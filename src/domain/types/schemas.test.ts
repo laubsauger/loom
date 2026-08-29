@@ -56,3 +56,102 @@ describe("projectDocumentSchema", () => {
     expect(parsed).toEqual(doc);
   });
 });
+
+describe("nodeResolutionOverride", () => {
+  const withResolution = (resolution: unknown) => {
+    const doc = minimalProject();
+    doc.graph.nodes = {
+      n1: {
+        id: "n1",
+        type: "blur",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {},
+        ...(resolution === undefined ? {} : { resolution }),
+      },
+    } as never;
+    return projectDocumentSchema.safeParse(doc);
+  };
+
+  /** Absent override is the default: the node's own ResolutionPolicy applies (§V50). */
+  it("accepts a node with no override", () => {
+    expect(withResolution(undefined).success).toBe(true);
+  });
+
+  it("accepts each override mode", () => {
+    expect(withResolution({ mode: "auto" }).success).toBe(true);
+    expect(withResolution({ mode: "project" }).success).toBe(true);
+    expect(withResolution({ mode: "input", input: "in" }).success).toBe(true);
+    expect(withResolution({ mode: "scale", factor: 0.5 }).success).toBe(true);
+    expect(withResolution({ mode: "fixed", width: 1920, height: 1080 }).success).toBe(true);
+  });
+
+  it("rejects a zero or negative scale factor", () => {
+    expect(withResolution({ mode: "scale", factor: 0 }).success).toBe(false);
+    expect(withResolution({ mode: "scale", factor: -2 }).success).toBe(false);
+  });
+
+  it("rejects a fractional or zero fixed resolution", () => {
+    expect(withResolution({ mode: "fixed", width: 100.5, height: 100 }).success).toBe(false);
+    expect(withResolution({ mode: "fixed", width: 0, height: 100 }).success).toBe(false);
+  });
+
+  it("rejects an unknown mode rather than ignoring it", () => {
+    expect(withResolution({ mode: "quarter" }).success).toBe(false);
+  });
+});
+
+describe("nodeFormatOverride", () => {
+  const withFormat = (format: unknown) => {
+    const doc = minimalProject();
+    doc.graph.nodes = {
+      n1: {
+        id: "n1",
+        type: "blur",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {},
+        ...(format === undefined ? {} : { format }),
+      },
+    } as never;
+    return projectDocumentSchema.safeParse(doc);
+  };
+
+  /** Absent override is the default: the node's own FormatPolicy applies (§V51). */
+  it("accepts a node with no override", () => {
+    expect(withFormat(undefined).success).toBe(true);
+  });
+
+  it("accepts each override mode", () => {
+    expect(withFormat({ mode: "auto" }).success).toBe(true);
+    expect(withFormat({ mode: "project" }).success).toBe(true);
+    expect(withFormat({ mode: "input", input: "in" }).success).toBe(true);
+    expect(withFormat({ mode: "fixed", format: "rgba16float" }).success).toBe(true);
+  });
+
+  /** A depth format is not a selectable colour output (§V51). */
+  it("rejects a depth format", () => {
+    expect(withFormat({ mode: "fixed", format: "depth24plus" }).success).toBe(false);
+  });
+
+  it("rejects a format outside the supported set", () => {
+    expect(withFormat({ mode: "fixed", format: "bgra8unorm" }).success).toBe(false);
+  });
+
+  it("carries resolution and format overrides independently", () => {
+    const doc = minimalProject();
+    doc.graph.nodes = {
+      n1: {
+        id: "n1",
+        type: "blur",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {},
+        resolution: { mode: "scale", factor: 0.5 },
+        format: { mode: "fixed", format: "rgba16float" },
+      },
+    } as never;
+    const parsed = projectDocumentSchema.safeParse(doc);
+    expect(parsed.success).toBe(true);
+  });
+});

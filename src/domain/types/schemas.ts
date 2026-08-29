@@ -53,6 +53,30 @@ export const parameterValueSchema = z.union([
   z.null(),
 ]);
 
+export const nodeResolutionOverrideSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("auto") }),
+  z.object({ mode: z.literal("project") }),
+  z.object({ mode: z.literal("input"), input: z.string().min(1).optional() }),
+  z.object({
+    mode: z.literal("scale"),
+    factor: z.number().positive().finite(),
+    input: z.string().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal("fixed"),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+]);
+
+export const nodeFormatOverrideSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("auto") }),
+  z.object({ mode: z.literal("project") }),
+  z.object({ mode: z.literal("input"), input: z.string().min(1).optional() }),
+  // Depth is deliberately absent: it is not a user-selectable colour output (§V51).
+  z.object({ mode: z.literal("fixed"), format: z.enum(["rgba8unorm", "rgba16float", "r32float"]) }),
+]);
+
 export const graphNodeSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -60,6 +84,8 @@ export const graphNodeSchema = z.object({
   position: vec2,
   size: z.object({ width: z.number(), height: z.number() }).optional(),
   parameters: z.record(parameterValueSchema),
+  resolution: nodeResolutionOverrideSchema.optional(),
+  format: nodeFormatOverrideSchema.optional(),
   state: z.record(z.unknown()).optional(),
   ui: z
     .object({

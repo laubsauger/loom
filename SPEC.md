@@ -184,6 +184,28 @@ type PortType =
   | { kind: "event" } | { kind: "audioFeatures" };
 ```
 
+### type: per-node output resolution override (TD Common page)
+```ts
+type NodeResolutionOverride =
+  | { mode: "auto" }                                   // node's own ResolutionPolicy — DEFAULT
+  | { mode: "project" }                                // project output resolution
+  | { mode: "input"; input?: PortId }                  // inherit named input
+  | { mode: "scale"; factor: number; input?: PortId }  // 1/8 1/4 1/2 2x 4x 8x
+  | { mode: "fixed"; width: number; height: number };  // custom
+```
+lives on `GraphNode.resolution?`. absent → definition policy. instance state, ⊥ definition state.
+
+### type: per-node pixel format override (TD Common page)
+```ts
+type NodeFormatOverride =
+  | { mode: "auto" }                          // node's own FormatPolicy — DEFAULT
+  | { mode: "project" }                       // project workingFormat
+  | { mode: "input"; input?: PortId }         // Use Input
+  | { mode: "fixed"; format: TextureFormat }; // rgba8unorm | rgba16float | r32float
+```
+lives on `GraphNode.format?`. depth ⊥ selectable — color outputs only.
+⊥ `rgba8unorm-srgb` yet: union growth mid-flight breaks exhaustive switches. → barrier.
+
 ### type: diagnostic (user-facing error surface)
 ```ts
 interface RuntimeDiagnostic {
@@ -275,6 +297,8 @@ V46: stateful node declares `{reset, deterministicReplay, checkpoint, randomAcce
 V47: execution plan renders to offscreen target w/o visible surface. headless path = same graph + same compiler.
 V48: ∀ readback isolated behind export interface. ⊥ readback call outside it.
 V49: runtime ⊥ couple graph eval to rAF | wall clock. scheduler = swappable transport source.
+V51: node format override = instance state, @ compile, ⊥ per-frame. absent → definition `formatPolicy`. ! validated vs capability report (V12) — unsupported → diagnostic + documented fallback, ⊥ crash, ⊥ silent swap. depth format ⊥ on color output. change → recreate targets + reset feedback (V22).
+V50: node resolution override = instance state, applied @ compile|resize, ⊥ per-frame (V21). absent → definition `resolutionPolicy`. ! clamped to project limits (V24). change → recreate affected targets + reset feedback history if pair resized (V22).
 
 ## §T TASKS
 row order = exec order. id = stable label, ⊥ ordering.
@@ -309,10 +333,14 @@ T20|.|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
 T21|.|shader diagnostics: debounce, async compile, line/col map, node badge + problems tab|V9,V27
 T22|.|retain last valid program + stale-output indicator|V9
 T23|.|**Phase0 exit**: uniform live-update, WGSL recompile, invalid WGSL keeps output|V5,V9
+T71|.|`NodeResolutionOverride` on `GraphNode` + zod + `setNodeResolution` patch op + bus command|V50,I.res
+T74|.|`NodeFormatOverride` on `GraphNode` + zod + `setNodeFormat` patch op + bus command|V51,I.fmt
 T24|.|compiler: resolve defs, validate params+connections|V13,V14
 T25|.|compiler: split temporal edges, reject illegal cycles, topo sort|V4
 T26|.|compiler: active-sink trace + prune|V25
 T27|.|compiler: resolution propagation (`ResolutionPolicy`)|V21
+T72|.|compiler: honor per-node resolution override in propagation, clamp to project limits, recreate targets on change|V50,V21,V24
+T75|.|compiler: honor per-node format override, validate vs capability tier, diagnostic + fallback when unsupported|V51,V12
 T28|.|compiler: format propagation rgba8unorm / rgba16float|V21
 T29|.|compiler: logical resource assign, persistent target per materialized output|V8
 T30|.|compiler: emit plan + structured `RuntimeDiagnostic[]`|I.diag
@@ -326,6 +354,7 @@ T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I
 T67|.|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
 T37|.|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
 T38|.|inspector pane: manifest-driven full control set, grouped|V17
+T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
 T39|.|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — types perlin\|simplex\|value\|sparse\|worley. params period, harmonics, gain, lacunarity, exponent, offset, amplitude, mono\|RGB, signed\|unsigned range, seed, 3D time evolve, xform. TD Noise TOP as param reference|V44,V45,I.registry
 T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
@@ -362,6 +391,9 @@ emits: `src/domain/types/` — ProjectDocument, GraphDocument, PortType, NodeDef
 RuntimeDiagnostic, AppCommandBus, InvocationContext, GraphPatch, FrameEvaluationInput, AuditEntry.
 ∀ later track codes against these. change after freeze → barrier + broadcast.
 
+barrier addendum: **T71 T74** — contract fields + zod landed pre-emptively (additive, safe mid-flight).
+patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth breaks exhaustive switches).
+
 ### wave 1 — 4 tracks
 | track | tasks | owns |
 |---|---|---|
@@ -373,9 +405,9 @@ RuntimeDiagnostic, AppCommandBus, InvocationContext, GraphPatch, FrameEvaluation
 ### wave 2 — 5 tracks
 | track | tasks | owns |
 |---|---|---|
-| E compiler | T24 T25 T26 T27 T28 T29 T30 T31 T32 T33 | `src/compiler/**` |
+| E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 
