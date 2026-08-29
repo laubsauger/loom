@@ -510,6 +510,7 @@ describe("T49 Phase 1 exit — any visible branch previews without readback (§V
           ref: { nodeId, portId: output.portId },
           source: { resourceId: output.resourceId, size: output.size, format: output.format },
           rect: { x: index * 110, y: 8, width: 96, height: 96 },
+          area: { width: 96, height: 96 },
           visible: true,
           pinned: false,
           collapsed: false,

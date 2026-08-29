@@ -104,6 +104,14 @@ export interface PreviewRequest {
   };
   /** Where the tile lands on the shared surface, CSS px (see `geometry.ts`). */
   readonly rect: PreviewRect;
+  /**
+   * The preview area in the NODE's own CSS px — what the tile is sized from (§V117, §V142).
+   *
+   * Separate from `rect` on purpose: `rect` is where the tile is drawn and carries the
+   * viewport transform, this is how big the thing being previewed is and does not. Sizing a
+   * tile from `rect` makes the camera reallocate render targets, which is B13.
+   */
+  readonly area: { readonly width: number; readonly height: number };
   /** The node's preview toggle is on and the node is inside the viewport. */
   readonly visible: boolean;
   /** Pinned previews survive every visibility reason (§V28 "visible OR pinned"). */
@@ -126,16 +134,30 @@ export const SUSPEND_REASONS = [
 
 export type SuspendReason = (typeof SUSPEND_REASONS)[number];
 
-export interface SuspendedPreview {
+/**
+ * A preview that may HOLD a tile — everything the program needs to allocate one, whether or
+ * not the preview draws this frame.
+ *
+ * Holding a tile and drawing into it are separate lifetimes (§V142): a preview scrolled off
+ * screen keeps its tile until the pool needs it for one that is drawing, so a camera move
+ * costs no allocation at all. What §V28c makes cheap is the per-frame GPU work, and that is
+ * still decided by `PreviewSchedule.active` alone.
+ */
+export interface AllocatedPreview {
   readonly ref: PreviewOutputRef;
+  readonly request: PreviewRequest;
+  /**
+   * Physical tile size in device pixels, after ladder snapping (see the design note §4).
+   * Derived from the node's preview AREA, never from zoom (§V142).
+   */
+  readonly tileSize: readonly [number, number];
+}
+
+export interface SuspendedPreview extends AllocatedPreview {
   readonly reason: SuspendReason;
 }
 
-export interface ScheduledPreview {
-  readonly ref: PreviewOutputRef;
-  readonly request: PreviewRequest;
-  /** Physical tile size in device pixels, after ladder snapping (see the design note §4). */
-  readonly tileSize: readonly [number, number];
+export interface ScheduledPreview extends AllocatedPreview {
   /** True when this frame is the one where the tile content re-renders. */
   readonly due: boolean;
 }

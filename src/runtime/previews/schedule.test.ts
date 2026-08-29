@@ -27,6 +27,7 @@ function request(id: string, overrides: Partial<PreviewRequest> = {}): PreviewRe
     ref: { nodeId: id, portId: "out" },
     source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float" },
     rect: { x: 10, y: 10, width: 192, height: 108 },
+    area: { width: 192, height: 108 },
     visible: true,
     pinned: false,
     collapsed: false,
@@ -209,13 +210,33 @@ describe("tile sizing", () => {
     expect(at2.active[0]?.tileSize[0]).toBe(384);
   });
 
-  it("caps the tile even when the slot is zoomed far in", () => {
+  it("caps the tile however large the node's preview area is", () => {
     const scheduler = createPreviewScheduler({ capacity: 4 });
     const schedule = scheduler.select(
-      [request("a", { rect: { x: 0, y: 0, width: 480, height: 270 } })],
+      [request("a", { area: { width: 480, height: 270 } })],
       input(0, { devicePixelRatio: 2 }),
     );
     expect(schedule.active[0]?.tileSize[0]).toBe(384);
+  });
+
+  it("sizes from the node's preview area, so the camera cannot resize a tile (§V142)", () => {
+    // B13: tiles sized from the on-screen rect are reallocated as the user zooms, and a
+    // reallocation blanks every preview at once. `rect` moves and scales with the viewport
+    // here; `area` — the slot inside the node's own box — does not, and neither may the tile.
+    const scheduler = createPreviewScheduler({ capacity: 4 });
+    const sizes = [0.4, 0.75, 1, 1.6, 2.5].map((zoom) => {
+      scheduler.reset();
+      const schedule = scheduler.select(
+        [
+          request("a", {
+            rect: { x: 120 * zoom, y: 40 * zoom, width: 192 * zoom, height: 108 * zoom },
+          }),
+        ],
+        input(0, { devicePixelRatio: 2 }),
+      );
+      return schedule.active[0]?.tileSize.join("x");
+    });
+    expect(new Set(sizes).size).toBe(1);
   });
 
   it("keeps the source aspect ratio", () => {

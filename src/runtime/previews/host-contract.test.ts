@@ -51,6 +51,7 @@ describe("T87 — the backend's preview host satisfies this directory's seam", (
           ref: { nodeId: "a", portId: "out" },
           source: { resourceId: "target/a", size: [1280, 720], format: "rgba16float" },
           rect: { x: 0, y: 0, width: 192, height: 108 },
+          area: { width: 192, height: 108 },
           visible: true,
           pinned: false,
           collapsed: false,

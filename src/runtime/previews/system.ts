@@ -6,6 +6,7 @@ import { createTileAtlas } from "./tile-atlas.ts";
 import type { TileAtlas } from "./tile-atlas.ts";
 import { previewKey } from "./types.ts";
 import type {
+  AllocatedPreview,
   PreviewCompositeTile,
   PreviewFrameCommand,
   PreviewProgram,
@@ -91,6 +92,8 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
   const atlas: TileAtlas = createTileAtlas({ capacity: options.capacity });
   let lastSignature: string | null = null;
 
+  const held = (entry: AllocatedPreview): boolean => atlas.get(previewKey(entry.ref)) !== undefined;
+
   function plan(input: PreviewSystemFrame): PreviewSystemResult {
     const schedule = scheduler.select(input.requests, {
       frame: input.frame,
@@ -100,7 +103,20 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       previewLongEdge: input.previewLongEdge,
     });
 
-    const program = buildPreviewProgram(schedule, atlas);
+    // Allocation follows the REQUEST set, not per-frame visibility (§V142, B13). A preview the
+    // user just panned off screen keeps its tile until the pool needs it for one that is
+    // drawing, so a camera move asks the host to rebuild nothing at all — and a rebuild is not
+    // a private cost, because the host reinstalls the whole program and every preview goes
+    // black for the frame. Active previews come first: they win a slot under pressure.
+    // A collapsed node is excluded — it has no preview area, so there is no tile to size.
+    const holding = schedule.suspended.filter((entry) => entry.reason !== "collapsed");
+    // Among previews that are only holding a tile, whoever already has a slot keeps it:
+    // reshuffling the pool between two previews that are both off screen is churn nobody
+    // asked for. The sort is stable, so the rest stay in request order.
+    holding.sort((a, b) => Number(held(b)) - Number(held(a)));
+
+    const allocated: AllocatedPreview[] = [...schedule.active, ...holding];
+    const program = buildPreviewProgram(allocated, atlas);
     const programChanged = program.signature !== lastSignature;
     if (programChanged) {
       lastSignature = program.signature;

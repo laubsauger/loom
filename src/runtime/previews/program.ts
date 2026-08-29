@@ -13,15 +13,16 @@ import {
 } from "./debug-effects.ts";
 import type { TileAtlas } from "./tile-atlas.ts";
 import { previewKey } from "./types.ts";
-import type { PreviewProgram, PreviewSchedule } from "./types.ts";
+import type { AllocatedPreview, PreviewProgram } from "./types.ts";
 
 /**
  * Turns a schedule into plan data (T34).
  *
- * The output is the STABLE half of the preview system: it changes when the active set, a tile
- * size or a debug mode changes, and at no other time. Panning, zooming inside a ladder step and
- * refreshing all leave it byte-identical, which is how §V8 ("no render-target allocation inside
- * the frame loop") holds without anyone having to remember it.
+ * The output is the STABLE half of the preview system: it changes when the ALLOCATED set, a
+ * tile size or a debug mode changes, and at no other time. Panning, zooming and refreshing all
+ * leave it byte-identical — allocation follows the request set and the node's own preview area,
+ * neither of which the camera touches (§V142) — which is how §V8 ("no render-target allocation
+ * inside the frame loop") holds without anyone having to remember it.
  *
  * Everything emitted here is plain data from the existing plan IR — no new pass or resource
  * kinds (§V58), no functions, no DOM references (§V63).
@@ -39,18 +40,26 @@ export function previewPassId(key: string): string {
   return `preview/pass/${key}`;
 }
 
-export function buildPreviewProgram(schedule: PreviewSchedule, atlas: TileAtlas): PreviewProgram {
+/**
+ * `allocated` is in PRIORITY order: the atlas keeps the head of the list when the pool is
+ * smaller than the list, so previews that are drawing this frame must come first.
+ */
+export function buildPreviewProgram(
+  allocated: ReadonlyArray<AllocatedPreview>,
+  atlas: TileAtlas,
+): PreviewProgram {
   const allocations = atlas.sync(
-    schedule.active.map((entry) => ({ key: previewKey(entry.ref), size: entry.tileSize })),
+    allocated.map((entry) => ({ key: previewKey(entry.ref), size: entry.tileSize })),
   );
   const byKey = new Map(allocations.map((allocation) => [allocation.key, allocation]));
 
   const passes: EffectPassDescriptor[] = [];
-  for (const entry of schedule.active) {
+  for (const entry of allocated) {
     const key = previewKey(entry.ref);
     const tile = byKey.get(key);
-    // No tile means the atlas ran out — the scheduler's budget suspension should already have
-    // prevented that, so this is a belt-and-braces skip rather than a silent partial render.
+    // No tile means the pool ran out. For a preview that is drawing, the scheduler's budget
+    // suspension should already have prevented that; for one that is only holding a tile, it
+    // is the ordinary case — it lost its slot to a preview that is actually on screen.
     if (tile === undefined) continue;
     passes.push({
       kind: "effect",

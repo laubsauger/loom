@@ -132,6 +132,10 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           ref: { nodeId, portId: output.portId },
           source: { resourceId: output.resourceId, size: output.size, format: output.format },
           rect: slotScreenRect(box, viewport),
+          // §V142 — where the tile is DRAWN carries the camera; how big the tile is
+          // ALLOCATED must not. `offset` is the slot measured inside the node's own box,
+          // so this is the node's preview area at any zoom (§V117).
+          area: { width: offset.width, height: offset.height },
           visible: true,
           pinned: node?.ui?.preview === true,
           collapsed: false,

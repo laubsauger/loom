@@ -16,6 +16,7 @@ function request(id: string, overrides: Partial<PreviewRequest> = {}): PreviewRe
     ref: { nodeId: id, portId: "out" },
     source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float" },
     rect: { x: 10, y: 10, width: 192, height: 108 },
+    area: { width: 192, height: 108 },
     visible: true,
     pinned: false,
     collapsed: false,
@@ -92,6 +93,72 @@ describe("preview system", () => {
     // The tile moves every frame even though it re-renders on a quarter of them.
     const destinations = host.commands.map((command) => command.composite[0]?.dest.x);
     expect(new Set(destinations).size).toBe(30);
+  });
+
+  it("does not rebuild the program while the graph zooms (§V142)", () => {
+    // B13: the tile used to be sized from the on-screen rect, so a zoom gesture crossed
+    // ladder steps and reinstalled the program — and the host rebuilds every tile when it
+    // does, which is why all the previews went black together. `area` is the node's own
+    // preview area and does not change with the camera, so neither does the program.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    for (const zoom of [0.25, 0.4, 0.75, 1, 1.5, 2.5]) {
+      system.update({
+        requests: [
+          request("a", {
+            rect: { x: 100 * zoom, y: 20 * zoom, width: 192 * zoom, height: 108 * zoom },
+          }),
+        ],
+        frame: frame(0, 0),
+        surface: SURFACE,
+        devicePixelRatio: 2,
+        previewFps: 15,
+        previewLongEdge: 192,
+      });
+    }
+    expect(host.programs).toHaveLength(1);
+  });
+
+  it("keeps a tile allocated for a preview that scrolled off screen (§V142)", () => {
+    // Suspension is a per-frame decision about GPU work (§V28); it is not a reason to free
+    // a tile, because freeing one reinstalls the program and blanks every OTHER preview for
+    // a frame. The pool is what bounds this, not visibility.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    run(system, [request("a"), request("b")], 1);
+
+    const scrolled = system.update({
+      requests: [request("a"), request("b", { rect: { x: 4000, y: 4000, width: 192, height: 108 } })],
+      frame: frame(1 / 60, 1),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+
+    expect(scrolled.schedule.suspended.map((entry) => entry.reason)).toEqual(["offscreen"]);
+    // Not drawn — and not reallocated either.
+    expect(scrolled.command.composite.map((tile) => tile.ref.nodeId)).toEqual(["a"]);
+    expect(host.programs).toHaveLength(1);
+  });
+
+  it("gives an on-screen preview a tile ahead of one that is only holding one", () => {
+    // The pool is the bound on retention: when it is full, a preview that is actually
+    // drawing takes the slot from one that is not.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 1 });
+    run(system, [request("a")], 1);
+
+    const swapped = system.update({
+      requests: [request("a", { rect: { x: 4000, y: 4000, width: 192, height: 108 } }), request("b")],
+      frame: frame(1 / 60, 1),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    expect(swapped.command.composite.map((tile) => tile.ref.nodeId)).toEqual(["b"]);
+    expect(swapped.program.passes).toHaveLength(1);
   });
 
   it("rebuilds the program when a debug mode changes, and not when exposure does", () => {

@@ -12,10 +12,11 @@ import type { PreviewRect } from "./types.ts";
 /**
  * Physical tile sizes we are willing to allocate.
  *
- * Zoom is continuous, so an exact `previewLongEdge * zoom * dpr` would reallocate every tile
- * on every frame of a zoom gesture — §V8 violated in the most expensive way available. Steps
- * are roughly 1.5x apart: a zoom gesture crosses a handful of them, and the worst-case
- * sharpness error inside a step is invisible at thumbnail scale.
+ * A node's preview area is continuous (nodes are resizable, §V117), so an exact
+ * `area * dpr` would reallocate a tile on every frame of a resize drag — §V8 violated in
+ * the most expensive way available. Steps are roughly 1.5x apart: a resize crosses a
+ * handful of them, and the worst-case sharpness error inside a step is invisible at
+ * thumbnail scale. Zoom is not in that input at all — see `TileSizeInput.areaLongEdge`.
  */
 export const TILE_SIZE_LADDER: ReadonlyArray<number> = [64, 96, 128, 192, 256, 384];
 
@@ -25,9 +26,10 @@ export const MIN_ONSCREEN_LONG_EDGE_CSS = 24;
 /**
  * Cap, as a multiple of `ProjectSettings.previewLongEdge`.
  *
- * Uncapped, dpr 2 at the graph's max zoom of 2.5 asks for a 960 px "thumbnail" costing 3.7 MB.
- * Past the cap a zoomed-in node preview goes deliberately soft; the honest answer to "let me
- * see this properly" is the large viewer pane (T36), which renders at its own size.
+ * The headroom is for device pixel ratio: dpr 2 on a `previewLongEdge` of 192 asks for 384,
+ * and a preview that ignored dpr would be visibly soft on every retina display. Past the cap
+ * a large node preview goes deliberately soft; the honest answer to "let me see this
+ * properly" is the large viewer pane (T36), which renders at its own size.
  */
 export const MAX_TILE_SCALE = 2;
 
@@ -50,12 +52,16 @@ export interface TileSizeInput {
   /** Source output size in pixels, which fixes the aspect ratio. */
   readonly sourceSize: readonly [number, number];
   /**
-   * How large the tile actually is on screen, CSS px on its long edge. For a node slot that
-   * is `previewLongEdge * zoom`; for the viewer pane it is the pane's own size. Taking the
-   * measured on-screen size rather than re-deriving it from zoom means one code path serves
-   * both, and neither can drift from what the user is looking at.
+   * The preview area's long edge in the NODE's own CSS px — the slot's size inside the node
+   * box, which the viewport transform never touches (§V117: a resized node buys a bigger
+   * tile). For the viewer pane it is the pane's own size.
+   *
+   * Deliberately NOT the on-screen size. That carries the graph zoom, so a tile sized from it
+   * is reallocated as the camera moves — and because the host rebuilds a changed preview
+   * program in one go, one reallocation blanks EVERY preview for a frame (B13, §V142). Zoom
+   * scales a tile with CSS, never with a new allocation.
    */
-  readonly onScreenLongEdge: number;
+  readonly areaLongEdge: number;
   readonly devicePixelRatio: number;
   /** Hard cap in device px, before ladder snapping. See `MAX_TILE_SCALE`. */
   readonly maxLongEdge: number;
@@ -64,13 +70,12 @@ export interface TileSizeInput {
 /**
  * Physical tile size in device pixels.
  *
- * dpr and on-screen size MULTIPLY, and on-screen size already carries the graph zoom. Treating
- * either as "the" scale is how a preview ends up blurry (drop dpr) or ruinously expensive
- * (drop the cap).
+ * dpr and the node's preview area MULTIPLY. Dropping dpr is how a preview ends up blurry;
+ * dropping the cap is how it ends up ruinously expensive; letting zoom in is B13.
  */
 export function tileSizeFor(input: TileSizeInput): readonly [number, number] {
-  const { sourceSize, onScreenLongEdge, devicePixelRatio, maxLongEdge } = input;
-  const requested = Math.max(0, onScreenLongEdge) * Math.max(devicePixelRatio, 1);
+  const { sourceSize, areaLongEdge, devicePixelRatio, maxLongEdge } = input;
+  const requested = Math.max(0, areaLongEdge) * Math.max(devicePixelRatio, 1);
   const capped = Math.min(requested, Math.max(1, maxLongEdge));
   const snapped = ladderSnap(capped);
 

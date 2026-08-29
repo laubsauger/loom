@@ -17,6 +17,7 @@ export {
 export type {
   ChannelMask,
   PreviewChannel,
+  AllocatedPreview,
   PreviewCompositeTile,
   PreviewFrameCommand,
   PreviewModeKind,

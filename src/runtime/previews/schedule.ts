@@ -108,19 +108,35 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
     capacity,
 
     select(requests: ReadonlyArray<PreviewRequest>, input: ScheduleInput): PreviewSchedule {
+      const maxLongEdge = Math.max(1, input.previewLongEdge) * MAX_TILE_SCALE;
+      // Sized from the node's preview area, so it is the same number whether the preview is
+      // drawing this frame or only holding its tile — and the same number at any zoom (§V142).
+      const tileFor = (request: PreviewRequest): readonly [number, number] =>
+        tileSizeFor({
+          sourceSize: request.source.size,
+          areaLongEdge: Math.max(request.area.width, request.area.height),
+          devicePixelRatio: input.devicePixelRatio,
+          maxLongEdge,
+        });
+
       const suspended: SuspendedPreview[] = [];
       const eligible: PreviewRequest[] = [];
 
       for (const request of requests) {
         const reason = suspensionReason(request, input);
         if (reason === null) eligible.push(request);
-        else suspended.push({ ref: request.ref, reason });
+        else suspended.push({ ref: request.ref, request, tileSize: tileFor(request), reason });
       }
 
       eligible.sort(budgetOrder);
       const kept = eligible.slice(0, capacity);
       for (const overflow of eligible.slice(capacity)) {
-        suspended.push({ ref: overflow.ref, reason: "budget" });
+        suspended.push({
+          ref: overflow.ref,
+          request: overflow,
+          tileSize: tileFor(overflow),
+          reason: "budget",
+        });
       }
 
       // A suspended preview surrenders its tile AND its refresh clock. Keeping the clock would
@@ -132,7 +148,6 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
       }
 
       const time = input.frame.timeSeconds;
-      const maxLongEdge = Math.max(1, input.previewLongEdge) * MAX_TILE_SCALE;
 
       const active: ScheduledPreview[] = kept.map((request) => {
         const key = previewKey(request.ref);
@@ -146,17 +161,7 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         const due =
           last === undefined || time < last || time - last >= interval - REFRESH_EPSILON_SECONDS;
         if (due) lastRefresh.set(key, time);
-        return {
-          ref: request.ref,
-          request,
-          tileSize: tileSizeFor({
-            sourceSize: request.source.size,
-            onScreenLongEdge: rectLongEdge(request.rect),
-            devicePixelRatio: input.devicePixelRatio,
-            maxLongEdge,
-          }),
-          due,
-        };
+        return { ref: request.ref, request, tileSize: tileFor(request), due };
       });
 
       return { active, suspended };

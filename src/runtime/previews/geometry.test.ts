@@ -20,15 +20,15 @@ describe("tile size ladder", () => {
     expect(ladderSnap(10_000)).toBe(last);
   });
 
-  it("keeps the tile size constant across a zoom range inside one ladder step", () => {
-    // The reason the ladder exists: a continuous physical size would reallocate every tile on
-    // every frame of a zoom gesture, which is §V8 violated in the most expensive way going.
+  it("keeps the tile size constant while a node is resized inside one ladder step", () => {
+    // The reason the ladder exists: a continuous physical size would reallocate a tile on
+    // every frame of a resize drag, which is §V8 violated in the most expensive way going.
     // 128 * [0.8 .. 1.0] spans 102.4 .. 128, entirely inside the 96 -> 128 step.
     const sizes = [0.8, 0.85, 0.9, 0.95, 1.0].map(
-      (zoom) =>
+      (scale) =>
         tileSizeFor({
           sourceSize: [1280, 720],
-          onScreenLongEdge: 128 * zoom,
+          areaLongEdge: 128 * scale,
           devicePixelRatio: 1,
           maxLongEdge: 384,
         })[0],
@@ -37,17 +37,17 @@ describe("tile size ladder", () => {
   });
 });
 
-describe("device pixel ratio and zoom multiply", () => {
+describe("device pixel ratio", () => {
   it("asks for more pixels on a high-density display", () => {
     const at1 = tileSizeFor({
       sourceSize: [1280, 720],
-      onScreenLongEdge: 96,
+      areaLongEdge: 96,
       devicePixelRatio: 1,
       maxLongEdge: 384,
     });
     const at2 = tileSizeFor({
       sourceSize: [1280, 720],
-      onScreenLongEdge: 96,
+      areaLongEdge: 96,
       devicePixelRatio: 2,
       maxLongEdge: 384,
     });
@@ -55,11 +55,11 @@ describe("device pixel ratio and zoom multiply", () => {
     expect(at2[0]).toBe(192);
   });
 
-  it("never exceeds the cap, whatever zoom and density ask for", () => {
+  it("never exceeds the cap, whatever the area and the density ask for", () => {
     const cap = 192 * MAX_TILE_SCALE;
     const size = tileSizeFor({
       sourceSize: [1280, 720],
-      onScreenLongEdge: 192 * 2.5,
+      areaLongEdge: 192 * 2.5,
       devicePixelRatio: 3,
       maxLongEdge: cap,
     });
