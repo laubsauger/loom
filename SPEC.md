@@ -372,6 +372,21 @@ interface ParameterSlot {
 ∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
 number-only feature: TD drives menus + toggles from expressions & that is half its power.
 
+### variadic inputs (1+n) — the mechanism exists, ⊥ node uses it
+`PortDefinition.variadic` is ∈ the contract, honored by the patch layer (V14), the
+compiler (`CompiledInputBinding` is an ARRAY per port), and the canvas. **⊥ production
+node declares one** — only test fixtures. same shape as feedback before T152: every layer
+built, nothing reaching it.
+
+Composite (Over/Add/Multiply/Screen/Difference) is the obvious first consumer — TD's
+Composite TOP is multi-input. Also: Switch, Merge, and any "combine N of these" op.
+
+**THE GAP THAT MATTERS**: edges into one port currently arrive in EDGE-ID order — i.e.
+creation order — and `GraphEdge` carries no ordering field. For Over, **layer order IS the
+operation**. Wiring a third layer would land it wherever its id sorted, and reordering
+would mean deleting and rewiring. ∴ a variadic port needs an EXPLICIT order before any node
+can use one.
+
 ### node NAMES are identifiers, ⊥ decoration (TD: noise1, noise2, null1)
 prerequisite for expressions & binds: `op('noise1').par.period` only works because a name
 is UNIQUE within its network. ∴ names must land BEFORE reference syntax, ⊥ after.
@@ -689,6 +704,8 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V131: a variadic port's input ORDER is explicit & user-controllable — the edge carries it. ⊥ edge-id|creation order: for Over|Composite the layer order IS the operation, and an order the user ⊥ change is a wrong answer they ⊥ fix.
+V132: variadic UI = n connected slots + 1 free, reorder by drag. reorder = 1 patch, 1 undo entry (V15). the free slot is how "1+n" is discoverable ⊥ documentation.
 V127: node `name` = a unique IDENTIFIER within its graph, auto-numbered on collision (`noise1`, `noise2`). ⊥ decoration: it is the reference target for binds + expressions (V110), so uniqueness ! precede reference syntax.
 V128: rename rewrites ∀ reference naming that node, ∈ the SAME patch — else a rename silently breaks a bind. rename is graph-wide, ⊥ node-local.
 V129: a rename collision auto-suffixes, ⊥ rejects. the user's intent is the word; the number is bookkeeping, & a modal saying "name taken" is the tool arguing w/ a decision already made.
@@ -870,6 +887,9 @@ T217|.|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE
 T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
 T219|.|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
+T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
+T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
 T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
 T222|.|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
 T223|.|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
@@ -977,7 +997,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
-| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
+| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
@@ -985,7 +1005,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
-| F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
+| F graph view | T18 T19 T227 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
 | G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
@@ -1003,7 +1023,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
