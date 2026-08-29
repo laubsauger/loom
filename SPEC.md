@@ -765,6 +765,8 @@ LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects
 (carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
 unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
+V167: a capability is ⊥ SHIPPED until a node can DECLARE it & a user can REACH it. T229 built `ExternalTextureResourceDescriptor` + `registerMediaSource` + upload gating, ∀ tested — & ⊥ node can request one ∴ `ScratchRequest` has no `external` kind. the plan layer & the backend layer are both green & the catalogue has no media node. same shape as B12.
+V168: within 1 frame, PLAN ORDER = EXECUTION ORDER. vgpu `compute.dispatch()` submits IMMEDIATELY while render passes submit @ frame close ∴ ∀ dispatch ran before ∀ render pass regardless of plan order (B19). ⊥ observable ∈ any mock.
 V165: `project.new` is a 4th DESTRUCTIVE verb (w/ open) — ! confirm when dirty, same rule as V93's open.
 V166: an unsaved-work confirm offers SAVE as its primary action, ⊥ only discard|cancel. a 2-button "are you sure" forces cancel → save by hand → redo the action, & the user who wanted to keep their work is the one punished for it. 3 buttons: Save & continue | Discard | Cancel.
 V164: ∈ dev, a surface that drew NOTHING ! be distinguishable from one that correctly drew BLACK. preview overlay is `alphaMode:"premultiplied"`, clear `[0,0,0,0]` (V106) ∴ "compositor produced nothing" reads as clean black over a dark app — indistinguishable from a working black picture. a distinct dev clear turns a silent class of bug into an obvious one.
@@ -984,6 +986,9 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
+T263|.|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
+T264|.|app side: file picker → `MediaSource`, `getUserMedia` → `MediaSource`, both → `registerMediaSource`. permission denial is a DIAGNOSTIC ⊥ a crash|V167,V136
 T261|.|**New** button beside Open/Save + `project.new` command. confirm-when-dirty w/ Save as primary|V165,V166,V93,V29
 T260|.|dev-only distinct preview clear colour — "drew nothing" ⊥ look like "drew black" (V164). ⊥ ship ∈ prod builds|V164,V106
 T259|.|**per-frame driven/expression push** ∈ composition root — gate on `hasAnimatedParameters`, re-resolve, values-only update (isUniformOnlyChange → updateUniforms). THE last inch of "something moves"|V163,V5,V143
@@ -1158,7 +1163,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 T234 T235 T236 T237 T238 T239 T240 T241 T242 T243 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 T234 T235 T236 T237 T238 T239 T240 T241 T242 T243 T262 T263 T264 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
@@ -1215,6 +1220,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B19|2026-08-30|**DISPATCH RAN BEFORE ALL RENDER PASSES, same frame.** vgpu computes have ⊥ frame-level pass API — `compute.dispatch()` makes its OWN encoder & SUBMITS IMMEDIATELY; render passes submit @ frame close. ∴ ∈ 1 frame every dispatch executed before every render pass regardless of plan order. Analyze read all-zeros; `textureToAttribute` (TOP→POP bridge) has sampled the PREVIOUS frame SINCE IT LANDED & its Dawn test tolerated it. ⊥ visible ∈ any mock, ⊥ per-layer test failed. fixed for the DIRECT path (segmented encoding); LOOP path keeps 1-frame effect→dispatch latency until vgpu gains a frame compute hook|V168
 B16|2026-08-30|**BYPASS & MUTE DO NOTHING.** `ui.bypassed`/`ui.muted` have toggles, badges & edge-flow styling; `compile.ts` NEVER READS THEM. classifier already calls them structural (`recompile-region`) ∴ the edit is classified right & then ignored. user toggles bypass, sees the badge, picture ⊥ change|V25
 B17|2026-08-30|**`renderedThisFrame` is VACUOUS.** `hub.ts:noteFrame()` bumps ∀ node ∈ plan ∀ frame ∴ node info popup ALWAYS reads true. ⊥ a lie today (nothing IS skipped) but 0 information, & becomes a lie the moment T254 lands|V85
 B18|2026-08-30|**§V25 pruning effectively DISABLED.** `use-graph-compile.ts:visiblePreviewSinks()` declares EVERY texture-producing node a preview sink ∴ a 200-node graph encodes 200+ passes/frame regardless of what's on screen. correct per §V28b/§V142 as written; the sink definition is what's wrong|V158,V25
