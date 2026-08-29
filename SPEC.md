@@ -575,6 +575,8 @@ V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query o
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
+V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V106: a preview surface composited OVER the graph ! be genuinely transparent — WebGPU canvas `alphaMode` defaults to **opaque**, so a transparent CLEAR still paints black. `alphaMode:"premultiplied"` + clear to (0,0,0,0). an opaque overlay hides the entire app except its tiles.
 V101: a per-node UI toggle (bypass|preview|mute) acts on the SELECTION when that node is in it, else on that node alone. ⊥ badge dispatching a raw patch: it ! go through the same bus command the key + menu use, else three surfaces diverge (V29, V52).
 V102: multi-node toggle SETS all to one value, ⊥ flips each independently — a mixed selection becomes uniformly ON, then uniformly OFF. flipping each keeps mixed selections mixed forever, which is never what the user meant by selecting them together.
 V103: `compileShader` `validated:false` = the DEVICE ⊥ report compilation info — UNKNOWN, ⊥ broken. editor shows "unvalidated on this device", ⊥ red. `ok:true` only when validation actually RAN clean.
@@ -733,6 +735,8 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T200|.|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
+T201|.|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
 T198|.|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
 T199|.|wire `read_points`: `createPointsReadback({ readBuffer, pointSetInfo, now })` — clock ! be INJECTED (the export boundary test caught a `Date.now` default)|V48,V16
 T197|.|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
