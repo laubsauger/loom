@@ -516,26 +516,46 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
   }
 
-  function encode(f: Frame, active: Program): void {
+  /**
+   * Encodes one dispatch pass. vgpu computes have no frame-level pass API (upstream
+   * gap): `dispatch()` builds its own command buffer and SUBMITS IMMEDIATELY, so where
+   * this call happens relative to open frames IS the execution order.
+   */
+  function encodeDispatch(active: Program, pass: PassDescriptor & { kind: "dispatch" }): void {
+    // T172: kernels run in the frame. Indirect counts come from a GPU buffer the
+    // lifecycle wrote — the CPU never knows the number, and does not need to.
+    const pipeline = active.resources.computes.get(pass.id);
+    if (!pipeline) return;
+    if ("indirect" in (pass.workgroups as object)) {
+      const counter = active.resources.buffers.get((pass.workgroups as { indirect: string }).indirect);
+      if (counter) pipeline.dispatch({ indirect: counter });
+    } else {
+      const [x, y, z] = pass.workgroups as readonly [number, number, number];
+      pipeline.dispatch(x, y, z);
+    }
+  }
+
+  function encode(
+    f: Frame,
+    active: Program,
+    passes: ReadonlyArray<PassDescriptor> = active.passes,
+    withPresentations = true,
+  ): void {
     guard.duringFrame(() => {
-      for (const pass of active.passes) {
+      for (const pass of passes) {
         if (pass.kind === "swap") {
           active.resources.pingPongs.get(pass.resourceId)?.swap();
           active.resources.bufferPairs.get(pass.resourceId)?.swap();
           continue;
         }
         if (pass.kind === "dispatch") {
-          // T172: kernels run in the frame. Indirect counts come from a GPU buffer the
-          // lifecycle wrote — the CPU never knows the number, and does not need to.
-          const pipeline = active.resources.computes.get(pass.id);
-          if (!pipeline) continue;
-          if ("indirect" in (pass.workgroups as object)) {
-            const counter = active.resources.buffers.get((pass.workgroups as { indirect: string }).indirect);
-            if (counter) pipeline.dispatch({ indirect: counter });
-          } else {
-            const [x, y, z] = pass.workgroups as readonly [number, number, number];
-            pipeline.dispatch(x, y, z);
-          }
+          // Inside an OPEN frame (the loop path) a dispatch cannot be ordered after
+          // this frame's render passes — vgpu submits it now, the frame submits later.
+          // Kernel→draw chains are therefore correct here; an effect→dispatch read
+          // (Analyze, the TOP→POP bridge) sees the PREVIOUS frame's texture — one
+          // frame of latency, which §V144 embraces. The no-open-frame path
+          // (`encodeSegmented`) honours plan order exactly.
+          encodeDispatch(active, pass);
           continue;
         }
         if (pass.kind === "draw") {
@@ -583,7 +603,46 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         );
       }
 
-      encodePresentations(f);
+      if (withPresentations) encodePresentations(f);
+    });
+  }
+
+  /**
+   * Plan-order-exact encoding for the direct (no open frame) path. vgpu computes
+   * submit the moment they are called, while a frame's render passes submit when the
+   * frame closes — so inside ONE frame a dispatch always runs first, whatever the plan
+   * said. Here the passes are split into segments instead: consecutive render-family
+   * passes share a frame, and each dispatch executes BETWEEN frames, exactly where the
+   * plan put it. This is what makes an effect→dispatch read (Analyze reducing a texture
+   * rendered THIS frame) correct on the offline/export path.
+   */
+  function encodeSegmented(gpu: GpuSession["gpu"], active: Program): void {
+    type Segment =
+      | { kind: "frame"; passes: PassDescriptor[] }
+      | { kind: "dispatch"; pass: PassDescriptor & { kind: "dispatch" } };
+    const segments: Segment[] = [];
+    let current: PassDescriptor[] = [];
+    for (const pass of active.passes) {
+      if (pass.kind === "dispatch") {
+        if (current.length > 0) {
+          segments.push({ kind: "frame", passes: current });
+          current = [];
+        }
+        segments.push({ kind: "dispatch", pass });
+        continue;
+      }
+      current.push(pass);
+    }
+    // The final frame always runs, even empty: it carries the presentations.
+    segments.push({ kind: "frame", passes: current });
+
+    segments.forEach((segment, index) => {
+      if (segment.kind === "dispatch") {
+        guard.duringFrame(() => encodeDispatch(active, segment.pass));
+        return;
+      }
+      const final = index === segments.length - 1;
+      frame(gpu, (f) => encode(f, active, segment.passes, final));
     });
   }
 
@@ -1100,7 +1159,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         encode(open, active);
       } else {
         try {
-          frame(session.gpu, (f) => encode(f, active));
+          encodeSegmented(session.gpu, active);
         } catch (error) {
           // Direct (non-loop) render: the caller sees the throw, the problems tab sees
           // the diagnostic. Loop renders get the same treatment inside runFrame().

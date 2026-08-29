@@ -94,7 +94,16 @@ export interface ScratchBufferPairRequest {
   capacity: number;
 }
 
-export type ScratchRequest = ScratchTargetRequest | ScratchBufferPairRequest;
+/** A single storage buffer a node's passes write — a reduction result, a lookup table. */
+export interface ScratchBufferRequest {
+  kind: "buffer";
+  key: string;
+  /** Element stride in bytes. */
+  stride: number;
+  capacity: number;
+}
+
+export type ScratchRequest = ScratchTargetRequest | ScratchBufferPairRequest | ScratchBufferRequest;
 
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;

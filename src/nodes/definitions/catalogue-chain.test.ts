@@ -327,8 +327,10 @@ function uniformStructMembers(shader: string, binding: string): string[] {
 function minimalGraphFor(definition: NodeDefinition): GraphDocument {
   const nodes: Record<string, GraphNode> = {
     subject: node("subject", definition.type),
-    sink: node("sink", "output"),
   };
+  // A node WITH outputs is observed through an Output sink; an output-less node
+  // (Analyze, §V144) declares `sink: true` and observes itself.
+  if (definition.outputs.length > 0) nodes["sink"] = node("sink", "output");
   const edges: Record<string, ReturnType<typeof edge>> = {};
 
   definition.inputs.forEach((port, index) => {

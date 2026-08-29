@@ -566,7 +566,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         ];
 
   // 1. definitions, parameters, connections (T24)
-  const validatedRaw = validateGraph(graph, registry);
+  const validatedRaw = validateGraph(graph, registry, request.resolution ?? {});
   diagnostics.push(...validatedRaw.diagnostics);
 
   // 1b. splice passthrough nodes (T223, §V130): a Null is a WIRE. Its consumers bind
@@ -772,6 +772,38 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           const pairId = scratchResourceId(nodeId, key);
           resources.push({ kind: "bufferPair", id: pairId, stride, capacity: bufferCapacity, label: `${nodeId} points ${key}` });
           scratchPairIds.push(pairId);
+          continue;
+        }
+        // T236: a single storage buffer — a reduction result, a lookup table. No pair,
+        // no swap; readable between frames via readBuffer (§V48).
+        if (entry.kind === "buffer") {
+          const stride = entry.stride;
+          const bufferCapacity = entry.capacity;
+          if (
+            key === undefined ||
+            seenScratch.has(key) ||
+            !(Number.isInteger(stride) && (stride as number) >= 1) ||
+            !(Number.isInteger(bufferCapacity) && (bufferCapacity as number) >= 1)
+          ) {
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.scratchInvalid,
+                `Node "${nodeId}" (${node.type}) declared an invalid or duplicate buffer scratch entry ${JSON.stringify(raw)}.`,
+                { nodeId, suggestion: 'A buffer entry is { key, kind: "buffer", stride >= 1, capacity >= 1 }.' },
+              ),
+            );
+            continue;
+          }
+          seenScratch.add(key);
+          resources.push({
+            kind: "buffer",
+            id: scratchResourceId(nodeId, key),
+            stride,
+            capacity: bufferCapacity,
+            usage: "storage",
+            label: `${nodeId} ${key}`,
+          });
           continue;
         }
         const scale =
