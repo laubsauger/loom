@@ -1,7 +1,6 @@
 import type {
   NumberParameter,
   ParameterDefinition,
-  ParameterMode,
   ParameterSchema,
   ParameterSlot,
   ParameterValue,

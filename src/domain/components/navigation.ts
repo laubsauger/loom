@@ -7,9 +7,22 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { ComponentId, NodeId } from "../types/ids.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
-import type { ParameterValue } from "../types/parameters.ts";
+import type { ParameterValue, StoredParameter } from "../types/parameters.ts";
+import { storedStaticValue } from "../parameters/slots.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { componentNodeType } from "./component-type.ts";
+
+/** Static view of a stored bag: slots collapse to their retained static payload (T202). */
+function staticParameterView(
+  stored: Readonly<Record<string, StoredParameter>>,
+): Record<string, ParameterValue> {
+  const view: Record<string, ParameterValue> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    const flat = storedStaticValue(value);
+    if (flat !== undefined) view[key] = flat;
+  }
+  return view;
+}
 import { readComponentInstance } from "./instance.ts";
 import { buildParentScope } from "./parent-scope.ts";
 import type { ComponentRegistryView } from "./registry.ts";
@@ -141,8 +154,12 @@ export function resolveComponentPath(input: ResolveComponentPathInput): Resolved
     }
 
     const manifest = input.nodes.get(componentNodeType(state.componentId, state.version));
+    // No manifest = no resolver; the static view of each stored value (a slot's
+    // retained static payload, T202) is the honest fallback — never the raw envelope.
     const parameters =
-      manifest === undefined ? { ...instanceNode.parameters } : input.resolveValues(instanceNode, manifest);
+      manifest === undefined
+        ? staticParameterView(instanceNode.parameters)
+        : input.resolveValues(instanceNode, manifest);
 
     frames.push({
       instanceNodeId,

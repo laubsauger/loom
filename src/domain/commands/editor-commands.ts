@@ -1,6 +1,6 @@
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId, Revision } from "../types/ids.ts";
-import type { ParameterValue } from "../types/parameters.ts";
+import type { StoredParameter } from "../types/parameters.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
@@ -79,7 +79,8 @@ interface ClipboardNode {
   readonly sourceId: NodeId;
   readonly type: string;
   readonly position: { x: number; y: number };
-  readonly parameters: Record<string, ParameterValue>;
+  /** Stored form: a copied node keeps its mode envelopes (T202), not just flat values. */
+  readonly parameters: Record<string, StoredParameter>;
   readonly ui: GraphNode["ui"] | undefined;
   readonly resolution: GraphNode["resolution"] | undefined;
   readonly format: GraphNode["format"] | undefined;

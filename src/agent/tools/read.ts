@@ -2,7 +2,7 @@ import type { CapabilityClass } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { EdgeId, NodeId, PortId, Revision } from "@domain/types/ids.ts";
 import type { GraphDocument, GraphNode, NodeFormatOverride, NodeResolutionOverride } from "@domain/types/graph.ts";
-import type { ParameterValue } from "@domain/types/parameters.ts";
+import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { PortDefinition, PortType } from "@domain/types/ports.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 
@@ -67,7 +67,8 @@ export interface AgentNodeView {
   readonly ui: GraphNode["ui"] | null;
   readonly resolution: NodeResolutionOverride | null;
   readonly format: NodeFormatOverride | null;
-  readonly parameters?: Record<string, ParameterValue>;
+  /** Stored form: a slot (T202) is returned as authored, envelope and all. */
+  readonly parameters?: Record<string, StoredParameter>;
 }
 
 export interface AgentEdgeView {
@@ -371,15 +372,20 @@ export const getSelection: AgentTool<
   description: "Node and edge ids the user currently has selected in the editor.",
   kind: "read",
   inputSchema: emptyInput,
-  requires: { ports: ["selection"] },
+  // T175: a bus QUERY, not an injected port. A port is a reference to the running
+  // editor's own objects, so it only ever works in-tab; an out-of-process MCP server
+  // holds a transport and can read exactly what the bus publishes (§V39).
+  requires: { queries: ["selection.get"] },
   capabilities: [],
   mutates: false,
-  run(_input, runtime) {
-    // The requirement check runs before this, so the port is present here.
-    const selection = runtime.ports.selection?.getSelection() ?? { nodeIds: [] };
+  async run(_input, runtime) {
+    const selection = await runtime.query<{
+      readonly nodeIds: readonly NodeId[];
+      readonly edgeIds: readonly EdgeId[];
+    }>("selection.get", {});
     return ok("get_selection", {
       nodeIds: [...selection.nodeIds],
-      edgeIds: [...(selection.edgeIds ?? [])],
+      edgeIds: [...selection.edgeIds],
     });
   },
 };
@@ -393,14 +399,20 @@ export const getDiagnostics: AgentTool<
   description: "Current compile and runtime diagnostics, newest last.",
   kind: "read",
   inputSchema: getDiagnosticsInput,
-  requires: { ports: ["diagnostics"] },
+  requires: { queries: ["diagnostics.get"] },
   capabilities: [],
   mutates: false,
-  run(input, runtime) {
-    const all = runtime.ports.diagnostics?.listDiagnostics() ?? [];
-    const bySeverity = input.severity === undefined ? all : all.filter((d) => d.severity === input.severity);
-    const limited = input.limit === undefined ? bySeverity : bySeverity.slice(-input.limit);
-    return ok("get_diagnostics", { diagnostics: [...limited] });
+  // Filtering happens in the query, not here: two implementations of "newest 10 errors"
+  // is two answers to one question.
+  async run(input, runtime) {
+    const snapshot = await runtime.query<{ readonly diagnostics: readonly RuntimeDiagnostic[] }>(
+      "diagnostics.get",
+      {
+        ...(input.severity === undefined ? {} : { severity: input.severity }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      },
+    );
+    return ok("get_diagnostics", { diagnostics: [...snapshot.diagnostics] });
   },
 };
 
@@ -411,15 +423,11 @@ export const getRuntimeMetrics: AgentTool<EmptyInput, AgentRuntimeMetrics> = {
     "Frame and pass timing as last published by the runtime. A null millisecond figure means the device has no timestamp query, not zero cost.",
   kind: "read",
   inputSchema: emptyInput,
-  requires: { ports: ["metrics"] },
+  requires: { queries: ["runtime.metrics"] },
   capabilities: [],
   mutates: false,
-  run(_input, runtime) {
-    const metrics = runtime.ports.metrics?.getMetrics();
-    if (metrics === undefined) {
-      return failed<AgentRuntimeMetrics>("get_runtime_metrics", "metrics.missing", "No metrics source is attached.");
-    }
-    return ok("get_runtime_metrics", metrics);
+  async run(_input, runtime) {
+    return ok("get_runtime_metrics", await runtime.query<AgentRuntimeMetrics>("runtime.metrics", {}));
   },
 };
 

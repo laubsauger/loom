@@ -2,8 +2,8 @@ import type { ComponentMigration, GraphComponentDefinition } from "../types/comp
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphNode } from "../types/graph.ts";
 import type { PortId } from "../types/ids.ts";
-import type { ParameterValue } from "../types/parameters.ts";
-import { validateParameterValue } from "../parameters/validate.ts";
+import type { StoredParameter } from "../types/parameters.ts";
+import { validateStoredParameter } from "../parameters/validate.ts";
 import { defaultValueOf } from "./parameter-defaults.ts";
 import { readComponentInstance } from "./instance.ts";
 import type { ComponentRegistryView } from "./registry.ts";
@@ -23,8 +23,8 @@ import type { ComponentRegistryView } from "./registry.ts";
 export interface ComponentUpgradePlan {
   fromVersion: number;
   toVersion: number;
-  /** Migrated published values for the new version. */
-  parameters: Record<string, ParameterValue>;
+  /** Migrated published values for the new version — stored form, envelopes kept (T202). */
+  parameters: Record<string, StoredParameter>;
   /** Published keys the new version no longer has. Their values are lost. */
   dropped: readonly string[];
   /** Published keys the new version adds; they take the new definition's default. */
@@ -80,7 +80,9 @@ export function planComponentUpgrade(input: UpgradePlanInput): ComponentUpgradeP
   const state = readComponentInstance(input.instance);
   const fromVersion = state?.version ?? input.from?.version ?? 0;
   const diagnostics: RuntimeDiagnostic[] = [];
-  const parameters: Record<string, ParameterValue> = {};
+  // Stored form, not bare values: a published parameter carrying a mode envelope (T202)
+  // survives the upgrade with its retained payloads intact.
+  const parameters: Record<string, StoredParameter> = {};
   const dropped: string[] = [];
   const added: string[] = [];
   const reset: string[] = [];
@@ -98,7 +100,7 @@ export function planComponentUpgrade(input: UpgradePlanInput): ComponentUpgradeP
     // A value that no longer fits the re-authored control — a narrowed range, a changed
     // type — falls back to the new default and is REPORTED. Silently clamping would
     // change what the project renders without saying so.
-    const invalid = validateParameterValue(published.key, published.definition, previous, input.instance.id);
+    const invalid = validateStoredParameter(published.key, published.definition, previous, input.instance.id);
     if (invalid !== null) {
       reset.push(published.key);
       parameters[published.key] = defaultValueOf(published.definition);

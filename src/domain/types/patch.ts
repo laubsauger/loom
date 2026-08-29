@@ -1,5 +1,5 @@
 import type { EdgeId, GroupId, NodeId, PortId, Revision } from "./ids.ts";
-import type { ParameterValue } from "./parameters.ts";
+import type { StoredParameter } from "./parameters.ts";
 import type { NodeFormatOverride, NodeResolutionOverride, ViewportState } from "./graph.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 
@@ -11,12 +11,22 @@ export type TempId = `$${string}`;
 export type NodeRef = NodeId | TempId;
 export type GroupRef = GroupId | TempId;
 
+/**
+ * A parameter operation carries a `StoredParameter`, not a bare `ParameterValue`.
+ *
+ * `GraphNode.parameters`, the zod boundary (`storedParameterSchema`) and
+ * `applyGraphPatch` have all spoken `StoredParameter` since T202 — a mode envelope
+ * travels end to end at runtime. This type was the last layer still saying
+ * `ParameterValue`, which forced a cast at every writer and made the compound editor's
+ * one-patch write (§V114) and every mode switch (§V107) type-illegal at the very
+ * boundary designed to carry them. A bare value stays legal: it IS a `StoredParameter`.
+ */
 export type GraphPatchOperation =
-  | { op: "addNode"; ref: NodeRef; type: string; position: { x: number; y: number }; parameters?: Record<string, ParameterValue> }
+  | { op: "addNode"; ref: NodeRef; type: string; position: { x: number; y: number }; parameters?: Record<string, StoredParameter> }
   | { op: "removeNodes"; nodeIds: NodeId[] }
   | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId } }
   | { op: "disconnect"; edgeIds: EdgeId[] }
-  | { op: "setParameters"; nodeId: NodeRef; parameters: Record<string, ParameterValue> }
+  | { op: "setParameters"; nodeId: NodeRef; parameters: Record<string, StoredParameter> }
   | { op: "setShaderSource"; nodeId: NodeRef; source: string }
   | { op: "moveNodes"; positions: Record<NodeId, { x: number; y: number }> }
   | { op: "setNodeUi"; nodeId: NodeRef; ui: Record<string, unknown> }

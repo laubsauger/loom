@@ -1734,6 +1734,8 @@ function pipelineFailureDiagnostic(
       candidate.id === label ||
       (candidate.kind === "effect" && candidate.label !== undefined && candidate.label === label),
   );
+  const nodeId =
+    pass !== undefined && pass.kind !== "swap" && pass.kind !== "counter" ? pass.nodeId : undefined;
   const causeMessage =
     shaped.cause instanceof Error
       ? shaped.cause.message
@@ -1745,7 +1747,7 @@ function pipelineFailureDiagnostic(
     BackendDiagnosticCode.compileFailed,
     `${pass === undefined ? (label.length > 0 ? `"${label}"` : "A pipeline") : `Pass "${pass.id}"`} failed to compile on the device: ${causeMessage}`,
     {
-      ...(pass?.nodeId === undefined ? {} : { nodeId: pass.nodeId }),
+      ...(nodeId === undefined ? {} : { nodeId }),
       suggestion: "The previous program is retained and still renders (§V9); fix the shader and recompile.",
     },
   );

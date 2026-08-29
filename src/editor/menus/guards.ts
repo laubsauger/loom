@@ -2,6 +2,7 @@ import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { MenuTarget } from "@domain/types/menus.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
+import { isParameterSlot, storedStaticValue } from "@domain/parameters/slots.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
 /**
@@ -100,7 +101,11 @@ const GUARDS: Record<MenuGuardName, (target: MenuTarget, context: MenuContext) =
     if (node === undefined || target.parameterKey === undefined) return false;
     const fallback = parameterDefault(target, context);
     if (fallback === undefined) return false;
-    return !sameValue(node.parameters[target.parameterKey], fallback);
+    const stored = node.parameters[target.parameterKey];
+    // A mode envelope in a non-static mode (T202) is an override by definition — the
+    // value is being computed, not defaulted. Otherwise compare the static view.
+    if (isParameterSlot(stored) && stored.mode !== "static") return true;
+    return !sameValue(storedStaticValue(stored), fallback);
   },
 };
 
