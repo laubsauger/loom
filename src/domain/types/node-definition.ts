@@ -64,8 +64,24 @@ export interface NodeCompileContext {
   readonly [key: string]: unknown;
 }
 
+/**
+ * Intermediate target a node needs BETWEEN its own passes — a separable blur's horizontal
+ * half, for instance. Declared structurally rather than allocated by the node, so the
+ * compiler owns the resource and V8 (no allocation inside the frame loop) still holds.
+ */
+export interface ScratchTargetRequest {
+  /** Node-local name; the compiler namespaces it. */
+  key: string;
+  /** Size relative to the node's resolved output. Omitted = same size. */
+  scale?: number;
+  /** Omitted = the node's resolved output format. */
+  format?: TextureFormat;
+}
+
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;
+  /** Scratch targets this node's passes render into and sample between each other. */
+  scratch?: ReadonlyArray<ScratchTargetRequest>;
   diagnostics?: RuntimeDiagnostic[];
 }
 

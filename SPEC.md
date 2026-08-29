@@ -482,6 +482,7 @@ V25: compiler evaluates only nodes reachable backward from active sinks. rest pr
 V26: edge visual hue = source port family color (§C). ⊥ arbitrary edge color.
 V27: WGSL compile message maps to editor line+col, surfaces on node badge + problems tab.
 V28: only visible|pinned previews scheduled. offscreen/collapsed node preview suspended.
+V28a: explicit sink list = AUTHORITATIVE ∀ previews — empty list means NONE visible, ⊥ "fall back to the flags". `undefined` = use document `ui.preview` flags. ∴ composition root ! pass ∀ visible previews once it derives them, ⊥ rely on the union.
 V29: ∀ mutation → `AppCommandBus.execute`. ⊥ adapter mutates zustand | React Flow array | GPU resource directly.
 V30: ∀ command carries `InvocationContext.actor`. ⊥ anonymous mutation.
 V31: ∀ mutation → `AuditEntry`. recent window inspectable ∈ UI; ring bound 512 — ⊥ a bug: an unbounded log grows quadratically over a 60Hz drag session. durable full audit → IndexedDB append task if ever needed.
@@ -659,10 +660,10 @@ T140|x|`resize()` reconciles descriptors + signature + memory estimate w/ live t
 T141|x|`compile()`|`loop()` await in-flight recovery, ⊥ throw "before initialize()"|V23,V98
 T142|x|compiler emits `compiler/memory-budget` warning vs `settings.limits.memoryBudgetBytes`; shared `estimateResourceBytes` ∈ plan.ts|V24
 T143|x|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
-T144|.|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
+T144|x|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
 T145|x|node info popup — TD MMB analog. res+aspect, format+space, est bytes, gpu ms, frames rendered, cooked-this-frame, pass count, warn/err, resolution source, bypass/mute/stale. MMB + keymap + context menu, all → 1 surface|V85,V86,I.info
 T146|x|component info aggregate: own | children | total time, pass + node count, over flattened source path|V87,V82
-T147|.|scratch/intermediate target kind ∈ plan IR — node needs >1 pass. unblocks separable Gaussian Blur (today: 1 pass, 81 taps, under-samples past ~dozens of px) + ∀ multi-pass filter|V58,V8
+T147|x|scratch/intermediate target kind ∈ plan IR — node needs >1 pass. unblocks separable Gaussian Blur (today: 1 pass, 81 taps, under-samples past ~dozens of px) + ∀ multi-pass filter|V58,V8
 T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers ∀ picker-driven nodes, ⊥ 20 in-shader curves|V56,V61
 T149|.|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
 T150|.|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
@@ -673,10 +674,10 @@ T154|.|example E2 Reaction-Diffusion — Gray-Scott CustomWGSL kernel, seeded in
 T155|.|example E3 Animated Noise Field — perlin4d t4d ← frame time, fan-out once|V88,V89,V44,V6
 T156|.|example E4 Bloom + E5 Kaleidoscope + E6 Displacement Stack|V88,V89,V51,V56
 T157|.|example runner: load ∀ example, compile, assert 0 errors + deterministic render. CI gate|V89
-T158|.|fix B1+B2 — depth fallback ⊥ pick a color format; `formatNoFallback` ⊥ return an unallocatable format. test AFTER fixing, ⊥ pin current behavior|V51,V12
-T159|.|fix B3 — `resolveSinks` doc ≠ impl on preview narrowing. pick one, make the other match|V25
-T160|.|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V3-clean Dawn host. parity harness deletes its eslint-disable + imports it|V3,V47
-T161|.|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
+T158|x|fix B1+B2 — depth fallback ⊥ pick a color format; `formatNoFallback` ⊥ return an unallocatable format. test AFTER fixing, ⊥ pin current behavior|V51,V12
+T159|x|fix B3 — `resolveSinks` doc ≠ impl on preview narrowing. pick one, make the other match|V25
+T160|x|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V3-clean Dawn host. parity harness deletes its eslint-disable + imports it|V3,V47
+T161|x|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
 T162|.|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
 T163|.|backend GPU timing surface — `timer(gpu)` after init when `timestampQuery`, `timer: t.span(pass.id)` ∈ `f.pass()`, forward `t.onResults`. span name = pass id. ⊥ exists today ∴ T41 reads "unavailable" everywhere|V86,V12
 T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
@@ -814,7 +815,7 @@ T49 Phase 1 exit, T62 Phase 1 agent exit.
 
 ## §B BUGS
 id|date|cause|fix
-B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158
-B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158
-B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159
-B4|2026-08-29|⊥ Dawn host ∈ `src/runtime/backend/vgpu/` ∴ ⊥ V3-clean way to get a headless device. V47/T67/T69 were untestable; parity harness had to `eslint-disable` V3|T160
+B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
+B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓
+B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159 ✓
+B4|2026-08-29|⊥ Dawn host ∈ `src/runtime/backend/vgpu/` ∴ ⊥ V3-clean way to get a headless device. V47/T67/T69 were untestable; parity harness had to `eslint-disable` V3|T160 ✓
