@@ -80,7 +80,7 @@ per-node parity notes ∈ node manifest `description`, ⊥ ∈ spec.
 - workers: renderer-in-worker COMMITTED Phase 2. worker owns device + ∀ surfaces; window transfers `OffscreenCanvas` in = also multi-window transport. v1 main-thread + clone-safe invariant + DOM-free lint + non-rAF loop.
 - audio-reactive: early Phase 2 headline. AudioIn (mic|file) → analysis (FFT bands, beat, envelope) → params via resolver. first consumer proving modulation arch. WebMIDI alongside. OSC → Phase 3 (needs bridge).
 - expressions: own minimal grammar. jsep-style AST, whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx. deterministic + sandboxed by construction. v1 = arithmetic only, 1 evaluator module.
-- autosave: IndexedDB ring. 2s debounce after last mutation. keep last 20 + 1 per 10min pinned. restore-on-launch prompt. manual save still writes `.loom.json`.
+- autosave: IndexedDB ring. 2s debounce after last mutation. keep last 20 + 1 per 10min pinned, pins capped 48 (~8h; ⊥ multi-day session fills quota). restore-on-launch prompt. manual save still writes `.loom.json`. `serialize.ts` = sole serializer, shared w/ manual save.
 - recording: first realtime export = WebCodecs → mp4 (`VideoEncoder`, exact-frame capture ← render loop). ⊥ MediaRecorder stopgap. Chrome ≥128 guarantees WebCodecs.
 
 ### open ? — ⊥ blocking Phase 0/1
@@ -442,7 +442,7 @@ V36: `dryRun: true` → validate + return diagnostics, ⊥ mutate, ⊥ audit as 
 V37: tool result = structured data, ⊥ instruction to calling model. 3rd-party node text & project text = untrusted.
 V38: capability grant required per class: local file, network, upload, export, recording, component install, project delete. calling tool ⊥ grants permission.
 V39: bus adapter-agnostic. WebMCP | MCP server adapter = transport + schema only, 0 app-logic duplication.
-V40: node delete → incident edges removed|tombstoned deterministically, same result ∀ actors.
+V40: node delete → incident edges removed|tombstoned deterministically, same result ∀ actors. binds undo/redo RESTORE too, ⊥ only `removeNodes` op — restore ! refuse rather than leave a dangling edge (V65).
 V41: undo actor-local. ⊥ erase other actor work.
 V42: agent activity visible — planning | editing | compiling | awaiting-approval shown in UI. ⊥ invisible background mutation.
 V43: long render | sim cancellable.
@@ -460,7 +460,7 @@ V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|e
 V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
 V69: `ParameterValue` = envelope `{kind:"static", value}` | reserved bound kinds. unknown kind preserved through load→save, ⊥ rejects doc (V10, V68).
 V70: presentation surface count = N per compiled output, worker-transferable (`OffscreenCanvas`). ⊥ React tree owns surface (V64).
-V71: expression eval = own grammar, whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx. ⊥ `eval`, ⊥ `Function`, ⊥ host global. deterministic by construction (V44, V45).
+V71: expression eval = own grammar ∈ `src/domain/expressions/`, sole engine. whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx (frame names win on collision). ⊥ `eval`, ⊥ `Function`, ⊥ host global. deterministic by construction (V44, V45). `src/ui/controls/expression.ts` = thin wrapper, ⊥ 2nd evaluator.
 V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
 V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
 V63: ∀ data crossing compile→render boundary structured-clone-safe. ⊥ function, ⊥ DOM ref, ⊥ class instance. `NodeDefinition.compile` emits plain data (WGSL text + binding desc), ⊥ callback.
@@ -544,7 +544,7 @@ T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + def
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
 T87|.|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
-T88|.|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
+T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
 T91|.|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
@@ -556,15 +556,15 @@ T96|.|real capability format query (⊥ hardcoded list); `float32-filterable` ga
 T97|.|clamp plan sizes vs `capabilities.limits` + memory accounting|V24,R7
 T98|.|frame-loop error boundary + device-loss retry API, ⊥ terminal halt|V23
 T99|.|diagnostic dedupe/rate-limit; ⊥ per-frame flood|V16
-T100|.|live clock: accumulate time from clamped deltas, reset time base; f32 time rebase|V44,V49
-T101|.|autosave: dirty state, debounced IndexedDB/OPFS ring (20), restore-on-launch flow|V10
+T100|x|live clock: accumulate time from clamped deltas, reset time base; f32 time rebase|V44,V49
+T101|x|autosave: dirty state, debounced IndexedDB/OPFS ring (20), restore-on-launch flow|V10
 T102|.|dryRun returns `validated` status + ⊥ mint real ids|V36
 T103|.|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
 T104|.|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
-T105|.|PWA manifest|C
+T105|x|PWA manifest|C
 T106|.|`ParameterValue` envelope migration + passthrough lane for unknown kinds|V69,V68,V10
 T107|.|patch-op classification value-only\|structural + overlap-scoped conflict|V33
-T108|.|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
+T108|x|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
 T109|.|non-rAF frame loop option (worker + node realtime)|V49,V63
 T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
 T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
@@ -593,6 +593,8 @@ T134|.|compiler: flatten component instances, preserve source path ∀ diagnosti
 T135|.|recursion detection — direct + indirect — @ instantiate, save, load|V83
 T136|.|component version pin + explicit upgrade migration|V84,V10
 T137|.|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
+T138|.|fully-blocked undo ⊥ consume history entry — today it empties, bumps revision, audits "applied" and pops. reject without consuming|V41,V65
+T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
@@ -618,7 +620,7 @@ T57|.|workflow tools: validate_project, compile_project, play, pause, save_proje
 T58|.|`render_preview` → bounded-size PNG of any texture output, via export iface|V48,I.tools
 T59|.|capability grant model + gate table, dryRun on destructive, ⊥ self-grant|V36,V38
 T60|.|agent presence UI: actor badge, planning\|editing\|compiling\|awaiting state, patch review + revert-transaction-as-unit|V42
-T43|.|save/load `.loom.json`, migration scaffolding, unknown-node placeholder|V10
+T43|.|save/load `.loom.json` via `src/domain/project/serialize.ts` (CANONICAL — ⊥ 2nd serializer), migration scaffolding, unknown-node placeholder|V10
 T44|.|resource caps: max resolution, dispatch size, buffer size, project budget|V24
 T45|.|unit tests: port compat, cycle/temporal, topo order, sink prune, resolution, format, migrations|V4,V13,V21,V25
 T46|.|`vgpu/mock` command-level tests|C
@@ -676,7 +678,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
 | K node catalog | T70 T40 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 | `src/runtime/telemetry/**` |
-| M persistence | T43 T44 T91 T101 | `src/domain/project/**` `src/domain/migrations/**` |
+| M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
 
 barrier: **T51** route ∀ human action through bus — toolbar, menu, keybind, inspector, drag-connect.
@@ -687,7 +689,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T100 T102 T103 T109 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
@@ -706,6 +708,10 @@ owns `src/points/**` `src/nodes/definitions/points/**`.
 T110 multi-window perform mode · renderer-in-worker · AudioIn + analysis + WebMIDI (resolver
 consumers, prove modulation arch) · T111 WebCodecs mp4 · components/subgraphs · media nodes ·
 WebMCP + MCP adapters.
+
+### completed outside the wave plan (peer session, disjoint paths)
+T88 undo/redo owner check + restore integrity · T100 monotonic clock base ·
+T108 expression engine · T101 autosave ring · T105 PWA manifest.
 
 ### wave 5 — serial gates
 T49 Phase 1 exit, T62 Phase 1 agent exit.
