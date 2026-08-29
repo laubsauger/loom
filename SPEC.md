@@ -1011,7 +1011,7 @@ T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE 
 T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
 T240|x|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
 T241|x|Edge + Convolve (arbitrary kernel) filters|-
-T242|.|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
+T242|x|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
 T243|.|Text generator — glyph atlas → texture|-
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
