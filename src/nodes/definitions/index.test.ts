@@ -44,6 +44,7 @@ describe("core catalogue (T70, T40)", () => {
       "lookup",
       "blur",
       "displace",
+      "composite",
       "over",
       "add",
       "multiply",
@@ -54,12 +55,13 @@ describe("core catalogue (T70, T40)", () => {
       "pointKernel",
       "textureToAttribute",
       "renderPoints",
+      "null",
     ]);
   });
 
   it("groups every node into a library category", () => {
     expect(new Set(coreNodeDefinitions.map((definition) => definition.category))).toEqual(
-      new Set(["generator", "filter", "color", "composite", "temporal", "points"]),
+      new Set(["generator", "filter", "color", "composite", "temporal", "points", "utility"]),
     );
   });
 

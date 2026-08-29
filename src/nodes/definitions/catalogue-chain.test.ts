@@ -172,9 +172,20 @@ describe("the catalogue compiles through the real compiler", () => {
       expect(errorsOf(read.diagnostics), definition.type).toEqual([]);
       expect(read.ok, definition.type).toBe(true);
 
-      // The node under test must actually contribute a pass — a node that compiles to
-      // nothing "passes" every structural check while rendering nothing at all. Any
-      // kind counts: point nodes contribute dispatch/draw passes (T121/T122).
+      // A passthrough definition (§V130) is a WIRE: it must contribute NO pass, and its
+      // output must alias its producer's resource. Everything else must contribute one —
+      // a node that compiles to nothing "passes" every structural check while rendering
+      // nothing at all. Any kind counts: point nodes contribute dispatch/draw passes.
+      if (definition.passthrough !== undefined) {
+        expect(
+          read.passes.some((pass) => "nodeId" in pass && pass.nodeId === "subject"),
+          definition.type,
+        ).toBe(false);
+        const alias = plan.outputs.find((output) => output.nodeId === "subject");
+        const producer = plan.outputs.find((output) => output.nodeId === "feed0");
+        expect(alias?.resourceId, definition.type).toBe(producer?.resourceId);
+        continue;
+      }
       expect(
         read.passes.some(
           (pass) => pass.kind !== "swap" && "nodeId" in pass && pass.nodeId === "subject",
@@ -196,6 +207,7 @@ describe("the catalogue compiles through the real compiler", () => {
    */
   it("sets exactly the uniforms its shader declares", () => {
     for (const definition of coreNodeDefinitions) {
+      if (definition.passthrough !== undefined) continue; // a wire has no uniforms to check (§V130)
       const plan = compile(minimalGraphFor(definition));
       const passes = plan.passes.filter(
         (pass) =>

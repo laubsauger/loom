@@ -3,7 +3,7 @@ import { graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchem
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
-import type { ParameterValue, StoredParameter } from "../types/parameters.ts";
+import type { StoredParameter } from "../types/parameters.ts";
 import type {
   GraphPatch,
   GraphPatchOperation,
@@ -13,6 +13,13 @@ import type {
 } from "../types/patch.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { arePortsCompatible, describePortType } from "../graph/port-compat.ts";
+import {
+  countNodeNameReferences,
+  nameBaseFor,
+  resolveRename,
+  rewriteNodeNameReferences,
+  uniqueNodeName,
+} from "../graph/names.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
@@ -360,6 +367,9 @@ function executeOperation(
         definitionVersion: definition.version,
         position: { x: operation.position.x, y: operation.position.y },
         parameters: { ...defaultParameters(definition.parameters), ...provided },
+        // §V129: the label is the NAME — unique per graph, auto-numbered at creation
+        // (`noise1`, `noise2`), which is what makes `op('name')` references resolvable.
+        label: uniqueNodeName(draft, nameBaseFor(definition.type)),
       };
       return;
     }
@@ -569,9 +579,23 @@ function executeOperation(
     case "setNodeLabel": {
       const node = requireNode(operation.nodeId);
       // null clears it: absence IS "follow the definition's title", so a cleared node
-      // keeps tracking the definition if that is later retitled.
+      // keeps tracking the definition if that is later retitled. Clearing also makes
+      // the node unaddressable by name — references it had are reported, not rewritten.
       if (operation.label === null) {
+        const cleared = node.label;
         delete node.label;
+        if (cleared !== undefined) {
+          const stranded = countNodeNameReferences(draft, cleared);
+          if (stranded > 0) {
+            run.diagnostics.push({
+              severity: "warning",
+              code: "node.name.stranded",
+              message: `Clearing the name "${cleared}" strands ${stranded} expression reference(s) to it.`,
+              nodeId: node.id,
+              suggestion: "Rename instead of clearing, or update the expressions.",
+            });
+          }
+        }
         return;
       }
       const label = operation.label.trim();
@@ -586,7 +610,32 @@ function executeOperation(
           nodeId: node.id,
         });
       }
-      node.label = label;
+      // §V129: a collision auto-suffixes rather than rejects — the word is the user's
+      // intent, the number is bookkeeping. §V128: the rename rewrites every stored
+      // reference to the old name IN THIS SAME PATCH, so a rename never silently breaks
+      // an expression; both adjustments are reported, never silent.
+      const previous = node.label;
+      const resolved = resolveRename(draft, label, node.id);
+      node.label = resolved;
+      if (resolved !== label) {
+        run.diagnostics.push({
+          severity: "info",
+          code: "node.name.suffixed",
+          message: `"${label}" is taken; the node is named "${resolved}".`,
+          nodeId: node.id,
+        });
+      }
+      if (previous !== undefined && previous !== resolved) {
+        const rewritten = rewriteNodeNameReferences(draft, previous, resolved);
+        if (rewritten > 0) {
+          run.diagnostics.push({
+            severity: "info",
+            code: "node.name.referencesRewritten",
+            message: `Renamed "${previous}" to "${resolved}"; ${rewritten} expression reference(s) updated.`,
+            nodeId: node.id,
+          });
+        }
+      }
       return;
     }
 

@@ -42,6 +42,8 @@ export const CompilerDiagnosticCode = {
   componentPortUnresolved: "compiler/component-port-unresolved",
   componentIdCollision: "compiler/component-id-collision",
   componentParameterConflict: "compiler/component-parameter-conflict",
+  /** A passthrough (Null) chain that reaches no producer (T223, §V130). */
+  passthroughUnconnected: "compiler/passthrough-unconnected",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

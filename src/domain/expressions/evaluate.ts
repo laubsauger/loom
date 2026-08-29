@@ -23,6 +23,13 @@ import type { FrameEvaluationInput } from "../types/frame.ts";
 export type ExpressionAst =
   | { kind: "number"; value: number }
   | { kind: "variable"; name: string }
+  /**
+   * A node reference, `op('noise1').par.gain` (§V127, T221). PARSED now, so it can be
+   * stored, validated and rename-rewritten (§V128) today; EVALUATION arrives with the
+   * cross-node read path and until then resolves to a named failure, which the
+   * parameter resolver turns into the §V108 fallback rather than an error wall.
+   */
+  | { kind: "opRef"; name: string; path: readonly string[] }
   | { kind: "unary"; operator: "-" | "+"; operand: ExpressionAst }
   | { kind: "binary"; operator: "+" | "-" | "*" | "/" | "%" | "^"; left: ExpressionAst; right: ExpressionAst };
 
@@ -47,6 +54,8 @@ export function scopeFromFrame(
 type Token =
   | { kind: "number"; value: number }
   | { kind: "identifier"; value: string }
+  | { kind: "string"; value: string }
+  | { kind: "dot" }
   | { kind: "op"; value: "+" | "-" | "*" | "/" | "%" | "^" }
   | { kind: "paren"; value: "(" | ")" };
 
@@ -84,6 +93,22 @@ function tokenize(input: string): Token[] | string {
       const start = index;
       while (index < input.length && isIdentPart(input[index] as string)) index += 1;
       tokens.push({ kind: "identifier", value: input.slice(start, index) });
+      continue;
+    }
+
+    // String literal — only op('name') references use these (§V127).
+    if (char === "'" || char === '"') {
+      const close = input.indexOf(char, index + 1);
+      if (close < 0) return "unterminated string";
+      tokens.push({ kind: "string", value: input.slice(index + 1, close) });
+      index = close + 1;
+      continue;
+    }
+
+    // A dot NOT starting a number is member access: op('x').par.gain.
+    if (char === "." && !/[0-9]/.test(input[index + 1] ?? "")) {
+      tokens.push({ kind: "dot" });
+      index += 1;
       continue;
     }
 
@@ -183,6 +208,7 @@ function parsePrimary(cursor: Cursor): ExpressionAst {
     cursor.index += 1;
     const next = peek(cursor);
     if (next !== undefined && next.kind === "paren" && next.value === "(") {
+      if (token.value === "op") return parseOpReference(cursor);
       fail(`functions are not available yet ("${token.value}")`);
     }
     return { kind: "variable", name: token.value };
@@ -197,7 +223,44 @@ function parsePrimary(cursor: Cursor): ExpressionAst {
     cursor.index += 1;
     return inner;
   }
-  fail(`unexpected "${token.value}"`);
+  fail(`unexpected "${describeToken(token)}"`);
+}
+
+const describeToken = (token: Token): string =>
+  token.kind === "dot" ? "." : token.kind === "string" ? `'${token.value}'` : String(token.value);
+
+/**
+ * `op('name').par.gain` — the cursor stands ON the opening paren (§V127, T221).
+ * Recognised so references can be STORED (and rename-rewritten, §V128) before the
+ * cross-node read path exists; `evaluateAst` names the gap until then.
+ */
+function parseOpReference(cursor: Cursor): ExpressionAst {
+  cursor.index += 1; // consume "("
+  const name = peek(cursor);
+  if (name === undefined || name.kind !== "string" || name.value.length === 0) {
+    fail("op() takes a quoted node name: op('noise1')");
+  }
+  cursor.index += 1;
+  const closing = peek(cursor);
+  if (closing === undefined || closing.kind !== "paren" || closing.value !== ")") {
+    fail("op() takes exactly one quoted node name");
+  }
+  cursor.index += 1;
+
+  const path: string[] = [];
+  for (;;) {
+    const dot = peek(cursor);
+    if (dot === undefined || dot.kind !== "dot") break;
+    cursor.index += 1;
+    const member = peek(cursor);
+    if (member === undefined || member.kind !== "identifier") {
+      fail("expected a member name after \".\"");
+    }
+    cursor.index += 1;
+    path.push(member.value);
+  }
+  if (path.length === 0) fail("an op() reference must read something: op('noise1').par.gain");
+  return { kind: "opRef", name: name.value, path };
 }
 
 export function parseExpression(input: string): ParseResult {
@@ -246,6 +309,11 @@ function evaluateNode(ast: ExpressionAst, scope: ExpressionScope): number {
       }
       return value;
     }
+    case "opRef":
+      // Parseable today so it can be stored and rename-rewritten (§V128); readable when
+      // the cross-node value path lands. The resolver turns this into the §V108 fallback.
+      fail(`node references are not readable yet (op('${ast.name}'))`);
+    // eslint-disable-next-line no-fallthrough -- fail() never returns
     case "unary": {
       const operand = evaluateNode(ast.operand, scope);
       return ast.operator === "-" ? -operand : operand;

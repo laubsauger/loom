@@ -171,8 +171,10 @@ describe("node.rename", () => {
 
   const node2 = () => h2.store.view.getGraph().nodes[id];
 
-  it("a new node carries no label", () => {
-    expect(node2()?.label).toBeUndefined();
+  it("a new node is auto-named from its type (§V129, T221)", () => {
+    // The label is the NAME now: unique per graph, numbered at creation, so
+    // `op('blur1')` has something stable to resolve against.
+    expect(node2()?.label).toBe("blur1");
   });
 
   it("sets a label", async () => {
@@ -196,7 +198,7 @@ describe("node.rename", () => {
     const result = await h2.bus.execute("node.rename", { nodeId: id, label: "   " }, contextFor(alice));
     expect(result.status).toBe("rejected");
     expect(result.diagnostics.some((d) => d.code === "node.label.empty")).toBe(true);
-    expect(node2()?.label).toBeUndefined();
+    expect(node2()?.label).toBe("blur1"); // the auto-assigned name survives the rejected rename
   });
 
   it("rejects an absurdly long label", async () => {

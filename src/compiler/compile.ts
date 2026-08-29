@@ -407,6 +407,131 @@ function feedbackResetSignature(
   return JSON.stringify(parts);
 }
 
+interface PassthroughSplice {
+  readonly nodes: ReadonlyMap<NodeId, ResolvedNode>;
+  readonly edges: ReadonlyArray<CompileEdge>;
+  /** Spliced output → the producer endpoint it aliases, for §V130 output resolution. */
+  readonly aliases: ReadonlyArray<
+    [{ nodeId: NodeId; portId: PortId }, { nodeId: NodeId; portId: PortId }]
+  >;
+  readonly redirectSink: (sink: ActiveSink) => ActiveSink;
+  readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
+}
+
+/**
+ * Splices passthrough nodes out of the compile graph (T223, §V130).
+ *
+ * A node whose definition declares `passthrough` is a wire: every edge leaving its
+ * output is rewired to the producer feeding its input, the node and its inbound edge
+ * disappear, and no pass or resource is ever emitted for it. Chains of wires resolve
+ * transitively. An unconnected wire simply vanishes (its consumers lose the input and
+ * report through the ordinary required-input path); a wire loop cannot happen — it
+ * would need a graph cycle, which ordering rejects — but the walk still guards.
+ *
+ * Temporality follows the REAL producer: a Null after a Feedback output carries the
+ * previous-frame semantics of that output, because the rewired edge recomputes
+ * `temporal` from the endpoint it now reads.
+ */
+function splicePassthroughNodes(validated: {
+  readonly nodes: ReadonlyMap<NodeId, ResolvedNode>;
+  readonly edges: ReadonlyArray<CompileEdge>;
+  readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
+}): PassthroughSplice {
+  const wires = new Map<NodeId, { input: PortId; output: PortId }>();
+  for (const [nodeId, resolved] of validated.nodes) {
+    if (resolved.definition.passthrough !== undefined) {
+      wires.set(nodeId, resolved.definition.passthrough);
+    }
+  }
+  if (wires.size === 0) {
+    return {
+      nodes: validated.nodes,
+      edges: validated.edges,
+      aliases: [],
+      redirectSink: (sink) => sink,
+      diagnostics: [],
+    };
+  }
+
+  const diagnostics: RuntimeDiagnostic[] = [];
+  /** First edge into each wire's declared input. */
+  const feeding = new Map<NodeId, { nodeId: NodeId; portId: PortId }>();
+  for (const edge of validated.edges) {
+    const wire = wires.get(edge.target.nodeId);
+    if (wire !== undefined && edge.target.portId === wire.input && !feeding.has(edge.target.nodeId)) {
+      feeding.set(edge.target.nodeId, edge.source);
+    }
+  }
+
+  /** The real (non-wire) producer behind a wire, or undefined for an unconnected chain. */
+  const producerBehind = (wireId: NodeId): { nodeId: NodeId; portId: PortId } | undefined => {
+    const seen = new Set<NodeId>();
+    let current = feeding.get(wireId);
+    while (current !== undefined && wires.has(current.nodeId)) {
+      if (seen.has(current.nodeId)) return undefined; // defensive: a loop of wires
+      seen.add(current.nodeId);
+      current = feeding.get(current.nodeId);
+    }
+    return current;
+  };
+
+  const producers = new Map<NodeId, { nodeId: NodeId; portId: PortId } | undefined>();
+  for (const wireId of [...wires.keys()].sort()) {
+    const producer = producerBehind(wireId);
+    producers.set(wireId, producer);
+    if (producer === undefined && feeding.has(wireId)) {
+      diagnostics.push(
+        compilerDiagnostic(
+          "warning",
+          CompilerDiagnosticCode.passthroughUnconnected,
+          `"${wireId}" passes through a chain that reaches no producer; its output is disconnected.`,
+          { nodeId: wireId },
+        ),
+      );
+    }
+  }
+
+  const temporalOf = (endpoint: { nodeId: NodeId; portId: PortId }): boolean => {
+    const definition = validated.nodes.get(endpoint.nodeId)?.definition;
+    return definition !== undefined && isTemporalOutput(definition, endpoint.portId);
+  };
+
+  const edges: CompileEdge[] = [];
+  for (const edge of validated.edges) {
+    // Edges INTO a wire are consumed by the splice.
+    if (wires.has(edge.target.nodeId)) continue;
+    const sourceWire = wires.get(edge.source.nodeId);
+    if (sourceWire === undefined) {
+      edges.push(edge);
+      continue;
+    }
+    const producer = producers.get(edge.source.nodeId);
+    if (producer === undefined) continue; // unconnected wire: the consumer loses the edge
+    edges.push({ ...edge, source: producer, temporal: temporalOf(producer) });
+  }
+
+  const nodes = new Map<NodeId, ResolvedNode>();
+  for (const [nodeId, resolved] of validated.nodes) {
+    if (!wires.has(nodeId)) nodes.set(nodeId, resolved);
+  }
+
+  const aliases: Array<[{ nodeId: NodeId; portId: PortId }, { nodeId: NodeId; portId: PortId }]> = [];
+  for (const [wireId, wire] of [...wires.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const producer = producers.get(wireId);
+    if (producer !== undefined) aliases.push([{ nodeId: wireId, portId: wire.output }, producer]);
+  }
+
+  const redirectSink = (sink: ActiveSink): ActiveSink => {
+    const wire = wires.get(sink.nodeId);
+    if (wire === undefined) return sink;
+    const producer = producers.get(sink.nodeId);
+    if (producer === undefined) return sink; // stays; resolves to nothing like any dangling sink
+    return { ...sink, nodeId: producer.nodeId, portId: producer.portId };
+  };
+
+  return { nodes, edges, aliases, redirectSink, diagnostics };
+}
+
 export function compileGraph(request: CompileRequest): CompiledGraph {
   const { registry, settings } = request;
   const diagnostics: RuntimeDiagnostic[] = [];
@@ -441,11 +566,20 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         ];
 
   // 1. definitions, parameters, connections (T24)
-  const validated = validateGraph(graph, registry);
-  diagnostics.push(...validated.diagnostics);
+  const validatedRaw = validateGraph(graph, registry);
+  diagnostics.push(...validatedRaw.diagnostics);
+
+  // 1b. splice passthrough nodes (T223, §V130): a Null is a WIRE. Its consumers bind
+  // the producer feeding it, the node emits nothing, and everything downstream of this
+  // point — pruning, ordering, resources, passes — never sees it. Its output stays
+  // addressable through the alias map, so previewing a Null costs exactly nothing.
+  const splice = splicePassthroughNodes(validatedRaw);
+  diagnostics.push(...splice.diagnostics);
+  const validated = { nodes: splice.nodes, edges: splice.edges };
+  const redirectedSinks = explicitSinks?.map((sink) => splice.redirectSink(sink));
 
   // 2. active sinks and pruning (T26, §V25)
-  const sinkResolution = resolveSinks(validated.nodes, explicitSinks);
+  const sinkResolution = resolveSinks(validated.nodes, redirectedSinks);
   diagnostics.push(...sinkResolution.diagnostics);
   const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks);
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
@@ -785,7 +919,16 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     };
   });
 
-  const outputs = [...propagated.outputs.values()].sort((a, b) =>
+  // §V130: a spliced Null's output resolves to its producer's resource — same id, same
+  // pixels, zero cost — so previews and readbacks of the Null keep working.
+  const aliasOutputs: ResolvedOutput[] = [];
+  for (const [alias, upstream] of splice.aliases) {
+    const resolved = propagated.outputs.get(outputKey(upstream.nodeId, upstream.portId));
+    if (resolved !== undefined) {
+      aliasOutputs.push({ ...resolved, nodeId: alias.nodeId, portId: alias.portId });
+    }
+  }
+  const outputs = [...propagated.outputs.values(), ...aliasOutputs].sort((a, b) =>
     outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)),
   );
 

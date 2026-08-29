@@ -138,6 +138,14 @@ export interface NodeDefinition {
    * is not the same claim, and a node with a side effect must survive pruning either way.
    */
   sink?: boolean;
+  /**
+   * Declares this node a pure WIRE (T223, §V130): the compiler splices it out —
+   * consumers of `output` bind the producer feeding `input` directly, no pass is
+   * emitted and no resource is allocated. TD's null idiom: point everything at a null,
+   * rewire upstream freely, pay nothing at render time. `compile()` is never called for
+   * a spliced node; it exists so the definition stays executable stand-alone.
+   */
+  passthrough?: { readonly input: PortId; readonly output: PortId };
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
 }

@@ -49,14 +49,17 @@ async function mountCanvas() {
 }
 
 describe("V1 — the canvas is a view of the domain graph", () => {
-  it("renders one node per document node, titled from the registry", async () => {
+  it("renders one node per document node, titled with its NAME (§V129, T221)", async () => {
     const { container } = await mountCanvas();
 
     await waitFor(() => {
       expect(container.querySelectorAll(".react-flow__node")).toHaveLength(2);
     });
-    expect(screen.getByTitle("Solid")).toBeDefined();
-    expect(screen.getByTitle("Blur")).toBeDefined();
+    // Since T221 every created node carries its unique auto-number name (`solid1`) as
+    // its label, and the header shows the label — the registry title is the fallback
+    // for legacy unnamed nodes only.
+    expect(screen.getByTitle("solid1")).toBeDefined();
+    expect(screen.getByTitle("blur1")).toBeDefined();
   });
 
   it("shows a node that appeared in the document while it was mounted", async () => {
@@ -68,7 +71,7 @@ describe("V1 — the canvas is a view of the domain graph", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3);
     });
-    expect(screen.getByTitle("Composite")).toBeDefined();
+    expect(screen.getByTitle("composite1")).toBeDefined();
   });
 
   it("drops a node the document removed, and its incident edges with it (§V40)", async () => {

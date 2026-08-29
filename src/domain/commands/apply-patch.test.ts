@@ -854,3 +854,66 @@ describe("graph.applyPatch — bind cycles refused at write time (T205, §V110)"
     expect(result.status).toBe("applied");
   });
 });
+
+describe("graph.applyPatch — names as identifiers (T221/T222, §V128/§V129)", () => {
+  it("auto-names created nodes uniquely, in patch order", async () => {
+    const result = await apply([addSolid("$a"), addSolid("$b", 100)]);
+    const a = graph().nodes[result.output.createdIds["$a"] as string];
+    const b = graph().nodes[result.output.createdIds["$b"] as string];
+    expect(a?.label).toBe("solid1");
+    expect(b?.label).toBe("solid2");
+  });
+
+  it("suffixes a colliding rename instead of rejecting, and says so", async () => {
+    const created = await apply([addSolid("$a"), addSolid("$b", 100)]);
+    const bId = created.output.createdIds["$b"] as string;
+    const result = await apply([{ op: "setNodeLabel", nodeId: bId, label: "solid1" }]);
+    expect(result.status).toBe("applied");
+    expect(graph().nodes[bId]?.label).toBe("solid12");
+    expect(result.diagnostics.some((d) => d.code === "node.name.suffixed")).toBe(true);
+  });
+
+  it("a rename rewrites every expression reference in the SAME patch (§V128)", async () => {
+    const created = await apply([addSolid("$a"), addSolid("$b", 100)]);
+    const aId = created.output.createdIds["$a"] as string;
+    const bId = created.output.createdIds["$b"] as string;
+    await apply([
+      {
+        op: "setParameters",
+        nodeId: bId,
+        parameters: {
+          amount: {
+            mode: "expression",
+            bindings: { expression: { kind: "expression", source: "op('solid1').par.amount" } },
+          },
+        } as never,
+      },
+    ]);
+
+    const renamed = await apply([{ op: "setNodeLabel", nodeId: aId, label: "backdrop" }]);
+    expect(renamed.status).toBe("applied");
+    expect(renamed.diagnostics.some((d) => d.code === "node.name.referencesRewritten")).toBe(true);
+    expect(JSON.stringify(graph().nodes[bId]?.parameters["amount"])).toContain("op('backdrop')");
+  });
+
+  it("warns when clearing a name that expressions still reference", async () => {
+    const created = await apply([addSolid("$a"), addSolid("$b", 100)]);
+    const aId = created.output.createdIds["$a"] as string;
+    const bId = created.output.createdIds["$b"] as string;
+    await apply([
+      {
+        op: "setParameters",
+        nodeId: bId,
+        parameters: {
+          amount: {
+            mode: "expression",
+            bindings: { expression: { kind: "expression", source: "op('solid1').par.amount" } },
+          },
+        } as never,
+      },
+    ]);
+    const cleared = await apply([{ op: "setNodeLabel", nodeId: aId, label: null }]);
+    expect(cleared.status).toBe("applied");
+    expect(cleared.diagnostics.some((d) => d.code === "node.name.stranded")).toBe(true);
+  });
+});
