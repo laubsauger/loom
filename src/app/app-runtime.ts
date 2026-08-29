@@ -1,15 +1,20 @@
 import { createDomainBus } from "@domain/commands/index.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { Actor, InvocationContext } from "@domain/types/commands.ts";
-import type { ProjectSettings } from "@domain/types/graph.ts";
+import type { GraphDocument, ProjectDocument, ProjectSettings } from "@domain/types/graph.ts";
+import { SCHEMA_VERSION } from "@domain/types/schemas.ts";
+import type { UnknownParameter } from "@domain/project/index.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { createComponentSystem, registerComponentCommands } from "@domain/components/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { createTelemetryHub } from "@runtime/telemetry/index.ts";
+import type { TelemetryHub } from "@runtime/telemetry/index.ts";
 import type { LayoutStorage } from "./layout-storage.ts";
 import { defaultLayoutStorage } from "./layout-storage.ts";
+import { registerProjectCommands } from "./project-commands.ts";
 
 /**
  * Everything the app is made of, built once (T51).
@@ -30,13 +35,33 @@ export interface AppRuntime {
   readonly components: ReturnType<typeof createComponentSystem>["components"];
   /** Status / GPU-ms / agent-activity channel. Never the document store (§V16). */
   readonly nodeRuntime: NodeRuntimeStore;
+  /**
+   * The ONE metrics pipe (T41/T42, §V16). Built here so there is exactly one, sunk into
+   * the canvas's existing per-node channel rather than standing up a second one, and
+   * disposed with it. Nothing in this object writes a metric — producers push, the UI
+   * samples at <= 10 Hz.
+   */
+  readonly telemetry: TelemetryHub;
   /** Actor + project identity stamped on every command (§V30). Stable per browser. */
   readonly invocation: InvocationContext;
   readonly settings: ProjectSettings;
+  /**
+   * Everything about the open project EXCEPT its graph, which lives in the store. Set
+   * from the loaded `.loom.json` (§V10) — not a fixed default — so a project's
+   * resolution, seed and limits survive a round trip.
+   */
+  readonly project: Omit<ProjectDocument, "graph">;
+  /**
+   * Parameter values the open file carried that this build cannot interpret (§V68,
+   * §V69). Reported by the loader, kept verbatim, and NEVER given a control to edit.
+   */
+  readonly unknownParameters: readonly UnknownParameter[];
+  /** The document as it would be saved right now: `project` plus the live graph. */
+  projectDocument(): ProjectDocument;
   dispose(): void;
 }
 
-/** Project defaults until T43 loads a real `.loom.json`. */
+/** Project defaults for a NEW project. An opened `.loom.json` brings its own (§V10). */
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputResolution: { width: 1280, height: 720 },
   workingFormat: "rgba16float",
@@ -89,6 +114,44 @@ export interface AppRuntimeOptions {
   settings?: ProjectSettings;
   /** Injectable for tests that want a deterministic actor. */
   actor?: Actor;
+  /**
+   * The project this runtime opens with. Opening a file rebuilds the runtime around the
+   * loaded document rather than mutating one in place — see the note on `openDocument`
+   * in `project-commands.ts` for why, and what `src/domain/commands` would need to make
+   * that unnecessary.
+   */
+  document?: ProjectDocument;
+  /** Values from a newer build, carried through untouched (§V68). */
+  unknownParameters?: readonly UnknownParameter[];
+}
+
+/** A brand-new, empty project. The graph half lives in the store. */
+export function newProjectDocument(projectId: string, settings = DEFAULT_PROJECT_SETTINGS): Omit<ProjectDocument, "graph"> {
+  const stamp = new Date().toISOString();
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    projectId,
+    name: "untitled",
+    settings,
+    assets: [],
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
+/**
+ * The project half of the runtime.
+ *
+ * §T139: `AppRuntime.settings` used to be the fixed `DEFAULT_PROJECT_SETTINGS`, which
+ * meant a project saved at 4K opened at 1280x720 and compiled against the wrong limits.
+ * It comes from the loaded document now; the defaults are the NEW-project case only.
+ */
+function projectMetaFrom(options: AppRuntimeOptions, projectId: string): Omit<ProjectDocument, "graph"> {
+  if (options.document === undefined) {
+    return newProjectDocument(projectId, options.settings ?? DEFAULT_PROJECT_SETTINGS);
+  }
+  const { graph: _graph, ...rest } = options.document;
+  return options.settings === undefined ? rest : { ...rest, settings: options.settings };
 }
 
 export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
@@ -103,9 +166,19 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   // nodes plus Noise. This one import is what makes them reachable from the library.
   const nodeRegistry = createNodeRegistry(allNodeDefinitions).view();
   const { components, nodes: registry } = createComponentSystem(nodeRegistry);
-  const { bus } = createDomainBus({ registry });
+  const initialGraph: GraphDocument | undefined = options.document?.graph;
+  const { bus } = createDomainBus({
+    registry,
+    ...(initialGraph === undefined ? {} : { initialGraph }),
+  });
   registerComponentCommands(bus, { components });
+  registerProjectCommands(bus);
   const nodeRuntime = createNodeRuntimeStore();
+
+  // §V16: the hub sinks into the channel the canvas ALREADY owns. A second per-node
+  // channel would mean two coalescers, two subscriptions per node and two answers to
+  // "what is this node's gpu ms".
+  const telemetry = createTelemetryHub({ sink: nodeRuntime });
 
   const actor: Actor = options.actor ?? {
     kind: "human",
@@ -113,22 +186,35 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     label: "You",
   };
 
+  // An opened project brings its own id; otherwise the browser-local one keeps autosave
+  // snapshots and audit attribution stable across reloads.
+  const projectId = options.document?.projectId ?? stableLocalId(PROJECT_STORAGE_KEY, "project", storage);
+
   const invocation: InvocationContext = {
     actor,
-    projectId: stableLocalId(PROJECT_STORAGE_KEY, "project", storage),
+    projectId,
     // §V38/§V67: nothing here self-grants. Side-effect capabilities arrive from the
     // bus-owned grant store (T90) once it exists, never from the caller's own context.
     capabilities: [],
   };
+
+  const project = projectMetaFrom(options, projectId);
 
   return {
     bus,
     registry,
     components,
     nodeRuntime,
+    telemetry,
     invocation,
-    settings: options.settings ?? DEFAULT_PROJECT_SETTINGS,
+    settings: project.settings,
+    project,
+    unknownParameters: options.unknownParameters ?? [],
+    projectDocument() {
+      return { ...project, graph: bus.store.getGraph() };
+    },
     dispose() {
+      telemetry.dispose();
       nodeRuntime.dispose();
     },
   };

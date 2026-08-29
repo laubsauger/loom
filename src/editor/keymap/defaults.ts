@@ -248,6 +248,21 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
 /** Ours: app-level, not part of TD's network-editor list. */
 const APP_BINDINGS: readonly KeyBinding[] = [
   {
+    // Node info (T145). TouchDesigner opens this with the middle mouse button and binds
+    // no key to it, so the key is ours to choose. "?" reads as "what is this", and the
+    // obvious alternative — `i` for info — is TD's dive-in.
+    //
+    // Written as `shift+/`, not `?`, because the engine matches on `event.code` (§T76):
+    // pressing the key labelled `?` on a US layout produces code `Slash` with Shift, and
+    // a binding spelled `?` would never fire. `formatKeys` renders it back for the UI.
+    id: "ui.showNodeInfo",
+    keys: "shift+/",
+    context: "graph",
+    command: "ui.showNodeInfo",
+    label: "Node info",
+    description: "Resolution, format, estimated bytes, GPU time and pass count for a node.",
+  },
+  {
     id: "ui.cancel",
     keys: "escape",
     context: "global",

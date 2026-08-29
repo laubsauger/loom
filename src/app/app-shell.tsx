@@ -31,6 +31,12 @@ function withGroup(layout: ShellLayout, key: GroupKey, sizes: number[]): ShellLa
 export interface AppShellProps {
   /** Replaces the whole top bar. Defaults to the stock transport/metrics bar. */
   topBar?: ReactNode;
+  /**
+   * App-wide notices, rendered under the header and above everything else: autosave
+   * unavailable, a halted GPU, a restorable snapshot. Full width because each one is a
+   * decision the user has to be able to see and act on from anywhere in the app.
+   */
+  notices?: ReactNode;
   nodeLibrary?: ReactNode;
   graphCanvas?: ReactNode;
   inspector?: ReactNode;
@@ -55,6 +61,7 @@ export interface AppShellProps {
  */
 export function AppShell({
   topBar,
+  notices,
   nodeLibrary,
   graphCanvas,
   inspector,
@@ -144,6 +151,10 @@ export function AppShell({
             />
           </div>
         </header>
+
+        {/* Always present so the grid keeps three rows: an empty strip is 0 tall, and
+            the body row stays `1fr` whether or not anything needs saying. */}
+        <div className={styles.notices}>{notices}</div>
 
         <PanelGroup
           className={styles.body}

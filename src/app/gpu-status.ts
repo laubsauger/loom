@@ -22,6 +22,15 @@ export type GpuStatus =
       readonly capabilities: BackendCapabilities;
       /** False when the device is below the Tier B product baseline (§C). */
       readonly baseline: boolean;
+      /**
+       * The live backend the probe acquired.
+       *
+       * The probe used to report the capabilities and drop the backend on the floor,
+       * which meant the app held a device it could never address: no `recover()` after a
+       * halt (§V23, T98), no `onDiagnostic`, no timing surface. Optional because a test
+       * builds this object by hand and a stub device has no backend to name.
+       */
+      readonly backend?: ShaderloomBackend | undefined;
     }
   | { readonly kind: "unavailable"; readonly reason: string };
 
@@ -75,6 +84,7 @@ export async function probeGpu(options: GpuProbeOptions = {}): Promise<GpuStatus
       kind: "ready",
       capabilities,
       baseline: meetsBaseline(capabilities),
+      backend,
     }),
     (error: unknown): GpuStatus => {
       backend.dispose();

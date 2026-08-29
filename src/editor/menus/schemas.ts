@@ -1,6 +1,11 @@
 import type { CommandName } from "@domain/types/commands.ts";
 import type { MenuItem, MenuSchema, MenuTarget } from "@domain/types/menus.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+// The command constant, NOT a literal — importing it is what keeps the menu and the
+// popup naming one thing (§V78). Deliberately from `command.ts` rather than the
+// `@editor/inspect` barrel: the barrel exports React surfaces, and `@editor/inspect`
+// imports this module's `resolveMenuTarget`.
+import { SHOW_NODE_INFO_COMMAND } from "@editor/inspect/command.ts";
 import type { MenuGuardName } from "./guards.ts";
 
 /**
@@ -102,6 +107,13 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
 export const NODE_MENU: MenuSchema = {
   surface: "node",
   entries: [
+    // T145: the third route to the node info popup, beside TouchDesigner's middle click
+    // and the `?` binding. All three name `ui.showNodeInfo`, which is the only reason
+    // they are guaranteed to open the same surface (§V78, §V85). Registered by the
+    // mounted `NodeInfoHost`, not by the domain bus — like `graph.selectAll`, its owner
+    // is the editor, so it is live rather than planned.
+    { command: SHOW_NODE_INFO_COMMAND, label: "Info" },
+    { separator: true },
     { command: "node.toggleBypass", label: "Bypass" },
     { command: "node.toggleRender", label: "Mute" },
     { command: "node.toggleDisplay", label: "Show preview" },

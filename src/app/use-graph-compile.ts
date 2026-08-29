@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { compileGraph } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
+import { telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -47,6 +48,13 @@ function compileSafely(
       settings: runtime.settings,
       registry: runtime.registry,
       capabilities,
+      // §V28a: NO `sinks` key, deliberately. An explicit list is AUTHORITATIVE — an
+      // empty one means "no previews are visible", not "fall back to the document's
+      // `ui.preview` flags" — and this root cannot yet tell which previews are on
+      // screen, because visibility lives with the preview surface (T34/T161, still in
+      // flight). Passing a partial list would silently schedule the wrong set; omitting
+      // the key is the documented "use the flags" case. When visibility is derivable
+      // here, pass EVERY visible preview and never the union of the two rules.
     });
     return { compiled, diagnostics: [...compiled.diagnostics] };
   } catch (error) {
@@ -125,6 +133,19 @@ export function useGraphCompile(
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
     };
   }, [graph, runtime, capabilities]);
+
+  // The static half of the performance tab and of every node info popup (T41, §V85).
+  // Once per compile, never per frame: the plan does not change between frames, and
+  // pushing it at frame rate is exactly the §V16 mistake the hub exists to prevent.
+  useEffect(() => {
+    runtime.telemetry.setPlan(
+      result.compiled === null
+        ? null
+        : telemetryPlan(result.compiled, {
+            memoryBudgetBytes: runtime.settings.limits.memoryBudgetBytes,
+          }),
+    );
+  }, [result.compiled, runtime]);
 
   const publishedRef = useRef<Set<NodeId>>(new Set());
   useEffect(() => {

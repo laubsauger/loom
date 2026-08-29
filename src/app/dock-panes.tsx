@@ -1,13 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import type { CompiledGraph } from "@compiler/index.ts";
 import { SHADER_SOURCE_PARAMETER } from "@domain/commands/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { PerformancePanel } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { useAppRuntime } from "./app-context.ts";
-import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
 
 /** The bottom dock's two non-trivial tabs: the shader editor and the performance tab. */
@@ -112,61 +111,20 @@ export function ShaderPane({ nodeId, graph, diagnostics }: ShaderPaneProps) {
   );
 }
 
-export interface PerformancePaneProps {
-  status: GpuStatus;
-  compiled: CompiledGraph | null;
-}
-
 /**
- * The `performance` slot.
+ * The `performance` slot (T41, §V16, §V86).
  *
- * Per-pass GPU spans are T41/T42 and are not measured yet, so this reports the plan —
- * which IS known and IS useful — and says plainly that no timing exists. A fabricated
- * frame time would be worse than an empty one.
+ * This used to be a hand-rolled placeholder that re-derived the plan's counts from
+ * `CompiledGraph` and printed a paragraph about timing not existing. The real panel had
+ * shipped and tested behind it the whole time. It reads the telemetry hub — the same
+ * snapshot the node info popup reads, at the same <= 10 Hz — so there is one answer to
+ * "how many passes" and one answer to "how long did they take" rather than two.
+ *
+ * With no timing source attached every ms field reads "unavailable", which is the
+ * truthful state and the one §V86 requires: not 0.000, and not a CPU-side number wearing
+ * a GPU label.
  */
-export function PerformancePane({ status, compiled }: PerformancePaneProps) {
-  const timestamps = status.kind === "ready" ? status.capabilities.timestampQuery : false;
-
-  return (
-    <div className={styles.performance}>
-      <section className={styles.block} aria-label="Plan">
-        <h3 className={styles.blockTitle}>compiled plan</h3>
-        {compiled === null ? (
-          <p className={styles.note}>
-            No plan: the graph is compiled against the device capability report, and none
-            is available.
-          </p>
-        ) : (
-          <dl className={styles.facts}>
-            <div className={styles.fact}>
-              <dt>passes</dt>
-              <dd>{compiled.passes.length}</dd>
-            </div>
-            <div className={styles.fact}>
-              <dt>resources</dt>
-              <dd>{compiled.resources.length}</dd>
-            </div>
-            <div className={styles.fact}>
-              <dt>nodes kept</dt>
-              <dd>{compiled.order.length}</dd>
-            </div>
-            <div className={styles.fact}>
-              <dt>nodes pruned</dt>
-              <dd>{compiled.pruned.length}</dd>
-            </div>
-          </dl>
-        )}
-      </section>
-
-      <section className={styles.block} aria-label="Timing">
-        <h3 className={styles.blockTitle}>timing</h3>
-        <p className={styles.note}>
-          Per-pass GPU spans are not instrumented yet.
-          {timestamps
-            ? " The device does support timestamp queries, so they can be."
-            : " This device reports no timestamp-query support, so spans will have to be estimated (§V12)."}
-        </p>
-      </section>
-    </div>
-  );
+export function PerformancePane() {
+  const { telemetry } = useAppRuntime();
+  return <PerformancePanel telemetry={telemetry} />;
 }

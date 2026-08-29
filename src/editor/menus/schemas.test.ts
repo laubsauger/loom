@@ -59,7 +59,14 @@ describe("every item names a command (§V78)", () => {
  * Registered by the app when it wires the editor (`src/app/selection-commands.ts`),
  * not by the domain bus — selection is view state, so its owner registers it there.
  */
-const APP_REGISTERED = ["graph.selectAll"];
+const APP_REGISTERED = [
+  "graph.selectAll",
+  // T145: registered by the mounted `NodeInfoHost` (`src/editor/inspect/command.ts`).
+  // Popup visibility is not document state and produces no patch, so there is nothing
+  // for `ctx.apply` to write and no reason for the domain bus to own it — but it IS
+  // registered, so it is live rather than planned.
+  "ui.showNodeInfo",
+];
 
 describe("what the menus promise but nobody has built", () => {
   it("PLANNED_COMMANDS is exactly the set the menus name and no track implements", () => {
@@ -87,8 +94,10 @@ describe("shape", () => {
   it.each(SURFACES)("%s stays a menu rather than a list", (surface) => {
     const schema = menuSchemaFor(surface, registry);
     const top = schema.entries.filter((entry) => !isMenuSeparator(entry));
-    // A twenty-item menu is a failure of design; nesting goes in submenus.
-    expect(top.length).toBeLessThanOrEqual(10);
+    // A twenty-item menu is a failure of design; nesting goes in submenus. Eleven is the
+    // node menu with TouchDesigner's Info action added (T145) — raised deliberately, and
+    // only once. The next item that wants in should displace one or open a submenu.
+    expect(top.length).toBeLessThanOrEqual(11);
     expect(top.length).toBeGreaterThan(0);
   });
 

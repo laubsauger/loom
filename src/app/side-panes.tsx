@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { CompiledGraph } from "@compiler/index.ts";
+import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -57,6 +58,8 @@ export interface InspectorPaneProps {
   compiled: CompiledGraph | null;
   diagnostics: readonly RuntimeDiagnostic[];
   status: GpuStatus;
+  /** Values the open file carried that this build cannot read (§V68, §V69). */
+  unknownParameters?: readonly UnknownParameter[];
 }
 
 /**
@@ -96,7 +99,14 @@ function inputResolutionsFor(
   });
 }
 
-export function InspectorPane({ nodeId, graph, compiled, diagnostics, status }: InspectorPaneProps) {
+export function InspectorPane({
+  nodeId,
+  graph,
+  compiled,
+  diagnostics,
+  status,
+  unknownParameters = [],
+}: InspectorPaneProps) {
   const { bus, invocation, registry, settings } = useAppRuntime();
 
   const node = nodeId === null ? undefined : graph.nodes[nodeId];
@@ -111,6 +121,19 @@ export function InspectorPane({ nodeId, graph, compiled, diagnostics, status }: 
     [compiled, graph, inputs, nodeId],
   );
 
+  const unknownHere = useMemo(
+    () => (nodeId === null ? [] : unknownParameters.filter((entry) => entry.nodeId === nodeId)),
+    [nodeId, unknownParameters],
+  );
+
+  if (unknownHere.length > 0 && nodeId !== null) {
+    return (
+      <div className={styles.fill} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}>
+        <FutureParameters nodeId={nodeId} unknown={unknownHere} />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.fill} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}>
       <Inspector
@@ -122,6 +145,52 @@ export function InspectorPane({ nodeId, graph, compiled, diagnostics, status }: 
         capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
         inputResolutions={inputResolutions}
       />
+    </div>
+  );
+}
+
+/**
+ * A node whose parameters this build cannot read (§V68, §V69, §T139).
+ *
+ * `loadProject` reports these and keeps the values byte-for-byte; the one thing that must
+ * NOT happen is a control rendered over them. A slider does not know the value is a
+ * shape it has never seen — it falls back to the definition's default, shows a number
+ * that was never in the file, and the first drag writes that number over the user's data
+ * on the next save. So the pane says what is true and offers nothing to drag.
+ *
+ * This is per-NODE rather than per-parameter because `Inspector` has no way to be told
+ * "render every control except this one". The precise ask for that track is an
+ * `unresolvedParameters?: readonly string[]` prop; until then, suppressing the node's
+ * controls is the conservative reading of §V69 and the only one available from here.
+ */
+function FutureParameters({
+  nodeId,
+  unknown,
+}: {
+  nodeId: NodeId;
+  unknown: readonly UnknownParameter[];
+}) {
+  return (
+    <div className={styles.viewer} data-testid="future-parameters">
+      <section className={styles.block} aria-label="Parameters from a newer version">
+        <h3 className={styles.blockTitle}>set by a newer version</h3>
+        <p className={styles.note}>
+          {nodeId} carries {unknown.length === 1 ? "a parameter value" : "parameter values"} written
+          by a newer build of Shaderloom. {unknown.length === 1 ? "It is" : "They are"} kept exactly
+          as saved and written back unchanged (§V68), so nothing is lost — but this build cannot
+          show a control over {unknown.length === 1 ? "it" : "them"} without inventing a value.
+        </p>
+        <ul className={styles.list}>
+          {unknown.map((entry) => (
+            <li key={entry.key} className={styles.row}>
+              <span className={styles.rowName}>{entry.key}</span>
+              <span className={styles.rowValue}>
+                {entry.kind === undefined ? "unreadable value" : `kind: ${entry.kind}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

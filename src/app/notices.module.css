@@ -1,0 +1,51 @@
+/* App-wide notices. Every colour is a token (V17). */
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hairline);
+  border-bottom: var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-ui);
+  color: var(--text);
+  background: var(--bg-raise);
+  border-left: 2px solid var(--line-hot);
+}
+
+.notice[data-tone="error"] {
+  border-left-color: var(--error);
+}
+
+.notice[data-tone="warn"] {
+  border-left-color: var(--warn);
+}
+
+.notice[data-tone="info"] {
+  border-left-color: var(--signal);
+}
+
+.message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.detail {
+  display: block;
+  color: var(--text-dim);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
