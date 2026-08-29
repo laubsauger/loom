@@ -673,6 +673,11 @@ T154|.|example E2 Reaction-Diffusion — Gray-Scott CustomWGSL kernel, seeded in
 T155|.|example E3 Animated Noise Field — perlin4d t4d ← frame time, fan-out once|V88,V89,V44,V6
 T156|.|example E4 Bloom + E5 Kaleidoscope + E6 Displacement Stack|V88,V89,V51,V56
 T157|.|example runner: load ∀ example, compile, assert 0 errors + deterministic render. CI gate|V89
+T158|.|fix B1+B2 — depth fallback ⊥ pick a color format; `formatNoFallback` ⊥ return an unallocatable format. test AFTER fixing, ⊥ pin current behavior|V51,V12
+T159|.|fix B3 — `resolveSinks` doc ≠ impl on preview narrowing. pick one, make the other match|V25
+T160|.|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V3-clean Dawn host. parity harness deletes its eslint-disable + imports it|V3,V47
+T161|.|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
+T162|.|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -701,10 +706,10 @@ T59|.|capability grant model + gate table, dryRun on destructive, ⊥ self-grant
 T60|.|agent presence UI: actor badge, planning\|editing\|compiling\|awaiting state, patch review + revert-transaction-as-unit|V42
 T43|x|save/load `.loom.json` via `src/domain/project/serialize.ts` (CANONICAL — ⊥ 2nd serializer), migration scaffolding, unknown-node placeholder|V10
 T44|x|resource caps: max resolution, dispatch size, buffer size, project budget|V24
-T45|.|unit tests: port compat, cycle/temporal, topo order, sink prune, resolution, format, migrations|V4,V13,V21,V25
-T46|.|`vgpu/mock` command-level tests|C
-T47|.|Dawn headless render snapshot: gradient→levels, blur chain, feedback progression|C
-T69|.|headless parity test: same graph browser vs `vgpu/node` Dawn → snapshot match within tolerance|V47
+T45|x|unit tests: port compat, cycle/temporal, topo order, sink prune, resolution, format, migrations|V4,V13,V21,V25
+T46|x|`vgpu/mock` command-level tests|C
+T47|x|Dawn headless render snapshot: gradient→levels, blur chain, feedback progression|C
+T69|x|headless parity test: same graph browser vs `vgpu/node` Dawn → snapshot match within tolerance|V47
 T48|.|playwright: connect gesture, undo/redo, param drag, shader error recovery, save+reload|V15
 T61|.|tests: patch atomicity, stale-revision conflict, dryRun ⊥ mutate, audit completeness, actor-local undo|V32,V33,V36,V41
 T49|.|**Phase1 exit**: PoC graph Noise→Displace→Levels→Composite→Output + Feedback + Colorize fan-out, 10min stable resource count|V6,V7,V22
@@ -767,8 +772,8 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 | track | tasks | owns |
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
-| P tests | T45 T46 T47 T69 T48 T61 T157 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 | `src/runtime/backend/**` `src/domain/graph/**` |
+| P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
+| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
@@ -807,3 +812,7 @@ T49 Phase 1 exit, T62 Phase 1 agent exit.
 
 ## §B BUGS
 id|date|cause|fix
+B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158
+B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158
+B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159
+B4|2026-08-29|⊥ Dawn host ∈ `src/runtime/backend/vgpu/` ∴ ⊥ V3-clean way to get a headless device. V47/T67/T69 were untestable; parity harness had to `eslint-disable` V3|T160
