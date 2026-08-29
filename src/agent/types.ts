@@ -1,8 +1,9 @@
+import type { OutputRef as DomainOutputRef } from "../domain/types/ids.ts";
 import type { z } from "zod";
 
 import type { Actor, CapabilityClass, InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
-import type { EdgeId, NodeId, PortId, Revision } from "@domain/types/ids.ts";
+import type { EdgeId, NodeId, Revision } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 
@@ -36,10 +37,7 @@ import type { ShaderloomBus } from "@domain/commands/bus.ts";
  */
 
 /** Port-scoped output identity (§V59). A single-output node uses the default port. */
-export interface OutputRef {
-  readonly nodeId: NodeId;
-  readonly portId: PortId;
-}
+export type OutputRef = DomainOutputRef;
 
 export const DEFAULT_OUTPUT_PORT = "out";
 

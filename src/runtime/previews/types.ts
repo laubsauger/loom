@@ -1,4 +1,4 @@
-import type { NodeId, PortId } from "../../domain/types/ids.ts";
+import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor, ResourceDescriptor } from "../backend/plan.ts";
 
@@ -19,10 +19,7 @@ import type { EffectPassDescriptor, ResourceDescriptor } from "../backend/plan.t
  * declared here, structurally identical, so the eventual merge is an import change and not a
  * rewrite. A single-output node uses the default port `"out"`.
  */
-export interface PreviewOutputRef {
-  readonly nodeId: NodeId;
-  readonly portId: PortId;
-}
+export type PreviewOutputRef = DomainOutputRef;
 
 export const DEFAULT_OUTPUT_PORT = "out";
 

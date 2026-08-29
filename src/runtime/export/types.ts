@@ -1,3 +1,4 @@
+import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { ReadbackImage, ReadbackRegion } from "../../domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { NodeId, PortId } from "../../domain/types/ids.ts";
@@ -29,10 +30,7 @@ export type { ReadbackImage, ReadbackRegion };
  * structurally identical to the preview track's `PreviewOutputRef` so the merge is an import
  * change, not a rewrite.
  */
-export interface OutputRef {
-  readonly nodeId: NodeId;
-  readonly portId: PortId;
-}
+export type OutputRef = DomainOutputRef;
 
 /** A single-output node uses this port (§V59). */
 export const DEFAULT_OUTPUT_PORT = "out";

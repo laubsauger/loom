@@ -613,7 +613,7 @@ T31|x|recompile classifier — edit kind → minimal work|V5,V21
 T32|x|branch reuse: 1 render per output, shared by N consumers|V6
 T33|x|Feedback node: pingPong pair, swap after encode, reset triggers|V22
 T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
-T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
+T80|x|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
 T81|x|SUPERSEDED by T115 (same union, landed w/ dispatch\|draw\|counter + buffer\|bufferPair)|V58
 T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
 T83|x|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
