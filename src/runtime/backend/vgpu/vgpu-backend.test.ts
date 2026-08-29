@@ -548,6 +548,17 @@ describe("vgpu backend — GPU pass timings (T163, §V16, §V12)", () => {
   });
 });
 
+describe("vgpu backend — standalone shader validation (T195, §V27)", () => {
+  it("reports honestly when the device cannot validate at all", async () => {
+    const { backend } = await harness();
+    const result = await backend.compileShader("total garbage {", { label: "editor.wgsl" });
+    // The mock device has no getCompilationInfo: unknown, NOT broken.
+    expect(result.validated).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe(BackendDiagnosticCode.shaderValidationUnavailable);
+  });
+});
+
 describe("vgpu backend — timer-driven loop (T109, §V49)", () => {
   it("drives frames off setInterval through the same frame path as rAF", async () => {
     const { backend, diagnostics } = await harness();

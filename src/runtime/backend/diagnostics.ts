@@ -23,6 +23,7 @@ export const BackendDiagnosticCode = {
   compileFailed: "backend/compile-failed",
   resourceLimit: "backend/resource-limit",
   presentFailed: "backend/present-failed",
+  shaderValidationUnavailable: "backend/shader-validation-unavailable",
 } as const;
 
 export type BackendDiagnosticCodeValue =

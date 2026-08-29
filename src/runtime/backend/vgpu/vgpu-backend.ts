@@ -1289,6 +1289,73 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       };
     },
 
+    async readBuffer(resourceId: string) {
+      // §V48: readback outside the loop only, counted like every other readback.
+      guard.assertOutsideFrame("buffer readback");
+      if (halted) throw new Error(`readBuffer("${resourceId}") while GPU submission is halted.`);
+      const plain = program?.resources.buffers.get(resourceId);
+      const pair = program?.resources.bufferPairs.get(resourceId);
+      const buffer = plain ?? pair?.read;
+      if (buffer === undefined) {
+        const message = `readBuffer() referenced unknown buffer "${resourceId}".`;
+        hub.report(backendDiagnostic("error", BackendDiagnosticCode.unknownResource, message));
+        throw new Error(message);
+      }
+      readbacks += 1;
+      return buffer.read();
+    },
+
+    async compileShader(source: string, options: { label?: string } = {}) {
+      const active = requireSession("compileShader()");
+      const label = options.label ?? "editor.wgsl";
+      // The RAW device: vgpu's wrapper does not expose shader modules, and this is the
+      // vgpu adapter, the one sanctioned place to reach through it (§V3).
+      const raw = (active.gpu.device as { gpu?: GPUDevice }).gpu;
+      const unvalidated = () => ({
+        ok: false,
+        validated: false,
+        diagnostics: [
+          backendDiagnostic(
+            "info",
+            BackendDiagnosticCode.shaderValidationUnavailable,
+            "This device cannot report shader compilation info; the shader is unvalidated, not broken.",
+          ),
+        ],
+      });
+      if (raw === undefined || typeof raw.createShaderModule !== "function") return unvalidated();
+
+      // Scope the validation error so an invalid module never surfaces as an uncaptured
+      // device error at the console — the diagnostics ARE the report.
+      raw.pushErrorScope?.("validation");
+      const module = raw.createShaderModule({ code: source, label });
+      const scopeError = (await raw.popErrorScope?.()) ?? null;
+      const info = await module.getCompilationInfo?.();
+
+      if (info === undefined) return unvalidated();
+
+      const diagnostics = info.messages.map((message) => ({
+        severity:
+          message.type === "error" ? ("error" as const) : message.type === "warning" ? ("warning" as const) : ("info" as const),
+        code: "wgsl/compile",
+        message: message.message,
+        // §V27: line and column, 1-based as WebGPU reports them, mapped to the editor.
+        source: { file: label, line: message.lineNum, column: message.linePos },
+      }));
+      if (diagnostics.length === 0 && scopeError !== null) {
+        diagnostics.push({
+          severity: "error" as const,
+          code: "wgsl/compile",
+          message: scopeError.message,
+          source: { file: label, line: 1, column: 1 },
+        });
+      }
+      return {
+        ok: diagnostics.every((diagnostic) => diagnostic.severity !== "error"),
+        validated: true,
+        diagnostics,
+      };
+    },
+
     async recover() {
       if (disposed) throw new Error("recover() called after dispose().");
       if (recovery) {

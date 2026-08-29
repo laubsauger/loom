@@ -1,4 +1,5 @@
 import type { RenderBackend } from "../../domain/types/backend.ts";
+import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { PreviewFrameCommand, PreviewProgram, PreviewRuntimeHost } from "../previews/types.ts";
 import type { UniformValues } from "./plan.ts";
 
@@ -128,6 +129,21 @@ export interface ShaderloomBackend extends RenderBackend {
   previewHost(canvas: PresentableCanvas): PreviewHostHandle;
 
   /**
+   * Validates WGSL standalone (T195, §V27) — no plan, no target, no render. Safe to
+   * call from an editor's debounce while the frame loop runs; it allocates nothing the
+   * frame guard cares about. Returns line/column-mapped diagnostics.
+   */
+  compileShader(source: string, options?: { label?: string }): Promise<ShaderCompileResult>;
+
+  /**
+   * Reads a storage buffer back (T125, §V48): a bufferPair reads its READ half — the
+   * last COMPLETED frame, coherent with what consumers saw. Counted as a readback;
+   * never called from the playback loop. Point-attribute windows go through the export
+   * interface built on this, not around it.
+   */
+  readBuffer(resourceId: string): Promise<ArrayBuffer>;
+
+  /**
    * Per-pass GPU timings in milliseconds, keyed by PASS ID (T163, §V16) — node and
    * component attribution key on that. Fires only when the device has timestamp-query
    * (§V12: `capabilities.timestampQuery`); without it, no listener ever fires and every
@@ -141,6 +157,23 @@ export interface ShaderloomBackend extends RenderBackend {
    * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
    */
   recover(): Promise<void>;
+}
+
+/**
+ * Standalone WGSL validation (T195, §V27): a shader checked WITHOUT a plan, a target or
+ * a render — what makes iterating on a shader in isolation possible at all.
+ */
+export interface ShaderCompileResult {
+  /** True when validation RAN and reported no errors. Never true on an unvalidating device. */
+  readonly ok: boolean;
+  /**
+   * Whether the device could report compilation info at all. The mock device cannot —
+   * `ok: false, validated: false` there means "unknown", not "broken", and the editor
+   * should say so rather than paint red.
+   */
+  readonly validated: boolean;
+  /** §V27: messages carry source line/column so the editor can mark the exact spot. */
+  readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 }
 
 /** The preview track's injected seam, plus the lifecycle the backend owns. */

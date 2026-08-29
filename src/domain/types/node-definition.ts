@@ -70,6 +70,8 @@ export interface NodeCompileContext {
  * compiler owns the resource and V8 (no allocation inside the frame loop) still holds.
  */
 export interface ScratchTargetRequest {
+  /** Absent kind = a texture target. */
+  kind?: "target";
   /** Node-local name; the compiler namespaces it. */
   key: string;
   /** Size relative to the node's resolved output. Omitted = same size. */
@@ -78,10 +80,25 @@ export interface ScratchTargetRequest {
   format?: TextureFormat;
 }
 
+/**
+ * SoA point storage a node owns (T121/T124, §V75): one ping-pong pair per attribute,
+ * ONE identity per pair so carry-over keeps simulation state across unrelated edits
+ * (§V22). The compiler materializes it and appends the swap; the node never allocates.
+ */
+export interface ScratchBufferPairRequest {
+  kind: "bufferPair";
+  key: string;
+  /** Element stride in bytes — the attribute's WGSL type decides it. */
+  stride: number;
+  capacity: number;
+}
+
+export type ScratchRequest = ScratchTargetRequest | ScratchBufferPairRequest;
+
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;
-  /** Scratch targets this node's passes render into and sample between each other. */
-  scratch?: ReadonlyArray<ScratchTargetRequest>;
+  /** Scratch resources this node's passes use between each other. */
+  scratch?: ReadonlyArray<ScratchRequest>;
   diagnostics?: RuntimeDiagnostic[];
 }
 

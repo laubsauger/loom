@@ -52,6 +52,7 @@ describe("core catalogue (T70, T40)", () => {
       "mask",
       "feedback",
       "pointKernel",
+      "textureToAttribute",
       "renderPoints",
     ]);
   });

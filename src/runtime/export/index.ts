@@ -95,3 +95,10 @@ export type { Mp4MuxInput, Mp4Sample } from "./recording/mp4-muxer.ts";
 
 export { isRecordingAvailable, loadVideoEncoder } from "./recording/encoder-loader.ts";
 export type { LoadEncoderOptions } from "./recording/encoder-loader.ts";
+export {
+  createPointsReadback,
+  type PointSetInfo,
+  type PointsReadback,
+  type PointsWindow,
+  type PointsWindowRequest,
+} from "./points.ts";

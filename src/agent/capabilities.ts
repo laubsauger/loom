@@ -32,6 +32,7 @@ import type { CapabilityClass } from "@domain/types/commands.ts";
  */
 export const TOOL_CAPABILITIES: Readonly<Record<string, readonly CapabilityClass[]>> = Object.freeze({
   render_preview: Object.freeze(["export"] as const),
+  read_points: Object.freeze(["export"] as const),
   save_project: Object.freeze(["localFile"] as const),
 });
 

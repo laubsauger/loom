@@ -6,7 +6,7 @@ import {
   type PointAttributeSchema,
 } from "../../points/attributes.ts";
 import { POINT_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
-import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL } from "../shaders/points.wgsl.ts";
+import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
@@ -203,11 +203,11 @@ export const pointKernelNode: NodeDefinition = {
       // bufferPair entries (see module doc). Shape mirrors pointKernelResources().
       scratch: pointKernelResources(nodeId, attributes, capacity).map((resource) => ({
         key: resource.id.split(":").slice(2).join(":"),
-        kind: "bufferPair",
+        kind: "bufferPair" as const,
         stride: resource.stride,
         capacity: resource.capacity,
       })),
-    } as CompiledNodeDescription;
+    };
   },
 };
 
@@ -318,7 +318,121 @@ export const renderPointsNode: NodeDefinition = {
 };
 
 /**
+ * TextureToAttribute (T124): the TOP→POP bridge — sample a texture per point, write the
+ * result as a point attribute. The first pointset consumer outside the family itself,
+ * and what makes the two graphs ONE instrument: a Noise TOP driving particle colour,
+ * a displacement field steering a sim.
+ *
+ * Ownership rule for pointset transforms: this node owns FRESH pairs for everything it
+ * outputs (position copied through, `sample` written from the texture), because
+ * downstream consumers derive pair ids from THEIR source's node id — a pointset node
+ * that modified upstream pairs in place would break that derivation and alias state
+ * across nodes.
+ */
+export const textureToAttributeNode: NodeDefinition = {
+  type: "textureToAttribute",
+  version: 1,
+  title: "Texture To Attribute",
+  category: "points",
+  description: "Samples a texture at each point's position and writes it as a point attribute.",
+  tags: ["points", "bridge", "texture", "sample"],
+  inputs: [
+    {
+      id: "points",
+      label: "Points",
+      type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
+    },
+    {
+      id: "texture",
+      label: "Texture",
+      type: RGBA_TEXTURE,
+      description: "Read with textureLoad — data fields (r32float displacement) work on baseline Tier B (§V57).",
+    },
+  ],
+  outputs: [
+    {
+      id: "out",
+      label: "Points",
+      // Provides position (copied) plus the sampled value.
+      type: {
+        kind: "pointset",
+        requires: [
+          { name: "position", type: "vec3f" },
+          { name: "sample", type: "vec4f" },
+        ],
+      },
+    },
+  ],
+  parameters: {
+    count: {
+      type: "number",
+      label: "Count",
+      default: 4096,
+      min: 1,
+      max: 1_000_000,
+      step: 1,
+      compileTime: true,
+      description: "Matches the producer's capacity until pointset edges carry it.",
+    },
+  },
+  resolutionPolicy: { kind: "project" },
+  formatPolicy: { kind: "project" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, inputs, parameters } = readCompileInputs(context);
+    const points = inputs["points"];
+    const texture = inputs["texture"];
+    if (points === undefined || texture === undefined) {
+      const what = points === undefined ? 'input port "points"' : 'input port "texture"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    if (points.source === undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.source",
+            message: `Node "${nodeId}": the points input carries no producer identity; per-attribute buffers cannot be located.`,
+            nodeId,
+          },
+        ],
+      };
+    }
+
+    const count = Math.max(1, Math.round(readNumber(parameters, "count", 4096)));
+    const pass: DispatchPassDescriptor = {
+      kind: "dispatch",
+      id: `${nodeId}:bridge`,
+      shader: TEXTURE_TO_ATTRIBUTE_WGSL,
+      entryPoint: "main",
+      workgroups: [Math.ceil(count / 64), 1, 1],
+      buffers: [
+        { binding: "in_position", resourceId: pointPairId(points.source.nodeId, "position"), half: "read" },
+        { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
+        { binding: "out_sample", resourceId: pointPairId(nodeId, "sample"), half: "write" },
+      ],
+      textures: [{ binding: "sourceTexture", resourceId: texture.resource, sampled: "unfiltered" }],
+      uniforms: { count },
+      uniformBinding: "bridgeFrame",
+      nodeId,
+    };
+
+    return {
+      passes: [pass],
+      scratch: [
+        { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
+        { key: "sample", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity: count },
+      ],
+    };
+  },
+};
+
+/**
  * Exported separately from `coreNodeDefinitions` until the compiler accepts
  * dispatch/draw emission and bufferPair scratch (see module doc).
  */
-export const pointNodeDefinitions: readonly NodeDefinition[] = [pointKernelNode, renderPointsNode];
+export const pointNodeDefinitions: readonly NodeDefinition[] = [
+  pointKernelNode,
+  textureToAttributeNode,
+  renderPointsNode,
+];

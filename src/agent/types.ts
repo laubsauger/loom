@@ -156,11 +156,36 @@ export interface PreviewExport {
   renderPreview(request: PreviewImageRequest): Promise<PreviewImage>;
 }
 
+/** One window of point-attribute values (T125). Mirrors the export module's shape. */
+export interface PointsWindowData {
+  readonly nodeId: string;
+  readonly attribute: string;
+  readonly type: string;
+  readonly start: number;
+  readonly count: number;
+  readonly capacity: number;
+  readonly values: ReadonlyArray<ReadonlyArray<number>>;
+}
+
+/**
+ * The export interface `read_points` needs (T125, §V48): windowed, throttled attribute
+ * readback. Implemented runtime-side by `createPointsReadback`; injected here.
+ */
+export interface PointsExport {
+  read(request: {
+    nodeId: string;
+    attribute?: string;
+    start?: number;
+    count?: number;
+  }): Promise<PointsWindowData>;
+}
+
 export interface AgentPorts {
   readonly selection?: SelectionSource | undefined;
   readonly diagnostics?: DiagnosticsSource | undefined;
   readonly metrics?: MetricsSource | undefined;
   readonly preview?: PreviewExport | undefined;
+  readonly points?: PointsExport | undefined;
 }
 
 export type AgentPortName = keyof AgentPorts;

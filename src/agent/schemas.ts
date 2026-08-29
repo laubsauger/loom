@@ -176,7 +176,19 @@ export const saveProjectInput = z.object({ saveAs: z.boolean().optional() }).str
  * the type — the schema is what actually runs.
  */
 export type ApplyGraphPatchInput = z.infer<typeof applyGraphPatchInput>;
+export const readPointsInput = z
+  .object({
+    nodeId: z.string().min(1),
+    /** Attribute to read; defaults to "position". */
+    attribute: z.string().min(1).optional(),
+    start: z.number().int().min(0).optional(),
+    /** A window, not a dump (§V16): the export path also caps at 256. */
+    count: z.number().int().min(1).max(256).optional(),
+  })
+  .strict();
+
 export type RenderPreviewInput = z.infer<typeof renderPreviewInput>;
+export type ReadPointsInput = z.infer<typeof readPointsInput>;
 export type EmptyInput = z.infer<typeof emptyInput>;
 export type GetGraphInput = z.infer<typeof getGraphInput>;
 export type GetNodeInput = z.infer<typeof getNodeInput>;
