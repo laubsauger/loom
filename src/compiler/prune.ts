@@ -34,9 +34,13 @@ export interface SinkResolution {
 const sinkKeyOf = (sink: ActiveSink): string => `${sink.nodeId}:${sink.portId ?? ""}:${sink.kind}`;
 
 /**
- * Combines the caller's sinks with the ones the document itself declares: manifest sinks
- * (never pruned) and nodes whose preview is switched on (§V28 — the caller decides which of
- * those are actually on screen and may pass a narrower list).
+ * Combines the caller's sinks with the ones the document itself declares.
+ *
+ * Manifest sinks are ALWAYS added — a declared sink is never pruned (§V25). The
+ * document's `ui.preview` flags become preview sinks only when the caller passed no
+ * explicit list: an explicit list is the caller saying which previews are actually on
+ * screen (§V28), and unioning the document's flags back in would defeat exactly that
+ * narrowing (T159).
  */
 export function resolveSinks(
   nodes: ReadonlyMap<NodeId, ResolvedNode>,
@@ -77,11 +81,17 @@ export function resolveSinks(
     add(sink);
   }
 
+  // T159: the caller is authoritative about PREVIEW sinks. Only it knows which preview
+  // toggles are actually on screen (§V28 — the compiler has no DOM), so the document's
+  // `ui.preview` flags act as sinks only when NO explicit list was passed at all — the
+  // safe default for tests, validation and agent compiles. Manifest sinks are different:
+  // a declared sink is never pruned regardless of who is calling.
+  const callerProvided = explicit !== undefined;
   for (const nodeId of [...nodes.keys()].sort()) {
     const resolved = nodes.get(nodeId);
     if (resolved === undefined) continue;
     if (isDeclaredSink(resolved.definition)) add({ nodeId, kind: "output" });
-    if (resolved.node.ui?.preview === true) add({ nodeId, kind: "preview" });
+    if (!callerProvided && resolved.node.ui?.preview === true) add({ nodeId, kind: "preview" });
   }
 
   const sinks = [...collected.values()].sort((a, b) => sinkKeyOf(a).localeCompare(sinkKeyOf(b)));

@@ -42,19 +42,41 @@ describe("isDeclaredSink (§V25)", () => {
 });
 
 describe("resolveSinks (T26)", () => {
-  it("adds declared sinks and preview-enabled nodes to the caller's list", () => {
+  it("defaults to the document's preview flags when the caller passes no list at all", () => {
     const document = testGraph([
       testNode("out", "fx.output"),
       testNode("peek", "fx.generator", { ui: { preview: true } }),
       testNode("quiet", "fx.generator"),
     ]);
     const validated = validateGraph(document, registry);
-    const { sinks } = resolveSinks(validated.nodes, []);
+    const { sinks } = resolveSinks(validated.nodes, undefined);
 
     expect(sinks.map((sink) => `${sink.nodeId}:${sink.kind}`).sort()).toEqual([
       "out:output",
       "peek:preview",
     ]);
+  });
+
+  it("honors an explicit list as authoritative for previews (T159, §V28)", () => {
+    const document = testGraph([
+      testNode("out", "fx.output"),
+      testNode("peek", "fx.generator", { ui: { preview: true } }),
+      testNode("also", "fx.generator", { ui: { preview: true } }),
+    ]);
+    const validated = validateGraph(document, registry);
+
+    // The caller says only "also" is actually on screen: "peek"'s document flag must
+    // NOT be unioned back in — that narrowing is the caller's whole job. Declared
+    // sinks are still always present.
+    const { sinks } = resolveSinks(validated.nodes, [{ nodeId: "also", kind: "preview" }]);
+    expect(sinks.map((sink) => `${sink.nodeId}:${sink.kind}`).sort()).toEqual([
+      "also:preview",
+      "out:output",
+    ]);
+
+    // And an explicit EMPTY list means "no previews are visible", not "use the flags".
+    const none = resolveSinks(validated.nodes, []);
+    expect(none.sinks.map((sink) => `${sink.nodeId}:${sink.kind}`)).toEqual(["out:output"]);
   });
 
   it("warns about a sink naming a node or port that does not exist", () => {

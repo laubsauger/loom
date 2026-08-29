@@ -109,6 +109,37 @@ describe("resolveNodeFormat — capability validation (T75, §V12, §V51)", () =
     expect(outcome.diagnostics[0]?.severity).toBe("error");
   });
 
+  it("B1: an unsupported depth format on a DEPTH output never falls back to colour", () => {
+    const outcome = resolveNodeFormat(
+      request({
+        policy: { kind: "fixed", format: "depth24plus" },
+        allowsDepth: true,
+        capabilities: without("depth24plus"),
+      }),
+    );
+
+    // The colour-fallback path must not fire: this is a formatNoFallback ERROR, not a
+    // formatUnsupported warning quietly handing back rgba-something.
+    expect(outcome.diagnostics.map((d) => d.code)).toContain(CompilerDiagnosticCode.formatNoFallback);
+    expect(outcome.diagnostics.map((d) => d.code)).not.toContain(CompilerDiagnosticCode.formatUnsupported);
+    expect(outcome.diagnostics.some((d) => d.severity === "error")).toBe(true);
+  });
+
+  it("B2: the no-fallback path never returns a format the device cannot allocate", () => {
+    const outcome = resolveNodeFormat(
+      request({
+        policy: { kind: "fixed", format: "depth24plus" },
+        allowsDepth: true,
+        capabilities: without("depth24plus"),
+      }),
+    );
+
+    // §V51: diagnose and fall back, never hand on something unusable. The plan is
+    // rejected by the error either way; the returned format only has to be allocatable.
+    expect(outcome.format).not.toBe("depth24plus");
+    expect(outcome.fellBack).toBe(true);
+  });
+
   it("rejects a depth format on a colour output", () => {
     const outcome = resolveNodeFormat(request({ policy: { kind: "fixed", format: "depth24plus" } }));
 

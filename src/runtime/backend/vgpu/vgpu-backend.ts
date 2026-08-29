@@ -12,6 +12,9 @@ import type {
   PresentableCanvas,
   PresentationHandle,
   PresentationOptions,
+  PreviewFrameCommand,
+  PreviewHostHandle,
+  PreviewProgram,
   ShaderloomBackend,
 } from "../backend-types.ts";
 import {
@@ -39,8 +42,10 @@ import {
   ResourceBuildError,
   buildResources,
   emptyCarryOver,
+  noExternalResources,
   toMutable,
   type CarryOver,
+  type ExternalResources,
   type ResourceSet,
 } from "./resources.ts";
 
@@ -164,6 +169,18 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   const presentations = new Map<string, PresentationState>();
   let presentationCounter = 0;
   let presentSampler: GPUSampler | undefined;
+
+  interface PreviewHostState {
+    readonly canvas: PresentableCanvas;
+    surface: Surface | undefined;
+    program: PreviewProgram | undefined;
+    set: ResourceSet | undefined;
+    blit: Effect | undefined;
+    /** External texture bindings per pass, for re-pointing after a main recompile. */
+    externalBindings: Array<{ passId: string; binding: string; resourceId: string }>;
+    disposed: boolean;
+  }
+  const previewHosts = new Set<PreviewHostState>();
 
   const status: BackendStatus = {
     get initialized() {
@@ -354,6 +371,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         p.boundSource = undefined;
       }
       ensureAllPresentations();
+      for (const h of previewHosts) {
+        h.surface = undefined;
+        h.set = undefined;
+        h.blit = undefined;
+        h.externalBindings = [];
+        buildPreviewHost(h);
+      }
       restartLoops();
       hub.report(
         backendDiagnostic(
@@ -552,6 +576,98 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     for (const p of presentations.values()) ensurePresentation(p);
   }
 
+  /** The main program's resources, as binding sources for the preview program (T161). */
+  function mainExternals(): ExternalResources {
+    if (!program) return noExternalResources;
+    return {
+      targets: program.resources.targets,
+      pingPongs: program.resources.pingPongs,
+      samplers: program.resources.samplers,
+    };
+  }
+
+  /** Destroys a preview host's owned objects; the shared block is kept iff it is the main program's. */
+  function releasePreviewSet(previous: ResourceSet, keepShared: boolean): void {
+    releaseResourcesExcept(previous, {
+      targets: new Map(),
+      pingPongs: new Map(),
+      samplers: new Map(),
+      effects: new Map(),
+      passUniforms: new Map(),
+      shared: keepShared ? previous.shared : (undefined as unknown as ResourceSet["shared"]),
+      dynamicTextures: new Map(),
+      renderTargets: new Map(),
+    });
+  }
+
+  /** (Re)builds one preview host: surface, tile targets, preview effects, tile blit. */
+  function buildPreviewHost(h: PreviewHostState): void {
+    const active = session;
+    if (!active || h.disposed) return;
+    try {
+      if (!h.surface) {
+        h.surface = surface(active.gpu, h.canvas as unknown as SurfaceCanvas, { label: "previews" });
+      }
+      if (!h.program) return;
+
+      const previous = h.set;
+      const sharedFromMain = program?.resources.shared;
+      h.set = buildResources(
+        active.gpu,
+        h.program.resources,
+        h.program.passes,
+        guard,
+        { ...emptyCarryOver, shared: sharedFromMain },
+        undefined,
+        mainExternals(),
+      );
+      if (previous) releasePreviewSet(previous, previous.shared === sharedFromMain);
+
+      // Bindings that live in the MAIN program get re-pointed after its recompiles.
+      h.externalBindings = [];
+      for (const pass of h.program.passes) {
+        for (const binding of pass.textures ?? []) {
+          if (!h.set.targets.has(binding.resourceId) && !h.set.pingPongs.has(binding.resourceId)) {
+            h.externalBindings.push({ passId: pass.id, binding: binding.binding, resourceId: binding.resourceId });
+          }
+        }
+      }
+
+      // The tile-composite blit. Needs some initial source; any tile target will do —
+      // presentPreviews re-points it per tile before every composite pass.
+      const firstTile = h.set.targets.values().next().value as Target | undefined;
+      if (!h.blit && firstTile !== undefined) {
+        presentSampler ??= sampler(active.gpu, { magFilter: "linear", minFilter: "linear" });
+        h.blit = effect(active.gpu, BLIT_WGSL, {
+          set: { blitSampler: presentSampler, blitSource: firstTile },
+          label: "preview-composite",
+        });
+      }
+    } catch (error) {
+      hub.report(
+        backendDiagnostic(
+          "error",
+          BackendDiagnosticCode.presentFailed,
+          `Could not build the preview host: ${describeError(error)}`,
+        ),
+      );
+    }
+  }
+
+  /** After a main recompile, preview bindings into replaced main resources are re-pointed (T143 interplay). */
+  function refreshPreviewExternals(): void {
+    for (const h of previewHosts) {
+      if (h.disposed || h.set === undefined) continue;
+      for (const external of h.externalBindings) {
+        const source = presentationSource(external.resourceId);
+        if (source === undefined) continue;
+        h.set.effects.get(external.passId)?.set({
+          [external.binding]: isPair(source) ? source.read.color : source,
+        });
+      }
+    }
+  }
+
   /** §V7: presenting is a blit pass encoded with the frame. No readback, ever. */
   function encodePresentations(f: Frame): void {
     for (const p of presentations.values()) {
@@ -697,8 +813,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       lastBuildStats = stats;
       stale = false;
       estimatedBytes = estimateResourceBytes(read.resources);
-      // Rebuilt outputs replaced their objects; every attached surface rebinds (T87).
+      // Rebuilt outputs replaced their objects; every attached surface rebinds (T87),
+      // and preview bindings into the main program get re-pointed (T161).
       ensureAllPresentations();
+      refreshPreviewExternals();
       return program.compiled;
     },
 
@@ -896,6 +1014,107 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       };
     },
 
+    previewHost(canvas: PresentableCanvas): PreviewHostHandle {
+      if (disposed) throw new Error("previewHost() called after dispose().");
+      if (!session && !recovery) throw new Error("previewHost() called before initialize().");
+      guard.assertOutsideFrame("preview host attach");
+
+      const h: PreviewHostState = {
+        canvas,
+        surface: undefined,
+        program: undefined,
+        set: undefined,
+        blit: undefined,
+        externalBindings: [],
+        disposed: false,
+      };
+      previewHosts.add(h);
+      buildPreviewHost(h); // creates the surface now; the program arrives later
+
+      return {
+        setPreviewProgram(next: PreviewProgram) {
+          if (h.disposed) return;
+          // The contract says this is called only on change; the signature makes that
+          // cheap to honor even when a caller is sloppy about it (§V8).
+          if (h.program?.signature === next.signature) return;
+          guard.assertOutsideFrame("preview program build");
+          h.program = next;
+          buildPreviewHost(h);
+        },
+        presentPreviews(command: PreviewFrameCommand) {
+          if (h.disposed || disposed || halted) return;
+          const active = session;
+          const set = h.set;
+          const surfaceTarget = h.surface;
+          if (!active || set === undefined || surfaceTarget === undefined) return;
+
+          const dpr = command.surface.dpr;
+          const encodeCommand = (f: Frame): void => {
+            // Ping-pong-sourced bindings swap identity per frame — re-point first,
+            // exactly as the main program's rebindDynamicTextures does.
+            for (const [passId, bindings] of set.dynamicTextures) {
+              const drawable = set.effects.get(passId);
+              if (!drawable) continue;
+              const values: Record<string, unknown> = {};
+              for (const binding of bindings) {
+                const pair =
+                  set.pingPongs.get(binding.resourceId) ??
+                  program?.resources.pingPongs.get(binding.resourceId);
+                if (pair) values[binding.binding] = pair.read.color;
+              }
+              drawable.set(values);
+            }
+
+            // Refresh: only the tiles whose cadence says they are due (§V28, §V16).
+            for (const passId of command.refresh) {
+              const drawable = set.effects.get(passId);
+              const resolve = set.renderTargets.get(passId);
+              if (drawable && resolve) f.pass({ target: resolve(), clear: true }, drawable);
+            }
+
+            // Composite: every active tile, due or not — a pan moves rects without
+            // re-rendering pixels. GPU→GPU throughout (§V7).
+            f.pass({ target: surfaceTarget, clear: true }, () => {});
+            if (h.blit) {
+              for (const tile of command.composite) {
+                const tileTarget = set.targets.get(tile.resourceId);
+                if (tileTarget === undefined) continue;
+                h.blit.set({ blitSource: tileTarget });
+                f.pass(
+                  {
+                    target: surfaceTarget,
+                    clear: false,
+                    viewport: {
+                      x: tile.dest.x * dpr,
+                      y: tile.dest.y * dpr,
+                      width: Math.max(1, tile.dest.width * dpr),
+                      height: Math.max(1, tile.dest.height * dpr),
+                    },
+                  },
+                  h.blit,
+                );
+              }
+            }
+          };
+
+          const open = currentFrame;
+          if (open) encodeCommand(open);
+          else frame(active.gpu, encodeCommand);
+        },
+        dispose() {
+          if (h.disposed) return;
+          h.disposed = true;
+          if (h.set) releasePreviewSet(h.set, h.set.shared === program?.resources.shared);
+          try {
+            h.surface?.dispose();
+          } catch {
+            // A lost device already tore it down.
+          }
+          previewHosts.delete(h);
+        },
+      };
+    },
+
     async recover() {
       if (disposed) throw new Error("recover() called after dispose().");
       if (recovery) {
@@ -934,6 +1153,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       presentations.clear();
+      for (const h of previewHosts) {
+        h.disposed = true;
+        try {
+          h.surface?.dispose();
+        } catch {
+          // A lost device already tore it down.
+        }
+      }
+      previewHosts.clear();
       program = undefined;
       try {
         session?.dispose();

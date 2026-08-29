@@ -62,6 +62,25 @@ export const emptyCarryOver: CarryOver = {
   shared: undefined,
 };
 
+/**
+ * Resources owned by ANOTHER resource set that passes in this build may bind but never
+ * render into (T161). This is how the preview program samples the main program's
+ * outputs: tile targets are local, the sampled node outputs are external. Externals are
+ * looked up as binding sources only — a pass whose render target is external is a plan
+ * error, and externals are never destroyed by this set's lifecycle.
+ */
+export interface ExternalResources {
+  readonly targets: ReadonlyMap<string, Target>;
+  readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
+  readonly samplers: ReadonlyMap<string, GPUSampler>;
+}
+
+export const noExternalResources: ExternalResources = {
+  targets: new Map(),
+  pingPongs: new Map(),
+  samplers: new Map(),
+};
+
 export class ResourceBuildError extends Error {
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 
@@ -93,6 +112,7 @@ export function buildResources(
   guard: FrameGuard,
   carry: CarryOver = emptyCarryOver,
   stats?: BuildStats,
+  externals: ExternalResources = noExternalResources,
 ): ResourceSet {
   guard.assertOutsideFrame("plan resources");
 
@@ -185,11 +205,11 @@ export function buildResources(
     // onTexturesRecreated only for Target values, and Target.resize() destroys and
     // recreates its textures — a bound .color would keep pointing at the destroyed
     // one after resize, and every pass sampling it would break.
-    const plain = targets.get(resourceId);
+    const plain = targets.get(resourceId) ?? externals.targets.get(resourceId);
     if (plain) return plain;
     // Ping-pong halves swap identity per frame; they are re-pointed explicitly by
     // rebindDynamicTextures before each render, so no recreation wiring is needed here.
-    const pair = pingPongs.get(resourceId);
+    const pair = pingPongs.get(resourceId) ?? externals.pingPongs.get(resourceId);
     if (pair) return pair.read.color;
     return undefined;
   };
@@ -220,13 +240,15 @@ export function buildResources(
       renderTargets.set(pass.id, resolveTarget);
       const carriedUniforms = carry.passUniforms.get(pass.id);
       if (carriedUniforms) passUniforms.set(pass.id, carriedUniforms);
-      const dynamic = (pass.textures ?? []).filter((binding) => pingPongs.has(binding.resourceId));
+      const dynamic = (pass.textures ?? []).filter(
+        (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+      );
       if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);
       note("effectsReused");
       continue;
     }
 
-    const setBag = buildSetBag(pass, { readTexture, samplers, shared, passUniforms, gpu, diagnostics });
+    const setBag = buildSetBag(pass, { readTexture, samplers, externals, shared, passUniforms, gpu, diagnostics });
     if (!setBag) continue;
 
     try {
@@ -240,7 +262,9 @@ export function buildResources(
       renderTargets.set(pass.id, resolveTarget);
       note("effectsBuilt");
 
-      const dynamic = (pass.textures ?? []).filter((binding) => pingPongs.has(binding.resourceId));
+      const dynamic = (pass.textures ?? []).filter(
+        (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+      );
       if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);
     } catch (error) {
       diagnostics.push(
@@ -272,6 +296,7 @@ interface SetBagContext {
   readonly gpu: Gpu;
   readonly readTexture: (resourceId: string) => unknown;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  readonly externals: ExternalResources;
   readonly shared: SharedUniforms<SharedUniformValues>;
   readonly passUniforms: Map<string, SharedUniforms<Record<string, unknown>>>;
   readonly diagnostics: RuntimeDiagnostic[];
@@ -300,7 +325,7 @@ function buildSetBag(
   }
 
   for (const binding of pass.samplers ?? []) {
-    const found = ctx.samplers.get(binding.resourceId);
+    const found = ctx.samplers.get(binding.resourceId) ?? ctx.externals.samplers.get(binding.resourceId);
     if (!found) {
       ctx.diagnostics.push(
         backendDiagnostic(

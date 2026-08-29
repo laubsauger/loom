@@ -7,11 +7,15 @@ import {
   SHARED_SAMPLER_ID,
   SINK_TARGET_PORT,
   pingPongResourceId,
+  scratchResourceId,
   swapPassId,
   targetResourceId,
 } from "./resources.ts";
 import type { CompileRequest } from "./types.ts";
+import { asCompilerContext } from "./types.ts";
+import type { CompiledNodeDescription, NodeDefinition } from "../domain/types/node-definition.ts";
 import {
+  FILTER_WGSL,
   createCompilerTestRegistry,
   testCapabilities,
   testEdge,
@@ -357,6 +361,125 @@ describe("compileGraph — node compilation", () => {
 
     expect(plan.ok).toBe(false);
     expect(plan.diagnostics.map((d) => d.code)).toContain(CompilerDiagnosticCode.passInvalid);
+  });
+});
+
+describe("compileGraph — scratch targets (T147)", () => {
+  /** A separable two-pass filter: horizontal into scratch, vertical into the output. */
+  const separableNode: NodeDefinition = {
+    type: "fx.separable",
+    version: 1,
+    title: "Separable",
+    category: "filter",
+    inputs: [{ id: "source", label: "Source", type: { kind: "texture2d", sample: "float", channels: 4 } }],
+    outputs: [{ id: "out", label: "Out", type: { kind: "texture2d", sample: "float", channels: 4 } }],
+    parameters: {},
+    resolutionPolicy: { kind: "inherit", input: "source" },
+    formatPolicy: { kind: "inherit", input: "source" },
+    compile: (raw) => {
+      const context = asCompilerContext(raw);
+      const source = context.inputs["source"]?.[0]?.resourceId;
+      const out = context.outputs["out"]?.resourceId;
+      if (source === undefined || out === undefined) return { passes: [] };
+      const scratch = scratchResourceId(context.nodeId, "h");
+      return {
+        passes: [
+          {
+            shader: FILTER_WGSL,
+            target: scratch,
+            samplers: [{ binding: "inputSampler", resourceId: context.sampler }],
+            textures: [{ binding: "sceneTexture", resourceId: source }, { binding: "historyTexture", resourceId: source }],
+            uniformBinding: "params",
+            uniforms: { decay: 0 },
+          },
+          {
+            shader: FILTER_WGSL,
+            target: out,
+            samplers: [{ binding: "inputSampler", resourceId: context.sampler }],
+            textures: [{ binding: "sceneTexture", resourceId: scratch }, { binding: "historyTexture", resourceId: scratch }],
+            uniformBinding: "params",
+            uniforms: { decay: 1 },
+          },
+        ],
+        scratch: [{ key: "h" }],
+      } as CompiledNodeDescription;
+    },
+  };
+
+  const separableRegistry = createCompilerTestRegistry([separableNode]).view();
+
+  const separableGraph = (): GraphDocument =>
+    testGraph(
+      [testNode("gen", "fx.generator"), testNode("fx", "fx.separable"), testNode("out", "fx.output")],
+      [
+        testEdge("e1", ["gen", "out"], ["fx", "source"]),
+        testEdge("e2", ["fx", "out"], ["out", "source"]),
+      ],
+    );
+
+  it("materializes a declared scratch target sized and formatted like the output", () => {
+    const plan = compile(separableGraph(), { registry: separableRegistry });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(plan.ok).toBe(true);
+
+    const scratch = plan.resources.find((resource) => resource.id === scratchResourceId("fx", "h"));
+    expect(scratch?.kind).toBe("target");
+    const output = plan.outputs.find((entry) => entry.nodeId === "fx");
+    if (scratch?.kind === "target" && output) {
+      expect(scratch.size).toEqual(output.size);
+      expect(scratch.format).toBe(output.format);
+    }
+    // Both passes made it through the backend's reader — the scratch pass targets a
+    // resource that genuinely exists in the plan.
+    expect(plan.passes.filter((pass) => pass.kind === "effect" && pass.nodeId === "fx")).toHaveLength(2);
+  });
+
+  it("scales a scratch entry relative to the node's output", () => {
+    const half: NodeDefinition = {
+      ...separableNode,
+      type: "fx.separable-half",
+      compile: (raw) => {
+        const base = separableNode.compile(raw);
+        return { ...base, scratch: [{ key: "h", scale: 0.5 }] } as CompiledNodeDescription;
+      },
+    };
+    const registry = createCompilerTestRegistry([half]).view();
+    const graph = testGraph(
+      [testNode("gen", "fx.generator"), testNode("fx", "fx.separable-half"), testNode("out", "fx.output")],
+      [testEdge("e1", ["gen", "out"], ["fx", "source"]), testEdge("e2", ["fx", "out"], ["out", "source"])],
+    );
+
+    const plan = compile(graph, { registry });
+    const scratch = plan.resources.find((resource) => resource.id === scratchResourceId("fx", "h"));
+    const output = plan.outputs.find((entry) => entry.nodeId === "fx");
+    if (scratch?.kind === "target" && output) {
+      expect(scratch.size).toEqual([Math.round(output.size[0] / 2), Math.round(output.size[1] / 2)]);
+    } else {
+      expect.unreachable("scratch target missing");
+    }
+  });
+
+  it("rejects invalid and duplicate scratch entries with a diagnostic", () => {
+    const bad: NodeDefinition = {
+      ...separableNode,
+      type: "fx.separable-bad",
+      compile: (raw) => {
+        const base = separableNode.compile(raw);
+        return {
+          ...base,
+          scratch: [{ key: "h" }, { key: "h" }, { scale: -1 }],
+        } as CompiledNodeDescription;
+      },
+    };
+    const registry = createCompilerTestRegistry([bad]).view();
+    const graph = testGraph(
+      [testNode("gen", "fx.generator"), testNode("fx", "fx.separable-bad"), testNode("out", "fx.output")],
+      [testEdge("e1", ["gen", "out"], ["fx", "source"]), testEdge("e2", ["fx", "out"], ["out", "source"])],
+    );
+
+    const plan = compile(graph, { registry });
+    const scratchErrors = plan.diagnostics.filter((d) => d.code === CompilerDiagnosticCode.scratchInvalid);
+    expect(scratchErrors).toHaveLength(2);
   });
 });
 

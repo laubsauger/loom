@@ -687,6 +687,142 @@ describe("vgpu backend — presentation seam (T87, §V64/§V70)", () => {
   });
 });
 
+describe("vgpu backend — preview host (T161, §V7, §V28)", () => {
+  const PREVIEW_WGSL = `@group(0) @binding(0) var previewSampler: sampler;
+@group(0) @binding(1) var previewSource: texture_2d<f32>;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSample(previewSource, previewSampler, uv);
+}`;
+
+  /** One tile sampling the MAIN program's "output" target as an external binding. */
+  function tileProgram(signature = "p1") {
+    return {
+      resources: [
+        { kind: "sampler" as const, id: "preview:sampler", filter: "linear" as const },
+        { kind: "target" as const, id: "preview:tile:0", size: [192, 108] as const, format: "rgba8unorm" as const },
+      ],
+      passes: [
+        {
+          kind: "effect" as const,
+          id: "preview:pass:0",
+          shader: PREVIEW_WGSL,
+          target: "preview:tile:0",
+          samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+          textures: [{ binding: "previewSource", resourceId: "output" }],
+        },
+      ],
+      signature,
+    };
+  }
+
+  function frameCommand() {
+    return {
+      refresh: ["preview:pass:0"],
+      composite: [
+        { ref: { nodeId: "n", portId: "out" }, resourceId: "preview:tile:0", dest: { x: 8, y: 8, width: 96, height: 54 } },
+      ],
+      surface: { size: [800, 600] as const, dpr: 2 },
+    };
+  }
+
+  function previewCanvas(host: MockGpuHost) {
+    let frames = 0;
+    const context = {
+      configure() {},
+      unconfigure() {},
+      getCurrentTexture: () => {
+        frames += 1;
+        const device = host.device;
+        if (!device) throw new Error("no live mock device");
+        return device.createTexture({
+          size: [1600, 1200],
+          format: "rgba8unorm",
+          usage: ["render_attachment", "texture_binding"] as unknown as GPUTextureUsageFlags,
+        });
+      },
+    };
+    return {
+      canvas: { width: 1600, height: 1200, getContext: (kind: string) => (kind === "webgpu" ? context : null) },
+      surfaceFrames: () => frames,
+    };
+  }
+
+  it("renders a tile from a main output and composites it to the shared surface", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas, surfaceFrames } = previewCanvas(host);
+
+    const preview = backend.previewHost(canvas);
+    preview.setPreviewProgram(tileProgram());
+
+    backend.render(plan, frameInputs(0));
+    preview.presentPreviews(frameCommand());
+
+    expect(surfaceFrames()).toBeGreaterThan(0);
+    // §V7/§V48: the whole path is GPU-to-GPU.
+    expect(backend.status.readbacks).toBe(0);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    preview.dispose();
+  });
+
+  it("an unchanged signature does not rebuild the tile resources (§V8)", async () => {
+    const { backend, host } = await harness();
+    await backend.compile(fixturePlan());
+    const { canvas } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+
+    preview.setPreviewProgram(tileProgram("same"));
+    const modules = snapshot(host.instrumentation).createShaderModule ?? 0;
+    preview.setPreviewProgram(tileProgram("same"));
+    expect(snapshot(host.instrumentation).createShaderModule).toBe(modules);
+    preview.dispose();
+  });
+
+  it("keeps presenting after a structural recompile of the main program (T143 interplay)", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const first = await backend.compile(fixturePlan());
+    const { canvas, surfaceFrames } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+    preview.setPreviewProgram(tileProgram());
+    backend.render(first, frameInputs(0));
+    preview.presentPreviews(frameCommand());
+
+    const second = await backend.compile(fixturePlan({ generateShader: GENERATE_WGSL_EDITED }));
+    backend.render(second, frameInputs(1));
+    const before = surfaceFrames();
+    preview.presentPreviews(frameCommand());
+
+    expect(surfaceFrames()).toBeGreaterThan(before);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    preview.dispose();
+  });
+
+  it("comes back after device loss with the retained program (§V23)", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas, surfaceFrames } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+    preview.setPreviewProgram(tileProgram());
+    backend.render(plan, frameInputs(0));
+    preview.presentPreviews(frameCommand());
+
+    const generation = backend.status.deviceGeneration;
+    host.loseDevice();
+    await until(() => backend.status.deviceGeneration > generation, "device rebuild");
+    await backend.whenSettled();
+
+    const recompiled = await backend.compile(fixturePlan());
+    backend.render(recompiled, frameInputs(1));
+    const before = surfaceFrames();
+    preview.presentPreviews(frameCommand());
+
+    expect(surfaceFrames()).toBeGreaterThan(before);
+    expect(diagnostics.filter((d) => d.code === BackendDiagnosticCode.presentFailed)).toEqual([]);
+    preview.dispose();
+  });
+});
+
 describe("vgpu backend — per-resource reuse across recompiles (T143, §V22)", () => {
   it("adding an unrelated node carries the feedback pair over instead of recreating it", async () => {
     const { backend, host, diagnostics } = await harness();

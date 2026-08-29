@@ -2,9 +2,16 @@ import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
+import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
-import type { PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
-import { estimateResourceBytes, planStructureSignature, readExecutionPlan } from "../runtime/backend/plan.ts";
+import type { PassDescriptor } from "../runtime/backend/plan.ts";
+import {
+  estimateResourceBytes,
+  passStructureKey,
+  planStructureSignature,
+  readExecutionPlan,
+  resourceStructureKey,
+} from "../runtime/backend/plan.ts";
 import { describeError } from "../runtime/backend/diagnostics.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
@@ -18,6 +25,7 @@ import {
   SHARED_SAMPLER_ID,
   SINK_TARGET_PORT,
   pingPongResourceId,
+  scratchResourceId,
   swapPassId,
   targetResourceId,
 } from "./resources.ts";
@@ -299,68 +307,11 @@ function describeResource(output: ResolvedOutput): Record<string, unknown> {
   }
 }
 
-/** Identity of one resource: what must be true for the existing GPU object to be reusable. */
-function resourceSignature(resource: ResourceDescriptor): string {
-  switch (resource.kind) {
-    case "sampler":
-      return JSON.stringify([
-        "sampler",
-        resource.filter ?? "nearest",
-        resource.addressMode ?? "clamp-to-edge",
-      ]);
-    case "target":
-    case "pingPong":
-      return JSON.stringify([resource.kind, resource.size[0], resource.size[1], resource.format]);
-    case "buffer":
-      return JSON.stringify([resource.kind, resource.stride, resource.capacity, resource.usage]);
-    case "bufferPair":
-      return JSON.stringify([resource.kind, resource.stride, resource.capacity]);
-  }
-}
-
-/** Identity of one pass. Uniform NAMES are part of it; uniform VALUES never are (§V5). */
-function passSignature(pass: PassDescriptor): string {
-  switch (pass.kind) {
-    case "swap":
-      return JSON.stringify(["swap", pass.resourceId]);
-    case "effect":
-      return JSON.stringify([
-        "effect",
-        pass.shader,
-        pass.target,
-        pass.clear ?? true,
-        (pass.textures ?? []).map((texture) => [texture.binding, texture.resourceId]),
-        (pass.samplers ?? []).map((sampler) => [sampler.binding, sampler.resourceId]),
-        pass.uniformBinding ?? null,
-        Object.keys(pass.uniforms ?? {}).sort(),
-        pass.sharedBinding ?? null,
-      ]);
-    case "dispatch":
-      return JSON.stringify([
-        "dispatch",
-        pass.shader,
-        pass.entryPoint,
-        typeof pass.workgroups === "object" && "indirect" in pass.workgroups
-          ? ["indirect", pass.workgroups.indirect]
-          : pass.workgroups,
-        (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
-        (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
-        Object.keys(pass.uniforms ?? {}).sort(),
-      ]);
-    case "draw":
-      return JSON.stringify([
-        "draw",
-        pass.shader,
-        pass.target,
-        pass.topology,
-        typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
-        (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
-        (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
-      ]);
-    case "counter":
-      return JSON.stringify(["counter", pass.op, pass.resourceId, pass.outputResourceId ?? null]);
-  }
-}
+// T144 (§V62d): one identity definition, not two. `resourceStructureKey` and
+// `passStructureKey` from plan.ts are THE per-entry identity — the backend's T143
+// carry-over diffs the same functions, so the compiler's recompile classifier and the
+// backend's resource reuse can never disagree about "has this changed". (The exported
+// keys fold the entry's id in; every consumer compares per-id, so that is inert.)
 
 function emptyPlan(
   diagnostics: ReadonlyArray<RuntimeDiagnostic>,
@@ -591,6 +542,68 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     }
     diagnostics.push(...(description.diagnostics ?? []));
 
+    // T147: scratch targets — node-private intermediates for multi-pass work (a
+    // separable blur's horizontal leg). Read structurally so the frozen
+    // CompiledNodeDescription contract needs no change to start using them; the typed
+    // field can land in the manifest types later without touching this code. Sized from
+    // the node's resolved output (scale-relative, §V21 — never per frame), formatted
+    // like it unless the entry says otherwise, and materialized as ordinary targets, so
+    // T143 carry-over and the memory estimate cover them for free.
+    const scratchRaw = (description as { scratch?: unknown }).scratch;
+    if (scratchRaw !== undefined) {
+      const baseSize = resolution ?? [settings.outputResolution.width, settings.outputResolution.height];
+      const seenScratch = new Set<string>();
+      const entries = Array.isArray(scratchRaw) ? scratchRaw : [];
+      if (!Array.isArray(scratchRaw)) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "error",
+            CompilerDiagnosticCode.scratchInvalid,
+            `Node "${nodeId}" (${node.type}) declared a non-array scratch list.`,
+            { nodeId },
+          ),
+        );
+      }
+      for (const raw of entries) {
+        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown };
+        const key = typeof entry.key === "string" && entry.key !== "" ? entry.key : undefined;
+        const scale =
+          entry.scale === undefined
+            ? 1
+            : typeof entry.scale === "number" && Number.isFinite(entry.scale) && entry.scale > 0
+              ? entry.scale
+              : undefined;
+        const scratchFormat =
+          entry.format === undefined
+            ? (format ?? settings.workingFormat)
+            : typeof entry.format === "string" && (TEXTURE_FORMATS as readonly string[]).includes(entry.format)
+              ? (entry.format as TextureFormat)
+              : undefined;
+        if (key === undefined || scale === undefined || scratchFormat === undefined || seenScratch.has(key)) {
+          diagnostics.push(
+            compilerDiagnostic(
+              "error",
+              CompilerDiagnosticCode.scratchInvalid,
+              `Node "${nodeId}" (${node.type}) declared an invalid or duplicate scratch entry ${JSON.stringify(raw)}.`,
+              { nodeId, suggestion: 'A scratch entry is { key: string, scale?: number > 0, format?: TextureFormat }.' },
+            ),
+          );
+          continue;
+        }
+        seenScratch.add(key);
+        resources.push({
+          kind: "target",
+          id: scratchResourceId(nodeId, key),
+          size: [
+            Math.max(1, Math.round(baseSize[0] * scale)),
+            Math.max(1, Math.round(baseSize[1] * scale)),
+          ],
+          format: scratchFormat,
+          label: `${nodeId} scratch ${key}`,
+        });
+      }
+    }
+
     let emitted = 0;
     description.passes.forEach((raw, index) => {
       const pass = normalizePass(nodeId, target, index, raw, diagnostics);
@@ -681,10 +694,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     feedback,
     sources: sourceRows,
     resourceSignatures: read.resources
-      .map((resource) => ({ id: resource.id, signature: resourceSignature(resource) }))
+      .map((resource) => ({ id: resource.id, signature: resourceStructureKey(resource) }))
       .sort((a, b) => a.id.localeCompare(b.id)),
     passSignatures: read.passes
-      .map((pass) => ({ id: pass.id, signature: passSignature(pass) }))
+      .map((pass) => ({ id: pass.id, signature: passStructureKey(pass) }))
       .sort((a, b) => a.id.localeCompare(b.id)),
     signature: planStructureSignature(read.resources, read.passes),
     estimatedResourceBytes,

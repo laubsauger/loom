@@ -1,4 +1,5 @@
 import type { RenderBackend } from "../../domain/types/backend.ts";
+import type { PreviewFrameCommand, PreviewProgram, PreviewRuntimeHost } from "../previews/types.ts";
 import type { UniformValues } from "./plan.ts";
 
 /** Stops a running frame loop. Mirrors vgpu's `FrameLoopHandle` without leaking the import. */
@@ -119,8 +120,23 @@ export interface ShaderloomBackend extends RenderBackend {
   present(canvas: PresentableCanvas, options: PresentationOptions): PresentationHandle;
 
   /**
+   * Creates the preview system's runtime host on a shared surface (T161, doc §12.2):
+   * tile passes sample the MAIN program's outputs as external bindings, render into
+   * pooled tile targets, and composite to the surface at per-tile viewports — GPU to
+   * GPU throughout (§V7). Survives recompiles and device loss like present() does.
+   */
+  previewHost(canvas: PresentableCanvas): PreviewHostHandle;
+
+  /**
    * Re-attempts device recovery after automatic rebuilds gave up (§V23). Resolves when
    * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
    */
   recover(): Promise<void>;
 }
+
+/** The preview track's injected seam, plus the lifecycle the backend owns. */
+export interface PreviewHostHandle extends PreviewRuntimeHost {
+  dispose(): void;
+}
+
+export type { PreviewFrameCommand, PreviewProgram, PreviewRuntimeHost };

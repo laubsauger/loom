@@ -20,6 +20,16 @@ export function pingPongResourceId(nodeId: NodeId, portId: PortId): string {
   return `pingpong:${nodeId}:${portId}`;
 }
 
+/**
+ * A node-private intermediate target (T147): what a separable blur renders its first
+ * pass into. Declared by the node's `compile()` result, materialized by the compiler,
+ * never visible on a port — downstream nodes cannot reference it. Keyed by node id so
+ * it survives recompiles under the same identity (§V8, T143 carry-over applies).
+ */
+export function scratchResourceId(nodeId: NodeId, key: string): string {
+  return `scratch:${nodeId}:${key}`;
+}
+
 export function swapPassId(resourceId: string): string {
   return `swap:${resourceId}`;
 }

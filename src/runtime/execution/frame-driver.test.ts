@@ -71,6 +71,11 @@ function recordingBackend(): ShaderloomBackend & {
       setOutput() {},
       dispose() {},
     }),
+    previewHost: () => ({
+      setPreviewProgram() {},
+      presentPreviews() {},
+      dispose() {},
+    }),
   };
 }
 

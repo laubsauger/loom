@@ -143,18 +143,32 @@ export function resolveNodeFormat(request: FormatRequest): FormatOutcome {
   // §V12: a format is used only after the capability report says the device has it.
   const supported = capabilities.formats;
   if (!supported.includes(format)) {
+    // B1 (T158): a depth output may only ever fall back to another DEPTH format. A
+    // colour substitute would let a depth output silently become colour — the user's
+    // depth-sampling shader is then wrong in a way no warning label makes acceptable.
+    const chain = isDepthFormat(format)
+      ? DEPTH_FORMATS.filter((option) => option !== format)
+      : (FORMAT_FALLBACKS[format] ?? []);
     const candidate =
-      (FORMAT_FALLBACKS[format] ?? []).find((option) => supported.includes(option)) ?? supported[0];
+      chain.find((option) => supported.includes(option)) ??
+      (isDepthFormat(format)
+        ? undefined
+        : supported.find((option) => !isDepthFormat(option)));
     if (candidate === undefined) {
+      // B2 (T158): the plan must never carry a format the device cannot allocate. The
+      // error already rejects the plan (§V9 keeps the last good one); the placeholder
+      // only exists so downstream propagation has something allocatable to reason
+      // about, and the diagnostic says so.
+      const placeholder = supported.find((option) => !isDepthFormat(option)) ?? project;
       diagnostics.push(
         compilerDiagnostic(
           "error",
           CompilerDiagnosticCode.formatNoFallback,
-          `Node "${nodeId}" (${nodeType}) needs "${format}", which this device does not support, and the capability report lists no format to fall back to.`,
-          { nodeId },
+          `Node "${nodeId}" (${nodeType}) needs "${format}", which this device does not support, and no acceptable fallback exists. The plan is rejected; "${placeholder}" stands in during propagation only.`,
+          { nodeId, suggestion: isDepthFormat(format) ? "A depth output cannot fall back to a colour format (§V51)." : "Pick a format this device supports (§V51)." },
         ),
       );
-      return { format, requested, source, fellBack: false, diagnostics };
+      return { format: placeholder, requested, source, fellBack: true, diagnostics };
     }
     diagnostics.push(
       compilerDiagnostic(

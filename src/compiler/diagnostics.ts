@@ -33,6 +33,7 @@ export const CompilerDiagnosticCode = {
   nodeCompileFailed: "compiler/node-compile-failed",
   passInvalid: "compiler/pass-invalid",
   memoryBudget: "compiler/memory-budget",
+  scratchInvalid: "compiler/scratch-invalid",
   /** Component flattening (T134, T135, §V82, §V83). */
   componentRecursion: "compiler/component-recursion",
   componentMissing: "compiler/component-missing",
