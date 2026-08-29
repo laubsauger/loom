@@ -1099,6 +1099,12 @@ T62|~|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compile
 wave = barrier. tracks ∈ wave run concurrent. track owns disjoint paths → ⊥ write collision.
 rule: track ⊥ edit file outside owned paths. shared contract frozen @ wave 0.
 cross-track need → raise, ⊥ patch other track path.
+**GATES THAT LIE — ! know which command actually checks:**
+- bare `tsc --noEmit` @ root checks NOTHING & exits 0 (references-only tsconfig, `files: []`). ! `pnpm typecheck`.
+- `vitest` ⊥ typecheck. a suite is green while the types are red.
+- a unit test on shader SOURCE (`toContain("frameU.time")`) is ⊥ evidence a pixel moved (V147, B15).
+∀ 3 have already produced a false green this project. a gate you ⊥ verified is a gate you ⊥ have.
+
 ⊥ `git stash` | `git checkout` | any tree-wide git op while tracks live — stash cycles OTHER tracks' uncommitted work. blame a file w/ `git diff HEAD -- <path>`, ⊥ tree-wide state changes.
 
 ### wave 0 — serial, 1 worker. contract freeze.
