@@ -784,8 +784,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 
   function previewCanvas(host: MockGpuHost) {
     let frames = 0;
+    let configured: Record<string, unknown> | undefined;
     const context = {
-      configure() {},
+      configure(options: Record<string, unknown>) {
+        configured = options;
+      },
       unconfigure() {},
       getCurrentTexture: () => {
         frames += 1;
@@ -801,8 +804,27 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     return {
       canvas: { width: 1600, height: 1200, getContext: (kind: string) => (kind === "webgpu" ? context : null) },
       surfaceFrames: () => frames,
+      configured: () => configured,
     };
   }
+
+  it("creates a TRANSPARENT overlay surface — opaque hid the entire app (V106)", async () => {
+    const { backend, host } = await harness();
+    await backend.compile(fixturePlan());
+    const { canvas, configured } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+    preview.setPreviewProgram(tileProgram());
+
+    // The canvas context must composite with alpha; "opaque" paints black even under a
+    // transparent clear. Asserted at the configure() call the surface actually made.
+    expect(configured()?.["alphaMode"]).toBe("premultiplied");
+    // And the clear itself must be zero-alpha — vgpu defaults to opaque black. Pinned
+    // at the source since the surface object is not exposed past creation.
+    const source = readFileSync(fileURLToPath(new URL("./vgpu-backend.ts", import.meta.url)), "utf8");
+    const previewSurface = source.slice(source.indexOf('label: "previews"'), source.indexOf('label: "previews"') + 200);
+    expect(previewSurface).toContain("clearColor: [0, 0, 0, 0]");
+    preview.dispose();
+  });
 
   it("renders a tile from a main output and composites it to the shared surface", async () => {
     const { backend, host, diagnostics } = await harness();

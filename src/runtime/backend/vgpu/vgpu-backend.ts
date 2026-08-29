@@ -611,6 +611,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (!p.surface) {
         // PresentableCanvas is the structural shape of vgpu's SurfaceCanvas; the cast
         // is what lets tests and transferred OffscreenCanvas objects through unchanged.
+        // Presentation surfaces own their pane (a viewer, a perform window): opaque is
+        // CORRECT here — an output should never show the page through unrendered pixels.
+        // Only the preview overlay surface is transparent (V106).
         p.surface = surface(active.gpu, p.canvas as unknown as SurfaceCanvas, p.label === undefined ? {} : { label: p.label });
       }
       const source = presentationSource(p.outputId);
@@ -707,7 +710,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     if (!active || h.disposed) return;
     try {
       if (!h.surface) {
-        h.surface = surface(active.gpu, h.canvas as unknown as SurfaceCanvas, { label: "previews" });
+        // V106: the preview canvas composites OVER the graph DOM — it must be
+        // transparent where no tile paints. BOTH options are load-bearing: vgpu's
+        // clearColor defaults to opaque black, AND the canvas context defaults to
+        // alphaMode "opaque" (which composites black even under a transparent clear).
+        h.surface = surface(active.gpu, h.canvas as unknown as SurfaceCanvas, {
+          label: "previews",
+          alphaMode: "premultiplied",
+          clearColor: [0, 0, 0, 0],
+        });
       }
       if (!h.program) return;
 
