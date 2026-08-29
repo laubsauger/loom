@@ -443,7 +443,7 @@ V37: tool result = structured data, ⊥ instruction to calling model. 3rd-party 
 V38: capability grant required per class: local file, network, upload, export, recording, component install, project delete. calling tool ⊥ grants permission.
 V39: bus adapter-agnostic. WebMCP | MCP server adapter = transport + schema only, 0 app-logic duplication.
 V40: node delete → incident edges removed|tombstoned deterministically, same result ∀ actors. binds undo/redo RESTORE too, ⊥ only `removeNodes` op — restore ! refuse rather than leave a dangling edge (V65).
-V41: undo actor-local. ⊥ erase other actor work.
+V41: undo actor-local. ⊥ erase other actor work. FULLY-blocked undo|redo → `rejected` + entry RETAINED, ⊥ revision bump, ⊥ "applied" audit for a no-op. blocked ← owner conflict OR referential integrity (V65) alike. partially-blocked → apply rest, consume, push to redo.
 V42: agent activity visible — planning | editing | compiling | awaiting-approval shown in UI. ⊥ invisible background mutation.
 V43: long render | sim cancellable.
 V44: ∀ time-dependent node consumes `FrameEvaluationInput`. ⊥ read `Date.now` | `performance.now` | rAF directly. lint-enforced.
@@ -463,6 +463,8 @@ V70: presentation surface count = N per compiled output, worker-transferable (`O
 V71: expression eval = own grammar ∈ `src/domain/expressions/`, sole engine. whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx (frame names win on collision). ⊥ `eval`, ⊥ `Function`, ⊥ host global. deterministic by construction (V44, V45). `src/ui/controls/expression.ts` = thin wrapper, ⊥ 2nd evaluator.
 V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
 V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
+V62a: `resize()` ! reconcile retained program's descriptors + signature + memory estimate w/ live targets. ∴ recompile @ post-resize size = cache HIT → feedback history SURVIVES viewport resize. compile asking a size live targets ⊥ have → real rebuild. device-loss rebuild reallocates @ post-resize sizes, ⊥ silently reverts to compile-time sizes.
+V62b: REMAINDER — backend still keys rebuild on whole-plan signature for non-resize edits. compiler already emits per-entry `resourceSignatures`; backend ! diff those. until then an unrelated structural edit still wipes feedback.
 V63: ∀ data crossing compile→render boundary structured-clone-safe. ⊥ function, ⊥ DOM ref, ⊥ class instance. `NodeDefinition.compile` emits plain data (WGSL text + binding desc), ⊥ callback.
 V64: presentable surface handed TO runtime, ⊥ owned by React tree. runtime supports N presentation surfaces per compiled output. opening|closing pane ⊥ stalls output.
 V65: undo|redo owner-checked ∀ directions. redo ⊥ clobber other actor newer edit. restore ! preserve referential integrity — ⊥ dangling edge @ missing node (V40 cascade applies to restore, ⊥ only to removeNodes op).
@@ -543,7 +545,7 @@ T83|.|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch 
 T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
-T87|.|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
+T87|.|presentation seam (! add explicit eslint ignore — the ONE legitimate `window`/`document` user ∈ src/runtime, V63 lint bans the rest): `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
@@ -593,7 +595,11 @@ T134|.|compiler: flatten component instances, preserve source path ∀ diagnosti
 T135|.|recursion detection — direct + indirect — @ instantiate, save, load|V83
 T136|x|component version pin + explicit upgrade migration|V84,V10
 T137|x|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
-T138|.|fully-blocked undo ⊥ consume history entry — today it empties, bumps revision, audits "applied" and pops. reject without consuming|V41,V65
+T138|x|fully-blocked undo ⊥ consume history entry — today it empties, bumps revision, audits "applied" and pops. reject without consuming|V41,V65
+T140|x|`resize()` reconciles descriptors + signature + memory estimate w/ live targets|V62a,V21
+T141|x|`compile()`|`loop()` await in-flight recovery, ⊥ throw "before initialize()"|V23,V98
+T142|x|compiler emits `compiler/memory-budget` warning vs `settings.limits.memoryBudgetBytes`; shared `estimateResourceBytes` ∈ plan.ts|V24
+T143|.|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -610,7 +616,7 @@ T73|x|node Common section: resolution select (auto\|project\|input\|1/8..8x\|cus
 T39|x|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
 T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
-T41|.|GPU timer spans, per-pass ms, performance tab, resource count + mem estimate|V16,V24
+T41|.|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes` + `compiler/memory-budget` warning|V16,V24
 T42|.|metrics pipe outside document store, ≤10Hz UI tick|V16
 T68|.|export interface = sole readback surface. screenshot/PNG v1|V48,V7
 T54|.|read tools: get_project_summary, get_graph, get_selection, list_node_definitions, get_node_definition, get_node, get_diagnostics, get_runtime_metrics|I.tools,V37
@@ -689,7 +695,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
