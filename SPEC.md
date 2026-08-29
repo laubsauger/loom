@@ -583,16 +583,16 @@ T124|.|`TextureToAttribute` bridge node (TOP→POP)|V13
 T125|.|`read_points` agent tool — windowed, via export iface|V37,V48
 T126|x|context menu engine: `MenuTarget` resolution, items ← bus registry, keys ← keymap, 1 root per surface|V78,V29,V55
 T127|x|menus for canvas (add node @ cursor, paste, layout), node (bypass, mute, preview, rename, color, delete, dive in), port (disconnect, insert conversion), edge (delete, reroute), parameter (reset, copy path, publish)|V78
-T128|.|`GraphComponentDefinition` + instance type + zod + component registry|V79,V84
-T129|.|save-selection-as-component + instantiate (linked \| detached copy)|V79,V83
-T130|.|enter/exit component, breadcrumb trail, nested editing|V82
-T131|.|expose internal port → external component port|V79
-T132|.|publish parameter: internal param → component param page, N targets, re-authored range/label|V80
-T133|.|`parent.<key>` scope resolution through the resolver, ∀ nesting depth|V81,V61
+T128|x|`GraphComponentDefinition` + instance type + zod + component registry|V79,V84
+T129|x|save-selection-as-component + instantiate (linked \| detached copy)|V79,V83
+T130|x|enter/exit component, breadcrumb trail, nested editing|V82
+T131|x|expose internal port → external component port|V79
+T132|x|publish parameter: internal param → component param page, N targets, re-authored range/label|V80
+T133|x|`parent.<key>` scope resolution through the resolver, ∀ nesting depth|V81,V61
 T134|.|compiler: flatten component instances, preserve source path ∀ diagnostics + timing|V82
 T135|.|recursion detection — direct + indirect — @ instantiate, save, load|V83
-T136|.|component version pin + explicit upgrade migration|V84,V10
-T137|.|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
+T136|x|component version pin + explicit upgrade migration|V84,V10
+T137|x|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
 T138|.|fully-blocked undo ⊥ consume history entry — today it empties, bumps revision, audits "applied" and pops. reject without consuming|V41,V65
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
