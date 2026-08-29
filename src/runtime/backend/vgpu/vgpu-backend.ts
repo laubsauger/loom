@@ -274,17 +274,35 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
   }
 
-  function restartLoops(): void {
+  /** Starts one registration on the live session, honoring its scheduler (T109). */
+  function startLoop(registration: LoopRegistration): void {
     const gpu = session?.gpu;
-    if (!gpu) return;
-    for (const registration of loops) {
-      if (registration.stopped || registration.handle) continue;
-      registration.handle = frameLoop(
-        gpu,
-        (f) => runFrame(f, registration.onFrame),
-        registration.settings,
-      );
+    if (!gpu || registration.stopped || registration.handle) return;
+
+    if (registration.settings.scheduler === "timer") {
+      // No rAF: frames driven off an interval through the same frame path a rAF tick
+      // takes. This is the worker / Node realtime loop (§V49) — frame(gpu, …) is the
+      // whole mechanism, the scheduler is just who calls it.
+      const fps = registration.settings.fps ?? 60;
+      const interval = setInterval(() => {
+        if (halted || disposed || registration.stopped) return;
+        const active = session?.gpu;
+        if (!active) return;
+        frame(active, (f) => runFrame(f, registration.onFrame));
+      }, 1000 / fps);
+      registration.handle = {
+        stop() {
+          clearInterval(interval);
+        },
+      };
+      return;
     }
+
+    registration.handle = frameLoop(gpu, (f) => runFrame(f, registration.onFrame), registration.settings);
+  }
+
+  function restartLoops(): void {
+    for (const registration of loops) startLoop(registration);
   }
 
   async function rebuild(): Promise<void> {
@@ -792,9 +810,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         stopped: false,
       };
       loops.add(registration);
-      if (session && !halted) {
-        registration.handle = frameLoop(session.gpu, (f) => runFrame(f, registration.onFrame), settings);
-      }
+      if (session && !halted) startLoop(registration);
       return {
         stop() {
           registration.stopped = true;

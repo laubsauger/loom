@@ -50,12 +50,13 @@ describe("core catalogue (T70, T40)", () => {
       "screen",
       "difference",
       "mask",
+      "feedback",
     ]);
   });
 
   it("groups every node into a library category", () => {
     expect(new Set(coreNodeDefinitions.map((definition) => definition.category))).toEqual(
-      new Set(["generator", "filter", "color", "composite"]),
+      new Set(["generator", "filter", "color", "composite", "temporal"]),
     );
   });
 

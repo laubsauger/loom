@@ -7,8 +7,15 @@ export interface FrameLoopControl {
 }
 
 export interface FrameLoopSettings {
-  /** Cap the scheduler. Omit to run at display rate. */
+  /** Cap the scheduler. Omit to run at display rate (raf) or 60 (timer). */
   readonly fps?: number;
+  /**
+   * How ticks are driven (T109). "raf" (default) uses the display clock and only runs
+   * where rAF exists; "timer" drives frames off setInterval, which is what a worker
+   * without rAF, a Node process, or a backgrounded tab that must keep rendering needs.
+   * Same frame path either way — the scheduler is a transport detail (§V49).
+   */
+  readonly scheduler?: "raf" | "timer";
 }
 
 /**

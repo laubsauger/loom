@@ -503,6 +503,54 @@ describe("vgpu backend — plan handling", () => {
   });
 });
 
+describe("vgpu backend — timer-driven loop (T109, §V49)", () => {
+  it("drives frames off setInterval through the same frame path as rAF", async () => {
+    const { backend, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+
+    let ticks = 0;
+    const control = backend.loop(
+      () => {
+        ticks += 1;
+        backend.render(plan, frameInputs(ticks));
+      },
+      { scheduler: "timer", fps: 200 },
+    );
+    await until(() => ticks >= 3, "timer loop ticks");
+    control.stop();
+
+    const settled = backend.status.framesSubmitted;
+    expect(settled).toBeGreaterThanOrEqual(3);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    // Stopped means stopped: no more ticks arrive afterwards.
+    const after = ticks;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(ticks).toBe(after);
+  });
+
+  it("a timer loop registered mid-recovery starts when the device returns", async () => {
+    const { backend, host } = await harness();
+    const plan = await backend.compile(fixturePlan());
+
+    const generation = backend.status.deviceGeneration;
+    host.loseDevice();
+    let ticks = 0;
+    // Whether this lands mid-recovery or just after, it must end up running.
+    const control = backend.loop(
+      () => {
+        ticks += 1;
+        backend.render(plan, frameInputs(ticks));
+      },
+      { scheduler: "timer", fps: 200 },
+    );
+    await until(() => backend.status.deviceGeneration > generation, "device rebuild");
+    await until(() => ticks > 0, "loop running after recovery");
+    control.stop();
+    expect(ticks).toBeGreaterThan(0);
+  });
+});
+
 describe("vgpu backend — presentation seam (T87, §V64/§V70)", () => {
   /** A structural canvas whose webgpu context textures come from the live mock device. */
   function stubCanvas(host: MockGpuHost) {
