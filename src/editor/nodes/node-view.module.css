@@ -26,8 +26,23 @@
   border-color: var(--line-hot);
 }
 
-.selected {
+/*
+  `.node.selected`, not `.selected`: the bare class is specificity (0,1,0) and `.node:hover`
+  is (0,2,0), so hover REPLACED the selection border regardless of source order — pointing
+  at a selected node made it look deselected. Selection is state and must outrank a
+  transient pointer cue.
+*/
+.node.selected,
+.node.selected:hover {
   border-color: var(--signal);
+}
+
+/*
+  Hovering a selected node still needs feedback, so it gets a ring instead of taking the
+  border. Both facts are visible at once rather than one overwriting the other.
+*/
+.node.selected:hover {
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--signal) 45%, transparent);
 }
 
 /* The status hue is carried on the top edge as a hairline: readable at any zoom,
