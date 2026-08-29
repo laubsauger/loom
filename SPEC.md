@@ -426,13 +426,26 @@ interface RuntimeDiagnostic {
 ```wgsl
 @group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
-struct Params { time: f32, amount: f32, };
+
+// Shared frame block — the runtime fills it from FrameEvaluationInput every frame.
+// TIME LIVES HERE AND NOWHERE ELSE (V44).
+@group(0) @binding(3) var<uniform> frameU: SharedFrame;
+
+struct Params { amount: f32 };
 @group(0) @binding(2) var<uniform> params: Params;
+
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return textureSample(inputTexture, inputSampler, uv);
 }
 ```
+`Params` ⊥ carries `time`. per-pass uniform block written @ compile + on param change
+(V5, V21) ∴ structurally ⊥ carry a per-frame clock — a `time` field there = a value that
+silently never advances. `frameU.time` = its only home.
+
+binding is GATED, ⊥ unconditional: runtime binds by NAME and hard-errors on a name the
+shader ⊥ declare (`VGPU-RING1-UNSUPPORTED`). `compile()` scans the source and binds only
+what it asked for — a kernel declaring neither block (E2 Gray-Scott) ! still compile.
 
 ### ui: app shell panes
 resizable + collapsible, drag dividers, dbl-click divider → reset, layout persisted `localStorage`.
@@ -683,8 +696,8 @@ T161|x|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this 
 T162|x|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
 T163|x|backend GPU timing surface — `timer(gpu)` after init when `timestampQuery`, `timer: t.span(pass.id)` ∈ `f.pass()`, forward `t.onResults`. span name = pass id. ⊥ exists today ∴ T41 reads "unavailable" everywhere|V86,V12
 T164|x|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
-T165|.|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
-T166|.|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
+T165|x|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
+T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|.|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T169|.|`GraphStore.replace(graph, {clearHistory})` committing through the same path as `apply` + a `project.load` command, so open is in-place w/ an actor. today open = teardown+rebuild ∴ undo history ⊥ survives|V29,V30,V31,V41
@@ -831,6 +844,6 @@ B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ p
 B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159 ✓
 B8|2026-08-29|TWO parameter eval paths ∴ V61 already drifted: `src/editor/inspector/parameter-resolver.ts` (decodes display→linear) & `src/compiler/validate.ts::resolveParameterValues` (⊥ decodes). T148's fix reaches the INSPECTOR, ⊥ the GPU — rendered color still wrong|T168
 B5|2026-08-29|`data` space unshippable — `colorSpaceForFormat` derives `data` only ← `r32float`, but plan binds 1 shared LINEAR sampler ∀ textures & r32float ⊥ filterable on Tier B w/o `float32-filterable`. ∴ a V56-flagged displacement field ⊥ renders|T83+T150 ✓
-B6|2026-08-29|Output node target size/format follows its INPUT, ⊥ project. `outputNode` declares no resolution/format policy; its own doc says project surface. E5 presents 2048² ⊥ project 1280×720|T165
-B7|2026-08-29|`customWgsl.compile()` emits ⊥ `uniformBinding`/`sharedBinding` ∴ kernel ⊥ receive uniforms or time. shipped default `source` DECLARES a `params` block bound to nothing = trap for anyone editing it|T166
+B6|2026-08-29|Output node target size/format follows its INPUT, ⊥ project. `outputNode` declares no resolution/format policy; its own doc says project surface. E5 presents 2048² ⊥ project 1280×720|T165 ✓
+B7|2026-08-29|`customWgsl.compile()` emits ⊥ `uniformBinding`/`sharedBinding` ∴ kernel ⊥ receive uniforms or time. shipped default `source` DECLARES a `params` block bound to nothing = trap for anyone editing it|T166 ✓
 B4|2026-08-29|⊥ Dawn host ∈ `src/runtime/backend/vgpu/` ∴ ⊥ V3-clean way to get a headless device. V47/T67/T69 were untestable; parity harness had to `eslint-disable` V3|T160 ✓

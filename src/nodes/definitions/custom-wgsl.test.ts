@@ -5,21 +5,15 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { customWgslNode } from "./custom-wgsl.ts";
-import { CUSTOM_WGSL_DEFAULT_SOURCE } from "../shaders/custom-wgsl-default.wgsl.ts";
+import { customWgslNode, declaresUniformBlock } from "./custom-wgsl.ts";
+import {
+  CUSTOM_WGSL_DEFAULT_SOURCE,
+  CUSTOM_WGSL_SHARED_BINDING,
+  CUSTOM_WGSL_UNIFORM_BINDING,
+} from "../shaders/custom-wgsl-default.wgsl.ts";
+import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 
 /** CustomWGSL — user-authored fragment effect (T15). */
-
-// The v1 contract, §I of SPEC.md, copied here independently of the shader module so a
-// change to either one shows up as a failing equality rather than a tautology.
-const CONTRACT_SOURCE = `@group(0) @binding(0) var inputSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
-struct Params { time: f32, amount: f32, };
-@group(0) @binding(2) var<uniform> params: Params;
-@fragment
-fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSample(inputTexture, inputSampler, uv);
-}`;
 
 function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileContext {
   return {
@@ -29,6 +23,16 @@ function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileCon
     sampler: "sampler:linear",
     parameters: { [SHADER_SOURCE_PARAMETER]: CUSTOM_WGSL_DEFAULT_SOURCE },
     ...overrides,
+  };
+}
+
+function firstPass(context: NodeCompileContext) {
+  const pass = customWgslNode.compile(context).passes[0];
+  return pass as {
+    shader?: string;
+    uniforms?: Record<string, unknown>;
+    uniformBinding?: string;
+    sharedBinding?: string;
   };
 }
 
@@ -56,10 +60,11 @@ describe("CustomWGSL node (T15)", () => {
     expect(parameter?.compileTime).toBe(true);
   });
 
-  it("defaults to the v1 custom WGSL contract verbatim (§I)", () => {
-    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toBe(CONTRACT_SOURCE);
+  it("ships the default source as the shader parameter's default", () => {
     const parameter = customWgslNode.parameters[SHADER_SOURCE_PARAMETER];
-    expect(parameter?.type === "string" ? parameter.default : undefined).toBe(CONTRACT_SOURCE);
+    expect(parameter?.type === "string" ? parameter.default : undefined).toBe(
+      CUSTOM_WGSL_DEFAULT_SOURCE,
+    );
   });
 
   it("compiles the current source into a plan-shaped pass bound to its connected input", () => {
@@ -99,5 +104,121 @@ describe("CustomWGSL node (T15)", () => {
     const compiled = customWgslNode.compile(contextFor({ inputs: {} }));
     expect(compiled.passes).toEqual([]);
     expect(compiled.diagnostics?.[0]?.code).toBe("node.compile.missingResource");
+  });
+});
+
+/**
+ * B7 / T166 — a kernel receives uniforms AND time, and the default declares nothing that
+ * is not bound.
+ *
+ * The old failure had two halves and both are asserted here. `compile()` emitted no
+ * `uniformBinding` and no `sharedBinding`, so `params` and the shared frame block were
+ * never written; and the shipped default declared a `Params { time, amount }` block anyway,
+ * so the first edit to it read zeroes with nothing to blame.
+ */
+describe("custom kernels receive uniforms and time (B7/T166)", () => {
+  it("binds this node's parameters as `params` on the emitted pass", () => {
+    const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: CUSTOM_WGSL_DEFAULT_SOURCE, amount: 0.25 } }));
+    expect(pass.uniformBinding).toBe(CUSTOM_WGSL_UNIFORM_BINDING);
+    expect(pass.uniforms).toEqual({ amount: 0.25 });
+  });
+
+  /**
+   * §V44: the shared frame block is the ONLY way time reaches a kernel. Without
+   * `sharedBinding` the runtime does not bind it at all — `frameU.time` stays 0 forever and
+   * an animated custom shader is simply impossible.
+   */
+  it("binds the shared frame block so `frameU.time` is real", () => {
+    expect(firstPass(contextFor()).sharedBinding).toBe(CUSTOM_WGSL_SHARED_BINDING);
+  });
+
+  it("exposes `amount` as a runtime parameter, not a compile-time one (§V5)", () => {
+    const parameter = customWgslNode.parameters["amount"];
+    expect(parameter?.type).toBe("number");
+    expect(parameter?.compileTime).toBeFalsy();
+    expect(parameter?.type === "number" ? parameter.default : undefined).toBe(1);
+  });
+
+  /**
+   * The structural version of "the default does not lie": every uniform block the default
+   * source DECLARES is a block the compiled pass BINDS, and vice versa. Read off the source
+   * with the node's own reader rather than eyeballed against a copy of the text, so editing
+   * one without the other fails here.
+   */
+  it("declares exactly the uniform blocks the compiled pass binds", () => {
+    const pass = firstPass(contextFor());
+    const declared = ["frameU", "params"].filter((name) =>
+      declaresUniformBlock(CUSTOM_WGSL_DEFAULT_SOURCE, name),
+    );
+    const bound = [pass.sharedBinding, pass.uniformBinding].filter(
+      (name): name is string => name !== undefined,
+    );
+    expect(declared.sort()).toEqual(bound.sort());
+    expect(declared).toHaveLength(2);
+  });
+
+  /**
+   * `Params.time` is gone on purpose. A per-pass uniform block is written at compile time
+   * and on parameter change (§V5, §V21) — it cannot carry a per-frame clock, and the node
+   * has nothing to put there. Leaving the field would rebuild the same trap.
+   */
+  it("does not offer a `time` field in its own uniform block", () => {
+    expect(firstPass(contextFor()).uniforms).not.toHaveProperty("time");
+    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain("frameU.time");
+  });
+
+  /**
+   * The reason the bindings are gated rather than always emitted: the runtime matches by
+   * NAME and refuses a value with no declaration. E2's Gray-Scott kernel declares neither
+   * block — everything it needs is a compile-time `const` — and handing it a `params`
+   * buffer would break a project that renders fine today.
+   */
+  it("omits a binding the user's own source never declares", () => {
+    const bare = `@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+}`;
+    const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: bare } }));
+    expect(pass.uniformBinding).toBeUndefined();
+    expect(pass.uniforms).toBeUndefined();
+    expect(pass.sharedBinding).toBeUndefined();
+  });
+
+  it("reads a declaration, not a mention of the name in a comment", () => {
+    const commented = `// params: not declared, just discussed
+/* var<uniform> params: Params; */
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+}`;
+    expect(declaresUniformBlock(commented, "params")).toBe(false);
+    expect(firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: commented } })).uniformBinding).toBeUndefined();
+  });
+
+  it("binds a block a hand-written kernel declares for itself", () => {
+    const mine = `struct Params { amount: f32, };
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> params : Params;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSampleLevel(inputTexture, inputSampler, uv, 0.0) * params.amount;
+}`;
+    const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: mine, amount: 0.5 } }));
+    expect(pass.uniformBinding).toBe("params");
+    expect(pass.uniforms).toEqual({ amount: 0.5 });
+    expect(pass.sharedBinding).toBeUndefined();
+  });
+
+  /** The default's binding names have to match the block the runtime actually fills (§T16). */
+  it("names the shared block with the struct the runtime declares", () => {
+    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain(SHARED_UNIFORMS_WGSL);
+    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain(
+      `var<uniform> ${CUSTOM_WGSL_SHARED_BINDING}: SharedFrame;`,
+    );
   });
 });

@@ -14,9 +14,21 @@ import { OUTPUT_PASSTHROUGH_WGSL } from "../shaders/output-passthrough.wgsl.ts";
  * unconnected filter node also has no outputs wired up, and that one IS meant to be
  * pruned. Inferring from port shape would conflate the two.
  *
- * No `resolutionPolicy`/`formatPolicy`: those describe how a node resolves its own output
- * ports, and Output has none — its render target is the project's designated output
- * surface, assigned by whatever owns `ProjectSettings`, not by a per-node policy here.
+ * RESOLUTION AND FORMAT (B6/T165, §V21, §V50, §V51). Output HAS no output ports, but it
+ * does have a render target, and the compiler sizes that target with the same propagation
+ * every other node goes through (the sink's target is materialized under the reserved
+ * `$target` port). Declaring no policy therefore did not mean "the project decides" — it
+ * meant "fall through to the primary input", which is how E5 came to present a 2048x2048
+ * surface for a 1280x720 project. The policy below is the node's own doc made executable:
+ * the target IS the project's designated output surface, so it says `{ kind: "project" }`
+ * for both size and format.
+ *
+ * A per-instance override still wins, deliberately: `resolveNodeResolution` /
+ * `resolveNodeFormat` put the instance override ahead of the definition policy, and §V50
+ * says the user may override any node. Rendering the final image at a different size from
+ * the project (a downscaled preview surface, an oversampled still for export) is a real
+ * thing to want. What changes is only the DEFAULT — the project, not whatever happens to
+ * be plugged in.
  */
 export const outputNode: NodeDefinition = {
   type: "output",
@@ -31,6 +43,10 @@ export const outputNode: NodeDefinition = {
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [],
   parameters: {},
+  // The project surface, not the input (B6/T165). An instance override still takes
+  // precedence over both (§V50, §V51) — see the module doc.
+  resolutionPolicy: { kind: "project" },
+  formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
     const { nodeId, inputs, target } = readCompileInputs(context);
     const source = inputs["input"];

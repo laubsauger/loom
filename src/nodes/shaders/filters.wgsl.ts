@@ -5,27 +5,45 @@ import { WGSL_CHANNEL, WGSL_EXTEND } from "./common.wgsl.ts";
  */
 
 /**
- * Blur — TD's Blur TOP, as a SINGLE pass.
+ * Blur — TD's Blur TOP, as ONE AXIS of a separable pass pair (T147, T40).
  *
- * A separable Gaussian is two passes with an intermediate target between them, and a node
- * definition cannot allocate one: the compiler assigns exactly one resource per declared,
- * materialized output port (§V8, §V29 of the resource model), and a scratch target is not
- * expressible in the plan IR today. So this samples a fixed 9x9 grid whose SPACING scales
- * with the filter size, rather than a fixed-radius kernel.
+ * `dir` selects the axis, so the same shader is the horizontal leg (writing the node's
+ * scratch target) and the vertical leg (reading it and writing the output). A 2D Gaussian
+ * factorises exactly — G2(x,y) = G1(x) * G1(y) — and so does a box, so two 1D passes are
+ * not an approximation of the 2D kernel, they ARE it.
  *
- * What that costs: 81 taps regardless of size (a separable pair would be 2 * (2r+1)), and
- * visible under-sampling once the size grows past a few dozen pixels, because the grid
- * stays 9x9 while the spacing grows. What it buys: a blur that exists, is correct at the
- * sizes people actually use for a preview, and needs nothing from another track.
+ * WHAT THIS REPLACED, and why the replacement is not just "faster". The single-pass
+ * version sampled a fixed 9x9 grid whose SPACING grew with the filter size: 81 taps at
+ * every size, which meant unit spacing at size 4 and 16-pixel gaps at size 64. Past a few
+ * dozen pixels it stopped being a blur and started being a ghosting grid, silently. The
+ * tap COUNT here is what scales instead, and the spacing stays at or below one pixel until
+ * the cap is hit.
  *
- * The fix when it matters is a scratch-target kind in the plan IR, at which point this
- * becomes two passes and the shader keeps its structure.
+ * TAP BUDGET, stated honestly. `taps` is taps per side, capped at 64 by the node, and
+ * `stride` is the pixel distance between them. The node picks a span of 3 sigma for the
+ * Gaussian (which is where a Gaussian has effectively ended) and the declared radius for
+ * the box, then divides that span by the tap count. So:
+ *
+ *   - stride <= 1 px, i.e. the kernel is fully sampled, up to filter size 42 (Gaussian)
+ *     and size 64 (box);
+ *   - above that the stride widens as span/64, and the result is a resampled
+ *     approximation — but it degrades linearly from a 129-tap-per-axis baseline rather
+ *     than from a 9-tap one.
+ *
+ * Cost is now proportional to the size rather than fixed: the default size of 8 takes 2 x
+ * 25 taps, where the old shader always took 81.
  */
 export const BLUR_FRAGMENT_WGSL = `${WGSL_EXTEND}
 
+// dir    (1,0) on the horizontal pass, (0,1) on the vertical one.
+// stride pixels between adjacent taps; <= 1 until the node's tap cap is reached.
+// taps   taps per side, so the loop runs 2 * taps + 1 times.
 struct Params {
   texel: vec2f,
+  dir: vec2f,
   size: f32,
+  stride: f32,
+  taps: f32,
   ftype: f32,
   extend: f32,
 };
@@ -35,24 +53,25 @@ struct Params {
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let radius = max(params.size, 0.0);
-  let spacing = radius / 4.0;
-  let sigma = max(radius * 0.5, 1e-4);
+  let n = i32(params.taps + 0.5);
+  // One pixel along this pass's axis, in uv units. The other axis contributes nothing.
+  let step = params.dir * params.texel;
+  // Same relation the single-pass version used, so an existing project blurs by the same
+  // amount. The node's tap budget is derived from the SAME relation on the CPU.
+  let sigma = max(max(params.size, 0.0) * 0.5, 1e-4);
   let falloff = -0.5 / (sigma * sigma);
 
   var acc = vec4f(0.0);
   var total = 0.0;
-  for (var j = -4; j <= 4; j = j + 1) {
-    for (var i = -4; i <= 4; i = i + 1) {
-      let offsetPx = vec2f(f32(i), f32(j)) * spacing;
-      var weight = 1.0;
-      if (params.ftype < 0.5) {
-        weight = exp(dot(offsetPx, offsetPx) * falloff);
-      }
-      let tap = sampleExtend(inputTexture, inputSampler, uv + (offsetPx * params.texel), params.extend);
-      acc = acc + (tap * weight);
-      total = total + weight;
+  for (var i = -n; i <= n; i = i + 1) {
+    let offsetPx = f32(i) * params.stride;
+    var weight = 1.0;
+    if (params.ftype < 0.5) {
+      weight = exp((offsetPx * offsetPx) * falloff);
     }
+    let tap = sampleExtend(inputTexture, inputSampler, uv + (step * offsetPx), params.extend);
+    acc = acc + (tap * weight);
+    total = total + weight;
   }
   return acc / max(total, 1e-6);
 }`;

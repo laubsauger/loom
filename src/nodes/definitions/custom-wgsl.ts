@@ -3,10 +3,17 @@ import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { CUSTOM_WGSL_DEFAULT_SOURCE } from "../shaders/custom-wgsl-default.wgsl.ts";
+import { readNumber } from "./parameter-readers.ts";
+import {
+  CUSTOM_WGSL_DEFAULT_SOURCE,
+  CUSTOM_WGSL_SAMPLER_BINDING,
+  CUSTOM_WGSL_SHARED_BINDING,
+  CUSTOM_WGSL_TEXTURE_BINDING,
+  CUSTOM_WGSL_UNIFORM_BINDING,
+} from "../shaders/custom-wgsl-default.wgsl.ts";
 
 /**
- * CustomWGSL — the user-authored fragment effect (T15; §I custom WGSL node contract v1).
+ * CustomWGSL — the user-authored fragment effect (T15, T166; §I custom WGSL node contract).
  *
  * One texture input, one texture output, resolution and format inherited from that input
  * — a filter has nowhere else sensible to get either from. Its shader text lives under
@@ -16,13 +23,42 @@ import { CUSTOM_WGSL_DEFAULT_SOURCE } from "../shaders/custom-wgsl-default.wgsl.
  * drift apart. `source` is `compileTime: true` — editing it changes the shader
  * structurally and must force a rebuild, never a uniform-only update (§V5).
  *
- * `compile()` treats the current source as opaque, arbitrary WGSL: it only wires the
- * conventional `inputTexture`/`inputSampler` bindings the v1 contract names, and does not
- * invent a per-node uniform block for the contract's own `Params { time, amount }` — the
- * default shader's function body does not read `params` at all, so nothing needs to
- * supply it yet. Feeding real values into a user-declared uniform block (once one is
- * introspected from source) is compiler work, not this node's.
+ * WHAT A KERNEL RECEIVES (B7/T166). Four bindings, all matched by NAME:
+ *
+ *   `inputSampler` / `inputTexture` — the connected input.
+ *   `frameU: SharedFrame`           — time, deltaTime, frameIndex, randomSeed,
+ *                                     resolution, pointer, straight from
+ *                                     `FrameEvaluationInput` (§V44). The ONLY clock a
+ *                                     kernel can reach.
+ *   `params: Params`                — this node's own parameters. `amount` today.
+ *
+ * Previously this node emitted neither `uniformBinding` nor `sharedBinding`, so the last
+ * two arrived as nothing at all while the shipped default source cheerfully declared a
+ * `Params` block for them. Both are wired now.
+ *
+ * DECLARED, THEN BOUND — never bound blindly. The runtime binds by name and refuses a
+ * value with no matching declaration in the shader, so a kernel that does not declare
+ * `params` (E2's Gray-Scott kernel is exactly that: all its constants are compile-time
+ * `const`s) must not be handed one. `declaresUniformBlock` reads the source for the
+ * declaration and the pass carries only what the source asked for. That check is a
+ * deterministic scan of the text, not a WGSL parser: a full parse belongs with real
+ * introspection — feeding a user-DECLARED struct's own fields — which is compiler work.
  */
+
+/** Comments are stripped before scanning so a mention of `params` in prose is not a declaration. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
+/**
+ * True when the source really declares `var<uniform> <name>`. Exported for the node's own
+ * tests: the claim "the default source declares nothing that is not bound" is only worth
+ * making if it is checked with the same reader the compile path uses.
+ */
+export function declaresUniformBlock(source: string, name: string): boolean {
+  return new RegExp(`var\\s*<\\s*uniform\\s*>\\s*${name}\\s*:`).test(stripComments(source));
+}
+
 export const customWgslNode: NodeDefinition = {
   type: "customWgsl",
   version: 1,
@@ -38,6 +74,20 @@ export const customWgslNode: NodeDefinition = {
       default: CUSTOM_WGSL_DEFAULT_SOURCE,
       multiline: true,
       compileTime: true,
+    },
+    /**
+     * The one generic scalar the contract's `Params` block carries. It has no meaning of
+     * its own — the kernel decides what it scales — which is why it is `amount` and not
+     * something that implies a unit. NOT `compileTime`: changing it is a uniform write,
+     * not a rebuild (§V5), which is the whole reason a kernel wants a uniform at all.
+     */
+    amount: {
+      type: "number",
+      label: "Amount",
+      default: 1,
+      min: 0,
+      max: 1,
+      description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it.",
     },
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
@@ -59,8 +109,17 @@ export const customWgslNode: NodeDefinition = {
       id: `${nodeId}:custom`,
       shader,
       target,
-      textures: [{ binding: "inputTexture", resourceId: source.resource }],
-      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      textures: [{ binding: CUSTOM_WGSL_TEXTURE_BINDING, resourceId: source.resource }],
+      samplers: [{ binding: CUSTOM_WGSL_SAMPLER_BINDING, resourceId: source.sampler }],
+      ...(declaresUniformBlock(shader, CUSTOM_WGSL_UNIFORM_BINDING)
+        ? {
+            uniformBinding: CUSTOM_WGSL_UNIFORM_BINDING,
+            uniforms: { amount: readNumber(parameters, "amount", 1) },
+          }
+        : {}),
+      ...(declaresUniformBlock(shader, CUSTOM_WGSL_SHARED_BINDING)
+        ? { sharedBinding: CUSTOM_WGSL_SHARED_BINDING }
+        : {}),
       nodeId,
       label: "Custom WGSL",
     };

@@ -4,6 +4,7 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import type { PortId } from "../../domain/types/ids.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import type { PlanReadResult } from "../../runtime/backend/plan.ts";
+import { scratchResourceId } from "../../compiler/resources.ts";
 
 /**
  * Fixtures for the catalogue's unit tests (T70, T40).
@@ -24,6 +25,12 @@ export interface ContextOptions {
   readonly outputs?: ReadonlyArray<PortId>;
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
   readonly resolution?: readonly [number, number];
+  /**
+   * Scratch keys the node declares (T147). The compiler materializes one target per key at
+   * `scratchResourceId(nodeId, key)`; `readNodePlan` declares the same resources so a
+   * multi-pass node's plan can be read back the way the real compiler's would be.
+   */
+  readonly scratch?: ReadonlyArray<string>;
 }
 
 export const TEST_SAMPLER_ID = "sampler:linear";
@@ -88,6 +95,12 @@ export function readNodePlan(
       ...(options.inputs ?? []).map((portId) => ({
         kind: "target" as const,
         id: inputResourceId(portId),
+        size: options.resolution ?? ([640, 480] as const),
+        format: "rgba16float" as const,
+      })),
+      ...(options.scratch ?? []).map((key) => ({
+        kind: "target" as const,
+        id: scratchResourceId(options.nodeId ?? "n1", key),
         size: options.resolution ?? ([640, 480] as const),
         format: "rgba16float" as const,
       })),

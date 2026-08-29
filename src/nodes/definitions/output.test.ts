@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeCompileContext } from "../../domain/types/node-definition.ts";
-import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
+import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/types/backend.ts";
+import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
+import { compileGraph } from "../../compiler/index.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { outputNode } from "./output.ts";
@@ -78,6 +80,132 @@ describe("Output node (T15)", () => {
     const compiled = outputNode.compile(contextFor({ inputs: {} }));
     expect(compiled.passes).toEqual([]);
     expect(compiled.diagnostics?.[0]?.code).toBe("node.compile.missingResource");
+  });
+});
+
+/**
+ * B6 / T165 — the Output node targets the PROJECT surface.
+ *
+ * Through the real compiler rather than against the manifest fields, because the defect
+ * was never visible in the manifest: `outputNode` simply declared no policy, and
+ * `resolveNodeResolution` / `resolveNodeFormat` fall through to the primary input when
+ * neither an override nor a policy is present. The graph below is E5's shape in miniature
+ * — an oversized source feeding a 1280x720 project — and it is the plan's SINK TARGET, not
+ * the node's manifest, that has to come out at the project's size and format.
+ */
+describe("output targets the project surface, not its input (B6/T165)", () => {
+  const settings: ProjectSettings = {
+    outputResolution: { width: 1280, height: 720 },
+    workingFormat: "rgba8unorm",
+    randomSeed: 1,
+    previewLongEdge: 192,
+    previewFps: 20,
+    limits: {
+      maxResolution: 4096,
+      maxDispatch: 65535,
+      maxBufferBytes: 268_435_456,
+      memoryBudgetBytes: 1_073_741_824,
+    },
+  };
+
+  const capabilities: BackendCapabilities = {
+    tier: "B",
+    features: [],
+    formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float", "depth24plus"],
+    timestampQuery: false,
+    limits: { maxTextureDimension2D: 8192 },
+  };
+
+  /** A generator pinned well away from the project, so "followed the input" is unmistakable. */
+  function graphWith(override?: {
+    resolution?: GraphNode["resolution"];
+    format?: GraphNode["format"];
+  }): GraphDocument {
+    const out: GraphNode = {
+      id: "out",
+      type: "output",
+      definitionVersion: 1,
+      position: { x: 200, y: 0 },
+      parameters: {},
+      ...(override?.resolution === undefined ? {} : { resolution: override.resolution }),
+      ...(override?.format === undefined ? {} : { format: override.format }),
+    };
+    return {
+      revision: 1,
+      nodes: {
+        source: {
+          id: "source",
+          type: "solid",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: {},
+          resolution: { mode: "fixed", width: 2048, height: 2048 },
+          format: { mode: "fixed", format: "rgba16float" },
+        },
+        out,
+      },
+      edges: {
+        e1: {
+          id: "e1",
+          source: { nodeId: "source", portId: "out" },
+          target: { nodeId: "out", portId: "input" },
+        },
+      },
+      groups: {},
+    };
+  }
+
+  const compile = (graph: GraphDocument) =>
+    compileGraph({
+      graph,
+      settings,
+      registry: createNodeRegistry([outputNode, solidNode]).view(),
+      capabilities,
+    });
+
+  /** The sink has no output ports, so its target lives under the reserved `$target` id. */
+  function sinkTarget(plan: ReturnType<typeof compile>) {
+    const binding = plan.outputs.find((entry) => entry.nodeId === "out");
+    if (binding === undefined) throw new Error("the Output node materialized no target");
+    return binding;
+  }
+
+  it("sizes and formats its target from the project even when its input differs", () => {
+    const plan = compile(graphWith());
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    // The input really is the other thing, so this is not passing by coincidence.
+    const source = plan.outputs.find((entry) => entry.nodeId === "source");
+    expect(source?.size).toEqual([2048, 2048]);
+    expect(source?.format).toBe("rgba16float");
+
+    expect(sinkTarget(plan).size).toEqual([1280, 720]);
+    expect(sinkTarget(plan).format).toBe("rgba8unorm");
+  });
+
+  /** §V50/§V51: a policy is the DEFAULT. The user may still pin the presented surface. */
+  it("still lets a per-instance override win over the project default", () => {
+    const plan = compile(
+      graphWith({
+        resolution: { mode: "fixed", width: 960, height: 540 },
+        format: { mode: "fixed", format: "rgba16float" },
+      }),
+    );
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(sinkTarget(plan).size).toEqual([960, 540]);
+    expect(sinkTarget(plan).format).toBe("rgba16float");
+  });
+
+  /** An override of `auto` is "no opinion", and must fall back to the policy, not the input. */
+  it("treats an auto override as no override at all", () => {
+    const plan = compile(graphWith({ resolution: { mode: "auto" }, format: { mode: "auto" } }));
+    expect(sinkTarget(plan).size).toEqual([1280, 720]);
+    expect(sinkTarget(plan).format).toBe("rgba8unorm");
+  });
+
+  it("declares the policy on the manifest so the popup and the compiler read one source", () => {
+    expect(outputNode.resolutionPolicy).toEqual({ kind: "project" });
+    expect(outputNode.formatPolicy).toEqual({ kind: "project" });
   });
 });
 
