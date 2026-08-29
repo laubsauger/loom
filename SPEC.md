@@ -61,6 +61,31 @@ gates:
 TOP RISK: attribute→WGSL codegen = new center of gravity. own task, heavily tested, headless.
 ⊥ a side effect of writing the first node.
 
+### example projects — executable specs, ⊥ demos
+handoff §35: examples ARE specifications. each ships as a real `.loom.json`, is a visual
+regression fixture, and documents the concept it proves. an example that ⊥ load = a
+release blocker, ⊥ a docs chore.
+
+buildable w/ what exists (18 nodes + Feedback + CustomWGSL):
+- **E1 Feedback Echo** — Noise → Over → Output, w/ Feedback → Transform → Blur → Level
+  closing the loop. proves: explicit temporal boundary, fade+transform inside loop,
+  branch preview, reset, ping-pong stability over 10 min (T49 gate).
+- **E2 Reaction-Diffusion** — Feedback → CustomWGSL (Gray-Scott kernel) → Feedback.
+  proves: iterative sim via render feedback, seeded init (V45), pause|step|reset,
+  rgba16float precision path, determinism browser vs headless (V47).
+- **E3 Animated Noise Field** — Noise (perlin4d, t4d ← time) → Level → Displace ← Noise.
+  proves: time reaches shader via `FrameEvaluationInput` ⊥ wall clock (V44), fan-out
+  rendered once (V6), 4D noise as the TD animation idiom.
+- **E4 Bloom** — Threshold → Blur → Add ← source. proves: multi-branch converge,
+  HDR rgba16float intermediate, per-node format override (V51).
+- **E5 Kaleidoscope** — Transform → Tile/mirror → Transform. proves: extend modes,
+  resolution override (V50), cheap chain @ high res.
+- **E6 Displacement Stack** — Noise → Level → Transform → Displace. proves: `data` vs
+  `linear` space discipline (V56/V57) — displacement input ⊥ color-converted.
+
+later, when deps land: media mixer (needs image/video nodes), particle trails +
+audio-reactive (P3a), 3D scene (P3c), agent-built visual (§35.7, agent gate).
+
 ### node catalog guideline
 TD TOP family = reference vocabulary for core node set — naming, param names, default behavior.
 map where it maps, ⊥ clone. POP/SOP families → later phase, same approach.
@@ -516,6 +541,8 @@ V84: instance pins component version. upgrade = explicit migration, ⊥ silent (
 V85: node info = read-only view over the runtime telemetry channel (V16), ⊥ document store, ⊥ its own subscription. refresh ≤ 10Hz. ⊥ readback (V7) — every field ← plan + timer spans + diagnostics already collected.
 V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query optional (V12) — absent → field reads "unavailable", ⊥ a fabricated number.
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
+V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
+V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -581,7 +608,7 @@ T87|x|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owne
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
-T91|.|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
+T91|x|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
 T92|x|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
 T93|x|lint: ⊥ import store `internals`\|`raw` outside src/domain/commands + tests|V29
 T94|x|fix resize: bind Target not `plain.color` — sampled intermediates hold destroyed texture|V21
@@ -640,6 +667,12 @@ T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers
 T149|.|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
 T150|.|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
 T151|.|`ResolutionPolicy` derived from a parameter — Crop keeps input res + blanks outside region, ⊥ resizes like TD Crop TOP|V21,V50
+T152|.|**Feedback node** — `TemporalDefinition`, prev-frame read, swap after consumers, reset + seed input. compiler/backend support exists, ⊥ node declares it, ∴ feedback unreachable from UI|V22,V50
+T153|.|example E1 Feedback Echo — `.loom.json` + regression fixture + concept doc|V88,V89,V22
+T154|.|example E2 Reaction-Diffusion — Gray-Scott CustomWGSL kernel, seeded init, pause/step/reset|V88,V89,V45
+T155|.|example E3 Animated Noise Field — perlin4d t4d ← frame time, fan-out once|V88,V89,V44,V6
+T156|.|example E4 Bloom + E5 Kaleidoscope + E6 Displacement Stack|V88,V89,V51,V56
+T157|.|example runner: load ∀ example, compile, assert 0 errors + deterministic render. CI gate|V89
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -666,8 +699,8 @@ T57|.|workflow tools: validate_project, compile_project, play, pause, save_proje
 T58|.|`render_preview` → bounded-size PNG of any texture output, via export iface|V48,I.tools
 T59|.|capability grant model + gate table, dryRun on destructive, ⊥ self-grant|V36,V38
 T60|.|agent presence UI: actor badge, planning\|editing\|compiling\|awaiting state, patch review + revert-transaction-as-unit|V42
-T43|.|save/load `.loom.json` via `src/domain/project/serialize.ts` (CANONICAL — ⊥ 2nd serializer), migration scaffolding, unknown-node placeholder|V10
-T44|.|resource caps: max resolution, dispatch size, buffer size, project budget|V24
+T43|x|save/load `.loom.json` via `src/domain/project/serialize.ts` (CANONICAL — ⊥ 2nd serializer), migration scaffolding, unknown-node placeholder|V10
+T44|x|resource caps: max resolution, dispatch size, buffer size, project budget|V24
 T45|.|unit tests: port compat, cycle/temporal, topo order, sink prune, resolution, format, migrations|V4,V13,V21,V25
 T46|.|`vgpu/mock` command-level tests|C
 T47|.|Dawn headless render snapshot: gradient→levels, blur chain, feedback progression|C
@@ -722,7 +755,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
@@ -734,7 +767,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 | track | tasks | owns |
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
-| P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
+| P tests | T45 T46 T47 T69 T48 T61 T157 | `src/tests/**` |
 | R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
@@ -758,6 +791,10 @@ WebMCP + MCP adapters.
 ### completed outside the wave plan (peer session, disjoint paths)
 T88 undo/redo owner check + restore integrity · T100 monotonic clock base ·
 T108 expression engine · T101 autosave ring · T105 PWA manifest.
+
+### track X — examples (⊥ demos, they are the acceptance suite)
+T152 Feedback node FIRST (blocks E1+E2) → T153 T154 T155 T156 → T157 runner + CI gate.
+owns `examples/**` + `src/tests/examples/**`.
 
 ### wave 5 — serial gates
 T49 Phase 1 exit, T62 Phase 1 agent exit.
