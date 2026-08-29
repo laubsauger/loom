@@ -99,6 +99,25 @@ is dirty; add/instantiate ! never confirm — they are undoable.
 shipped components (handoff §31.4, buildable w/ current catalogue):
 FeedbackEcho · Bloom · DisplacementStack · MediaGrade · Kaleidoscope.
 
+### media needs a resource kind that ⊥ exist yet
+`ResourceDescriptor` = target | pingPong | sampler | buffer | bufferPair. **⊥ way to
+carry a texture the CPU supplies.** ∀ current resource is GPU-allocated & GPU-written;
+a decoded frame comes from outside. ∴ media is blocked on plan-IR work, ⊥ on node work —
+worth knowing before anyone starts w/ the node.
+
+```ts
+interface ExternalTextureResourceDescriptor {
+  kind: "externalTexture";
+  id: string;
+  size: readonly [number, number];
+  format: TextureFormat;
+  /** Who supplies frames. The runtime uploads; the plan ⊥ carry pixels (V63 clone-safe). */
+  sourceId: string;
+}
+```
+`sourceId` ⊥ the pixels: the plan stays structured-clone-safe (V63) ∴ worker-movable. the
+runtime holds a registry `sourceId → MediaSource` and uploads on frame-ready.
+
 ### media as NODES (TD Movie File In / Movie File Out TOP)
 recording belongs ∈ the GRAPH, ⊥ a global "record" button. TD makes it a node ∴ TOPOLOGY
 decides what is recorded: an intermediate branch, several outputs at once, a pass you are
@@ -716,6 +735,8 @@ V126: pulse reset is PER-RESOURCE, ⊥ whole-backend. `resetTemporalHistory()` i
 V119: recording is a NODE, ⊥ a global action. topology decides what is recorded ∴ several recorders may run at once, on intermediate branches. a recorder declares `sink: true` (V25) — recording is its side effect & it ⊥ be pruned for having no consumer.
 V120: a recorder captures by `frameIndex` via the export interface (V48, T111), ⊥ by sampling a clock. a take that dropped|duplicated frames = a WRONG recording, ⊥ a shorter one — it ! fail the take, ⊥ silently ship.
 V122: 1 media-in node covers still|sequence|video (TD Movie File In). params that ⊥ apply to the loaded asset are HIDDEN, ⊥ disabled-and-visible — a still has no in|out point, and showing one teaches the user the node is broken.
+V135: a decoded frame enters the graph as an `externalTexture` RESOURCE, ⊥ as pixels ∈ the plan. the plan carries a `sourceId`; the runtime owns the registry & uploads. keeps the plan structured-clone-safe (V63) ∴ the worker migration stays free.
+V136: upload happens on FRAME-READY, ⊥ per render frame. a 30fps video ∈ a 60fps graph uploads 30 times, ⊥ 60 — re-uploading an unchanged frame is the easiest wasted bandwidth ∈ the system.
 V121: media nodes reference an `AssetReference`, ⊥ a raw path or an object URL (V10). unresolved asset → relink flow, keeps identity. decode behind a media-source abstraction ∴ WebCodecs can replace `HTMLVideoElement` w/o touching a node.
 V116: node size = DOCUMENT state (`GraphNode.size`, already ∈ contract) — persisted, undoable, 1 patch per gesture (V15). resize is how a graph gets a layout: a key node big, the rest small. ⊥ view-only state, else a saved project loses its composition.
 V117: a resized node buys a BIGGER TILE, ⊥ a stretched one. preview resolution follows the node's preview area, quantised to the size ladder + capped by `previewLongEdge` (V28c) — the cap is what keeps default-on previews affordable, so it survives resizing.
@@ -900,6 +921,8 @@ T224|.|move the Common block below the node's parameters (or behind a fold) — 
 T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
 T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
+T229|.|`externalTexture` resource kind + runtime media-source registry + upload-on-frame-ready. BLOCKS T211 — media cannot exist without it|V135,V136,V63,V58
+T230|.|asset registry: resolve `AssetReference` → a decoded source; File System Access + drag-drop + relink flow for unresolved|V121,V10
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
 T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
 T212|.|drop a connection ON AN EDGE → replaces it (takes that edge's target). 1 patch = disconnect + connect, 1 undo group. generous invisible hit area on the edge|V14b,V14c,V32,V34
@@ -1028,7 +1051,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
 | K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
-| M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
+| M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
 
 barrier: **T51** route ∀ human action through bus — toolbar, menu, keybind, inspector, drag-connect.
@@ -1039,7 +1062,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T217 T215 T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T229 T217 T215 T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
