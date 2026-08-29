@@ -1,0 +1,113 @@
+/**
+ * Global base layer. Loaded once from `src/main.tsx`, after `tokens.css`.
+ * Holds the a11y floor (T6, V19): visible focus rings, honoured
+ * `prefers-reduced-motion`, and predictable tab order.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-void);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* A pro tool never rubber-bands or text-selects its own chrome. */
+  overscroll-behavior: none;
+}
+
+/* Numbers, port labels and WGSL are monospace everywhere (§C). */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* V19 — keyboard reachability is the floor, not a feature.
+   Mouse focus stays quiet; keyboard focus is always visible, on every
+   interactive element including ones that opt out of the default outline. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius);
+}
+
+/* Radix sets data-state on the element it drives; keep focus visible there too. */
+[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+::selection {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* Dense scrollbars — chrome must not compete with the user's imagery. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-hot) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--radius);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--line-hot);
+  background-clip: content-box;
+}
+
+/* V19 — reduced motion is honoured globally, not per component.
+   Motion tokens are already zeroed in tokens.css; this catches anything
+   that animates without reading them (third-party CSS included). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

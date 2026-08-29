@@ -1,0 +1,106 @@
+.shell {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-void);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-bottom: var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.topbarSlot {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.topbarTrailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  padding-right: var(--space-4);
+}
+
+.body {
+  min-height: 0;
+}
+
+/* Dividers: 1px of --line, zero radius (§C), with a generous invisible hit
+   area supplied by the handle's pointer margins. */
+.handle {
+  position: relative;
+  flex: 0 0 auto;
+  border-radius: var(--radius-none);
+  background: var(--line);
+  transition: background var(--dur-instant) var(--ease-out);
+}
+
+.handleV {
+  width: var(--divider);
+  cursor: col-resize;
+}
+
+.handleH {
+  height: var(--divider);
+  cursor: row-resize;
+}
+
+.handle[data-resize-handle-state="hover"],
+.handle[data-resize-handle-state="drag"] {
+  background: var(--line-hot);
+}
+
+.handle:focus-visible {
+  background: var(--focus-ring);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+/* The graph canvas is deliberately chrome-free: no pane header competes with
+   the user's imagery, and the divider is the only edge it gets. */
+.canvas {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  background: var(--bg-void);
+}
+
+.dock {
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.layoutMenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 200px;
+}
+
+.layoutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+}
+
+.layoutHint {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-hairline);
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+}

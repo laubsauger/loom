@@ -1,0 +1,38 @@
+.content {
+  z-index: var(--z-tooltip);
+  max-width: 280px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  color: var(--text);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-ui);
+  box-shadow: var(--shadow-raise);
+  user-select: none;
+  animation: fade var(--dur-instant) var(--ease-out);
+}
+
+/* Keyboard hints and numerics inside a tooltip stay monospace. */
+.content kbd {
+  padding: 0 var(--space-1);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.arrow {
+  fill: var(--bg-raise);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

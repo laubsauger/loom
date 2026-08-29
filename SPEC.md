@@ -304,11 +304,11 @@ V50: node resolution override = instance state, applied @ compile|resize, ⊥ pe
 row order = exec order. id = stable label, ⊥ ordering.
 id|status|task|cites
 T1|x|scaffold vite+react19+ts strict, pnpm, path aliases|C
-T2|.|token layer `src/ui/tokens.css` — colors, type scale, radius, port family vars|V17,V26
-T3|.|load Archivo + JetBrains Mono, self-host woff2, fallback stacks|C
-T4|.|app shell: `react-resizable-panels` layout per §I.ui, persisted localStorage|V18
-T5|.|Radix base primitives restyled to tokens: tooltip, popover, tabs, ctx menu, dialog|V17,V19
-T6|.|a11y floor: focus-visible rings, reduced-motion media query, tab order|V19
+T2|x|token layer `src/ui/tokens.css` — colors, type scale, radius, port family vars|V17,V26
+T3|x|load Archivo + JetBrains Mono, self-host woff2, fallback stacks|C
+T4|x|app shell: `react-resizable-panels` layout per §I.ui, persisted localStorage|V18
+T5|x|Radix base primitives restyled to tokens: tooltip, popover, tabs, ctx menu, dialog|V17,V19
+T6|x|a11y floor: focus-visible rings, reduced-motion media query, tab order|V19
 T7|x|eslint rule: `vgpu` import restricted to `src/runtime/backend/vgpu/**`|V3
 T8|x|eslint rule: no react/@xyflow import in `src/nodes/definitions/**`|V11
 T9|x|domain types — ProjectDocument, GraphDocument, GraphNode, GraphEdge + zod schemas|I.file,V10

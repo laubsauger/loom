@@ -1,0 +1,138 @@
+/**
+ * Design tokens (§C). Dark-only, v1.
+ *
+ * V17: this is the ONLY file in the app permitted to contain a literal color.
+ * Every component, pane and primitive reads color through these custom properties.
+ * `src/ui/tokens.test.ts` enforces that.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- ground ------------------------------------------------------- */
+  --bg-void: #0b0e14; /* canvas ground, app backdrop */
+  --bg-panel: #12161f; /* pane fill */
+  --bg-raise: #1a202c; /* node body, popover, menu */
+  --line: #232a38; /* hairline, pane divider */
+  --line-hot: #384356; /* divider hover / drag */
+
+  /* ---- text --------------------------------------------------------- */
+  --text: #d6dce8;
+  --text-dim: #7c8698; /* labels, units, meta */
+
+  /* ---- state -------------------------------------------------------- */
+  --signal: #f2a03d; /* live / active / running amber */
+  --warn: #fbbf24;
+  --error: #ff5c57;
+  --ok: #34d399;
+
+  /* ---- derived surfaces --------------------------------------------
+     No new hues: these interpolate between the ground steps above so the
+     chrome stays a single neutral ramp. */
+  --bg-sunken: #090c11; /* wells, inset tracks, graph void */
+  --bg-hover: #171c27;
+  --bg-active: #202838;
+  --bg-overlay: rgba(6, 8, 12, 0.66); /* dialog backdrop */
+  --shadow-raise: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+
+  /* ---- port family colors (§C, V26) ---------------------------------
+     Semantic, not decorative: hue encodes PortType.kind, and V26 makes the
+     edge hue the source port's family color. Var name matches the union
+     member exactly (case-sensitive) so the lookup in ports.ts is mechanical.
+
+     texture2d..audioFeatures below the divider comment are spec-fixed.
+     scene / material / light / transform3d were left free by the spec and are
+     chosen here to stay in the same tier as the fixed set (Tailwind-400-class
+     chroma) while keeping the deferred 3D family legible next to geometry. */
+  --port-texture2d: #4fd1c5;
+  --port-buffer: #a78bfa;
+  --port-scalar: #94a3b8;
+  --port-vector: #f472b6;
+  --port-matrix: #fbbf24;
+  --port-geometry: #60a5fa;
+  --port-camera: #34d399;
+  --port-event: #fb7185;
+  --port-audioFeatures: #c084fc;
+  /* chosen (see note above) */
+  --port-scene: #38bdf8; /* sky-400 — sits beside geometry blue: the 3D container */
+  --port-material: #fb923c; /* orange-400 — warm surface, clear of amber matrix */
+  --port-light: #fde047; /* yellow-300 — one tier lighter on purpose, to separate from matrix */
+  --port-transform3d: #a3e635; /* lime-400 — the one wide-open hue gap in the set */
+  --port-unknown: var(--text-dim);
+
+  /* ---- type ---------------------------------------------------------
+     Archivo for UI and display, JetBrains Mono for every numeric, port label
+     and WGSL glyph. Never Inter. */
+  --font-ui:
+    "Archivo Variable", Archivo, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Consolas, monospace;
+
+  --fs-micro: 10px; /* badges, units, port labels */
+  --fs-meta: 11px; /* pane headers, control labels, meta */
+  --fs-ui: 12px; /* default UI text */
+  --fs-body: 13px; /* prose, code editor */
+  --fs-title: 16px;
+  --fs-display: 22px;
+
+  --lh-ui: 1.35;
+  --lh-prose: 1.55;
+  --tracking-display: -0.01em;
+  --tracking-mono: 0;
+  --weight-header: 600;
+  --width-header: 112%; /* Archivo wdth axis — expanded-ish display */
+
+  /* ---- geometry ------------------------------------------------------ */
+  --radius: 3px; /* nodes, controls, popovers */
+  --radius-none: 0; /* pane dividers are never rounded */
+  --hairline: 1px;
+  --border-hairline: var(--hairline) solid var(--line);
+
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+
+  --topbar-h: 32px;
+  --pane-header-h: 24px;
+  --control-h: 20px;
+  --control-h-lg: 24px;
+  --divider: 1px; /* visual thickness; hit area is widened in JS */
+
+  /* ---- motion (V19) --------------------------------------------------
+     Zeroed under prefers-reduced-motion below, so any consumer that drives
+     an animation from these tokens becomes static for free. */
+  --dur-instant: 60ms;
+  --dur-fast: 110ms;
+  --dur-slow: 220ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --motion-scale: 1; /* multiplier for JS-driven animation, e.g. edge flow */
+
+  /* ---- focus (V19) ---------------------------------------------------
+     Amber is the "live" signal and focus is a live state; reusing it avoids
+     introducing a hue that competes with the port families. */
+  --focus-ring: var(--signal);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 1px;
+
+  /* ---- layers -------------------------------------------------------- */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-popover: 100;
+  --z-dialog: 200;
+  --z-tooltip: 300;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-slow: 0ms;
+    --motion-scale: 0;
+  }
+}

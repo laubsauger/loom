@@ -24,6 +24,12 @@ export default defineWorkspace([
   },
   {
     extends: "./vitest.config.ts",
+    // jsdom tests must resolve the BROWSER build of dependencies. Without this, Vitest
+    // uses node/SSR conditions and react-resizable-panels ships its SSR build: layout
+    // effects never run, panels never register, and setLayout throws "Invalid 0 panel
+    // layout". Any DOM-measuring dependency has the same failure mode.
+    resolve: { conditions: ["browser", "import", "module", "default"] },
+    ssr: { resolve: { conditions: ["browser", "import", "module", "default"] } },
     test: {
       name: "browser",
       environment: "jsdom",

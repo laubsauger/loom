@@ -1,0 +1,43 @@
+.content {
+  z-index: var(--z-popover);
+  min-width: 180px;
+  max-width: 420px;
+  max-height: var(--radix-popover-content-available-height, 60vh);
+  overflow: auto;
+  padding: var(--space-4);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  color: var(--text);
+  font-size: var(--fs-ui);
+  box-shadow: var(--shadow-raise);
+  animation: pop var(--dur-fast) var(--ease-out);
+}
+
+.arrow {
+  fill: var(--bg-raise);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  font-weight: var(--weight-header);
+  font-size: var(--fs-meta);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  color: var(--text-dim);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
