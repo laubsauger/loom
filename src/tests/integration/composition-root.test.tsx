@@ -117,7 +117,9 @@ describe("every shell slot is filled with a real pane", () => {
     expect(screen.getByText("No node selected")).toBeDefined();
     expect(screen.getByText("outputs")).toBeDefined();
     expect(screen.getByText("No shader selected")).toBeDefined();
-    expect(screen.getByText("compiled plan")).toBeDefined();
+    // The real T41 panel, reading the telemetry hub — not the hand-rolled placeholder
+    // that used to re-derive the plan's counts from `CompiledGraph` beside it.
+    expect(screen.getByTestId("performance-panel")).toBeDefined();
     expect(screen.getByLabelText("Problems")).toBeDefined();
   });
 
@@ -197,11 +199,12 @@ describe("§V12 — a machine without WebGPU degrades, it does not break", () =>
   });
 
   it("does not invent a capability report to compile against (§V12)", async () => {
-    await mountApp(NO_WEBGPU);
+    const { runtime } = await mountApp(NO_WEBGPU);
 
-    expect(
-      screen.getByText(/the graph is compiled against the device capability report/i),
-    ).toBeDefined();
+    // No device report, so no compile — and therefore no plan on the telemetry hub. The
+    // panel says so instead of showing counts from a compile that never happened.
+    expect(runtime.telemetry.snapshot().plan).toBeNull();
+    expect(screen.getByText("No plan is compiled.")).toBeDefined();
   });
 
   it("reports a below-baseline device instead of pretending it will render", async () => {
