@@ -1,5 +1,5 @@
 import { compute, draw, effect, pingPong, pingPongStorage, sampler, storage, target, uniforms } from "vgpu";
-import type { Compute, Draw, Effect, Gpu, PingPongStorage, PingPongTargets, SharedUniforms, StorageBuffer, Target } from "vgpu";
+import type { Compute, Draw, Effect, Gpu, PingPongStorage, PingPongTargets, SharedUniforms, StorageBuffer, Target, Texture } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import { BackendDiagnosticCode, backendDiagnostic, describeError } from "../diagnostics.ts";
 import type { BuildStats } from "../backend-types.ts";
@@ -21,10 +21,26 @@ import { initialSharedUniforms, type SharedUniformValues } from "../shared-unifo
  * releases the lot; there is no per-resource teardown to get wrong.
  */
 
+/**
+ * An `externalTexture` resource, live (T229, §V135). The texture is GPU-allocated here;
+ * its CONTENTS arrive from the media source registered under `sourceId`, uploaded by
+ * the backend when — and only when — the source's frameId advances (§V136).
+ */
+export interface ExternalTextureEntry {
+  readonly texture: Texture;
+  readonly sourceId: string;
+  readonly size: readonly [number, number];
+  readonly format: string;
+  /** Mutable: the frameId last uploaded, so an unchanged frame uploads nothing (§V136). */
+  lastFrameId: number | undefined;
+}
+
 export interface ResourceSet {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  /** CPU-fed sampleable textures, keyed by resource id (T229). */
+  readonly externalTextures: ReadonlyMap<string, ExternalTextureEntry>;
   /** SoA point storage (T118, §V75): one buffer per attribute, plus counters. */
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
@@ -57,6 +73,8 @@ export interface CarryOver {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  /** A carried external texture keeps its contents AND its upload cursor (§V136). */
+  readonly externalTextures: ReadonlyMap<string, ExternalTextureEntry>;
   /** A carried buffer keeps its CONTENTS — a sim's state survives unrelated edits (§V22). */
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
@@ -71,6 +89,7 @@ export const emptyCarryOver: CarryOver = {
   targets: new Map(),
   pingPongs: new Map(),
   samplers: new Map(),
+  externalTextures: new Map(),
   buffers: new Map(),
   bufferPairs: new Map(),
   effects: new Map(),
@@ -137,6 +156,7 @@ export function buildResources(
   const targets = new Map<string, Target>();
   const pingPongs = new Map<string, PingPongTargets>();
   const samplers = new Map<string, GPUSampler>();
+  const externalTextures = new Map<string, ExternalTextureEntry>();
   const buffers = new Map<string, StorageBuffer>();
   const bufferPairs = new Map<string, PingPongStorage>();
   const effects = new Map<string, Effect>();
@@ -188,6 +208,30 @@ export function buildResources(
             label: resource.label ?? resource.id,
           }),
         );
+        note("resourcesCreated");
+      } else if (resource.kind === "externalTexture") {
+        // T229: the texture is ours; the contents are the media source's. A carried
+        // entry keeps both the pixels and the upload cursor — a structural edit
+        // elsewhere must not re-upload (or blank) a paused video frame (§V136). The
+        // sourceId is part of the structure key, so a re-pointed source never carries.
+        const carried = carry.externalTextures.get(resource.id);
+        if (carried) {
+          externalTextures.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
+        externalTextures.set(resource.id, {
+          texture: gpu.device.createTexture({
+            size: resource.size,
+            format: resource.format as GPUTextureFormat,
+            usage: ["texture_binding", "copy_dst"],
+            label: resource.label ?? resource.id,
+          }),
+          sourceId: resource.sourceId,
+          size: resource.size,
+          format: resource.format,
+          lastFrameId: undefined,
+        });
         note("resourcesCreated");
       } else if (resource.kind === "sampler") {
         const carried = carry.samplers.get(resource.id);
@@ -267,6 +311,10 @@ export function buildResources(
     // rebindDynamicTextures before each render, so no recreation wiring is needed here.
     const pair = pingPongs.get(resourceId) ?? externals.pingPongs.get(resourceId);
     if (pair) return pair.read.color;
+    // T229: an external texture binds as the (stable-identity) Texture itself — its
+    // contents change via queue writes, never its object, so no re-pointing is needed.
+    const external = externalTextures.get(resourceId);
+    if (external) return external.texture;
     return undefined;
   };
 
@@ -502,6 +550,7 @@ export function buildResources(
     targets,
     pingPongs,
     samplers,
+    externalTextures,
     buffers,
     bufferPairs,
     effects,

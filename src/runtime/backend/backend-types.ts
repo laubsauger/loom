@@ -157,6 +157,48 @@ export interface ShaderloomBackend extends RenderBackend {
    * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
    */
   recover(): Promise<void>;
+
+  /**
+   * Binds a CPU-side frame producer to a `sourceId` (T229, §V135). Every
+   * `externalTexture` resource declaring that sourceId uploads from this source — on
+   * frame-ready, never per render frame (§V136). Returns the unregister function.
+   * Registration order is free: a source may arrive before or after the plan compiles,
+   * and a texture with no source simply keeps its contents (black until the first
+   * frame). Re-registering a sourceId replaces the previous source.
+   */
+  registerMediaSource(sourceId: string, source: MediaSource): () => void;
+}
+
+/**
+ * One decoded frame offered by a media source (T229).
+ *
+ * `frameId` is monotonic per source; an unchanged id means "nothing new" and the
+ * backend uploads NOTHING (§V136) — a 30fps video in a 60fps graph uploads 30 times.
+ * Exactly one of `bytes` / `image` is set: `bytes` is tightly packed rows in the
+ * declared texture format (works everywhere, mock and Dawn included); `image` is the
+ * browser fast path (ImageBitmap, VideoFrame, canvas — anything
+ * `copyExternalImageToTexture` takes), typed `unknown` so this contract never drags DOM
+ * types into headless code.
+ */
+export interface MediaSourceFrame {
+  readonly frameId: number;
+  readonly bytes?: Uint8Array;
+  readonly image?: unknown;
+}
+
+/**
+ * A frame producer behind a `sourceId` (T229, T231). Deliberately shaped for LIVE
+ * sources as much as files: pull-based (`currentFrame()` answers with whatever is
+ * newest — no seek, no duration, no demand-driven decode), frames arrive on the
+ * source's own schedule, and a stream may end without being closed (webcam unplugged,
+ * capture permission revoked) — `ended` flips and the texture keeps its last contents.
+ * Transport concerns (play/pause/seek for files) live on the SOURCE's owner, not here.
+ */
+export interface MediaSource {
+  /** Latest decoded frame, or undefined before the first one. */
+  currentFrame(): MediaSourceFrame | undefined;
+  /** True once no further frames will ever come. Optional: absent means "unknown/live". */
+  readonly ended?: boolean;
 }
 
 /**

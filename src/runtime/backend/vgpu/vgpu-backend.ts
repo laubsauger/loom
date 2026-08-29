@@ -9,6 +9,9 @@ import type {
   BackendStatus,
   BuildStats,
   FrameLoopSettings,
+  // Ours, NOT the DOM's Media Source Extensions global of the same name — without this
+  // import the code below would silently typecheck against the wrong interface.
+  MediaSource,
   PresentableCanvas,
   PresentationHandle,
   PresentationOptions,
@@ -168,6 +171,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let consecutiveFrameErrors = 0;
   let lastBuildStats: BuildStats | undefined;
   const presentations = new Map<string, PresentationState>();
+  /** sourceId → frame producer (T229, §V135). Backend-lifetime: survives recompiles and device loss. */
+  const mediaSources = new Map<string, MediaSource>();
   let presentationCounter = 0;
   let presentSampler: GPUSampler | undefined;
   /** GPU pass timer (T163). Exists only when the device has timestamp-query (§V12). */
@@ -582,6 +587,57 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
   }
 
+  /**
+   * Uploads new media frames into their external textures (T229, §V136).
+   *
+   * Per render, per texture: ask the registered source what its newest frame is; upload
+   * ONLY when the frameId advanced — a 30fps video in a 60fps graph uploads 30 times.
+   * `writeTexture` is a queue operation, ordered before this frame's submit, so the
+   * frame samples what was just written. No source registered, or no frame yet, or the
+   * source ended: the texture keeps its contents (black until the first frame).
+   */
+  function uploadExternalTextures(active: Program): void {
+    if (!session || active.resources.externalTextures.size === 0) return;
+    const queue = session.gpu.device.queue.gpu;
+    for (const entry of active.resources.externalTextures.values()) {
+      const source = mediaSources.get(entry.sourceId);
+      if (source === undefined) continue;
+      const mediaFrame = source.currentFrame();
+      if (mediaFrame === undefined || mediaFrame.frameId === entry.lastFrameId) continue;
+      try {
+        if (mediaFrame.bytes !== undefined) {
+          const bytesPerRow = entry.size[0] * bytesPerPixelFor(entry.format as Parameters<typeof bytesPerPixelFor>[0]);
+          queue.writeTexture(
+            { texture: entry.texture.gpu },
+            mediaFrame.bytes as BufferSource,
+            { bytesPerRow, rowsPerImage: entry.size[1] },
+            { width: entry.size[0], height: entry.size[1] },
+          );
+        } else if (mediaFrame.image !== undefined && typeof queue.copyExternalImageToTexture === "function") {
+          // Browser fast path: ImageBitmap / VideoFrame / canvas, no CPU readback.
+          queue.copyExternalImageToTexture(
+            { source: mediaFrame.image as GPUCopyExternalImageSource },
+            { texture: entry.texture.gpu },
+            { width: entry.size[0], height: entry.size[1] },
+          );
+        } else {
+          continue; // No payload this device can take; leave the cursor so a usable frame retries.
+        }
+        entry.lastFrameId = mediaFrame.frameId;
+      } catch (error) {
+        hub.report(
+          backendDiagnostic(
+            "warning",
+            BackendDiagnosticCode.frameError,
+            `Media upload for source "${entry.sourceId}" failed: ${describeError(error)}`,
+          ),
+        );
+        // Advance anyway: retrying the same broken frame at 60Hz is a diagnostics flood.
+        entry.lastFrameId = mediaFrame.frameId;
+      }
+    }
+  }
+
   function lookupTargets(outputId: string): ReadonlyArray<Target> {
     if (!program) return [];
     const plain = program.resources.targets.get(outputId);
@@ -691,6 +747,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       targets: new Map(),
       pingPongs: new Map(),
       samplers: new Map(),
+      externalTextures: new Map(),
       buffers: new Map(),
       bufferPairs: new Map(),
       effects: new Map(),
@@ -1007,6 +1064,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       rebindDynamicTextures(active);
+      uploadExternalTextures(active);
 
       const open = currentFrame;
       if (open) {
@@ -1424,6 +1482,16 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       await recovery;
     },
 
+    registerMediaSource(sourceId, source) {
+      // Order-free (T229): a plan compiled before this registration starts uploading on
+      // the next render; a registration with no plan yet simply waits. Replacement
+      // resets no texture — the next differing frameId overwrites the pixels anyway.
+      mediaSources.set(sourceId, source);
+      return () => {
+        if (mediaSources.get(sourceId) === source) mediaSources.delete(sourceId);
+      };
+    },
+
     async whenSettled() {
       await recovery;
       await session?.gpu.settled();
@@ -1491,6 +1559,7 @@ function computeCarryOver(
   const targets = new Map<string, NonNullable<ReturnType<ResourceSet["targets"]["get"]>>>();
   const pingPongs = new Map<string, NonNullable<ReturnType<ResourceSet["pingPongs"]["get"]>>>();
   const samplers = new Map<string, GPUSampler>();
+  const externalTextures = new Map<string, NonNullable<ReturnType<ResourceSet["externalTextures"]["get"]>>>();
   const buffers = new Map<string, NonNullable<ReturnType<ResourceSet["buffers"]["get"]>>>();
   const bufferPairs = new Map<string, NonNullable<ReturnType<ResourceSet["bufferPairs"]["get"]>>>();
   for (const id of reusable) {
@@ -1500,6 +1569,8 @@ function computeCarryOver(
     if (pair) pingPongs.set(id, pair);
     const sampler = previous.resources.samplers.get(id);
     if (sampler) samplers.set(id, sampler);
+    const external = previous.resources.externalTextures.get(id);
+    if (external) externalTextures.set(id, external);
     const buffer = previous.resources.buffers.get(id);
     if (buffer) buffers.set(id, buffer);
     const bufferPair = previous.resources.bufferPairs.get(id);
@@ -1545,6 +1616,7 @@ function computeCarryOver(
     targets,
     pingPongs,
     samplers,
+    externalTextures,
     buffers,
     bufferPairs,
     effects,
@@ -1587,6 +1659,9 @@ function releaseResourcesExcept(previous: ResourceSet, next?: ResourceSet): void
       destroy(pair.read);
       destroy(pair.write);
     }
+  }
+  for (const [id, entry] of previous.externalTextures) {
+    if (next?.externalTextures.get(id) !== entry) destroy(entry.texture);
   }
   for (const [id, buffer] of previous.buffers) {
     if (next?.buffers.get(id) !== buffer) destroy(buffer);

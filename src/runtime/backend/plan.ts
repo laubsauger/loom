@@ -71,12 +71,32 @@ export interface BufferPairResourceDescriptor {
   readonly label?: string;
 }
 
+/**
+ * A sampleable texture whose CONTENTS come from outside the GPU — a decoded video
+ * frame, a webcam, a screen capture, a still image (T229, T231).
+ *
+ * §V135: the plan carries a `sourceId`, never pixels. The backend holds a
+ * `sourceId → MediaSource` registry and uploads on frame-ready (§V136). Pixels in the
+ * plan would break structured-clone safety (§V63) and with it the renderer-in-worker
+ * migration, silently, months before anyone noticed.
+ */
+export interface ExternalTextureResourceDescriptor {
+  readonly kind: "externalTexture";
+  readonly id: string;
+  readonly size: readonly [number, number];
+  readonly format: TextureFormat;
+  /** WHO supplies frames. The registry key; the descriptor's whole link to the media. */
+  readonly sourceId: string;
+  readonly label?: string;
+}
+
 export type ResourceDescriptor =
   | TargetResourceDescriptor
   | PingPongResourceDescriptor
   | SamplerResourceDescriptor
   | BufferResourceDescriptor
-  | BufferPairResourceDescriptor;
+  | BufferPairResourceDescriptor
+  | ExternalTextureResourceDescriptor;
 
 export interface TextureBindingDescriptor {
   /** WGSL binding name in the pass shader. */
@@ -298,6 +318,21 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
     return kind === "target"
       ? { kind: "target", ...withLabel }
       : { kind: "pingPong", ...withLabel };
+  }
+
+  if (kind === "externalTexture") {
+    const sourceId = value["sourceId"];
+    if (!isSize(value["size"]) || !isFormat(value["format"])) return undefined;
+    if (typeof sourceId !== "string" || sourceId.length === 0) return undefined;
+    const label = value["label"];
+    return {
+      kind: "externalTexture",
+      id,
+      size: value["size"],
+      format: value["format"],
+      sourceId,
+      ...(typeof label === "string" ? { label } : {}),
+    };
   }
 
   if (kind === "sampler") {
@@ -649,6 +684,10 @@ export function resourceStructureKey(resource: ResourceDescriptor): string {
       return JSON.stringify([resource.kind, resource.id, resource.stride, resource.capacity, resource.usage]);
     case "bufferPair":
       return JSON.stringify([resource.kind, resource.id, resource.stride, resource.capacity]);
+    case "externalTexture":
+      // sourceId is structural: rebinding a texture to a different media source is a new
+      // resource (fresh contents), not a carried one.
+      return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format, resource.sourceId]);
   }
 }
 
@@ -747,7 +786,7 @@ export function estimateResourceBytes(resources: ReadonlyArray<ResourceDescripto
       total += resource.stride * resource.capacity * 2;
       continue;
     }
-    if (resource.kind !== "target" && resource.kind !== "pingPong") continue;
+    if (resource.kind !== "target" && resource.kind !== "pingPong" && resource.kind !== "externalTexture") continue;
     const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
     total += resource.size[0] * resource.size[1] * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
   }
