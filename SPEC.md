@@ -1007,7 +1007,7 @@ T220|.|wire `createAgentToolSurface` into the composition root + inject its port
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
 T271|.|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
-T269|.|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
+T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|.|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
@@ -1033,7 +1033,7 @@ T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ d
 T247|.|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
 T245|x|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
-T244|.|lint rule for V145 — ⊥ implicit global-named type|V145
+T244|x|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
