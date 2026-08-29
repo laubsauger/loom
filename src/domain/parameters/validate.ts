@@ -151,25 +151,32 @@ export function validateParameters(
   return diagnostics;
 }
 
+/**
+ * The manifest default for one parameter.
+ *
+ * Array- and object-valued defaults are COPIED: the manifest is shared by every node of
+ * a type, so handing out the literal would let one node's edit mutate every other node's
+ * default. An `asset` has no inline default — an unset asset is genuinely absent.
+ */
+export function defaultParameterValue(definition: ParameterDefinition): ParameterValue {
+  switch (definition.type) {
+    case "asset":
+      return null;
+    case "color":
+    case "vector":
+      return [...definition.default];
+    case "curve":
+      return definition.default.map((point) => ({ x: point.x, y: point.y }));
+    default:
+      return definition.default;
+  }
+}
+
 /** The manifest defaults for a schema — the starting parameter bag of a new node. */
 export function defaultParameters(schema: ParameterSchema): Record<string, ParameterValue> {
   const result: Record<string, ParameterValue> = {};
   for (const [key, definition] of Object.entries(schema)) {
-    switch (definition.type) {
-      case "asset":
-        result[key] = null;
-        break;
-      case "color":
-      case "vector":
-        result[key] = [...definition.default];
-        break;
-      case "curve":
-        result[key] = definition.default.map((point) => ({ x: point.x, y: point.y }));
-        break;
-      default:
-        result[key] = definition.default;
-        break;
-    }
+    result[key] = defaultParameterValue(definition);
   }
   return result;
 }

@@ -707,6 +707,7 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T187|.|`component-scope.ts::resolveInstanceValues` returns DECODED `.values` into the parent scope ∴ a display colour decodes TWICE (mid-grey → ~0.046). ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
 T184|.|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
 T185|.|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
 T186|.|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
@@ -723,7 +724,7 @@ T177|.|`transactionId` on `HistoryGroupSummary` (or a `graph.revertTransaction`)
 T169|.|`GraphStore.replace(graph, {clearHistory})` committing through the same path as `apply` + a `project.load` command, so open is in-place w/ an actor. today open = teardown+rebuild ∴ undo history ⊥ survives|V29,V30,V31,V41
 T170|.|`Inspector` accepts `unresolvedParameters?: readonly string[]` — today a node w/ ANY newer-version param suppresses ALL its controls|V68,V10
 T171|.|attach the timing source where the frame loop lives — T163's backend surface exists; composition root ⊥ runs a loop ∴ attaching there would park ∀ fields on "measuring…" forever|V86
-T168|.|promote `resolveParameters` → `src/domain/parameters/`, compiler + inspector BOTH evaluate through it. fixes B8. V61 says ONE read path & there are 2 — the exact drift the invariant exists to stop|V61,V56
+T168|x|promote `resolveParameters` → `src/domain/parameters/`, compiler + inspector BOTH evaluate through it. fixes B8. V61 says ONE read path & there are 2 — the exact drift the invariant exists to stop|V61,V56
 T139|x|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|x|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -862,7 +863,7 @@ id|date|cause|fix
 B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
 B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓
 B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159 ✓
-B8|2026-08-29|TWO parameter eval paths ∴ V61 already drifted: `src/editor/inspector/parameter-resolver.ts` (decodes display→linear) & `src/compiler/validate.ts::resolveParameterValues` (⊥ decodes). T148's fix reaches the INSPECTOR, ⊥ the GPU — rendered color still wrong|T168
+B8|2026-08-29|TWO parameter eval paths ∴ V61 already drifted: `src/editor/inspector/parameter-resolver.ts` (decodes display→linear) & `src/compiler/validate.ts::resolveParameterValues` (⊥ decodes). T148's fix reaches the INSPECTOR, ⊥ the GPU — rendered color still wrong|T168 ✓
 B5|2026-08-29|`data` space unshippable — `colorSpaceForFormat` derives `data` only ← `r32float`, but plan binds 1 shared LINEAR sampler ∀ textures & r32float ⊥ filterable on Tier B w/o `float32-filterable`. ∴ a V56-flagged displacement field ⊥ renders|T83+T150 ✓
 B6|2026-08-29|Output node target size/format follows its INPUT, ⊥ project. `outputNode` declares no resolution/format policy; its own doc says project surface. E5 presents 2048² ⊥ project 1280×720|T165 ✓
 B7|2026-08-29|`customWgsl.compile()` emits ⊥ `uniformBinding`/`sharedBinding` ∴ kernel ⊥ receive uniforms or time. shipped default `source` DECLARES a `params` block bound to nothing = trap for anyone editing it|T166 ✓

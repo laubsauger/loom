@@ -1,190 +1,29 @@
-import type { FrameEvaluationInput } from "@domain/types/frame.ts";
-import type { GraphNode } from "@domain/types/graph.ts";
-import type { NodeDefinition } from "@domain/types/node-definition.ts";
-import type {
-  ParameterDefinition,
-  ParameterSchema,
-  ParameterValue,
-} from "@domain/types/parameters.ts";
-import { fromDisplay, toRgba } from "@ui/controls/color.ts";
-import { valueForDefinition } from "@ui/controls/parameter-value.ts";
-
 /**
- * THE parameter read path (doc §8.2).
+ * The inspector's parameter read path — which is now the ONLY parameter read path
+ * (§V61, T168, closing B8).
  *
- * Nothing in the editor reads `node.parameters[key]` directly. Every effective value —
- * for display, for a control, and later for evaluation — comes through
- * `resolveParameters`. In v1 that is a passthrough of the stored static value with a
- * manifest-default fallback, and it is supposed to look trivial.
+ * This file used to hold the implementation while `src/compiler/validate.ts` held a
+ * second one. They drifted: the display→linear colour decode (T148, §V56) landed here
+ * and not there, so the inspector showed the corrected colour and the GPU rendered the
+ * uncorrected one. §V61 says there is one read path, so the implementation was promoted
+ * into `src/domain/parameters/resolve.ts`, where the compiler (Node, worker-ready) and
+ * the inspector (browser) can both reach it.
  *
- * The reason it exists now is what §8.2 defers but tells us to design for: keyframes,
- * expressions, MIDI/OSC mapping, audio-reactive modulation and parameter linking. In
- * TouchDesigner terms, anything can drive any parameter. The day a parameter can be
- * *driven*, the difference between "the value stored in the document" and "the value in
- * effect this frame" becomes real. If that distinction has to be introduced across
- * every reader in the codebase it never lands; introduced here, a driver source is one
- * new branch in one function, and every control already renders the effective value and
- * already knows whether it is showing a driven one.
- *
- * The `stored` value is kept alongside, because an editor writes to the static value
- * even while a driver overrides what is displayed.
- *
- * Intended to be promoted into `src/domain/parameters` at the wave barrier so the
- * compiler evaluates through the same function; it is written with no React and no DOM
- * so that move is a file move.
+ * What stays here is this re-export, so editor code keeps importing the resolver from
+ * the layer it lives in. There is no implementation in this file and there must never be
+ * one again — a second copy is exactly the bug B8 records.
  */
 
-export type ParameterSource =
-  /** The document holds a usable value. */
-  | "static"
-  /** The document has no value (or one the manifest rejects); the default is in effect. */
-  | "default"
-  /** A driver (keyframe, expression, MIDI, audio, link) supplied the value. */
-  | "driven";
-
-export interface ResolvedParameter {
-  key: string;
-  definition: ParameterDefinition;
-  /**
-   * The value in effect: what a control shows and edits. For most parameter types this
-   * is also what evaluation should consume — but a `color` declared `space: "display"`
-   * stays display-encoded here (T148): decoding it would make the picker appear to
-   * drift its own number every round trip. Evaluation reads the decoded number from
-   * `ResolvedParameters.values` instead.
-   */
-  value: ParameterValue;
-  /** The static value in the document, which is what an edit writes back to. */
-  stored: ParameterValue | undefined;
-  source: ParameterSource;
-  /** Convenience for the "this parameter is being driven" affordance. */
-  driven: boolean;
-}
-
-/**
- * A parameter driver. Not implemented in v1 — this is the seam the deferred features
- * plug into, and having it typed keeps the resolver's shape honest.
- */
-export interface ParameterDriverContext {
-  node: GraphNode;
-  key: string;
-  definition: ParameterDefinition;
-  /** Absent when resolving for display outside a frame (§V44: never a wall clock). */
-  frame?: FrameEvaluationInput | undefined;
-}
-
-export type ParameterDriver = (context: ParameterDriverContext) => ParameterValue | undefined;
-
-export interface ResolveParametersOptions {
-  /** Per-node driver lookup, keyed by parameter. Empty in v1. */
-  drivers?: Readonly<Record<string, ParameterDriver>> | undefined;
-  frame?: FrameEvaluationInput | undefined;
-}
-
-export interface ResolvedParameters {
-  entries: readonly ResolvedParameter[];
-  get: (key: string) => ResolvedParameter | undefined;
-  /**
-   * Effective values only — the shape evaluation wants. Unlike `entries[].value`, a
-   * `color` parameter here is decoded to linear when its manifest says `space:
-   * "display"` (T148, §V56): this is the read path evaluation is meant to use, so the
-   * decode belongs here rather than in each shader that would otherwise redo it.
-   */
-  values: Readonly<Record<string, ParameterValue>>;
-}
-
-export function resolveParameter(
-  node: GraphNode,
-  key: string,
-  definition: ParameterDefinition,
-  options: ResolveParametersOptions = {},
-): ResolvedParameter {
-  const stored = node.parameters[key];
-  const driver = options.drivers?.[key];
-
-  if (driver !== undefined) {
-    const driven = driver({
-      node,
-      key,
-      definition,
-      frame: options.frame,
-    });
-    if (driven !== undefined) {
-      return {
-        key,
-        definition,
-        // A driver's output is still checked against the manifest: a bad driver must
-        // not put a value in the graph the schema would have refused.
-        value: valueForDefinition(definition, driven),
-        stored,
-        source: "driven",
-        driven: true,
-      };
-    }
-  }
-
-  const value = valueForDefinition(definition, stored);
-  const usable = stored !== undefined && value === stored;
-  return {
-    key,
-    definition,
-    value,
-    stored,
-    source: usable ? "static" : "default",
-    driven: false,
-  };
-}
-
-function schemaOf(definition: NodeDefinition | undefined): ParameterSchema {
-  return definition?.parameters ?? {};
-}
-
-/**
- * The value evaluation should consume (T148, §V56, §V61).
- *
- * A `color` parameter declared `space: "display"` holds a number that came straight out
- * of a colour picker — sRGB-encoded — while the project's working space is linear
- * (§V56). `resolveParameters` is the sole eval read path, so this is the one place that
- * decode belongs: fixed here, every picker-driven node (solid, ramp, checker, circle,
- * ...) is correct, instead of each in-shader curve doing its own slightly different
- * conversion. A `space: "linear"` colour is already in the working space and passes
- * through untouched, and alpha is never touched either way — it is coverage, not light,
- * and encoding it would make 50% opacity read as a different value than the one composed.
- *
- * This is deliberately NOT applied to `ResolvedParameter.value`: that value is what a
- * control displays and edits, and it must stay in the space the user picked (display),
- * or the colour picker would appear to drift its own number every time it round-trips
- * through the document. `values` is the separate "what evaluation wants" shape, so the
- * boundary is: decode happens only when values leaves the resolver as bulk evaluation
- * input, never on the per-entry value the inspector renders.
- */
-function evaluationValue(definition: ParameterDefinition, value: ParameterValue): ParameterValue {
-  if (definition.type !== "color" || definition.space !== "display") return value;
-  if (!Array.isArray(value) || value.length !== 4) return value;
-  return fromDisplay(toRgba(value), "linear");
-}
-
-/**
- * Effective parameters of a node, in manifest order. An unknown node type (§V10
- * placeholder) resolves to nothing rather than guessing a schema.
- */
-export function resolveParameters(
-  node: GraphNode,
-  definition: NodeDefinition | undefined,
-  options: ResolveParametersOptions = {},
-): ResolvedParameters {
-  const entries: ResolvedParameter[] = [];
-  const values: Record<string, ParameterValue> = {};
-
-  for (const [key, parameter] of Object.entries(schemaOf(definition))) {
-    const resolved = resolveParameter(node, key, parameter, options);
-    entries.push(resolved);
-    values[key] = evaluationValue(parameter, resolved.value);
-  }
-
-  const byKey = new Map(entries.map((entry) => [entry.key, entry]));
-  return {
-    entries,
-    get: (key: string) => byKey.get(key),
-    values,
-  };
-}
+export {
+  resolveParameter,
+  resolveParameterSchema,
+  resolveParameters,
+} from "@domain/parameters/resolve.ts";
+export type {
+  ParameterDriver,
+  ParameterDriverContext,
+  ParameterSource,
+  ResolveParametersOptions,
+  ResolvedParameter,
+  ResolvedParameters,
+} from "@domain/parameters/resolve.ts";

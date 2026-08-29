@@ -22,7 +22,8 @@ import {
 } from "../domain/components/index.ts";
 import type { ComponentRegistryView } from "../domain/components/index.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
-import { resolveParameterValues } from "./validate.ts";
+import { resolveNodeParameters } from "./validate.ts";
+import type { ResolvedParameters } from "../domain/parameters/resolve.ts";
 import type { ActiveSink } from "./types.ts";
 
 /**
@@ -126,6 +127,22 @@ function publishedSchema(definition: GraphComponentDefinition): ParameterSchema 
   const schema: ParameterSchema = {};
   for (const published of definition.parameters) schema[published.key] = published.definition;
   return schema;
+}
+
+/**
+ * A resolved page in STORED space — `ResolvedParameter.value`, not `.values`.
+ *
+ * Flattening does not evaluate these numbers; it WRITES them back onto internal
+ * `GraphNode.parameters` as overrides, and hands them to `parent.<key>` drivers that
+ * feed them into the internal node's own resolution. Both of those re-resolve, so a
+ * published `space: "display"` colour has to arrive here still display-encoded — using
+ * the evaluation values would decode it once on the way in and again on the way out,
+ * and a mid-grey would land at roughly 0.046 instead of 0.214 (§V56, B8).
+ */
+function storedSpaceValues(resolved: ResolvedParameters): Record<string, ParameterValue> {
+  const values: Record<string, ParameterValue> = {};
+  for (const entry of resolved.entries) values[entry.key] = entry.value;
+  return values;
 }
 
 /** Overrides addressed `<internalNodeId>/<key>`, grouped by internal node. */
@@ -349,11 +366,8 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
       recordSource(flatId, input.path, node, label);
 
       // The instance's published page, validated against its re-authored definitions.
-      const published = resolveParameterValues(
-        resolved,
-        publishedSchema(componentDefinition),
-        node.type,
-        diagnostics,
+      const published = storedSpaceValues(
+        resolveNodeParameters(resolved, publishedSchema(componentDefinition), node.type, diagnostics),
       );
       const childOverrides = effectiveInternalOverrides(componentDefinition, resolved, published);
 

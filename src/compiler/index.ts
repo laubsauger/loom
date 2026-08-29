@@ -19,7 +19,13 @@ export {
 } from "./flatten.ts";
 export type { ComponentSource, FlatEndpoint, FlattenRequest, FlattenedGraph } from "./flatten.ts";
 
-export { resolveParameterValues, validateGraph, validateRequiredInputs, isTemporalOutput } from "./validate.ts";
+export {
+  resolveNodeParameters,
+  resolveParameterValues,
+  validateGraph,
+  validateRequiredInputs,
+  isTemporalOutput,
+} from "./validate.ts";
 export type { ResolvedNode, ValidatedGraph } from "./validate.ts";
 
 export { orderNodes } from "./topology.ts";

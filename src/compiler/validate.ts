@@ -2,10 +2,11 @@ import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { NodeDefinition } from "../domain/types/node-definition.ts";
-import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
+import type { ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
-import { validateParameterValue } from "../domain/parameters/validate.ts";
+import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
+import type { ResolvedParameters } from "../domain/parameters/resolve.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
 import type { CompileEdge } from "./types.ts";
@@ -20,7 +21,12 @@ import type { CompileEdge } from "./types.ts";
 export interface ResolvedNode {
   readonly node: GraphNode;
   readonly definition: NodeDefinition;
-  /** Declared parameters with defaults filled in; invalid values fall back to the default. */
+  /**
+   * The values EVALUATION consumes: defaults filled in, invalid values replaced by the
+   * default and reported, and a `space: "display"` colour decoded to linear (§V56, B8).
+   * This is `ResolvedParameters.values` from the §V61 resolver, unaltered — the compiler
+   * no longer has an opinion of its own about what a parameter is worth.
+   */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
 }
 
@@ -30,11 +36,6 @@ export interface ValidatedGraph {
   /** Edges that passed endpoint, type (§V13) and arity (§V14) validation, sorted by edge id. */
   readonly edges: ReadonlyArray<CompileEdge>;
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
-}
-
-function defaultParameterValue(definition: ParameterDefinition): ParameterValue {
-  // An asset parameter has no inline default — an unset asset is genuinely absent.
-  return definition.type === "asset" ? null : definition.default;
 }
 
 function findPort(ports: ReadonlyArray<PortDefinition>, portId: PortId): PortDefinition | undefined {
@@ -47,39 +48,39 @@ export function isTemporalOutput(definition: NodeDefinition, portId: PortId): bo
 }
 
 /**
- * Effective values for one node's declared parameters: defaults filled in, stored values
- * validated against the schema, an invalid value replaced by the default and reported.
+ * One node's parameters, resolved through THE parameter read path (§V61, T168).
+ *
+ * The compiler used to carry its own copy of this resolution, and the copies drifted:
+ * the display→linear colour decode reached the inspector's copy and not this one, so a
+ * mid-grey swatch rendered near-black (B8). There is now one implementation, in
+ * `src/domain/parameters/resolve.ts`, and this function is the compiler's call site into
+ * it — schema resolution plus the two things that are genuinely the COMPILER's business:
+ *
+ *  - forwarding the resolver's own rejections into the compilation's diagnostics. The
+ *    validation itself belongs to the shared resolver, because validating is what picks
+ *    the value (reject → default, accept → stored); a caller that validated on its own
+ *    would resolve differently, which is B8 wearing another parameter type.
+ *  - the "carries a parameter this type does not declare" warning, which is about keys
+ *    OUTSIDE the schema, is worded in terms of a node type, and carries a compiler
+ *    diagnostic code. Nothing an inspector would ever want.
  *
  * Takes a bare schema rather than a `NodeDefinition` because a component instance's
  * parameter page is the component's PUBLISHED definitions, which exist before any node
  * manifest does (§V80) — and one resolver is the point. `typeLabel` is only for the
  * "carries a parameter this type does not declare" message.
  */
-export function resolveParameterValues(
+export function resolveNodeParameters(
   node: GraphNode,
   parameters: ParameterSchema,
   typeLabel: string,
   diagnostics: RuntimeDiagnostic[],
-): Record<string, ParameterValue> {
-  const resolved: Record<string, ParameterValue> = {};
+): ResolvedParameters {
+  const resolved = resolveParameterSchema(node, parameters);
 
-  for (const key of Object.keys(parameters).sort()) {
-    const schema = parameters[key];
-    if (schema === undefined) continue;
-    const raw = node.parameters[key];
-    if (raw === undefined) {
-      resolved[key] = defaultParameterValue(schema);
-      continue;
-    }
-    // The domain validator owns the rules; re-implementing them here would let the
-    // compiler and the command bus disagree about what a legal value is.
-    const failure = validateParameterValue(key, schema, raw, node.id);
-    if (failure !== null) {
-      diagnostics.push(failure);
-      resolved[key] = defaultParameterValue(schema);
-      continue;
-    }
-    resolved[key] = raw;
+  // Sorted by key, not manifest order: a diagnostic list is read by a human scanning for
+  // a parameter name, and the order must not change when a manifest is reordered.
+  for (const entry of [...resolved.entries].sort((a, b) => a.key.localeCompare(b.key))) {
+    if (entry.diagnostic !== null) diagnostics.push(entry.diagnostic);
   }
 
   for (const key of Object.keys(node.parameters).sort()) {
@@ -95,6 +96,23 @@ export function resolveParameterValues(
   }
 
   return resolved;
+}
+
+/**
+ * The values evaluation consumes — `space: "display"` colours decoded to linear (§V56).
+ *
+ * This is what feeds `NodeDefinition.compile` and therefore the plan's uniforms. A
+ * caller that needs the STORED-space values instead (flattening bakes published values
+ * back onto `GraphNode.parameters`, where a second decode would be wrong) reads
+ * `resolveNodeParameters(...).entries` directly.
+ */
+export function resolveParameterValues(
+  node: GraphNode,
+  parameters: ParameterSchema,
+  typeLabel: string,
+  diagnostics: RuntimeDiagnostic[],
+): Record<string, ParameterValue> {
+  return { ...resolveNodeParameters(node, parameters, typeLabel, diagnostics).values };
 }
 
 /**
