@@ -349,24 +349,78 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     const diagnostics: RuntimeDiagnostic[] = [];
     const blocked = new Set<string>();
 
-    if (direction === "undo") {
-      // §V41: refuse to roll back an entity another actor has since edited.
-      for (const entity of ownerKeys(group)) {
-        const owner = state.owners[entity];
-        if (owner !== undefined && owner.actorKey !== group.actorKey && owner.revision > group.revisionAfter) {
-          blocked.add(entity);
-          diagnostics.push({
-            severity: "warning",
-            code: "history.blocked",
-            message: `Skipped ${entity} while undoing: ${owner.actorKey} changed it more recently.`,
-            suggestion: "Ask the other actor to undo their change first.",
-          });
-        }
+    const verb = direction === "undo" ? "undoing" : "redoing";
+
+    // §V41: refuse to roll back — or re-apply — an entity another actor has since
+    // edited. Redo needs the same guard as undo: after A's blocked undo, the group sits
+    // on A's redo stack still carrying B's entity, and re-applying `after` would erase
+    // B's newer work.
+    for (const entity of ownerKeys(group)) {
+      const owner = state.owners[entity];
+      if (owner !== undefined && owner.actorKey !== group.actorKey && owner.revision > group.revisionAfter) {
+        blocked.add(entity);
+        diagnostics.push({
+          severity: "warning",
+          code: "history.blocked",
+          message: `Skipped ${entity} while ${verb}: ${owner.actorKey} changed it more recently.`,
+          suggestion: "Ask the other actor to undo their change first.",
+        });
       }
     }
 
     const pick = <T,>(change: EntityChange<T>): T | undefined =>
       direction === "undo" ? change.before : change.after;
+
+    // §V40 also binds restore, not just removeNodes: a restore must never leave an edge
+    // pointing at a missing node. Cascading the offending edges is not an option — they
+    // may be another actor's work (§V41) — so the deletion is kept back instead.
+    for (const [id, change] of Object.entries(group.nodes)) {
+      if (blocked.has(`node:${id}`)) continue;
+      if (pick(change) !== undefined) continue;
+      if (state.graph.nodes[id] === undefined) continue;
+      const stranded = Object.values(state.graph.edges).filter((edge) => {
+        if (edge.source.nodeId !== id && edge.target.nodeId !== id) return false;
+        const edgeChange = group.edges[edge.id];
+        const removedByRestore =
+          edgeChange !== undefined && !blocked.has(`edge:${edge.id}`) && pick(edgeChange) === undefined;
+        return !removedByRestore;
+      });
+      if (stranded.length > 0) {
+        blocked.add(`node:${id}`);
+        diagnostics.push({
+          severity: "warning",
+          code: "history.integrity",
+          message: `Kept node ${id} while ${verb}: ${stranded.length} edge(s) outside this history entry still connect to it.`,
+          nodeId: id,
+          suggestion: "Disconnect those edges first, then retry.",
+        });
+      }
+    }
+
+    // Mirror image: an edge only comes back if both endpoints exist in the restored
+    // document (present now and not deleted by this restore, or re-added by it).
+    for (const [id, change] of Object.entries(group.edges)) {
+      if (blocked.has(`edge:${id}`)) continue;
+      const value = pick(change);
+      if (value === undefined) continue;
+      const missing = [value.source.nodeId, value.target.nodeId].some((nodeId) => {
+        const nodeChange = group.nodes[nodeId];
+        const present =
+          nodeChange !== undefined && !blocked.has(`node:${nodeId}`)
+            ? pick(nodeChange) !== undefined
+            : state.graph.nodes[nodeId] !== undefined;
+        return !present;
+      });
+      if (missing) {
+        blocked.add(`edge:${id}`);
+        diagnostics.push({
+          severity: "warning",
+          code: "history.integrity",
+          message: `Skipped edge ${id} while ${verb}: an endpoint node no longer exists.`,
+          suggestion: "Restore the missing node first, then retry.",
+        });
+      }
+    }
 
     const nextGraph = produce(state.graph, (writable) => {
       // The recorded values are whole frozen entities; immer's Draft<> mapping only

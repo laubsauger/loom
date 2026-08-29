@@ -263,4 +263,93 @@ describe("graph store — actor-local undo (§V41)", () => {
     await harness.bus.execute("graph.undo", {}, contextFor(alice));
     expect(Object.keys(graph().nodes)).toHaveLength(0);
   });
+
+  it("blocks redo, not only undo, from clobbering another actor's newer edit", async () => {
+    const built = await applyAs(alice, [addSolid("$a")]);
+    const nodeId = built.output.createdIds["$a"] as string;
+
+    await applyAs(alice, [{ op: "setParameters", nodeId, parameters: { amount: 0.25 } }]);
+    await applyAs(bob, [{ op: "setParameters", nodeId, parameters: { amount: 0.75 } }]);
+
+    // Alice's undo is blocked (bob owns the entity) and lands the group on her redo stack.
+    await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(graph().nodes[nodeId]?.parameters["amount"]).toBe(0.75);
+
+    // Redoing must not re-apply alice's 0.25 over bob's 0.75.
+    const redone = await harness.bus.execute("graph.redo", {}, contextFor(alice));
+    expect(redone.status).toBe("applied");
+    expect(graph().nodes[nodeId]?.parameters["amount"]).toBe(0.75);
+    expect(redone.diagnostics.some((d) => d.code === "history.blocked")).toBe(true);
+  });
+});
+
+describe("graph store — restore keeps referential integrity (§V40, §V41)", () => {
+  it("keeps a node whose undo would strand another actor's edge", async () => {
+    const source = await applyAs(alice, [addSolid("$a")]);
+    const sourceId = source.output.createdIds["$a"] as string;
+    const blur = await applyAs(alice, [
+      { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } },
+    ]);
+    const blurId = blur.output.createdIds["$b"] as string;
+
+    await applyAs(bob, [
+      { op: "connect", source: { nodeId: sourceId, portId: "out" }, target: { nodeId: blurId, portId: "source" } },
+    ]);
+
+    // Alice undoes the blur node's creation; bob's edge points at it.
+    const undone = await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(undone.status).toBe("applied");
+    expect(graph().nodes[blurId]).toBeDefined();
+    expect(Object.keys(graph().edges)).toHaveLength(1);
+    expect(undone.diagnostics.some((d) => d.code === "history.integrity")).toBe(true);
+    // No dangling edge either way round.
+    for (const edge of Object.values(graph().edges)) {
+      expect(graph().nodes[edge.source.nodeId]).toBeDefined();
+      expect(graph().nodes[edge.target.nodeId]).toBeDefined();
+    }
+  });
+
+  it("skips re-adding an edge whose endpoint no longer exists", async () => {
+    const source = await applyAs(alice, [addSolid("$a")]);
+    const sourceId = source.output.createdIds["$a"] as string;
+    const blur = await applyAs(alice, [
+      { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } },
+    ]);
+    const blurId = blur.output.createdIds["$b"] as string;
+    await applyAs(alice, [
+      { op: "connect", source: { nodeId: sourceId, portId: "out" }, target: { nodeId: blurId, portId: "source" } },
+    ]);
+
+    // Alice retracts the connection, bob deletes the source node, alice redoes.
+    await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    await applyAs(bob, [{ op: "removeNodes", nodeIds: [sourceId] }]);
+
+    const redone = await harness.bus.execute("graph.redo", {}, contextFor(alice));
+    expect(redone.status).toBe("applied");
+    expect(Object.keys(graph().edges)).toHaveLength(0);
+    expect(redone.diagnostics.some((d) => d.code === "history.integrity")).toBe(true);
+  });
+
+  it("still cascades cleanly when the same actor's group holds both the node and its edges", async () => {
+    // One patch adds two nodes and the edge between them: undo removes all three
+    // together, so integrity blocking must not trigger.
+    const built = await applyAs(alice, [
+      addSolid("$a"),
+      { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } },
+      { op: "connect", source: { nodeId: "$a", portId: "out" }, target: { nodeId: "$b", portId: "source" } },
+    ]);
+    expect(built.status).toBe("applied");
+    expect(Object.keys(graph().edges)).toHaveLength(1);
+
+    const undone = await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(undone.status).toBe("applied");
+    expect(undone.diagnostics).toHaveLength(0);
+    expect(Object.keys(graph().nodes)).toHaveLength(0);
+    expect(Object.keys(graph().edges)).toHaveLength(0);
+
+    const redone = await harness.bus.execute("graph.redo", {}, contextFor(alice));
+    expect(redone.status).toBe("applied");
+    expect(Object.keys(graph().nodes)).toHaveLength(2);
+    expect(Object.keys(graph().edges)).toHaveLength(1);
+  });
 });

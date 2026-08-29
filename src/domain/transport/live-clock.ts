@@ -20,6 +20,7 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
   let seed = options.seed ?? 0;
   let frameIndex = 0;
   let lastMs: number | null = null;
+  let timeSeconds = 0;
 
   return {
     next(): FrameEvaluationInput {
@@ -29,9 +30,15 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
 
       // Clamp so a backgrounded tab does not hand simulations an enormous step.
       const deltaSeconds = Math.min(Math.max(rawDelta, 0), maxDelta);
+      // Time accumulates from the same clamped deltas the simulations consume:
+      // otherwise a 10-minute background jump moves time-driven nodes 600s while
+      // delta-driven ones step 0.25s, and the two halves of one graph diverge.
+      // Starting at 0 also keeps f32 shader uniforms precise far longer than the
+      // page-epoch timestamps performance.now() returns.
+      timeSeconds += deltaSeconds;
 
       return {
-        timeSeconds: nowMs / 1000,
+        timeSeconds,
         deltaSeconds,
         frameIndex: frameIndex++,
         mode: "realtime",
@@ -42,6 +49,7 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = 0;
       lastMs = null;
+      timeSeconds = 0;
     },
   };
 }
