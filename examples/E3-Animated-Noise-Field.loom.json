@@ -1,0 +1,148 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-field-shape": {
+        "id": "e-field-shape",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "input"
+        }
+      },
+      "e-field-warp": {
+        "id": "e-field-warp",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "disp"
+        }
+      },
+      "e-shape-warp": {
+        "id": "e-shape-warp",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "source"
+        }
+      },
+      "e-warp-out": {
+        "id": "e-warp-out",
+        "source": {
+          "nodeId": "warp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.22,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 3,
+          "speed": 0.35,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -360,
+          "y": 0
+        },
+        "type": "noise"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 420,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "parameters": {
+          "blacklevel": 0.15,
+          "contrast": 1.35,
+          "whitelevel": 0.85
+        },
+        "position": {
+          "x": -100,
+          "y": -80
+        },
+        "type": "level"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.06,
+            0.06
+          ]
+        },
+        "position": {
+          "x": 160,
+          "y": 0
+        },
+        "type": "displace"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E3 Animated Noise Field",
+  "projectId": "example-animated-noise-field",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

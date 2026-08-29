@@ -1,0 +1,200 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-facets-spin": {
+        "id": "e-facets-spin",
+        "source": {
+          "nodeId": "facets",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spin",
+          "portId": "input"
+        }
+      },
+      "e-fold-facets": {
+        "id": "e-fold-facets",
+        "source": {
+          "nodeId": "fold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "facets",
+          "portId": "input"
+        }
+      },
+      "e-source-fold": {
+        "id": "e-source-fold",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fold",
+          "portId": "input"
+        }
+      },
+      "e-spin-out": {
+        "id": "e-spin-out",
+        "source": {
+          "nodeId": "spin",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "facets": {
+        "definitionVersion": 1,
+        "id": "facets",
+        "parameters": {
+          "mirrorx": true,
+          "mirrory": true,
+          "offset": [
+            0.15,
+            0.05
+          ],
+          "repeat": [
+            3,
+            3
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "tile"
+      },
+      "fold": {
+        "definitionVersion": 1,
+        "id": "fold",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "mirror",
+          "p": [
+            0,
+            0
+          ],
+          "r": 30,
+          "s": [
+            0.5,
+            0.5
+          ],
+          "t": [
+            0.12,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "transform"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 520,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0.03,
+            0.05,
+            0.12,
+            1
+          ],
+          "center": [
+            0.32,
+            0.42
+          ],
+          "fillcolor": [
+            0.95,
+            0.4,
+            0.15,
+            1
+          ],
+          "mode": "distance",
+          "radius": [
+            0.18,
+            0.11
+          ],
+          "softness": 0.05
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "resolution": {
+          "height": 2048,
+          "mode": "fixed",
+          "width": 2048
+        },
+        "type": "circle"
+      },
+      "spin": {
+        "definitionVersion": 1,
+        "id": "spin",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "repeat",
+          "p": [
+            0,
+            0
+          ],
+          "r": -15,
+          "s": [
+            1,
+            1
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "rst"
+        },
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "type": "transform"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E5 Kaleidoscope",
+  "projectId": "example-kaleidoscope",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

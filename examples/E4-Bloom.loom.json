@@ -1,0 +1,197 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bright-glow": {
+        "id": "e-bright-glow",
+        "source": {
+          "nodeId": "bright",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "input"
+        }
+      },
+      "e-combine-out": {
+        "id": "e-combine-out",
+        "source": {
+          "nodeId": "combine",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-glow-combine": {
+        "id": "e-glow-combine",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "combine",
+          "portId": "in1"
+        }
+      },
+      "e-hot-bright": {
+        "id": "e-hot-bright",
+        "source": {
+          "nodeId": "hot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bright",
+          "portId": "input"
+        }
+      },
+      "e-hot-combine": {
+        "id": "e-hot-combine",
+        "source": {
+          "nodeId": "hot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "combine",
+          "portId": "in2"
+        }
+      },
+      "e-source-hot": {
+        "id": "e-source-hot",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hot",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bright": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "bright",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0.12,
+          "threshold": 0.9
+        },
+        "position": {
+          "x": -40,
+          "y": -120
+        },
+        "type": "threshold"
+      },
+      "combine": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "combine",
+        "parameters": {
+          "opacity": 0.85
+        },
+        "position": {
+          "x": 440,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "glow",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 36
+        },
+        "position": {
+          "x": 200,
+          "y": -120
+        },
+        "type": "blur"
+      },
+      "hot": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "hot",
+        "parameters": {
+          "blacklevel": 0.35,
+          "contrast": 1.2,
+          "whitelevel": 0.72
+        },
+        "position": {
+          "x": -280,
+          "y": 0
+        },
+        "type": "level"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 680,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "parameters": {
+          "amp": 1,
+          "exp": 2.2,
+          "harmon": 4,
+          "mono": true,
+          "period": 0.16,
+          "seed": 11,
+          "type": "perlin2d"
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "type": "noise"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E4 Bloom",
+  "projectId": "example-bloom",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba8unorm"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

@@ -1,0 +1,210 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-field-shape": {
+        "id": "e-field-shape",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "input"
+        }
+      },
+      "e-place-warp": {
+        "id": "e-place-warp",
+        "source": {
+          "nodeId": "place",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "disp"
+        }
+      },
+      "e-plate-warp": {
+        "id": "e-plate-warp",
+        "source": {
+          "nodeId": "plate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "source"
+        }
+      },
+      "e-shape-place": {
+        "id": "e-shape-place",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "place",
+          "portId": "input"
+        }
+      },
+      "e-warp-out": {
+        "id": "e-warp-out",
+        "source": {
+          "nodeId": "warp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "parameters": {
+          "aspectcorrect": true,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": true,
+          "period": 0.3,
+          "seed": 5,
+          "type": "simplex2d"
+        },
+        "position": {
+          "x": -520,
+          "y": 120
+        },
+        "type": "noise"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 520,
+          "y": -60
+        },
+        "type": "output"
+      },
+      "place": {
+        "definitionVersion": 1,
+        "id": "place",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "mirror",
+          "p": [
+            0,
+            0
+          ],
+          "r": 12,
+          "s": [
+            1.4,
+            1.4
+          ],
+          "t": [
+            0.05,
+            -0.03
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": 0,
+          "y": 120
+        },
+        "type": "transform"
+      },
+      "plate": {
+        "definitionVersion": 1,
+        "id": "plate",
+        "parameters": {
+          "color1": [
+            0.04,
+            0.06,
+            0.1,
+            1
+          ],
+          "color2": [
+            0.85,
+            0.87,
+            0.95,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            10,
+            6
+          ]
+        },
+        "position": {
+          "x": -520,
+          "y": -140
+        },
+        "type": "checker"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "parameters": {
+          "blacklevel": 0.2,
+          "contrast": 1.1,
+          "gamma1": 1.2,
+          "whitelevel": 0.8
+        },
+        "position": {
+          "x": -260,
+          "y": 120
+        },
+        "type": "level"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.08,
+            0.05
+          ]
+        },
+        "position": {
+          "x": 260,
+          "y": -60
+        },
+        "type": "displace"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E6 Displacement Stack",
+  "projectId": "example-displacement-stack",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

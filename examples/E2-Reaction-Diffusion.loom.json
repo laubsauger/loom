@@ -1,0 +1,114 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-kernel-out": {
+        "id": "e-kernel-out",
+        "source": {
+          "nodeId": "kernel",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-kernel-state": {
+        "id": "e-kernel-state",
+        "source": {
+          "nodeId": "kernel",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "state",
+          "portId": "in"
+        }
+      },
+      "e-state-kernel": {
+        "id": "e-state-kernel",
+        "source": {
+          "nodeId": "state",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "kernel",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "kernel": {
+        "definitionVersion": 1,
+        "id": "kernel",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\n// Coral-growth parameters. Feed/kill pairs are famously sensitive: these two sit in the\n// mitosis band, which keeps dividing rather than settling into a fixed pattern.\nconst FEED: f32 = 0.0545;\nconst KILL: f32 = 0.062;\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (FEED * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((KILL + FEED) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": 200,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 460,
+          "y": 120
+        },
+        "type": "output"
+      },
+      "state": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "state",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 1
+        },
+        "position": {
+          "x": -80,
+          "y": 0
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "feedback"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E2 Reaction-Diffusion",
+  "projectId": "example-reaction-diffusion",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 512,
+      "width": 512
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

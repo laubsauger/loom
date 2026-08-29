@@ -1,0 +1,237 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-decay-over": {
+        "id": "e-decay-over",
+        "source": {
+          "nodeId": "decay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "over",
+          "portId": "in2"
+        }
+      },
+      "e-drift-soften": {
+        "id": "e-drift-soften",
+        "source": {
+          "nodeId": "drift",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "soften",
+          "portId": "input"
+        }
+      },
+      "e-feedback-drift": {
+        "id": "e-feedback-drift",
+        "source": {
+          "nodeId": "echo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "drift",
+          "portId": "input"
+        }
+      },
+      "e-over-feedback": {
+        "id": "e-over-feedback",
+        "source": {
+          "nodeId": "over",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "echo",
+          "portId": "in"
+        }
+      },
+      "e-over-out": {
+        "id": "e-over-out",
+        "source": {
+          "nodeId": "over",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-soften-decay": {
+        "id": "e-soften-decay",
+        "source": {
+          "nodeId": "soften",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "decay",
+          "portId": "input"
+        }
+      },
+      "e-source-over": {
+        "id": "e-source-over",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "over",
+          "portId": "in1"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "decay": {
+        "definitionVersion": 1,
+        "id": "decay",
+        "parameters": {
+          "blacklevel": 0.015,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -360,
+          "y": 60
+        },
+        "type": "level"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": 3.5,
+          "s": [
+            0.985,
+            0.985
+          ],
+          "t": [
+            0,
+            -0.006
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -160,
+          "y": 220
+        },
+        "type": "transform"
+      },
+      "echo": {
+        "definitionVersion": 1,
+        "id": "echo",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 0.94
+        },
+        "position": {
+          "x": 40,
+          "y": 140
+        },
+        "type": "feedback"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 260,
+          "y": -60
+        },
+        "type": "output"
+      },
+      "over": {
+        "definitionVersion": 1,
+        "id": "over",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 40,
+          "y": -60
+        },
+        "type": "over"
+      },
+      "soften": {
+        "definitionVersion": 1,
+        "id": "soften",
+        "parameters": {
+          "extend": "zero",
+          "filter": "gaussian",
+          "size": 2.5
+        },
+        "position": {
+          "x": -360,
+          "y": 220
+        },
+        "type": "blur"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "parameters": {
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.32
+          ],
+          "fillcolor": [
+            1,
+            0.72,
+            0.28,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.045,
+            0.045
+          ],
+          "softness": 0.02
+        },
+        "position": {
+          "x": -360,
+          "y": -120
+        },
+        "type": "circle"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E1 Feedback Echo",
+  "projectId": "example-feedback-echo",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
