@@ -7,10 +7,16 @@ import {
   CHANNEL_OPTIONS,
   EXTEND_OPTIONS,
   readEnumIndex,
+  readFlag,
   readNumber,
   readVector,
 } from "./parameter-readers.ts";
-import { BLUR_FRAGMENT_WGSL, DISPLACE_FRAGMENT_WGSL } from "../shaders/filters.wgsl.ts";
+import {
+  CONVOLVE_FRAGMENT_WGSL,
+  EDGE_FRAGMENT_WGSL,
+  BLUR_FRAGMENT_WGSL,
+  DISPLACE_FRAGMENT_WGSL,
+} from "../shaders/filters.wgsl.ts";
 
 /**
  * Neighbourhood filters: Blur and Displace (T40).
@@ -261,4 +267,141 @@ export const displaceNode: NodeDefinition = {
 };
 
 /** The neighbourhood-filter group, in library order. */
-export const filterNodes: readonly NodeDefinition[] = [blurNode, displaceNode];
+/**
+ * Edge — Sobel gradient magnitude (T241). TD's Edge TOP.
+ *
+ * Per channel rather than on luminance: run it on a mask and you get that mask's boundary,
+ * which a luminance-only version would have collapsed away. Alpha passes through untouched,
+ * because under straight alpha the edges of COVERAGE are a different question from the
+ * edges of colour, and differentiating it would make every opaque image come back fully
+ * transparent.
+ */
+export const edgeNode: NodeDefinition = {
+  type: "edge",
+  version: 1,
+  title: "Edge",
+  category: "filter",
+  description: "Sobel edge detection, per channel. TD Edge TOP.",
+  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    strength: {
+      type: "number",
+      label: "Strength",
+      default: 1,
+      min: 0,
+      max: 10,
+      description: "Scales the gradient magnitude. Edges are often faint at 1.",
+    },
+    extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters, resolution } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:edge`,
+      shader: EDGE_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      // Key order matches the WGSL struct's field order, as everywhere else here.
+      uniforms: {
+        texel: [1 / resolution[0], 1 / resolution[1]],
+        strength: readNumber(parameters, "strength", 1),
+        extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
+      },
+      nodeId,
+      label: "Edge",
+    };
+    return { passes: [pass] };
+  },
+};
+
+/**
+ * Convolve — an arbitrary 3x3 kernel (T241). TD's Convolve TOP.
+ *
+ * The kernel is three vec3 ROWS rather than nine scalars, so the inspector shows it as a
+ * 3x3 grid — the only layout in which a kernel is readable at all. Nine separately-named
+ * numbers would be identical to the compiler and unusable to a person.
+ *
+ * The identity kernel is the default. A Convolve you have just dropped should do nothing
+ * visible until you type something into it; defaulting to a blur or an emboss would make
+ * the node appear to be broken in the other direction.
+ */
+export const convolveNode: NodeDefinition = {
+  type: "convolve",
+  version: 1,
+  title: "Convolve",
+  category: "filter",
+  description: "Applies an arbitrary 3x3 kernel. TD Convolve TOP.",
+  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    row0: { type: "vector", size: 3, label: "Row 1", default: [0, 0, 0], description: "Top row." },
+    row1: { type: "vector", size: 3, label: "Row 2", default: [0, 1, 0], description: "Middle row." },
+    row2: { type: "vector", size: 3, label: "Row 3", default: [0, 0, 0], description: "Bottom row." },
+    normalize: {
+      type: "boolean",
+      label: "Normalize",
+      default: true,
+      description: "Divides by the kernel sum, holding brightness. Ignored when the sum is 0.",
+    },
+    bias: {
+      type: "number",
+      label: "Bias",
+      default: 0,
+      min: -1,
+      max: 1,
+      description: "Added after. A zero-sum kernel needs ~0.5 here to show negative results.",
+    },
+    extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters, resolution } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:convolve`,
+      shader: CONVOLVE_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        texel: [1 / resolution[0], 1 / resolution[1]],
+        row0: readVector(parameters, "row0", [0, 0, 0]),
+        row1: readVector(parameters, "row1", [0, 1, 0]),
+        row2: readVector(parameters, "row2", [0, 0, 0]),
+        normalize: readFlag(parameters, "normalize", true),
+        bias: readNumber(parameters, "bias", 0),
+        extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
+      },
+      nodeId,
+      label: "Convolve",
+    };
+    return { passes: [pass] };
+  },
+};
+
+export const filterNodes: readonly NodeDefinition[] = [
+  blurNode,
+  edgeNode,
+  convolveNode,
+  displaceNode,
+];

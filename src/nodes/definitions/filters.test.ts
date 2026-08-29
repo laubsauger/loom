@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
-import { BLUR_SCRATCH_KEY, blurNode, displaceNode, filterNodes } from "./filters.ts";
+import {
+  BLUR_SCRATCH_KEY,
+  blurNode,
+  convolveNode,
+  displaceNode,
+  edgeNode,
+  filterNodes,
+} from "./filters.ts";
 import { EXTEND_OPTIONS } from "./parameter-readers.ts";
 import { WGSL_EXTEND } from "../shaders/common.wgsl.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
@@ -53,7 +60,7 @@ function firstPass(definition: NodeDefinition, parameters = {}, resolution?: rea
 describe("filter nodes (T40)", () => {
   it("all register together with no manifest diagnostics", () => {
     for (const definition of filterNodes) expect(validateNodeDefinition(definition)).toEqual([]);
-    expect(createNodeRegistry(filterNodes).list().map((d) => d.type)).toEqual(["blur", "displace"]);
+    expect(createNodeRegistry(filterNodes).list().map((d) => d.type)).toEqual(["blur", "convolve", "displace", "edge"]);
   });
 
   it("agree with the shader about which extend mode each enum index means", () => {
@@ -221,5 +228,61 @@ describe("filter nodes (T40)", () => {
       expect(compiled.passes).toEqual([]);
       expect(compiled.diagnostics?.[0]?.message).toContain('input port "disp"');
     });
+  });
+});
+
+/**
+ * Edge and Convolve (T241) — the two decisions in each that are arguments, not code.
+ */
+describe("Edge (T241)", () => {
+  it("passes alpha through instead of differentiating it", () => {
+    // Under straight alpha (§V56) coverage is not colour, and the edges of coverage are a
+    // different question. Differentiating alpha would make every fully opaque image come
+    // back completely transparent — surprising, and useless.
+    const { shader } = firstPass(edgeNode);
+    expect(shader).toContain("source.a");
+    expect(shader).not.toContain("gx.a");
+  });
+
+  it("uses the true gradient length, not the cheap anisotropic sum", () => {
+    // |gx| + |gy| reports diagonal edges up to 41% stronger than axis-aligned ones. The
+    // saving is irrelevant on a GPU and the bias is visible.
+    expect(firstPass(edgeNode).shader).toContain("sqrt((gx * gx) + (gy * gy))");
+  });
+
+  it("scales its sampling with the target resolution", () => {
+    // A fixed texel step would make the kernel a different physical size at every
+    // resolution, so an Edge would change character when the project resolution changed.
+    const uniforms = firstPass(edgeNode, {}, [200, 100]).uniforms as { texel?: readonly number[] };
+    expect(uniforms.texel).toEqual([1 / 200, 1 / 100]);
+  });
+});
+
+describe("Convolve (T241)", () => {
+  it("defaults to the identity kernel", () => {
+    // A freshly dropped Convolve must do nothing visible. Defaulting to a blur or an
+    // emboss would make an untouched node look broken in the other direction.
+    const uniforms = firstPass(convolveNode).uniforms as Record<string, unknown>;
+    expect([uniforms["row0"], uniforms["row1"], uniforms["row2"]]).toEqual([
+      [0, 0, 0],
+      [0, 1, 0],
+      [0, 0, 0],
+    ]);
+  });
+
+  it("guards normalisation against a zero-sum kernel", () => {
+    // Zero-sum is the NORMAL case for edge kernels, not a mistake, so normalising one has
+    // to pass the raw result through rather than divide by nothing.
+    expect(firstPass(convolveNode).shader).toContain("abs(weight) > 1e-6");
+  });
+
+  it("takes the kernel as three rows so the inspector can show a grid", () => {
+    // Nine separately-named scalars would be identical to the compiler and unreadable to a
+    // person. The shape of this parameter set is the feature.
+    for (const key of ["row0", "row1", "row2"]) {
+      const parameter = convolveNode.parameters[key];
+      expect(parameter?.type).toBe("vector");
+      expect(parameter?.type === "vector" ? parameter.size : 0).toBe(3);
+    }
   });
 });

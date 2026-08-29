@@ -29,7 +29,7 @@ export { noiseNode } from "./noise.ts";
 export { rampNode, uvNode, checkerNode, circleNode, generatorNodes } from "./generators.ts";
 export { transformNode, cropNode, tileNode, transformNodes } from "./transforms.ts";
 export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
-export { blurNode, displaceNode, filterNodes } from "./filters.ts";
+export { blurNode, edgeNode, convolveNode, displaceNode, filterNodes } from "./filters.ts";
 export {
   compositeNode,
   crossNode,

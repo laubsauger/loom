@@ -108,3 +108,105 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   );
   return sampleExtend(inputTexture, inputSampler, uv + (shift * params.weight), params.extend);
 }`;
+
+/**
+ * Edge — Sobel gradient magnitude (T241). TD's Edge TOP.
+ *
+ * Per channel rather than on luminance, which is what TD does and what makes the node
+ * useful for more than outlines: run it on a mask and you get that mask's boundary; run it
+ * on a normal-ish texture and each channel's gradient is independently meaningful. A
+ * luminance-only version throws that away and cannot be recovered downstream.
+ *
+ * Alpha is PASSED THROUGH, not differentiated. Under the straight-alpha convention (§V56)
+ * alpha is coverage, and the edges of coverage are a different question from the edges of
+ * colour — a fully opaque image would otherwise come back with zero alpha everywhere, which
+ * is both surprising and useless.
+ *
+ * The magnitude is `sqrt(gx^2 + gy^2)`, the honest gradient length. Some implementations
+ * use `|gx| + |gy|` because it is cheaper; that is anisotropic — it reports diagonal edges
+ * up to 41% stronger than axis-aligned ones — and the saving is irrelevant on a GPU.
+ */
+export const EDGE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+
+struct Params {
+  texel: vec2f,
+  strength: f32,
+  extend: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  var gx = vec3f(0.0);
+  var gy = vec3f(0.0);
+  // Sobel: the 1-2-1 weighting is a smoothing kernel along the edge direction, which is
+  // what makes it less noise-sensitive than a bare difference.
+  let kx = array<f32, 9>(-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0);
+  let ky = array<f32, 9>(-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0);
+  for (var j = 0; j < 3; j = j + 1) {
+    for (var i = 0; i < 3; i = i + 1) {
+      let offset = vec2f(f32(i - 1), f32(j - 1)) * params.texel;
+      let texel = sampleExtend(inputTexture, inputSampler, uv + offset, params.extend).rgb;
+      let index = (j * 3) + i;
+      gx = gx + (texel * kx[index]);
+      gy = gy + (texel * ky[index]);
+    }
+  }
+  let magnitude = sqrt((gx * gx) + (gy * gy)) * max(params.strength, 0.0);
+  let source = sampleExtend(inputTexture, inputSampler, uv, params.extend);
+  return vec4f(magnitude, source.a);
+}`;
+
+/**
+ * Convolve — an arbitrary 3x3 kernel (T241). TD's Convolve TOP.
+ *
+ * The kernel arrives as three vec3 rows rather than nine scalars so that the inspector
+ * shows it as a 3x3 grid, which is the only layout in which a kernel is readable. Nine
+ * separately-named scalars would be technically identical and practically unusable.
+ *
+ * `normalize` divides by the kernel sum, which is what keeps a blur-shaped kernel from
+ * changing the image's brightness. It is guarded against a zero sum because the useful
+ * edge-detection kernels sum to exactly zero — and for those, normalising is meaningless
+ * rather than an error, so the guard passes the raw result through instead of producing
+ * infinities.
+ *
+ * `bias` is added after, which is how a zero-sum kernel's negative results are made
+ * visible: an emboss kernel without a 0.5 bias is half black.
+ */
+export const CONVOLVE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+
+struct Params {
+  texel: vec2f,
+  row0: vec3f,
+  row1: vec3f,
+  row2: vec3f,
+  normalize: f32,
+  bias: f32,
+  extend: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let rows = array<vec3f, 3>(params.row0, params.row1, params.row2);
+  var sum = vec3f(0.0);
+  var weight = 0.0;
+  for (var j = 0; j < 3; j = j + 1) {
+    let row = rows[j];
+    for (var i = 0; i < 3; i = i + 1) {
+      let k = row[i];
+      let offset = vec2f(f32(i - 1), f32(j - 1)) * params.texel;
+      sum = sum + (sampleExtend(inputTexture, inputSampler, uv + offset, params.extend).rgb * k);
+      weight = weight + k;
+    }
+  }
+  // A zero-sum kernel is the normal case for edge detection, not a mistake, so normalising
+  // one passes the raw result through rather than dividing by nothing.
+  let divisor = select(1.0, weight, (params.normalize > 0.5) && (abs(weight) > 1e-6));
+  let source = sampleExtend(inputTexture, inputSampler, uv, params.extend);
+  return vec4f((sum / divisor) + vec3f(params.bias), source.a);
+}`;
