@@ -233,18 +233,25 @@ describe("graph store — actor-local undo (§V41)", () => {
     expect(Object.keys(graph().nodes)).toHaveLength(1);
   });
 
-  it("skips an entity another actor has edited more recently rather than erasing their work", async () => {
+  it("rejects an undo whose every entity another actor edited more recently, keeping the entry (T138)", async () => {
     const built = await applyAs(alice, [addSolid("$a")]);
     const nodeId = built.output.createdIds["$a"] as string;
 
     await applyAs(alice, [{ op: "setParameters", nodeId, parameters: { amount: 0.25 } }]);
     await applyAs(bob, [{ op: "setParameters", nodeId, parameters: { amount: 0.75 } }]);
 
+    const revisionBefore = harness.store.view.getRevision();
+    const entriesBefore = harness.store.view.getHistory(alice).undo.length;
     const undone = await harness.bus.execute("graph.undo", {}, contextFor(alice));
-    expect(undone.status).toBe("applied");
-    // Bob's newer value stands: undo must not silently revert another actor's edit.
+
+    // Bob's newer value stands: undo must not silently revert another actor's edit —
+    // and a press that changes nothing must not burn the history slot either.
+    expect(undone.status).toBe("rejected");
     expect(graph().nodes[nodeId]?.parameters["amount"]).toBe(0.75);
     expect(undone.diagnostics.some((d) => d.code === "history.blocked")).toBe(true);
+    expect(harness.store.view.getRevision()).toBe(revisionBefore);
+    expect(harness.store.view.getHistory(alice).undo).toHaveLength(entriesBefore);
+    expect(harness.store.view.getHistory(alice).redo).toHaveLength(0);
   });
 
   it("keys history by actor kind as well as id", () => {
@@ -268,16 +275,25 @@ describe("graph store — actor-local undo (§V41)", () => {
     const built = await applyAs(alice, [addSolid("$a")]);
     const nodeId = built.output.createdIds["$a"] as string;
 
-    await applyAs(alice, [{ op: "setParameters", nodeId, parameters: { amount: 0.25 } }]);
+    // One group touching TWO entities: a param change on X and a fresh node Y, so a
+    // partial block still applies (and consumes the entry) rather than rejecting.
+    const combo = await applyAs(alice, [
+      { op: "setParameters", nodeId, parameters: { amount: 0.25 } },
+      addSolid("$y", 400),
+    ]);
+    const addedId = combo.output.createdIds["$y"] as string;
     await applyAs(bob, [{ op: "setParameters", nodeId, parameters: { amount: 0.75 } }]);
 
-    // Alice's undo is blocked (bob owns the entity) and lands the group on her redo stack.
-    await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    // Alice's undo skips X (bob owns it), removes Y, and lands on her redo stack.
+    const undone = await harness.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(undone.status).toBe("applied");
     expect(graph().nodes[nodeId]?.parameters["amount"]).toBe(0.75);
+    expect(graph().nodes[addedId]).toBeUndefined();
 
-    // Redoing must not re-apply alice's 0.25 over bob's 0.75.
+    // Redoing restores Y but must not re-apply alice's 0.25 over bob's 0.75.
     const redone = await harness.bus.execute("graph.redo", {}, contextFor(alice));
     expect(redone.status).toBe("applied");
+    expect(graph().nodes[addedId]).toBeDefined();
     expect(graph().nodes[nodeId]?.parameters["amount"]).toBe(0.75);
     expect(redone.diagnostics.some((d) => d.code === "history.blocked")).toBe(true);
   });
@@ -321,12 +337,14 @@ describe("graph store — restore keeps referential integrity (§V40, §V41)", (
       { op: "connect", source: { nodeId: sourceId, portId: "out" }, target: { nodeId: blurId, portId: "source" } },
     ]);
 
-    // Alice undoes the blur node's creation; bob's edge points at it.
+    // Alice undoes the blur node's creation; bob's edge points at it. The group's only
+    // entity is integrity-blocked, so the whole undo rejects and the entry is kept (T138).
     const undone = await harness.bus.execute("graph.undo", {}, contextFor(alice));
-    expect(undone.status).toBe("applied");
+    expect(undone.status).toBe("rejected");
     expect(graph().nodes[blurId]).toBeDefined();
     expect(Object.keys(graph().edges)).toHaveLength(1);
     expect(undone.diagnostics.some((d) => d.code === "history.integrity")).toBe(true);
+    expect(harness.store.view.getHistory(alice).undo.length).toBeGreaterThan(0);
     // No dangling edge either way round.
     for (const edge of Object.values(graph().edges)) {
       expect(graph().nodes[edge.source.nodeId]).toBeDefined();
@@ -349,10 +367,12 @@ describe("graph store — restore keeps referential integrity (§V40, §V41)", (
     await harness.bus.execute("graph.undo", {}, contextFor(alice));
     await applyAs(bob, [{ op: "removeNodes", nodeIds: [sourceId] }]);
 
+    // The edge is the group's only entity and cannot come back — rejected, kept (T138).
     const redone = await harness.bus.execute("graph.redo", {}, contextFor(alice));
-    expect(redone.status).toBe("applied");
+    expect(redone.status).toBe("rejected");
     expect(Object.keys(graph().edges)).toHaveLength(0);
     expect(redone.diagnostics.some((d) => d.code === "history.integrity")).toBe(true);
+    expect(harness.store.view.getHistory(alice).redo.length).toBeGreaterThan(0);
   });
 
   it("still cascades cleanly when the same actor's group holds both the node and its edges", async () => {

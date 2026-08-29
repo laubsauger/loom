@@ -482,6 +482,29 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       }
     }
 
+    // T138: when EVERY entity is blocked, consuming the entry would make the user's
+    // undo press do nothing visible AND silently burn the history slot (plus a
+    // revision bump and an "applied" audit entry for a no-op). Reject instead: the
+    // entry stays where it is, and the press can succeed later once the other actor's
+    // newer edits are out of the way.
+    const totalEntities =
+      Object.keys(group.nodes).length + Object.keys(group.edges).length + Object.keys(group.groups).length;
+    if (totalEntities > 0 && blocked.size >= totalEntities) {
+      return {
+        status: "rejected",
+        revision: state.graph.revision,
+        undoGroupId: group.id,
+        diagnostics: [
+          ...diagnostics,
+          {
+            severity: "warning",
+            code: "history.blocked",
+            message: `Nothing ${direction === "undo" ? "undone" : "redone"}: every entity in this step was changed more recently by another actor. The step is kept for later.`,
+          },
+        ],
+      };
+    }
+
     const nextGraph = produce(state.graph, (writable) => {
       // The recorded values are whole frozen entities; immer's Draft<> mapping only
       // differs in array mutability, which restoring never relies on.

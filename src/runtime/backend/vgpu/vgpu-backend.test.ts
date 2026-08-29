@@ -503,6 +503,50 @@ describe("vgpu backend — plan handling", () => {
   });
 });
 
+describe("vgpu backend — resize/compile reconciliation (R4)", () => {
+  it("does not rebuild when the compiler hands back the sizes resize() already applied", async () => {
+    const { backend } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+    const builds = backend.status.resourceBuilds;
+
+    backend.resize("scene", [128, 128]);
+    backend.resize("output", [128, 128]);
+    backend.resize("history", [128, 128]);
+    const resets = backend.status.temporalResets;
+
+    // The compiler re-propagates resolution and emits the same plan at the new size.
+    // The signature was reconciled by resize(), so this must be a cache hit: no
+    // rebuild, and — critically — no second feedback-history wipe (§V22).
+    await backend.compile(fixturePlan({ size: [128, 128] }));
+    expect(backend.status.resourceBuilds).toBe(builds);
+    expect(backend.status.temporalResets).toBe(resets);
+  });
+
+  it("does rebuild when the compiler asks for a size the live targets no longer have", async () => {
+    const { backend } = await harness();
+    await backend.compile(fixturePlan());
+    const builds = backend.status.resourceBuilds;
+
+    backend.resize("scene", [128, 128]);
+
+    // The plan still says 64×64 for scene — descriptors no longer match, so this is a
+    // real structural change, not a spurious cache hit on stale descriptors.
+    await backend.compile(fixturePlan());
+    expect(backend.status.resourceBuilds).toBe(builds + 1);
+  });
+
+  it("keeps the memory estimate in step with live resizes (§V24)", async () => {
+    const { backend } = await harness();
+    await backend.compile(fixturePlan());
+    const before = backend.status.estimatedResourceBytes;
+
+    backend.resize("scene", [128, 128]);
+    // scene is rgba16float: 128² − 64² pixels at 8 bytes each.
+    expect(backend.status.estimatedResourceBytes).toBe(before + (128 * 128 - 64 * 64) * 8);
+  });
+});
+
 describe("vgpu backend — capability truth (T96, §V51)", () => {
   it("excludes r32float without float32-filterable, includes it with the feature", async () => {
     const plain = await harness();
@@ -587,6 +631,29 @@ describe("vgpu backend — recovery hardening (T98)", () => {
     await backend.recover();
     expect(backend.status.halted).toBe(false);
     expect(backend.status.deviceGeneration).toBe(2);
+  });
+
+  it("lets compile() wait out the recovery window instead of throwing (R9)", async () => {
+    const inner = mockGpuHost();
+    const host = flaky(inner, 0);
+    // The retry gate holds the recovery open so the mid-recovery window is observable.
+    let releaseRetry!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseRetry = resolve));
+    const backend = createVgpuBackend({ host, retryDelay: () => gate });
+    teardown.push(() => backend.dispose());
+    await backend.initialize({});
+    await backend.compile(fixturePlan());
+
+    host.setFailures(1); // first re-acquire fails, second (after the gate) succeeds
+    inner.loseDevice();
+    await until(() => backend.status.halted, "loss observed");
+
+    // Issued mid-recovery: previously this threw "called before initialize()".
+    const pending = backend.compile(fixturePlan({ size: [32, 32] }));
+    releaseRetry();
+    const compiled = await pending;
+    expect(compiled.id).toBeDefined();
+    expect(backend.status.halted).toBe(false);
   });
 
   it("halts the loop after repeated frame errors instead of throwing into rAF forever", async () => {

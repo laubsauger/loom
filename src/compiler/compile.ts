@@ -4,7 +4,7 @@ import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
 import type { PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
-import { planStructureSignature, readExecutionPlan } from "../runtime/backend/plan.ts";
+import { estimateResourceBytes, planStructureSignature, readExecutionPlan } from "../runtime/backend/plan.ts";
 import { describeError } from "../runtime/backend/diagnostics.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
@@ -371,6 +371,7 @@ function emptyPlan(diagnostics: ReadonlyArray<RuntimeDiagnostic>, pruned: Readon
     resourceSignatures: [],
     passSignatures: [],
     signature: planStructureSignature([], []),
+    estimatedResourceBytes: 0,
   };
 }
 
@@ -593,6 +594,23 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const read = readExecutionPlan(candidate);
   diagnostics.push(...read.diagnostics);
 
+  // §V24: the project memory budget is REPORTED, not enforced — per-resource caps are
+  // already clamped upstream (resolution.ts), so exceeding the budget is a warning the
+  // user can act on, never a refusal to render.
+  const estimatedResourceBytes = estimateResourceBytes(read.resources);
+  if (estimatedResourceBytes > settings.limits.memoryBudgetBytes) {
+    const budgetMb = (settings.limits.memoryBudgetBytes / (1024 * 1024)).toFixed(0);
+    const estimateMb = (estimatedResourceBytes / (1024 * 1024)).toFixed(1);
+    diagnostics.push(
+      compilerDiagnostic(
+        "warning",
+        CompilerDiagnosticCode.memoryBudget,
+        `Estimated texture memory ${estimateMb} MB exceeds the project budget of ${budgetMb} MB.`,
+        { suggestion: "Lower node or project resolutions, or raise the budget in project settings." },
+      ),
+    );
+  }
+
   const feedback: FeedbackPair[] = feedbackOutputs.map((output) => {
     const definition = validated.nodes.get(output.nodeId)?.definition;
     return {
@@ -627,5 +645,6 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       .map((pass) => ({ id: pass.id, signature: passSignature(pass) }))
       .sort((a, b) => a.id.localeCompare(b.id)),
     signature: planStructureSignature(read.resources, read.passes),
+    estimatedResourceBytes,
   };
 }

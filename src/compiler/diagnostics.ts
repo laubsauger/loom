@@ -32,6 +32,7 @@ export const CompilerDiagnosticCode = {
   nodeNoPasses: "compiler/node-no-passes",
   nodeCompileFailed: "compiler/node-compile-failed",
   passInvalid: "compiler/pass-invalid",
+  memoryBudget: "compiler/memory-budget",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

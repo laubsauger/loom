@@ -122,6 +122,11 @@ export interface CompiledGraph extends LogicalExecutionPlan {
    * the key for deciding what to rebuild; use the per-entry signatures for that.
    */
   readonly signature: string;
+  /**
+   * Coarse texture-memory estimate for the plan's resources (§V24). Reported alongside a
+   * `compiler/memory-budget` warning when it exceeds `settings.limits.memoryBudgetBytes`.
+   */
+  readonly estimatedResourceBytes: number;
 }
 
 export interface PlanEntrySignature {

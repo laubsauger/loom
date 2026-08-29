@@ -14,6 +14,7 @@ import {
 } from "../diagnostics.ts";
 import { createFrameGuard } from "../frame-guard.ts";
 import {
+  estimateResourceBytes,
   planStructureSignature,
   planUniformValues,
   readExecutionPlan,
@@ -61,24 +62,6 @@ const MAX_CONSECUTIVE_FRAME_ERRORS = 3;
 const defaultRetryDelay = (attempt: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
 
-const BYTES_PER_PIXEL: Record<string, number> = {
-  rgba8unorm: 4,
-  "rgba8unorm-srgb": 4,
-  rgba16float: 8,
-  r32float: 4,
-};
-
-/** §V24 reporting: coarse texture-memory estimate for the program's declared resources. */
-function estimateResourceBytes(resources: ReadonlyArray<ResourceDescriptor>): number {
-  let total = 0;
-  for (const resource of resources) {
-    if (resource.kind !== "target" && resource.kind !== "pingPong") continue;
-    const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
-    const pixels = resource.size[0] * resource.size[1];
-    total += pixels * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
-  }
-  return total;
-}
 
 /** `ShaderloomBackend` plus a settle hook for shutdown and deterministic tests. */
 export interface VgpuBackend extends ShaderloomBackend {
@@ -90,8 +73,9 @@ export interface VgpuBackend extends ShaderloomBackend {
 
 interface Program {
   readonly id: string;
-  readonly signature: string;
-  readonly resourceDescriptors: ReadonlyArray<ResourceDescriptor>;
+  /** Mutable: `resize()` reconciles both so the compile cache never diverges from the GPU (R4). */
+  signature: string;
+  resourceDescriptors: ReadonlyArray<ResourceDescriptor>;
   readonly passes: ReadonlyArray<PassDescriptor>;
   readonly compiled: CompiledExecutionPlan;
   /** Latest uniform values per pass, including live updates. Survives a device rebuild. */
@@ -468,6 +452,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
 
     async compile(plan) {
+      // R9: a compile racing the device-loss recovery window waits for it to settle
+      // instead of throwing a misleading "called before initialize()".
+      if (recovery) await recovery;
       const active = requireSession("compile()");
       guard.assertOutsideFrame("plan compile");
 
@@ -610,6 +597,23 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         return;
       }
       for (const t of found) t.resize(size);
+
+      // R4: the two resolution-change paths must agree. A live resize mutates GPU
+      // targets, so the retained descriptors and structural signature are updated to
+      // match — otherwise the next compile either rebuilds spuriously (wiping feedback
+      // history, §V22) when the compiler hands back the same new size, or silently
+      // reuses descriptors that lie about what is allocated when it hands back the old
+      // one. A device-loss rebuild also reallocates at the post-resize sizes this way.
+      if (program) {
+        program.resourceDescriptors = program.resourceDescriptors.map((resource) =>
+          (resource.kind === "target" || resource.kind === "pingPong") && resource.id === outputId
+            ? { ...resource, size: [size[0], size[1]] as const }
+            : resource,
+        );
+        program.signature = planStructureSignature(program.resourceDescriptors, program.passes);
+        estimatedBytes = estimateResourceBytes(program.resourceDescriptors);
+      }
+
       // A resized feedback pair carries garbage from the old resolution (§V23 resetOn).
       if (program?.resources.pingPongs.has(outputId)) clearTemporalHistory("resolution");
     },
@@ -636,7 +640,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
 
     loop(onFrame, settings = {}) {
-      const active = requireSession("loop()");
+      // R9: during the recovery window there is no session yet, but registering is
+      // still valid — restartLoops() starts every registration once the device is back.
+      if (disposed) throw new Error("loop() called after dispose().");
+      if (!session && !recovery) throw new Error("loop() called before initialize().");
       const registration: LoopRegistration = {
         onFrame,
         settings,
@@ -644,7 +651,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         stopped: false,
       };
       loops.add(registration);
-      registration.handle = frameLoop(active.gpu, (f) => runFrame(f, registration.onFrame), settings);
+      if (session && !halted) {
+        registration.handle = frameLoop(session.gpu, (f) => runFrame(f, registration.onFrame), settings);
+      }
       return {
         stop() {
           registration.stopped = true;

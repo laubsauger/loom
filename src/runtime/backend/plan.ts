@@ -517,6 +517,28 @@ export function planStructureSignature(
   return JSON.stringify({ resourceKeys, passKeys });
 }
 
+const BYTES_PER_PIXEL: Record<string, number> = {
+  rgba8unorm: 4,
+  "rgba8unorm-srgb": 4,
+  rgba16float: 8,
+  r32float: 4,
+};
+
+/**
+ * Coarse texture-memory estimate for a plan's declared resources (§V24 reporting).
+ * Shared by the compiler (budget diagnostic against ProjectSettings) and the backend
+ * (live status), so the two never disagree about what a plan costs.
+ */
+export function estimateResourceBytes(resources: ReadonlyArray<ResourceDescriptor>): number {
+  let total = 0;
+  for (const resource of resources) {
+    if (resource.kind !== "target" && resource.kind !== "pingPong") continue;
+    const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
+    total += resource.size[0] * resource.size[1] * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
+  }
+  return total;
+}
+
 /** Uniform values a plan carries, keyed by pass id. Extracted after the signature is taken. */
 export function planUniformValues(
   passes: ReadonlyArray<PassDescriptor>,

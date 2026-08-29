@@ -359,3 +359,27 @@ describe("compileGraph — node compilation", () => {
     expect(plan.diagnostics.map((d) => d.code)).toContain(CompilerDiagnosticCode.passInvalid);
   });
 });
+
+describe("compileGraph — memory budget reporting (§V24)", () => {
+  it("estimates plan texture memory and stays quiet inside the budget", () => {
+    const plan = compile(fanOutGraph());
+    expect(plan.estimatedResourceBytes).toBeGreaterThan(0);
+    expect(plan.diagnostics.map((d) => d.code)).not.toContain(CompilerDiagnosticCode.memoryBudget);
+  });
+
+  it("warns — never refuses — when the estimate exceeds the project budget", () => {
+    const settings = testSettings();
+    const plan = compile(fanOutGraph(), {
+      settings: {
+        ...settings,
+        limits: { ...settings.limits, memoryBudgetBytes: 1 },
+      },
+    });
+
+    const budget = plan.diagnostics.find((d) => d.code === CompilerDiagnosticCode.memoryBudget);
+    expect(budget?.severity).toBe("warning");
+    // §V24 says reported: the plan still compiles and renders.
+    expect(plan.ok).toBe(true);
+    expect(plan.passes.length).toBeGreaterThan(0);
+  });
+});
