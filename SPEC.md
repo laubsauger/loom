@@ -134,6 +134,14 @@ debugging — ⊥ only whatever the single main output happens to be.
   points, native res, current time, duration, frame-ready event. asset by `AssetReference`,
   ⊥ a raw path (V10). decode behind a media-source abstraction: `HTMLVideoElement` first,
   WebCodecs later where it measurably wins.
+- **DeviceIn** (TD Video Device In TOP) — webcam | capture device → texture. SEPARATE node
+  from MovieFileIn, as TD keeps them: the param sets barely overlap (device pick, resolution
+  negotiation vs file + playback), and V122's hide-what-⊥-apply would hide most of either.
+  rides the SAME `externalTexture` + media-source registry (T229) — a webcam is another
+  `MediaSource`, ⊥ a subsystem. `getDisplayMedia` screen capture = the same shape, later.
+  what a FILE never has to handle, and ∀ of it is normal ⊥ exceptional:
+  permission denied · no device · device unplugged mid-stream · another app takes the camera ·
+  tab backgrounded · resolution ⊥ what you asked for.
 - **MovieFileOut** — a texture input → an encoded file. rides T111's WebCodecs mp4 +
   exact-frame capture. IS A SINK (V25) ∴ ⊥ pruned; recording is its side effect.
 
@@ -735,6 +743,9 @@ V126: pulse reset is PER-RESOURCE, ⊥ whole-backend. `resetTemporalHistory()` i
 V119: recording is a NODE, ⊥ a global action. topology decides what is recorded ∴ several recorders may run at once, on intermediate branches. a recorder declares `sink: true` (V25) — recording is its side effect & it ⊥ be pruned for having no consumer.
 V120: a recorder captures by `frameIndex` via the export interface (V48, T111), ⊥ by sampling a clock. a take that dropped|duplicated frames = a WRONG recording, ⊥ a shorter one — it ! fail the take, ⊥ silently ship.
 V122: 1 media-in node covers still|sequence|video (TD Movie File In). params that ⊥ apply to the loaded asset are HIDDEN, ⊥ disabled-and-visible — a still has no in|out point, and showing one teaches the user the node is broken.
+V137: a live-device node treats permission-denied, no-device, unplugged, taken-by-another-app & backgrounded as NORMAL states w/ their own node status + a stated next action — ⊥ errors, ⊥ a black frame. a camera that is off looks exactly like a camera that is broken unless the node says which.
+V138: a live device is capability-gated (V38) & the app shows its OWN live indicator while a stream is open. relying on the browser's dot alone means a graph can hold a camera open w/ ⊥ trace ∈ the tool that opened it.
+V139: a live device negotiates — requested resolution|rate is a REQUEST. the node reports what it actually GOT, & downstream resolution follows the actual (V21), ⊥ the asked-for.
 V135: a decoded frame enters the graph as an `externalTexture` RESOURCE, ⊥ as pixels ∈ the plan. the plan carries a `sourceId`; the runtime owns the registry & uploads. keeps the plan structured-clone-safe (V63) ∴ the worker migration stays free.
 V136: upload happens on FRAME-READY, ⊥ per render frame. a 30fps video ∈ a 60fps graph uploads 30 times, ⊥ 60 — re-uploading an unchanged frame is the easiest wasted bandwidth ∈ the system.
 V121: media nodes reference an `AssetReference`, ⊥ a raw path or an object URL (V10). unresolved asset → relink flow, keeps identity. decode behind a media-source abstraction ∴ WebCodecs can replace `HTMLVideoElement` w/o touching a node.
@@ -922,6 +933,7 @@ T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ 
 T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
 T229|.|`externalTexture` resource kind + runtime media-source registry + upload-on-frame-ready. BLOCKS T211 — media cannot exist without it|V135,V136,V63,V58
+T231|.|**DeviceIn** node — device enumeration + pick, permission flow, live indicator, negotiated-vs-requested resolution, ∀ interruption states as node status. rides T229's registry|V137,V138,V139,V38
 T230|.|asset registry: resolve `AssetReference` → a decoded source; File System Access + drag-drop + relink flow for unresolved|V121,V10
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
 T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
@@ -1049,7 +1061,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
