@@ -728,6 +728,8 @@ V102: multi-node toggle SETS all to one value, ⊥ flips each independently — 
 V103: `compileShader` `validated:false` = the DEVICE ⊥ report compilation info — UNKNOWN, ⊥ broken. editor shows "unvalidated on this device", ⊥ red. `ok:true` only when validation actually RAN clean.
 V104: a pointset TRANSFORM owns FRESH pairs for everything it outputs (position copied through) — consumers derive pair ids from their source node id, so modifying an upstream pair in place would alias sim state across nodes. generalizes to ∀ pointset op.
 V115: STATE outranks a transient pointer cue. selection|error|bypass ⊥ replaced by `:hover` — a selected node under the cursor ! still read as selected. hover adds (a ring, a tint), ⊥ overwrites the property state owns. specificity: state selectors ! be ≥ the hover selector, ⊥ rely on source order.
+V133: numeric drag precision spans DECADES, ⊥ 3 fixed modifier levels. same field ! reach 0.0001 and 100 w/o the user editing a `step` setting: modifiers give ±1 decade, a magnitude LADDER (press-hold → 0.001·0.01·0.1·1·10·100, pick one, drag) gives arbitrary reach. the manifest `step` is the DEFAULT decade, ⊥ a cap.
+V134: ∀ emitted value still lands on the chosen decade's grid @ declared precision (V-drag rules) — changing reach ⊥ mean changing exactness. 0.30000000000000004 ∈ a saved document is the failure this prevents.
 V99: ∀ pointer target ≥ ~20px even when its VISUAL is smaller. a 7px port dot is a coin toss, and missing it drags the NODE — you meant to wire and you moved the thing you were wiring. expand w/ an invisible pad, ⊥ by growing the dot (a bigger dot dominates a dense graph).
 V100: a disabled preview region shows the node's RESOLVED FACTS (size, format, space) — ⊥ a black rectangle. off ⊥ mean empty: the space is already spent, so it should carry what the user would otherwise open the info popup for.
 V130: the Common block (resolution, format, space readout) goes LAST or behind a fold — ⊥ above the node's own parameters. TD puts it on a separate tab for a reason: it is chrome that is occasionally consulted, and the params are why the panel was opened. prime real estate belongs to the node's actual controls.
@@ -887,6 +889,7 @@ T217|.|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE
 T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
 T219|.|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
+T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
@@ -904,11 +907,11 @@ T213|.|drop a NODE on an edge → SPLICE it inline (upstream→node→downstream
 T208|.|node resize: React Flow NodeResizer + `setNodeSize` patch op, 1 patch per gesture, persisted ∈ the document, min size respected|V116,V15,V29
 T209|.|preview tile resolution follows the node's preview area (ladder-quantised, capped), aspect letterboxed ⊥ stretched|V117,V118,V28c
 T206|.|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
-T207|.|component-addressable slots: `color.r`/`t.x` each w/ own mode+value; resolver reassembles; compound editor writes ∀ components ∈ 1 patch|V113,V114,V107
-T202|.|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
-T203|.|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
+T207|x|component-addressable slots: `color.r`/`t.x` each w/ own mode+value; resolver reassembles; compound editor writes ∀ components ∈ 1 patch|V113,V114,V107
+T202|x|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
+T203|x|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
 T204|.|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's has-a-value corner mark; ctrl/cmd+E edits the expression; right-click menu|V107,V108,V90
-T205|.|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
+T205|x|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
 T200|.|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
 T201|.|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
 T198|.|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
@@ -1006,7 +1009,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 T227 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
