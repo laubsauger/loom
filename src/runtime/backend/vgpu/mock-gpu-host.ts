@@ -22,6 +22,8 @@ export interface MockGpuHost extends GpuHost {
   loseDevice(info?: Partial<DeviceLossInfo>): void;
   /** Command-level counters of the live session's device. */
   readonly instrumentation: MockInstrumentation | undefined;
+  /** The live mock device — lets tests fabricate context textures for canvas stubs (T87). */
+  readonly device: GPUDevice | undefined;
   readonly sessionsCreated: number;
 }
 
@@ -37,6 +39,9 @@ export function mockGpuHost(options: MockGpuHostOptions = {}): MockGpuHost {
     },
     get instrumentation() {
       return live === undefined ? undefined : getMockGPUDeviceInstrumentation(live.device);
+    },
+    get device() {
+      return live?.device;
     },
     loseDevice(info) {
       live?.lose({

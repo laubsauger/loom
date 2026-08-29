@@ -22,6 +22,7 @@ export const BackendDiagnosticCode = {
   submissionHalted: "backend/submission-halted",
   compileFailed: "backend/compile-failed",
   resourceLimit: "backend/resource-limit",
+  presentFailed: "backend/present-failed",
 } as const;
 
 export type BackendDiagnosticCodeValue =

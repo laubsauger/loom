@@ -1,11 +1,19 @@
-import { frame, frameLoop } from "vgpu";
-import type { Frame, Target } from "vgpu";
+import { effect, frame, frameLoop, sampler, surface } from "vgpu";
+import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target } from "vgpu";
 import type {
   BackendCapabilities,
   BackendInitOptions,
   CompiledExecutionPlan,
 } from "../../../domain/types/backend.ts";
-import type { BackendStatus, BuildStats, FrameLoopSettings, ShaderloomBackend } from "../backend-types.ts";
+import type {
+  BackendStatus,
+  BuildStats,
+  FrameLoopSettings,
+  PresentableCanvas,
+  PresentationHandle,
+  PresentationOptions,
+  ShaderloomBackend,
+} from "../backend-types.ts";
 import {
   BackendDiagnosticCode,
   backendDiagnostic,
@@ -99,6 +107,31 @@ interface LoopRegistration {
   stopped: boolean;
 }
 
+/**
+ * One attached presentation surface (T87, §V64/§V70). The canvas is retained so the
+ * surface can be re-established on a fresh device after loss; the blit is rebound
+ * whenever the source object changes (recompile replacing a target, output switch).
+ */
+interface PresentationState {
+  readonly id: string;
+  readonly canvas: PresentableCanvas;
+  readonly label: string | undefined;
+  outputId: string;
+  surface: Surface | undefined;
+  blit: Effect | undefined;
+  /** The exact object currently bound as the blit source, for change detection. */
+  boundSource: Target | PingPongTargets | undefined;
+  disposed: boolean;
+}
+
+/** Presenting is a GPU-to-GPU copy (§V7): sample the output, write the surface. */
+const BLIT_WGSL = `@group(0) @binding(0) var blitSampler: sampler;
+@group(0) @binding(1) var blitSource: texture_2d<f32>;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return textureSample(blitSource, blitSampler, uv);
+}`;
+
 export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend {
   const host = options.host ?? browserGpuHost();
   const recover = options.recoverFromDeviceLoss ?? true;
@@ -128,6 +161,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let estimatedBytes = 0;
   let consecutiveFrameErrors = 0;
   let lastBuildStats: BuildStats | undefined;
+  const presentations = new Map<string, PresentationState>();
+  let presentationCounter = 0;
+  let presentSampler: GPUSampler | undefined;
 
   const status: BackendStatus = {
     get initialized() {
@@ -291,6 +327,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
       halted = false;
       clearTemporalHistory("device");
+      // Old surfaces and the sampler died with the old device; re-establish every
+      // attached presentation on the new one from its retained canvas (T87, §V23).
+      presentSampler = undefined;
+      for (const p of presentations.values()) {
+        p.surface = undefined;
+        p.blit = undefined;
+        p.boundSource = undefined;
+      }
+      ensureAllPresentations();
       restartLoops();
       hub.report(
         backendDiagnostic(
@@ -405,6 +450,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         const renderTarget: Target = resolve();
         f.pass({ target: renderTarget, clear: pass.clear ?? true }, drawable);
       }
+
+      encodePresentations(f);
     });
   }
 
@@ -431,6 +478,73 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     return [];
   }
 
+  function presentationSource(outputId: string): Target | PingPongTargets | undefined {
+    if (!program) return undefined;
+    return program.resources.targets.get(outputId) ?? program.resources.pingPongs.get(outputId);
+  }
+
+  const isPair = (source: Target | PingPongTargets): source is PingPongTargets => "swap" in source;
+
+  /**
+   * (Re)establishes one presentation: surface on the live device, blit effect bound to
+   * the current source object. Allocates, so callers run outside any open frame (§V8).
+   * A presentation with no resolvable source (nothing compiled yet, output pruned) stays
+   * attached and silent until a later compile brings the output back.
+   */
+  function ensurePresentation(p: PresentationState): void {
+    const active = session;
+    if (!active || p.disposed) return;
+    try {
+      if (!p.surface) {
+        // PresentableCanvas is the structural shape of vgpu's SurfaceCanvas; the cast
+        // is what lets tests and transferred OffscreenCanvas objects through unchanged.
+        p.surface = surface(active.gpu, p.canvas as unknown as SurfaceCanvas, p.label === undefined ? {} : { label: p.label });
+      }
+      const source = presentationSource(p.outputId);
+      if (source === undefined) {
+        p.boundSource = undefined;
+        return;
+      }
+      presentSampler ??= sampler(active.gpu, { magFilter: "linear", minFilter: "linear" });
+      const bindValue = isPair(source) ? source.read.color : source;
+      if (!p.blit) {
+        p.blit = effect(active.gpu, BLIT_WGSL, {
+          set: { blitSampler: presentSampler, blitSource: bindValue },
+          label: `present:${p.id}`,
+        });
+        // No compileSync here: a surface target only exists inside frame(gpu)
+        // (VGPU-SURFACE-NOT-IN-FRAME), so the blit pipeline compiles lazily on its
+        // first encode. One-time cost on the first presented frame, not per frame.
+      } else if (p.boundSource !== source) {
+        p.blit.set({ blitSource: bindValue });
+      }
+      p.boundSource = source;
+    } catch (error) {
+      hub.report(
+        backendDiagnostic(
+          "error",
+          BackendDiagnosticCode.presentFailed,
+          `Could not attach presentation "${p.id}" for output "${p.outputId}": ${describeError(error)}`,
+        ),
+      );
+    }
+  }
+
+  function ensureAllPresentations(): void {
+    for (const p of presentations.values()) ensurePresentation(p);
+  }
+
+  /** §V7: presenting is a blit pass encoded with the frame. No readback, ever. */
+  function encodePresentations(f: Frame): void {
+    for (const p of presentations.values()) {
+      if (p.disposed || p.surface === undefined || p.blit === undefined || p.boundSource === undefined) continue;
+      // A ping-pong source swaps identity every frame; re-point before encoding, the
+      // same way rebindDynamicTextures treats plan passes.
+      if (isPair(p.boundSource)) p.blit.set({ blitSource: p.boundSource.read.color });
+      f.pass({ target: p.surface, clear: true }, p.blit);
+    }
+  }
+
   return {
     status,
     get capabilities() {
@@ -450,7 +564,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         reportCapabilities(capabilities);
         watchDeviceLoss(created);
         // §V47: no surface is created here, with or without `options.canvas`. The plan
-        // always renders offscreen; presenting to a canvas is a separate concern.
+        // always renders offscreen; a canvas becomes visible only through present() (T87).
         return capabilities;
       } catch (error) {
         hub.report(
@@ -565,6 +679,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       lastBuildStats = stats;
       stale = false;
       estimatedBytes = estimateResourceBytes(read.resources);
+      // Rebuilt outputs replaced their objects; every attached surface rebinds (T87).
+      ensureAllPresentations();
       return program.compiled;
     },
 
@@ -718,6 +834,52 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       clearTemporalHistory("explicit");
     },
 
+    present(canvas: PresentableCanvas, options: PresentationOptions): PresentationHandle {
+      // §V64/§V70: the surface is handed in, never created here, and any number of
+      // surfaces may present the same output. Registering mid-recovery is fine — the
+      // rebuild re-establishes every retained presentation (mirrors loop(), R9).
+      if (disposed) throw new Error("present() called after dispose().");
+      if (!session && !recovery) throw new Error("present() called before initialize().");
+      guard.assertOutsideFrame("surface attach");
+
+      presentationCounter += 1;
+      const p: PresentationState = {
+        id: `present-${presentationCounter}`,
+        canvas,
+        label: options.label,
+        outputId: options.outputId,
+        surface: undefined,
+        blit: undefined,
+        boundSource: undefined,
+        disposed: false,
+      };
+      presentations.set(p.id, p);
+      if (session) ensurePresentation(p);
+
+      return {
+        id: p.id,
+        get outputId() {
+          return p.outputId;
+        },
+        setOutput(outputId: string) {
+          if (p.disposed) return;
+          p.outputId = outputId;
+          p.boundSource = undefined;
+          if (session && currentFrame === undefined) ensurePresentation(p);
+        },
+        dispose() {
+          if (p.disposed) return;
+          p.disposed = true;
+          try {
+            p.surface?.dispose();
+          } catch {
+            // A lost device already tore it down.
+          }
+          presentations.delete(p.id);
+        },
+      };
+    },
+
     async recover() {
       if (disposed) throw new Error("recover() called after dispose().");
       if (recovery) {
@@ -747,6 +909,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       disposed = true;
       stopLoops();
       loops.clear();
+      for (const p of presentations.values()) {
+        p.disposed = true;
+        try {
+          p.surface?.dispose();
+        } catch {
+          // A lost device already tore it down.
+        }
+      }
+      presentations.clear();
       program = undefined;
       try {
         session?.dispose();

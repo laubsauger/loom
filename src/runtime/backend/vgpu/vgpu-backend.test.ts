@@ -503,6 +503,142 @@ describe("vgpu backend — plan handling", () => {
   });
 });
 
+describe("vgpu backend — presentation seam (T87, §V64/§V70)", () => {
+  /** A structural canvas whose webgpu context textures come from the live mock device. */
+  function stubCanvas(host: MockGpuHost) {
+    let frames = 0;
+    const context = {
+      configure() {},
+      unconfigure() {},
+      getCurrentTexture: () => {
+        frames += 1;
+        const device = host.device;
+        if (!device) throw new Error("no live mock device");
+        return device.createTexture({
+          size: [64, 64],
+          format: "rgba8unorm",
+          usage: ["render_attachment", "texture_binding"] as unknown as GPUTextureUsageFlags,
+        });
+      },
+    };
+    return {
+      canvas: { width: 64, height: 64, getContext: (kind: string) => (kind === "webgpu" ? context : null) },
+      presentedFrames: () => frames,
+    };
+  }
+
+  it("presents a compiled output to a handed-in canvas, GPU-to-GPU", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas, presentedFrames } = stubCanvas(host);
+
+    backend.present(canvas, { outputId: "output" });
+    backend.render(plan, frameInputs(0));
+    const afterFirst = presentedFrames();
+    backend.render(plan, frameInputs(1));
+
+    // vgpu may pull the context texture more than once per frame; what matters is
+    // that every rendered frame reaches the canvas.
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(presentedFrames()).toBeGreaterThan(afterFirst);
+    // §V7/§V48: presenting is a blit, never a readback.
+    expect(backend.status.readbacks).toBe(0);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("presents the same output on multiple surfaces at once (§V70)", async () => {
+    const { backend, host } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const first = stubCanvas(host);
+    const second = stubCanvas(host);
+
+    backend.present(first.canvas, { outputId: "output" });
+    backend.present(second.canvas, { outputId: "output" });
+    backend.render(plan, frameInputs(0));
+
+    expect(first.presentedFrames()).toBeGreaterThan(0);
+    expect(second.presentedFrames()).toBeGreaterThan(0);
+  });
+
+  it("a surface attached before any compile lights up after one", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const { canvas, presentedFrames } = stubCanvas(host);
+
+    backend.present(canvas, { outputId: "output" });
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+
+    expect(presentedFrames()).toBeGreaterThan(0);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("setOutput repoints a live surface, and presenting a feedback output tracks the swap", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas, presentedFrames } = stubCanvas(host);
+
+    const handle = backend.present(canvas, { outputId: "output" });
+    backend.render(plan, frameInputs(0));
+    const beforeSwitch = presentedFrames();
+    handle.setOutput("history"); // a ping-pong output: rebinds every frame
+    expect(handle.outputId).toBe("history");
+    backend.render(plan, frameInputs(1));
+    backend.render(plan, frameInputs(2));
+
+    expect(beforeSwitch).toBeGreaterThan(0);
+    expect(presentedFrames()).toBeGreaterThan(beforeSwitch);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("keeps presenting across a structural recompile", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const first = await backend.compile(fixturePlan());
+    const { canvas, presentedFrames } = stubCanvas(host);
+    backend.present(canvas, { outputId: "output" });
+    backend.render(first, frameInputs(0));
+
+    const beforeRecompile = presentedFrames();
+    const second = await backend.compile(fixturePlan({ generateShader: GENERATE_WGSL_EDITED }));
+    backend.render(second, frameInputs(1));
+
+    expect(beforeRecompile).toBeGreaterThan(0);
+    expect(presentedFrames()).toBeGreaterThan(beforeRecompile);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("re-establishes surfaces after device loss (§V23)", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas, presentedFrames } = stubCanvas(host);
+    backend.present(canvas, { outputId: "output" });
+    backend.render(plan, frameInputs(0));
+
+    const generation = backend.status.deviceGeneration;
+    host.loseDevice();
+    await until(() => backend.status.deviceGeneration > generation, "device rebuild");
+    await backend.whenSettled();
+
+    const beforeLoss = presentedFrames();
+    const recompiled = await backend.compile(fixturePlan());
+    backend.render(recompiled, frameInputs(1));
+    expect(beforeLoss).toBeGreaterThan(0);
+    expect(presentedFrames()).toBeGreaterThan(beforeLoss);
+    expect(diagnostics.filter((d) => d.code === BackendDiagnosticCode.presentFailed)).toEqual([]);
+  });
+
+  it("dispose frees the canvas for a new presentation", async () => {
+    const { backend, host } = await harness();
+    await backend.compile(fixturePlan());
+    const { canvas } = stubCanvas(host);
+
+    const handle = backend.present(canvas, { outputId: "output" });
+    handle.dispose();
+    // vgpu guards one live surface per canvas; a disposed one must release its claim.
+    const again = backend.present(canvas, { outputId: "output" });
+    expect(again.id).not.toBe(handle.id);
+  });
+});
+
 describe("vgpu backend — per-resource reuse across recompiles (T143, §V22)", () => {
   it("adding an unrelated node carries the feedback pair over instead of recreating it", async () => {
     const { backend, host, diagnostics } = await harness();

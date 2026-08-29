@@ -20,6 +20,33 @@ export interface UniformUpdate {
   readonly values: UniformValues;
 }
 
+/**
+ * Anything the runtime can present into (T87, §V64/§V70): an on-screen canvas, an
+ * `OffscreenCanvas` transferred from another window or into a worker, or a test stub.
+ * Structural on purpose — the runtime never touches the DOM, it is HANDED a surface.
+ */
+export interface PresentableCanvas {
+  width: number;
+  height: number;
+  getContext(contextId: "webgpu", options?: unknown): unknown;
+}
+
+export interface PresentationOptions {
+  /** Which compiled output this surface shows. */
+  readonly outputId: string;
+  readonly label?: string;
+}
+
+/** One live presentation. The same output may be presented on any number of surfaces (§V70). */
+export interface PresentationHandle {
+  readonly id: string;
+  readonly outputId: string;
+  /** Repoint this surface at a different output (pin preview, A/B, perform screens). */
+  setOutput(outputId: string): void;
+  /** Detaches the surface and frees the canvas for a new context. */
+  dispose(): void;
+}
+
 /** Reuse accounting for one structural compile (T143). */
 export interface BuildStats {
   resourcesCreated: number;
@@ -75,6 +102,14 @@ export interface ShaderloomBackend extends RenderBackend {
 
   /** Clears every ping-pong pair. Called automatically on device loss (§V22, §V23). */
   resetTemporalHistory(): void;
+
+  /**
+   * Attaches a presentable surface to a compiled output (T87, §V64/§V70). The surface is
+   * handed in — never created here — and any number of surfaces may present the same
+   * output. Presenting is a GPU-to-GPU blit encoded with each frame (§V7); surfaces
+   * survive plan recompiles and are re-established across device loss.
+   */
+  present(canvas: PresentableCanvas, options: PresentationOptions): PresentationHandle;
 
   /**
    * Re-attempts device recovery after automatic rebuilds gave up (§V23). Resolves when

@@ -65,6 +65,12 @@ function recordingBackend(): ShaderloomBackend & {
     updateUniforms() {},
     resetTemporalHistory() {},
     recover: () => Promise.resolve(),
+    present: (_canvas, options) => ({
+      id: "present-1",
+      outputId: options.outputId,
+      setOutput() {},
+      dispose() {},
+    }),
   };
 }
 
