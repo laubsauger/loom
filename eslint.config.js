@@ -4,6 +4,55 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 
+// §V145 — a domain type whose name is ALSO a DOM/Node global must be imported
+// explicitly at every use.
+//
+// This exists because of a bug that produced no error at all: `vgpu-backend.ts`
+// referenced `MediaSource` without importing ours, TypeScript happily resolved the
+// DOM's Media Source Extensions interface, and the file typechecked green against
+// the WRONG contract. Nothing was red; the type simply meant something else.
+//
+// The list is OUR names that collide, not every global that could — a blanket rule
+// on `Node`, `Event`, `Range` and friends would drown the UI code in false
+// positives for legitimate DOM types. ADD A NAME HERE when a domain type starts
+// colliding: `Cache` is the next one due, once T237's Cache node lands.
+const COLLIDING_DOMAIN_TYPES = new Set(["MediaSource"]);
+
+const v145Plugin = {
+  rules: {
+    "explicit-colliding-type-import": {
+      meta: {
+        type: "problem",
+        docs: { description: "§V145: import domain types that shadow DOM globals explicitly." },
+        schema: [],
+      },
+      create(context) {
+        // Names the FILE introduces itself — by import, or by declaring its own.
+        // Either one means the reference cannot silently resolve to the global.
+        const local = new Set();
+        return {
+          ImportDeclaration(node) {
+            for (const specifier of node.specifiers) local.add(specifier.local.name);
+          },
+          "TSInterfaceDeclaration, TSTypeAliasDeclaration, ClassDeclaration"(node) {
+            if (node.id?.name) local.add(node.id.name);
+          },
+          "TSTypeReference > Identifier"(node) {
+            if (!COLLIDING_DOMAIN_TYPES.has(node.name) || local.has(node.name)) return;
+            context.report({
+              node,
+              message:
+                `§V145: "${node.name}" is both one of our domain types and a DOM global. ` +
+                "Without an explicit import this resolves to the GLOBAL and typechecks green " +
+                "against the wrong contract — the silence is the bug. Import it explicitly.",
+            });
+          },
+        };
+      },
+    },
+  },
+};
+
 // §V3: vgpu is pre-1.0 (pinned 0.3.1). Every subpath funnels through the
 // backend adapter so a future migration doesn't require touching every file
 // that happens to import a renderer primitive.
@@ -249,6 +298,14 @@ export default tseslint.config(
     ignores: ["src/runtime/backend/vgpu/**", "**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": ["error", ...vgpuRestrictedSyntax, ...v29RestrictedSyntax],
+    },
+  },
+  {
+    // T244 / §V145 — domain types that shadow a DOM global need an explicit import.
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: { v145: v145Plugin },
+    rules: {
+      "v145/explicit-colliding-type-import": "error",
     },
   },
   {
