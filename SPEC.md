@@ -206,6 +206,43 @@ type NodeFormatOverride =
 lives on `GraphNode.format?`. depth ⊥ selectable — color outputs only.
 `rgba8unorm-srgb` landed @ barrier. `TEXTURE_FORMATS` const = single source, type derived from it.
 
+### module: `src/editor/keymap` — bindings as data
+```ts
+type KeyContext = "global" | "graph" | "inspector" | "viewer" | "text";
+
+interface KeyBinding {
+  id: string;              // stable, survives rebinding
+  keys: string;            // "mod+z", "shift+h", "g d" (chord)
+  context: KeyContext;     // narrowest wins; "text" swallows editing keys
+  command: CommandName;    // bus command — ⊥ inline handler
+  input?: unknown;         // static args, or resolved from selection
+  when?: string;           // guard: "hasSelection", "nodeHovered"
+  label: string;           // shown in palette, menus, tooltips
+}
+
+interface Keymap {
+  defaults: KeyBinding[];
+  overrides: Record<string, string | null>;  // id → keys, null = unbound
+}
+```
+`mod` = Cmd @ macOS, Ctrl elsewhere. overrides ∈ localStorage, ⊥ ∈ project doc.
+
+### defaults — TD-informed (? = ! confirm vs real TD install)
+```
+Tab            add-node search @ cursor      Esc      cancel | close
+mod+z / mod+shift+z  undo / redo             mod+s    save
+mod+c / x / v  copy / cut / paste            mod+d    duplicate
+Del | Backspace  delete selection            mod+a    select all
+H              home — fit all                F        fit selected
+B              bypass selected     ?         M        mute selected
+P              pin preview         ?         1..8     set viewer @ hovered node ?
+mod+g          group selected      ?         mod+f    search graph
+Space          play | pause                  .        step 1 frame
+mod+k          command palette               mod+,    settings
+mod+shift+r    reset feedback history
+alt+drag       pan | middle-drag pan | scroll zoom
+```
+
 ### type: diagnostic (user-facing error surface)
 ```ts
 interface RuntimeDiagnostic {
@@ -298,6 +335,10 @@ V47: execution plan renders to offscreen target w/o visible surface. headless pa
 V48: ∀ readback isolated behind export interface. ⊥ readback call outside it.
 V49: runtime ⊥ couple graph eval to rAF | wall clock. scheduler = swappable transport source.
 V51: node format override = instance state, @ compile, ⊥ per-frame. absent → definition `formatPolicy`. ! validated vs capability report (V12) — unsupported → diagnostic + documented fallback, ⊥ crash, ⊥ silent swap. depth format ⊥ on color output. change → recreate targets + reset feedback (V22).
+V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
+V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
+V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
+V55: ∀ binding discoverable — command palette lists ∀ command + its key; menus & tooltips show binding from keymap, ⊥ hardcoded string.
 V50: node resolution override = instance state, applied @ compile|resize, ⊥ per-frame (V21). absent → definition `resolutionPolicy`. ! clamped to project limits (V24). change → recreate affected targets + reset feedback history if pair resized (V22).
 
 ## §T TASKS
@@ -354,6 +395,10 @@ T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I
 T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
 T37|.|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
 T38|.|inspector pane: manifest-driven full control set, grouped|V17
+T76|.|keymap engine: binding table, chord + context resolution, `mod` normalize, when-guards, dispatch → bus|V52,V53
+T77|.|default TD-informed keymap + `when` guards + selection-resolved inputs|V52
+T78|.|keybinding settings pane: rebind, conflict detect + warn, per-binding & full reset, persisted overrides|V54
+T79|.|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
 T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
 T39|.|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — types perlin\|simplex\|value\|sparse\|worley. params period, harmonics, gain, lacunarity, exponent, offset, amplitude, mono\|RGB, signed\|unsigned range, seed, 3D time evolve, xform. TD Noise TOP as param reference|V44,V45,I.registry
@@ -410,6 +455,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | G controls | T37 T38 T73 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
 
 barrier: **T23 Phase 0 exit** ← C, H, I.
 
@@ -438,7 +484,7 @@ T49 Phase 1 exit, T62 Phase 1 agent exit.
 - `src/agent/` ∉ doc §25 structure. added here. holds bus adapters + tool schemas only, ⊥ app logic (V39).
 - K reuses I paths → I done @ wave 2 barrier, ⊥ concurrent.
 - G owns `src/ui/controls/**` only. A owns rest of `src/ui/`.
-- max concurrency 5. widening past that → collision risk > speedup.
+- max concurrency 6. widening past that → collision risk > speedup.
 
 ## §B BUGS
 id|date|cause|fix
