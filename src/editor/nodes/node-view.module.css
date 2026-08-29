@@ -1,0 +1,278 @@
+/*
+ * Node chrome. Dense, quiet, and entirely token-driven (§V17): the only hues on a node
+ * are the status dot and the port dots, and both of them mean something.
+ */
+
+.node {
+  --node-width: 178px;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--node-width);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  box-shadow: var(--shadow-raise);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-ui);
+  user-select: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.node:hover {
+  border-color: var(--line-hot);
+}
+
+.selected {
+  border-color: var(--signal);
+}
+
+/* The status hue is carried on the top edge as a hairline: readable at any zoom,
+   and it costs no layout space at the density this graph is meant to reach. */
+.node::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--hairline);
+  background: var(--status-color);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* Bypassed = pass-through, muted = off. Both are "this node is not contributing what
+   it normally does", and both must be obvious without reading the toggles. */
+.node[data-bypassed="true"],
+.node[data-muted="true"] {
+  opacity: 0.62;
+}
+
+.node[data-muted="true"] {
+  border-style: dashed;
+}
+
+/* ---- title bar ------------------------------------------------------- */
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--pane-header-h);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: var(--border-hairline);
+  cursor: default;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-color);
+}
+
+/* Compiling is the one state that is genuinely in motion, so it is the one state that
+   animates. Zeroed by the reduced-motion tokens and by the global base layer (§V19). */
+.dot[data-status="compiling"] {
+  animation: node-pulse 1.1s var(--ease-out) infinite alternate;
+}
+
+@keyframes node-pulse {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-status="compiling"] {
+    animation: none;
+  }
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+}
+
+.timing {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.toggle {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  cursor: default;
+}
+
+.toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--signal);
+}
+
+/* ---- agent activity (§V42) -------------------------------------------- */
+
+.agent {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: var(--border-hairline);
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--agent-color);
+}
+
+.agentKind {
+  font-weight: var(--weight-header);
+  white-space: nowrap;
+}
+
+.agentActor,
+.agentDetail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+/* ---- preview + inline controls ---------------------------------------- */
+
+.preview {
+  aspect-ratio: 16 / 9;
+  border-bottom: var(--border-hairline);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-hairline);
+}
+
+/* ---- ports ------------------------------------------------------------ */
+
+.ports {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.outputs {
+  align-items: flex-end;
+}
+
+.port {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  height: 14px;
+  padding: 0 var(--space-3);
+}
+
+.portOut {
+  flex-direction: row-reverse;
+}
+
+.portLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+/*
+ * The connection handle. Colour is the port family token the component sets inline on
+ * the row (§V26) — the same value the edges leaving this port use.
+ *
+ * Compound selectors on purpose: React Flow's own `.react-flow__handle` rules carry one
+ * class of specificity, and this must beat them regardless of stylesheet order.
+ */
+.port .handle {
+  width: 7px;
+  height: 7px;
+  min-width: 0;
+  min-height: 0;
+  border: var(--hairline) solid var(--bg-void);
+  border-radius: 50%;
+  background: var(--port-color);
+}
+
+.portIn .handle {
+  left: 0;
+}
+
+.portOut .handle {
+  right: 0;
+}
+
+.port .handle:hover {
+  box-shadow: 0 0 0 3px var(--bg-active);
+}
+
+/* ---- diagnostics ------------------------------------------------------ */
+
+.message {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-ui);
+  color: var(--status-color);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}

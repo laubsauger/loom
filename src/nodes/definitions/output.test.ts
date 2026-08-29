@@ -15,7 +15,8 @@ function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileCon
   return {
     nodeId: "n1",
     outputs: {},
-    inputs: { input: { resource: "scene", sampler: "linear" } },
+    inputs: { input: [{ portId: "input", resourceId: "scene", sampler: "linear" }] },
+    sampler: "sampler:linear",
     parameters: {},
     target: "canvas-output",
     ...overrides,
@@ -77,5 +78,22 @@ describe("Output node (T15)", () => {
     const compiled = outputNode.compile(contextFor({ inputs: {} }));
     expect(compiled.passes).toEqual([]);
     expect(compiled.diagnostics?.[0]?.code).toBe("node.compile.missingResource");
+  });
+});
+
+/**
+ * Regression: the compiler's active-sink trace reads `definition.sink === true` and
+ * nothing else (§V25). This node previously declared sink-ness only through a tag,
+ * which meant the compiler pruned it — and pruning the Output node means the whole
+ * graph renders nothing. A tag is documentation; the field is the contract.
+ */
+describe("output node is a declared sink", () => {
+  it("sets the first-class sink field, not only the tag", () => {
+    expect(outputNode.sink).toBe(true);
+  });
+
+  it("survives an active-sink trace that reads only the field", () => {
+    const isDeclaredSink = (d: { sink?: boolean }) => d.sink === true;
+    expect(isDeclaredSink(outputNode)).toBe(true);
   });
 });

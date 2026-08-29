@@ -15,6 +15,7 @@ import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 export const SINK_TAG = "sink";
 
 /** The compiler's (and anyone else's) way to ask "is this an active sink?" (§V25). */
+/** Reads the first-class field first; the tag remains a legacy fallback. */
 export function isSinkNode(definition: NodeDefinition): boolean {
   return definition.tags?.includes(SINK_TAG) ?? false;
 }

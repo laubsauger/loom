@@ -1,0 +1,137 @@
+/** Problems tab (V27). Colour is severity and nothing else; every value is a token (V17). */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-panel);
+  overflow: auto;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  border-bottom: var(--border-hairline);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  height: var(--pane-header-h);
+  padding: 0 var(--space-4);
+  background: var(--bg-panel);
+  border-bottom: var(--border-hairline);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  user-select: none;
+}
+
+.groupCount {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.errorTone {
+  color: var(--error);
+}
+
+.warningTone {
+  color: var(--warn);
+}
+
+.infoTone {
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--space-3) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+.rowError {
+  border-left-color: var(--error);
+}
+
+.rowWarning {
+  border-left-color: var(--warn);
+}
+
+.rowInfo {
+  border-left-color: var(--line-hot);
+}
+
+.marker {
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: 50%;
+  background: currentcolor;
+  align-self: center;
+}
+
+.message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+.code {
+  display: block;
+  color: var(--text-dim);
+}
+
+.location {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.suggestion {
+  display: block;
+  color: var(--text-dim);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-6);
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.emptyHint {
+  max-width: 40ch;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+  color: var(--line-hot);
+}

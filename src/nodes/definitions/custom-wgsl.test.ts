@@ -24,8 +24,9 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileContext {
   return {
     nodeId: "n1",
-    outputs: { out: "target-1" },
-    inputs: { input: { resource: "scene", sampler: "linear" } },
+    outputs: { out: { portId: "out", resourceId: "target-1" } },
+    inputs: { input: [{ portId: "input", resourceId: "scene", sampler: "linear" }] },
+    sampler: "sampler:linear",
     parameters: { [SHADER_SOURCE_PARAMETER]: CUSTOM_WGSL_DEFAULT_SOURCE },
     ...overrides,
   };

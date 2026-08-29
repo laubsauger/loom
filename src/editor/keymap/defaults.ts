@@ -1,0 +1,326 @@
+import type { KeyBinding } from "./types.ts";
+
+/**
+ * Default keymap (T77), verified against docs.derivative.ca/Application_Shortcuts.
+ *
+ * TouchDesigner's network editor is single-key, no modifier, and case is semantic:
+ * uppercase acts on everything, lowercase on the selection (`H`/`h` home, `F`/`f`
+ * frame). We adopt that: modifier-heavy graph bindings do not feel like TD. Internally
+ * `H` is stored as `shift+h` — one spelling per physical chord — and rendered back as
+ * "H" (see `formatKeys`).
+ *
+ * Bare letters in the `graph` context are exactly why §V53 is load-bearing rather than
+ * theoretical: `b` must toggle bypass on the canvas and must type a "b" in a text
+ * field, never both.
+ *
+ * COMMAND NAMES: most of these name commands no track has registered yet. That is
+ * deliberate — a binding is data naming a command (§V52), the palette renders an
+ * unregistered one as unavailable, and the engine reports `unresolved` instead of
+ * throwing. Nothing here is stubbed onto the bus.
+ *
+ * NOT IN THIS TABLE: pan/zoom mouse gestures (middle-drag / space-drag pan, scroll
+ * zoom, alt+drag zoom). Those are pointer gestures on the canvas and belong to the
+ * graph-canvas track, not to a key binding table. They are still unconfirmed vs a real
+ * TD install (§I defaults, "mouse").
+ */
+
+/** Verified TD network-editor bindings. Single key, case-significant. */
+const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
+  {
+    id: "graph.addOperator",
+    keys: "tab",
+    context: "graph",
+    command: "ui.openNodeSearch",
+    label: "Add operator",
+    description: "Open the node search at the cursor.",
+  },
+  {
+    id: "view.home",
+    keys: "H",
+    context: "graph",
+    command: "view.home",
+    label: "Home — default view",
+  },
+  {
+    id: "view.homeSelected",
+    keys: "h",
+    context: "graph",
+    command: "view.homeSelected",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Home selected",
+  },
+  {
+    id: "view.frame",
+    keys: "F",
+    context: "graph",
+    command: "view.frameAll",
+    label: "Frame — fit content",
+  },
+  {
+    id: "view.frameSelected",
+    keys: "f",
+    context: "graph",
+    command: "view.frameSelected",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Frame selected",
+  },
+  {
+    id: "node.toggleBypass",
+    keys: "b",
+    context: "graph",
+    command: "node.toggleBypass",
+    when: "hasSelection",
+    inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
+    label: "Toggle bypass",
+  },
+  {
+    id: "node.toggleDisplay",
+    keys: "d",
+    context: "graph",
+    command: "node.toggleDisplay",
+    when: "hasSelection",
+    inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
+    label: "Toggle display",
+  },
+  {
+    id: "node.toggleRender",
+    keys: "r",
+    context: "graph",
+    command: "node.toggleRender",
+    when: "hasSelection",
+    inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
+    label: "Toggle render",
+  },
+  {
+    id: "node.openViewer",
+    keys: "v",
+    context: "graph",
+    command: "node.openViewer",
+    when: "hasSelection",
+    inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
+    label: "Open viewer",
+  },
+  {
+    id: "view.overview",
+    keys: "o",
+    context: "graph",
+    command: "view.overview",
+    label: "Overview",
+  },
+  {
+    id: "graph.diveIn",
+    keys: "i",
+    context: "graph",
+    command: "graph.diveIn",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Dive in",
+  },
+  {
+    id: "graph.jumpUp",
+    keys: "u",
+    context: "graph",
+    command: "graph.jumpUp",
+    label: "Jump up",
+  },
+  {
+    // TD lists "Enter — jump down" beside "i — dive in"; both descend into the
+    // current operator, so they name one command with two keys.
+    id: "graph.diveIn.enter",
+    keys: "enter",
+    context: "graph",
+    command: "graph.diveIn",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Jump down",
+  },
+  {
+    id: "node.rename",
+    keys: "n",
+    context: "graph",
+    command: "node.rename",
+    when: "hasSingleSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Name",
+  },
+  {
+    id: "node.colorPalette",
+    keys: "c",
+    context: "graph",
+    command: "node.openColorPalette",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Color palette",
+  },
+  {
+    id: "node.editExpose",
+    keys: "e",
+    context: "graph",
+    command: "ui.openShaderEditor",
+    when: "hasSingleSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Edit / expose",
+    description: "TD's edit/expose. Here: open the node's shader source in the dock.",
+  },
+  {
+    // §I lists `L layout` and `l layout all` — the reverse of the H/h and F/f case
+    // convention. Transcribed literally from the spec table rather than "corrected"
+    // to match the pattern; flagged so a real TD install can settle it.
+    id: "graph.layout",
+    keys: "L",
+    context: "graph",
+    command: "graph.layout",
+    label: "Layout",
+    unconfirmed: true,
+  },
+  {
+    id: "graph.layoutAll",
+    keys: "l",
+    context: "graph",
+    command: "graph.layoutAll",
+    label: "Layout all",
+    unconfirmed: true,
+  },
+  {
+    id: "graph.delete",
+    keys: "delete",
+    context: "graph",
+    command: "graph.removeNodes",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Delete selection",
+  },
+  {
+    // Not a second TD binding: the key labelled "delete" on every Apple keyboard
+    // emits Backspace, so without this the verified `Del` binding is unreachable on
+    // the hardware most of this tool's users have.
+    id: "graph.delete.backspace",
+    keys: "backspace",
+    context: "graph",
+    command: "graph.removeNodes",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Delete selection (Backspace)",
+  },
+  {
+    id: "graph.selectAll",
+    keys: "mod+a",
+    context: "graph",
+    command: "graph.selectAll",
+    label: "Select all",
+  },
+  {
+    id: "graph.find",
+    keys: "mod+f",
+    context: "graph",
+    command: "ui.findInGraph",
+    label: "Find in graph",
+  },
+  {
+    id: "graph.copy",
+    keys: "mod+c",
+    context: "graph",
+    command: "graph.copySelection",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Copy",
+  },
+  {
+    id: "graph.cut",
+    keys: "mod+x",
+    context: "graph",
+    command: "graph.cutSelection",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Cut",
+  },
+  {
+    id: "graph.paste",
+    keys: "mod+v",
+    context: "graph",
+    command: "graph.paste",
+    label: "Paste",
+  },
+];
+
+/** Ours: app-level, not part of TD's network-editor list. */
+const APP_BINDINGS: readonly KeyBinding[] = [
+  {
+    id: "ui.cancel",
+    keys: "escape",
+    context: "global",
+    command: "ui.cancel",
+    label: "Cancel / close",
+  },
+  {
+    id: "graph.undo",
+    keys: "mod+z",
+    context: "global",
+    command: "graph.undo",
+    label: "Undo",
+  },
+  {
+    id: "graph.redo",
+    keys: "mod+shift+z",
+    context: "global",
+    command: "graph.redo",
+    label: "Redo",
+  },
+  {
+    id: "project.save",
+    keys: "mod+s",
+    context: "global",
+    command: "project.save",
+    label: "Save project",
+  },
+  {
+    id: "graph.duplicate",
+    keys: "mod+d",
+    context: "graph",
+    command: "graph.duplicateSelection",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Duplicate",
+  },
+  {
+    id: "ui.commandPalette",
+    keys: "mod+k",
+    context: "global",
+    command: "ui.openCommandPalette",
+    label: "Command palette",
+    description: "Search every command on the bus and run it.",
+  },
+  {
+    id: "ui.settings",
+    keys: "mod+,",
+    context: "global",
+    command: "ui.openSettings",
+    label: "Settings",
+  },
+  {
+    id: "transport.playPause",
+    keys: "space",
+    context: "global",
+    command: "transport.togglePlay",
+    label: "Play / pause",
+  },
+  {
+    id: "transport.stepFrame",
+    keys: ".",
+    context: "global",
+    command: "transport.stepFrame",
+    input: { frames: 1 },
+    label: "Step one frame",
+  },
+  {
+    id: "runtime.resetFeedback",
+    keys: "mod+shift+r",
+    context: "global",
+    command: "runtime.resetFeedback",
+    label: "Reset feedback history",
+  },
+];
+
+export const DEFAULT_BINDINGS: readonly KeyBinding[] = [...TD_GRAPH_BINDINGS, ...APP_BINDINGS];

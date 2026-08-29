@@ -1,0 +1,24 @@
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  box-shadow: var(--shadow-inset);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: calc(var(--control-h) - 2px);
+  letter-spacing: var(--tracking-mono);
+  white-space: nowrap;
+}
+
+.unbound {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-style: italic;
+}

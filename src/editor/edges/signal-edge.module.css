@@ -1,0 +1,54 @@
+/*
+ * Edge chrome. Every colour here is `--edge-color`, which the component sets to the
+ * source port's family token (§V26, §V17) — this file names no colour of its own.
+ */
+
+.base {
+  fill: none;
+  stroke: var(--edge-color);
+  stroke-width: 1.25;
+  /* The resting state is a quiet hairline: the imagery is the hero, not the wiring. */
+  opacity: 0.45;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.base:hover {
+  opacity: 0.85;
+}
+
+.selected {
+  stroke-width: 2;
+  opacity: 1;
+}
+
+/*
+ * The moving layer. Rendered only when the source pass reports real GPU time and the
+ * viewer has not asked for reduced motion — the component removes it from the DOM
+ * entirely in either case, so there is no animation to suppress.
+ */
+.flow {
+  fill: none;
+  stroke: var(--edge-color);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: var(--flow-opacity);
+  animation: signal-flow var(--flow-duration) linear infinite;
+  /* Hit-testing belongs to the base edge's interaction path. */
+  pointer-events: none;
+}
+
+@keyframes signal-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: calc(-1 * var(--flow-dash));
+  }
+}
+
+/* V19 — belt and braces: even if a flow layer reaches the DOM, it does not move. */
+@media (prefers-reduced-motion: reduce) {
+  .flow {
+    animation: none;
+  }
+}

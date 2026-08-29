@@ -1,0 +1,107 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(560px, 92vw);
+  max-height: min(60vh, 520px);
+  padding: var(--space-4);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.input {
+  width: 100%;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+}
+
+.input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  cursor: default;
+}
+
+.itemActive {
+  background: var(--bg-active);
+  box-shadow: inset var(--focus-ring-width) 0 0 var(--focus-ring);
+}
+
+.itemUnavailable .label {
+  color: var(--text-dim);
+}
+
+.label {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command {
+  flex: 1 1 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+}
+
+.keys {
+  flex: 0 0 auto;
+}
+
+.empty {
+  padding: var(--space-4) var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+}
+
+.status {
+  min-height: var(--fs-body);
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-micro);
+}

@@ -1,0 +1,60 @@
+/*
+ * React Flow ships its own palette. This file re-points every part of it we actually
+ * render at the token layer (§V17) — the library stylesheet is imported immediately
+ * before this one, so these rules win on order at equal specificity.
+ *
+ * Node and edge bodies are NOT themed here: those are custom components with their own
+ * CSS modules. What is left is the library's own chrome — the pane, the rubber band,
+ * the in-flight connection line, handle connect feedback, the attribution.
+ */
+
+.react-flow {
+  background: var(--bg-void);
+}
+
+.react-flow__pane {
+  cursor: default;
+}
+
+.react-flow__node {
+  cursor: default;
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+
+/* Rubber-band selection: the same amber that means "live" everywhere else. */
+.react-flow__selection {
+  border: var(--hairline) dashed var(--signal);
+  background: var(--bg-overlay);
+}
+
+/*
+ * The connection line in flight. Amber rather than a port hue on purpose: until it
+ * lands there is no connection and therefore no type, and §V26 reserves family colour
+ * for edges that actually carry a typed signal.
+ */
+.react-flow__connection-path {
+  stroke: var(--signal);
+  stroke-width: 1.5;
+}
+
+/* §V13 feedback under the cursor: green where the drop is legal, red where it is not. */
+.react-flow__handle.connectingto {
+  box-shadow: 0 0 0 3px var(--error);
+}
+
+.react-flow__handle.connectingto.valid {
+  box-shadow: 0 0 0 3px var(--ok);
+}
+
+.react-flow__attribution {
+  background: transparent;
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.react-flow__attribution a {
+  color: inherit;
+  text-decoration: none;
+}

@@ -1,0 +1,99 @@
+/**
+ * Keymap public surface (T76–T78).
+ *
+ * What other tracks need from here:
+ *  - `<KeyHint command="graph.undo" />` — the shortcut chip for a menu item or tooltip.
+ *    Never hardcode "⌘Z" (§V55).
+ *  - `useCommandKeyDisplay(command)` / `useBindingKeyDisplay(id)` — the same thing as a
+ *    string, when you are not rendering a chip.
+ *  - `displayForCommand(resolved, command)` — the non-React form.
+ *  - `useRunCommand()` — run a bus command from a button exactly as a hotkey would, so
+ *    the toolbar and the keyboard share one path (§V29).
+ *  - `<KeymapProvider bus … invocationContext … environment …>` — mount once, around
+ *    the app. `environment` carries the selection and hovered node that `when` guards
+ *    and selection-resolved inputs read.
+ *  - `KEYMAP_CONTEXT_ATTRIBUTE` — put `data-keymap-context="graph"` on a pane's root and
+ *    every key pressed inside it resolves in that context (§V53).
+ */
+
+export type {
+  BindingInputSource,
+  KeyBinding,
+  KeyContext,
+  Keymap,
+  KeymapCommandName,
+  KeymapEnvironment,
+  Platform,
+} from "./types.ts";
+export { CONTEXT_RANK, EMPTY_ENVIRONMENT, KEY_CONTEXTS } from "./types.ts";
+
+export type { BindingStroke, EventStroke, KeyEventLike } from "./keys.ts";
+export {
+  detectPlatform,
+  eventStrokeToKeys,
+  formatEventStrokes,
+  formatKeys,
+  isValidKeys,
+  normalizeKeys,
+  parseKeys,
+  strokeFromEvent,
+} from "./keys.ts";
+
+export { DEFAULT_BINDINGS } from "./defaults.ts";
+
+export type { GuardName } from "./when.ts";
+export { GUARD_NAMES, evaluateGuard, resolveBindingInput } from "./when.ts";
+
+export {
+  KEYMAP_CONTEXT_ATTRIBUTE,
+  activeContextsFor,
+  isTextEntryTarget,
+  paneContextFromTarget,
+} from "./context.ts";
+export { isEditingStroke } from "./editing-keys.ts";
+
+export type {
+  KeymapConflict,
+  KeymapConflictKind,
+  KeymapProblem,
+  ResolvedBinding,
+  ResolvedKeymap,
+} from "./resolve.ts";
+export {
+  bindingsForCommand,
+  contextsOverlap,
+  displayForBinding,
+  displayForCommand,
+  resolveKeymap,
+} from "./resolve.ts";
+
+export type { KeymapOverrides, KeymapStorage } from "./storage.ts";
+export {
+  KEYMAP_STORAGE_KEY,
+  clearOverrides,
+  defaultKeymapStorage,
+  readOverrides,
+  writeOverrides,
+} from "./storage.ts";
+
+export type { KeymapStore, KeymapStoreOptions, SetOverrideResult } from "./store.ts";
+export { createKeymapStore } from "./store.ts";
+
+export type { KeymapDispatch, KeymapEngine, KeymapEngineOptions } from "./engine.ts";
+export { DEFAULT_CHORD_TIMEOUT_MS, createKeymapEngine } from "./engine.ts";
+
+export type { KeymapContextValue, KeymapProviderProps } from "./keymap-provider.tsx";
+export {
+  KeymapProvider,
+  useBindingKeyDisplay,
+  useCommandKeyDisplay,
+  useKeymap,
+  useOptionalKeymap,
+  useRunCommand,
+} from "./keymap-provider.tsx";
+
+export type { KeyChipProps, KeyHintProps } from "./key-hint.tsx";
+export { KeyChip, KeyHint } from "./key-hint.tsx";
+
+export type { KeybindingSettingsProps } from "./keybinding-settings.tsx";
+export { KeybindingSettings } from "./keybinding-settings.tsx";

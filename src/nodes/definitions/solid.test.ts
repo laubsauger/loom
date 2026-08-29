@@ -12,8 +12,9 @@ import { SOLID_FRAGMENT_WGSL } from "../shaders/solid.wgsl.ts";
 function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileContext {
   return {
     nodeId: "n1",
-    outputs: { out: "target-1" },
+    outputs: { out: { portId: "out", resourceId: "target-1" } },
     inputs: {},
+    sampler: "sampler:linear",
     parameters: { color: [0.2, 0.4, 0.6, 1] },
     ...overrides,
   };

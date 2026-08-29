@@ -412,26 +412,26 @@ T16|x|frame loop via vgpu frameLoop, shared uniforms (time, frame, pointer, reso
 T64|x|lint rule: ⊥ `Date.now`\|`performance.now`\|rAF ∈ `src/nodes/**` — frame input only|V44
 T65|x|seeded RNG: project seed + node seed → deterministic per frameIndex|V45
 T17|x|uniform-only update path, ⊥ recompile|V5
-T18|.|custom node component: title bar, status dot, ports L/R, preview slot, bypass/mute|V26
-T19|.|edge renderer: flow-dash anim, hue=port family, speed←GPU ms, static if reduced-motion|V19,V26
-T20|.|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
-T21|.|shader diagnostics: debounce, async compile, line/col map, node badge + problems tab|V9,V27
-T22|.|retain last valid program + stale-output indicator|V9
+T18|x|custom node component: title bar, status dot, ports L/R, preview slot, bypass/mute|V26
+T19|x|edge renderer: flow-dash anim, hue=port family, speed←GPU ms, static if reduced-motion|V19,V26
+T20|x|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
+T21|x|shader diagnostics: debounce, async compile, line/col map, node badge + problems tab|V9,V27
+T22|x|retain last valid program + stale-output indicator|V9
 T23|.|**Phase0 exit**: uniform live-update, WGSL recompile, invalid WGSL keeps output|V5,V9
 T71|x|`NodeResolutionOverride` on `GraphNode` + zod + `setNodeResolution` patch op + bus command|V50,I.res
 T74|x|`NodeFormatOverride` on `GraphNode` + zod + `setNodeFormat` patch op + bus command|V51,I.fmt
-T24|.|compiler: resolve defs, validate params+connections|V13,V14
-T25|.|compiler: split temporal edges, reject illegal cycles, topo sort|V4
-T26|.|compiler: active-sink trace + prune|V25
-T27|.|compiler: resolution propagation (`ResolutionPolicy`)|V21
-T72|.|compiler: honor per-node resolution override in propagation, clamp to project limits, recreate targets on change|V50,V21,V24
-T75|.|compiler: honor per-node format override, validate vs capability tier, diagnostic + fallback when unsupported|V51,V12
-T28|.|compiler: format propagation rgba8unorm / rgba16float|V21
-T29|.|compiler: logical resource assign, persistent target per materialized output|V8
-T30|.|compiler: emit plan + structured `RuntimeDiagnostic[]`|I.diag
-T31|.|recompile classifier — edit kind → minimal work|V5,V21
-T32|.|branch reuse: 1 render per output, shared by N consumers|V6
-T33|.|Feedback node: pingPong pair, swap after encode, reset triggers|V22
+T24|x|compiler: resolve defs, validate params+connections|V13,V14
+T25|x|compiler: split temporal edges, reject illegal cycles, topo sort|V4
+T26|x|compiler: active-sink trace + prune|V25
+T27|x|compiler: resolution propagation (`ResolutionPolicy`)|V21
+T72|x|compiler: honor per-node resolution override in propagation, clamp to project limits, recreate targets on change|V50,V21,V24
+T75|x|compiler: honor per-node format override, validate vs capability tier, diagnostic + fallback when unsupported|V51,V12
+T28|x|compiler: format propagation rgba8unorm / rgba16float|V21
+T29|x|compiler: logical resource assign, persistent target per materialized output|V8
+T30|x|compiler: emit plan + structured `RuntimeDiagnostic[]`|I.diag
+T31|x|recompile classifier — edit kind → minimal work|V5,V21
+T32|x|branch reuse: 1 render per output, shared by N consumers|V6
+T33|x|Feedback node: pingPong pair, swap after encode, reset triggers|V22
 T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
 T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
 T81|.|plan IR: pass kind union render\|compute, resource kind union texture\|buffer, exhaustive switch|V58
@@ -473,10 +473,10 @@ T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I
 T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
 T37|.|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
 T38|.|inspector pane: manifest-driven full control set, grouped|V17
-T76|.|keymap engine: binding table, chord + context resolution, `mod` normalize, when-guards, dispatch → bus|V52,V53
-T77|.|default TD-informed keymap + `when` guards + selection-resolved inputs|V52
-T78|.|keybinding settings pane: rebind, conflict detect + warn, per-binding & full reset, persisted overrides|V54
-T79|.|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
+T76|x|keymap engine: binding table, chord + context resolution, `mod` normalize, when-guards, dispatch → bus|V52,V53
+T77|x|default TD-informed keymap + `when` guards + selection-resolved inputs|V52
+T78|x|keybinding settings pane: rebind, conflict detect + warn, per-binding & full reset, persisted overrides|V54
+T79|x|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
 T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
 T39|.|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry

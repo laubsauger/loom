@@ -1,0 +1,155 @@
+/**
+ * Chrome around the CodeMirror surface. The editor's own colours come from
+ * `theme.ts` (CodeMirror injects them through style-mod, ahead of any stylesheet);
+ * everything here is layout and the panel's status strip. Every colour is a token (V17).
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 0 0 auto;
+  height: var(--pane-header-h);
+  padding: 0 var(--space-4);
+  border-bottom: var(--border-hairline);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  user-select: none;
+}
+
+.node {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.phase {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.phaseBusy {
+  color: var(--signal);
+}
+
+.countError {
+  color: var(--error);
+}
+
+.countWarning {
+  color: var(--warn);
+}
+
+.countOk {
+  color: var(--ok);
+}
+
+/* V9 — the loud part. A stale output is still rendering; the user has to be told the
+   pixels are from the last shader that compiled, not from what they are looking at. */
+.stale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: calc(var(--control-h) - 2px);
+}
+
+.staleDot {
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor :global(.cm-editor) {
+  height: 100%;
+}
+
+.empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.emptyHint {
+  max-width: 40ch;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+  color: var(--line-hot);
+}
+
+/* Node badge (V27): the compile state as it appears on the graph node itself. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.badgeItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.badgeError {
+  color: var(--error);
+}
+
+.badgeWarning {
+  color: var(--warn);
+}
+
+.badgeStale {
+  color: var(--warn);
+}
+
+.badgeCompiling {
+  color: var(--signal);
+}

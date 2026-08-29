@@ -1,0 +1,179 @@
+/** Node library pane (T39). Colours are tokens only (§V17). */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-hairline);
+}
+
+.search {
+  width: 100%;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+}
+
+.search::placeholder {
+  color: var(--line-hot);
+}
+
+.search:hover {
+  border-color: var(--line-hot);
+}
+
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: default;
+}
+
+.chip:hover {
+  border-color: var(--line-hot);
+  color: var(--text);
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Port-drag mode: the pane is answering "what can I connect this to?" (§V13). */
+.dragBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hairline) solid var(--signal);
+  border-radius: var(--radius);
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.dragDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--port-unknown);
+}
+
+.dragType {
+  color: var(--text);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3) var(--space-6);
+}
+
+.group {
+  margin-bottom: var(--space-4);
+}
+
+.groupHeader {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: grab;
+}
+
+.item:hover {
+  border-color: var(--line);
+  background: var(--bg-hover);
+}
+
+.item:active {
+  cursor: grabbing;
+  background: var(--bg-active);
+}
+
+.itemTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.itemDescription {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+}
+
+.empty {
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: center;
+}
+
+.hint {
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+}

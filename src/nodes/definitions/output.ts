@@ -24,6 +24,9 @@ export const outputNode: NodeDefinition = {
   title: "Output",
   category: "output",
   description: "Presents its input as the viewable/exportable render target.",
+  // First-class field, read by the compiler's active-sink trace (§V25). The SINK_TAG
+  // below predates it and is kept for the isSinkNode() helper; `sink` is what prunes on.
+  sink: true,
   tags: [SINK_TAG],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [],
