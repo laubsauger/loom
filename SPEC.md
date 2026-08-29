@@ -644,7 +644,7 @@ T107|.|patch-op classification value-only\|structural + overlap-scoped conflict|
 T108|x|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
 T109|x|non-rAF frame loop option (worker + node realtime)|V49,V63
 T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
-T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
+T111|x|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
 T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps land|C
 T114|x|`pointset` port kind + attribute-requirement compat, replaces `geometry`|V13,I.pointset
 T115|x|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
@@ -700,6 +700,11 @@ T165|x|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its inpu
 T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|.|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
+T173|.|`RenderBackend.readOutput(id, {region?}) → ReadbackImage` — completes T82. today returns bare bytes ∴ format+stride come from a table BESIDE the copy, ⊥ from the thing that copied. also: a 1×1 probe pulls a whole 1080p frame|V60,V48
+T174|.|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
+T175|.|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
+T176|.|lift `GraphPatchOperation` zod into `domain/types/schemas.ts` — agent guards its own boundary only; every caller needs it (V66)|V66
+T177|.|`transactionId` on `HistoryGroupSummary` (or a `graph.revertTransaction`) so revert-as-one-unit ⊥ rely on an adapter-side ledger|V42,V34
 T169|.|`GraphStore.replace(graph, {clearHistory})` committing through the same path as `apply` + a `project.load` command, so open is in-place w/ an actor. today open = teardown+rebuild ∴ undo history ⊥ survives|V29,V30,V31,V41
 T170|.|`Inspector` accepts `unresolvedParameters?: readonly string[]` — today a node w/ ANY newer-version param suppresses ALL its controls|V68,V10
 T171|.|attach the timing source where the frame loop lives — T163's backend surface exists; composition root ⊥ runs a loop ∴ attaching there would park ∀ fields on "measuring…" forever|V86
@@ -722,14 +727,14 @@ T70|x|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d,
 T40|x|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
 T41|x|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes`, `compiler/memory-budget` warning, `BackendStatus.lastBuild` {resourcesCreated/Reused, effectsBuilt/Reused}|V16,V24
 T42|x|metrics pipe outside document store, ≤10Hz UI tick|V16
-T68|.|export interface = sole readback surface. screenshot/PNG v1|V48,V7
-T54|.|read tools: get_project_summary, get_graph, get_selection, list_node_definitions, get_node_definition, get_node, get_diagnostics, get_runtime_metrics|I.tools,V37
-T55|.|`apply_graph_patch` — atomic ops, baseRevision conflict, temp→stable `createdIds`, 1 undo group|V32,V33,V34,V35
-T56|.|mutation tools on bus: add_node, remove_nodes, connect_ports, disconnect_ports, set_parameters, set_shader_source, set_output, reset_feedback, undo, redo|V29,V30
-T57|.|workflow tools: validate_project, compile_project, play, pause, save_project|I.tools
-T58|.|`render_preview` → bounded-size PNG of any texture output, via export iface|V48,I.tools
-T59|.|capability grant model + gate table, dryRun on destructive, ⊥ self-grant|V36,V38
-T60|.|agent presence UI: actor badge, planning\|editing\|compiling\|awaiting state, patch review + revert-transaction-as-unit|V42
+T68|x|export interface = sole readback surface. screenshot/PNG v1|V48,V7
+T54|x|read tools: get_project_summary, get_graph, get_selection, list_node_definitions, get_node_definition, get_node, get_diagnostics, get_runtime_metrics|I.tools,V37
+T55|x|`apply_graph_patch` — atomic ops, baseRevision conflict, temp→stable `createdIds`, 1 undo group|V32,V33,V34,V35
+T56|x|mutation tools on bus: add_node, remove_nodes, connect_ports, disconnect_ports, set_parameters, set_shader_source, set_output, reset_feedback, undo, redo|V29,V30
+T57|x|workflow tools: validate_project, compile_project, play, pause, save_project|I.tools
+T58|x|`render_preview` → bounded-size PNG of any texture output, via export iface|V48,I.tools
+T59|x|capability grant model + gate table, dryRun on destructive, ⊥ self-grant|V36,V38
+T60|x|agent presence UI: actor badge, planning\|editing\|compiling\|awaiting state, patch review + revert-transaction-as-unit|V42
 T43|x|save/load `.loom.json` via `src/domain/project/serialize.ts` (CANONICAL — ⊥ 2nd serializer), migration scaffolding, unknown-node placeholder|V10
 T44|x|resource caps: max resolution, dispatch size, buffer size, project budget|V24
 T45|x|unit tests: port compat, cycle/temporal, topo order, sink prune, resolution, format, migrations|V4,V13,V21,V25
