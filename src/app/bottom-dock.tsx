@@ -49,15 +49,22 @@ export function BottomDock({
         <TabsTrigger value="performance">performance</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="shader">
+      {/*
+        forceMount on every tab: Radix unmounts inactive tab content by default, which
+        would destroy the CodeMirror instance on each tab switch — losing scroll position,
+        selection, undo history and editor setup — and churn the performance tab's
+        subscriptions. Visibility is handled by CSS via [data-state] instead. Any content
+        mounted here must therefore be cheap when hidden, not merely cheap when visible.
+      */}
+      <TabsContent value="shader" forceMount>
         {shaderEditor ?? (
           <PaneEmpty label="Shader editor" hint="CodeMirror 6 WGSL editor mounts here" />
         )}
       </TabsContent>
-      <TabsContent value="problems">
+      <TabsContent value="problems" forceMount>
         {problems ?? <PaneEmpty label="Problems" hint="compile and runtime diagnostics" />}
       </TabsContent>
-      <TabsContent value="performance">
+      <TabsContent value="performance" forceMount>
         {performance ?? (
           <PaneEmpty label="Performance" hint="per-pass GPU ms, resource count, memory estimate" />
         )}

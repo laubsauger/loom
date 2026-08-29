@@ -25,3 +25,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Vite-only breakage (asset imports, CSS modules, font emission) passes
+      # tsc and vitest but fails a real build — so build in CI too.
+      - run: pnpm build

@@ -117,3 +117,46 @@ describe("§V44 — no wall-clock reads in src/nodes/**", () => {
     expect(result.errorCount).toBe(0);
   });
 });
+
+/**
+ * Bypass probes. A review confirmed the original selectors could be walked around;
+ * these assert the holes are closed. Each case previously passed lint.
+ */
+describe("guardrail bypasses are closed", () => {
+  it("§V3 — dynamic import of vgpu is caught", async () => {
+    const { messages } = await lint(`const m = await import("vgpu");\nvoid m;\n`, "src/compiler/sneaky.ts");
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("§V3 — an unlisted vgpu subpath is caught", async () => {
+    const { messages } = await lint(`import x from "vgpu/webgpu";\nvoid x;\n`, "src/compiler/sneaky.ts");
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("§V3 — the adapter itself still imports vgpu freely", async () => {
+    const { messages } = await lint(
+      `import { effect } from "vgpu";\nvoid effect;\n`,
+      "src/runtime/backend/vgpu/ok.ts",
+    );
+    expect(messages).toEqual([]);
+  });
+
+  it("§V44 — performance.now() via a global object is caught", async () => {
+    const { messages: viaWindow } = await lint(`export const t = window.performance.now();\n`, "src/nodes/definitions/a.ts");
+    const { messages: viaGlobal } = await lint(`export const t = globalThis.performance.now();\n`, "src/nodes/definitions/b.ts");
+    expect(viaWindow.length).toBeGreaterThan(0);
+    expect(viaGlobal.length).toBeGreaterThan(0);
+  });
+
+  it("§V44 — aliasing performance is caught at the alias", async () => {
+    const { messages } = await lint(`const p = performance;\nexport const t = p.now();\n`, "src/nodes/definitions/c.ts");
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("§V44 — self.requestAnimationFrame and bare timers are caught", async () => {
+    const { messages: raf } = await lint(`self.requestAnimationFrame(() => {});\n`, "src/nodes/definitions/d.ts");
+    const { messages: timer } = await lint(`setInterval(() => {}, 16);\n`, "src/nodes/definitions/e.ts");
+    expect(raf.length).toBeGreaterThan(0);
+    expect(timer.length).toBeGreaterThan(0);
+  });
+});

@@ -88,6 +88,16 @@
   background: var(--bg-panel);
 }
 
+/*
+  Consumers may pass `forceMount` to keep expensive tab content alive across switches
+  (the shader editor does — remounting CodeMirror would lose scroll, selection and undo
+  history). Radix then leaves inactive panels in the DOM, so hide them here rather than
+  letting all panels stack.
+*/
+.content[data-state="inactive"] {
+  display: none;
+}
+
 .content:focus-visible {
   outline-offset: calc(-1 * var(--focus-ring-width));
 }
