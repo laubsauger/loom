@@ -1010,7 +1010,7 @@ T237|.|**Cache / Time Machine** — hold N frames, read frame `t-n`. trails & ti
 T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
 T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
 T240|x|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
-T241|.|Edge + Convolve (arbitrary kernel) filters|-
+T241|x|Edge + Convolve (arbitrary kernel) filters|-
 T242|.|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
 T243|.|Text generator — glyph atlas → texture|-
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
