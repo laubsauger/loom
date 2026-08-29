@@ -744,7 +744,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         );
       }
       for (const raw of entries) {
-        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown };
+        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown; sourceId?: unknown };
         const key = typeof entry.key === "string" && entry.key !== "" ? entry.key : undefined;
         // T121/T176: a bufferPair scratch entry — SoA point storage. One identity per
         // attribute; the compiler appends its swap after all consumers (§V22), and T143
@@ -772,6 +772,45 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           const pairId = scratchResourceId(nodeId, key);
           resources.push({ kind: "bufferPair", id: pairId, stride, capacity: bufferCapacity, label: `${nodeId} points ${key}` });
           scratchPairIds.push(pairId);
+          continue;
+        }
+        // T262 (§V135, §V167): a CPU-fed texture. The node names its media SOURCE; the
+        // backend's registry supplies the frames. Sized to the node's resolved output,
+        // so the per-node resolution override governs media like everything else.
+        if (entry.kind === "external") {
+          const sourceId = entry.sourceId;
+          const externalFormat =
+            entry.format === undefined
+              ? "rgba8unorm"
+              : typeof entry.format === "string" && (TEXTURE_FORMATS as readonly string[]).includes(entry.format)
+                ? (entry.format as TextureFormat)
+                : undefined;
+          if (
+            key === undefined ||
+            seenScratch.has(key) ||
+            typeof sourceId !== "string" ||
+            sourceId.length === 0 ||
+            externalFormat === undefined
+          ) {
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.scratchInvalid,
+                `Node "${nodeId}" (${node.type}) declared an invalid or duplicate external scratch entry ${JSON.stringify(raw)}.`,
+                { nodeId, suggestion: 'An external entry is { key, kind: "external", sourceId, format? }.' },
+              ),
+            );
+            continue;
+          }
+          seenScratch.add(key);
+          resources.push({
+            kind: "externalTexture",
+            id: scratchResourceId(nodeId, key),
+            size: baseSize,
+            format: externalFormat,
+            sourceId,
+            label: `${nodeId} ${key}`,
+          });
           continue;
         }
         // T236: a single storage buffer — a reduction result, a lookup table. No pair,

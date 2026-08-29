@@ -64,6 +64,8 @@ describe("core catalogue (T70, T40)", () => {
       "constant",
       "timer",
       "analyze",
+      "movieFileIn",
+      "webcam",
     ]);
   });
 

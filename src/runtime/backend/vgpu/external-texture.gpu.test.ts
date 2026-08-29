@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { LogicalExecutionPlan } from "../../../domain/types/backend.ts";
+import type { GraphDocument, GraphNode, ProjectSettings } from "../../../domain/types/graph.ts";
+import type { BackendCapabilities } from "../../../domain/types/backend.ts";
 import type { MediaSource, MediaSourceFrame } from "../backend-types.ts";
+import { compileGraph } from "../../../compiler/compile.ts";
+import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
+import { allNodeDefinitions, mediaSourceIdFor } from "../../../nodes/definitions/index.ts";
 import { readExecutionPlan, resourceStructureKey } from "../plan.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
@@ -81,6 +86,78 @@ describe("externalTexture in the plan reader (T229, §V135)", () => {
     const a = resourceStructureKey({ kind: "externalTexture", id: "m", size: [4, 4], format: "rgba8unorm", sourceId: "vid-a" });
     const b = resourceStructureKey({ kind: "externalTexture", id: "m", size: [4, 4], format: "rgba8unorm", sourceId: "vid-b" });
     expect(a).not.toBe(b);
+  });
+});
+
+describe("media node end to end on Dawn (T262/T263, §V167)", () => {
+  it("Movie File In: registered bytes come out of the node's output as pixels", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const settings: ProjectSettings = {
+      outputResolution: { width: 16, height: 16 },
+      workingFormat: "rgba16float",
+      randomSeed: 1,
+      previewLongEdge: 192,
+      previewFps: 20,
+      limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+    };
+    const capabilities: BackendCapabilities = {
+      tier: "B",
+      features: [],
+      formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float", "depth24plus"],
+      timestampQuery: false,
+      limits: { maxTextureDimension2D: 8192 },
+    };
+    const node = (id: string, type: string, extra: Partial<GraphNode> = {}): GraphNode =>
+      ({ id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, ...extra }) as GraphNode;
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        movie: node("movie", "movieFileIn", {
+          // rgba8unorm output so the readback bytes compare directly.
+          format: { mode: "fixed", format: "rgba8unorm" },
+        }),
+        sink: node("sink", "output"),
+      },
+      edges: {
+        e0: { id: "e0", source: { nodeId: "movie", portId: "out" }, target: { nodeId: "sink", portId: "input" } },
+      },
+      groups: {},
+    } as unknown as GraphDocument;
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({ graph, settings, registry, capabilities });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    // §V167 made concrete: a catalogue node DECLARED the external texture.
+    expect(plan.resources.some((r) => r["kind"] === "externalTexture" && r["sourceId"] === mediaSourceIdFor("movie"))).toBe(true);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      const frame = (frameIndex: number) => ({
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex, mode: "offline" as const, randomSeed: 1 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [16, 16] as [number, number],
+      });
+
+      // Fully red, sRGB bytes. The external texture is -srgb: sampling decodes, and the
+      // node's blit re-encodes into its rgba8unorm-... no: the target is UNORM, values
+      // land linear-encoded-as-stored. Pure red survives both exactly (1.0 either way).
+      const red = new Uint8Array(16 * 16 * 4);
+      for (let i = 0; i < red.length; i += 4) red.set([255, 0, 0, 255], i);
+      backend.registerMediaSource(mediaSourceIdFor("movie"), {
+        currentFrame: () => ({ frameId: 1, bytes: red }),
+      });
+      backend.render(compiled, frame(0));
+
+      const image = await backend.readOutput("target:movie:out");
+      const centre = (8 * 16 + 8) * 4;
+      expect([...image.bytes.slice(centre, centre + 4)]).toEqual([255, 0, 0, 255]);
+    } finally {
+      backend.dispose();
+    }
   });
 });
 

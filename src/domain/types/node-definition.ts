@@ -103,7 +103,27 @@ export interface ScratchBufferRequest {
   capacity: number;
 }
 
-export type ScratchRequest = ScratchTargetRequest | ScratchBufferPairRequest | ScratchBufferRequest;
+/**
+ * A CPU-fed texture (T262, §V135): the node declares WHO supplies frames — a sourceId
+ * into the backend's media registry — and the compiler materializes an
+ * `externalTexture` resource sized to the node's resolved output. This is the seam
+ * that makes media REACHABLE from the catalogue (§V167): without it the descriptor,
+ * registry and upload path all exist and no node can declare them.
+ */
+export interface ScratchExternalTextureRequest {
+  kind: "external";
+  key: string;
+  /** The media registry key. Never pixels (§V135). */
+  sourceId: string;
+  /** Omitted = rgba8unorm. Media nodes typically want rgba8unorm-srgb so sampling decodes. */
+  format?: TextureFormat;
+}
+
+export type ScratchRequest =
+  | ScratchTargetRequest
+  | ScratchBufferPairRequest
+  | ScratchBufferRequest
+  | ScratchExternalTextureRequest;
 
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;

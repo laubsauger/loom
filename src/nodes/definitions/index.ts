@@ -13,11 +13,13 @@ import { pointNodeDefinitions } from "./points.ts";
 import { nullNode } from "./null-node.ts";
 import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
+import { mediaNodeDefinitions } from "./media.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
 export { analyzeNode, ANALYZE_RESULT_KEY } from "./analyze.ts";
+export { movieFileInNode, webcamNode, mediaSourceIdFor, mediaNodeDefinitions } from "./media.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
 export { outputNode } from "./output.ts";
 export { isSinkNode, SINK_TAG } from "./sink.ts";
@@ -79,6 +81,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   nullNode,
   ...valueNodeDefinitions,
   analyzeNode,
+  ...mediaNodeDefinitions,
 ];
 
 /**
