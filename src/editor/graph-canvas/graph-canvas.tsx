@@ -183,18 +183,29 @@ export function GraphCanvas({
     (connection: Connection) => {
       const { source, target, sourceHandle, targetHandle } = connection;
       if (sourceHandle === null || targetHandle === null) return;
-      dispatch(
-        [
-          {
-            op: "connect",
-            source: { nodeId: source, portId: sourceHandle },
-            target: { nodeId: target, portId: targetHandle },
-          },
-        ],
-        "Connect ports",
-      );
+
+      // §V14a: dropping onto an input that already holds a non-variadic edge REPLACES
+      // it rather than being refused — the drop itself is the user's intent, and making
+      // them hunt down the old edge to delete first is the wrong answer to that. Both
+      // ops leave as one patch, so it is one atomic change and one undo entry (§V32, §V34).
+      const targetNode = domainNodes[target];
+      const targetPort =
+        targetNode === undefined ? undefined : registry.port(targetNode.type, targetHandle, "input");
+      const operations: GraphPatchOperation[] = [];
+      if (targetPort?.variadic !== true) {
+        const displaced = Object.entries(domainEdges)
+          .filter(([, edge]) => edge.target.nodeId === target && edge.target.portId === targetHandle)
+          .map(([edgeId]) => edgeId);
+        if (displaced.length > 0) operations.push({ op: "disconnect", edgeIds: displaced });
+      }
+      operations.push({
+        op: "connect",
+        source: { nodeId: source, portId: sourceHandle },
+        target: { nodeId: target, portId: targetHandle },
+      });
+      dispatch(operations, "Connect ports");
     },
-    [dispatch],
+    [dispatch, domainEdges, domainNodes, registry],
   );
 
   /**
@@ -216,16 +227,11 @@ export function GraphCanvas({
       if (sourcePort === undefined || targetPort === undefined) return false;
       if (!arePortsCompatible(sourcePort.type, targetPort.type)) return false;
 
-      // §V14 — an input takes one edge unless it declares itself variadic.
-      if (targetPort.variadic !== true) {
-        const occupied = Object.values(domainEdges).some(
-          (edge) => edge.target.nodeId === target && edge.target.portId === targetHandle,
-        );
-        if (occupied) return false;
-      }
+      // §V14a — an occupied non-variadic input is not a refusal: dropping here REPLACES
+      // the existing edge (`onConnect` above), so the drop must be allowed to land.
       return true;
     },
-    [domainEdges, domainNodes, registry],
+    [domainNodes, registry],
   );
 
   /**

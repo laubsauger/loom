@@ -256,7 +256,7 @@ describe("V20 — a drag on embedded node chrome never becomes a node drag", () 
 
     // React Flow refuses to start a drag or a pan when the pressed element is inside
     // `.nodrag` / `.nopan`. This is that predicate, evaluated the same way.
-    for (const name of ["Bypass", "Mute", "Preview"]) {
+    for (const name of ["Bypass", "Mute", "Pin preview"]) {
       const control = screen.getByRole("button", { name });
       expect(control.closest(".nodrag")).not.toBeNull();
       expect(control.closest(".nopan")).not.toBeNull();
@@ -321,18 +321,37 @@ describe("V29 — node chrome mutates only through the command bus", () => {
   });
 });
 
-describe("preview slot (§V28)", () => {
-  it("stays absent until the node asks for a preview", async () => {
-    const { bus, container } = mountNode("test.blur", {
+describe("preview slot (§V28b) — visible texture-producing node previews by default", () => {
+  it("shows by default for a texture-producing node, before any pin is set", () => {
+    const { container } = mountNode("test.blur", {
       graph: graphWith("test.blur"),
       renderPreview: () => <div>tile</div>,
     });
-    expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();
+    expect(container.querySelector("[data-testid^='node-preview-']")).not.toBeNull();
+    expect(screen.getByText("tile")).toBeDefined();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+  it("has no slot at all for a node with no texture output", () => {
+    const { container } = mountNode("test.scalarF32", {
+      graph: graphWith("test.scalarF32"),
+      renderPreview: () => <div>tile</div>,
+    });
+    expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();
+  });
+
+  it("'Pin preview' toggles the pin (§V28b), not whether the slot exists", async () => {
+    const { bus } = mountNode("test.blur", {
+      graph: graphWith("test.blur"),
+      renderPreview: () => <div>tile</div>,
+    });
+    expect(bus.store.getGraph().nodes["n1"]?.ui?.preview).toBeUndefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin preview" }));
     await waitFor(() => {
       expect(bus.store.getGraph().nodes["n1"]?.ui?.preview).toBe(true);
     });
+    // Pinning does not add the slot — it was already there — it only keeps this
+    // preview live once the node scrolls off screen (§V28's "visible OR pinned").
     expect(screen.getByText("tile")).toBeDefined();
   });
 });

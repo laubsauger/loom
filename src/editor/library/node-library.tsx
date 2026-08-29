@@ -181,10 +181,10 @@ export function NodeLibrary({
           ))
         )}
       </div>
-
+      {/*
       <p className={styles.hint}>
         Drag onto the canvas, or press Enter to add the top hit.
-      </p>
+      </p> */}
     </div>
   );
 }

@@ -5,16 +5,14 @@ import type { AgentTool, ToolStatus } from "../types.ts";
 /**
  * Workflow tools (T57, §I.tools).
  *
- * Four of the five have NO command behind them today, and they say so rather than
+ * Three of the five have NO command behind them today, and they say so rather than
  * pretending. Each names the command it needs, so `list_tools` reads as a to-do list for
  * the tracks that own those surfaces instead of as a working feature that quietly does
  * nothing:
  *
- *  - `validate_project` → `project.validate`. Validation exists inside the compiler, but
- *    reaching into `src/compiler` from here would be the app-logic duplication §V39
- *    forbids: the composition root already owns compile wiring, and a validate command
- *    is how it should be shared.
- *  - `compile_project`  → `project.compile`, for the same reason.
+ *  - `compile_project`  → `project.compile`. Compile wiring belongs to the composition
+ *    root, which owns retained-plan and recompile scheduling (§V9); registering it here
+ *    would be a second compile path, which §V39 forbids.
  *  - `play` / `pause`   → `transport.play` / `transport.pause`. The keymap has named
  *    these since T77 and reports them unresolved; there is no frame-loop owner yet.
  *
@@ -41,12 +39,28 @@ function unavailableTool(
   };
 }
 
-export const validateProject = unavailableTool(
-  "validate_project",
-  "project.validate",
-  "Validate project",
-  "Validate the graph without compiling it. Requires a project.validate command, which is not registered.",
-);
+/**
+ * Real since the bus registered `project.validate`, which runs the compiler's own
+ * validation rather than a second copy of it (§V39) — the adapter projects, nothing more.
+ */
+export const validateProject: AgentTool<EmptyInput, unknown> = {
+  name: "validate_project",
+  title: "Validate project",
+  description: "Validate the graph without compiling it: unresolved nodes, cycles, and connection diagnostics.",
+  kind: "workflow",
+  inputSchema: emptyInput,
+  requires: { commands: ["project.validate"] },
+  capabilities: [],
+  mutates: false,
+  run: async (_input, runtime) => {
+    const dispatched = await runtime.execute<unknown>("project.validate", {});
+    const status: ToolStatus = dispatched.status === "applied" ? "ok" : "rejected";
+    return result<unknown>("validate_project", status, dispatched.output, {
+      diagnostics: dispatched.diagnostics,
+      revision: dispatched.revision,
+    });
+  },
+};
 
 export const compileProject = unavailableTool(
   "compile_project",

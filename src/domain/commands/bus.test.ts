@@ -81,6 +81,7 @@ describe("command bus — registration surface (§V39)", () => {
       "graph.paste",
       "graph.redo",
       "graph.removeNodes",
+      "graph.revertTransaction",
       "graph.undo",
       "node.rename",
       "node.setFormat",
@@ -88,7 +89,13 @@ describe("command bus — registration surface (§V39)", () => {
       "node.toggleBypass",
       "node.toggleDisplay",
       "node.toggleRender",
+      "project.validate",
     ]);
+    // T175: `selection.get`, `diagnostics.get`, `runtime.metrics` and `project.get` are
+    // registered by `attachStateSources` and are deliberately absent here. None of them
+    // is document state, so an unwired bus genuinely cannot answer them, and
+    // `hasQuery(...)` staying false is what lets an adapter report that honestly instead
+    // of publishing a tool that returns an empty selection nobody made.
     expect(harness.bus.listQueries()).toEqual(["graph.audit", "graph.get", "graph.history"]);
     expect(harness.bus.hasCommand("graph.applyPatch")).toBe(true);
     expect(harness.bus.hasCommand("nope")).toBe(false);
@@ -255,7 +262,8 @@ describe("command bus — dryRun reaches every command (§V36)", () => {
   it("does not audit an undo dry run", async () => {
     await addSolid();
     const result = await harness.bus.execute("graph.undo", {}, contextFor(alice, { dryRun: true }));
-    expect(result.status).toBe("applied");
+    // §V36/T102: a dry run reports "validated" — it did not undo anything.
+    expect(result.status).toBe("validated");
     expect(result.output.undoGroupId).not.toBeNull();
     expect(harness.store.view.getRevision()).toBe(1);
     expect(harness.store.view.getAudit()).toHaveLength(1);

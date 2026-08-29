@@ -116,7 +116,9 @@ describe("node output overrides", () => {
       contextFor(alice, { dryRun: true }),
     );
 
-    expect(result.status).toBe("applied");
+    // §V36/T102: "validated", not "applied" — the override was never written.
+    expect(result.status).toBe("validated");
+    expect(result.output.status).toBe("validated");
     expect(node()?.resolution).toBeUndefined();
     expect(h.store.view.getRevision()).toBe(beforeRevision);
     expect((await h.bus.query("graph.audit", {}, contextFor(alice))).length).toBe(beforeAudit);

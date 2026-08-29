@@ -67,5 +67,15 @@ export function describeOperation(operation: GraphPatchOperation): OperationRow 
         targets: [operation.nodeId],
         detail: operation.format === null ? "cleared" : operation.format.mode,
       };
+    // T104: groups and the viewport. `label` is document data like every other target
+    // string here, so it travels in `detail` and is rendered as a text node (§V37).
+    case "addGroup":
+      return { kind: operation.op, targets: [operation.ref], detail: operation.label };
+    case "removeGroups":
+      return { kind: operation.op, targets: operation.groupIds, detail: null };
+    case "setGroup":
+      return { kind: operation.op, targets: [operation.groupId], detail: operation.label ?? null };
+    case "setViewport":
+      return { kind: operation.op, targets: [], detail: operation.viewport === null ? "cleared" : null };
   }
 }

@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { SELECTABLE_COLOR_FORMATS, TEXTURE_FORMATS } from "./node-definition.ts";
+import type { GraphPatchOperation } from "./patch.ts";
 
 /**
- * Runtime validation for the serialized surface only (§V10).
- * Live in-memory types stay in the .ts contract; this guards file boundaries.
+ * Runtime validation for the two boundaries where data arrives untrusted (§V10, §V66):
+ * the serialized file surface, and the graph patch a caller hands the bus.
+ * Live in-memory types stay in the .ts contract; this guards what crosses in.
  */
 
 export const SCHEMA_VERSION = 1;
@@ -185,3 +187,146 @@ export const projectDocumentSchema = z.object({
 });
 
 export type ParsedProjectDocument = z.infer<typeof projectDocumentSchema>;
+
+/* ------------------------------------------------------------------------------------
+ * Graph patch input (§V66, T176)
+ *
+ * A patch is UNTRUSTED input at a process boundary — from an agent tool, a WebMCP call,
+ * an out-of-process MCP server, a replayed file — and compile-time types guard none of
+ * those. This schema is the runtime guard, and it lives HERE rather than beside any one
+ * caller: `src/agent` guarded only its own boundary, so a malformed patch arriving any
+ * other way still reached `applyGraphPatch` and threw a raw TypeError (no diagnostic, no
+ * audit entry, an unhandled rejection). One schema, every caller.
+ * ---------------------------------------------------------------------------------- */
+
+/**
+ * §V66: a non-finite coordinate is not a cosmetic problem. `NaN` serializes to `null`,
+ * `null` fails `graphNodeSchema` on load, and the saved document no longer opens — so a
+ * position is refused at the boundary rather than written and discovered a week later.
+ */
+const finiteNumber = z.number().finite();
+const patchPoint = z.object({ x: finiteNumber, y: finiteNumber }).strict();
+const patchBounds = z
+  .object({ x: finiteNumber, y: finiteNumber, width: finiteNumber, height: finiteNumber })
+  .strict();
+
+/** A stable id or a patch-local `$temp` ref; `applyGraphPatch` tells them apart (§V35). */
+const refString = z.string().min(1);
+const patchPortRef = z.object({ nodeId: refString, portId: z.string().min(1) }).strict();
+const patchParameters = z.record(parameterValueSchema);
+
+/**
+ * Resolution and format overrides are checked for SHAPE here and for meaning by the
+ * operation itself (§V50, §V51): the operation knows which node it is talking about and
+ * which formats the project can select, so it is the layer that can say "depth is not a
+ * colour output" and name the node. This boundary's job is to guarantee the field is an
+ * override-shaped object or an explicit null before anyone reads `.mode` off it —
+ * structural validation, which is what §V66 asks for; re-deriving the semantics here
+ * would be the same rule written twice, and the copy that drifts is never the one that
+ * runs.
+ */
+const overridePayload = z.union([z.object({ mode: z.string().min(1) }).passthrough(), z.null()]);
+
+/**
+ * Every object is `.strict()`: an unknown key is a caller mistake worth reporting, and
+ * silently dropping it is how a typo in `positon` becomes a node at the origin.
+ */
+export const graphPatchOperationSchema = z.discriminatedUnion("op", [
+  z
+    .object({
+      op: z.literal("addNode"),
+      ref: refString,
+      type: z.string().min(1),
+      position: patchPoint,
+      parameters: patchParameters.optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal("removeNodes"), nodeIds: z.array(z.string().min(1)) }).strict(),
+  z
+    .object({
+      op: z.literal("connect"),
+      ref: z.string().regex(/^\$/, "A patch-local ref must start with `$`.").optional(),
+      source: patchPortRef,
+      target: patchPortRef,
+    })
+    .strict(),
+  z.object({ op: z.literal("disconnect"), edgeIds: z.array(z.string().min(1)) }).strict(),
+  z.object({ op: z.literal("setParameters"), nodeId: refString, parameters: patchParameters }).strict(),
+  z.object({ op: z.literal("setShaderSource"), nodeId: refString, source: z.string() }).strict(),
+  z.object({ op: z.literal("moveNodes"), positions: z.record(patchPoint) }).strict(),
+  z.object({ op: z.literal("setNodeUi"), nodeId: refString, ui: z.record(z.unknown()) }).strict(),
+  z.object({ op: z.literal("setNodeLabel"), nodeId: refString, label: z.string().nullable() }).strict(),
+  z
+    .object({
+      op: z.literal("setNodeResolution"),
+      nodeId: refString,
+      resolution: overridePayload,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("setNodeFormat"),
+      nodeId: refString,
+      format: overridePayload,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("addGroup"),
+      ref: refString,
+      label: z.string(),
+      bounds: patchBounds,
+      color: z.string().optional(),
+      members: z.array(refString).optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal("removeGroups"), groupIds: z.array(z.string().min(1)) }).strict(),
+  z
+    .object({
+      op: z.literal("setGroup"),
+      groupId: z.string().min(1),
+      label: z.string().optional(),
+      bounds: patchBounds.optional(),
+      color: z.string().nullable().optional(),
+      members: z.array(refString).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("setViewport"),
+      viewport: z
+        .object({ x: finiteNumber, y: finiteNumber, zoom: finiteNumber.positive() })
+        .strict()
+        .nullable(),
+    })
+    .strict(),
+]);
+
+/**
+ * `label` is bounded because it lands in the undo history and the audit log, both of
+ * which a 60Hz caller can fill; `operations` is bounded for the same reason a patch is
+ * atomic — one transaction that cannot be paused is one the UI has to survive.
+ */
+export const graphPatchSchema = z
+  .object({
+    baseRevision: z.number().int().nonnegative(),
+    operations: z.array(graphPatchOperationSchema).max(10_000),
+    label: z.string().max(200).optional(),
+  })
+  .strict();
+
+export type ParsedGraphPatchOperation = z.infer<typeof graphPatchOperationSchema>;
+
+/**
+ * Compile-time coverage guard. Adding a member to `GraphPatchOperation` without teaching
+ * the schema about it makes this line fail to compile — the same mechanism as the
+ * `const never: never = operation` at the end of `applyGraphPatch`'s switch. Without it
+ * a new operation would be structurally REJECTED at the boundary at runtime, which is
+ * loud but only once someone tries the new op in a browser.
+ */
+export const GRAPH_PATCH_OPERATIONS_COVERED: Exclude<
+  GraphPatchOperation["op"],
+  ParsedGraphPatchOperation["op"]
+> extends never
+  ? true
+  : never = true;

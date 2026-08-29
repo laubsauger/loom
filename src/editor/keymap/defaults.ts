@@ -82,7 +82,7 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     command: "node.toggleDisplay",
     when: "hasSelection",
     inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
-    label: "Toggle display",
+    label: "Toggle preview pin",
   },
   {
     id: "node.toggleRender",

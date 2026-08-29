@@ -6,6 +6,7 @@ import type {
   CommandName,
   CommandOutput,
   CommandResult,
+  CommandStatus,
   InvocationContext,
   QueryInput,
   QueryName,
@@ -87,7 +88,8 @@ export interface CommandContext {
 }
 
 export interface CommandOutcome<TOutput> {
-  status: "applied" | "rejected" | "conflict";
+  /** `"validated"` = a dry run that passed: reported, not applied, not audited (§V36). */
+  status: CommandStatus;
   output: TOutput;
   diagnostics?: RuntimeDiagnostic[];
   /** Defaults to the store revision after the handler ran. */
@@ -360,15 +362,46 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
         redoLast: () => store.internals.redo(context.actor, name),
       };
 
-      const outcome = (await registration.handler(input, commandContext)) as CommandOutcome<
-        CommandOutput<TName>
-      >;
+      let outcome: CommandOutcome<CommandOutput<TName>>;
+      try {
+        outcome = (await registration.handler(input, commandContext)) as CommandOutcome<
+          CommandOutput<TName>
+        >;
+      } catch (thrown) {
+        // §V31/§V66: a handler that throws must not become an unhandled rejection with
+        // no trace in the log. The mutation did not happen, so it is recorded as
+        // rejected and reported as a diagnostic — the same shape every other failure
+        // has. A command with no `rejectionOutput` cannot be answered (the bus cannot
+        // invent a typed result), so it rethrows AFTER the audit entry exists.
+        const revision = store.view.getRevision();
+        if (!dryRun) {
+          store.internals.recordAudit({ revision, actor: context.actor, command: name, status: "rejected" });
+        }
+        if (registration.rejectionOutput === undefined) throw thrown;
+        const diagnostics: RuntimeDiagnostic[] = [
+          {
+            severity: "error",
+            code: "command.failed",
+            // The error's TYPE only. Its message may quote untrusted document text (§V37).
+            message: `"${name}" failed: ${thrown instanceof Error ? thrown.name : "a non-Error value was thrown"}.`,
+            suggestion: "This is a defect in the command, not in the request; nothing was changed.",
+          },
+        ];
+        return {
+          status: "rejected",
+          revision,
+          diagnostics,
+          output: registration.rejectionOutput(input, diagnostics, revision) as CommandOutput<TName>,
+        };
+      }
+
       const revision = outcome.revision ?? store.view.getRevision();
 
       // A committed mutation already wrote its audit entry inside the store. What is
       // left is the negative space: rejections and conflicts still have to be visible
-      // in the log (§V31). A dry run writes nothing at all (§V36).
-      if (!dryRun && outcome.status !== "applied") {
+      // in the log (§V31). A dry run writes nothing at all (§V36) — including one that
+      // answers "validated", which is a report about a mutation that did not happen.
+      if (!dryRun && (outcome.status === "rejected" || outcome.status === "conflict")) {
         store.internals.recordAudit({
           revision,
           actor: context.actor,

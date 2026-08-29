@@ -188,7 +188,7 @@ export interface ToolRuntime {
 
 /** A bus command result, as an adapter that dispatches BY NAME can see it. */
 export interface DispatchResult<TOutput> {
-  readonly status: "applied" | "rejected" | "conflict";
+  readonly status: "applied" | "validated" | "rejected" | "conflict";
   readonly revision: Revision;
   readonly diagnostics: readonly RuntimeDiagnostic[];
   readonly output: TOutput;

@@ -116,7 +116,7 @@ export const NODE_MENU: MenuSchema = {
     { separator: true },
     { command: "node.toggleBypass", label: "Bypass" },
     { command: "node.toggleRender", label: "Mute" },
-    { command: "node.toggleDisplay", label: "Show preview" },
+    { command: "node.toggleDisplay", label: "Pin preview" },
     { separator: true },
     { command: planned("node.rename"), label: "Rename…" },
     { command: planned("node.openColorPalette"), label: "Set colour…" },

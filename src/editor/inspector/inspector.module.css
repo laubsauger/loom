@@ -43,23 +43,43 @@
   font-size: var(--fs-micro);
 }
 
+/*
+  Sections are grouped by RHYTHM, not by boxing them in. Space above a header is roughly
+  double the space below it, so the header reads as belonging to the rows beneath rather
+  than floating between two groups — proximity does the work that a border would, with no
+  extra ink. The section border-bottom is gone: the next header's own rule already marks
+  the boundary, and drawing two lines per boundary was the reason the panel read as flat.
+*/
 .section {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-3) 0;
-  border-bottom: var(--border-hairline);
+  padding: 0 0 var(--space-4);
+}
+
+.section + .section {
+  padding-top: var(--space-5);
 }
 
 .section:last-child {
   border-bottom: 0;
 }
 
+/*
+  Sticky, because a node with twenty parameters scrolls past its own headings and "which
+  group am I in" is the question the eye asks most often in a long inspector. The panel
+  background travels with it so rows do not smear underneath.
+*/
 .sectionHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-1) 0;
+  background: var(--bg-panel);
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
@@ -70,10 +90,14 @@
   user-select: none;
 }
 
+/*
+  Fades out rather than running hard to the edge: it marks where the group starts without
+  becoming a second horizontal divider competing with the pane's own borders.
+*/
 .sectionRule {
   flex: 1 1 auto;
   height: var(--hairline);
-  background: var(--line);
+  background: linear-gradient(to right, var(--line), transparent);
 }
 
 /* ---- Common section readout (§V50, §V51) ---------------------------- */

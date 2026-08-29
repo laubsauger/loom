@@ -647,7 +647,7 @@ T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole ev
 T86|x|SUPERSEDED by T143 (backend per-entry carry-over; V62b now the rule)|V62,V22
 T87|x|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
-T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
+T89|x|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|x|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
 T91|x|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
 T92|x|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
@@ -660,12 +660,12 @@ T98|x|frame-loop error boundary + device-loss retry API, ⊥ terminal halt|V23
 T99|x|diagnostic dedupe/rate-limit; ⊥ per-frame flood|V16
 T100|x|live clock: accumulate time from clamped deltas, reset time base; f32 time rebase|V44,V49
 T101|x|autosave: dirty state, debounced IndexedDB/OPFS ring (20), restore-on-launch flow|V10
-T102|.|dryRun returns `validated` status + ⊥ mint real ids|V36
+T102|x|dryRun returns `validated` status + ⊥ mint real ids|V36
 T103|x|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
-T104|.|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
+T104|x|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
 T105|x|PWA manifest|C
 T106|.|`ParameterValue` envelope migration + passthrough lane for unknown kinds|V69,V68,V10
-T107|.|patch-op classification value-only\|structural + overlap-scoped conflict|V33
+T107|x|patch-op classification value-only\|structural + overlap-scoped conflict|V33
 T108|x|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
 T109|x|non-rAF frame loop option (worker + node realtime)|V49,V63
 T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
@@ -745,10 +745,10 @@ T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swa
 T180|x|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
 T181|~|GPU timer spans for dispatch/draw — literal draws DONE (f.pass gives clear+timer); indirect draws & ALL compute ⊥ measurable: vgpu has no timestampWrites hook on compute passes. UPSTREAM GAP — T163 covers effect passes only ∴ compute cost is unmeasured|V86
 T173|x|`RenderBackend.readOutput(id, {region?}) → ReadbackImage` — completes T82. today returns bare bytes ∴ format+stride come from a table BESIDE the copy, ⊥ from the thing that copied. also: a 1×1 probe pulls a whole 1080p frame|V60,V48
-T174|.|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
-T175|.|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
-T176|.|lift `GraphPatchOperation` zod into `domain/types/schemas.ts` — agent guards its own boundary only; every caller needs it (V66)|V66
-T177|.|`transactionId` on `HistoryGroupSummary` (or a `graph.revertTransaction`) so revert-as-one-unit ⊥ rely on an adapter-side ledger|V42,V34
+T174|x|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
+T175|x|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
+T176|x|lift `GraphPatchOperation` zod into `domain/types/schemas.ts` — agent guards its own boundary only; every caller needs it (V66)|V66
+T177|x|`transactionId` on `HistoryGroupSummary` (or a `graph.revertTransaction`) so revert-as-one-unit ⊥ rely on an adapter-side ledger|V42,V34
 T169|.|`GraphStore.replace(graph, {clearHistory})` committing through the same path as `apply` + a `project.load` command, so open is in-place w/ an actor. today open = teardown+rebuild ∴ undo history ⊥ survives|V29,V30,V31,V41
 T170|.|`Inspector` accepts `unresolvedParameters?: readonly string[]` — today a node w/ ANY newer-version param suppresses ALL its controls|V68,V10
 T171|.|attach the timing source where the frame loop lives — T163's backend surface exists; composition root ⊥ runs a loop ∴ attaching there would park ∀ fields on "measuring…" forever|V86

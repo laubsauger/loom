@@ -5,6 +5,7 @@ import { registerEditorCommands } from "./editor-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
 import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
+import { registerValidateCommand } from "./validate-command.ts";
 
 export {
   CapabilityDeniedError,
@@ -40,7 +41,28 @@ export type {
   HistoryCommandOutput,
   HistoryGroupSummary,
   HistorySummary,
+  RevertTransactionInput,
+  RevertTransactionOutput,
 } from "./graph-commands.ts";
+export { registerValidateCommand } from "./validate-command.ts";
+export type { ValidationReport } from "./validate-command.ts";
+export {
+  isValueOnlyPatch,
+  operationClass,
+  overlappingEntities,
+  patchTouchedEntities,
+  touchedEntities,
+} from "./patch-scope.ts";
+export type { PatchOperationClass } from "./patch-scope.ts";
+export { attachStateSources, stateSourcesFor } from "./state-queries.ts";
+export type {
+  DiagnosticsQueryInput,
+  DiagnosticsSnapshot,
+  ProjectSnapshot,
+  RuntimeMetricsSnapshot,
+  SelectionSnapshot,
+  StateSources,
+} from "./state-queries.ts";
 
 export interface DomainBusOptions extends GraphStoreOptions {
   registry?: NodeRegistryView;
@@ -65,6 +87,7 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus);
+  registerValidateCommand(bus);
   return { bus, store };
 }
 export { createCapabilityGrantStore, type CapabilityGrantStore, type CapabilityGrantStoreOptions } from "./grants.ts";

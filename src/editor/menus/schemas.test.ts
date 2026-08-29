@@ -108,7 +108,7 @@ describe("shape", () => {
   it("gives the three node toggles a state guard, so each shows a checkmark", () => {
     const nodeItems = items(menuSchemaFor("node", registry).entries);
     const toggles = nodeItems.filter((item) => item.command !== undefined && TOGGLE_GUARD[item.command] !== undefined);
-    expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Show preview"]);
+    expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Pin preview"]);
   });
 });
 

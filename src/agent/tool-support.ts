@@ -11,7 +11,8 @@ import type { DispatchResult, ToolResult, ToolRuntime, ToolStatus } from "./type
  * decides what an edit means (§V39). The two rules it enforces on every tool:
  *
  *  - **A dry run is never reported as applied.** `graph.applyPatch` answers a dry run
- *    with status `"applied"` and a populated `createdIds` today (logged as T102). An
+ *    T102 landed: the bus itself now answers a dry run with `"validated"` and mints no
+ *    ids, so this adapter projects what it is told instead of correcting it. An
  *    agent reading "applied" for an edit that did not happen will build its next patch on
  *    ids that do not exist, so the adapter reports `validated` — which it can do honestly,
  *    because IT is the one that asked for the dry run — and withholds the provisional ids
@@ -87,6 +88,7 @@ export interface PatchToolData {
 
 const PATCH_STATUS: Record<DispatchResult<unknown>["status"], ToolStatus> = {
   applied: "ok",
+  validated: "validated",
   rejected: "rejected",
   conflict: "conflict",
 };
@@ -122,11 +124,10 @@ export async function dispatchPatchCommand(
         createdIds: {},
       };
 
-  const applied = dispatched.status === "applied";
-  const status: ToolStatus = applied && runtime.dryRun ? "validated" : PATCH_STATUS[dispatched.status];
+  const status: ToolStatus = PATCH_STATUS[dispatched.status];
 
   const diagnostics: RuntimeDiagnostic[] = [...dispatched.diagnostics];
-  if (applied && runtime.dryRun) {
+  if (dispatched.status === "validated") {
     diagnostics.push(
       diagnostic(
         "info",
@@ -141,10 +142,10 @@ export async function dispatchPatchCommand(
   }
 
   const data: PatchToolData = {
-    status: applied && runtime.dryRun ? "validated" : dispatched.status,
+    status: dispatched.status,
     revision: dispatched.revision,
     appliedOperations: patch.appliedOperations,
-    createdIds: applied && runtime.dryRun ? {} : { ...patch.createdIds },
+    createdIds: { ...patch.createdIds },
     undoGroupId: dispatched.undoGroupId ?? null,
   };
 

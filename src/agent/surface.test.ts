@@ -179,10 +179,11 @@ describe("every tool dispatches through the bus (§V29, §V30)", () => {
 });
 
 describe("tools with no command behind them report unavailable (§V39)", () => {
+  // validate_project left this list when the bus registered project.validate (T174).
+  // The list shrinking as commands land is the intended lifecycle, not a weakening.
   const unbacked = [
     ["set_output", "graph.setOutput"],
     ["reset_feedback", "runtime.resetFeedback"],
-    ["validate_project", "project.validate"],
     ["compile_project", "project.compile"],
     ["play", "transport.play"],
     ["pause", "transport.pause"],

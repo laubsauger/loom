@@ -161,22 +161,101 @@ describe("graph.applyPatch — atomicity (§V32)", () => {
   });
 });
 
-describe("graph.applyPatch — conflict (§V33)", () => {
-  it("reports conflict for a stale baseRevision and never rebases", async () => {
-    await apply([addSolid("$a")]);
+describe("graph.applyPatch — conflict is entity overlap, not staleness (§V33, T107)", () => {
+  it("reports conflict when the patch touches a node someone else has since changed", async () => {
+    const built = await apply([addSolid("$a")]);
+    const nodeId = built.output.createdIds["$a"] as string;
+    const base = graph().revision;
+
+    // Bob edits the node. Alice's patch, built before that, targets the same node.
+    await apply([{ op: "setNodeLabel", nodeId, label: "bob was here" }], { actor: bob });
     const currentRevision = graph().revision;
-    expect(currentRevision).toBe(1);
     const snapshot = graph();
 
-    const result = await apply([addSolid("$b")], { base: 0 });
+    const result = await apply([{ op: "setNodeLabel", nodeId, label: "alice" }], { base });
 
     expect(result.status).toBe("conflict");
     expect(result.output.status).toBe("conflict");
     expect(result.output.appliedOperations).toBe(0);
     expect(result.output.revision).toBe(currentRevision);
     expect(result.diagnostics[0]?.code).toBe("patch.conflict");
+    // The overlapping entity is NAMED, so the caller knows what to re-read.
+    expect(result.diagnostics[0]?.message).toContain(`node:${nodeId}`);
     expect(graph()).toBe(snapshot);
-    expect(nodeCount()).toBe(1);
+  });
+
+  /**
+   * The case that makes the invariant worth having: a human dragging a node writes a
+   * revision every frame, so an agent patch built 20ms ago is always stale. If staleness
+   * alone were a conflict, the agent could never land an edit while anyone touches the
+   * canvas — which is the T62 gate passing in a quiet room and failing in a real one.
+   */
+  it("applies a stale patch that touches nothing the newer edits touched", async () => {
+    const built = await apply([addSolid("$a")]);
+    const dragged = built.output.createdIds["$a"] as string;
+    const base = graph().revision;
+
+    // A 60Hz drag of one node: many revisions, all on that node only.
+    for (let frame = 0; frame < 8; frame += 1) {
+      await apply([{ op: "moveNodes", positions: { [dragged]: { x: frame, y: 0 } } }], { actor: bob });
+    }
+    expect(graph().revision).toBe(base + 8);
+
+    // The agent's patch was built against `base` and adds a disjoint node.
+    const result = await apply([addSolid("$b", 500)], { base });
+
+    expect(result.status).toBe("applied");
+    expect(nodeCount()).toBe(2);
+    // Applied, but not silently: the stale base is reported (§V33 forbids a QUIET rebase,
+    // and nothing was rebased — the operations went in exactly as written).
+    expect(result.diagnostics.some((d) => d.code === "patch.staleBase")).toBe(true);
+    expect(graph().nodes[dragged]?.position.x).toBe(7);
+  });
+
+  it("conflicts when a value-only patch targets a node a structural patch removed", async () => {
+    const built = await apply([addSolid("$a"), { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } }]);
+    const removed = built.output.createdIds["$a"] as string;
+    const kept = built.output.createdIds["$b"] as string;
+    const base = graph().revision;
+
+    await apply([{ op: "removeNodes", nodeIds: [removed] }], { actor: bob });
+
+    const overlapping = await apply(
+      [{ op: "setNodeUi", nodeId: removed, ui: { bypassed: true } }],
+      { base },
+    );
+    expect(overlapping.status).toBe("conflict");
+
+    // The same value-only edit on the surviving node is not in anyone's way.
+    const disjoint = await apply([{ op: "setNodeUi", nodeId: kept, ui: { bypassed: true } }], { base });
+    expect(disjoint.status).toBe("applied");
+    expect(graph().nodes[kept]?.ui?.bypassed).toBe(true);
+  });
+
+  it("conflicts when another actor already occupied the input port a connect wants", async () => {
+    const built = await apply([
+      addSolid("$a"),
+      { op: "addNode", ref: "$b", type: "test.solid", position: { x: 0, y: 200 } },
+      { op: "addNode", ref: "$t", type: "test.blur", position: { x: 400, y: 0 } },
+    ]);
+    const first = built.output.createdIds["$a"] as string;
+    const second = built.output.createdIds["$b"] as string;
+    const target = built.output.createdIds["$t"] as string;
+    const base = graph().revision;
+
+    await apply(
+      [{ op: "connect", source: { nodeId: first, portId: "out" }, target: { nodeId: target, portId: "source" } }],
+      { actor: bob },
+    );
+
+    // §V14 is decided by the edges already landing on that port, so the edge Bob just
+    // created is part of what this patch touches even though it never names it.
+    const result = await apply(
+      [{ op: "connect", source: { nodeId: second, portId: "out" }, target: { nodeId: target, portId: "source" } }],
+      { base },
+    );
+    expect(result.status).toBe("conflict");
+    expect(edgeCount()).toBe(1);
   });
 
   it("reports conflict for a baseRevision ahead of the document too", async () => {
@@ -186,25 +265,33 @@ describe("graph.applyPatch — conflict (§V33)", () => {
   });
 
   it("records the conflict in the audit log (§V31)", async () => {
-    await apply([addSolid("$a")]);
-    await apply([addSolid("$b")], { base: 0 });
+    const built = await apply([addSolid("$a")]);
+    const nodeId = built.output.createdIds["$a"] as string;
+    const base = graph().revision;
+    await apply([{ op: "setNodeLabel", nodeId, label: "bob" }], { actor: bob });
+    await apply([{ op: "setNodeLabel", nodeId, label: "alice" }], { base });
+
     const audit = harness.store.view.getAudit();
-    expect(audit.map((entry) => entry.status)).toEqual(["applied", "conflict"]);
-    expect(audit[1]?.actor.id).toBe("alice");
-    expect(audit[1]?.command).toBe("graph.applyPatch");
+    expect(audit.map((entry) => entry.status)).toEqual(["applied", "applied", "conflict"]);
+    expect(audit[2]?.actor.id).toBe("alice");
+    expect(audit[2]?.command).toBe("graph.applyPatch");
   });
 });
 
-describe("graph.applyPatch — dryRun (§V36)", () => {
-  it("validates without mutating and without an applied audit entry", async () => {
+describe("graph.applyPatch — dryRun (§V36, T102)", () => {
+  it("answers `validated`, mints no ids, and writes no audit entry", async () => {
     const before = graph();
     const result = await apply(
       [addSolid("$a"), { op: "addNode", ref: "$b", type: "test.blur", position: { x: 1, y: 1 } }],
       { dryRun: true },
     );
 
-    expect(result.status).toBe("applied");
+    // NOT "applied": a caller told "applied" for an edit that did not happen builds its
+    // next patch on ids nobody minted (T102).
+    expect(result.status).toBe("validated");
+    expect(result.output.status).toBe("validated");
     expect(result.output.appliedOperations).toBe(2);
+    expect(result.output.createdIds).toEqual({});
     expect(result.diagnostics.some((d) => d.code === "patch.dryRun")).toBe(true);
 
     expect(graph()).toBe(before);
@@ -212,6 +299,22 @@ describe("graph.applyPatch — dryRun (§V36)", () => {
     expect(nodeCount()).toBe(0);
     expect(harness.store.view.getAudit()).toHaveLength(0);
     expect(harness.store.view.getHistory(alice).undo).toHaveLength(0);
+  });
+
+  /**
+   * The concrete hazard T102 names: a dry run followed by the real thing must not
+   * produce two different id sets, and the dry run must not consume ids from the factory
+   * to make that happen.
+   */
+  it("does not consume ids, so the real apply mints the ids a caller can rely on", async () => {
+    await apply([addSolid("$a")], { dryRun: true });
+    const real = await apply([addSolid("$a")]);
+
+    const created = real.output.createdIds["$a"];
+    expect(created).toBeDefined();
+    expect(graph().nodes[created as string]).toBeDefined();
+    // The very first minted node id, exactly as if the dry run had never run.
+    expect(created).toBe("nd_t1");
   });
 
   it("reports diagnostics for an invalid patch without mutating or auditing", async () => {
@@ -452,5 +555,250 @@ describe("graph.applyPatch — parameters and shader source", () => {
     const bad = await apply([{ op: "setNodeUi", nodeId: id, ui: { rotation: 90 } }]);
     expect(bad.status).toBe("rejected");
     expect(bad.diagnostics[0]?.code).toBe("node.ui.unknown");
+  });
+});
+
+/**
+ * §V66 / T89 + T176: the patch is untrusted input.
+ *
+ * Every case below used to leave the boundary through a raw `TypeError` — no diagnostic,
+ * no audit entry, and an unhandled rejection at whatever called `bus.execute`. A caller
+ * that sends garbage must get an answer, and the log must show that something was
+ * refused (§V31).
+ */
+describe("graph.applyPatch — structural validation of untrusted input (§V66)", () => {
+  /** Bypasses the typed helper on purpose: this is what arrives over a transport. */
+  const raw = async (patch: unknown, options: { dryRun?: boolean } = {}) =>
+    harness.bus.execute(
+      "graph.applyPatch",
+      patch as Parameters<typeof harness.bus.execute<"graph.applyPatch">>[1],
+      ctx(alice, options.dryRun === true ? { dryRun: true } : {}),
+    );
+
+  it("rejects an addNode with no position instead of throwing, and audits the rejection", async () => {
+    const before = graph();
+    const result = await raw({
+      baseRevision: 0,
+      operations: [{ op: "addNode", ref: "$a", type: "test.solid" }],
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics[0]?.code).toBe("patch.malformed");
+    // The path is what makes a rejected batch fixable.
+    expect(result.diagnostics[0]?.message).toContain("operations.0.position");
+    expect(graph()).toBe(before);
+
+    // §V31: a refusal is a log entry, not silence.
+    const audit = harness.store.view.getAudit();
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ command: "graph.applyPatch", status: "rejected", actor: { id: "alice" } });
+  });
+
+  /**
+   * §V66's second clause, and the reason it is worth a rule of its own: `NaN` survives
+   * every `typeof` check, `JSON.stringify` turns it into `null`, and `null` fails the
+   * node schema on load — so the document saves and then refuses to reopen. The damage
+   * is discovered days later, by which time the session that caused it is gone.
+   */
+  it("refuses a non-finite position rather than writing a document that cannot reload", async () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -Number.POSITIVE_INFINITY]) {
+      harness = createHarness();
+      const result = await raw({
+        baseRevision: 0,
+        operations: [{ op: "addNode", ref: "$a", type: "test.solid", position: { x: bad, y: 0 } }],
+      });
+      expect(result.status).toBe("rejected");
+      expect(result.diagnostics[0]?.code).toBe("patch.malformed");
+      expect(nodeCount()).toBe(0);
+      expect(JSON.stringify({ x: bad })).toBe('{"x":null}');
+    }
+  });
+
+  it("refuses a non-finite position on moveNodes too", async () => {
+    const built = await apply([addSolid("$a")]);
+    const nodeId = built.output.createdIds["$a"] as string;
+    const before = graph();
+
+    const result = await raw({
+      baseRevision: graph().revision,
+      operations: [{ op: "moveNodes", positions: { [nodeId]: { x: 10, y: Number.NaN } } }],
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(graph()).toBe(before);
+  });
+
+  it("rejects an unknown operation, an unknown key and a malformed patch envelope", async () => {
+    const cases: unknown[] = [
+      { baseRevision: 0, operations: [{ op: "deleteEverything", nodeIds: ["a"] }] },
+      // A typo'd key is a caller mistake worth reporting: dropping it silently is how
+      // `positon` becomes a node at the origin.
+      { baseRevision: 0, operations: [{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 }, positon: 1 }] },
+      { baseRevision: 0, operations: "not an array" },
+      { baseRevision: -1, operations: [] },
+      { operations: [] },
+      null,
+      "nonsense",
+    ];
+    for (const patchInput of cases) {
+      harness = createHarness();
+      const result = await raw(patchInput);
+      expect(result.status).toBe("rejected");
+      expect(result.diagnostics[0]?.code).toBe("patch.malformed");
+      expect(harness.store.view.getAudit()).toHaveLength(1);
+    }
+  });
+
+  it("writes no audit entry when a malformed patch arrives as a dry run (§V36)", async () => {
+    const result = await raw({ baseRevision: 0, operations: [{ op: "addNode" }] }, { dryRun: true });
+    expect(result.status).toBe("rejected");
+    expect(harness.store.view.getAudit()).toHaveLength(0);
+  });
+
+  /**
+   * Defence in depth for §V31: even a command whose handler has a defect must leave a
+   * trace and answer its caller, rather than surfacing as an unhandled rejection.
+   */
+  it("turns a throwing handler into an audited rejection", async () => {
+    harness.bus.registerCommand({
+      name: "test.rename",
+      handler: () => {
+        throw new TypeError("boom");
+      },
+      rejectionOutput: () => ({ ok: false }),
+    });
+
+    const result = await harness.bus.execute("test.rename", { nodeId: "x", label: "y" }, ctx());
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics[0]?.code).toBe("command.failed");
+    // The error's TYPE only: its message may quote untrusted document text (§V37).
+    expect(result.diagnostics[0]?.message).toContain("TypeError");
+    expect(result.diagnostics[0]?.message).not.toContain("boom");
+    expect(harness.store.view.getAudit().at(-1)).toMatchObject({
+      command: "test.rename",
+      status: "rejected",
+    });
+  });
+});
+
+/**
+ * T104 (§V29): groups and the viewport were undoable but uncreatable — the store records
+ * group changes in its undo groups, and no operation could write one.
+ */
+describe("graph.applyPatch — groups and viewport (T104)", () => {
+  it("creates a group over nodes made in the same patch and hands back its id (§V35)", async () => {
+    const result = await apply([
+      addSolid("$a"),
+      { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } },
+      {
+        op: "addGroup",
+        ref: "$g",
+        label: "Chain",
+        bounds: { x: -20, y: -20, width: 400, height: 200 },
+        color: "#334",
+        members: ["$a", "$b"],
+      },
+    ]);
+
+    expect(result.status).toBe("applied");
+    const groupId = result.output.createdIds["$g"] as string;
+    expect(groupId).toBeDefined();
+    const group = graph().groups[groupId];
+    expect(group?.label).toBe("Chain");
+    expect(group?.color).toBe("#334");
+    expect(group?.members).toEqual(
+      [result.output.createdIds["$a"], result.output.createdIds["$b"]].sort(),
+    );
+  });
+
+  it("undoes and redoes a group as one unit (§V34)", async () => {
+    const built = await apply([
+      addSolid("$a"),
+      { op: "addGroup", ref: "$g", label: "One", bounds: { x: 0, y: 0, width: 10, height: 10 }, members: ["$a"] },
+    ]);
+    const groupId = built.output.createdIds["$g"] as string;
+    expect(Object.keys(graph().groups)).toHaveLength(1);
+
+    await harness.bus.execute("graph.undo", {}, ctx());
+    expect(graph().groups[groupId]).toBeUndefined();
+    expect(nodeCount()).toBe(0);
+
+    await harness.bus.execute("graph.redo", {}, ctx());
+    expect(graph().groups[groupId]?.label).toBe("One");
+  });
+
+  it("edits a group's fields, clears its colour with null, and deletes it without its nodes", async () => {
+    const built = await apply([
+      addSolid("$a"),
+      { op: "addGroup", ref: "$g", label: "One", bounds: { x: 0, y: 0, width: 10, height: 10 }, color: "#f00", members: ["$a"] },
+    ]);
+    const groupId = built.output.createdIds["$g"] as string;
+
+    await apply([
+      { op: "setGroup", groupId, label: "Renamed", bounds: { x: 5, y: 5, width: 20, height: 20 }, color: null },
+    ]);
+    const group = graph().groups[groupId];
+    expect(group?.label).toBe("Renamed");
+    expect(group?.bounds).toEqual({ x: 5, y: 5, width: 20, height: 20 });
+    expect(group?.color).toBeUndefined();
+    // Untouched fields are left alone by a partial update.
+    expect(group?.members).toHaveLength(1);
+
+    const removed = await apply([{ op: "removeGroups", groupIds: [groupId] }]);
+    expect(removed.status).toBe("applied");
+    expect(graph().groups[groupId]).toBeUndefined();
+    // A group is a label over members: deleting it never deletes the nodes.
+    expect(nodeCount()).toBe(1);
+  });
+
+  it("refuses a group whose member does not exist, and an edit to a group that does not", async () => {
+    const missingMember = await apply([
+      { op: "addGroup", ref: "$g", label: "x", bounds: { x: 0, y: 0, width: 1, height: 1 }, members: ["nope"] },
+    ]);
+    expect(missingMember.status).toBe("rejected");
+    expect(missingMember.diagnostics[0]?.code).toBe("node.missing");
+    expect(Object.keys(graph().groups)).toHaveLength(0);
+
+    const missingGroup = await apply([{ op: "setGroup", groupId: "nope", label: "x" }]);
+    expect(missingGroup.status).toBe("rejected");
+    expect(missingGroup.diagnostics[0]?.code).toBe("group.missing");
+  });
+
+  it("drops a deleted node out of its group (§V40) and keeps the group", async () => {
+    const built = await apply([
+      addSolid("$a"),
+      { op: "addNode", ref: "$b", type: "test.blur", position: { x: 200, y: 0 } },
+      { op: "addGroup", ref: "$g", label: "Both", bounds: { x: 0, y: 0, width: 1, height: 1 }, members: ["$a", "$b"] },
+    ]);
+    const groupId = built.output.createdIds["$g"] as string;
+    const removed = built.output.createdIds["$a"] as string;
+
+    await apply([{ op: "removeNodes", nodeIds: [removed] }]);
+    expect(graph().groups[groupId]?.members).toEqual([built.output.createdIds["$b"]]);
+  });
+
+  it("round-trips the viewport and clears it with null", async () => {
+    const set = await apply([{ op: "setViewport", viewport: { x: -120, y: 40, zoom: 1.5 } }]);
+    expect(set.status).toBe("applied");
+    expect(graph().viewport).toEqual({ x: -120, y: 40, zoom: 1.5 });
+
+    await apply([{ op: "setViewport", viewport: null }]);
+    expect(graph().viewport).toBeUndefined();
+  });
+
+  it("refuses a viewport with a non-finite coordinate or a non-positive zoom (§V66)", async () => {
+    for (const viewport of [
+      { x: Number.NaN, y: 0, zoom: 1 },
+      { x: 0, y: 0, zoom: 0 },
+      { x: 0, y: 0, zoom: -1 },
+    ]) {
+      const result = await harness.bus.execute(
+        "graph.applyPatch",
+        { baseRevision: graph().revision, operations: [{ op: "setViewport", viewport }] },
+        ctx(),
+      );
+      expect(result.status).toBe("rejected");
+      expect(graph().viewport).toBeUndefined();
+    }
   });
 });

@@ -1,7 +1,7 @@
 import { SELECTABLE_COLOR_FORMATS } from "../types/node-definition.ts";
-import { nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
+import { graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { EdgeId, NodeId, PortId } from "../types/ids.ts";
+import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
 import type { ParameterValue } from "../types/parameters.ts";
 import type {
@@ -15,16 +15,41 @@ import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { arePortsCompatible, describePortType } from "../graph/port-compat.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
+import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 
 /**
  * `graph.applyPatch` — the atomic graph mutation (§I.patch, T55).
  *
  * One patch is one transaction and one undo group (§V32, §V34). Operations are executed
  * in order against an immer draft; the first error throws, immer discards the draft, and
- * the document is left byte-identical to what it was (§V32). A stale `baseRevision` is
- * reported as a conflict and never rebased (§V33). Patch-local `$temp` ids are minted
- * into stable ids and handed back in `createdIds`, which is what lets an agent add three
- * nodes and wire them together in a single request (§V35).
+ * the document is left byte-identical to what it was (§V32). Patch-local `$temp` ids are
+ * minted into stable ids and handed back in `createdIds`, which is what lets an agent add
+ * three nodes and wire them together in a single request (§V35).
+ *
+ * Three rules that are easy to get subtly wrong live here:
+ *
+ *  - **Input is untrusted (§V66, §V37).** The patch is parsed with zod BEFORE anything
+ *    reads a field off it. Compile-time types say nothing about what an agent, an MCP
+ *    server or a replayed file actually sent, and `{op:"addNode"}` with no position used
+ *    to throw a raw TypeError out of the handler: no diagnostic, no audit entry, an
+ *    unhandled rejection at the caller. A malformed patch is now a rejection like any
+ *    other, which means the bus writes its audit entry (§V31).
+ *  - **A stale base is a conflict only on real overlap (§V33, T107).** See `patch-scope.ts`.
+ *  - **A dry run mints nothing (§V36, T102).** It answers `"validated"`, not `"applied"`,
+ *    and hands back no ids — ids minted by a validation pass are ids nobody created.
+ *
+ * ## Groups and the viewport (T104)
+ *
+ * Group operations are fully undoable: `UndoGroup` records per-entity before/after for
+ * `groups` exactly as it does for nodes and edges, so creating, editing and deleting a
+ * group round-trips through undo/redo like any other edit.
+ *
+ * `setViewport` does NOT. `GraphDocument.viewport` is document state — it is serialized,
+ * so a project reopens where it was left — but it has no entity identity, so the store's
+ * undo group has nowhere to record it and undoing a viewport-only patch restores no
+ * framing. Making that work needs a `viewport` change record in `GraphStore` (owned by
+ * the store's track), and it is a deliberate open question whether it SHOULD: in most
+ * editors panning is not an undo step. Until then the honest statement is the one above.
  */
 
 /** Parameter key a shader-authorable node exposes its WGSL through. */
@@ -46,6 +71,8 @@ function isTempId(ref: NodeRef): ref is TempId {
 interface PatchRun {
   diagnostics: RuntimeDiagnostic[];
   createdIds: Record<string, string>;
+  /** A dry run resolves temp refs against provisional ids it never hands back (§V36). */
+  dryRun: boolean;
 }
 
 export function applyGraphPatch(
@@ -54,42 +81,30 @@ export function applyGraphPatch(
 ): CommandOutcome<GraphPatchResult> {
   const current = context.store.getRevision();
 
-  if (!Number.isInteger(patch.baseRevision) || patch.baseRevision < 0) {
-    return rejected(current, [
-      {
-        severity: "error",
-        code: "patch.baseRevision",
-        message: `Patch baseRevision must be a non-negative integer, received ${String(patch.baseRevision)}.`,
-        suggestion: "Read the current revision with the graph.get query first.",
-      },
-    ]);
+  // §V66: structural validation first, before any field is read. Everything below this
+  // point may assume the shape it declares; nothing above it may assume anything.
+  const parsed = graphPatchSchema.safeParse(patch);
+  if (!parsed.success) {
+    return rejected(current, malformedDiagnostics(parsed.error.issues));
   }
 
-  if (patch.baseRevision !== current) {
-    // §V33: never silently rebase. The caller re-reads and decides.
-    const diagnostics: RuntimeDiagnostic[] = [
-      {
-        severity: "error",
-        code: "patch.conflict",
-        message: `Patch was built against revision ${patch.baseRevision}, the document is at ${current}.`,
-        suggestion: "Re-read the graph and rebuild the patch against the current revision.",
-      },
-    ];
+  const staleness = staleBaseOutcome(patch, context, current);
+  if (staleness.kind === "conflict") {
     return {
       status: "conflict",
       revision: current,
-      diagnostics,
+      diagnostics: staleness.diagnostics,
       output: {
         status: "conflict",
         revision: current,
         appliedOperations: 0,
-        diagnostics,
+        diagnostics: staleness.diagnostics,
         createdIds: {},
       },
     };
   }
 
-  const run: PatchRun = { diagnostics: [], createdIds: {} };
+  const run: PatchRun = { diagnostics: [...staleness.diagnostics], createdIds: {}, dryRun: context.dryRun };
 
   let applied;
   try {
@@ -108,25 +123,29 @@ export function applyGraphPatch(
   }
 
   if (context.dryRun) {
-    // §V36: validated, nothing mutated, and the bus writes no "applied" audit entry.
+    // §V36/T102: validated — NOT "applied", and no ids. The provisional ids the run used
+    // to resolve `$temp` refs against its scratch draft die with the draft; handing them
+    // back would let a caller cache references to nodes nobody ever created, and the
+    // real apply would mint different ones.
     const diagnostics: RuntimeDiagnostic[] = [
       ...run.diagnostics,
       {
         severity: "info",
         code: "patch.dryRun",
-        message: `Dry run: ${patch.operations.length} operation(s) validated, nothing was applied.`,
+        message: `Dry run: ${patch.operations.length} operation(s) validated, nothing was applied and no ids were minted.`,
+        suggestion: "Call again without dryRun to apply; read the stable ids from that result.",
       },
     ];
     return {
-      status: "applied",
+      status: "validated",
       revision: current,
       diagnostics,
       output: {
-        status: "applied",
+        status: "validated",
         revision: current,
         appliedOperations: patch.operations.length,
         diagnostics,
-        createdIds: run.createdIds,
+        createdIds: {},
       },
     };
   }
@@ -146,6 +165,99 @@ export function applyGraphPatch(
     diagnostics: run.diagnostics,
     output,
     ...(applied.undoGroupId === undefined ? {} : { undoGroupId: applied.undoGroupId }),
+  };
+}
+
+/**
+ * Zod issues as diagnostics (§V66, §V37).
+ *
+ * The path is reported — `operations.2.position.x` is the only thing that makes a
+ * rejected batch fixable — and the issue's own message is used only for the small set of
+ * checks this schema authors. Nothing quotes the offending VALUE: patch content is
+ * untrusted document text and a diagnostic is read by a model (§V37).
+ */
+function malformedDiagnostics(issues: readonly { path: (string | number)[]; message: string; code: string }[]): RuntimeDiagnostic[] {
+  const capped = issues.slice(0, 10);
+  const diagnostics = capped.map<RuntimeDiagnostic>((issue) => ({
+    severity: "error",
+    code: "patch.malformed",
+    message: `Patch is structurally invalid at ${issue.path.join(".") || "(root)"}: ${issue.code}.`,
+    suggestion: issue.message,
+  }));
+  if (issues.length > capped.length) {
+    diagnostics.push({
+      severity: "error",
+      code: "patch.malformed",
+      message: `${issues.length - capped.length} further structural problem(s) were not listed.`,
+    });
+  }
+  return diagnostics;
+}
+
+type StalenessOutcome =
+  | { kind: "conflict"; diagnostics: RuntimeDiagnostic[] }
+  | { kind: "proceed"; diagnostics: RuntimeDiagnostic[] };
+
+/**
+ * §V33 / T107: decides whether a base revision that is not the current one is a conflict.
+ *
+ * A patch built against a LATER revision than the document has is always refused — it was
+ * built against a document this store has never seen, so there is nothing to compare.
+ * A patch built against an earlier one is refused only when it touches an entity that has
+ * changed since. Nothing is rebased either way: an applied patch is applied verbatim
+ * against the current document, and every precondition is re-checked below.
+ */
+function staleBaseOutcome(
+  patch: GraphPatch,
+  context: CommandContext,
+  current: number,
+): StalenessOutcome {
+  if (patch.baseRevision === current) return { kind: "proceed", diagnostics: [] };
+
+  if (patch.baseRevision > current) {
+    return {
+      kind: "conflict",
+      diagnostics: [
+        {
+          severity: "error",
+          code: "patch.conflict",
+          message: `Patch was built against revision ${patch.baseRevision}, which is ahead of this document at ${current}.`,
+          suggestion: "Read the current revision with the graph.get query and rebuild the patch.",
+        },
+      ],
+    };
+  }
+
+  const overlapping = overlappingEntities(
+    patch.operations,
+    context.graph,
+    context.store.getState().owners,
+    patch.baseRevision,
+  );
+
+  if (overlapping.length > 0) {
+    return {
+      kind: "conflict",
+      diagnostics: [
+        {
+          severity: "error",
+          code: "patch.conflict",
+          message: `Patch was built against revision ${patch.baseRevision}, the document is at ${current}, and ${overlapping.length} entity it touches changed in between: ${overlapping.join(", ")}.`,
+          suggestion: "Re-read those entities and rebuild the patch; nothing is rebased for you (§V33).",
+        },
+      ],
+    };
+  }
+
+  return {
+    kind: "proceed",
+    diagnostics: [
+      {
+        severity: "info",
+        code: "patch.staleBase",
+        message: `Patch was built against revision ${patch.baseRevision} and the document is at ${current}, but no entity it touches changed in between, so it was applied as written (${isValueOnlyPatch(patch.operations) ? "value-only" : "structural"} patch).`,
+      },
+    ],
   };
 }
 
@@ -169,9 +281,18 @@ function executeOperation(
   index: number,
   draft: GraphDocument,
   registry: NodeRegistryView,
-  ids: { node: () => string; edge: () => string },
+  ids: { node: () => string; edge: () => string; group: () => string },
   run: PatchRun,
 ): void {
+  /**
+   * §V36/T102: a dry run resolves its own temp refs against provisional ids so the rest
+   * of the patch can be validated, but it never draws from the real id factory — a
+   * validation pass that consumes ids makes the subsequent real apply produce a
+   * different id set, which is the phantom-id hazard in the first place.
+   */
+  const mint = (kind: "node" | "edge" | "group", key: string): string =>
+    run.dryRun ? `pending-${kind}-${key}` : ids[kind]();
+
   const fail = (code: string, message: string, extra?: Partial<RuntimeDiagnostic>): never => {
     run.diagnostics.push({
       severity: "error",
@@ -215,7 +336,7 @@ function executeOperation(
         if (run.createdIds[operation.ref] !== undefined) {
           fail("patch.duplicateRef", `temp id "${operation.ref}" was already used in this patch.`);
         }
-        nodeId = ids.node();
+        nodeId = mint("node", operation.ref);
         run.createdIds[operation.ref] = nodeId;
       } else {
         nodeId = operation.ref;
@@ -334,10 +455,10 @@ function executeOperation(
         if (run.createdIds[operation.ref] !== undefined) {
           fail("patch.duplicateRef", `temp id "${operation.ref}" was already used in this patch.`);
         }
-        edgeId = ids.edge();
+        edgeId = mint("edge", operation.ref);
         run.createdIds[operation.ref] = edgeId;
       } else {
-        edgeId = ids.edge();
+        edgeId = mint("edge", `op${index}`);
       }
 
       draft.edges[edgeId] = {
@@ -495,11 +616,101 @@ function executeOperation(
       return;
     }
 
+    case "addGroup": {
+      let groupId: GroupId;
+      if (isTempId(operation.ref)) {
+        if (run.createdIds[operation.ref] !== undefined) {
+          fail("patch.duplicateRef", `temp id "${operation.ref}" was already used in this patch.`);
+        }
+        groupId = mint("group", operation.ref);
+        run.createdIds[operation.ref] = groupId;
+      } else {
+        groupId = operation.ref;
+      }
+      if (draft.groups[groupId] !== undefined) {
+        fail("group.duplicate", `group "${groupId}" already exists.`);
+      }
+      draft.groups[groupId] = {
+        id: groupId,
+        label: operation.label,
+        bounds: { ...operation.bounds },
+        members: resolveMembers(operation.members ?? [], draft, resolveNodeId, fail),
+        ...(operation.color === undefined ? {} : { color: operation.color }),
+      };
+      return;
+    }
+
+    case "removeGroups": {
+      // Sorted and de-duplicated, like every other multi-target operation: two actors
+      // replaying the same patch must produce the same document (§V40).
+      for (const groupId of [...new Set(operation.groupIds)].sort()) {
+        if (draft.groups[groupId] === undefined) {
+          fail("group.missing", `group "${groupId}" does not exist.`);
+        }
+        delete draft.groups[groupId];
+      }
+      // Deleting a group deletes the grouping, never the nodes inside it: a group is a
+      // label over members, and TD's equivalent behaves the same way.
+      return;
+    }
+
+    case "setGroup": {
+      const group = draft.groups[operation.groupId];
+      if (group === undefined) {
+        fail("group.missing", `group "${operation.groupId}" does not exist.`);
+        return;
+      }
+      if (operation.label !== undefined) group.label = operation.label;
+      if (operation.bounds !== undefined) group.bounds = { ...operation.bounds };
+      if (operation.color !== undefined) {
+        // null clears the colour back to the canvas default, mirroring setNodeLabel.
+        if (operation.color === null) delete group.color;
+        else group.color = operation.color;
+      }
+      if (operation.members !== undefined) {
+        group.members = resolveMembers(operation.members, draft, resolveNodeId, fail);
+      }
+      return;
+    }
+
+    case "setViewport": {
+      // View framing IS document state (`GraphDocument.viewport`), so a project reopens
+      // where it was left. It is not entity state: the store records node, edge and
+      // group changes in an undo group, so undoing a viewport-only patch does not
+      // restore the previous framing — see the note in the module header.
+      if (operation.viewport === null) delete draft.viewport;
+      else draft.viewport = { ...operation.viewport };
+      return;
+    }
+
     default: {
       const never: never = operation;
       void never;
     }
   }
+}
+
+/**
+ * Group members, resolved through the same `$temp` machinery as everything else (§V35),
+ * de-duplicated and sorted so the stored membership is deterministic (§V40). A member
+ * that does not exist is a failed patch, not a silently dropped id: a group quietly
+ * missing half its nodes is the kind of thing nobody notices until a layout breaks.
+ */
+function resolveMembers(
+  members: readonly NodeRef[],
+  draft: GraphDocument,
+  resolveNodeId: (ref: NodeRef) => NodeId,
+  fail: (code: string, message: string, extra?: Partial<RuntimeDiagnostic>) => never,
+): NodeId[] {
+  const resolved = new Set<NodeId>();
+  for (const ref of members) {
+    const nodeId = resolveNodeId(ref);
+    if (draft.nodes[nodeId] === undefined) {
+      fail("node.missing", `group member "${nodeId}" does not exist.`, { nodeId });
+    }
+    resolved.add(nodeId);
+  }
+  return [...resolved].sort();
 }
 
 function incomingEdges(draft: GraphDocument, nodeId: NodeId, portId: PortId): GraphEdge[] {

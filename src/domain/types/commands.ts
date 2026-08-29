@@ -63,8 +63,16 @@ export type CommandOutput<T extends CommandName> = CommandMap[T]["output"];
 export type QueryInput<T extends QueryName> = QueryMap[T]["input"];
 export type QueryOutput<T extends QueryName> = QueryMap[T]["output"];
 
+/**
+ * `"validated"` is what a `dryRun` invocation answers (§V36, T102): the command was
+ * validated and NOTHING happened — no mutation, no audit entry, no minted ids. It is a
+ * separate status rather than "applied" because a caller told "applied" for an edit that
+ * did not happen caches ids nobody created and builds its next request on them.
+ */
+export type CommandStatus = "applied" | "validated" | "rejected" | "conflict";
+
 export type CommandResult<T extends CommandName> = CommandResultBase & {
-  status: "applied" | "rejected" | "conflict";
+  status: CommandStatus;
   output: CommandOutput<T>;
 };
 

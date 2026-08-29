@@ -93,19 +93,38 @@ describe("apply_graph_patch (§V32, §V35)", () => {
     expect(outcome.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it("reports a stale baseRevision as a conflict and never rebases (§V33)", async () => {
-    await fixture.surface.callTool("add_node", { type: "test.solid" });
+  /**
+   * §V33 conflicts on ENTITY OVERLAP, not on revision distance alone (T107). So this
+   * patch must touch the node the concurrent edit touched — an earlier version added a
+   * disjoint node against a stale base and now correctly APPLIES, which is the whole
+   * point of the carve-out: a 60Hz human drag must not starve every agent patch.
+   */
+  it("reports a stale baseRevision as a conflict when the edits OVERLAP (§V33)", async () => {
+    const created = await fixture.surface.callTool("add_node", { type: "test.solid" });
+    const nodeId = Object.values(patchData(created).createdIds)[0] as string;
     const stale = 0;
 
     const outcome = await fixture.surface.callTool("apply_graph_patch", {
       baseRevision: stale,
-      operations: [{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 } }],
+      operations: [{ op: "moveNodes", positions: { [nodeId]: { x: 40, y: 40 } } }],
     });
 
     expect(outcome.status).toBe("conflict");
     expect(patchData(outcome).appliedOperations).toBe(0);
-    expect(nodeCount()).toBe(1);
     expect(outcome.diagnostics.some((entry) => entry.code === "patch.conflict")).toBe(true);
+  });
+
+  /** The other half of the same rule: a stale base with NO overlap still applies. */
+  it("applies a stale patch that overlaps nothing (§V33, T107)", async () => {
+    await fixture.surface.callTool("add_node", { type: "test.solid" });
+
+    const outcome = await fixture.surface.callTool("apply_graph_patch", {
+      baseRevision: 0,
+      operations: [{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 } }],
+    });
+
+    expect(outcome.status).toBe("ok");
+    expect(nodeCount()).toBe(2);
   });
 
   it("refuses malformed input structurally instead of throwing (§V66)", async () => {

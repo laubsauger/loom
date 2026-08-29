@@ -62,7 +62,10 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
 
   const bypassed = node.ui?.bypassed === true;
   const muted = node.ui?.muted === true;
-  const previewOn = node.ui?.preview === true;
+  // §V28b: `ui.preview` is a PIN — keep previewing while scrolled off screen — not the
+  // on-switch. Whether the slot exists at all is decided below, from the definition.
+  const pinned = node.ui?.preview === true;
+  const hasPreview = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
   const agent = snapshot.agent;
 
   return (
@@ -107,10 +110,11 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           {formatGpuMs(snapshot.gpuMs)}
         </span>
         <NodeToggle
-          label="Preview"
+          label="Pin preview"
+          title="Pin — keep previewing when scrolled off screen"
           short="P"
-          pressed={previewOn}
-          onToggle={() => setUi("preview", !previewOn, previewOn ? "Hide preview" : "Show preview")}
+          pressed={pinned}
+          onToggle={() => setUi("preview", !pinned, pinned ? "Unpin preview" : "Pin preview")}
         />
         <NodeToggle
           label="Bypass"
@@ -140,9 +144,11 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
         </p>
       )}
 
-      {previewOn ? (
-        // Only visible/pinned previews are ever scheduled (§V28); the slot itself is
-        // filled by the preview track (T34) and stays empty until then.
+      {hasPreview ? (
+        // §V28b: a visible texture-producing node previews by default — the slot exists
+        // whether or not the node is pinned. §V28 still governs whether it is actually
+        // LIVE right now (on screen or pinned) versus suspended; that state comes back
+        // on the runtime channel and `NodePreview` renders it (§V16).
         <div className={cx(styles.preview, "nodrag", "nopan")} data-testid={`node-preview-${id}`}>
           {renderPreview?.(id)}
         </div>
@@ -176,6 +182,8 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
 
 interface NodeToggleProps {
   label: string;
+  /** On-hover/focus explanation, only when the accessible name alone is not enough (§V90). */
+  title?: string;
   short: string;
   pressed: boolean;
   onToggle: () => void;
@@ -188,7 +196,7 @@ interface NodeToggleProps {
  * stopping the pointer press from reaching the node wrapper's drag listener at all.
  * The click itself is left to bubble, so pressing a toggle still selects its node.
  */
-function NodeToggle({ label, short, pressed, onToggle }: NodeToggleProps) {
+function NodeToggle({ label, title, short, pressed, onToggle }: NodeToggleProps) {
   const swallowPress = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
   }, []);
@@ -199,7 +207,7 @@ function NodeToggle({ label, short, pressed, onToggle }: NodeToggleProps) {
       className={cx(styles.toggle, "nodrag", "nopan")}
       aria-label={label}
       aria-pressed={pressed}
-      title={label}
+      title={title ?? label}
       onPointerDown={swallowPress}
       onMouseDown={swallowPress}
       onClick={onToggle}
