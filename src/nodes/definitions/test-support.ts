@@ -21,6 +21,8 @@ export interface ContextOptions {
   readonly nodeId?: string;
   /** Input port ids to give a bound resource. */
   readonly inputs?: ReadonlyArray<PortId>;
+  /** Producer node id per input port, for pointset consumers (T122). */
+  readonly sources?: Readonly<Record<PortId, string>>;
   /** Output port ids to materialize. Defaults to `["out"]`. */
   readonly outputs?: ReadonlyArray<PortId>;
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
@@ -51,9 +53,16 @@ export function outputResourceId(portId: PortId): string {
  */
 export function compileContext(options: ContextOptions = {}): NodeCompileContext {
   const outputPorts = options.outputs ?? ["out"];
-  const inputs: Record<string, ReadonlyArray<{ resourceId: string; sampler: string }>> = {};
+  const inputs: Record<string, ReadonlyArray<{ resourceId: string; sampler: string; sourceNodeId?: string; sourcePortId?: string }>> = {};
   for (const portId of options.inputs ?? []) {
-    inputs[portId] = [{ resourceId: inputResourceId(portId), sampler: TEST_SAMPLER_ID }];
+    const sourceNodeId = options.sources?.[portId];
+    inputs[portId] = [
+      {
+        resourceId: inputResourceId(portId),
+        sampler: TEST_SAMPLER_ID,
+        ...(sourceNodeId === undefined ? {} : { sourceNodeId, sourcePortId: "out" }),
+      },
+    ];
   }
   const outputs: Record<string, { portId: string; resourceId: string }> = {};
   for (const portId of outputPorts) {

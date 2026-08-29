@@ -511,9 +511,24 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             typeof pass.instances === "object"
               ? active.resources.buffers.get(pass.instances.indirect)
               : undefined;
-          // Draw owns its own pass on the current frame; DrawCallOptions.target names
-          // where it lands, indirect counts come from the GPU-written args buffer.
-          drawable.draw(indirect ? { target: resolve(), indirect } : { target: resolve() });
+          if (indirect) {
+            // Indirect counts come from the GPU-written args buffer through the draw's
+            // own pass. No clear/timer hook exists on that path yet (T180/T181 note).
+            drawable.draw({ target: resolve(), indirect });
+          } else {
+            // Literal draws encode through f.pass, which is what gives them a clear
+            // knob (T180 - clear:false is the trails pattern) and a GPU timer span
+            // (T181 - span name = pass id, like effects).
+            const span = gpuTimer?.span(pass.id);
+            f.pass(
+              {
+                target: resolve(),
+                clear: pass.clear ?? true,
+                ...(span === undefined ? {} : { timer: span }),
+              },
+              drawable,
+            );
+          }
           continue;
         }
         // counter is reserved for the scan/compact convenience ops; the lifecycle
@@ -560,7 +575,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       const values: Record<string, unknown> = {};
       for (const binding of bindings) {
         const pair = active.resources.bufferPairs.get(binding.resourceId);
-        if (pair) values[binding.binding] = pair.read;
+        if (pair) values[binding.binding] = binding.half === "write" ? pair.write : pair.read;
       }
       drawable.set(values);
     }

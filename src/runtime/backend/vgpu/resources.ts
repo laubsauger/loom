@@ -42,7 +42,7 @@ export interface ResourceSet {
    */
   readonly dynamicTextures: ReadonlyMap<string, ReadonlyArray<TextureBindingDescriptor>>;
   /** Buffer bindings whose source is a bufferPair read half — re-pointed after each swap. */
-  readonly dynamicBuffers: ReadonlyMap<string, ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>>;
+  readonly dynamicBuffers: ReadonlyMap<string, ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>>;
   /** Render target per effect pass, resolved once. Ping-pong passes render into the write half. */
   readonly renderTargets: ReadonlyMap<string, () => Target>;
 }
@@ -144,7 +144,7 @@ export function buildResources(
   const draws = new Map<string, Draw>();
   const passUniforms = new Map<string, SharedUniforms<Record<string, unknown>>>();
   const dynamicTextures = new Map<string, ReadonlyArray<TextureBindingDescriptor>>();
-  const dynamicBuffers = new Map<string, ReadonlyArray<{ binding: string; resourceId: string }>>();
+  const dynamicBuffers = new Map<string, ReadonlyArray<{ binding: string; resourceId: string; half?: "read" | "write" }>>();
   const renderTargets = new Map<string, () => Target>();
   const diagnostics: RuntimeDiagnostic[] = [];
 
@@ -270,13 +270,14 @@ export function buildResources(
     return undefined;
   };
 
-  const bufferValue = (resourceId: string): unknown => {
+  const bufferValue = (resourceId: string, half: "read" | "write"): unknown => {
     const plain = buffers.get(resourceId);
     if (plain) return plain;
-    // A pair binds its READ half; identity swaps per frame, re-pointed by the backend
-    // exactly like ping-pong textures.
+    // T121: a pair binds the SELECTED half — a stateful kernel reads "read" and writes
+    // "write", the pair swaps as one identity. Both halves swap per frame, so both are
+    // re-pointed by the backend before each render.
     const pair = bufferPairs.get(resourceId);
-    if (pair) return pair.read;
+    if (pair) return half === "write" ? pair.write : pair.read;
     return undefined;
   };
 
@@ -284,14 +285,14 @@ export function buildResources(
   const buildComputeDrawBag = (
     passId: string,
     nodeId: string | undefined,
-    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>,
+    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>,
     textureBindings: ReadonlyArray<TextureBindingDescriptor>,
     uniformsValue: Readonly<Record<string, unknown>> | undefined,
     uniformBinding: string | undefined,
   ): Record<string, unknown> | undefined => {
     const bag: Record<string, unknown> = {};
     for (const binding of bufferBindings) {
-      const value = bufferValue(binding.resourceId);
+      const value = bufferValue(binding.resourceId, binding.half ?? "read");
       if (value === undefined) {
         diagnostics.push(
           backendDiagnostic(
@@ -330,7 +331,7 @@ export function buildResources(
 
   const noteDynamicBindings = (
     passId: string,
-    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>,
+    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>,
     textureBindings: ReadonlyArray<TextureBindingDescriptor>,
   ): void => {
     const dynamicTex = textureBindings.filter(

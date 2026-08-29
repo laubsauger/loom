@@ -99,6 +99,19 @@ export interface SamplerBindingDescriptor {
   readonly resourceId: string;
 }
 
+/**
+ * A storage-buffer binding (T121). For a `bufferPair`, `half` selects which side this
+ * binding sees: a stateful kernel reads the pair's "read" half and writes its "write"
+ * half, and the pair swaps as ONE resource with ONE identity — so T143 carry-over keeps
+ * simulation state across unrelated edits exactly as it does for texture ping-pongs.
+ * Ignored (and defaulted to "read") for plain buffers. Part of the pass structure key.
+ */
+export interface BufferBindingDescriptor {
+  readonly binding: string;
+  readonly resourceId: string;
+  readonly half?: "read" | "write";
+}
+
 export interface EffectPassDescriptor {
   readonly kind: "effect";
   readonly id: string;
@@ -145,7 +158,7 @@ export interface DispatchPassDescriptor {
   readonly entryPoint: string;
   /** Literal workgroup counts, or a counter resource read on the GPU (indirect). */
   readonly workgroups: readonly [number, number, number] | { readonly indirect: string };
-  readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
+  readonly buffers?: ReadonlyArray<BufferBindingDescriptor>;
   readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
   readonly uniforms?: Readonly<Record<string, number | readonly number[]>>;
   /**
@@ -169,7 +182,7 @@ export interface DrawPassDescriptor {
   /** A literal count, or a counter resource so the GPU decides how much to draw. */
   readonly instances: number | { readonly indirect: string };
   readonly vertexCount?: number;
-  readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
+  readonly buffers?: ReadonlyArray<BufferBindingDescriptor>;
   readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
   /** Per-pass uniform values (sprite size, tint). Values only, never structure (§V5). */
   readonly uniforms?: UniformValues;
@@ -178,6 +191,13 @@ export interface DrawPassDescriptor {
   readonly sharedBinding?: string;
   /** Blend applied to the color target. Sprites usually want "additive" or "alpha". */
   readonly blend?: "alpha" | "additive" | "premultiplied";
+  /**
+   * Clear the target before drawing (T180). Default true. `false` accumulates over the
+   * target's existing contents — the trails pattern. Honored for literal-instance
+   * draws; an INDIRECT draw currently always clears (vgpu's standalone draw pass has
+   * no clear hook yet — documented gap, not a decision).
+   */
+  readonly clear?: boolean;
 }
 
 /**
@@ -376,17 +396,16 @@ function readPass(value: unknown): PassDescriptor | undefined {
   };
 }
 
-function readBufferBindings(
-  value: unknown,
-): ReadonlyArray<{ binding: string; resourceId: string }> | undefined {
+function readBufferBindings(value: unknown): ReadonlyArray<BufferBindingDescriptor> | undefined {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return undefined;
-  const out: Array<{ binding: string; resourceId: string }> = [];
+  const out: BufferBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId } = entry;
+    const { binding, resourceId, half } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
-    out.push({ binding, resourceId });
+    if (half !== undefined && half !== "read" && half !== "write") return undefined;
+    out.push(half === undefined ? { binding, resourceId } : { binding, resourceId, half });
   }
   return out;
 }
@@ -472,6 +491,8 @@ function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescr
   if (sharedBinding !== undefined && typeof sharedBinding !== "string") return undefined;
   const blend = value["blend"];
   if (blend !== undefined && blend !== "alpha" && blend !== "additive" && blend !== "premultiplied") return undefined;
+  const clear = value["clear"];
+  if (clear !== undefined && typeof clear !== "boolean") return undefined;
 
   const nodeId = value["nodeId"];
   return {
@@ -487,6 +508,7 @@ function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescr
     ...(uniforms === undefined ? {} : { uniforms, uniformBinding: uniformBinding as string }),
     ...(typeof sharedBinding === "string" ? { sharedBinding } : {}),
     ...(blend === undefined ? {} : { blend }),
+    ...(clear === undefined ? {} : { clear }),
     ...(typeof nodeId === "string" ? { nodeId } : {}),
   };
 }
@@ -671,7 +693,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           typeof pass.workgroups === "object" && "indirect" in pass.workgroups
             ? ["indirect", pass.workgroups.indirect]
             : pass.workgroups,
-          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,
@@ -684,12 +706,13 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.target,
           pass.topology,
           typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
-          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,
           pass.sharedBinding ?? null,
           pass.blend ?? null,
+          pass.clear ?? true,
         ];
       case "counter":
         return ["counter", pass.id, pass.op, pass.resourceId, pass.outputResourceId ?? null];

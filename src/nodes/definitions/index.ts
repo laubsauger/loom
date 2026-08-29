@@ -33,6 +33,14 @@ export {
   compositeNodes,
 } from "./composite.ts";
 export { feedbackNode, temporalNodes } from "./feedback.ts";
+export {
+  DEFAULT_POINT_ATTRIBUTES,
+  pointKernelNode,
+  pointKernelResources,
+  pointNodeDefinitions,
+  pointPairId,
+  renderPointsNode,
+} from "./points.ts";
 
 /** The Phase 0 spike catalogue (T15). Kept as its own list so the spike's tests still mean what they meant. */
 export const spikeNodeDefinitions: readonly NodeDefinition[] = [solidNode, customWgslNode, outputNode];

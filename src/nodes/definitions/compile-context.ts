@@ -24,7 +24,21 @@ export interface NodeCompileInputs {
   /** Resource id the compiler assigned to each of this node's OUTPUT ports. */
   readonly outputs: Readonly<Record<PortId, string>>;
   /** Resource + sampler id the compiler assigned to each connected INPUT port. */
-  readonly inputs: Readonly<Record<PortId, { readonly resource: string; readonly sampler: string }>>;
+  readonly inputs: Readonly<
+    Record<
+      PortId,
+      {
+        readonly resource: string;
+        readonly sampler: string;
+        /**
+         * Producing node/port, when the compiler supplies it (T122). Pointset consumers
+         * derive per-attribute buffer ids from the producer's node id — a pointset edge
+         * carries a FAMILY of buffers, not one resource.
+         */
+        readonly source?: { readonly nodeId: string; readonly portId: PortId };
+      }
+    >
+  >;
   /** This node's current parameter values, already validated against its own schema. */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
   /** Resource id this node's passes render into. Undefined when nothing is materialized. */
@@ -48,7 +62,12 @@ interface CompilerContextShape {
   readonly target?: string | undefined;
   readonly sampler?: string;
   readonly resolution?: readonly [number, number];
-  readonly inputs?: Readonly<Record<PortId, ReadonlyArray<{ resourceId: string; sampler: string }>>>;
+  readonly inputs?: Readonly<
+    Record<
+      PortId,
+      ReadonlyArray<{ resourceId: string; sampler: string; sourceNodeId?: string; sourcePortId?: string }>
+    >
+  >;
   readonly outputs?: Readonly<Record<PortId, { resourceId: string }>>;
 }
 
@@ -60,13 +79,19 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
     outputs[portId] = binding.resourceId;
   }
 
-  const inputs: Record<PortId, { resource: string; sampler: string }> = {};
+  const inputs: Record<PortId, NodeCompileInputs["inputs"][PortId]> = {};
   for (const [portId, bindings] of Object.entries(raw.inputs ?? {})) {
     const first = bindings[0];
     // An unconnected optional port simply has no binding; compile() reports that itself
     // through missingCompileResource rather than the adapter inventing an empty id.
     if (first === undefined) continue;
-    inputs[portId] = { resource: first.resourceId, sampler: first.sampler ?? raw.sampler ?? "" };
+    inputs[portId] = {
+      resource: first.resourceId,
+      sampler: first.sampler ?? raw.sampler ?? "",
+      ...(first.sourceNodeId === undefined
+        ? {}
+        : { source: { nodeId: first.sourceNodeId, portId: first.sourcePortId ?? "out" } }),
+    };
   }
 
   const size = raw.resolution;
