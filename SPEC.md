@@ -99,6 +99,22 @@ is dirty; add/instantiate ! never confirm — they are undoable.
 shipped components (handoff §31.4, buildable w/ current catalogue):
 FeedbackEcho · Bloom · DisplacementStack · MediaGrade · Kaleidoscope.
 
+### media as NODES (TD Movie File In / Movie File Out TOP)
+recording belongs ∈ the GRAPH, ⊥ a global "record" button. TD makes it a node ∴ TOPOLOGY
+decides what is recorded: an intermediate branch, several outputs at once, a pass you are
+debugging — ⊥ only whatever the single main output happens to be.
+
+- **MovieFileIn** — image | video | sequence → texture. play/pause/seek/loop/rate, in|out
+  points, native res, current time, duration, frame-ready event. asset by `AssetReference`,
+  ⊥ a raw path (V10). decode behind a media-source abstraction: `HTMLVideoElement` first,
+  WebCodecs later where it measurably wins.
+- **MovieFileOut** — a texture input → an encoded file. rides T111's WebCodecs mp4 +
+  exact-frame capture. IS A SINK (V25) ∴ ⊥ pruned; recording is its side effect.
+
+both are Phase 2 (media pipeline, doc §33) — but the SHAPE is decided now, because
+"recording is a node" changes who owns the export interface, and retrofitting a global
+recorder into a node model is a rewrite.
+
 ### node catalog guideline
 TD TOP family = reference vocabulary for core node set — naming, param names, default behavior.
 map where it maps, ⊥ clone. POP/SOP families → later phase, same approach.
@@ -623,6 +639,9 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V119: recording is a NODE, ⊥ a global action. topology decides what is recorded ∴ several recorders may run at once, on intermediate branches. a recorder declares `sink: true` (V25) — recording is its side effect & it ⊥ be pruned for having no consumer.
+V120: a recorder captures by `frameIndex` via the export interface (V48, T111), ⊥ by sampling a clock. a take that dropped|duplicated frames = a WRONG recording, ⊥ a shorter one — it ! fail the take, ⊥ silently ship.
+V121: media nodes reference an `AssetReference`, ⊥ a raw path or an object URL (V10). unresolved asset → relink flow, keeps identity. decode behind a media-source abstraction ∴ WebCodecs can replace `HTMLVideoElement` w/o touching a node.
 V116: node size = DOCUMENT state (`GraphNode.size`, already ∈ contract) — persisted, undoable, 1 patch per gesture (V15). resize is how a graph gets a layout: a key node big, the rest small. ⊥ view-only state, else a saved project loses its composition.
 V117: a resized node buys a BIGGER TILE, ⊥ a stretched one. preview resolution follows the node's preview area, quantised to the size ladder + capped by `previewLongEdge` (V28c) — the cap is what keeps default-on previews affordable, so it survives resizing.
 V118: preview preserves the SOURCE aspect inside the region — letterbox, ⊥ stretch. a stretched preview lies about the image, and the node body's aspect is whatever the user dragged, ⊥ what the texture is.
@@ -788,6 +807,8 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
+T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
 T208|.|node resize: React Flow NodeResizer + `setNodeSize` patch op, 1 patch per gesture, persisted ∈ the document, min size respected|V116,V15,V29
 T209|.|preview tile resolution follows the node's preview area (ladder-quantised, capped), aspect letterboxed ⊥ stretched|V117,V118,V28c
 T206|.|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
@@ -910,7 +931,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
