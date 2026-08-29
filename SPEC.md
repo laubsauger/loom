@@ -313,20 +313,20 @@ T7|x|eslint rule: `vgpu` import restricted to `src/runtime/backend/vgpu/**`|V3
 T8|x|eslint rule: no react/@xyflow import in `src/nodes/definitions/**`|V11
 T9|x|domain types — ProjectDocument, GraphDocument, GraphNode, GraphEdge + zod schemas|I.file,V10
 T63|x|`FrameEvaluationInput` type + live scheduler feeding it from browser clock|I.frame,V49
-T10|.|zustand+immer graph store, semantic command layer, undo/redo w/ drag coalescing|V1,V15
-T11|.|`PortType` union + `arePortsCompatible()` exact-match check|I.port,V13
-T12|.|node registry + `NodeDefinition` manifest type|I.registry
-T50|.|`AppCommandBus`: command+query registry, `InvocationContext`, dryRun, result types|I.bus,V29,V30
+T10|x|zustand+immer graph store, semantic command layer, undo/redo w/ drag coalescing|V1,V15
+T11|x|`PortType` union + `arePortsCompatible()` exact-match check|I.port,V13
+T12|x|node registry + `NodeDefinition` manifest type|I.registry
+T50|x|`AppCommandBus`: command+query registry, `InvocationContext`, dryRun, result types|I.bus,V29,V30
 T51|.|route ∀ human action through bus — toolbar, menu, keybind, inspector edit, drag-connect|V29
-T52|.|`revision` counter + `AuditEntry` log + actor identity, audit viewer in dock|V31,V40
-T53|.|undo groups keyed to command\|patch, actor-local history|V34,V41
-T13|.|`RenderBackend` iface + vgpu adapter impl, device init, capability report|I.backend,V2,V12
-T14|.|device-loss handling: halt, diagnose, rebuild from graph, reset temporal|V23
+T52|x|`revision` counter + `AuditEntry` log + actor identity, audit viewer in dock|V31,V40
+T53|x|undo groups keyed to command\|patch, actor-local history|V34,V41
+T13|x|`RenderBackend` iface + vgpu adapter impl, device init, capability report|I.backend,V2,V12
+T14|x|device-loss handling: halt, diagnose, rebuild from graph, reset temporal|V23
 T15|.|Phase0 spike nodes: Solid, CustomWGSL, Output|I.wgsl
-T16|.|frame loop via vgpu frameLoop, shared uniforms (time, frame, pointer, resolution)|V8
+T16|x|frame loop via vgpu frameLoop, shared uniforms (time, frame, pointer, resolution)|V8
 T64|x|lint rule: ⊥ `Date.now`\|`performance.now`\|rAF ∈ `src/nodes/**` — frame input only|V44
-T65|.|seeded RNG: project seed + node seed → deterministic per frameIndex|V45
-T17|.|uniform-only update path, ⊥ recompile|V5
+T65|x|seeded RNG: project seed + node seed → deterministic per frameIndex|V45
+T17|x|uniform-only update path, ⊥ recompile|V5
 T18|.|custom node component: title bar, status dot, ports L/R, preview slot, bypass/mute|V26
 T19|.|edge renderer: flow-dash anim, hue=port family, speed←GPU ms, static if reduced-motion|V19,V26
 T20|.|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
@@ -347,11 +347,11 @@ T30|.|compiler: emit plan + structured `RuntimeDiagnostic[]`|I.diag
 T31|.|recompile classifier — edit kind → minimal work|V5,V21
 T32|.|branch reuse: 1 render per output, shared by N consumers|V6
 T33|.|Feedback node: pingPong pair, swap after encode, reset triggers|V22
-T66|.|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
+T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
 T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
-T67|.|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
+T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
 T37|.|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
 T38|.|inspector pane: manifest-driven full control set, grouped|V17
 T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
