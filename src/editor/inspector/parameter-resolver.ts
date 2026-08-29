@@ -6,6 +6,7 @@ import type {
   ParameterSchema,
   ParameterValue,
 } from "@domain/types/parameters.ts";
+import { fromDisplay, toRgba } from "@ui/controls/color.ts";
 import { valueForDefinition } from "@ui/controls/parameter-value.ts";
 
 /**
@@ -44,7 +45,13 @@ export type ParameterSource =
 export interface ResolvedParameter {
   key: string;
   definition: ParameterDefinition;
-  /** The value in effect: what a control shows and what evaluation should consume. */
+  /**
+   * The value in effect: what a control shows and edits. For most parameter types this
+   * is also what evaluation should consume — but a `color` declared `space: "display"`
+   * stays display-encoded here (T148): decoding it would make the picker appear to
+   * drift its own number every round trip. Evaluation reads the decoded number from
+   * `ResolvedParameters.values` instead.
+   */
   value: ParameterValue;
   /** The static value in the document, which is what an edit writes back to. */
   stored: ParameterValue | undefined;
@@ -76,7 +83,12 @@ export interface ResolveParametersOptions {
 export interface ResolvedParameters {
   entries: readonly ResolvedParameter[];
   get: (key: string) => ResolvedParameter | undefined;
-  /** Effective values only — the shape evaluation wants. */
+  /**
+   * Effective values only — the shape evaluation wants. Unlike `entries[].value`, a
+   * `color` parameter here is decoded to linear when its manifest says `space:
+   * "display"` (T148, §V56): this is the read path evaluation is meant to use, so the
+   * decode belongs here rather than in each shader that would otherwise redo it.
+   */
   values: Readonly<Record<string, ParameterValue>>;
 }
 
@@ -127,6 +139,31 @@ function schemaOf(definition: NodeDefinition | undefined): ParameterSchema {
 }
 
 /**
+ * The value evaluation should consume (T148, §V56, §V61).
+ *
+ * A `color` parameter declared `space: "display"` holds a number that came straight out
+ * of a colour picker — sRGB-encoded — while the project's working space is linear
+ * (§V56). `resolveParameters` is the sole eval read path, so this is the one place that
+ * decode belongs: fixed here, every picker-driven node (solid, ramp, checker, circle,
+ * ...) is correct, instead of each in-shader curve doing its own slightly different
+ * conversion. A `space: "linear"` colour is already in the working space and passes
+ * through untouched, and alpha is never touched either way — it is coverage, not light,
+ * and encoding it would make 50% opacity read as a different value than the one composed.
+ *
+ * This is deliberately NOT applied to `ResolvedParameter.value`: that value is what a
+ * control displays and edits, and it must stay in the space the user picked (display),
+ * or the colour picker would appear to drift its own number every time it round-trips
+ * through the document. `values` is the separate "what evaluation wants" shape, so the
+ * boundary is: decode happens only when values leaves the resolver as bulk evaluation
+ * input, never on the per-entry value the inspector renders.
+ */
+function evaluationValue(definition: ParameterDefinition, value: ParameterValue): ParameterValue {
+  if (definition.type !== "color" || definition.space !== "display") return value;
+  if (!Array.isArray(value) || value.length !== 4) return value;
+  return fromDisplay(toRgba(value), "linear");
+}
+
+/**
  * Effective parameters of a node, in manifest order. An unknown node type (§V10
  * placeholder) resolves to nothing rather than guessing a schema.
  */
@@ -141,7 +178,7 @@ export function resolveParameters(
   for (const [key, parameter] of Object.entries(schemaOf(definition))) {
     const resolved = resolveParameter(node, key, parameter, options);
     entries.push(resolved);
-    values[key] = resolved.value;
+    values[key] = evaluationValue(parameter, resolved.value);
   }
 
   const byKey = new Map(entries.map((entry) => [entry.key, entry]));

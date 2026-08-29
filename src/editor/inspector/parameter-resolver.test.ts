@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { checkerNode, circleNode, rampNode } from "@nodes/definitions/generators.ts";
+import { solidNode as catalogueSolidNode } from "@nodes/definitions/solid.ts";
 import { blurNode, solidNode } from "@nodes/registry/test-nodes.ts";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { resolveParameter, resolveParameters } from "./parameter-resolver.ts";
@@ -58,6 +60,80 @@ describe("effective values", () => {
     const second = resolveParameters(nodeWith({}), solidNode).get("color")?.value;
     expect(first).toEqual(second);
     expect(first).not.toBe(second);
+  });
+});
+
+/**
+ * T148 — a `space: "display"` colour parameter holds an sRGB-encoded number straight out
+ * of a picker; the working space is linear (§V56). `resolveParameters` is the sole eval
+ * read path (§V61), so the decode happens here, once, rather than in every shader that
+ * consumes a colour.
+ */
+describe("T148 — colour parameter decode", () => {
+  it("decodes a display-space colour to linear for evaluation, alpha untouched", () => {
+    const node = nodeWith({ color: [0.5, 0.5, 0.5, 0.7] }, solidNode.type);
+    const resolved = resolveParameters(node, solidNode);
+    const [r, g, b, a] = resolved.values["color"] as readonly number[];
+    expect(r).toBeCloseTo(0.214, 3);
+    expect(g).toBeCloseTo(0.214, 3);
+    expect(b).toBeCloseTo(0.214, 3);
+    expect(a).toBe(0.7);
+  });
+
+  it("leaves a space:\"linear\" colour parameter untouched", () => {
+    const linearColorNode = {
+      ...solidNode,
+      parameters: {
+        color: {
+          type: "color" as const,
+          label: "Color",
+          default: [0, 0, 0, 1] as const,
+          space: "linear" as const,
+        },
+      },
+    };
+    const node = nodeWith({ color: [0.5, 0.5, 0.5, 0.7] }, linearColorNode.type);
+    const resolved = resolveParameters(node, linearColorNode);
+    expect(resolved.values["color"]).toEqual([0.5, 0.5, 0.5, 0.7]);
+  });
+
+  it("round-trips: the inspector's per-entry value stays what the user picked, undecoded", () => {
+    const node = nodeWith({ color: [0.5, 0.5, 0.5, 0.7] }, solidNode.type);
+    const resolved = resolveParameters(node, solidNode);
+    // The control-facing value is display-space, exactly the stored number — decoding
+    // it here would make the swatch drift every time it round-trips through the document.
+    expect(resolved.get("color")?.value).toEqual([0.5, 0.5, 0.5, 0.7]);
+    expect(resolved.get("color")?.stored).toEqual([0.5, 0.5, 0.5, 0.7]);
+  });
+
+  it("falls back to the manifest default before decoding, same as any other parameter", () => {
+    const node = nodeWith({}, solidNode.type);
+    const resolved = resolveParameters(node, solidNode);
+    // Default is opaque black either way, but this pins that decode runs on the
+    // resolved default, not only on a stored value.
+    expect(resolved.values["color"]).toEqual([0, 0, 0, 1]);
+  });
+
+  it("covers every picker-driven node in the catalogue through the one resolver fix", () => {
+    const midGrey = [0.5, 0.5, 0.5, 1] as const;
+    const cases: ReadonlyArray<{ definition: typeof catalogueSolidNode; key: string }> = [
+      { definition: catalogueSolidNode, key: "color" },
+      { definition: rampNode, key: "color1" },
+      { definition: rampNode, key: "color2" },
+      { definition: checkerNode, key: "color1" },
+      { definition: circleNode, key: "fillcolor" },
+    ];
+    for (const { definition, key } of cases) {
+      const node = nodeWith({ [key]: midGrey }, definition.type);
+      const resolved = resolveParameters(node, definition);
+      const [r, g, b, a] = resolved.values[key] as readonly number[];
+      expect(r).toBeCloseTo(0.214, 3);
+      expect(g).toBeCloseTo(0.214, 3);
+      expect(b).toBeCloseTo(0.214, 3);
+      expect(a).toBe(1);
+      // And the entry the inspector renders is untouched.
+      expect(resolved.get(key)?.value).toEqual(midGrey);
+    }
   });
 });
 

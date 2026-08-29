@@ -3,7 +3,10 @@ import type { PortType } from "@domain/types/ports.ts";
 import { testNodeDefinitions } from "@nodes/registry/test-nodes.ts";
 import {
   compatibleDefinitions,
+  describeDrag,
+  describeDragPrecisely,
   filterLibrary,
+  friendlyPortLabel,
   groupByCategory,
   matchScore,
   searchDefinitions,
@@ -90,6 +93,42 @@ describe("§V13 — port-drag search offers only exactly-compatible nodes", () =
       direction: "output",
     });
     expect(matches).toEqual([]);
+  });
+});
+
+/**
+ * T167 — the drag banner needs a short, human label, not `describePortType`'s
+ * diagnostic-shaped signature. `describePortType` itself stays untouched (§V57):
+ * mismatch diagnostics still need to say exactly which sample/channel/space differs.
+ */
+describe("T167 — friendly port label for the drag banner", () => {
+  it("is short and carries no angle brackets, unlike the diagnostic form", () => {
+    const label = friendlyPortLabel(rgba);
+    expect(label).toBe("RGBA texture");
+    expect(label).not.toMatch(/[<>]/);
+  });
+
+  it("names channel count in plain language, and falls back for an untyped texture", () => {
+    expect(friendlyPortLabel(mono)).toBe("single-channel texture");
+    expect(friendlyPortLabel(untypedChannels)).toBe("texture");
+  });
+
+  it("gives every other port kind a short, bracket-free label too", () => {
+    expect(friendlyPortLabel({ kind: "scalar", scalar: "f32" })).toBe("number");
+    expect(friendlyPortLabel({ kind: "vector", scalar: "f32", size: 3 })).toBe("3D vector");
+    expect(friendlyPortLabel({ kind: "buffer", element: "Particle", access: "read" })).toBe(
+      "buffer",
+    );
+    expect(friendlyPortLabel({ kind: "matrix", columns: 4, rows: 4 })).toBe("4×4 matrix");
+    expect(friendlyPortLabel({ kind: "pointset", requires: [] })).toBe("point set");
+    expect(friendlyPortLabel({ kind: "material", model: "pbr" })).toBe("material");
+    expect(friendlyPortLabel({ kind: "camera" })).toBe("camera");
+  });
+
+  it("describeDrag uses the friendly label; describeDragPrecisely keeps the diagnostic form", () => {
+    const drag = { type: rgba, direction: "output" } as const;
+    expect(describeDrag(drag)).toBe("RGBA texture");
+    expect(describeDragPrecisely(drag)).toBe("texture2d<float,4,linear>");
   });
 });
 

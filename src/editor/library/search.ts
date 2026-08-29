@@ -153,7 +153,71 @@ export function groupByCategory(definitions: readonly NodeDefinition[]): Categor
     .map(([category, members]) => ({ category, definitions: members }));
 }
 
+const TEXTURE_CHANNEL_LABEL: Readonly<Record<1 | 2 | 4, string>> = {
+  1: "single-channel",
+  2: "two-channel",
+  4: "RGBA",
+};
+
+/**
+ * Short, human label for a port type — for the drag banner, NOT for diagnostics (T167).
+ *
+ * `describePortType` (§V57) is deliberately diagnostic-shaped: it spells out sample
+ * type, channel count and colour space so a mismatch message can say exactly which
+ * property differs. That is the wrong string to hand someone mid-drag — they need "will
+ * this connect", not a type signature to parse. Colour space is left out here on
+ * purpose: `arePortsCompatible` already enforces an exact match, so the library only
+ * ever offers ports that DO accept the drag, and no name in this list carries angle
+ * brackets or generic syntax.
+ */
+export function friendlyPortLabel(type: PortType): string {
+  switch (type.kind) {
+    case "texture2d": {
+      const prefix = type.channels === undefined ? "" : `${TEXTURE_CHANNEL_LABEL[type.channels]} `;
+      return `${prefix}texture`;
+    }
+    case "buffer":
+      return "buffer";
+    case "scalar":
+      return "number";
+    case "vector":
+      return `${type.size}D vector`;
+    case "matrix":
+      return `${type.columns}×${type.rows} matrix`;
+    case "pointset":
+      return "point set";
+    case "material":
+      return "material";
+    case "scene":
+      return "scene";
+    case "camera":
+      return "camera";
+    case "light":
+      return "light";
+    case "transform3d":
+      return "transform";
+    case "event":
+      return "event";
+    case "audioFeatures":
+      return "audio features";
+    default: {
+      // Exhaustiveness guard: a new PortType member must be handled explicitly.
+      const never: never = type;
+      void never;
+      return "port";
+    }
+  }
+}
+
 /** Human-readable summary of a dragged port, for the "compatible with…" banner. */
 export function describeDrag(drag: PortDragQuery): string {
+  return friendlyPortLabel(drag.type);
+}
+
+/**
+ * The precise, diagnostic-shaped form (§V57) — still reachable as a tooltip so someone
+ * who DOES want the exact sample/channel/space signature is one hover away.
+ */
+export function describeDragPrecisely(drag: PortDragQuery): string {
   return describePortType(drag.type);
 }

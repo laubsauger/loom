@@ -81,9 +81,14 @@ describe("T39 — node library pane", () => {
 describe("§V13 — port-drag mode narrows the catalogue to what will actually connect", () => {
   const portDrag = { type: rgba, direction: "output" } as const;
 
-  it("shows only exactly-compatible nodes, and names the type being dragged", () => {
+  it("shows only exactly-compatible nodes, and names the type being dragged in a short, human label (T167)", () => {
     render(<NodeLibrary definitions={testNodeDefinitions} portDrag={portDrag} />);
-    expect(screen.getByText("texture2d<float,4,linear>")).toBeDefined();
+    // Short label for the user, not the diagnostic-shaped `texture2d<float,4,linear>`.
+    const chip = screen.getByText("RGBA texture");
+    expect(chip).toBeDefined();
+    expect(chip.textContent).not.toMatch(/[<>]/);
+    // The precise, diagnostic-shaped form (§V57) is still reachable, as a tooltip.
+    expect(chip.title).toBe("texture2d<float,4,linear>");
     expect(screen.getByText("Blur")).toBeDefined();
     expect(screen.getByText("Composite")).toBeDefined();
     // Near misses stay out: a different channel count or sample type is not "close".

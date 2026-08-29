@@ -9,6 +9,7 @@ import type { NodeDragPayload } from "./drag-payload.ts";
 import {
   compatibleDefinitions,
   describeDrag,
+  describeDragPrecisely,
   filterLibrary,
   groupByCategory,
 } from "./search.ts";
@@ -117,7 +118,9 @@ export function NodeLibrary({
               style={{ background: portTypeColor(drag.type) }}
             />
             <span>compatible with</span>
-            <span className={styles.dragType}>{describeDrag(drag)}</span>
+            <span className={styles.dragType} title={describeDragPrecisely(drag)}>
+              {describeDrag(drag)}
+            </span>
             {onClearPortDrag === undefined ? null : (
               <Button onClick={onClearPortDrag} aria-label="Clear port filter">
                 clear

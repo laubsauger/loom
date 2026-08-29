@@ -13,7 +13,9 @@ export type { DragDataCarrier, NodeDragPayload } from "./drag-payload.ts";
 export {
   compatibleDefinitions,
   describeDrag,
+  describeDragPrecisely,
   filterLibrary,
+  friendlyPortLabel,
   groupByCategory,
   matchScore,
   searchDefinitions,
