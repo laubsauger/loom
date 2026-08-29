@@ -748,6 +748,9 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V151: a reference|bind line is DERIVED from parameter slots @ render time — ⊥ stored ∈ `edges`, ⊥ ∈ the plan, ⊥ a drop target. it is a VIEW of a dependency that already exists. storing it = 2 sources of truth & a graph that ⊥ round-trip.
+V152: cycle detection spans DATA EDGES ∪ PARAMETER REFERENCES. `a.par ← b` & `b.par ← a` is a real cycle a texture-edge topo sort ⊥ see. reject @ command time w/ the path named, ⊥ discover @ evaluate.
+V153: reference lines TOGGLEABLE. a network w/ many refs is unreadable if ∀ drawn always — TD ships the toggle for this reason.
 V150: expression completion offers ONLY what the evaluator accepts. source = same probe the help reference uses (run it, keep what parses) — ⊥ a hand-kept list. a completion menu that suggests a fn the grammar rejects is worse than no menu: it TEACHES a wrong API & the user blames their syntax.
 V148: "copy parameter reference" yields a string that PASTES INTO an expression & resolves to that same parameter. round-trip tested (copy → paste → evaluate == source value). a reference format that ⊥ paste back is the whole feature failing silently.
 V149: reset-to-default restores BOTH value & mode, & SAYS what it cleared when an expression|reference was discarded. ⊥ silently drop authored work. per-mode retained values (V107) survive a value reset — clearing the mode ≠ clearing its memory.
@@ -951,6 +954,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
 T247|.|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
 T245|.|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
@@ -1087,7 +1091,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
-| F graph view | T18 T19 T227 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
+| F graph view | T18 T19 T227 T248 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
 | G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 T245 T246 T247 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
