@@ -36,7 +36,14 @@ export {
   rectangleNode,
   generatorNodes,
 } from "./generators.ts";
-export { transformNode, cropNode, tileNode, transformNodes } from "./transforms.ts";
+export {
+  transformNode,
+  flipNode,
+  mirrorNode,
+  cropNode,
+  tileNode,
+  transformNodes,
+} from "./transforms.ts";
 export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
 export { blurNode, edgeNode, convolveNode, displaceNode, filterNodes } from "./filters.ts";
 export {

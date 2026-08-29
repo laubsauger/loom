@@ -37,6 +37,8 @@ describe("core catalogue (T70, T40)", () => {
       "circle",
       "rectangle",
       "transform",
+      "flip",
+      "mirror",
       "crop",
       "tile",
       "level",

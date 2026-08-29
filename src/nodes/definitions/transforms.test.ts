@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
-import { cropNode, tileNode, transformNode, transformNodes } from "./transforms.ts";
+import {
+  cropNode,
+  flipNode,
+  mirrorNode,
+  tileNode,
+  transformNode,
+  transformNodes,
+} from "./transforms.ts";
 import { TRANSFORM_ORDER_OPTIONS } from "./parameter-readers.ts";
 import { WGSL_TRANSFORM2D } from "../shaders/common.wgsl.ts";
 import { compileContext, inputResourceId, outputResourceId, readNodePlan, TEST_SAMPLER_ID } from "./test-support.ts";
@@ -25,6 +32,8 @@ describe("geometry filter nodes (T40)", () => {
     for (const definition of transformNodes) expect(validateNodeDefinition(definition)).toEqual([]);
     expect(createNodeRegistry(transformNodes).list().map((d) => d.type)).toEqual([
       "crop",
+      "flip",
+      "mirror",
       "tile",
       "transform",
     ]);
@@ -110,5 +119,34 @@ describe("geometry filter nodes (T40)", () => {
       expect(firstPass(tileNode, { mirrorx: true }).uniforms?.["mirror"]).toEqual([1, 0]);
       expect(firstPass(tileNode, { mirrory: true }).uniforms?.["mirror"]).toEqual([0, 1]);
     });
+  });
+});
+
+/**
+ * Flip and Mirror (T242) — the two claims that are arguments rather than code.
+ */
+describe("Flip and Mirror (T242)", () => {
+  it("flips without resampling, which is why it is not just Transform with a negative scale", () => {
+    // The whole justification for a separate node: reversing a coordinate lands on texel
+    // centres, where a -1 scale runs the image through the sampler's filter and softens it
+    // slightly every time. If this shader ever grows a matrix, that argument is gone.
+    const shader = firstPass(flipNode, { flipx: true }).shader;
+    expect(shader).toContain("vec2f(1.0) - swapped");
+    expect(shader).not.toContain("matrix");
+  });
+
+  it("mirrors about a pivot, not just the centre", () => {
+    // Folding about the centre is the boring case; folding about 0.3 is what makes this a
+    // design tool rather than a checkbox on Flip. Pinned so the pivot is not "simplified"
+    // away later.
+    const uniforms = firstPass(mirrorNode, { pivot: [0.3, 0.5] }).uniforms as Record<string, unknown>;
+    expect(uniforms["pivot"]).toEqual([0.3, 0.5]);
+    expect(firstPass(mirrorNode).shader).toContain("abs(uv - params.pivot)");
+  });
+
+  it("samples the fold through the extend helper, because folded coords leave [0,1]", () => {
+    // At pivot 0.2 the far edge maps to -0.6. Sampling that directly would clamp silently
+    // on one backend and wrap on another.
+    expect(firstPass(mirrorNode).shader).toContain("sampleExtend");
   });
 });

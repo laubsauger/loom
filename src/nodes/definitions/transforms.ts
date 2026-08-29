@@ -12,6 +12,8 @@ import {
   readVector,
 } from "./parameter-readers.ts";
 import {
+  FLIP_FRAGMENT_WGSL,
+  MIRROR_FRAGMENT_WGSL,
   CROP_FRAGMENT_WGSL,
   TILE_FRAGMENT_WGSL,
   TRANSFORM_FRAGMENT_WGSL,
@@ -209,4 +211,136 @@ export const tileNode: NodeDefinition = {
 };
 
 /** The geometry-filter group, in library order. */
-export const transformNodes: readonly NodeDefinition[] = [transformNode, cropNode, tileNode];
+/**
+ * Flip — exact axis reversal (T242). TD's Flip TOP.
+ *
+ * Transform can flip with a negative scale, so this earns its place two ways. It is EXACT:
+ * reversing a coordinate lands on texel centres, where a -1 scale runs the image through
+ * the sampler's filter and softens it a little every time. And it is what someone actually
+ * looks for — nobody reaches for "set scale x to -1" when they want a mirror image, so a
+ * Transform-only answer is a discoverability failure dressed up as orthogonality.
+ */
+export const flipNode: NodeDefinition = {
+  type: "flip",
+  version: 1,
+  title: "Flip",
+  category: "filter",
+  description: "Reverses the image on either axis, exactly. TD Flip TOP.",
+  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    flipx: { type: "boolean", label: "Flip X", default: false },
+    flipy: { type: "boolean", label: "Flip Y", default: false },
+    swap: {
+      type: "boolean",
+      label: "Swap XY",
+      default: false,
+      description: "Transposes the axes. With a flip this gives 90 degree rotations free.",
+    },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:flip`,
+      shader: FLIP_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        flip: [readFlag(parameters, "flipx", false), readFlag(parameters, "flipy", false)],
+        swap: readFlag(parameters, "swap", false),
+      },
+      nodeId,
+      label: "Flip",
+    };
+    return { passes: [pass] };
+  },
+};
+
+/**
+ * Mirror — fold the image about a pivot (T242).
+ *
+ * Not the same operation as Tile's mirror flags, which mirror alternate REPEATS to make a
+ * tiling seamless. This folds the image itself, at a pivot you choose: the operation behind
+ * kaleidoscopes, symmetric masks, and making a hand-drawn shape symmetric without drawing
+ * both halves.
+ *
+ * The pivot is why this is a node rather than a checkbox on Flip. Folding about the centre
+ * is the boring case; folding about 0.3 is where it becomes a design tool.
+ */
+export const mirrorNode: NodeDefinition = {
+  type: "mirror",
+  version: 1,
+  title: "Mirror",
+  category: "filter",
+  description: "Folds the image about a pivot so one half replaces the other.",
+  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    mirrorx: { type: "boolean", label: "Mirror X", default: true },
+    mirrory: { type: "boolean", label: "Mirror Y", default: false },
+    pivot: {
+      type: "vector",
+      size: 2,
+      label: "Pivot",
+      default: [0.5, 0.5],
+      min: 0,
+      max: 1,
+      description: "Where the fold happens. Off-centre is the interesting case.",
+    },
+    keephigh: {
+      type: "boolean",
+      label: "Keep Far Side",
+      default: false,
+      description: "Which half survives the fold and is copied onto the other.",
+    },
+    extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:mirror`,
+      shader: MIRROR_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        pivot: readVector(parameters, "pivot", [0.5, 0.5]),
+        axis: [readFlag(parameters, "mirrorx", true), readFlag(parameters, "mirrory", false)],
+        keepHigh: readFlag(parameters, "keephigh", false),
+        extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
+      },
+      nodeId,
+      label: "Mirror",
+    };
+    return { passes: [pass] };
+  },
+};
+
+export const transformNodes: readonly NodeDefinition[] = [
+  transformNode,
+  flipNode,
+  mirrorNode,
+  cropNode,
+  tileNode,
+];
