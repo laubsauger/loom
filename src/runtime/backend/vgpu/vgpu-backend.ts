@@ -891,8 +891,22 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       const stats: BuildStats = { resourcesCreated: 0, resourcesReused: 0, effectsBuilt: 0, effectsReused: 0 };
 
       let resources: ResourceSet;
+      // B9 (T217, §V9): Dawn does not throw on invalid WGSL. `compileSync()` returns; the
+      // validation error surfaces ASYNCHRONOUSLY through vgpu's pipeline error scope and
+      // lands on `gpu.onError` (or stderr, when nobody listens). So the try/catch below
+      // only sees CPU-side failures — the device's verdict has to be collected here and
+      // awaited via `settled()` BEFORE the program is installed, or a broken shader
+      // replaces (and releases) the last valid program with all lights green.
+      const asyncErrors: unknown[] = [];
+      const unsubscribe = active.gpu.onError((error: unknown) => {
+        asyncErrors.push(error);
+      });
       try {
         resources = buildResources(active.gpu, read.resources, read.passes, guard, carry, stats);
+        // Twice, deliberately: the first settle drains the tracked error-scope pops, whose
+        // handlers only THEN enqueue the listener delivery; the second drains those.
+        await active.gpu.settled();
+        await active.gpu.settled();
       } catch (error) {
         // T95 (§V9, §V27): shader and allocation failures must reach onDiagnostic — the
         // problems tab listens there, not on thrown errors. The previous program is
@@ -911,6 +925,30 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           );
         }
         throw error;
+      } finally {
+        unsubscribe();
+      }
+
+      const pipelineFailures = asyncErrors.filter(isPipelineCompileError);
+      // Anything else the device reported in the window (a dropped readback, say) still
+      // reaches the problems tab — it just does not veto the install.
+      for (const other of asyncErrors) {
+        if (isPipelineCompileError(other)) continue;
+        hub.report(
+          backendDiagnostic("warning", BackendDiagnosticCode.frameError, describeError(other)),
+        );
+      }
+      if (pipelineFailures.length > 0) {
+        // §V9: the previous program stays installed and keeps rendering, flagged stale.
+        // The half-built resources are released — except objects carried from (and still
+        // owned by) the retained program.
+        stale = program !== undefined;
+        releaseResourcesExcept(resources, program?.resources);
+        const failureDiagnostics = pipelineFailures.map((error) =>
+          pipelineFailureDiagnostic(error, read.passes),
+        );
+        for (const diagnostic of failureDiagnostics) hub.report(diagnostic);
+        throw new ResourceBuildError(failureDiagnostics);
       }
       resourceBuilds += 1;
       planCounter += 1;
@@ -1526,7 +1564,10 @@ function computeCarryOver(
  * declare it, but the concrete implementations have it, and without it every shader edit
  * leaks the replaced objects until `gpu.dispose()` (§T49's stable-resource-count gate).
  */
-function releaseResourcesExcept(previous: ResourceSet, next: ResourceSet): void {
+/** Releases `previous`'s objects except those shared (by identity) with `next`. An
+ * absent `next` releases everything — the failed-build cleanup path (B9), where the
+ * half-built set shares only what it CARRIED from the retained program. */
+function releaseResourcesExcept(previous: ResourceSet, next?: ResourceSet): void {
   const destroy = (value: unknown): void => {
     const candidate = value as { destroy?: () => void };
     if (typeof candidate?.destroy === "function") {
@@ -1539,26 +1580,70 @@ function releaseResourcesExcept(previous: ResourceSet, next: ResourceSet): void 
   };
 
   for (const [id, target] of previous.targets) {
-    if (next.targets.get(id) !== target) destroy(target);
+    if (next?.targets.get(id) !== target) destroy(target);
   }
   for (const [id, pair] of previous.pingPongs) {
-    if (next.pingPongs.get(id) !== pair) {
+    if (next?.pingPongs.get(id) !== pair) {
       destroy(pair.read);
       destroy(pair.write);
     }
   }
   for (const [id, buffer] of previous.buffers) {
-    if (next.buffers.get(id) !== buffer) destroy(buffer);
+    if (next?.buffers.get(id) !== buffer) destroy(buffer);
   }
   for (const [id, pair] of previous.bufferPairs) {
-    if (next.bufferPairs.get(id) !== pair) {
+    if (next?.bufferPairs.get(id) !== pair) {
       destroy(pair.read);
       destroy(pair.write);
     }
   }
   for (const [id, block] of previous.passUniforms) {
-    if (next.passUniforms.get(id) !== block) destroy(block);
+    if (next?.passUniforms.get(id) !== block) destroy(block);
   }
-  if (next.shared !== previous.shared) destroy(previous.shared);
+  if (next?.shared !== previous.shared) destroy(previous.shared);
+}
+
+/** vgpu reports a failed pipeline build as `VGPUError` code VGPU-COMPILE-FAILED (B9). */
+function isPipelineCompileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "VGPU-COMPILE-FAILED"
+  );
+}
+
+/**
+ * A device-side pipeline failure, attributed to its pass and node (§V27). The error's
+ * `where` is `<label>.compileSync` and effects are labelled with the pass id (or its
+ * label), so the owning pass — and through it the node badge — is recoverable. The
+ * `cause` carries Dawn's real message, line and column included.
+ */
+function pipelineFailureDiagnostic(
+  error: unknown,
+  passes: readonly PassDescriptor[],
+): ReturnType<typeof backendDiagnostic> {
+  const shaped = error as { where?: unknown; cause?: unknown; message?: unknown };
+  const where = typeof shaped.where === "string" ? shaped.where : "";
+  const label = where.replace(/\.(compileSync|compile|pipelineFor)$/, "");
+  const pass = passes.find(
+    (candidate) =>
+      candidate.id === label ||
+      (candidate.kind === "effect" && candidate.label !== undefined && candidate.label === label),
+  );
+  const causeMessage =
+    shaped.cause instanceof Error
+      ? shaped.cause.message
+      : typeof (shaped.cause as { message?: unknown } | undefined)?.message === "string"
+        ? String((shaped.cause as { message: string }).message)
+        : describeError(error);
+  return backendDiagnostic(
+    "error",
+    BackendDiagnosticCode.compileFailed,
+    `${pass === undefined ? (label.length > 0 ? `"${label}"` : "A pipeline") : `Pass "${pass.id}"`} failed to compile on the device: ${causeMessage}`,
+    {
+      ...(pass?.nodeId === undefined ? {} : { nodeId: pass.nodeId }),
+      suggestion: "The previous program is retained and still renders (§V9); fix the shader and recompile.",
+    },
+  );
 }
 

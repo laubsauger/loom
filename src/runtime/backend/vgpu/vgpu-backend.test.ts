@@ -23,7 +23,10 @@ interface Harness {
 }
 
 async function harness(
-  hostOptions: { features?: ReadonlyArray<GPUFeatureName> } = {},
+  hostOptions: {
+    features?: ReadonlyArray<GPUFeatureName>;
+    validateShader?: (source: string) => string | null;
+  } = {},
   init: { requiredFeatures?: ReadonlyArray<string> } = {},
 ): Promise<Harness> {
   const host = mockGpuHost(hostOptions);
@@ -489,6 +492,52 @@ describe("vgpu backend — plan handling", () => {
     expect(backend.status.framesSubmitted).toBe(1);
 
     // A successful compile clears the flag.
+    await backend.compile(fixturePlan());
+    expect(backend.status.stale).toBe(false);
+  });
+
+  /**
+   * B9 (T217): Dawn does NOT throw on invalid WGSL — pipeline creation succeeds
+   * synchronously and validation fails ASYNCHRONOUSLY through the error scope. The T95
+   * test above cannot see that: its shader breaks vgpu's CPU-side reflection, which
+   * throws synchronously on every device. This test flags a semantically-broken shader
+   * through the host's Dawn-shaped `validateShader`, so the failure takes the real
+   * async path — the one that shipped a broken program with all lights green.
+   */
+  it("refuses to install a program whose pipeline fails DEVICE-side validation (B9, §V9)", async () => {
+    const dawnError =
+      "error: no matching function for call to notAFunction (shader.wgsl:12:9)";
+    const { backend, diagnostics } = await harness({
+      validateShader: (source) => (source.includes("__B9_SEMANTIC_ERROR__") ? dawnError : null),
+    });
+    const good = await backend.compile(fixturePlan());
+    backend.render(good, frameInputs(0));
+    const builds = backend.status.resourceBuilds;
+
+    // Parses fine (the marker is a comment), so reflection passes and nothing throws
+    // synchronously — exactly Dawn's shape for a semantic error.
+    const broken = fixturePlan({
+      generateShader: `${GENERATE_WGSL_EDITED}\n// __B9_SEMANTIC_ERROR__`,
+    });
+    await expect(backend.compile(broken)).rejects.toThrow();
+
+    // §V9: previous program retained (not released, not rebuilt), flagged stale.
+    expect(backend.status.stale).toBe(true);
+    expect(backend.status.resourceBuilds).toBe(builds);
+
+    // §V27: a structured diagnostic reaches onDiagnostic, attributed to the node whose
+    // shader failed, carrying Dawn's message (line/column included).
+    const failure = diagnostics.find((d) => d.code === BackendDiagnosticCode.compileFailed);
+    expect(failure).toBeDefined();
+    expect(failure?.severity).toBe("error");
+    expect(failure?.nodeId).toBe("node-generate");
+    expect(failure?.message).toContain("notAFunction");
+
+    // The retained program still renders...
+    backend.render(good, frameInputs(1));
+    expect(backend.status.framesSubmitted).toBe(2);
+
+    // ...and a fixed compile recovers.
     await backend.compile(fixturePlan());
     expect(backend.status.stale).toBe(false);
   });
