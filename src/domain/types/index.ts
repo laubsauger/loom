@@ -12,3 +12,5 @@ export type * from "./graph.ts";
 export type * from "./patch.ts";
 export type * from "./commands.ts";
 export type * from "./backend.ts";
+export type * from "./components.ts";
+export type * from "./menus.ts";

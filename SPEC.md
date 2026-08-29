@@ -23,7 +23,7 @@ Browser WebGPU node compositor: typed graph → compiled pass plan → live mult
 - ⊥ marketplace. ⊥ pass fusion. ⊥ resource aliasing pool. ⊥ timeline/keyframes.
 - ⊥ 3D geometry graph, scenes, materials, cameras, lights (doc §32 → Phase 3).
 - ⊥ image/video/webcam loader nodes, asset registry (doc §33 → Phase 2).
-- ⊥ reusable components / subgraphs (doc §31 → Phase 2).
+- components/subgraphs = CORE (track U), ⊥ deferred. TD COMP model: instance pins version, params published to a component page, `parent` scope, flatten @ compile.
 - ⊥ WebMCP adapter, ⊥ MCP server (doc §30.2 → Phase 2). bus ! shaped so both add w/ 0 logic dup.
 - ⊥ CRDT, presence, live collab (doc §34 → Phase 4). arch prep only: stable IDs, atomic patch, actor-tagged mutation, actor-local undo.
 - ⊥ agent-authored node packages (doc §30.6 → Phase 2).
@@ -238,6 +238,53 @@ fn process(p: Point, ctx: KernelContext) -> Point
 `Point` struct codegen'd from attribute schema. `ctx` carries frame input + `pointId`.
 `NodeDefinition.contractVersion` pins ABI; mismatch → diagnostic, ⊥ silent run.
 
+### type: component (COMP) — subgraph behind a stable interface
+```ts
+interface GraphComponentDefinition {
+  componentId: ComponentId;
+  version: number;
+  name: string;
+  graph: GraphDocument;              // internal network
+  inputs: ExposedPort[];             // internal port → external port
+  outputs: ExposedPort[];
+  parameters: PublishedParameter[];  // internal params → component param page
+  migrations?: ComponentMigration[];
+}
+
+interface ExposedPort { externalId: PortId; label: string; nodeId: NodeId; portId: PortId; }
+
+/** One component param drives N internal targets — TD binds a custom par to many. */
+interface PublishedParameter {
+  key: string;                       // name on the component's param page
+  definition: ParameterDefinition;   // label, range, unit, default — re-authored, ⊥ copied
+  targets: ReadonlyArray<{ nodeId: NodeId; key: string }>;
+}
+```
+instance stores `componentId` + `version` + own param values + overrides.
+⊥ duplicate internal graph unless detached.
+
+### parent scope
+child reads owning component's params via resolver (V61): `parent.<key>`.
+resolves ∀ nesting depth by walking up instance chain. ⊥ arbitrary cross-node reads —
+`parent` = lexical, ⊥ a graph edge.
+
+### type: context menu (right-click) — data, ⊥ hardcoded
+```ts
+interface MenuTarget {
+  surface: "canvas" | "node" | "port" | "edge" | "parameter";
+  nodeId?: NodeId; portId?: PortId; edgeId?: EdgeId; parameterKey?: string;
+}
+interface MenuItem {
+  command: CommandName;   // ⊥ inline handler — same path as hotkey + palette (V29, V52)
+  input?: unknown;
+  label: string;
+  when?: string;
+  submenu?: MenuItem[];
+}
+```
+ONE menu root per surface, target resolved from event on open. ⊥ Radix root per node —
+dense graph cost. keys rendered ← keymap (V55), ⊥ literal "⌘Z" strings.
+
 ### type: per-node output resolution override (TD Common page)
 ```ts
 type NodeResolutionOverride =
@@ -428,6 +475,13 @@ V74: lifecycle (spawn|kill|compact) via scan/prefix-sum. ⊥ atomics ∈ lifecyc
 V75: pointset storage = SoA, 1 buffer per attribute. op binds only attributes it declares. ⊥ monolithic Point buffer.
 V76: attribute→WGSL codegen = own module, headless-tested. ⊥ inlined ∈ node definition.
 V77: kernel `contractVersion` checked before run. mismatch → diagnostic + refuse, ⊥ silent run against wrong ABI.
+V78: context menu content ← bus command registry + keymap. ⊥ hardcoded action, ⊥ hardcoded key text. 1 menu root per surface, target resolved on open, ⊥ per-node root.
+V79: component instance = `componentId` + `version` + own values. ⊥ copy internal graph unless detached. edit to definition → ∀ linked instances, detached ⊥ affected.
+V80: published param drives N internal targets. 1 edit → 1 atomic patch → 1 undo group ∀ targets (V32, V34).
+V81: `parent.<key>` resolved via resolver (V61), lexical up the instance chain. ⊥ direct cross-node param read.
+V82: component compiles by FLATTENING into parent logical graph. source path preserved `Main/Feedback_2/Blur_1` ∀ diagnostic, timing, profile.
+V83: component recursion ⊥ — direct & indirect. detected @ instantiate, save, load.
+V84: instance pins component version. upgrade = explicit migration, ⊥ silent (V10).
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -527,6 +581,18 @@ T122|.|sprite render path (spine step 1 of sprites→instances→mesh)|V58
 T123|.|point viewer + attribute spreadsheet, windowed readback ≤10Hz|V48,V16
 T124|.|`TextureToAttribute` bridge node (TOP→POP)|V13
 T125|.|`read_points` agent tool — windowed, via export iface|V37,V48
+T126|.|context menu engine: `MenuTarget` resolution, items ← bus registry, keys ← keymap, 1 root per surface|V78,V29,V55
+T127|.|menus for canvas (add node @ cursor, paste, layout), node (bypass, mute, preview, rename, color, delete, dive in), port (disconnect, insert conversion), edge (delete, reroute), parameter (reset, copy path, publish)|V78
+T128|.|`GraphComponentDefinition` + instance type + zod + component registry|V79,V84
+T129|.|save-selection-as-component + instantiate (linked \| detached copy)|V79,V83
+T130|.|enter/exit component, breadcrumb trail, nested editing|V82
+T131|.|expose internal port → external component port|V79
+T132|.|publish parameter: internal param → component param page, N targets, re-authored range/label|V80
+T133|.|`parent.<key>` scope resolution through the resolver, ∀ nesting depth|V81,V61
+T134|.|compiler: flatten component instances, preserve source path ∀ diagnostics + timing|V82
+T135|.|recursion detection — direct + indirect — @ instantiate, save, load|V83
+T136|.|component version pin + explicit upgrade migration|V84,V10
+T137|.|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
@@ -623,6 +689,12 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
 | R hardening | T95 T96 T97 T98 T100 T102 T103 T109 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+
+### track U — components + menus (core, ⊥ Phase 2 backlog)
+T126 T127 menus (owns `src/editor/menus/**`) — depends bus + keymap, both landed.
+T128 T129 T130 T131 T132 T133 T136 T137 components (owns `src/domain/components/**`
+`src/editor/component/**`). T134 T135 → compiler owner.
+menus ∥ components — disjoint paths, run concurrent.
 
 ### P3a track (late Phase 2, parallel w/ audio-reactive) — new track T
 T117 codegen (FIRST, own task, blocks rest) → T118 SoA storage → T119 compaction →
