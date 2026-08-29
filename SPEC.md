@@ -748,6 +748,29 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+### cooking — TD's model, Notch's stateless/stateful split (T249-T256)
+TD: cook needs BOTH a REQUEST (downstream | param reference | viewer) & a REASON (input
+cooked | param changed | time-dependent | expression resolves ≠). PULL, ⊥ push. cook graph =
+wires ∪ PARAMETER REFERENCES. escape hatches @ both ends (Cook Type, Cooking Flag).
+Notch: push-traverse active tree from Root ∀ frame, ⊥ dirty mechanism, per-node manual
+"static" switches. worse — but 3 ideas better than TD's:
+ 1. STATELESS vs STATEFUL as a per-node property (the thing TD lacks & we need most)
+ 2. a frozen node ! COMPUTE ONCE before it may serve cache; clears on reset
+ 3. CPU+GPU ms together per node, category rollups
+TD's own failure worth ⊥ inheriting: dependency system ⊥ total; when it misses it shows a
+STALE value as FRESH. documented (`Dependency.modified()` exists for this) & unroot-caused
+∈ the field. ∴ our gate is built BEFORE the feature, ⊥ after.
+
+LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects REUSED
+(carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
+unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
+
+V154: the dependency graph is DATA EDGES ∪ PARAMETER REFERENCES — for pruning AND cooking AND cycle detection (V152). `pruneToActiveSinks()` walks edges ONLY today ∴ `op('x').par.y` is invisible to it. this is TD's exact documented bug; ⊥ inherit it.
+V155: a node declaring §V46 STATE is UNSKIPPABLE. a skipped stateless node is 1 frame stale & SELF-CORRECTS; a skipped stateful node's trajectory DIVERGES permanently & nothing fixes it. feedback's failure mode ⊥ "stale frame" — it's "advances @ half rate", which reads as a LOOK someone tunes around & ships.
+V156: time-dependence is DATA, ⊥ a callback (§V63): `"always" | "never" | {anyNonZero:[param]}`, re-evaluated against CURRENT uniforms ∴ Noise speed 0→1 flips the class w/ ⊥ recompile. expression time-dependence: WHITELIST provably-static names, ⊥ blacklist clocks.
+V157: `cookPolicy: "always"|"auto"` ships BEFORE any gating & stays forever. "auto" ! be BYTE-IDENTICAL to "always" @ EVERY frame index — ⊥ only the last. a 1-frame lag is THE signature failure & it self-corrects by the final frame. also the permanent bisect switch when someone suspects cooking ∈ the wild.
+V158: preview-only nodes ? be viewport-gated. output-reachable nodes ⊥ EVER. offline render has ⊥ previews ∴ this can only under-render, never over-.
+V159: dirty marks are set @ the BACKEND ENTRY POINT (`updateUniforms`), ⊥ @ call sites. V5 & cooking become 1 mechanism — 2 competing notions of "changed" is how the stale frame gets in.
 V151: a reference|bind line is DERIVED from parameter slots @ render time — ⊥ stored ∈ `edges`, ⊥ ∈ the plan, ⊥ a drop target. it is a VIEW of a dependency that already exists. storing it = 2 sources of truth & a graph that ⊥ round-trip.
 V152: cycle detection spans DATA EDGES ∪ PARAMETER REFERENCES. `a.par ← b` & `b.par ← a` is a real cycle a texture-edge topo sort ⊥ see. reject @ command time w/ the path named, ⊥ discover @ evaluate.
 V153: reference lines TOGGLEABLE. a network w/ many refs is unreadable if ∀ drawn always — TD ships the toggle for this reason.
@@ -954,6 +977,14 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T249|.|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
+T250|.|**fix bypass/mute** — `ui.bypassed`/`ui.muted` are UI-ONLY; `compile.ts` ⊥ reads them (B16)|V25
+T251|.|dependency graph = edges ∪ param refs, applied to `pruneToActiveSinks()` FIRST|V154,V152
+T252|.|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` declaring EVERY texture node a sink (B18)|V158,V25
+T253|.|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
+T254|.|per-node cook gate ∈ `encode()` + dirty set on `Program` + pure clock-free `runtime/execution/cook.ts` policy|V155,V156,V159,V157
+T255|.|**fix `renderedThisFrame`** — `noteFrame()` bumps EVERY node ∀ frame ∴ popup always reads true (B17)|V85
+T256|.|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, better than TD's)|V85
 T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
 T247|.|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
@@ -1166,6 +1197,9 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B16|2026-08-30|**BYPASS & MUTE DO NOTHING.** `ui.bypassed`/`ui.muted` have toggles, badges & edge-flow styling; `compile.ts` NEVER READS THEM. classifier already calls them structural (`recompile-region`) ∴ the edit is classified right & then ignored. user toggles bypass, sees the badge, picture ⊥ change|V25
+B17|2026-08-30|**`renderedThisFrame` is VACUOUS.** `hub.ts:noteFrame()` bumps ∀ node ∈ plan ∀ frame ∴ node info popup ALWAYS reads true. ⊥ a lie today (nothing IS skipped) but 0 information, & becomes a lie the moment T254 lands|V85
+B18|2026-08-30|**§V25 pruning effectively DISABLED.** `use-graph-compile.ts:visiblePreviewSinks()` declares EVERY texture-producing node a preview sink ∴ a 200-node graph encodes 200+ passes/frame regardless of what's on screen. correct per §V28b/§V142 as written; the sink definition is what's wrong|V158,V25
 B14|2026-08-29|**`Time Speed` is a SILENT NO-OP on default noise type.** default `type` = `perlin2d`; 2D field has ⊥ 4th dim ∴ `baseNoise` uses `q.xy` & `frameU.time * speed` is discarded. user adds Noise, sees Time Speed, sets it, hits play → still image, having done ∀ right. shader matches TD; TD DIMS inapplicable params & we ⊥. ∴ reads as "nothing animates". engine verified fine on perlin4d @ Dawn|V146
 B15|2026-08-29|**⊥ test asserted the picture MOVES.** transport, frame block & `noise.test.ts` (`toContain("frameU.time")` — a STRING test) ∀ green while nobody checked a texel changed between frames. same shape as B9/B10. also: `speed` ≤ 10 ∴ @ 60fps 1 frame moves field < 1/255 → naive per-frame assert fails on a WORKING build; claim ! be "1 second of playback moves picture"|V147
 B13|2026-08-29|**flicker on camera move.** ∀ node previews flicker black for 1 frame together while panning/zooming. IN SYNC ∴ 1 shared cause, ⊥ per-node. candidates: (a) surface set re-registered on viewport change → presentation seam re-created → whole plan's targets reallocate; (b) preview canvas size derived from ZOOM → reconfigure per zoom step → 1 undefined frame each; (c) preview mount keyed on a value the transform touches → remount. ⊥ guess — instrument compile count + surface-registration count while panning, THEN fix|V142
