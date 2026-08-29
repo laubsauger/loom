@@ -71,7 +71,23 @@ describe("core catalogue (T70, T40)", () => {
 
   it("groups every node into a library category", () => {
     expect(new Set(coreNodeDefinitions.map((definition) => definition.category))).toEqual(
-      new Set(["generator", "filter", "color", "composite", "temporal", "points", "utility", "value"]),
+      new Set([
+        // "input" is its own category rather than a kind of generator: a generator makes
+        // pixels from parameters and is reproducible from the document alone, where an
+        // input brings the OUTSIDE in — a camera, a file, later a capture or a network
+        // stream — and carries permissions, availability and a source that may simply not
+        // be there. Grouping them together would put "webcam" next to "circle" in the
+        // library and imply they fail in the same ways.
+        "input",
+        "generator",
+        "filter",
+        "color",
+        "composite",
+        "temporal",
+        "points",
+        "utility",
+        "value",
+      ]),
     );
   });
 
