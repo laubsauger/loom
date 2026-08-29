@@ -144,6 +144,13 @@ export function pruneToActiveSinks(
     }
   }
 
-  const pruned = [...nodes.keys()].filter((nodeId) => !kept.has(nodeId)).sort();
+  // T268 (§V173): `pruned` means DEAD — could have contributed GPU work and was
+  // excluded. A value source (T238-T240) is non-plan-resident BY DESIGN: it has no
+  // ports, resolves off the document through the channel seam, and was never a
+  // candidate — reporting it pruned would misdirect exactly the person debugging why
+  // "nothing moves". It is simply not in the list, kept or pruned.
+  const pruned = [...nodes.keys()]
+    .filter((nodeId) => !kept.has(nodeId) && nodes.get(nodeId)?.definition.valueChannel === undefined)
+    .sort();
   return { kept, pruned };
 }

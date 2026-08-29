@@ -124,3 +124,24 @@ describe("Null splices to a wire (T223, §V130)", () => {
     expect(compiled.diagnostics.some((d) => d.code === "compiler/input-missing")).toBe(true);
   });
 });
+
+describe("value sources are not 'pruned' (T268, §V173)", () => {
+  it("reports a dead texture node pruned, and a working LFO not at all", () => {
+    // The LFO is non-plan-resident BY DESIGN: it drives parameters through the channel
+    // seam, off the document. "Pruned" means dead-and-excluded; showing it on the one
+    // node type whose purpose is to be invisible misdirects exactly the person
+    // debugging why nothing moves.
+    const graph = graphOf(
+      [
+        node("gen", "solid"),
+        node("sink", "output"),
+        { ...node("mod", "lfo"), label: "lfo1" },
+        node("orphan", "solid"),
+      ],
+      [["gen", "out", "sink", "input"]],
+    );
+    const compiled = compileGraph({ graph, settings, registry: registry(), capabilities });
+    expect(compiled.pruned).toContain("orphan");
+    expect(compiled.pruned).not.toContain("mod");
+  });
+});
