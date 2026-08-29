@@ -195,6 +195,11 @@ type NodeResolutionOverride =
 ```
 lives on `GraphNode.resolution?`. absent → definition policy. instance state, ⊥ definition state.
 
+TD Output Resolution menu = Use Input | Eighth | Quarter | Half | 2X | 4X | 8X |
+Fit Resolution | Limit Resolution | Custom. our `scale` covers eighth..8x, `fixed` = custom.
+MISSING: `fit` (fit w/h, keep aspect) + `limit` (clamp w/h). both real, both useful —
+`limit` = safety valve. → wave 2 barrier (union growth, tracks E+G reading it now).
+
 ### type: per-node pixel format override (TD Common page)
 ```ts
 type NodeFormatOverride =
@@ -227,21 +232,33 @@ interface Keymap {
 ```
 `mod` = Cmd @ macOS, Ctrl elsewhere. overrides ∈ localStorage, ⊥ ∈ project doc.
 
-### defaults — TD-informed (? = ! confirm vs real TD install)
+### defaults — verified vs docs.derivative.ca/Application_Shortcuts
+TD philosophy: graph context = SINGLE KEY, no modifier. case distinguishes all vs selected.
+adopt it — modifier-heavy bindings ⊥ feel like TD.
 ```
-Tab            add-node search @ cursor      Esc      cancel | close
-mod+z / mod+shift+z  undo / redo             mod+s    save
-mod+c / x / v  copy / cut / paste            mod+d    duplicate
-Del | Backspace  delete selection            mod+a    select all
-H              home — fit all                F        fit selected
-B              bypass selected     ?         M        mute selected
-P              pin preview         ?         1..8     set viewer @ hovered node ?
-mod+g          group selected      ?         mod+f    search graph
-Space          play | pause                  .        step 1 frame
-mod+k          command palette               mod+,    settings
-mod+shift+r    reset feedback history
-alt+drag       pan | middle-drag pan | scroll zoom
+VERIFIED (TD network editor):
+Tab   add operator          Esc   cancel
+H     home (default view)   h     home selected
+F     frame (fit content)   f     frame selected
+b     toggle bypass         d     toggle display      r  toggle render
+v     open viewer           o     overview
+i     dive in               u     jump up             Enter  jump down
+n     name                  c     color palette       e  edit/expose
+L     layout                l     layout all
+Del   delete                mod+a select all         mod+f find
+mod+c / mod+x / mod+v  copy / cut / paste
+
+OURS (⊥ ∈ TD, app-level — justified):
+mod+z / mod+shift+z  undo / redo      mod+s  save
+mod+d  duplicate                      mod+k  command palette
+mod+,  settings                       Space  play | pause      .  step frame
+mod+shift+r  reset feedback history
+
+DROPPED (was guess, ⊥ in TD docs): P pin, M mute, mod+g group, 1..8 viewer.
+`d`/`r`/`v` cover display+render+viewer instead.
 ```
+mouse: pan | zoom ⊥ documented @ Application_Shortcuts. use node-editor convention:
+middle-drag | space-drag pan, scroll zoom, alt+drag zoom. mark ? — ! confirm vs TD install.
 
 ### type: diagnostic (user-facing error surface)
 ```ts
@@ -401,7 +418,7 @@ T78|.|keybinding settings pane: rebind, conflict detect + warn, per-binding & fu
 T79|.|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
 T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
 T39|.|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
-T70|.|Noise node — types perlin\|simplex\|value\|sparse\|worley. params period, harmonics, gain, lacunarity, exponent, offset, amplitude, mono\|RGB, signed\|unsigned range, seed, 3D time evolve, xform. TD Noise TOP as param reference|V44,V45,I.registry
+T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
 T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
 T41|.|GPU timer spans, per-pass ms, performance tab, resource count + mem estimate|V16,V24
 T42|.|metrics pipe outside document store, ≤10Hz UI tick|V16
