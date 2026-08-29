@@ -3,6 +3,7 @@ import type { GraphPatch, GraphPatchOperation } from "../types/patch.ts";
 import { createGraphStore, type GraphStore } from "../graph/store.ts";
 import { createSequentialIdFactory } from "../graph/ids.ts";
 import { createTestRegistry } from "../../nodes/registry/test-nodes.ts";
+import type { CapabilityGrantStore } from "./grants.ts";
 import { createDomainBus } from "./index.ts";
 import type { ShaderloomBus } from "./bus.ts";
 
@@ -13,12 +14,19 @@ export interface Harness {
   store: GraphStore;
 }
 
-export function createHarness(idPrefix = "t"): Harness {
+export function createHarness(
+  options: { idPrefix?: string; grants?: CapabilityGrantStore } | string = {},
+): Harness {
+  const resolved = typeof options === "string" ? { idPrefix: options } : options;
   const store = createGraphStore({
-    ids: createSequentialIdFactory(idPrefix),
+    ids: createSequentialIdFactory(resolved.idPrefix ?? "t"),
     now: () => "2026-08-29T00:00:00.000Z",
   });
-  const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
+  const { bus } = createDomainBus({
+    store,
+    registry: createTestRegistry().view(),
+    ...(resolved.grants === undefined ? {} : { grants: resolved.grants }),
+  });
   return { bus, store };
 }
 

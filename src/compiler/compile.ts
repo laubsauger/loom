@@ -15,6 +15,7 @@ import {
 import { describeError } from "../runtime/backend/diagnostics.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
+import { declaredColorSpace } from "../domain/graph/port-compat.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
@@ -170,7 +171,8 @@ function propagate(args: PropagationArgs): PropagationResult {
       // matter what arrives — a Mask's mask input takes any channel as coverage, and
       // that is not a colour mismatch (§V57).
       const inputPortType = definition.inputs.find((port) => port.id === edge.target.portId)?.type;
-      const readsAsData = inputPortType?.kind === "texture2d" && inputPortType.space === "data";
+      const readsAsData =
+        inputPortType?.kind === "texture2d" && declaredColorSpace(inputPortType) === "data";
       spaceBindings.push({
         portId: edge.target.portId,
         space: readsAsData ? "data" : upstream.space,
@@ -242,12 +244,12 @@ function propagate(args: PropagationArgs): PropagationResult {
       if (!materialized.has(key)) continue;
       // T83/B5: an EXPLICIT `space` on the output port is the author's claim and wins
       // over everything derived — a Mask's output declaring `data` stays data no matter
-      // what formats flowed in. Deliberately `type.space`, not `colorSpaceOf()`: the
-      // accessor's absent→linear normalization is for §V13 comparisons; here absence
-      // means "no claim", and the derived space (inputs, then format) fills it.
+      // what formats flowed in. `declaredColorSpace` answers "did the author claim one"
+      // (absence = no claim, derived space fills it); `colorSpaceOf` answers the §V13
+      // comparison question and would erase that distinction.
       const portType = definition.outputs.find((port) => port.id === slot.portId)?.type;
       const declaredSpace =
-        portType !== undefined && portType.kind === "texture2d" ? portType.space : undefined;
+        portType !== undefined && portType.kind === "texture2d" ? declaredColorSpace(portType) : undefined;
       outputs.set(key, {
         nodeId,
         portId: slot.portId,

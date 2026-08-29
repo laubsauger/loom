@@ -158,6 +158,13 @@ export const projectSettingsSchema = z.object({
   randomSeed: z.number().int(),
   previewLongEdge: z.number().int().positive(),
   previewFps: z.number().positive(),
+  /** T84: optional so pre-colour-policy documents parse; absent means the default. */
+  colorPolicy: z
+    .object({
+      workingSpace: z.literal("linear"),
+      displayTransform: z.enum(["srgb", "none"]),
+    })
+    .optional(),
   limits: z.object({
     maxResolution: z.number().int().positive(),
     maxDispatch: z.number().int().positive(),

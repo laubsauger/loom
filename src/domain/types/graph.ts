@@ -118,6 +118,24 @@ export interface AssetReference {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * The project's colour commitments (T84, §V56, §V70a). `workingSpace` is what every
+ * effect computes in; `displayTransform` is what the OUTPUT NODE applies at the end —
+ * never the present blit, which is a raw copy (§V70a), and never any node in between.
+ * Recorded on the project so the choice survives save/load instead of living in code.
+ */
+export interface ColorPolicy {
+  /** Only linear exists today (§V56); the field exists so that stays a recorded choice. */
+  workingSpace: "linear";
+  /** "srgb": encode at the Output node. "none": raw values out (measurement, data dumps). */
+  displayTransform: "srgb" | "none";
+}
+
+export const DEFAULT_COLOR_POLICY: ColorPolicy = Object.freeze({
+  workingSpace: "linear",
+  displayTransform: "srgb",
+});
+
 export interface ProjectSettings {
   outputResolution: { width: number; height: number };
   workingFormat: TextureFormat;
@@ -125,6 +143,8 @@ export interface ProjectSettings {
   randomSeed: number;
   previewLongEdge: number;
   previewFps: number;
+  /** Absent in older documents; consumers read `settings.colorPolicy ?? DEFAULT_COLOR_POLICY`. */
+  colorPolicy?: ColorPolicy;
   limits: {
     maxResolution: number;
     maxDispatch: number;

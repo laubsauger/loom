@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { NodeId } from "../types/ids.ts";
 import { alice, agent, contextFor, createHarness, patch, type Harness } from "./test-support.ts";
 import { CapabilityDeniedError, InvalidInvocationError, UnknownCommandError, UnknownQueryError } from "./bus.ts";
+import { createCapabilityGrantStore } from "./grants.ts";
 
 /**
  * Bus invariants: §V29 §V30 §V31 §V36 §V38 §V39.
@@ -158,22 +159,51 @@ describe("command bus — capability gating (§V38)", () => {
     expect(harness.store.view.getAudit()[0]).toMatchObject({ status: "rejected", command: "test.exportSomething" });
   });
 
-  it("runs the command when the capability is granted and unexpired", async () => {
-    const context = contextFor(alice, {
-      capabilities: [{ capability: "export", grantedAt: "2026-01-01T00:00:00.000Z" }],
-    });
-    const result = await harness.bus.execute("test.exportSomething", {}, context);
+  it("runs the command when the BUS-OWNED store granted the capability (T90)", async () => {
+    harness.bus.grants.grant(alice, "export");
+    const result = await harness.bus.execute("test.exportSomething", {}, contextFor(alice));
     expect(result.status).toBe("applied");
     expect(result.output.ok).toBe(true);
   });
 
-  it("ignores an expired grant", async () => {
+  it("§V38: caller-supplied context capabilities grant NOTHING — the self-grant hole is closed", async () => {
+    // Exactly what a rogue adapter would try: fabricate the grant on the invocation.
     const context = contextFor(alice, {
-      capabilities: [
-        { capability: "export", grantedAt: "2020-01-01T00:00:00.000Z", expiresAt: "2020-01-02T00:00:00.000Z" },
-      ],
+      capabilities: [{ capability: "export", grantedAt: "2026-01-01T00:00:00.000Z" }],
     });
     const result = await harness.bus.execute("test.exportSomething", {}, context);
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics[0]?.code).toBe("capability.denied");
+  });
+
+  it("ignores an expired grant, with the clock injected rather than wall time", async () => {
+    let clock = Date.parse("2026-01-01T00:00:00.000Z");
+    const grants = createCapabilityGrantStore({ now: () => clock });
+    const fresh = createHarness({ grants });
+    fresh.bus.registerCommand({
+      name: "test.exportSomething",
+      requiredCapabilities: ["export"],
+      handler: () => ({ status: "applied", output: { ok: true } }),
+      rejectionOutput: () => ({ ok: false }),
+    });
+
+    fresh.bus.grants.grant(alice, "export", { expiresAt: "2026-01-02T00:00:00.000Z" });
+    const before = await fresh.bus.execute("test.exportSomething", {}, contextFor(alice));
+    expect(before.status).toBe("applied");
+
+    clock = Date.parse("2026-01-03T00:00:00.000Z");
+    const after = await fresh.bus.execute("test.exportSomething", {}, contextFor(alice));
+    expect(after.status).toBe("rejected");
+  });
+
+  it("refuses an unparseable expiresAt at grant time instead of treating it as forever", () => {
+    expect(() => harness.bus.grants.grant(alice, "export", { expiresAt: "not a date" })).toThrow(/expiresAt/);
+  });
+
+  it("revocation takes effect immediately", async () => {
+    harness.bus.grants.grant(alice, "export");
+    harness.bus.grants.revoke(alice, "export");
+    const result = await harness.bus.execute("test.exportSomething", {}, contextFor(alice));
     expect(result.status).toBe("rejected");
   });
 

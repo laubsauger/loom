@@ -16,6 +16,7 @@ import type { GraphDocument } from "../types/graph.ts";
 import type { Revision } from "../types/ids.ts";
 import type { IdFactory } from "../graph/ids.ts";
 import type { GraphStore, GraphStoreView, HistoryOutcome } from "../graph/store.ts";
+import { createCapabilityGrantStore, type CapabilityGrantStore } from "./grants.ts";
 import { createGraphStore } from "../graph/store.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -186,6 +187,11 @@ interface StoredQuery {
 }
 
 export interface ShaderloomBus extends AppCommandBus {
+  /**
+   * THE authority on capability grants (T90, §V38). The confirm flow writes here; the
+   * bus checks here; adapters cannot reach it through a tool call.
+   */
+  readonly grants: CapabilityGrantStore;
   registerCommand: <TName extends CommandName>(registration: CommandRegistration<TName>) => void;
   registerQuery: <TName extends QueryName>(registration: QueryRegistration<TName>) => void;
   hasCommand: (name: string) => boolean;
@@ -200,6 +206,8 @@ export interface ShaderloomBus extends AppCommandBus {
 export interface CommandBusOptions {
   store?: GraphStore;
   registry?: NodeRegistryView;
+  /** Bus-owned grant store (T90, §V38). Created empty when not supplied. */
+  grants?: CapabilityGrantStore;
 }
 
 function assertContext(context: InvocationContext, name: string): void {
@@ -215,29 +223,32 @@ function assertContext(context: InvocationContext, name: string): void {
   }
 }
 
+/**
+ * T90 (§V38): grants are read from the BUS-OWNED store, never from the invocation.
+ * `InvocationContext.capabilities` still exists in the frozen contract but is advisory —
+ * an adapter fabricating it changes nothing, which is what "calling a tool never grants
+ * a capability" actually requires.
+ */
 function missingCapabilities(
   required: readonly CapabilityClass[],
-  context: InvocationContext,
-  nowMs: number,
+  actor: InvocationContext["actor"],
+  grants: CapabilityGrantStore,
 ): CapabilityClass[] {
   if (required.length === 0) return [];
-  const granted = new Set<CapabilityClass>();
-  for (const grant of context.capabilities ?? []) {
-    if (grant.expiresAt !== undefined && Date.parse(grant.expiresAt) <= nowMs) continue;
-    granted.add(grant.capability);
-  }
-  return required.filter((capability) => !granted.has(capability));
+  return required.filter((capability) => !grants.has(actor, capability));
 }
 
 export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus {
   const store = options.store ?? createGraphStore();
   const registry = options.registry ?? createNodeRegistry().view();
+  const grants = options.grants ?? createCapabilityGrantStore();
   const commands = new Map<string, StoredCommand>();
   const queries = new Map<string, StoredQuery>();
 
   const bus: ShaderloomBus = {
     store: store.view,
     registry,
+    grants,
 
     registerCommand<TName extends CommandName>(registration: CommandRegistration<TName>): void {
       if (commands.has(registration.name)) {
@@ -278,7 +289,7 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
       const registration = queries.get(name);
       if (registration === undefined) throw new UnknownQueryError(name);
 
-      const missing = missingCapabilities(registration.requiredCapabilities, context, Date.now());
+      const missing = missingCapabilities(registration.requiredCapabilities, context.actor, grants);
       if (missing.length > 0) throw new CapabilityDeniedError(name, missing);
 
       const queryContext: QueryContext = {
@@ -301,7 +312,7 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
       if (registration === undefined) throw new UnknownCommandError(name);
 
       const dryRun = context.dryRun === true;
-      const missing = missingCapabilities(registration.requiredCapabilities, context, Date.now());
+      const missing = missingCapabilities(registration.requiredCapabilities, context.actor, grants);
       if (missing.length > 0) {
         const diagnostics: RuntimeDiagnostic[] = [
           {

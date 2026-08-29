@@ -629,6 +629,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       targets: new Map(),
       pingPongs: new Map(),
       samplers: new Map(),
+      buffers: new Map(),
+      bufferPairs: new Map(),
       effects: new Map(),
       passUniforms: new Map(),
       shared: keepShared ? previous.shared : (undefined as unknown as ResourceSet["shared"]),
@@ -1253,6 +1255,8 @@ function computeCarryOver(
   const targets = new Map<string, NonNullable<ReturnType<ResourceSet["targets"]["get"]>>>();
   const pingPongs = new Map<string, NonNullable<ReturnType<ResourceSet["pingPongs"]["get"]>>>();
   const samplers = new Map<string, GPUSampler>();
+  const buffers = new Map<string, NonNullable<ReturnType<ResourceSet["buffers"]["get"]>>>();
+  const bufferPairs = new Map<string, NonNullable<ReturnType<ResourceSet["bufferPairs"]["get"]>>>();
   for (const id of reusable) {
     const target = previous.resources.targets.get(id);
     if (target) targets.set(id, target);
@@ -1260,6 +1264,10 @@ function computeCarryOver(
     if (pair) pingPongs.set(id, pair);
     const sampler = previous.resources.samplers.get(id);
     if (sampler) samplers.set(id, sampler);
+    const buffer = previous.resources.buffers.get(id);
+    if (buffer) buffers.set(id, buffer);
+    const bufferPair = previous.resources.bufferPairs.get(id);
+    if (bufferPair) bufferPairs.set(id, bufferPair);
   }
 
   const oldPassKeys = new Map(previous.passes.map((pass) => [pass.id, passStructureKey(pass)]));
@@ -1281,7 +1289,7 @@ function computeCarryOver(
     if (block) passUniforms.set(pass.id, block);
   }
 
-  return { targets, pingPongs, samplers, effects, passUniforms, shared: previous.resources.shared };
+  return { targets, pingPongs, samplers, buffers, bufferPairs, effects, passUniforms, shared: previous.resources.shared };
 }
 
 /**
@@ -1310,6 +1318,15 @@ function releaseResourcesExcept(previous: ResourceSet, next: ResourceSet): void 
   }
   for (const [id, pair] of previous.pingPongs) {
     if (next.pingPongs.get(id) !== pair) {
+      destroy(pair.read);
+      destroy(pair.write);
+    }
+  }
+  for (const [id, buffer] of previous.buffers) {
+    if (next.buffers.get(id) !== buffer) destroy(buffer);
+  }
+  for (const [id, pair] of previous.bufferPairs) {
+    if (next.bufferPairs.get(id) !== pair) {
       destroy(pair.read);
       destroy(pair.write);
     }

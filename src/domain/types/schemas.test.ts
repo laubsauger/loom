@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SCHEMA_VERSION, projectDocumentSchema } from "./schemas.ts";
+import { SCHEMA_VERSION, projectDocumentSchema, projectSettingsSchema } from "./schemas.ts";
+import { DEFAULT_COLOR_POLICY } from "./graph.ts";
 
 const minimalProject = () => ({
   schemaVersion: SCHEMA_VERSION,
@@ -153,5 +154,39 @@ describe("nodeFormatOverride", () => {
     } as never;
     const parsed = projectDocumentSchema.safeParse(doc);
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("colour policy (T84, §V56)", () => {
+  const settings = {
+    outputResolution: { width: 1280, height: 720 },
+    workingFormat: "rgba16float",
+    randomSeed: 1,
+    previewLongEdge: 192,
+    previewFps: 20,
+    limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 1, memoryBudgetBytes: 1 },
+  };
+
+  it("parses with and without a colorPolicy — older documents stay valid", () => {
+    expect(projectSettingsSchema.safeParse(settings).success).toBe(true);
+    expect(
+      projectSettingsSchema.safeParse({
+        ...settings,
+        colorPolicy: { workingSpace: "linear", displayTransform: "none" },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an unknown display transform rather than guessing", () => {
+    expect(
+      projectSettingsSchema.safeParse({
+        ...settings,
+        colorPolicy: { workingSpace: "linear", displayTransform: "gamma1.8" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("the default policy is linear working space with an sRGB display transform", () => {
+    expect(DEFAULT_COLOR_POLICY).toEqual({ workingSpace: "linear", displayTransform: "srgb" });
   });
 });

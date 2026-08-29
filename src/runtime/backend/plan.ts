@@ -554,6 +554,14 @@ const BYTES_PER_PIXEL: Record<string, number> = {
 export function estimateResourceBytes(resources: ReadonlyArray<ResourceDescriptor>): number {
   let total = 0;
   for (const resource of resources) {
+    if (resource.kind === "buffer") {
+      total += resource.stride * resource.capacity;
+      continue;
+    }
+    if (resource.kind === "bufferPair") {
+      total += resource.stride * resource.capacity * 2;
+      continue;
+    }
     if (resource.kind !== "target" && resource.kind !== "pingPong") continue;
     const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
     total += resource.size[0] * resource.size[1] * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);

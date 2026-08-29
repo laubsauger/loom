@@ -3,6 +3,7 @@ import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../gr
 import { createCommandBus, type ShaderloomBus } from "./bus.ts";
 import { registerEditorCommands } from "./editor-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
+import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
 
 export {
@@ -44,6 +45,8 @@ export type {
 export interface DomainBusOptions extends GraphStoreOptions {
   registry?: NodeRegistryView;
   store?: GraphStore;
+  /** Bus-owned capability grant store (T90, §V38). Created empty when not supplied. */
+  grants?: CapabilityGrantStore;
 }
 
 /**
@@ -52,14 +55,16 @@ export interface DomainBusOptions extends GraphStoreOptions {
  * returned bus rather than building their own (§V29, §V39).
  */
 export function createDomainBus(options: DomainBusOptions = {}): { bus: ShaderloomBus; store: GraphStore } {
-  const { registry, store: providedStore, ...storeOptions } = options;
+  const { registry, store: providedStore, grants, ...storeOptions } = options;
   const store = providedStore ?? createGraphStore(storeOptions);
   const bus = createCommandBus({
     store,
     ...(registry === undefined ? {} : { registry }),
+    ...(grants === undefined ? {} : { grants }),
   });
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus);
   return { bus, store };
 }
+export { createCapabilityGrantStore, type CapabilityGrantStore, type CapabilityGrantStoreOptions } from "./grants.ts";

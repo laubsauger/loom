@@ -1,5 +1,5 @@
-import { effect, pingPong, sampler, target, uniforms } from "vgpu";
-import type { Effect, Gpu, PingPongTargets, SharedUniforms, Target } from "vgpu";
+import { effect, pingPong, pingPongStorage, sampler, storage, target, uniforms } from "vgpu";
+import type { Effect, Gpu, PingPongStorage, PingPongTargets, SharedUniforms, StorageBuffer, Target } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import { BackendDiagnosticCode, backendDiagnostic, describeError } from "../diagnostics.ts";
 import type { BuildStats } from "../backend-types.ts";
@@ -25,6 +25,9 @@ export interface ResourceSet {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  /** SoA point storage (T118, §V75): one buffer per attribute, plus counters. */
+  readonly buffers: ReadonlyMap<string, StorageBuffer>;
+  readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   readonly effects: ReadonlyMap<string, Effect>;
   readonly passUniforms: ReadonlyMap<string, SharedUniforms<Record<string, unknown>>>;
   readonly shared: SharedUniforms<SharedUniformValues>;
@@ -48,6 +51,9 @@ export interface CarryOver {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  /** A carried buffer keeps its CONTENTS — a sim's state survives unrelated edits (§V22). */
+  readonly buffers: ReadonlyMap<string, StorageBuffer>;
+  readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   readonly effects: ReadonlyMap<string, Effect>;
   readonly passUniforms: ReadonlyMap<string, SharedUniforms<Record<string, unknown>>>;
   readonly shared: SharedUniforms<SharedUniformValues> | undefined;
@@ -57,6 +63,8 @@ export const emptyCarryOver: CarryOver = {
   targets: new Map(),
   pingPongs: new Map(),
   samplers: new Map(),
+  buffers: new Map(),
+  bufferPairs: new Map(),
   effects: new Map(),
   passUniforms: new Map(),
   shared: undefined,
@@ -119,6 +127,8 @@ export function buildResources(
   const targets = new Map<string, Target>();
   const pingPongs = new Map<string, PingPongTargets>();
   const samplers = new Map<string, GPUSampler>();
+  const buffers = new Map<string, StorageBuffer>();
+  const bufferPairs = new Map<string, PingPongStorage>();
   const effects = new Map<string, Effect>();
   const passUniforms = new Map<string, SharedUniforms<Record<string, unknown>>>();
   const dynamicTextures = new Map<string, ReadonlyArray<TextureBindingDescriptor>>();
@@ -178,16 +188,49 @@ export function buildResources(
           sampler(gpu, samplerDescriptor(resource.filter, resource.addressMode)),
         );
         note("resourcesCreated");
-      } else {
-        // buffer / bufferPair: declared in the plan IR (§V58) for the point system, not
-        // built until that slice lands. Reported rather than silently skipped.
-        diagnostics.push(
-          backendDiagnostic(
-            "warning",
-            BackendDiagnosticCode.planInvalid,
-            `Resource "${resource.id}" of kind "${resource.kind}" is declared but not yet buildable by this backend.`,
+      } else if (resource.kind === "buffer") {
+        // T118 (§V75): SoA point storage. "uniform" usage is not a storage buffer and
+        // stays a per-pass uniform block's business.
+        if (resource.usage === "uniform") {
+          diagnostics.push(
+            backendDiagnostic(
+              "warning",
+              BackendDiagnosticCode.planInvalid,
+              `Resource "${resource.id}" declares usage "uniform"; kernel uniforms belong to the pass uniform block, not a storage buffer.`,
+            ),
+          );
+          continue;
+        }
+        const carried = carry.buffers.get(resource.id);
+        if (carried) {
+          buffers.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
+        const bytes = resource.stride * resource.capacity;
+        buffers.set(
+          resource.id,
+          storage(
+            gpu,
+            bytes,
+            resource.usage === "indirect"
+              ? { access: "read-write", indirect: true }
+              : resource.usage === "storage-read"
+                ? "read"
+                : "read-write",
           ),
         );
+        note("resourcesCreated");
+      } else if (resource.kind === "bufferPair") {
+        // A carried pair keeps its contents, exactly like a texture ping-pong (§V22).
+        const carried = carry.bufferPairs.get(resource.id);
+        if (carried) {
+          bufferPairs.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
+        bufferPairs.set(resource.id, pingPongStorage(gpu, resource.stride * resource.capacity));
+        note("resourcesCreated");
       }
     } catch (error) {
       diagnostics.push(
@@ -284,6 +327,8 @@ export function buildResources(
     targets,
     pingPongs,
     samplers,
+    buffers,
+    bufferPairs,
     effects,
     passUniforms,
     shared,

@@ -9,6 +9,7 @@ export type * from "./ports.ts";
 export type * from "./parameters.ts";
 export type * from "./node-definition.ts";
 export type * from "./graph.ts";
+export { DEFAULT_COLOR_POLICY } from "./graph.ts";
 export type * from "./patch.ts";
 export type * from "./commands.ts";
 export type * from "./backend.ts";
