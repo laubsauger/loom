@@ -433,7 +433,7 @@ V27: WGSL compile message maps to editor line+col, surfaces on node badge + prob
 V28: only visible|pinned previews scheduled. offscreen/collapsed node preview suspended.
 V29: ∀ mutation → `AppCommandBus.execute`. ⊥ adapter mutates zustand | React Flow array | GPU resource directly.
 V30: ∀ command carries `InvocationContext.actor`. ⊥ anonymous mutation.
-V31: ∀ mutation → `AuditEntry`. audit log inspectable in UI.
+V31: ∀ mutation → `AuditEntry`. recent window inspectable ∈ UI; ring bound 512 — ⊥ a bug: an unbounded log grows quadratically over a 60Hz drag session. durable full audit → IndexedDB append task if ever needed.
 V32: `GraphPatch` atomic — ∀ ops apply | 0 apply.
 V33: stale `baseRevision` → `conflict` ⟺ actual entity overlap. ⊥ silent rebase. patch ops classified value-only (param, position, ui) | structural (add, remove, connect, disconnect). value-only on disjoint entities ⊥ conflict w/ concurrent structural patch — else 60Hz human drag starves ∀ agent patch (T62 gate passes quiet, unusable next to live human).
 V34: 1 patch → 1 undo group unless explicitly split.
