@@ -964,7 +964,7 @@ T240|.|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/
 T241|.|Edge + Convolve (arbitrary kernel) filters|-
 T242|.|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
 T243|.|Text generator — glyph atlas → texture|-
-T232|.|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
+T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
 T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
