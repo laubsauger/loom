@@ -748,6 +748,9 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V142: viewport transform (pan/zoom) is VIEW state ∴ ⊥ reach the plan, ⊥ re-create surfaces, ⊥ recompile, ⊥ reconfigure a canvas. camera move ! be free. corollary: a preview surface's configured size derives from its NODE's resolution, ⊥ from zoom — zoom scales w/ CSS, ⊥ w/ reallocation.
+V143: a node that MAKES a value over time (LFO, Timer) reads time from FrameEvaluationInput like every other node — ⊥ wall clock (already lint-enforced) ∴ offline render & live preview agree frame-for-frame.
+V144: image→scalar reduction (Analyze) lands ∈ a readback that is ALREADY async & ALREADY between frames (V48/V7). ⊥ stall the frame loop to feed a parameter. a value 1 frame late is correct; a hitch is ⊥.
 V140: a blend operation has ONE implementation. Composite selects it @ compile time, a named node binds a fixed selection of the SAME fn. ⊥ 2 copies of the math — else the node and the mode drift and only 1 gets the fix.
 V141: a parameter that changes the SHADER is `compileTime: true` & recompiles (V5, V31 classifier). ⊥ a per-pixel branch on a value that changes ~never. V5's uniform-only fast path is only meaningful if structural changes are classified honestly.
 V131: a variadic port's input ORDER is explicit & user-controllable — the edge carries it. ⊥ edge-id|creation order: for Over|Composite the layer order IS the operation, and an order the user ⊥ change is a wrong answer they ⊥ fix.
@@ -942,6 +945,17 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T233|.|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
+T234|.|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
+T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
+T236|.|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
+T237|.|**Cache / Time Machine** — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
+T238|.|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
+T239|.|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
+T240|.|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
+T241|.|Edge + Convolve (arbitrary kernel) filters|-
+T242|.|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
+T243|.|Text generator — glyph atlas → texture|-
 T232|.|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
@@ -1081,7 +1095,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 T234 T235 T236 T237 T238 T239 T240 T241 T242 T243 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
@@ -1138,6 +1152,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B13|2026-08-29|**flicker on camera move.** ∀ node previews flicker black for 1 frame together while panning/zooming. IN SYNC ∴ 1 shared cause, ⊥ per-node. candidates: (a) surface set re-registered on viewport change → presentation seam re-created → whole plan's targets reallocate; (b) preview canvas size derived from ZOOM → reconfigure per zoom step → 1 undefined frame each; (c) preview mount keyed on a value the transform touches → remount. ⊥ guess — instrument compile count + surface-registration count while panning, THEN fix|V142
 B12|2026-08-29|`createAgentToolSurface` has NO CALLER anywhere ∈ `src/app/**` — the agent surface is built, tested & not wired into the product|T220
 B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
 B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓
