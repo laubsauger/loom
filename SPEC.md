@@ -674,10 +674,10 @@ T155|.|example E3 Animated Noise Field — perlin4d t4d ← frame time, fan-out 
 T156|.|example E4 Bloom + E5 Kaleidoscope + E6 Displacement Stack|V88,V89,V51,V56
 T157|.|example runner: load ∀ example, compile, assert 0 errors + deterministic render. CI gate|V89
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
-T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
+T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
-T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
-T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
+T35|x|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
+T36|x|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
 T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
 T37|x|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
 T38|x|inspector pane: manifest-driven full control set, grouped|V17
