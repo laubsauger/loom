@@ -1012,7 +1012,7 @@ T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop e
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
-T266|.|project settings UI: resolution, fps, seed, working format. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
+T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
 T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
 T263|.|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
 T264|.|app side: file picker → `MediaSource`, `getUserMedia` → `MediaSource`, both → `registerMediaSource`. permission denial is a DIAGNOSTIC ⊥ a crash|V167,V136
