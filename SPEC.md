@@ -352,6 +352,19 @@ V47: execution plan renders to offscreen target w/o visible surface. headless pa
 V48: ∀ readback isolated behind export interface. ⊥ readback call outside it.
 V49: runtime ⊥ couple graph eval to rAF | wall clock. scheduler = swappable transport source.
 V51: node format override = instance state, @ compile, ⊥ per-frame. absent → definition `formatPolicy`. ! validated vs capability report (V12) — unsupported → diagnostic + documented fallback, ⊥ crash, ⊥ silent swap. depth format ⊥ on color output. change → recreate targets + reset feedback (V22).
+V56: project working space = linear RGB. import|media node decodes → linear. encode + tonemap ONLY @ output|display node. texture carrying non-color data flagged `data`, bypasses ∀ conversion. ⊥ node silently mixes encoded & linear.
+V57: `texture2d` carries `space: "linear"|"encoded"|"data"`. exact-match under V13. mismatch → diagnostic naming conversion node to insert, ⊥ silent convert.
+V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler & backend switch exhaustively. new kind → type error until handled everywhere. v1 emits `render` only, ⊥ texture-only assumption ∈ sort|prune|resource assign.
+V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|export|preview|tool surface. single-output node → default port `"out"`. ⊥ outputId ≡ nodeId.
+V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
+V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
+V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
+V63: ∀ data crossing compile→render boundary structured-clone-safe. ⊥ function, ⊥ DOM ref, ⊥ class instance. `NodeDefinition.compile` emits plain data (WGSL text + binding desc), ⊥ callback.
+V64: presentable surface handed TO runtime, ⊥ owned by React tree. runtime supports N presentation surfaces per compiled output. opening|closing pane ⊥ stalls output.
+V65: undo|redo owner-checked ∀ directions. redo ⊥ clobber other actor newer edit. restore ! preserve referential integrity — ⊥ dangling edge @ missing node (V40 cascade applies to restore, ⊥ only to removeNodes op).
+V66: ∀ patch input structurally validated (zod) before apply. malformed → diagnostic + audit entry, ⊥ raw throw, ⊥ unhandled rejection. non-finite position rejected (NaN → null → doc unloadable).
+V67: capability grant issued by bus-owned store keyed by actor. ⊥ read from caller-supplied context — self-grantable = ⊥ (V38).
+V68: unknown|future-version serialized data preserved through load→save round trip. closed param schema ⊥ reject whole doc (V10).
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -406,6 +419,32 @@ T31|.|recompile classifier — edit kind → minimal work|V5,V21
 T32|.|branch reuse: 1 render per output, shared by N consumers|V6
 T33|.|Feedback node: pingPong pair, swap after encode, reset triggers|V22
 T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
+T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
+T81|.|plan IR: pass kind union render\|compute, resource kind union texture\|buffer, exhaustive switch|V58
+T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
+T83|.|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
+T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
+T85|.|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
+T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
+T87|.|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
+T88|.|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
+T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
+T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
+T91|.|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
+T92|.|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
+T93|.|lint: ⊥ import store `internals`\|`raw` outside src/domain/commands + tests|V29
+T94|.|fix resize: bind Target not `plain.color` — sampled intermediates hold destroyed texture|V21
+T95|.|route WGSL compile failures to `onDiagnostic`; represent V9 stale flag in backend status|V9,V27
+T96|.|real capability format query (⊥ hardcoded list); `float32-filterable` gates r32float sampling|V12,V51
+T97|.|clamp plan sizes vs `capabilities.limits` + memory accounting|V24,R7
+T98|.|frame-loop error boundary + device-loss retry API, ⊥ terminal halt|V23
+T99|.|diagnostic dedupe/rate-limit; ⊥ per-frame flood|V16
+T100|.|live clock: accumulate time from clamped deltas, reset time base; f32 time rebase|V44,V49
+T101|.|autosave: dirty state, debounced IndexedDB/OPFS ring (20), restore-on-launch flow|V10
+T102|.|dryRun returns `validated` status + ⊥ mint real ids|V36
+T103|.|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
+T104|.|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
+T105|.|PWA manifest|C
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
 T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
@@ -476,14 +515,20 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 
 barrier: **T23 Phase 0 exit** ← C, H, I.
 
+barrier (wave 2 → 3) — contract changes, ⊥ parallel:
+T80 OutputRef · T81 plan IR unions · T82 readback descriptor · T83 texture2d.space ·
+T84 colorPolicy · T85 resolveParameters · T86 rebuild granularity · T88 undo/redo fixes ·
+T89 patch zod · T94 resize bug · T104 group/viewport ops · resolution `fit`+`limit` modes.
+∀ = frozen-contract edits. do serial, broadcast, then fan out.
+
 ### wave 3 — 5 tracks
 | track | tasks | owns |
 |---|---|---|
-| J preview | T34 T35 T36 | `src/runtime/previews/**` `src/editor/viewer/**` |
+| J preview | T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
 | K node catalog | T70 T40 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
-| L telemetry | T41 T42 | `src/runtime/telemetry/**` |
-| M persistence | T43 T44 | `src/domain/project/**` `src/domain/migrations/**` |
-| N export | T68 | `src/runtime/export/**` |
+| L telemetry | T41 T42 T99 | `src/runtime/telemetry/**` |
+| M persistence | T43 T44 T91 T101 | `src/domain/project/**` `src/domain/migrations/**` |
+| N export | T68 T82 | `src/runtime/export/**` |
 
 barrier: **T51** route ∀ human action through bus — toolbar, menu, keybind, inspector, drag-connect.
 serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools assume bus = only mutation path (V29).
@@ -493,6 +538,8 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
+| R hardening | T95 T96 T97 T98 T100 T102 T103 | `src/runtime/backend/**` `src/domain/graph/**` |
+| S guardrails+ | T90 T92 T93 T105 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### wave 5 — serial gates
 T49 Phase 1 exit, T62 Phase 1 agent exit.
