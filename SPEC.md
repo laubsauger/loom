@@ -86,6 +86,19 @@ buildable w/ what exists (18 nodes + Feedback + CustomWGSL):
 later, when deps land: media mixer (needs image/video nodes), particle trails +
 audio-reactive (P3a), 3D scene (P3c), agent-built visual (§35.7, agent gate).
 
+### three libraries, three verbs (TD: OP Create dialog | Palette | example projects)
+- **node library** — a TYPE. verb = ADD. already exists.
+- **component library** — a reusable subgraph (TD Palette / `.tox`). verb = INSTANTIATE into the
+  current graph, linked or detached, at a pinned version (V79, V84). shipped set + user-saved.
+- **example library** — a whole PROJECT. verb = OPEN, which REPLACES the open document.
+
+⊥ merge into one browser. the verbs differ, and merging puts a DESTRUCTIVE action (open
+replaces your work) one click from an additive one. examples ! confirm when the document
+is dirty; add/instantiate ! never confirm — they are undoable.
+
+shipped components (handoff §31.4, buildable w/ current catalogue):
+FeedbackEcho · Bloom · DisplacementStack · MediaGrade · Kaleidoscope.
+
 ### node catalog guideline
 TD TOP family = reference vocabulary for core node set — naming, param names, default behavior.
 map where it maps, ⊥ clone. POP/SOP families → later phase, same approach.
@@ -565,6 +578,8 @@ V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministi
 V90: help = ON DEMAND, ⊥ ambient. inline text ∈ a control row limited to: label, value, unit, state badge. ∀ explanation → hover|focus|tooltip|`?` handle. a node has 10-15 params — a sentence under each buries the values the user came to read, is read once, then permanently ∈ the way. text ⊥ lost: reachable by hover, focus & screen reader.
 V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's purpose, ⊥ its implementation. "CodeMirror 6 mounts here" teaches a user nothing actionable. hint ? only when the next ACTION is genuinely non-obvious.
 V92: ⊥ decorative prose ∈ chrome — ⊥ taglines, ⊥ "Tip:", ⊥ restating a label in a sentence. if a label needs a sentence, the LABEL is wrong. dense pro tool: imagery = hero, chrome competes w/ it (§C).
+V93: node|component|example = 3 libraries, 3 verbs — add | instantiate | OPEN. ⊥ one merged browser: open REPLACES the document, and a destructive verb ⊥ sit one click from additive ones. open ! confirm when dirty; add|instantiate ⊥ confirm (undoable).
+V94: a shipped component = the SAME `GraphComponentDefinition` a user saves (V79). ⊥ a privileged format — else the shipped set stops being a worked example of the thing users make.
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -659,8 +674,8 @@ T117|x|**attribute→WGSL codegen module** — own task, headless, heavily teste
 T118|x|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24
 T119|x|scan/prefix-sum compaction for spawn/kill. ⊥ atomics|V74,V73
 T120|x|per-point RNG `hash(seed, pointId, frame)` + `pointId` identity|V72,V73,V45
-T121|.|custom per-point WGSL kernel node (`fn process`)|V77,I.kernel
-T122|.|sprite render path (spine step 1 of sprites→instances→mesh)|V58
+T121|x|custom per-point WGSL kernel node (`fn process`)|V77,I.kernel
+T122|x|sprite render path (spine step 1 of sprites→instances→mesh)|V58
 T123|.|point viewer + attribute spreadsheet, windowed readback ≤10Hz|V48,V16
 T124|.|`TextureToAttribute` bridge node (TOP→POP)|V13
 T125|.|`read_points` agent tool — windowed, via export iface|V37,V48
@@ -707,6 +722,9 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T188|.|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
+T189|.|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
+T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
 T187|.|`component-scope.ts::resolveInstanceValues` returns DECODED `.values` into the parent scope ∴ a display colour decodes TWICE (mid-grey → ~0.046). ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
 T184|.|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
 T185|.|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
@@ -714,8 +732,8 @@ T186|.|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
 T182|.|previews default-on for visible texture nodes: composition root derives visible set → explicit sink list (V28a) ∀ compile. `ui.preview` becomes a PIN. today a disconnected node renders nothing|V28b,V28c,V28a,V25
 T183|.|`.subTrigger[data-state="open"]` uses `--bg-raise` while `.item[data-highlighted]` uses `--bg-active` ∴ the highlight visibly CHANGES when a submenu opens. open parent ! look identical to highlighted|V17
 T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swap pass, so a stateful kernel's `out_` bindings reach the write half. today in/out are 2 separate buffers|V22,V75
-T180|.|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
-T181|.|GPU timer spans for dispatch/draw — T163 covers effect passes only ∴ compute cost is unmeasured|V86
+T180|x|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
+T181|~|GPU timer spans for dispatch/draw — literal draws DONE (f.pass gives clear+timer); indirect draws & ALL compute ⊥ measurable: vgpu has no timestampWrites hook on compute passes. UPSTREAM GAP — T163 covers effect passes only ∴ compute cost is unmeasured|V86
 T173|.|`RenderBackend.readOutput(id, {region?}) → ReadbackImage` — completes T82. today returns bare bytes ∴ format+stride come from a table BESIDE the copy, ⊥ from the thing that copied. also: a 1×1 probe pulls a whole 1080p frame|V60,V48
 T174|.|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
 T175|.|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
@@ -791,7 +809,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T188 T189 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
@@ -808,7 +826,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
