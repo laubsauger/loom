@@ -640,7 +640,17 @@ describe("values written by a newer build (§V68, §V69)", () => {
 // 6. GPU recovery (T98, §V23)
 // ---------------------------------------------------------------------------------
 
-/** The two things `useGpuRecovery` reads: a status object and a diagnostic stream. */
+/**
+ * What `useGpuRecovery` reads — a status object and a diagnostic stream — plus the
+ * members the composition root calls on ANY backend it is handed.
+ *
+ * `loop` and `previewHost` are stubbed for a reason worth stating: the root starts a
+ * frame loop and attaches a preview host as soon as a backend exists, from effects that
+ * run on mount. A stub that carried only the recovery surface therefore threw during
+ * render, and the failure surfaced as an unrelated `AggregateError` from React's act
+ * queue rather than as "your stub is incomplete". Every member here returns an inert
+ * handle: this file's subject is the recovery affordance, not the render path.
+ */
 function haltedBackend() {
   let halted = true;
   const listeners = new Set<(diagnostic: { severity: string; code: string; message: string }) => void>();
@@ -659,6 +669,25 @@ function haltedBackend() {
       return () => listeners.delete(listener);
     },
     recover,
+    loop: () => ({ stop: () => {} }),
+    previewHost: () => ({
+      setPreviewProgram: () => {},
+      presentPreviews: () => {},
+      dispose: () => {},
+    }),
+    present: () => ({
+      id: "present-stub",
+      outputId: "",
+      setOutput: () => {},
+      dispose: () => {},
+    }),
+    onGpuTimings: () => () => {},
+    compile: () => Promise.reject(new Error("the halted-backend stub compiles nothing")),
+    render: () => {},
+    resize: () => {},
+    updateUniforms: () => {},
+    resetTemporalHistory: () => {},
+    dispose: () => {},
   } as unknown as ShaderloomBackend;
   return { backend, recover };
 }

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { srgbToLinear } from "../../domain/parameters/index.ts";
 import { fixturePlan } from "../../runtime/backend/vgpu/plan-fixture.ts";
 import {
   blurChainGraph,
@@ -108,7 +109,7 @@ describe("T47 — Dawn headless render (§V47)", () => {
    * The control case. Every pixel is one known constant, so a failure is plumbing — wrong
    * target read back, padded rows, a format mismatch — and never shading.
    */
-  it("solid: every pixel is the parameter value", async () => {
+  it("solid: every pixel is the parameter value, decoded to linear", async () => {
     requireDawn();
     const frame = await renderOnce({ host: dawnGpuHost(), graph: solidGraph() });
 
@@ -117,7 +118,14 @@ describe("T47 — Dawn headless render (§V47)", () => {
     expect(frame.format).toBe("rgba8unorm");
     expect(frame.bytes.byteLength).toBe(SIZE * SIZE * 4);
 
-    const expected = [0.25, 0.5, 0.75, 1];
+    // B8: `solid.color` is declared `space: "display"` — it is a colour-picker number —
+    // and the working space is linear (§V56), so the resolver decodes it before it ever
+    // reaches the plan. The oracle calls the SAME function rather than restating
+    // 0.05088/0.21404/0.52252, so it cannot drift from the implementation the way the
+    // previous literal `[0.25, 0.5, 0.75, 1]` did: that literal asserted the raw picker
+    // value reached the pixels, which is precisely the bug B8 closed. Alpha is coverage,
+    // not colour, and is never transformed.
+    const expected = [srgbToLinear(0.25), srgbToLinear(0.5), srgbToLinear(0.75), 1];
     const components = decodeComponents(frame.bytes, frame.format);
     let worst = 0;
     for (let i = 0; i < components.length; i += 1) {

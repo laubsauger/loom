@@ -738,7 +738,7 @@ T19|x|edge renderer: flow-dash anim, hue=port family, speed←GPU ms, static if 
 T20|x|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
 T21|x|shader diagnostics: debounce, async compile, line/col map, node badge + problems tab|V9,V27
 T22|x|retain last valid program + stale-output indicator|V9
-T23|.|**Phase0 exit**: uniform live-update, WGSL recompile, invalid WGSL keeps output|V5,V9
+T23|~|**Phase0 exit**: uniform live-update, WGSL recompile, invalid WGSL keeps output|V5,V9
 T71|x|`NodeResolutionOverride` on `GraphNode` + zod + `setNodeResolution` patch op + bus command|V50,I.res
 T74|x|`NodeFormatOverride` on `GraphNode` + zod + `setNodeFormat` patch op + bus command|V51,I.fmt
 T24|x|compiler: resolve defs, validate params+connections|V13,V14
@@ -843,6 +843,10 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T217|.|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE installing the program; route the failure to `onDiagnostic` + set `stale`; keep the previous program. AND make the mock reject the way Dawn does, else the test stays greener than the product|V9,V27
+T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
+T219|.|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
+T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
 T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
@@ -921,10 +925,10 @@ T45|x|unit tests: port compat, cycle/temporal, topo order, sink prune, resolutio
 T46|x|`vgpu/mock` command-level tests|C
 T47|x|Dawn headless render snapshot: gradient→levels, blur chain, feedback progression|C
 T69|x|headless parity test: same graph browser vs `vgpu/node` Dawn → snapshot match within tolerance|V47
-T48|.|playwright: connect gesture, undo/redo, param drag, shader error recovery, save+reload|V15
-T61|.|tests: patch atomicity, stale-revision conflict, dryRun ⊥ mutate, audit completeness, actor-local undo|V32,V33,V36,V41
-T49|.|**Phase1 exit**: PoC graph Noise→Displace→Levels→Composite→Output + Feedback + Colorize fan-out, 10min stable resource count|V6,V7,V22
-T62|.|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compiles, renders preview, reads GPU ms, undoes as 1 group|V32,V34,V35
+T48|x|playwright: connect gesture, undo/redo, param drag, shader error recovery, save+reload|V15
+T61|x|tests: patch atomicity, stale-revision conflict, dryRun ⊥ mutate, audit completeness, actor-local undo|V32,V33,V36,V41
+T49|x|**Phase1 exit**: PoC graph Noise→Displace→Levels→Composite→Output + Feedback + Colorize fan-out, 10min stable resource count|V6,V7,V22
+T62|~|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compiles, renders preview, reads GPU ms, undoes as 1 group|V32,V34,V35
 
 ## §P PARALLEL PLAN
 
@@ -955,7 +959,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
@@ -985,7 +989,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T215 T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T217 T215 T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
@@ -1026,6 +1030,10 @@ T49 Phase 1 exit, T62 Phase 1 agent exit.
 
 ## §B BUGS
 id|date|cause|fix
+B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217
+B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
+B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219
+B12|2026-08-29|`createAgentToolSurface` has NO CALLER anywhere ∈ `src/app/**` — the agent surface is built, tested & not wired into the product|T220
 B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
 B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓
 B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159 ✓
