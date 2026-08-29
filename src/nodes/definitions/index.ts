@@ -2,6 +2,12 @@ import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { solidNode } from "./solid.ts";
 import { customWgslNode } from "./custom-wgsl.ts";
 import { outputNode } from "./output.ts";
+import { noiseNode } from "./noise.ts";
+import { generatorNodes } from "./generators.ts";
+import { transformNodes } from "./transforms.ts";
+import { colorNodes } from "./color.ts";
+import { filterNodes } from "./filters.ts";
+import { compositeNodes } from "./composite.ts";
 
 export { solidNode } from "./solid.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
@@ -11,5 +17,48 @@ export { RGBA_TEXTURE } from "./common-ports.ts";
 export type { NodeCompileInputs } from "./compile-context.ts";
 export { readCompileInputs, missingCompileResource } from "./compile-context.ts";
 
-/** The Phase 0 spike catalogue (T15). Track K's node catalogue (T70, T40) adds to this. */
+export { noiseNode } from "./noise.ts";
+export { rampNode, uvNode, checkerNode, circleNode, generatorNodes } from "./generators.ts";
+export { transformNode, cropNode, tileNode, transformNodes } from "./transforms.ts";
+export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
+export { blurNode, displaceNode, filterNodes } from "./filters.ts";
+export {
+  overNode,
+  addNode,
+  multiplyNode,
+  screenNode,
+  differenceNode,
+  maskNode,
+  compositeNodes,
+} from "./composite.ts";
+
+/** The Phase 0 spike catalogue (T15). Kept as its own list so the spike's tests still mean what they meant. */
 export const spikeNodeDefinitions: readonly NodeDefinition[] = [solidNode, customWgslNode, outputNode];
+
+/**
+ * The core catalogue (T70, T40), in TD TOP vocabulary.
+ *
+ * Grouped source -> geometry -> colour -> filter -> composite, which is the order a chain
+ * is usually built in and the order the library pane reads best in.
+ */
+export const coreNodeDefinitions: readonly NodeDefinition[] = [
+  noiseNode,
+  ...generatorNodes,
+  ...transformNodes,
+  ...colorNodes,
+  ...filterNodes,
+  ...compositeNodes,
+];
+
+/**
+ * Everything a project can instantiate: the spike nodes plus the core catalogue.
+ *
+ * This is the list an application registry should be built from — `spikeNodeDefinitions`
+ * alone is three nodes, which is a spike, not a tool. The composition root still imports
+ * the spike list (it is outside this track's paths); switching it to this export is the
+ * one change needed elsewhere to make the catalogue reachable from the UI.
+ */
+export const allNodeDefinitions: readonly NodeDefinition[] = [
+  ...spikeNodeDefinitions,
+  ...coreNodeDefinitions,
+];

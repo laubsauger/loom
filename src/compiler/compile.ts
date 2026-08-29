@@ -9,6 +9,8 @@ import { describeError } from "../runtime/backend/diagnostics.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
+import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
+import type { ComponentSource } from "./flatten.ts";
 import { resolveNodeFormat } from "./format.ts";
 import { isDeclaredSink, pruneToActiveSinks, resolveSinks } from "./prune.ts";
 import { resolveNodeResolution } from "./resolution.ts";
@@ -24,6 +26,7 @@ import { isTemporalOutput, validateGraph, validateRequiredInputs } from "./valid
 import type { ResolvedNode } from "./validate.ts";
 import { outputKey } from "./types.ts";
 import type {
+  ActiveSink,
   CompileEdge,
   CompileRequest,
   CompiledGraph,
@@ -43,6 +46,7 @@ import type {
  * unstable ordering would rebuild the world on every keystroke (§V5).
  *
  * The pipeline, in order:
+ *   0. flatten component instances into the parent logical graph   (T134, T135, §V82, §V83)
  *   1. resolve definitions, validate parameters and connections   (T24, §V13, §V14)
  *   2. trace active sinks and prune                                (T26, §V25)
  *   3. split temporal edges, reject illegal cycles, order          (T25, §V4)
@@ -358,7 +362,11 @@ function passSignature(pass: PassDescriptor): string {
   }
 }
 
-function emptyPlan(diagnostics: ReadonlyArray<RuntimeDiagnostic>, pruned: ReadonlyArray<NodeId>): CompiledGraph {
+function emptyPlan(
+  diagnostics: ReadonlyArray<RuntimeDiagnostic>,
+  pruned: ReadonlyArray<NodeId>,
+  sources: ReadonlyArray<ComponentSource> = [],
+): CompiledGraph {
   return {
     passes: [],
     resources: [],
@@ -368,6 +376,7 @@ function emptyPlan(diagnostics: ReadonlyArray<RuntimeDiagnostic>, pruned: Readon
     pruned,
     outputs: [],
     feedback: [],
+    sources,
     resourceSignatures: [],
     passSignatures: [],
     signature: planStructureSignature([], []),
@@ -408,15 +417,44 @@ function feedbackResetSignature(
 }
 
 export function compileGraph(request: CompileRequest): CompiledGraph {
-  const { graph, registry, settings } = request;
+  const { registry, settings } = request;
   const diagnostics: RuntimeDiagnostic[] = [];
+
+  // 0. flatten component instances (T134, §V82). Everything after this point sees one
+  // flat logical graph: pruning, ordering and resource assignment never learn what a
+  // component is. Without a component registry there is nothing to flatten against, and
+  // an instance falls through to the manifest's `component.notFlattened` tripwire.
+  const flattened =
+    request.components === undefined
+      ? undefined
+      : flattenComponents({ graph: request.graph, registry, components: request.components });
+  const sources = flattened?.sources ?? new Map<NodeId, ComponentSource>();
+  const sourceRows = [...sources.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  const stamp = (collected: ReadonlyArray<RuntimeDiagnostic>): RuntimeDiagnostic[] =>
+    collected.map((diagnostic) => withSourcePath(diagnostic, sources));
+
+  if (flattened !== undefined) {
+    diagnostics.push(...flattened.diagnostics);
+    // §V83: a recursive graph expands for ever. It stops here, with the cycle named.
+    if (flattened.recursion !== null) return emptyPlan(stamp(diagnostics), [], sourceRows);
+  }
+  const graph = flattened?.graph ?? request.graph;
+
+  // A sink naming an instance has to follow it into the flattening (§V25, §V28).
+  const explicitSinks: ReadonlyArray<ActiveSink> | undefined =
+    flattened === undefined
+      ? request.sinks
+      : [
+          ...(request.sinks ?? []).map((sink) => redirectSink(sink, flattened.instanceOutputs)),
+          ...flattened.sinks,
+        ];
 
   // 1. definitions, parameters, connections (T24)
   const validated = validateGraph(graph, registry);
   diagnostics.push(...validated.diagnostics);
 
   // 2. active sinks and pruning (T26, §V25)
-  const sinkResolution = resolveSinks(validated.nodes, request.sinks);
+  const sinkResolution = resolveSinks(validated.nodes, explicitSinks);
   diagnostics.push(...sinkResolution.diagnostics);
   const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks);
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
@@ -424,7 +462,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   // 3. temporal split, cycle rejection, ordering (T25, §V4)
   const topology = orderNodes(kept, validated.edges);
   diagnostics.push(...topology.diagnostics);
-  if (topology.cycles.length > 0) return emptyPlan(diagnostics, pruned);
+  if (topology.cycles.length > 0) return emptyPlan(stamp(diagnostics), pruned, sourceRows);
 
   const incoming = new Map<NodeId, CompileEdge[]>();
   for (const edge of [...topology.currentFrameEdges, ...topology.temporalEdges].sort((a, b) =>
@@ -629,15 +667,19 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)),
   );
 
+  // §V82: every diagnostic that names a node inside a component carries its source path.
+  const reported = stamp(diagnostics);
+
   return {
     passes: read.passes,
     resources: read.resources,
-    diagnostics,
-    ok: !hasError(diagnostics),
+    diagnostics: reported,
+    ok: !hasError(reported),
     order: topology.order,
     pruned,
     outputs,
     feedback,
+    sources: sourceRows,
     resourceSignatures: read.resources
       .map((resource) => ({ id: resource.id, signature: resourceSignature(resource) }))
       .sort((a, b) => a.id.localeCompare(b.id)),

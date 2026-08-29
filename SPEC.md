@@ -576,7 +576,7 @@ T83|.|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch 
 T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
-T87|.|presentation seam (! add explicit eslint ignore — the ONE legitimate `window`/`document` user ∈ src/runtime, V63 lint bans the rest): `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
+T87|x|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
@@ -622,8 +622,8 @@ T130|x|enter/exit component, breadcrumb trail, nested editing|V82
 T131|x|expose internal port → external component port|V79
 T132|x|publish parameter: internal param → component param page, N targets, re-authored range/label|V80
 T133|x|`parent.<key>` scope resolution through the resolver, ∀ nesting depth|V81,V61
-T134|.|compiler: flatten component instances, preserve source path ∀ diagnostics + timing|V82
-T135|.|recursion detection — direct + indirect — @ instantiate, save, load|V83
+T134|x|compiler: flatten component instances, preserve source path ∀ diagnostics + timing|V82
+T135|x|recursion detection — direct + indirect — @ instantiate, save, load|V83
 T136|x|component version pin + explicit upgrade migration|V84,V10
 T137|x|component inspector: param page, exposed ports, version + upgrade affordance|V79,V17
 T138|x|fully-blocked undo ⊥ consume history entry — today it empties, bumps revision, audits "applied" and pops. reject without consuming|V41,V65
@@ -648,8 +648,8 @@ T78|x|keybinding settings pane: rebind, conflict detect + warn, per-binding & fu
 T79|x|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
 T73|x|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
 T39|x|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
-T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
-T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
+T70|x|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
+T40|x|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
 T41|.|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes`, `compiler/memory-budget` warning, `BackendStatus.lastBuild` {resourcesCreated/Reused, effectsBuilt/Reused}|V16,V24
 T42|.|metrics pipe outside document store, ≤10Hz UI tick|V16
 T68|.|export interface = sole readback surface. screenshot/PNG v1|V48,V7

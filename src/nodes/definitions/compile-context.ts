@@ -29,6 +29,16 @@ export interface NodeCompileInputs {
   readonly parameters: Readonly<Record<string, ParameterValue>>;
   /** Resource id this node's passes render into. Undefined when nothing is materialized. */
   readonly target?: string;
+  /**
+   * Size this node's outputs resolved to, in pixels (§V21, §V50).
+   *
+   * Resolved at COMPILE time, never per frame, which is why it is safe for a node to fold
+   * it into a uniform value: aspect correction, a blur radius in pixels and a per-texel
+   * step all need it, and the shared frame block's `resolution` is the presentation
+   * surface's, not this pass's target's. Falls back to 1x1 rather than 0x0 so a
+   * `1.0 / resolution` in a shader can never divide by zero.
+   */
+  readonly resolution: readonly [number, number];
 }
 
 /** The compiler-side shape this adapter reads. Kept local so src/nodes stays headless. */
@@ -37,6 +47,7 @@ interface CompilerContextShape {
   readonly parameters: Readonly<Record<string, ParameterValue>>;
   readonly target?: string | undefined;
   readonly sampler?: string;
+  readonly resolution?: readonly [number, number];
   readonly inputs?: Readonly<Record<PortId, ReadonlyArray<{ resourceId: string; sampler: string }>>>;
   readonly outputs?: Readonly<Record<PortId, { resourceId: string }>>;
 }
@@ -58,11 +69,16 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
     inputs[portId] = { resource: first.resourceId, sampler: first.sampler ?? raw.sampler ?? "" };
   }
 
+  const size = raw.resolution;
+  const resolution: readonly [number, number] =
+    size !== undefined && size[0] > 0 && size[1] > 0 ? [size[0], size[1]] : [1, 1];
+
   return {
     nodeId: raw.nodeId,
     outputs,
     inputs,
     parameters: raw.parameters,
+    resolution,
     ...(raw.target === undefined ? {} : { target: raw.target }),
   };
 }

@@ -33,6 +33,12 @@ export const CompilerDiagnosticCode = {
   nodeCompileFailed: "compiler/node-compile-failed",
   passInvalid: "compiler/pass-invalid",
   memoryBudget: "compiler/memory-budget",
+  /** Component flattening (T134, T135, §V82, §V83). */
+  componentRecursion: "compiler/component-recursion",
+  componentMissing: "compiler/component-missing",
+  componentPortUnresolved: "compiler/component-port-unresolved",
+  componentIdCollision: "compiler/component-id-collision",
+  componentParameterConflict: "compiler/component-parameter-conflict",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

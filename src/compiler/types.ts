@@ -5,6 +5,8 @@ import type { BackendCapabilities, LogicalExecutionPlan } from "../domain/types/
 import type { NodeCompileContext, TextureFormat } from "../domain/types/node-definition.ts";
 import type { ParameterValue } from "../domain/types/parameters.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
+import type { ComponentRegistryView } from "../domain/components/index.ts";
+import type { ComponentSource } from "./flatten.ts";
 import type { PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
 import type { ColorSpace } from "./color-space.ts";
 
@@ -47,6 +49,16 @@ export interface CompileRequest {
    * always added to this set — a side-effect node is never pruned (§V25).
    */
   readonly sinks?: ReadonlyArray<ActiveSink>;
+  /**
+   * The component catalogue, when the project uses components (§V82).
+   *
+   * Supplied separately from `registry` because the two answer different questions: the
+   * node registry hands back a component's synthesized MANIFEST, which is what the canvas
+   * and §V13 need, while flattening needs the internal GRAPH behind it. Omitted, nothing
+   * is flattened and an instance trips the manifest's `component.notFlattened` error —
+   * loudly, rather than rendering nothing.
+   */
+  readonly components?: ComponentRegistryView;
 }
 
 /**
@@ -109,6 +121,15 @@ export interface CompiledGraph extends LogicalExecutionPlan {
   /** Sorted by `${nodeId}:${portId}` so the projection is deterministic. */
   readonly outputs: ReadonlyArray<ResolvedOutput>;
   readonly feedback: ReadonlyArray<FeedbackPair>;
+  /**
+   * Where each node came from, sorted by id (§V82).
+   *
+   * Empty for a project with no components. For a flattened one it carries the source path
+   * of every node at every depth — `Main / DreamyFeedback_2 / Blur_1` — which is what a
+   * timing row, a profile entry or a problems-tab line shows instead of the namespaced id.
+   * Every pass in the plan carries its `nodeId`, so a row is one lookup away from its path.
+   */
+  readonly sources: ReadonlyArray<ComponentSource>;
   /**
    * Per-resource identity, sorted by id. THIS is what a consumer diffs to decide what to
    * rebuild: a document-level hash would make one unrelated new node reallocate every

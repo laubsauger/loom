@@ -71,11 +71,16 @@ describe("the composition root builds", () => {
   it("constructs one registry, one store and one bus without throwing", () => {
     const runtime = newRuntime();
 
-    expect(runtime.registry.list().map((definition) => definition.type).sort()).toEqual([
-      "customWgsl",
-      "output",
-      "solid",
-    ]);
+    // The whole catalogue is registered, not a hand-listed subset — asserting the exact
+    // list here would fail every time a node is added, which is noise rather than a guard.
+    // What matters is that the composition root wires the REAL catalogue: the spike nodes
+    // and the TD-vocabulary set both present, from one registry.
+    const types = runtime.registry.list().map((definition) => definition.type);
+    expect(new Set(types).size).toBe(types.length);
+    for (const required of ["solid", "customWgsl", "output", "noise", "level", "over"]) {
+      expect(types).toContain(required);
+    }
+    expect(types.length).toBeGreaterThanOrEqual(20);
     expect(runtime.bus.store.getRevision()).toBe(0);
     // §V30: the identity every command is stamped with exists before anything mounts.
     expect(runtime.invocation.actor.id).toBe("tester");

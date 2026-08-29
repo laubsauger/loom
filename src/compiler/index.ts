@@ -9,7 +9,17 @@ export { compileGraph } from "./compile.ts";
 export { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
 export type { CompilerDiagnosticCodeValue, DiagnosticDetails } from "./diagnostics.ts";
 
-export { validateGraph, validateRequiredInputs, isTemporalOutput } from "./validate.ts";
+export {
+  COMPONENT_ID_SEPARATOR,
+  componentPathOf,
+  flattenComponents,
+  flattenedNodeId,
+  redirectSink,
+  withSourcePath,
+} from "./flatten.ts";
+export type { ComponentSource, FlatEndpoint, FlattenRequest, FlattenedGraph } from "./flatten.ts";
+
+export { resolveParameterValues, validateGraph, validateRequiredInputs, isTemporalOutput } from "./validate.ts";
 export type { ResolvedNode, ValidatedGraph } from "./validate.ts";
 
 export { orderNodes } from "./topology.ts";

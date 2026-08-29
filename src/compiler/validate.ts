@@ -2,7 +2,7 @@ import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { NodeDefinition } from "../domain/types/node-definition.ts";
-import type { ParameterDefinition, ParameterValue } from "../domain/types/parameters.ts";
+import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
 import { validateParameterValue } from "../domain/parameters/validate.ts";
@@ -46,15 +46,25 @@ export function isTemporalOutput(definition: NodeDefinition, portId: PortId): bo
   return definition.temporal?.outputs.includes(portId) === true;
 }
 
-function resolveParameters(
+/**
+ * Effective values for one node's declared parameters: defaults filled in, stored values
+ * validated against the schema, an invalid value replaced by the default and reported.
+ *
+ * Takes a bare schema rather than a `NodeDefinition` because a component instance's
+ * parameter page is the component's PUBLISHED definitions, which exist before any node
+ * manifest does (§V80) — and one resolver is the point. `typeLabel` is only for the
+ * "carries a parameter this type does not declare" message.
+ */
+export function resolveParameterValues(
   node: GraphNode,
-  definition: NodeDefinition,
+  parameters: ParameterSchema,
+  typeLabel: string,
   diagnostics: RuntimeDiagnostic[],
 ): Record<string, ParameterValue> {
   const resolved: Record<string, ParameterValue> = {};
 
-  for (const key of Object.keys(definition.parameters).sort()) {
-    const schema = definition.parameters[key];
+  for (const key of Object.keys(parameters).sort()) {
+    const schema = parameters[key];
     if (schema === undefined) continue;
     const raw = node.parameters[key];
     if (raw === undefined) {
@@ -73,12 +83,12 @@ function resolveParameters(
   }
 
   for (const key of Object.keys(node.parameters).sort()) {
-    if (key in definition.parameters) continue;
+    if (key in parameters) continue;
     diagnostics.push(
       compilerDiagnostic(
         "warning",
         CompilerDiagnosticCode.parameterUnknown,
-        `Node "${node.id}" carries parameter "${key}", which "${definition.type}" does not declare.`,
+        `Node "${node.id}" carries parameter "${key}", which "${typeLabel}" does not declare.`,
         { nodeId: node.id, suggestion: "The value is ignored; remove it or update the node definition." },
       ),
     );
@@ -124,7 +134,11 @@ export function validateGraph(graph: GraphDocument, registry: NodeRegistryView):
         ),
       );
     }
-    nodes.set(nodeId, { node, definition, parameters: resolveParameters(node, definition, diagnostics) });
+    nodes.set(nodeId, {
+      node,
+      definition,
+      parameters: resolveParameterValues(node, definition.parameters, definition.type, diagnostics),
+    });
   }
 
   const edges: CompileEdge[] = [];

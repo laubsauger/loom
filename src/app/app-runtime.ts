@@ -4,7 +4,7 @@ import type { Actor, InvocationContext } from "@domain/types/commands.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
-import { spikeNodeDefinitions } from "@nodes/definitions/index.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { createComponentSystem, registerComponentCommands } from "@domain/components/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -99,7 +99,9 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   // wrapper every instance reads as an unknown node type. The wrapper composes over the
   // node registry rather than replacing it, so re-authoring a component changes every
   // linked instance with no cache to invalidate (§V79).
-  const nodeRegistry = createNodeRegistry(spikeNodeDefinitions).view();
+  // The whole catalogue, not just the three Phase 0 spike nodes — 20 TD-vocabulary
+  // nodes plus Noise. This one import is what makes them reachable from the library.
+  const nodeRegistry = createNodeRegistry(allNodeDefinitions).view();
   const { components, nodes: registry } = createComponentSystem(nodeRegistry);
   const { bus } = createDomainBus({ registry });
   registerComponentCommands(bus, { components });
