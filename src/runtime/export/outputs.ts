@@ -109,41 +109,14 @@ export function cropReadback(image: ReadbackImage, region: ReadbackRegion): Read
 }
 
 /**
- * Bridge over a backend whose `readOutput` still returns a bare `Uint8Array` (§V60 / T82).
- *
- * It reconstructs the descriptor from the catalogue — which is the only reason the bare
- * return type has been survivable so far — and crops regions on the CPU after pulling the
- * whole output. Both are compromises, and both are the argument for changing the backend
- * signature: a 1x1 pixel probe should not move a 1080p frame across the bus, and the format
- * and stride should come from the thing that did the copy, not from a lookup table beside it.
- *
- * DELETE THIS once `RenderBackend.readOutput` returns `ReadbackImage` and accepts a region.
+ * `ReadbackSource` over the real backend (T173/T82): `readOutput` now returns the full
+ * `ReadbackImage` and crops regions itself, so this is pure delegation — the descriptor
+ * comes from the thing that did the copy, exactly as §V60 wanted.
  */
-export function readbackSourceFromBytes(backend: {
-  readOutput(outputId: string): Promise<Uint8Array>;
+export function readbackSourceFromBackend(backend: {
+  readOutput(outputId: string, region?: ReadbackRegion): Promise<ReadbackImage>;
 }): ReadbackSource {
   return {
-    async read(target, region) {
-      const bytes = await backend.readOutput(target.resourceId);
-      const rowStride = inferRowStride(
-        bytes.byteLength,
-        target.width,
-        target.height,
-        target.format,
-      );
-      const whole: ReadbackImage = {
-        width: target.width,
-        height: target.height,
-        format: target.format,
-        rowStride,
-        bytes,
-      };
-      const isWhole =
-        region.x === 0 &&
-        region.y === 0 &&
-        region.width === target.width &&
-        region.height === target.height;
-      return isWhole ? whole : cropReadback(whole, region);
-    },
+    read: (target, region) => backend.readOutput(target.resourceId, region),
   };
 }

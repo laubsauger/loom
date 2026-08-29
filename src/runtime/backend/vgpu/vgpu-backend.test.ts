@@ -76,9 +76,19 @@ describe("vgpu backend — initialization and capabilities", () => {
     expect(backend.status.framesSubmitted).toBe(2);
     // A readback is available for the offline path, but playback never triggers one (§V48).
     expect(backend.status.readbacks).toBe(0);
-    const bytes = await backend.readOutput("output");
-    expect(bytes.byteLength).toBe(64 * 64 * 4);
+    const image = await backend.readOutput("output");
+    // §V60 (T173): descriptor + bytes. rowStride is tight — vgpu unpads.
+    expect(image.width).toBe(64);
+    expect(image.height).toBe(64);
+    expect(image.format).toBe("rgba8unorm");
+    expect(image.rowStride).toBe(64 * 4);
+    expect(image.bytes.byteLength).toBe(64 * 64 * 4);
     expect(backend.status.readbacks).toBe(1);
+
+    // A region crop comes back region-sized, still fully described.
+    const probe = await backend.readOutput("output", { x: 1, y: 2, width: 3, height: 4 });
+    expect([probe.width, probe.height]).toEqual([3, 4]);
+    expect(probe.bytes.byteLength).toBe(3 * 4 * 4);
   });
 
   /** §V12: optional features are reported, never assumed, and their absence is not fatal. */

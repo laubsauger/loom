@@ -51,7 +51,8 @@ function recordingBackend(): ShaderloomBackend & {
       calls.push(inputs);
     },
     resize() {},
-    readOutput: () => Promise.resolve(new Uint8Array()),
+    readOutput: () =>
+      Promise.resolve({ width: 0, height: 0, format: "rgba8unorm" as const, rowStride: 0, bytes: new Uint8Array() }),
     onDiagnostic: () => () => {},
     dispose() {},
     loop(next) {

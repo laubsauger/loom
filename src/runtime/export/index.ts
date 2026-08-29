@@ -48,7 +48,7 @@ export {
   exportOutputsFrom,
   fullRegion,
   inferRowStride,
-  readbackSourceFromBytes,
+  readbackSourceFromBackend,
 } from "./outputs.ts";
 
 export { BYTES_PER_PIXEL, clamp01, decodeHalf, linearToSrgb, srgbToLinear } from "./pixel-format.ts";

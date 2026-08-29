@@ -726,6 +726,11 @@ const BYTES_PER_PIXEL: Record<string, number> = {
   r32float: 4,
 };
 
+/** Bytes per texel for the supported color formats (§V60 readback descriptors). */
+export function bytesPerPixelFor(format: TextureFormat): number {
+  return BYTES_PER_PIXEL[format] ?? 4;
+}
+
 /**
  * Coarse texture-memory estimate for a plan's declared resources (§V24 reporting).
  * Shared by the compiler (budget diagnostic against ProjectSettings) and the backend

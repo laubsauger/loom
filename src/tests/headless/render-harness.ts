@@ -156,14 +156,15 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       if (wanted.has(index)) {
         // §V48/§V7: readback happens between frames, never inside the loop, which is why
         // `step()` exists as a separate entry point at all.
-        const bytes = await backend.readOutput(outputResourceId);
-        const resolved = plan.outputs.find((o) => o.resourceId === outputResourceId);
+        // T173: readOutput returns the full descriptor now — width/format/stride come
+        // from the thing that did the copy, not from a lookup beside it (§V60).
+        const image = await backend.readOutput(outputResourceId);
         captured.push({
           frameIndex: index,
-          width: resolved?.size[0] ?? settings.outputResolution.width,
-          height: resolved?.size[1] ?? settings.outputResolution.height,
-          format: resolved?.format ?? settings.workingFormat,
-          bytes,
+          width: image.width,
+          height: image.height,
+          format: image.format,
+          bytes: image.bytes,
         });
       }
       request.betweenFrames?.(control, index);
@@ -240,13 +241,13 @@ export async function renderPlanHeadless(request: PlanRenderRequest): Promise<{
     for (let index = 0; index < request.frames; index += 1) {
       driver.step();
       if (wanted.has(index)) {
-        const bytes = await backend.readOutput(request.outputResourceId);
+        const image = await backend.readOutput(request.outputResourceId);
         captured.push({
           frameIndex: index,
-          width: request.size[0],
-          height: request.size[1],
-          format: request.format,
-          bytes,
+          width: image.width,
+          height: image.height,
+          format: image.format,
+          bytes: image.bytes,
         });
       }
     }

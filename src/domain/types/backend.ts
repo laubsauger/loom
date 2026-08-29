@@ -48,7 +48,7 @@ export interface FrameInputs {
  * rather than a convention.
  *
  * Owned here (not in the export module) so the backend and the export interface name the
- * same shape: T82 changes `RenderBackend.readOutput` to return this.
+ * same shape: `RenderBackend.readOutput` returns it (T82/T173, landed).
  */
 export interface ReadbackImage {
   readonly width: number;
@@ -79,7 +79,12 @@ export interface RenderBackend {
   render(plan: CompiledExecutionPlan, frame: FrameInputs): void;
   resize(outputId: string, size: readonly [number, number]): void;
   /** Readback is isolated here and behind the export interface — never in playback (§V7, §V48). */
-  readOutput(outputId: string): Promise<Uint8Array>;
+  /**
+   * §V48/§V60: the ONLY readback. Returns the full descriptor — bytes are
+   * uninterpretable without width/format/rowStride. `region` crops server-side so a
+   * 1×1 pixel probe is expressible; rows in the result are tightly packed.
+   */
+  readOutput(outputId: string, region?: ReadbackRegion): Promise<ReadbackImage>;
   onDiagnostic(listener: (diagnostic: RuntimeDiagnostic) => void): () => void;
   dispose(): void;
 }

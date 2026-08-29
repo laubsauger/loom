@@ -72,11 +72,12 @@ describe("point graph end to end on Dawn (T121/T122/T176)", () => {
 
       const renderTarget = plan.outputs.find((output) => output.nodeId === "draw");
       expect(renderTarget).toBeDefined();
-      const bytes = await backend.readOutput(renderTarget?.resourceId ?? "");
+      const image = await backend.readOutput(renderTarget?.resourceId ?? "");
+      const bytes = image.bytes;
       expect(errors).toEqual([]);
 
       let litPixels = 0;
-      for (let index = 0; index < bytes.length; index += 4) {
+      for (let index = 0; index < bytes.byteLength; index += 4) {
         if ((bytes[index] ?? 0) > 0) litPixels += 1;
       }
       expect(litPixels).toBeGreaterThan(0);

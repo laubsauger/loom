@@ -25,6 +25,7 @@ import {
 } from "../diagnostics.ts";
 import { createFrameGuard } from "../frame-guard.ts";
 import {
+  bytesPerPixelFor,
   estimateResourceBytes,
   passStructureKey,
   planStructureSignature,
@@ -1015,7 +1016,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (program?.resources.pingPongs.has(outputId)) clearTemporalHistory("resolution");
     },
 
-    async readOutput(outputId) {
+    async readOutput(outputId, region) {
       // §V48: the only readback in the runtime, and never inside the playback loop.
       guard.assertOutsideFrame("output readback");
       if (halted) {
@@ -1028,8 +1029,54 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         hub.report(backendDiagnostic("error", BackendDiagnosticCode.unknownOutput, message));
         throw new Error(message);
       }
+
+      // §V60 (T173): the descriptor comes from the thing that owns the copy. vgpu's
+      // read() UNPADS rows (its readback loop strips the 256-byte alignment), so the
+      // returned rowStride is exactly width × bytesPerPixel — asserted, not assumed.
+      const descriptor = program?.resourceDescriptors.find(
+        (resource) => resource.id === outputId && (resource.kind === "target" || resource.kind === "pingPong"),
+      );
+      if (descriptor === undefined || (descriptor.kind !== "target" && descriptor.kind !== "pingPong")) {
+        throw new Error(`readOutput("${outputId}") has no retained descriptor to interpret the bytes.`);
+      }
+      const [width, height] = descriptor.size;
+      const format = descriptor.format;
+      const bytesPerPixel = bytesPerPixelFor(format);
+
       readbacks += 1;
-      return first.read();
+      const raw = new Uint8Array(await first.read());
+      if (raw.byteLength !== width * height * bytesPerPixel) {
+        throw new Error(
+          `readOutput("${outputId}") returned ${raw.byteLength} bytes; expected ${width * height * bytesPerPixel} for ${width}×${height} ${format}.`,
+        );
+      }
+      const whole = { width, height, format, rowStride: width * bytesPerPixel, bytes: raw };
+      if (
+        region === undefined ||
+        (region.x === 0 && region.y === 0 && region.width === width && region.height === height)
+      ) {
+        return whole;
+      }
+
+      // Region crop. vgpu has no sub-rectangle read yet, so this still moves the whole
+      // frame across the bus and crops on the CPU — the CONTRACT is region-shaped so a
+      // real sub-copy is a backend optimization later, not an interface change.
+      const x = Math.max(0, Math.min(region.x, width));
+      const y = Math.max(0, Math.min(region.y, height));
+      const cropWidth = Math.max(0, Math.min(region.width, width - x));
+      const cropHeight = Math.max(0, Math.min(region.height, height - y));
+      const cropped = new Uint8Array(cropWidth * cropHeight * bytesPerPixel);
+      for (let row = 0; row < cropHeight; row += 1) {
+        const src = (y + row) * whole.rowStride + x * bytesPerPixel;
+        cropped.set(raw.subarray(src, src + cropWidth * bytesPerPixel), row * cropWidth * bytesPerPixel);
+      }
+      return {
+        width: cropWidth,
+        height: cropHeight,
+        format,
+        rowStride: cropWidth * bytesPerPixel,
+        bytes: cropped,
+      };
     },
 
     onDiagnostic(listener) {

@@ -4,7 +4,7 @@ import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { PixelProbe } from "../previews/pixel-probe.ts";
 import { decodePixel } from "../previews/pixel-probe.ts";
 import { createExportInterface, createPixelProbe } from "./export-interface.ts";
-import { alignedRowStride, cropReadback, readbackSourceFromBytes } from "./outputs.ts";
+import { alignedRowStride, cropReadback, readbackSourceFromBackend } from "./outputs.ts";
 import type { ExportInterface, ExportOutput, ReadbackSource } from "./types.ts";
 import { ExportError, outputRef } from "./types.ts";
 
@@ -229,34 +229,28 @@ describe("the viewer's PixelProbe (T36) is satisfied by this module", () => {
   });
 });
 
-describe("bridge over a backend that still returns bare bytes (T82)", () => {
-  it("recovers a 256-aligned row stride rather than assuming a tight one", async () => {
-    const padded = paddedRgba8();
+describe("readback source over the real backend (T173)", () => {
+  it("delegates read straight through, region included — no inference left", async () => {
+    const calls: Array<{ id: string; region: ReadbackRegion | undefined }> = [];
+    const image: ReadbackImage = {
+      width: 2,
+      height: 2,
+      format: "rgba8unorm",
+      rowStride: 8,
+      bytes: new Uint8Array(16).fill(9),
+    };
     const api = createExportInterface({
-      source: readbackSourceFromBytes({ readOutput: () => Promise.resolve(padded.bytes) }),
+      source: readbackSourceFromBackend({
+        readOutput: (id, region) => {
+          calls.push({ id, region });
+          return Promise.resolve(image);
+        },
+      }),
       outputs: () => [output()],
     });
-    const image = await api.read(COLOR);
-    expect(image.rowStride).toBe(256);
-    expect(decodePixel(image, 0, 1)?.rgba[0]).toBeCloseTo(70 / 255, 6);
-  });
 
-  it("recovers a tight stride when that is what the bytes say", async () => {
-    const bytes = new Uint8Array(2 * 2 * 4).fill(7);
-    const api = createExportInterface({
-      source: readbackSourceFromBytes({ readOutput: () => Promise.resolve(bytes) }),
-      outputs: () => [output()],
-    });
-    expect((await api.read(COLOR)).rowStride).toBe(8);
-  });
-
-  it("refuses to guess when the byte count matches neither stride", async () => {
-    // Guessing here produces an image that is subtly sheared, which reads as a rendering
-    // bug and costs a day. Refusing names the real problem immediately.
-    const api = createExportInterface({
-      source: readbackSourceFromBytes({ readOutput: () => Promise.resolve(new Uint8Array(30)) }),
-      outputs: () => [output()],
-    });
-    await expect(api.read(COLOR)).rejects.toThrow(/neither a tight \(8\) nor a 256-aligned/i);
+    const got = await api.read(COLOR);
+    expect(got).toBe(image);
+    expect(calls[0]?.id).toBe(output().resourceId);
   });
 });

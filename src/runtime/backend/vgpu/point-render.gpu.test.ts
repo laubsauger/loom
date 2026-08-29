@@ -100,12 +100,13 @@ describe("dispatch + draw through the backend on Dawn (T172)", () => {
         resolution: [64, 64],
       });
 
-      const bytes = await backend.readOutput("out");
+      const image = await backend.readOutput("out");
+      const bytes = image.bytes;
       expect(errors).toEqual([]);
 
       // A horizontal band of red points across the middle row of clip space.
       let redPixels = 0;
-      for (let index = 0; index < bytes.length; index += 4) {
+      for (let index = 0; index < bytes.byteLength; index += 4) {
         if ((bytes[index] ?? 0) > 200 && (bytes[index + 1] ?? 0) < 50) redPixels += 1;
       }
       expect(redPixels).toBeGreaterThanOrEqual(COUNT / 2);
