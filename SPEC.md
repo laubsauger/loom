@@ -778,6 +778,8 @@ TRADE, stated: timeline time means dropped frames SLOW the animation (TD behaves
 wall time means dropped frames SKIP it (Notch's "frame-rate independence" = "visually
 similar", ⊥ identical). ⊥ 1 right answer ∴ ship both & DEFAULT to smooth.
 
+V177: project settings are DOCUMENT state — they serialize w/ the graph, mutate ONLY via `project.setSettings` (V29), bump the revision & make ONE undo entry ("Set frame rate", TD-style). `AppRuntime.settings` is a live VIEW of the store, ⊥ a snapshot.
+V178: settings edits classify PER FIELD. `outputResolution`, `workingFormat`, `limits` = STRUCTURAL → recompile. `fps`, `previewFps`, `previewLongEdge` = ⊥ structural → ⊥ recompile, ⊥ resource rebuild. w/o this someone writes "any settings edit rebuilds the world" & dragging an fps field rebuilds every resource @ 60Hz.
 V176: `time` ∈ expressions & the shared block is TIMELINE time = frameIndex/fps — uniform by construction. wall time is a SEPARATE name for when sync matters. a linear expression on `time` ! produce linear motion; if it visibly jitters the clock is wrong, ⊥ the user's expression.
 V173b: LIVENESS has 3 sources, ⊥ 1: (a) a data EDGE to a sink, (b) a DRIVEN slot naming a value node's channel, (c) an `op()` REFERENCE ∈ an expression. ∀ consumer of liveness uses the SAME answer — `plan.pruned`, the example gate's dead-node check, cooking's dirty set, the UI's pruned badge. 4 places computing it separately = 4 chances to disagree, & they will.
 V173: `pruned` means DEAD — "could have contributed GPU work & was excluded". a node that is NON-PLAN-RESIDENT BY DESIGN (the value trio: LFO, Constant, Timer — no ports, no passes) is ⊥ pruned, it was never a candidate. conflating them puts a `pruned` warning badge on a WORKING LFO & counts it ∈ "nodes pruned".
@@ -1012,6 +1014,7 @@ T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop e
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
+T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
 T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
 T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
 T263|.|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
