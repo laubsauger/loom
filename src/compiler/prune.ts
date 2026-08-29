@@ -1,6 +1,7 @@
 import type { NodeId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { NodeDefinition } from "../domain/types/node-definition.ts";
+import { computeLiveness, type LivenessNode } from "../domain/graph/liveness.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
 import type { ActiveSink, CompileEdge } from "./types.ts";
 import type { ResolvedNode } from "./validate.ts";
@@ -144,13 +145,21 @@ export function pruneToActiveSinks(
     }
   }
 
-  // T268 (§V173): `pruned` means DEAD — could have contributed GPU work and was
-  // excluded. A value source (T238-T240) is non-plan-resident BY DESIGN: it has no
-  // ports, resolves off the document through the channel seam, and was never a
-  // candidate — reporting it pruned would misdirect exactly the person debugging why
-  // "nothing moves". It is simply not in the list, kept or pruned.
-  const pruned = [...nodes.keys()]
-    .filter((nodeId) => !kept.has(nodeId) && nodes.get(nodeId)?.definition.valueChannel === undefined)
-    .sort();
-  return { kept, pruned };
+  // T268 (§V173b): `kept` is the GPU answer — what compiles and materializes — and it
+  // stays edge-based, because channel and op() liveness are PARAMETER reads that need
+  // no GPU work. `pruned` is the REPORT, and it uses the one liveness function: a value
+  // source referenced by a driven slot, or a node an expression op()-references, is
+  // alive and must not wear a dead badge (§V154's bug, prevented in one place for
+  // every consumer).
+  const livenessNodes = new Map<NodeId, LivenessNode>();
+  for (const [nodeId, resolved] of nodes) {
+    livenessNodes.set(nodeId, {
+      name: resolved.node.label,
+      parameters: resolved.node.parameters,
+      isValueSource: resolved.definition.valueChannel !== undefined,
+      isSink: false, // seeds come from the resolved ACTIVE sinks below, not the manifest
+    });
+  }
+  const { dead } = computeLiveness(livenessNodes, producers, [...kept].sort());
+  return { kept, pruned: dead };
 }

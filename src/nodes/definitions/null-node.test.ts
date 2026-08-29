@@ -144,4 +144,27 @@ describe("value sources are not 'pruned' (T268, §V173)", () => {
     expect(compiled.pruned).toContain("orphan");
     expect(compiled.pruned).not.toContain("mod");
   });
+
+  it("keeps an op()-referenced texture node out of the pruned report (§V154, §V173b)", () => {
+    const graph = graphOf(
+      [
+        {
+          ...node("gen", "blur"),
+          parameters: {
+            size: {
+              mode: "expression",
+              bindings: { expression: { kind: "expression", source: "op('backdrop').par.amount" } },
+            },
+          } as GraphNode["parameters"],
+        },
+        node("sink", "output"),
+        { ...node("referenced", "solid"), label: "backdrop" },
+      ],
+      [["gen", "out", "sink", "input"]],
+    );
+    const compiled = compileGraph({ graph, settings, registry: registry(), capabilities });
+    // Not in the GPU plan (kept stays edge-based; a .par read needs no pixels) — but
+    // not "pruned" either: it is a live dependency, and the badge would misdirect.
+    expect(compiled.pruned).not.toContain("referenced");
+  });
 });
