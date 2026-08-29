@@ -748,6 +748,7 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V145: a domain type sharing a name w/ a DOM|Node GLOBAL (`MediaSource`, `Text`, `Selection`, `Range`, `Event`, `Image`, `Path`, `Node`, `Screen`, `Cache`, `Transform`…) ! be imported explicitly @ ∀ use. lint-enforced. w/o import tsc resolves the GLOBAL & goes GREEN against the WRONG interface — the silence is the bug.
 V142: viewport transform (pan/zoom) is VIEW state ∴ ⊥ reach the plan, ⊥ re-create surfaces, ⊥ recompile, ⊥ reconfigure a canvas. camera move ! be free. corollary: a preview surface's configured size derives from its NODE's resolution, ⊥ from zoom — zoom scales w/ CSS, ⊥ w/ reallocation.
 V143: a node that MAKES a value over time (LFO, Timer) reads time from FrameEvaluationInput like every other node — ⊥ wall clock (already lint-enforced) ∴ offline render & live preview agree frame-for-frame.
 V144: image→scalar reduction (Analyze) lands ∈ a readback that is ALREADY async & ALREADY between frames (V48/V7). ⊥ stall the frame loop to feed a parameter. a value 1 frame late is correct; a hitch is ⊥.
@@ -945,6 +946,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T244|.|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|.|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|.|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
@@ -1071,7 +1073,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
-| D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
+| D guardrails | T7 T8 T64 T244 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
 ### wave 2 — 5 tracks
 | track | tasks | owns |
