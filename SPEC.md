@@ -1009,7 +1009,7 @@ T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥
 T271|.|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
 T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
-T268|.|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
+T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
 T266|.|project settings UI: resolution, fps, seed, working format. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
@@ -1022,7 +1022,7 @@ T259|.|**per-frame driven/expression push** ∈ composition root — gate on `ha
 T257|.|**preview-side carry-over** ∈ `buildPreviewHost` — reuse T143's mechanism. w/o it V142 holds only below the 48-tile pool; above it a camera move still blanks everything|V162,V142
 T258|.|preview host resilience: 1 unresolvable binding currently blanks the WHOLE host (`buildPreviewHost` catches → `h.set` unusable). ⊥ let 1 bad node black out ∀ previews. widens w/ T252|V162,V28
 T249|.|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
-T250|.|**fix bypass/mute** — `ui.bypassed`/`ui.muted` are UI-ONLY; `compile.ts` ⊥ reads them (B16)|V25
+T250|x|**fix bypass/mute** — `ui.bypassed`/`ui.muted` are UI-ONLY; `compile.ts` ⊥ reads them (B16)|V25
 T251|.|dependency graph = edges ∪ param refs, applied to `pruneToActiveSinks()` FIRST|V154,V152
 T252|.|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` declaring EVERY texture node a sink (B18)|V158,V25
 T253|.|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
