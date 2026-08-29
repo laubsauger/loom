@@ -372,6 +372,28 @@ interface ParameterSlot {
 ∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
 number-only feature: TD drives menus + toggles from expressions & that is half its power.
 
+### pulse parameters (TD Pulse) — momentary triggers
+TD: `Pulse` is a parameter TYPE, ⊥ a per-node feature. Feedback TOP has Reset; Timer has
+Start/Stop. ∴ ANY node can declare one and the mechanism is written once.
+
+```ts
+interface PulseParameter extends ParameterBase { type: "pulse"; }
+```
+- momentary: it FIRES, it ⊥ hold. never serialized as "on" — a pulse ∈ a saved doc that
+  re-fires on load would reset your work every time you opened it.
+- mutates RUNTIME state, ⊥ document state ∴ audited (V31) but **⊥ undoable**: undo restores
+  a document, and a cleared feedback buffer is ⊥ ∈ the document. saying so beats a
+  disabled undo that silently does nothing.
+- takes ∀ mode (V107) — an EXPRESSION firing a pulse is how an automated reset happens
+  (TD's whole idiom: pulse on a beat, on a threshold, on a frame count).
+- TD also pairs a HOLD toggle w/ the momentary pulse (Feedback TOP has both). support both:
+  `reset` (hold ∈ reset) + `resetPulse` (fire once).
+
+a node declaring `stateful.reset === true` (V46, already ∈ the contract) SHOULD expose one
+— that field has been declaring the capability w/ nothing to trigger it.
+consumers: Feedback (clear), Noise (reseed), accumulator (clear), point sim (reset),
+MovieFileIn (re-fetch).
+
 ### compound parameters are COMPONENT-ADDRESSABLE (TD: colorr/colorg/colorb, tx/ty/tz)
 TD has ⊥ "a color parameter" — it has `colorr`, `colorg`, `colorb`, each a first-class
 parameter w/ its OWN mode. the swatch is a convenience ON TOP. same for `tx`/`ty`/`tz`.
@@ -648,6 +670,10 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V123: `pulse` = a parameter type, ⊥ a node feature — declared once, available to any node (TD Pulse). ∀ node w/ `stateful.reset === true` (V46) SHOULD expose one.
+V124: a pulse mutates RUNTIME state, ⊥ document state ∴ audited (V31), ⊥ undoable, ⊥ serialized. a pulse persisted as "on" would re-fire on load & wipe your work every open.
+V125: a pulse takes ∀ parameter mode (V107) — an expression firing it is how an automated reset happens: on a beat, a threshold, a frame count. a trigger you can only click is ⊥ a trigger, it is a button.
+V126: pulse reset is PER-RESOURCE, ⊥ whole-backend. `resetTemporalHistory()` is global today ∴ resetting one Feedback would clear every other node's history — the reason `runtime.resetFeedback` stayed unregistered (V62).
 V119: recording is a NODE, ⊥ a global action. topology decides what is recorded ∴ several recorders may run at once, on intermediate branches. a recorder declares `sink: true` (V25) — recording is its side effect & it ⊥ be pruned for having no consumer.
 V120: a recorder captures by `frameIndex` via the export interface (V48, T111), ⊥ by sampling a clock. a take that dropped|duplicated frames = a WRONG recording, ⊥ a shorter one — it ! fail the take, ⊥ silently ship.
 V122: 1 media-in node covers still|sequence|video (TD Movie File In). params that ⊥ apply to the loaded asset are HIDDEN, ⊥ disabled-and-visible — a still has no in|out point, and showing one teaches the user the node is broken.
@@ -817,6 +843,9 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
+T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
+T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
 T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
 T212|.|drop a connection ON AN EDGE → replaces it (takes that edge's target). 1 patch = disconnect + connect, 1 undo group. generous invisible hit area on the edge|V14b,V14c,V32,V34
@@ -917,7 +946,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
-| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
+| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
@@ -943,7 +972,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
@@ -956,7 +985,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T215 T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
