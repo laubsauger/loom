@@ -349,6 +349,21 @@ interface ParameterSlot {
 ∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
 number-only feature: TD drives menus + toggles from expressions & that is half its power.
 
+### compound parameters are COMPONENT-ADDRESSABLE (TD: colorr/colorg/colorb, tx/ty/tz)
+TD has ⊥ "a color parameter" — it has `colorr`, `colorg`, `colorb`, each a first-class
+parameter w/ its OWN mode. the swatch is a convenience ON TOP. same for `tx`/`ty`/`tz`.
+that is what makes a single channel drivable while the others stay constant.
+
+ours: the MANIFEST keeps one declaration (`color`, `t`) — verbose 4-way manifests would
+be worse — but the SLOT is per component:
+```
+color  → color.r  color.g  color.b  color.a
+t      → t.x      t.y      t.z      (t.w for size 4)
+```
+∀ component gets its own `ParameterSlot` ∴ its own mode, expression, bind, value.
+resolver reassembles components → the compound value the shader wants.
+component names: r g b a · x y z w.
+
 ### type: per-node output resolution override (TD Common page)
 ```ts
 type NodeResolutionOverride =
@@ -601,6 +616,8 @@ V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query o
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
+V113: compound params (color, vector) are COMPONENT-ADDRESSABLE — `color.g`, `t.x` each carry their own mode + value (V107). a color you ⊥ animate per channel is a picker, ⊥ a parameter. manifest stays compound; the SLOT is per component; resolver reassembles.
+V114: the compound editor (swatch, xyz row) writes ∀ components in ONE patch = 1 undo entry (V15, V32). ⊥ 4 patches for 1 colour pick.
 V107: ∀ parameter, ∀ TYPE, accepts ∀ mode: static | expression | bind | driven. ⊥ expressions-on-numbers-only — a mode available on some parameters is a mode users ⊥ trust.
 V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and the UI shows which inactive modes hold one (TD's corner square). flipping to Constant to check a number ⊥ costs you the expression you were writing.
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
@@ -768,6 +785,7 @@ T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE to
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
 T206|.|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
+T207|.|component-addressable slots: `color.r`/`t.x` each w/ own mode+value; resolver reassembles; compound editor writes ∀ components ∈ 1 patch|V113,V114,V107
 T202|.|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
 T203|.|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
 T204|.|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's has-a-value corner mark; ctrl/cmd+E edits the expression; right-click menu|V107,V108,V90
@@ -860,7 +878,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
-| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
+| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
