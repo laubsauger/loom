@@ -495,6 +495,8 @@ V25: compiler evaluates only nodes reachable backward from active sinks. rest pr
 V26: edge visual hue = source port family color (§C). ⊥ arbitrary edge color.
 V27: WGSL compile message maps to editor line+col, surfaces on node badge + problems tab.
 V28: only visible|pinned previews scheduled. offscreen/collapsed node preview suspended.
+V28b: a VISIBLE texture-producing node previews BY DEFAULT — TD parity: a disconnected node shows its output, ⊥ a blank box. ∴ visibility (⊥ `ui.preview`) is what makes it a preview sink. `ui.preview` = an explicit PIN — keep previewing while scrolled off — ⊥ the on-switch. w/o this a node renders nothing until wired to an Output, which reads as broken & hides the node you are authoring.
+V28c: default-on previews are affordable ONLY because V28 suspends offscreen|collapsed. a 200-node graph previews the ~dozen on screen. ∴ V28b ⊥ shippable w/o V28's scheduler — they land together.
 V28a: explicit sink list = AUTHORITATIVE ∀ previews — empty list means NONE visible, ⊥ "fall back to the flags". `undefined` = use document `ui.preview` flags. ∴ composition root ! pass ∀ visible previews once it derives them, ⊥ rely on the union.
 V29: ∀ mutation → `AppCommandBus.execute`. ⊥ adapter mutates zustand | React Flow array | GPU resource directly.
 V30: ∀ command carries `InvocationContext.actor`. ⊥ anonymous mutation.
@@ -704,6 +706,8 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T182|.|previews default-on for visible texture nodes: composition root derives visible set → explicit sink list (V28a) ∀ compile. `ui.preview` becomes a PIN. today a disconnected node renders nothing|V28b,V28c,V28a,V25
+T183|.|`.subTrigger[data-state="open"]` uses `--bg-raise` while `.item[data-highlighted]` uses `--bg-active` ∴ the highlight visibly CHANGES when a submenu opens. open parent ! look identical to highlighted|V17
 T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swap pass, so a stateful kernel's `out_` bindings reach the write half. today in/out are 2 separate buffers|V22,V75
 T180|.|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
 T181|.|GPU timer spans for dispatch/draw — T163 covers effect passes only ∴ compute cost is unmeasured|V86
@@ -782,7 +786,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
