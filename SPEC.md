@@ -767,6 +767,7 @@ unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
 V174: ∈ the inspector, PARAMETERS come first & COMMON is a separate TAB (TD's page model) — ⊥ both stacked on 1 page. common is chrome you set once; parameters are the work. prime real estate goes to the work.
 V175: a Ramp is N STOPS, ⊥ 2 colours. add|remove|move a stop, position per stop. 2-colour is the degenerate case of the general thing, & shipping only the degenerate case means every gradient anyone actually wants is impossible.
+V173b: LIVENESS has 3 sources, ⊥ 1: (a) a data EDGE to a sink, (b) a DRIVEN slot naming a value node's channel, (c) an `op()` REFERENCE ∈ an expression. ∀ consumer of liveness uses the SAME answer — `plan.pruned`, the example gate's dead-node check, cooking's dirty set, the UI's pruned badge. 4 places computing it separately = 4 chances to disagree, & they will.
 V173: `pruned` means DEAD — "could have contributed GPU work & was excluded". a node that is NON-PLAN-RESIDENT BY DESIGN (the value trio: LFO, Constant, Timer — no ports, no passes) is ⊥ pruned, it was never a candidate. conflating them puts a `pruned` warning badge on a WORKING LFO & counts it ∈ "nodes pruned".
 V172: a graph edit produces a rendered frame BY ITSELF — ⊥ waiting on an unrelated event (zoom, resize, pointer move, next param change) to nudge it. "renders when I zoom" means the render is riding someone else's invalidation & the edit path has no trigger of its own. measure FIRST-FRAME-AFTER-EDIT ∈ a composed test, ⊥ eyeball it.
 V169: the timeline readout (frame, time, fps) reads the SAME `FrameEvaluationInput` the render consumed — ⊥ a parallel clock, ⊥ `performance.now`. a readout that can disagree w/ the picture is worse than no readout: it's the thing you check when you ⊥ trust the picture.
@@ -995,7 +996,7 @@ T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
 T269|.|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
-T268|.|`pruned` excludes non-plan-resident value nodes (B20). + E7 example lands once green|V173,V154
+T268|.|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
 T266|.|project settings UI: resolution, fps, seed, working format. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
