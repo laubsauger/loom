@@ -580,7 +580,9 @@ V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's
 V92: ⊥ decorative prose ∈ chrome — ⊥ taglines, ⊥ "Tip:", ⊥ restating a label in a sentence. if a label needs a sentence, the LABEL is wrong. dense pro tool: imagery = hero, chrome competes w/ it (§C).
 V93: node|component|example = 3 libraries, 3 verbs — add | instantiate | OPEN. ⊥ one merged browser: open REPLACES the document, and a destructive verb ⊥ sit one click from additive ones. open ! confirm when dirty; add|instantiate ⊥ confirm (undoable).
 V94: a shipped component = the SAME `GraphComponentDefinition` a user saves (V79). ⊥ a privileged format — else the shipped set stops being a worked example of the thing users make.
-V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
+V95: ∀ pane relocatable — dock zone left|right|bottom|center, or FLOAT (own window). ⊥ pane hardcoded to a slot. arrangement persisted ∈ localStorage (V18), ⊥ ∈ project doc. shader editor forced to the bottom dock = the specific complaint; the general rule is the fix.
+V96: relocating a pane ⊥ REMOUNTS its content. CodeMirror keeps scroll, selection & undo history; a preview keeps its tile; a running editor keeps focus. same failure as the dock's forceMount fix (U3), reached by dragging instead of by tab-switching — a pane that forgets on move is a pane you ⊥ move.
+V97: a floated|popped-out window shares ONE app state — same bus, same store, same runtime (V29). ⊥ a second runtime ∈ the child window. it renders through the SAME presentation machinery as multi-window perform mode (V64, V70): surface handed to the runtime, N surfaces per output. → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
 V55: ∀ binding discoverable — command palette lists ∀ command + its key; menus & tooltips show binding from keymap, ⊥ hardcoded string.
@@ -722,6 +724,9 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
+T192|.|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
+T193|.|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
 T188|.|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
 T189|.|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
 T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
@@ -799,7 +804,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 1 — 4 tracks
 | track | tasks | owns |
 |---|---|---|
-| A design system + shell | T2 T3 T5 T4 T6 | `src/ui/**` `src/app/**` |
+| A design system + shell | T2 T3 T5 T4 T6 T191 T192 T193 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
