@@ -578,6 +578,7 @@ V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministi
 V90: help = ON DEMAND, ⊥ ambient. inline text ∈ a control row limited to: label, value, unit, state badge. ∀ explanation → hover|focus|tooltip|`?` handle. a node has 10-15 params — a sentence under each buries the values the user came to read, is read once, then permanently ∈ the way. text ⊥ lost: reachable by hover, focus & screen reader.
 V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's purpose, ⊥ its implementation. "CodeMirror 6 mounts here" teaches a user nothing actionable. hint ? only when the next ACTION is genuinely non-obvious.
 V92: ⊥ decorative prose ∈ chrome — ⊥ taglines, ⊥ "Tip:", ⊥ restating a label in a sentence. if a label needs a sentence, the LABEL is wrong. dense pro tool: imagery = hero, chrome competes w/ it (§C).
+V98: a port type = a STATIC CLAIM a dynamic parameter ⊥ break. kernel node's output port advertises `position: vec3f` ∈ its provides set; the attributes JSON param ⊥ remove it, enforced @ schema validation. custom schemas otherwise free. else a graph type-checks @ edit time and the producer silently stops providing what the edge promised.
 V93: node|component|example = 3 libraries, 3 verbs — add | instantiate | OPEN. ⊥ one merged browser: open REPLACES the document, and a destructive verb ⊥ sit one click from additive ones. open ! confirm when dirty; add|instantiate ⊥ confirm (undoable).
 V94: a shipped component = the SAME `GraphComponentDefinition` a user saves (V79). ⊥ a privileged format — else the shipped set stops being a worked example of the thing users make.
 V95: ∀ pane relocatable — dock zone left|right|bottom|center, or FLOAT (own window). ⊥ pane hardcoded to a slot. arrangement persisted ∈ localStorage (V18), ⊥ ∈ project doc. shader editor forced to the bottom dock = the specific complaint; the general rule is the fix.
@@ -724,6 +725,7 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
 T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
 T192|.|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
 T193|.|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
@@ -831,7 +833,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
