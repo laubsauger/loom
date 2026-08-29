@@ -12,10 +12,12 @@ import { temporalNodes } from "./feedback.ts";
 import { pointNodeDefinitions } from "./points.ts";
 import { nullNode } from "./null-node.ts";
 import { valueNodeDefinitions } from "./values.ts";
+import { analyzeNode } from "./analyze.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
+export { analyzeNode, ANALYZE_RESULT_KEY } from "./analyze.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
 export { outputNode } from "./output.ts";
 export { isSinkNode, SINK_TAG } from "./sink.ts";
@@ -30,6 +32,7 @@ export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./col
 export { blurNode, displaceNode, filterNodes } from "./filters.ts";
 export {
   compositeNode,
+  crossNode,
   overNode,
   addNode,
   multiplyNode,
@@ -68,6 +71,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...pointNodeDefinitions,
   nullNode,
   ...valueNodeDefinitions,
+  analyzeNode,
 ];
 
 /**

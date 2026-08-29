@@ -6,6 +6,7 @@ import {
   addNode,
   compositeNode,
   compositeNodes,
+  crossNode,
   differenceNode,
   maskNode,
   multiplyNode,
@@ -35,6 +36,7 @@ describe("compositing nodes (T40)", () => {
     expect(createNodeRegistry(compositeNodes).list().map((d) => d.type)).toEqual([
       "add",
       "composite",
+      "cross",
       "difference",
       "mask",
       "multiply",
@@ -89,6 +91,32 @@ describe("compositing nodes (T40)", () => {
       // The named nodes exist to be self-documenting; giving them a menu would make them
       // Composite with extra steps.
       for (const node of blendNodes) expect(node.parameters["operation"]).toBeUndefined();
+    });
+  });
+
+  describe("Cross (T234)", () => {
+    it("is not an operation in Composite's menu", () => {
+      // The design claim, pinned so it is not "tidied up" later by someone who notices
+      // Cross looks like a blend. Every entry in that menu is a fixed function of two
+      // pixels; Cross is a function of two pixels AND a factor, and the factor is the
+      // reason you reach for it. In the menu it would need a control none of its
+      // neighbours have.
+      const operation = compositeNode.parameters["operation"];
+      const options = operation?.type === "enum" ? operation.options : [];
+      expect(options.map((option) => option.value)).not.toContain("cross");
+      expect(crossNode.parameters["cross"]).toBeDefined();
+    });
+
+    it("passes the factor as a uniform rather than specialising the shader", () => {
+      // The opposite call from `operation` (§V141), and for the opposite reason: this one
+      // is meant to be animated every frame, so it must stay on §V5's uniform-only path.
+      expect(crossNode.parameters["cross"]?.compileTime).toBeUndefined();
+      expect(firstPass(crossNode, { cross: 0.25 }).uniforms).toEqual({ cross: 0.25 });
+    });
+
+    it("inherits resolution and format from input 1, so a dissolve does not resize", () => {
+      expect(crossNode.resolutionPolicy).toEqual({ kind: "inherit", input: "in1" });
+      expect(crossNode.formatPolicy).toEqual({ kind: "inherit", input: "in1" });
     });
   });
 

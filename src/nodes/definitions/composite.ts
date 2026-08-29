@@ -5,6 +5,7 @@ import { missingCompileResource, readCompileInputs } from "./compile-context.ts"
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
   ADD_FRAGMENT_WGSL,
+  CROSS_FRAGMENT_WGSL,
   DIFFERENCE_FRAGMENT_WGSL,
   MASK_FRAGMENT_WGSL,
   MULTIPLY_FRAGMENT_WGSL,
@@ -204,6 +205,79 @@ export const compositeNode = blendNode(
 );
 
 /**
+ * Cross — dissolve between two inputs (T234). TD's Cross TOP.
+ *
+ * Not an entry in Composite's operation menu, deliberately. Every operation in that menu is
+ * a fixed function of two pixels; Cross is a function of two pixels AND a factor, and the
+ * factor is the whole point — it is what you drive to dissolve one chain into another. In
+ * the menu it would need a control none of its neighbours have, and the control would be
+ * the reason you picked it.
+ *
+ * Resolution and format inherit `in1` like the rest of the family, so a Cross does not
+ * change size halfway through a dissolve.
+ */
+export const crossNode: NodeDefinition = {
+  type: "cross",
+  version: 1,
+  title: "Cross",
+  category: "composite",
+  description: "Dissolves between two inputs by a factor. TD Cross TOP.",
+  inputs: [
+    {
+      id: "in1",
+      label: "Input 1",
+      type: RGBA_TEXTURE,
+      description: "Shown at Cross 0. Resolution and format come from here.",
+    },
+    { id: "in2", label: "Input 2", type: RGBA_TEXTURE, description: "Shown at Cross 1." },
+  ],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    cross: {
+      type: "number",
+      label: "Cross",
+      default: 0.5,
+      min: 0,
+      max: 1,
+      description: "0 is input 1, 1 is input 2. Drive this to dissolve.",
+    },
+  },
+  resolutionPolicy: { kind: "inherit", input: "in1" },
+  formatPolicy: { kind: "inherit", input: "in1" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const first = inputs["in1"];
+    const second = inputs["in2"];
+    if (target === undefined || first === undefined || second === undefined) {
+      const what =
+        target === undefined
+          ? 'output port "out"'
+          : first === undefined
+            ? 'input port "in1"'
+            : 'input port "in2"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:cross`,
+      shader: CROSS_FRAGMENT_WGSL,
+      target,
+      textures: [
+        { binding: "frontTexture", resourceId: first.resource },
+        { binding: "backTexture", resourceId: second.resource },
+      ],
+      samplers: [{ binding: "inputSampler", resourceId: first.sampler }],
+      uniformBinding: "params",
+      uniforms: { cross: readNumber(parameters, "cross", 0.5) },
+      nodeId,
+      label: "Cross",
+    };
+    return { passes: [pass] };
+  },
+};
+
+/**
  * Mask — multiply an image's coverage by a mask.
  *
  * COLOUR (§V56/§V57): `mask` is DATA — a coverage value, not light. One of its channels
@@ -279,6 +353,7 @@ export const maskNode: NodeDefinition = {
 /** The compositing group, in library order. */
 export const compositeNodes: readonly NodeDefinition[] = [
   compositeNode,
+  crossNode,
   overNode,
   addNode,
   multiplyNode,

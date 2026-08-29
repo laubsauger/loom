@@ -45,6 +45,7 @@ describe("core catalogue (T70, T40)", () => {
       "blur",
       "displace",
       "composite",
+      "cross",
       "over",
       "add",
       "multiply",
@@ -59,6 +60,7 @@ describe("core catalogue (T70, T40)", () => {
       "lfo",
       "constant",
       "timer",
+      "analyze",
     ]);
   });
 

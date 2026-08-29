@@ -72,6 +72,35 @@ export const SCREEN_FRAGMENT_WGSL = blendFragmentWgsl(
 export const DIFFERENCE_FRAGMENT_WGSL = blendFragmentWgsl(`abs(front - back)`);
 
 /**
+ * Cross — dissolve between two inputs by a factor (T234). TD's Cross TOP.
+ *
+ * Deliberately NOT one of the Composite operations. Every entry in that menu is a fixed
+ * function of two pixels; Cross is a function of two pixels AND a parameter, and that
+ * parameter is the entire point — it is the thing you animate to dissolve between two
+ * chains. Putting it in the menu would give it a control the other operations do not have
+ * and hide the one thing it is for.
+ *
+ * `cross` is 0 at input 1 and 1 at input 2, matching TD. A straight `mix` across RGBA is
+ * right here even though the arithmetic operators are per-channel by convention: a
+ * dissolve interpolates coverage as well as colour, so a transparent image crossing into
+ * an opaque one becomes progressively more opaque.
+ */
+export const CROSS_FRAGMENT_WGSL = `struct Params {
+  cross: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var frontTexture: texture_2d<f32>;
+@group(0) @binding(3) var backTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let a = textureSampleLevel(frontTexture, inputSampler, uv, 0.0);
+  let b = textureSampleLevel(backTexture, inputSampler, uv, 0.0);
+  return mix(a, b, clamp(params.cross, 0.0, 1.0));
+}`;
+
+/**
  * Mask — multiply an image's coverage by a mask channel.
  *
  * The mask input is DATA: a coverage value, not light. It is read from one channel and
