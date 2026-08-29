@@ -1,0 +1,68 @@
+/* Timeline readout (T265). Numerics are monospace, like every other number in the app. */
+.readout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.label {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: lowercase;
+}
+
+.value {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: right;
+}
+
+/* Editable, so it reads as a field rather than as a label (§V19: focus ring, tab order). */
+.input {
+  width: 6ch;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.input:hover {
+  border-color: var(--line-hot);
+}
+
+.input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.input[readonly] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.glyph {
+  font-size: var(--fs-micro);
+  line-height: 1;
+}

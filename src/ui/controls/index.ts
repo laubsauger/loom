@@ -9,20 +9,28 @@
 export type { EditPhase, NumericSpec, ValueListener } from "./types.ts";
 
 export {
+  DECADE_LADDER,
   DRAG_MODIFIER_FACTOR,
   DRAG_THRESHOLD_PX,
   PIXELS_PER_DECADE,
   PIXELS_PER_STEP,
   clampToRange,
+  decadeForModifier,
+  decadeIndex,
   decimalsFor,
+  decimalsForDecade,
+  defaultDecade,
   describeRange,
   dragModifierFrom,
+  formatDecade,
   formatNumber,
+  normalizeAtDecade,
   normalizeValue,
   nudge,
   quantize,
   rangeFraction,
   roundToDecimals,
+  shiftDecade,
   stepFor,
   valueFromDrag,
 } from "./drag-math.ts";
@@ -76,3 +84,21 @@ export type { AssetFieldProps, CurveFieldProps, CurvePoint } from "./curve-field
 
 export { ParameterControl } from "./parameter-control.tsx";
 export type { ParameterControlProps } from "./parameter-control.tsx";
+
+export {
+  MODE_GLYPHS,
+  MODE_LABELS,
+  MODE_ORDER,
+  MODE_PAYLOAD_LABELS,
+  bindingFromText,
+  holdsRetainedValue,
+  isParameterSlot,
+  payloadText,
+  slotOf,
+  withBinding,
+  withMode,
+  withStaticValue,
+} from "./parameter-slot.ts";
+
+export { ParameterModePanel } from "./parameter-mode.tsx";
+export type { ParameterModePanelProps } from "./parameter-mode.tsx";

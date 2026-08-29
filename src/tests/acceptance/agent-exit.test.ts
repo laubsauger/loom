@@ -3,9 +3,11 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createAgentToolSurface } from "../../agent/index.ts";
 import type { AgentToolSurface } from "../../agent/surface.ts";
 import type { AgentPorts, AgentRuntimeMetrics, PreviewExport, ToolResult } from "../../agent/types.ts";
+import { registerCompileCommand } from "../../app/compile-command.ts";
+import type { CompileReport } from "../../app/compile-command.ts";
 import { compileGraph } from "../../compiler/index.ts";
 import type { CompiledGraph } from "../../compiler/index.ts";
-import { createDomainBus } from "../../domain/commands/index.ts";
+import { attachStateSources, createDomainBus } from "../../domain/commands/index.ts";
 import type { ShaderloomBus } from "../../domain/commands/bus.ts";
 import type { HistorySummary } from "../../domain/commands/graph-commands.ts";
 import { createSequentialIdFactory } from "../../domain/graph/ids.ts";
@@ -16,6 +18,7 @@ import type { Actor, AuditEntry } from "../../domain/types/commands.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
+import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { ShaderloomBackend } from "../../runtime/backend/index.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
@@ -50,12 +53,13 @@ import { pocSettings } from "./poc-graph.ts";
  * reads UNAVAILABLE rather than zero — and that is what is asserted. A test asserting
  * `frameGpuMs >= 0` would pass against a product that made the number up.
  *
- * ## What this file is NOT wired to
+ * ## What this file gates, and what it does not
  *
- * `createAgentToolSurface` has no caller anywhere in `src/app/**` — see the finding in the
- * `compile` test below. The surface is assembled here the way a composition root would
- * have to assemble it, so what is gated is the SURFACE's ability to do the job, not the
- * shipped application's.
+ * The surface is assembled here the way the composition root assembles it, so what is
+ * gated is the SURFACE's ability to do the job. That it is also CONSTRUCTED by the
+ * running app — B12, closed by T220 — is asserted where it belongs, in
+ * `src/tests/integration/composition-wiring.test.tsx`, because only a mounted app can
+ * show it.
  */
 
 const AGENT: Actor = { kind: "agent", id: "claude", label: "Claude" };
@@ -76,6 +80,7 @@ function requireDawn(): void {
 interface Fixture {
   readonly bus: ShaderloomBus;
   readonly store: GraphStore;
+  readonly registry: NodeRegistryView;
   readonly surface: AgentToolSurface;
 }
 
@@ -87,7 +92,7 @@ function fixture(ports: AgentPorts = {}): Fixture {
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const { bus } = createDomainBus({ store, registry });
   const surface = createAgentToolSurface({ bus, actor: AGENT, projectId: "acceptance", ports });
-  return { bus, store, surface };
+  return { bus, store, registry, surface };
 }
 
 /**
@@ -224,36 +229,63 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
   });
 
   /**
-   * ## FAILING CLAUSE — the agent cannot compile
+   * T62 says the agent "compiles" — and until T220 it could not.
    *
-   * T62 says the agent "compiles". `compile_project` is declared and reports itself
-   * `unavailable`: it needs a `project.compile` bus command and nothing registers one.
-   * That is a REASONED gap, not an oversight — `src/domain/commands/validate-command.ts`
-   * explains at length why compiling cannot live in the domain layer (it needs
-   * `ProjectSettings` and a live `BackendCapabilities` report, plus the root's retained-plan
-   * and recompile scheduling), and registers `project.validate` instead, which the test
-   * above now exercises.
+   * `compile_project` was declared, named the `project.compile` command it needed, and
+   * reported itself `unavailable`, which was the honest behaviour for the tool and a
+   * failing clause for the criterion. The reasoning in
+   * `src/domain/commands/validate-command.ts` for why compiling cannot live in the domain
+   * layer still stands: it needs `ProjectSettings`, a LIVE `BackendCapabilities` report,
+   * and the retained-plan scheduling the composition root owns. So the command was
+   * registered where the compile already happens — `src/app/compile-command.ts`, driven
+   * by `useGraphCompile` — and this test wires it exactly as that hook does.
    *
-   * The consequence for THIS criterion stands regardless of the reasoning: an agent
-   * cannot compile through the tool surface, so it cannot see whether the graph it just
-   * built produces a plan, and the same is true of `play` / `pause`. The fix belongs in
-   * the composition root, which already owns the compile in `use-graph-compile.ts` and
-   * has only to register it as a command.
-   *
-   * Left red on purpose. Reporting `unavailable` honestly is the right behaviour for the
-   * tool; it is the missing command that fails the criterion.
+   * The two things that would make this a false pass are both closed here. The device
+   * report is REAL (Dawn), not a hand-written capability object, because compiling
+   * validates formats against the device (§V51). And the compile is asked for AFTER the
+   * patch: the handler reads the store at call time rather than returning whatever plan
+   * the UI last rendered, so an agent that edits and then compiles sees its own edit.
    */
   it("compiles the graph it just built, through the bus", async () => {
-    const { surface } = fixture();
-    const info = surface.describeTool("compile_project");
-    expect(
-      info?.available,
-      "compile_project has no command behind it — see the FAILING CLAUSE note above",
-    ).toBe(true);
+    requireDawn();
+    const backend: ShaderloomBackend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      const capabilities: BackendCapabilities = await backend.initialize({});
+      const { bus, store, registry, surface } = fixture();
 
-    const compiled = await surface.callTool("compile_project", {});
-    expect(compiled.status).toBe("ok");
-  });
+      // What `useGraphCompile` does on mount: one compile path, on the bus.
+      const holder = registerCompileCommand(bus);
+      holder.current = {
+        compileNow: () => {
+          const compiled = compileGraph({
+            graph: store.view.getGraph(),
+            settings: pocSettings(),
+            registry,
+            capabilities,
+          });
+          return { compiled, diagnostics: compiled.diagnostics };
+        },
+      };
+
+      expect(
+        surface.describeTool("compile_project")?.available,
+        "compile_project has no command behind it",
+      ).toBe(true);
+
+      await surface.callTool("apply_graph_patch", threeNodePatch(store.view.getRevision()));
+      const report = expectOk(await surface.callTool("compile_project", {})) as CompileReport;
+
+      expect(report.compiled).toBe(true);
+      expect(report.ok).toBe(true);
+      // The plan is of the graph the agent just built — three nodes, one output — and not
+      // an empty plan from before the patch.
+      expect(report.nodeCount).toBe(3);
+      expect(report.passCount).toBeGreaterThan(0);
+      expect(report.outputs.length).toBeGreaterThan(0);
+    } finally {
+      backend.dispose();
+    }
+  }, 60_000);
 
   it("renders a preview of what it built, through the export interface (§V48)", async () => {
     requireDawn();
@@ -357,30 +389,28 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
       const store = createGraphStore({ ids: createSequentialIdFactory("n"), now: () => "t" });
       const { bus } = createDomainBus({ store, registry });
 
-      const surface = createAgentToolSurface({
-        bus,
-        actor: AGENT,
-        projectId: "acceptance",
-        ports: {
-          metrics: {
-            getMetrics(): AgentRuntimeMetrics {
-              const snapshot = hub.snapshot();
-              return {
-                timingAvailable: snapshot.timingAvailable,
-                framesRendered: snapshot.framesRendered,
-                lastFrameIndex: snapshot.lastFrameIndex,
-                frameGpuMs: snapshot.frame.gpuMs,
-                passCount: snapshot.plan?.passes.length ?? 0,
-                nodeCount: snapshot.plan?.nodeCount ?? 0,
-                prunedCount: snapshot.plan?.prunedCount ?? 0,
-                estimatedResourceBytes: snapshot.plan?.estimatedResourceBytes ?? null,
-                memoryBudgetBytes: snapshot.plan?.memoryBudgetBytes ?? null,
-                overBudget: snapshot.overBudget,
-              };
-            },
-          },
+      // T175: the telemetry hub attaches a READ SOURCE and the bus publishes it as the
+      // `runtime.metrics` query — the same thing the composition root does. An injected
+      // port would have worked in-tab only.
+      attachStateSources(bus, {
+        metrics: (): AgentRuntimeMetrics => {
+          const snapshot = hub.snapshot();
+          return {
+            timingAvailable: snapshot.timingAvailable,
+            framesRendered: snapshot.framesRendered,
+            lastFrameIndex: snapshot.lastFrameIndex,
+            frameGpuMs: snapshot.frame.gpuMs,
+            passCount: snapshot.plan?.passes.length ?? 0,
+            nodeCount: snapshot.plan?.nodeCount ?? 0,
+            prunedCount: snapshot.plan?.prunedCount ?? 0,
+            estimatedResourceBytes: snapshot.plan?.estimatedResourceBytes ?? null,
+            memoryBudgetBytes: snapshot.plan?.memoryBudgetBytes ?? null,
+            overBudget: snapshot.overBudget,
+          };
         },
       });
+
+      const surface = createAgentToolSurface({ bus, actor: AGENT, projectId: "acceptance" });
 
       await surface.callTool("apply_graph_patch", threeNodePatch(store.view.getRevision()));
       const plan = compileGraph({

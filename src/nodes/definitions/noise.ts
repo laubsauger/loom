@@ -1,4 +1,5 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
+import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { hashSeed } from "../../domain/rng/rng.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -58,6 +59,24 @@ import { NOISE_FRAGMENT_WGSL, NOISE_TYPE_OPTIONS } from "../shaders/noise.wgsl.t
  * ordering of three axis rotations would be a control that changes nothing. It belongs
  * with a genuinely 3D noise transform, not with this one.
  */
+/**
+ * §V146 / B14 — the noise types that actually HAVE a fourth dimension.
+ *
+ * `baseNoise` switches on the type and samples `q.xy` for the 2D ones, `q.xyz` for the
+ * 3D ones, and the whole `vec4` only for Perlin 4D and Random. `w` is where `t4d`, `s4d`
+ * and `Time Speed` live, so on every other type the shader discards them — silently, and
+ * `perlin2d` is the DEFAULT. A user who adds a Noise, sets Time Speed and presses play
+ * gets a still image having done everything right; the reason has to be visible on the
+ * control rather than left for them to deduce.
+ */
+const FOUR_DIMENSIONAL = new Set(["perlin4d", "random"]);
+
+function fourthDimensionMissing(values: Readonly<Record<string, ParameterValue>>): string | null {
+  const type = values["type"];
+  if (typeof type !== "string" || FOUR_DIMENSIONAL.has(type)) return null;
+  return "This noise type samples a 2D or 3D slice, which has no fourth dimension to move along. Choose Perlin 4D or Random to use it.";
+}
+
 export const noiseNode: NodeDefinition = {
   type: "noise",
   version: 1,
@@ -220,12 +239,14 @@ export const noiseNode: NodeDefinition = {
       default: 0,
       group: "Transform",
       description: "Position along the fourth dimension. Only the 4D types read it.",
+      inactiveWhen: fourthDimensionMissing,
     },
     s4d: {
       type: "number",
       label: "Scale 4D",
       default: 1,
       group: "Transform",
+      inactiveWhen: fourthDimensionMissing,
     },
     speed: {
       type: "number",
@@ -237,6 +258,7 @@ export const noiseNode: NodeDefinition = {
       group: "Transform",
       description:
         "Not a TD parameter. Advances Translate 4D from FrameEvaluationInput until parameter expressions can bind time themselves (§V61).",
+      inactiveWhen: fourthDimensionMissing,
     },
   },
   resolutionPolicy: { kind: "project" },

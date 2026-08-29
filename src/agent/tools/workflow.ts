@@ -5,16 +5,19 @@ import type { AgentTool, ToolStatus } from "../types.ts";
 /**
  * Workflow tools (T57, §I.tools).
  *
- * Three of the five have NO command behind them today, and they say so rather than
+ * `play` and `pause` have NO command behind them today, and they say so rather than
  * pretending. Each names the command it needs, so `list_tools` reads as a to-do list for
  * the tracks that own those surfaces instead of as a working feature that quietly does
- * nothing:
+ * nothing: `transport.play` / `transport.pause` have been named by the keymap since T77
+ * and report unresolved (the frame loop registers `transport.togglePlay`, which is one
+ * command for two tool verbs — resolving that is the transport owner's call, not a place
+ * for this adapter to invent a mapping).
  *
- *  - `compile_project`  → `project.compile`. Compile wiring belongs to the composition
- *    root, which owns retained-plan and recompile scheduling (§V9); registering it here
- *    would be a second compile path, which §V39 forbids.
- *  - `play` / `pause`   → `transport.play` / `transport.pause`. The keymap has named
- *    these since T77 and reports them unresolved; there is no frame-loop owner yet.
+ * `compile_project` is real since T220: `project.compile` is registered by the
+ * composition root, which is the only place that has `ProjectSettings`, a live
+ * `BackendCapabilities` report and the retained-plan scheduling a compile needs (§V9).
+ * Registering it HERE would have been a second compile path, which §V39 forbids — so the
+ * tool waited for the command rather than growing an implementation of its own.
  *
  * `save_project` is real: `project.save` is registered by the composition root, and it
  * writes a file, so it is gated behind the `localFile` capability (§V38).
@@ -62,12 +65,30 @@ export const validateProject: AgentTool<EmptyInput, unknown> = {
   },
 };
 
-export const compileProject = unavailableTool(
-  "compile_project",
-  "project.compile",
-  "Compile project",
-  "Compile the graph to an execution plan and report its diagnostics. Requires a project.compile command, which is not registered.",
-);
+/**
+ * Real since the composition root registered `project.compile` (T220,
+ * `src/app/compile-command.ts`) — the adapter projects one command's result and owns no
+ * compiler of its own.
+ */
+export const compileProject: AgentTool<EmptyInput, unknown> = {
+  name: "compile_project",
+  title: "Compile project",
+  description:
+    "Compile the graph to an execution plan and report its passes, resolved outputs and diagnostics.",
+  kind: "workflow",
+  inputSchema: emptyInput,
+  requires: { commands: ["project.compile"] },
+  capabilities: [],
+  mutates: false,
+  run: async (_input, runtime) => {
+    const dispatched = await runtime.execute<unknown>("project.compile", {});
+    const status: ToolStatus = dispatched.status === "applied" ? "ok" : "rejected";
+    return result<unknown>("compile_project", status, dispatched.output, {
+      diagnostics: dispatched.diagnostics,
+      revision: dispatched.revision,
+    });
+  },
+};
 
 export const play = unavailableTool(
   "play",

@@ -89,3 +89,69 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let source = select(tile, mirrored, params.mirror > vec2f(0.5));
   return textureSampleLevel(inputTexture, inputSampler, source, 0.0);
 }`;
+
+/**
+ * Flip — exact axis reversal (T242). TD's Flip TOP.
+ *
+ * Transform can already flip with a negative scale, so this exists for two reasons that
+ * are not "convenience". It is EXACT: reversing a coordinate lands on texel centres, where
+ * a -1 scale runs the image through the sampler's filter and softens it very slightly every
+ * time. And it is what someone looks for — nobody reaches for "scale x to -1" when they
+ * want a mirror image, so a Transform-only answer is a discoverability failure rather than
+ * a feature.
+ *
+ * `swap` transposes x and y, which is the half of a 90 degree rotation that costs nothing.
+ * Combined with a flip it gives all four rotations without a matrix or a resample.
+ */
+export const FLIP_FRAGMENT_WGSL = `struct Params {
+  flip: vec2f,
+  swap: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let swapped = select(uv, uv.yx, params.swap > 0.5);
+  let source = select(swapped, vec2f(1.0) - swapped, params.flip > vec2f(0.5));
+  return textureSampleLevel(inputTexture, inputSampler, source, 0.0);
+}`;
+
+/**
+ * Mirror — fold the image about a pivot, so one half replaces the other (T242).
+ *
+ * Distinct from Tile's mirror flags, which mirror alternate REPEATS to make a tiling
+ * seamless. This folds the image itself, at a pivot you choose, on either axis — the
+ * operation behind kaleidoscopes, symmetric masks, and making a hand-drawn shape symmetric
+ * without drawing both sides.
+ *
+ * `pivot - abs(u - pivot)` maps both sides of the pivot onto the LOW side; adding instead
+ * of subtracting keeps the high side. That is the whole operation, and the reason it reads
+ * as one line is that a fold IS an absolute value about a point.
+ *
+ * Folded coordinates leave [0,1] whenever the pivot is off centre — at pivot 0.2 the far
+ * edge maps to -0.6 — so this samples through the shared extend helper rather than
+ * pretending the range is safe.
+ */
+export const MIRROR_FRAGMENT_WGSL = `${WGSL_EXTEND}
+
+struct Params {
+  pivot: vec2f,
+  axis: vec2f,
+  keepHigh: f32,
+  extend: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let folded_low = params.pivot - abs(uv - params.pivot);
+  let folded_high = params.pivot + abs(uv - params.pivot);
+  let folded = select(folded_low, folded_high, params.keepHigh > 0.5);
+  // Per axis: fold only where the node was asked to.
+  let source = select(uv, folded, params.axis > vec2f(0.5));
+  return sampleExtend(inputTexture, inputSampler, source, params.extend);
+}`;

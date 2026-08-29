@@ -8,6 +8,7 @@ import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "../domain/components/index.ts";
 import type { ComponentSource } from "./flatten.ts";
 import type { PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
+import type { ParameterResolution } from "./validate.ts";
 import type { ColorSpace } from "./color-space.ts";
 
 /**
@@ -44,6 +45,17 @@ export interface CompileRequest {
   readonly settings: ProjectSettings;
   readonly registry: NodeRegistryView;
   readonly capabilities: BackendCapabilities;
+  /**
+   * The frame this compilation resolves parameters AT, and how it reads driven channels
+   * (T259, §V163). Omitted — the normal, structural case — every animated parameter
+   * resolves at its zero-frame value, exactly as before.
+   *
+   * Supplied, the plan that comes back differs from the structural one ONLY in its pass
+   * uniform VALUES: same nodes, same passes, same resources, same signatures. That is
+   * what lets the caller push it with `updateUniforms` instead of recompiling, which is
+   * the whole of §V5 and the reason an animated graph does not rebuild at 60 Hz.
+   */
+  readonly resolution?: ParameterResolution;
   /**
    * Explicit sinks. Nodes that exist only for their side effect (no declared outputs) are
    * always added to this set — a side-effect node is never pruned (§V25).

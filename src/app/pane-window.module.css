@@ -1,0 +1,19 @@
+/* The child window's own chrome (T192). Tokens only (§V17): the parent's stylesheets are
+   cloned into this document, so `:root` carries the same variables it does in the app. */
+.body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-void);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+}
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-panel);
+}

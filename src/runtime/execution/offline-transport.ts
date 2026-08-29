@@ -28,13 +28,20 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
     next(): FrameEvaluationInput {
       const current = frameIndex;
       frameIndex += 1;
+      const timeSeconds = current / options.fps;
+      const step = current === startFrame ? 0 : deltaSeconds;
       return {
         // Divided, not accumulated: frame N always lands on exactly N/fps.
-        timeSeconds: current / options.fps,
-        deltaSeconds: current === startFrame ? 0 : deltaSeconds,
+        timeSeconds,
+        deltaSeconds: step,
         frameIndex: current,
         mode,
         randomSeed: seed,
+        // T271/§V44: an offline render has no wall clock, and inventing one would make
+        // the same sequence irreproducible the moment an expression read it. Wall time
+        // here IS the timeline.
+        wallSeconds: timeSeconds,
+        wallDeltaSeconds: step,
       };
     },
     reset(nextSeed?: number): void {

@@ -26,7 +26,7 @@ export {
   validateRequiredInputs,
   isTemporalOutput,
 } from "./validate.ts";
-export type { ResolvedNode, ValidatedGraph } from "./validate.ts";
+export type { ParameterResolution, ResolvedNode, ValidatedGraph } from "./validate.ts";
 
 export { orderNodes } from "./topology.ts";
 export type { TopologyResult } from "./topology.ts";

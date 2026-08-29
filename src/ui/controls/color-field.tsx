@@ -40,6 +40,11 @@ export interface ColorFieldProps {
   value: readonly number[];
   definition: ColorParameter;
   disabled?: boolean;
+  /**
+   * Per-channel availability (§V113): `color.g` running an expression is not draggable,
+   * because its own slot decides it and the swatch does not.
+   */
+  componentDisabled?: readonly boolean[];
   describedBy?: string;
   onChange: ValueListener<readonly number[]>;
 }
@@ -49,6 +54,7 @@ export function ColorField({
   value,
   definition,
   disabled = false,
+  componentDisabled,
   describedBy,
   onChange,
 }: ColorFieldProps) {
@@ -119,7 +125,7 @@ export function ColorField({
                   value={shown[index] ?? 0}
                   defaultValue={defaults[index] ?? 0}
                   spec={channelSpec(index)}
-                  disabled={disabled}
+                  disabled={disabled || componentDisabled?.[index] === true}
                   onChange={(next, phase) => setChannel(index, next, phase)}
                 />
               </div>

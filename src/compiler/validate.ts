@@ -6,6 +6,7 @@ import type { ParameterSchema, ParameterValue } from "../domain/types/parameters
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
 import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
+import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
 import { isComponentKeyOf } from "../domain/parameters/slots.ts";
 import type { ResolvedParameters } from "../domain/parameters/resolve.ts";
@@ -19,6 +20,18 @@ import type { CompileEdge } from "./types.ts";
  * Everything here is a rejection with a diagnostic, never a throw: a project with one bad
  * edge still compiles the rest of itself, and the user gets told exactly which edge.
  */
+
+/**
+ * What a resolution needs to know about the moment it is resolving AT (T259, §V163).
+ *
+ * Empty for a structural compile, which is the common case and resolves every animated
+ * parameter at its zero-frame value. A per-frame values-only pass supplies both: the
+ * frame an expression reads `time` from, and the channel resolver a `driven` parameter
+ * reads its LFO through. Nothing else about the compile changes — same graph, same
+ * topology, same resources — so the resulting plan differs only in its uniform VALUES,
+ * which is what makes the update path `updateUniforms` rather than a recompile (§V5).
+ */
+export type ParameterResolution = Pick<ResolveParametersOptions, "frame" | "channels">;
 
 export interface ResolvedNode {
   readonly node: GraphNode;
@@ -76,8 +89,9 @@ export function resolveNodeParameters(
   parameters: ParameterSchema,
   typeLabel: string,
   diagnostics: RuntimeDiagnostic[],
+  options: ParameterResolution = {},
 ): ResolvedParameters {
-  const resolved = resolveParameterSchema(node, parameters);
+  const resolved = resolveParameterSchema(node, parameters, options);
 
   // §V110 belt-and-braces: the patch gate refuses cycles at write time, but a document
   // can arrive from a file. Surfacing them here keeps compile the second line, and the
@@ -120,8 +134,9 @@ export function resolveParameterValues(
   parameters: ParameterSchema,
   typeLabel: string,
   diagnostics: RuntimeDiagnostic[],
+  options: ParameterResolution = {},
 ): Record<string, ParameterValue> {
-  return { ...resolveNodeParameters(node, parameters, typeLabel, diagnostics).values };
+  return { ...resolveNodeParameters(node, parameters, typeLabel, diagnostics, options).values };
 }
 
 /**
@@ -130,7 +145,11 @@ export function resolveParameterValues(
  * Runs over the WHOLE document rather than the pruned subgraph: a miswired branch that
  * nothing renders is still a mistake worth surfacing in the problems tab.
  */
-export function validateGraph(graph: GraphDocument, registry: NodeRegistryView): ValidatedGraph {
+export function validateGraph(
+  graph: GraphDocument,
+  registry: NodeRegistryView,
+  options: ParameterResolution = {},
+): ValidatedGraph {
   const diagnostics: RuntimeDiagnostic[] = [];
   const nodes = new Map<NodeId, ResolvedNode>();
 
@@ -164,7 +183,13 @@ export function validateGraph(graph: GraphDocument, registry: NodeRegistryView):
     nodes.set(nodeId, {
       node,
       definition,
-      parameters: resolveParameterValues(node, definition.parameters, definition.type, diagnostics),
+      parameters: resolveParameterValues(
+        node,
+        definition.parameters,
+        definition.type,
+        diagnostics,
+        options,
+      ),
     });
   }
 

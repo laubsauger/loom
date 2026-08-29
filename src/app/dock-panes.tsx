@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentToolSurface } from "@agent/index.ts";
 import { SHADER_SOURCE_PARAMETER } from "@domain/commands/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { AgentPresencePanel, useAgentPresence } from "@editor/agent/index.ts";
 import { PerformancePanel } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
@@ -10,7 +12,7 @@ import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
 
-/** The bottom dock's two non-trivial tabs: the shader editor and the performance tab. */
+/** The panes that used to be the bottom dock's tabs: shader editor, performance, agent. */
 
 export interface ShaderPaneProps {
   nodeId: NodeId | null;
@@ -227,5 +229,46 @@ function GpuStatusCard({ status }: { status: GpuStatus }) {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * The `agent` pane (T60, T220, §V42).
+ *
+ * §V42: agent activity must be VISIBLE — planning, editing, compiling, awaiting approval
+ * — and invisible background mutation is forbidden. The panel was built and tested and
+ * had no host; this is the host. It reads a snapshot of the presence store the tool
+ * surface writes as it runs, and it is never a producer of tool state: approve, reject
+ * and revert all go back through the surface, which goes through the bus (§V29).
+ */
+export function AgentPane({ surface }: { surface: AgentToolSurface }) {
+  const presence = useAgentPresence(surface.presence);
+  const onApprove = useCallback(
+    (proposalId: string) => {
+      void surface.approve(proposalId);
+    },
+    [surface],
+  );
+  const onReject = useCallback(
+    (proposalId: string) => {
+      surface.reject(proposalId);
+    },
+    [surface],
+  );
+  const onRevert = useCallback(
+    (transactionId: string) => {
+      void surface.revertTransaction(transactionId);
+    },
+    [surface],
+  );
+  return (
+    <div className={styles.viewer}>
+      <AgentPresencePanel
+        presence={presence}
+        onApprove={onApprove}
+        onReject={onReject}
+        onRevert={onRevert}
+      />
+    </div>
   );
 }

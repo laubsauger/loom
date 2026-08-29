@@ -4,7 +4,7 @@ import type { LoadProjectSuccess } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import { registerProjectCommands } from "./project-commands.ts";
-import type { ProjectOpenResult, ProjectSaveResult } from "./project-commands.ts";
+import type { ProjectNewResult, ProjectOpenResult, ProjectSaveResult } from "./project-commands.ts";
 import { readProjectFile, writeProjectFile } from "./project-io.ts";
 import type { OpenOutcome, SaveOutcome } from "./project-io.ts";
 
@@ -35,9 +35,45 @@ export interface ProjectWiringOptions {
   readonly flushAutosave: () => Promise<void>;
   /** Hands the loaded document to whoever can adopt it (see `project-commands.ts`). */
   readonly onDocumentLoaded: (result: LoadProjectSuccess) => void;
+  /**
+   * Starts an empty project (§V165). The root replaces the runtime, exactly as it does
+   * for an open — see `adoptDocument` in `app.tsx`.
+   */
+  readonly onNewProject?: () => void;
+  /**
+   * "Is there unsaved work?" — the one question that makes a destructive verb ask first
+   * (§V93, §V165). Absent, nothing ever asks, which is the wrong default but a truthful
+   * one for a caller that does not track it.
+   */
+  readonly isDirty?: () => boolean;
+  /**
+   * Fired when bytes actually reached a file — not on a cancelled picker.
+   *
+   * The dirty flag (T189) is "the store's revision is above the last one written", and
+   * this is the only moment anything knows what was written. Without it the app errs
+   * toward asking before an open, which is the safe direction but a needless prompt.
+   */
+  readonly onSaved?: () => void;
   /** Test seams for the browser halves. */
   readonly write?: (file: ReturnType<typeof buildProjectFile>) => Promise<SaveOutcome>;
   readonly read?: () => Promise<OpenOutcome>;
+}
+
+/**
+ * A destructive verb waiting on the user (§V166).
+ *
+ * The command is SUSPENDED while this is set: it resolves when one of the three actions
+ * is chosen, so the confirmation belongs to the command and every route through it —
+ * button, hotkey, palette, agent — asks the same question and honours the same answer.
+ */
+export interface PendingConfirm {
+  /** What is about to happen, in the user's words. */
+  readonly action: string;
+  /** Saves, then continues. The primary action (§V166). */
+  save(): void;
+  /** Continues without saving. */
+  discard(): void;
+  cancel(): void;
 }
 
 export interface ProjectWiring {
@@ -46,22 +82,54 @@ export interface ProjectWiring {
   /** Last file written or read, for the top bar. */
   readonly fileName: string | null;
   readonly busy: boolean;
+  /** Non-null while a destructive verb is waiting for the user (§V166). */
+  readonly confirm: PendingConfirm | null;
   save(): void;
   open(): void;
+  /** Starts an empty project, asking first when there is unsaved work (§V165). */
+  create(): void;
   /** Opens bytes we already have — the restore-on-launch path. */
   openText(text: string, fileName?: string): void;
 }
 
 export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): ProjectWiring {
-  const { flushAutosave, onDocumentLoaded, write = writeProjectFile, read = readProjectFile } = options;
+  const {
+    flushAutosave,
+    onDocumentLoaded,
+    onNewProject,
+    isDirty,
+    onSaved,
+    write = writeProjectFile,
+    read = readProjectFile,
+  } = options;
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Read through refs so the registered handlers never go stale without re-registering.
-  const latest = useRef({ runtime, flushAutosave, onDocumentLoaded, write, read });
-  latest.current = { runtime, flushAutosave, onDocumentLoaded, write, read };
+  const latest = useRef({
+    runtime,
+    flushAutosave,
+    onDocumentLoaded,
+    onNewProject,
+    isDirty,
+    onSaved,
+    write,
+    read,
+  });
+  latest.current = {
+    runtime,
+    flushAutosave,
+    onDocumentLoaded,
+    onNewProject,
+    isDirty,
+    onSaved,
+    write,
+    read,
+  };
+
+  const [pending, setPending] = useState<PendingConfirm | null>(null);
 
   const save = useCallback(async (): Promise<ProjectSaveResult> => {
     const { runtime: current, flushAutosave: flush, write: writeFile } = latest.current;
@@ -149,6 +217,32 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     [],
   );
 
+  /**
+   * Asks before a destructive verb throws unsaved work away (§V93, §V165, §V166).
+   *
+   * Returns the user's choice, and RESOLVES the command that is waiting on it — which is
+   * why the confirmation lives here and not on a button. Three outcomes, never two: a
+   * dialog that exists to protect unsaved work must make saving the shortest path through
+   * it, not the longest one (§V166).
+   *
+   * Nothing to lose = nothing to ask. A clean document continues straight through.
+   */
+  const askUnsaved = useCallback((action: string): Promise<"save" | "discard" | "cancel"> => {
+    if (latest.current.isDirty?.() !== true) return Promise.resolve("discard");
+    return new Promise((resolve) => {
+      const settle = (choice: "save" | "discard" | "cancel") => () => {
+        setPending(null);
+        resolve(choice);
+      };
+      setPending({
+        action,
+        save: settle("save"),
+        discard: settle("discard"),
+        cancel: settle("cancel"),
+      });
+    });
+  }, []);
+
   // One registration per bus; the holder is what a remount replaces.
   useEffect(() => {
     const holder = registerProjectCommands(runtime.bus);
@@ -160,12 +254,19 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
           const result = await save();
           setDiagnostics(result.diagnostics);
           if (result.fileName !== null) setFileName(result.fileName);
+          if (result.saved) latest.current.onSaved?.();
           return result;
         } finally {
           setBusy(false);
         }
       },
       async open(input: { text?: string | undefined; fileName?: string | undefined }): Promise<ProjectOpenResult> {
+        // Only the PICKER route asks. `openText` is the restore-a-snapshot path, where
+        // the user has already answered this question by choosing Restore.
+        if (input.text === undefined) {
+          const guard = await confirmDestructive("Open another project");
+          if (guard !== null) return { opened: false, fileName: null, diagnostics: guard };
+        }
         setBusy(true);
         try {
           const result = await open(input);
@@ -176,12 +277,47 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
           setBusy(false);
         }
       },
+      async create(): Promise<ProjectNewResult> {
+        const guard = await confirmDestructive("Start a new project");
+        if (guard !== null) return { created: false, diagnostics: guard };
+        const start = latest.current.onNewProject;
+        if (start === undefined) {
+          return {
+            created: false,
+            diagnostics: [
+              {
+                severity: "error",
+                code: "project.new.unsupported",
+                message: "This surface cannot start a new project.",
+              },
+            ],
+          };
+        }
+        setDiagnostics([]);
+        setFileName(null);
+        start();
+        return { created: true, diagnostics: [] };
+      },
     };
+
+    /**
+     * Runs the §V166 confirmation. Null = go ahead; a diagnostic list = stop, and why.
+     *
+     * "Save and continue" that fails to save STOPS. Continuing anyway would be the exact
+     * outcome the user clicked Save to avoid.
+     */
+    async function confirmDestructive(action: string): Promise<RuntimeDiagnostic[] | null> {
+      const choice = await askUnsaved(action);
+      if (choice === "cancel") return [];
+      if (choice === "discard") return null;
+      const saved = await handlers.save({ saveAs: false });
+      return saved.saved ? null : [...saved.diagnostics];
+    }
     holder.current = handlers;
     return () => {
       if (holder.current === handlers) holder.current = null;
     };
-  }, [open, runtime.bus, save]);
+  }, [askUnsaved, open, runtime.bus, save]);
 
   // §V29: the buttons execute the command; they do not call the handler this hook just
   // registered. Same path as the hotkey, the palette and an agent adapter.
@@ -193,6 +329,10 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
 
   const requestOpen = useCallback(() => {
     void bus.execute("project.open", {}, invocation);
+  }, [bus, invocation]);
+
+  const requestNew = useCallback(() => {
+    void bus.execute("project.new", {}, invocation);
   }, [bus, invocation]);
 
   const requestOpenText = useCallback(
@@ -210,8 +350,10 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     diagnostics,
     fileName,
     busy,
+    confirm: pending,
     save: requestSave,
     open: requestOpen,
+    create: requestNew,
     openText: requestOpenText,
   };
 }

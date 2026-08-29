@@ -17,13 +17,36 @@ declare module "@domain/types/commands.ts" {
     "transport.togglePlay": { input: Record<string, never>; output: { playing: boolean } };
     /** Render exactly `frames` (default 1) frames synchronously. Reports the last frame index. */
     "transport.stepFrame": { input: { frames?: number }; output: { frameIndex: number } };
+    /**
+     * Jump to a frame (T265, §V170).
+     *
+     * Implemented as a REPLAY: the transport is reset, temporal history is cleared, and
+     * the graph is stepped forward to the requested frame. That is the only honest way to
+     * seek a graph with feedback, a Cache or a point simulation — their state is not a
+     * function of frame index, so jumping the counter and leaving the state alone would
+     * show a picture belonging to a different history and look like a working scrub.
+     *
+     * The cost is linear in the target frame, and bounded: past `SEEK_FRAME_LIMIT` the
+     * command reports rather than freezing the tab for a typo.
+     */
+    "transport.seek": { input: { frameIndex: number }; output: { frameIndex: number } };
   }
 }
+
+/**
+ * How far a seek will replay before it refuses (§V170).
+ *
+ * 10 000 frames is ~2.8 minutes of 60 fps material — past anything someone scrubs to by
+ * hand, and low enough that a mistyped `1e9` reports instead of hanging the browser.
+ */
+export const SEEK_FRAME_LIMIT = 10_000;
 
 export interface TransportHandlers {
   isPlaying(): boolean;
   togglePlay(): void;
   stepFrame(frames: number): number;
+  /** Replays from frame 0 to `frameIndex`, clearing temporal state first (§V170). */
+  seek(frameIndex: number): number;
 }
 
 export interface TransportHolder {
@@ -89,6 +112,58 @@ export function registerTransportCommands(bus: ShaderloomBus): TransportHolder {
         const frames = Math.max(1, Math.trunc(input.frames ?? 1));
         const frameIndex = context.dryRun ? -1 : holder.current.stepFrame(frames);
         return { status: "applied", revision: context.store.getRevision(), output: { frameIndex } };
+      },
+      rejectionOutput: () => ({ frameIndex: -1 }),
+    });
+  }
+
+  if (!bus.hasCommand("transport.seek")) {
+    bus.registerCommand({
+      name: "transport.seek",
+      description: "Jump to a frame by replaying from the start (§V170).",
+      handler: (input, context) => {
+        const revision = context.store.getRevision();
+        if (holder.current === null) {
+          return {
+            status: "rejected",
+            revision,
+            diagnostics: [NO_LOOP_DIAGNOSTIC],
+            output: { frameIndex: -1 },
+          };
+        }
+        const target = Math.trunc(input.frameIndex);
+        if (!Number.isFinite(target) || target < 0) {
+          return {
+            status: "rejected",
+            revision,
+            diagnostics: [
+              {
+                severity: "error" as const,
+                code: "transport.seekRange",
+                message: `Frame ${input.frameIndex} is not a frame.`,
+              },
+            ],
+            output: { frameIndex: -1 },
+          };
+        }
+        if (target > SEEK_FRAME_LIMIT) {
+          return {
+            status: "rejected",
+            revision,
+            diagnostics: [
+              {
+                severity: "warning" as const,
+                code: "transport.seekLimit",
+                message: `Seeking to frame ${target} would replay ${target} frames; the limit is ${SEEK_FRAME_LIMIT}.`,
+                suggestion:
+                  "A graph with feedback has no state at a frame it has not reached, so a seek replays rather than jumping.",
+              },
+            ],
+            output: { frameIndex: -1 },
+          };
+        }
+        const frameIndex = context.dryRun ? -1 : holder.current.seek(target);
+        return { status: "applied", revision, output: { frameIndex } };
       },
       rejectionOutput: () => ({ frameIndex: -1 }),
     });

@@ -3,7 +3,7 @@ import type { z } from "zod";
 
 import type { Actor, CapabilityClass, InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
-import type { EdgeId, NodeId, Revision } from "@domain/types/ids.ts";
+import type { Revision } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 
@@ -92,15 +92,14 @@ export interface ToolResult<TData = unknown> {
  * the tool `unavailable` when a port is absent. Each one SHOULD become a bus query so an
  * out-of-process MCP server can reach it too — an injected port only works in-tab.
  */
-export interface SelectionSource {
-  /** Current editor selection. Ids only: selection is view state, not document state. */
-  getSelection(): { readonly nodeIds: readonly NodeId[]; readonly edgeIds?: readonly EdgeId[] };
-}
-
-export interface DiagnosticsSource {
-  /** Current compile + runtime diagnostics, newest last. */
-  listDiagnostics(): readonly RuntimeDiagnostic[];
-}
+/*
+ * Selection, diagnostics and runtime metrics used to be injected ports too. They are bus
+ * QUERIES now (T175, `src/domain/commands/state-queries.ts`): `selection.get`,
+ * `diagnostics.get` and `runtime.metrics`. A port is a reference to the running editor's
+ * own objects and therefore only works in-tab, which is exactly the limitation §V39
+ * rules out for an adapter. What remains below are the two reads the bus genuinely has
+ * no query for, because both hand back BYTES rather than state.
+ */
 
 /**
  * The subset of `TelemetrySnapshot` an agent can act on, restated structurally so
@@ -119,10 +118,6 @@ export interface AgentRuntimeMetrics {
   readonly estimatedResourceBytes: number | null;
   readonly memoryBudgetBytes: number | null;
   readonly overBudget: boolean;
-}
-
-export interface MetricsSource {
-  getMetrics(): AgentRuntimeMetrics;
 }
 
 /** §V60 — an image is bytes plus everything needed to interpret them. */
@@ -181,9 +176,6 @@ export interface PointsExport {
 }
 
 export interface AgentPorts {
-  readonly selection?: SelectionSource | undefined;
-  readonly diagnostics?: DiagnosticsSource | undefined;
-  readonly metrics?: MetricsSource | undefined;
   readonly preview?: PreviewExport | undefined;
   readonly points?: PointsExport | undefined;
 }

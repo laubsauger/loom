@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -9,7 +10,9 @@ import type { InputResolution } from "@editor/inspector/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
+import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
+import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
@@ -128,14 +131,25 @@ export function InspectorPane({
 
   if (unknownHere.length > 0 && nodeId !== null) {
     return (
-      <div className={styles.fill} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}>
+      <div
+        className={styles.scrollFill}
+        data-testid="inspector-scroll"
+        {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
+      >
         <FutureParameters nodeId={nodeId} unknown={unknownHere} />
       </div>
     );
   }
 
+  // `scrollFill`, not `fill`: a node with twenty parameters is taller than the right dock,
+  // and a pane that grows past its dock has its overflow clipped rather than scrolled —
+  // the parameters below the fold simply cannot be reached. See `panes.module.css`.
   return (
-    <div className={styles.fill} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}>
+    <div
+      className={styles.scrollFill}
+      data-testid="inspector-scroll"
+      {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
+    >
       <Inspector
         bus={bus}
         context={invocation}
@@ -197,22 +211,56 @@ function FutureParameters({
 
 export interface ViewerPaneProps {
   compiled: CompiledGraph | null;
+  /** Needed only to tell a declared Output node from a preview sink — see below. */
+  graph: GraphDocument;
+  /** The live backend, when there is one. The runtime is handed the surface (§V64). */
+  backend?: ShaderloomBackend | null;
 }
 
 /**
- * The viewer (§I.ui).
+ * The viewer (§I.ui, T87/T161, §V64, §V70).
  *
  * A content surface shows content, or names its empty state (§V91, §V92a) — device and
  * build diagnostics (tier, formats, memory, reuse) belong on the performance surface
- * instead, beside the rest of what a person diagnosing cost is already looking at
- * (`PerformancePane`, `dock-panes.tsx`). There is no presentation surface wired to this
- * pane yet (T87/§V64, T161), so what it shows is the outputs the compiler resolved;
- * once previews land here this list is replaced by the pictures, not supplemented.
+ * instead (`PerformancePane`, `dock-panes.tsx`).
+ *
+ * The picture is a presentation surface HANDED to the runtime, never a canvas React
+ * draws into (§V64): `backend.present(canvas, { outputId })` attaches it and the runtime
+ * blits into it with every frame (§V7 — GPU to GPU, no readback). The canvas is never
+ * remounted when the pane moves (T193), so the presentation survives being dragged to
+ * another dock or floated into its own window, which is what §V64's "opening or closing a
+ * pane must not stall the output" requires — and the same seam multi-window perform mode
+ * (T110) is built on.
+ *
+ * Which output: the graph's DECLARED sink, not simply the first resolved output. Every
+ * visible texture node is a preview sink (§V28b), so `compiled.outputs` is the whole
+ * graph; showing its first entry would put an arbitrary intermediate node on the viewer.
+ * With no Output node there is nothing to show, and the pane says so.
  */
-export function ViewerPane({ compiled }: ViewerPaneProps) {
+export function ViewerPane({ compiled, graph, backend = null }: ViewerPaneProps) {
+  const { registry } = useAppRuntime();
+
+  const sink = useMemo(() => {
+    for (const output of compiled?.outputs ?? []) {
+      const type = graph.nodes[output.nodeId]?.type;
+      const definition = type === undefined ? undefined : registry.get(type);
+      if (definition !== undefined && isDeclaredSink(definition)) return output;
+    }
+    return null;
+  }, [compiled, graph, registry]);
+
+  const { canvasRef } = useOutputPresentation(backend, sink?.resourceId ?? null);
   const outputs = compiled?.outputs ?? [];
+
   return (
     <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
+      <div className={styles.surface} data-testid="viewer-surface">
+        {sink === null ? (
+          <p className={styles.note}>No output</p>
+        ) : (
+          <canvas ref={canvasRef} className={styles.canvas} aria-label="Rendered output" />
+        )}
+      </div>
       <section className={styles.block} aria-label="Resolved outputs">
         <h3 className={styles.blockTitle}>outputs</h3>
         {outputs.length === 0 ? (

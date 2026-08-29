@@ -100,6 +100,16 @@ async function setup(options: { diagnostics?: readonly RuntimeDiagnostic[] } = {
   return { bus, nodeId, node };
 }
 
+/**
+ * T269: Common is a PAGE now, so a Common assertion opens it first, as a user does.
+ * Radix activates a tab on mousedown, which `fireEvent.click` does not synthesise.
+ */
+function openCommon(): void {
+  const tab = screen.getByRole("tab", { name: "Common" });
+  fireEvent.mouseDown(tab, { button: 0 });
+  fireEvent.click(tab);
+}
+
 describe("T38 — manifest-driven inspector", () => {
   it("renders a control for every ParameterDefinition variant the node declares", async () => {
     await setup();
@@ -156,6 +166,7 @@ describe("T73 — the Common section shows what the node will actually produce",
 
   it("halves the readout when the user picks 1/2, and stores the override", async () => {
     const harness = await setup();
+    openCommon();
     fireEvent.change(screen.getByLabelText("Resolution mode"), { target: { value: "scale:1/2" } });
 
     await waitFor(() =>
@@ -168,6 +179,7 @@ describe("T73 — the Common section shows what the node will actually produce",
 
   it("clears the override with null when the user goes back to Auto (§V50)", async () => {
     const harness = await setup();
+    openCommon();
     fireEvent.change(screen.getByLabelText("Resolution mode"), { target: { value: "project" } });
     await waitFor(() => expect(harness.node()?.resolution).toEqual({ mode: "project" }));
 
@@ -178,6 +190,7 @@ describe("T73 — the Common section shows what the node will actually produce",
 
   it("offers custom width and height once Custom is chosen, seeded with the current size", async () => {
     const harness = await setup();
+    openCommon();
     fireEvent.change(screen.getByLabelText("Resolution mode"), { target: { value: "custom" } });
 
     await waitFor(() =>
@@ -195,6 +208,7 @@ describe("T73 — the Common section shows what the node will actually produce",
 
   it("stores a format override and clears it again", async () => {
     const harness = await setup();
+    openCommon();
     fireEvent.change(screen.getByLabelText("Pixel format"), { target: { value: "rgba16float" } });
     await waitFor(() =>
       expect(harness.node()?.format).toEqual({ mode: "fixed", format: "rgba16float" }),
@@ -206,6 +220,7 @@ describe("T73 — the Common section shows what the node will actually produce",
 
   it("warns when the chosen format is outside the device capability report (§V12)", async () => {
     const harness = await setup();
+    openCommon();
     fireEvent.change(screen.getByLabelText("Pixel format"), { target: { value: "r32float" } });
     await waitFor(() => expect(harness.node()?.format).toBeDefined());
 
@@ -245,9 +260,88 @@ describe("T73 — the Common section shows what the node will actually produce",
       />,
     );
 
+    openCommon();
     const alert = await screen.findByRole("alert");
     // The message is the compiler's, verbatim: the UI does not recompute the fallback.
     expect(alert.textContent).toContain("falling back to rgba16float");
     expect(alert.textContent).toContain("Choose rgba16float");
+  });
+});
+
+describe("T269 — parameters first, Common on its own page (§V174)", () => {
+  it("opens on Parameters, with the node's own controls and not the Common ones", async () => {
+    await setup();
+    expect(screen.getByRole("tab", { name: "Parameters" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Common" }).getAttribute("aria-selected")).toBe("false");
+    // The work is what the panel opens on; the chrome is one click away.
+    expect(screen.getByRole("spinbutton", { name: "Radius" })).toBeDefined();
+    expect(screen.queryByLabelText("Resolution mode")).toBeNull();
+  });
+
+  it("puts the parameter groups ABOVE the tab content boundary, not below a Common block", async () => {
+    await setup();
+    const parameters = screen.getByRole("tabpanel");
+    // One panel is rendered at a time, and it is the parameters one.
+    expect(within(parameters).getByRole("region", { name: "Shape" })).toBeDefined();
+    expect(within(parameters).queryByRole("region", { name: "Common" })).toBeNull();
+  });
+
+  it("moves the resolution and format controls onto the Common page", async () => {
+    await setup();
+    openCommon();
+    expect(screen.getByLabelText("Resolution mode")).toBeDefined();
+    expect(screen.getByLabelText("Pixel format")).toBeDefined();
+    // And the parameters are the ones now out of view.
+    expect(screen.queryByRole("spinbutton", { name: "Radius" })).toBeNull();
+  });
+
+  it("keeps the resolved readout visible from BOTH pages", async () => {
+    await setup();
+    const onParameters = screen.getByLabelText("Resolved output");
+    expect(within(onParameters).getByText("800 × 600")).toBeDefined();
+    expect(within(onParameters).getByText("rgba8unorm")).toBeDefined();
+
+    openCommon();
+    // Same single readout, still in the header: it is the fact you check constantly, and
+    // it moves as a consequence of edits made elsewhere (§V174 decision).
+    const onCommon = screen.getByLabelText("Resolved output");
+    expect(within(onCommon).getByText("800 × 600")).toBeDefined();
+  });
+
+  it("carries the size and format SOURCE on hover rather than printing it (§V90)", async () => {
+    await setup();
+    const readout = screen.getByLabelText("Resolved output");
+    expect(readout.getAttribute("title")).toContain("node default");
+    expect(readout.getAttribute("title")).toContain("project");
+    // The source words are not taking a row of their own any more.
+    expect(readout.textContent).not.toContain("node default");
+  });
+
+  it("names the state when a node declares no parameters (§V91)", async () => {
+    const bare: NodeDefinition = {
+      ...everythingNode,
+      type: "test.bare",
+      title: "Bare",
+      parameters: {},
+    };
+    const store = createGraphStore({ ids: createSequentialIdFactory("b") });
+    const { bus } = createDomainBus({ store, registry: createNodeRegistry([bare]).view() });
+    const created = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: 0,
+        operations: [{ op: "addNode", ref: "$n", type: bare.type, position: { x: 0, y: 0 } }],
+      },
+      context,
+    );
+    render(
+      <Inspector
+        bus={bus}
+        context={context}
+        nodeId={created.output.createdIds["$n"] as NodeId}
+        settings={settings}
+      />,
+    );
+    expect(screen.getByText("No parameters")).toBeDefined();
   });
 });

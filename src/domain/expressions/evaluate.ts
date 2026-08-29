@@ -1,3 +1,4 @@
+import { wallDeltaSecondsOf, wallSecondsOf } from "../types/frame.ts";
 import type { FrameEvaluationInput } from "../types/frame.ts";
 
 /**
@@ -45,9 +46,14 @@ export function scopeFromFrame(
 ): ExpressionScope {
   return {
     ...nodeContext,
+    // T271/§V172 — `time` is TIMELINE time and `delta` is its step; `walltime` and
+    // `walldelta` are the other clock. Never a mix: an expression reading `time` and a
+    // simulation reading `delta` must be advancing at the same rate.
     time: frame.timeSeconds,
     delta: frame.deltaSeconds,
     frame: frame.frameIndex,
+    walltime: wallSecondsOf(frame),
+    walldelta: wallDeltaSecondsOf(frame),
   };
 }
 

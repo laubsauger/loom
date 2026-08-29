@@ -129,6 +129,94 @@ export function normalizeValue(value: number, spec: NumericSpec): number {
   return roundToDecimals(clampToRange(quantized, spec), decimalsFor(spec));
 }
 
+/* ---- the magnitude ladder (T228, §V133, §V134) ------------------------------------ */
+
+/**
+ * §V133's magnitude ladder: the decades a numeric drag can be performed at.
+ *
+ * Precision has to span decades. The same field must reach 0.0001 and 100 without the
+ * user going and editing a `step` setting, and three fixed modifier levels cannot do
+ * that — they give one decade either side of whatever the manifest happened to declare.
+ * Nuke and Houdini solved this by making the reach a THING YOU PICK: press and hold,
+ * a ladder of magnitudes appears, choose one, drag at it. The win over more modifier
+ * keys is that the reach becomes visible rather than memorised.
+ *
+ * Fixed rungs, identical in every field, so the gesture means the same thing everywhere.
+ * The manifest `step` picks which rung a field STARTS on — a default, never a cap.
+ */
+export const DECADE_LADDER: readonly number[] = [0.001, 0.01, 0.1, 1, 10, 100];
+
+/** The rung a field starts on: the manifest step snapped down onto the ladder. */
+export function defaultDecade(spec: NumericSpec): number {
+  const step = stepFor(spec);
+  let chosen = DECADE_LADDER[0] as number;
+  for (const rung of DECADE_LADDER) {
+    if (rung <= step + Number.EPSILON) chosen = rung;
+  }
+  return chosen;
+}
+
+/** Index of `decade` on the ladder, or the nearest rung's index. */
+export function decadeIndex(decade: number): number {
+  let best = 0;
+  let distance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < DECADE_LADDER.length; index += 1) {
+    const rung = DECADE_LADDER[index] as number;
+    const gap = Math.abs(Math.log10(rung) - Math.log10(decade));
+    if (gap < distance) {
+      distance = gap;
+      best = index;
+    }
+  }
+  return best;
+}
+
+/** Moves `decade` `steps` rungs along the LADDER, clamped at both ends — what the picker walks. */
+export function shiftDecade(decade: number, steps: number): number {
+  const index = decadeIndex(decade) + steps;
+  const clamped = Math.min(DECADE_LADDER.length - 1, Math.max(0, index));
+  return DECADE_LADDER[clamped] as number;
+}
+
+/**
+ * §V133: the modifiers still give ±1 decade, now expressed against the CHOSEN rung
+ * rather than against the manifest step. Shift is one finer, Alt one coarser — the same
+ * gesture as before, reaching wherever the ladder was left.
+ *
+ * Deliberately NOT clamped to the ladder. The rungs are what you can PICK; the modifier
+ * is a decade either side of the pick, and clamping it would put 0.0001 out of reach
+ * from a ladder whose finest rung is 0.001 — which is precisely the reach §V133 names.
+ */
+export function decadeForModifier(decade: number, modifier: DragModifier): number {
+  if (modifier === "fine") return decade / 10;
+  if (modifier === "coarse") return decade * 10;
+  return decade;
+}
+
+/**
+ * Decimals a value on `decade`'s grid needs to be written EXACTLY.
+ *
+ * §V134: changing the reach must not cost exactness. The manifest's precision is a
+ * floor, not a ceiling — capping at it would make a 0.001 rung on a `precision: 2`
+ * parameter round every value to the same number, which is the ladder doing nothing.
+ */
+export function decimalsForDecade(spec: NumericSpec, decade: number): number {
+  return Math.min(MAX_DECIMALS, Math.max(decimalsFor(spec), decimalsOf(decade)));
+}
+
+/**
+ * §V134's funnel: snap onto the chosen decade's grid, clamp into the declared range,
+ * round so the result is exactly representable. `0.30000000000000004` reaching a saved
+ * document is the failure this exists to prevent.
+ */
+export function normalizeAtDecade(value: number, spec: NumericSpec, decade: number): number {
+  if (!Number.isFinite(value)) return clampToRange(0, spec);
+  const decimals = decimalsForDecade(spec, decade);
+  const anchor = spec.min !== undefined && Number.isFinite(spec.min) ? spec.min : 0;
+  const snapped = anchor + Math.round((value - anchor) / decade) * decade;
+  return roundToDecimals(clampToRange(roundToDecimals(snapped, decimals), spec), decimals);
+}
+
 export interface DragInput {
   /** Value the gesture started from — never the current value, or the drag drifts. */
   startValue: number;
@@ -136,6 +224,11 @@ export interface DragInput {
   deltaX: number;
   spec: NumericSpec;
   modifier: DragModifier;
+  /**
+   * Magnitude picked from the ladder (§V133). Absent = the manifest's own step, which
+   * is exactly what this control did before the ladder existed.
+   */
+  decade?: number | undefined;
 }
 
 /**
@@ -143,7 +236,7 @@ export interface DragInput {
  * and where it is now. Accumulating per-move deltas would make the value depend on
  * event granularity, so dragging out and back would not return to the start value.
  */
-export function valueFromDrag({ startValue, deltaX, spec, modifier }: DragInput): number {
+export function valueFromDrag({ startValue, deltaX, spec, modifier, decade }: DragInput): number {
   const factor = DRAG_MODIFIER_FACTOR[modifier];
 
   // A log-scaled parameter moves multiplicatively: equal travel is equal ratio, which
@@ -151,6 +244,14 @@ export function valueFromDrag({ startValue, deltaX, spec, modifier }: DragInput)
   if (spec.scale === "log" && startValue > 0) {
     const decades = (deltaX / PIXELS_PER_DECADE) * factor;
     return normalizeValue(startValue * 10 ** decades, spec);
+  }
+
+  // A picked rung replaces the manifest step as the drag granularity, and the modifier
+  // moves it one rung rather than scaling it (§V133). Every emitted value still lands on
+  // that rung's grid (§V134).
+  if (decade !== undefined) {
+    const effective = decadeForModifier(decade, modifier);
+    return normalizeAtDecade(startValue + (deltaX / PIXELS_PER_STEP) * effective, spec, effective);
   }
 
   return normalizeValue(startValue + (deltaX / PIXELS_PER_STEP) * stepFor(spec) * factor, spec);
@@ -164,6 +265,8 @@ export interface NudgeInput {
   modifier: DragModifier;
   /** Steps per press. PageUp/PageDown pass 10. */
   steps?: number;
+  /** Magnitude picked from the ladder (§V133); absent = the manifest step. */
+  decade?: number | undefined;
 }
 
 /**
@@ -174,19 +277,35 @@ export interface NudgeInput {
  * is not a thing a key press can ask for. (A drag expresses fine mode as travel
  * instead — ten times the distance for the same step — which needs no sub-step values.)
  */
-export function nudge({ value, direction, spec, modifier, steps = 1 }: NudgeInput): number {
+export function nudge({ value, direction, spec, modifier, steps = 1, decade }: NudgeInput): number {
   const factor = DRAG_MODIFIER_FACTOR[modifier];
   const count = Math.max(1, Math.round(steps * factor));
   if (spec.scale === "log" && value > 0) {
     return normalizeValue(value * 10 ** (direction * 0.05 * count), spec);
   }
+  // The keyboard reaches the same decades the ladder does: a rung chosen with the
+  // pointer or with mod+arrow is the increment the arrow keys then step by (§V19).
+  if (decade !== undefined) {
+    const effective = decadeForModifier(decade, modifier);
+    return normalizeAtDecade(value + direction * effective * Math.max(1, steps), spec, effective);
+  }
   return normalizeValue(value + direction * stepFor(spec) * count, spec);
 }
 
-/** Display text for a value: fixed decimals, so digits do not jitter under a drag. */
-export function formatNumber(value: number, spec: NumericSpec): string {
+/**
+ * Display text for a value: fixed decimals, so digits do not jitter under a drag. A
+ * chosen decade widens the display the same way it widens storage (§V134) — a field
+ * dragging at 0.001 that still prints two decimals would look frozen.
+ */
+export function formatNumber(value: number, spec: NumericSpec, decade?: number): string {
   if (!Number.isFinite(value)) return "0";
-  return value.toFixed(decimalsFor(spec));
+  return value.toFixed(decade === undefined ? decimalsFor(spec) : decimalsForDecade(spec, decade));
+}
+
+/** A ladder rung as its label: "0.001", "1", "100" — never "1e-3". */
+export function formatDecade(decade: number): string {
+  const decimals = decimalsOf(decade);
+  return decade.toFixed(decimals);
 }
 
 /**

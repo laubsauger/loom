@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { liveClock } from "@domain/transport/live-clock.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
+import type { FrameInputs } from "@domain/types/backend.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import { createUniformAnimator } from "./animate-parameters.ts";
 import { registerTransportCommands } from "./transport-commands.ts";
 
 /**
@@ -25,23 +28,56 @@ import { registerTransportCommands } from "./transport-commands.ts";
  */
 
 const MAX_DIAGNOSTICS = 50;
+
+/**
+ * The timeline rate (T271). Drives the clock AND the scheduler, so `time` advances at
+ * one second per second on any display. `ProjectSettings` has no fps field yet (T266);
+ * when it grows one, this constant is what it replaces.
+ */
+const TIMELINE_FPS = 60;
 const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
 
 export interface FrameLoopResult {
   readonly diagnostics: readonly RuntimeDiagnostic[];
   /** True while the loop is running. Reflects the driver, not a request. */
   readonly playing: boolean;
+  /**
+   * The inputs of the last frame actually rendered, SAMPLED — never pushed (§V16).
+   *
+   * A caller that wants `time`, `delta` or `frame` (the expression help panel does) reads
+   * this when it renders. Putting the value in state instead would re-render the tree
+   * sixty times a second, which is the exact mistake §V16 exists to prevent.
+   */
+  latestFrame(): FrameInputs | null;
 }
+
+/**
+ * Re-resolves the graph AT a frame. Null when nothing animates (T259, §V163).
+ *
+ * `useGraphCompile` owns this: it is the same compile path, with the frame and the
+ * channel resolver supplied. Null here is the gate — a static graph costs nothing per
+ * frame because there is no call to make, not because a call returns early.
+ */
+export type AnimateFrame = (frame: FrameEvaluationInput) => CompiledGraph | null;
 
 export function useFrameLoop(
   bus: ShaderloomBus,
   backend: ShaderloomBackend | null | undefined,
   compiled: CompiledGraph | null,
   settings: ProjectSettings,
+  animate: AnimateFrame | null = null,
 ): FrameLoopResult {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
   const driverRef = useRef<FrameDriver | null>(null);
+  const latestFrameRef = useRef<FrameInputs | null>(null);
+  // T259 — the per-frame values-only push. Read through refs because it runs inside the
+  // driver's frame callback, which must never be re-created to pick up a new closure.
+  const animateRef = useRef<AnimateFrame | null>(animate);
+  animateRef.current = animate;
+  const planRef = useRef<CompiledGraph | null>(compiled);
+  const animatorRef = useRef(createUniformAnimator());
+  const driftRef = useRef(false);
   const pointerRef = useRef<PointerSource | null>(null);
   const generationRef = useRef(0);
 
@@ -49,6 +85,44 @@ export function useFrameLoop(
   // a function for exactly this reason.
   const resolutionRef = useRef(settings.outputResolution);
   resolutionRef.current = settings.outputResolution;
+
+  /**
+   * §V163 — the whole of "the picture moves".
+   *
+   * Runs inside the driver's frame callback, after `render` encoded this frame and before
+   * the loop submits it, so the values written here apply to the frame they were resolved
+   * for. `updateUniforms` carries no frame guard by design (§V5: values in, values only),
+   * which is what makes writing from inside an open frame legal.
+   *
+   * Three ways this stays honest. It does nothing at all when `animate` is null — a static
+   * document is not paying for a feature it is not using. It refuses to touch the GPU when
+   * the per-frame plan is not a values-only variation of the structural one, because
+   * recompiling at frame rate is exactly what §V5 forbids. And it reports that refusal
+   * once instead of every frame.
+   */
+  const pushAnimatedValues = useCallback((inputs: FrameInputs) => {
+    const animateFrame = animateRef.current;
+    const base = planRef.current;
+    const live = backend;
+    if (animateFrame === null || base === null || live === null || live === undefined) return;
+    const next = animateFrame(inputs.frame);
+    if (next === null) return;
+    const written = animatorRef.current.push(live, base, next);
+    if (written !== null || driftRef.current) return;
+    driftRef.current = true;
+    setDiagnostics((current) =>
+      [
+        ...current,
+        {
+          severity: "warning" as const,
+          code: "animation/structuralDrift",
+          message: "An animated parameter changed the plan's structure, so it was not applied.",
+          suggestion:
+            "Only values may animate (§V5). A parameter that changes a resolution, a format or a shader interface needs a recompile, which the frame loop will not do.",
+        },
+      ].slice(-MAX_DIAGNOSTICS),
+    );
+  }, [backend]);
 
   useEffect(() => {
     if (backend === null || backend === undefined) {
@@ -59,13 +133,24 @@ export function useFrameLoop(
     setDiagnostics(NO_DIAGNOSTICS);
     const pointer = pointerRef.current ?? createPointerSource();
     pointerRef.current = pointer;
+    // T271/§V172 — ONE fps: the timeline clock advances at `1/fps` and the scheduler is
+    // capped to the same rate, or timeline time runs fast on a 120 Hz display and slow on
+    // a struggling one. The number is a constant until `ProjectSettings` carries an fps
+    // (T266); it is read from one place either way.
+    const transport = liveClock({ fps: TIMELINE_FPS });
     const driver = createFrameDriver({
       backend,
-      transport: liveClock(),
+      transport,
       pointer,
       resolution: () => {
         const { width, height } = resolutionRef.current;
         return [width, height] as const;
+      },
+      fps: TIMELINE_FPS,
+      // A ref, not state: this runs on every rendered frame (§V16).
+      onFrame: (inputs) => {
+        latestFrameRef.current = inputs;
+        pushAnimatedValues(inputs);
       },
     });
     driverRef.current = driver;
@@ -92,6 +177,27 @@ export function useFrameLoop(
         for (let index = 0; index < frames; index += 1) last = live.step();
         return last?.frame.frameIndex ?? -1;
       },
+      /**
+       * §V170 — a seek REPLAYS. A graph with feedback, a Cache or a point simulation has
+       * no state at a frame it has not reached, so resetting the counter and leaving the
+       * GPU's temporal history alone would show a picture belonging to a different
+       * history: a scrub that looks like it works and is a lie. Clearing history and
+       * stepping forward from zero costs O(frames) and is the true state at that frame.
+       */
+      seek: (frameIndex) => {
+        const live = driverRef.current;
+        if (live === null) return -1;
+        const wasRunning = live.running;
+        if (wasRunning) live.stop();
+        transport.reset();
+        backend.resetTemporalHistory();
+        let last = null;
+        for (let index = 0; index <= frameIndex; index += 1) last = live.step();
+        latestFrameRef.current = last;
+        if (wasRunning) live.start();
+        setPlaying(live.running);
+        return last?.frame.frameIndex ?? -1;
+      },
     };
 
     return () => {
@@ -99,7 +205,7 @@ export function useFrameLoop(
       driver.stop();
       driverRef.current = null;
     };
-  }, [backend, bus]);
+  }, [backend, bus, pushAnimatedValues]);
 
   useEffect(() => {
     const driver = driverRef.current;
@@ -113,6 +219,11 @@ export function useFrameLoop(
         // A newer compile landed while this one was in flight — that result, not this
         // one, is authoritative for the driver.
         if (generation !== generationRef.current) return;
+        // The structural plan the per-frame push diffs against. Reset together, so a
+        // recompile never leaves the animator comparing against a plan that is gone.
+        planRef.current = compiled;
+        animatorRef.current.reset();
+        driftRef.current = false;
         driverRef.current?.setPlan(plan);
       })
       .catch((error: unknown) => {
@@ -132,5 +243,7 @@ export function useFrameLoop(
       });
   }, [backend, compiled]);
 
-  return { diagnostics, playing };
+  const latestFrame = useCallback(() => latestFrameRef.current, []);
+
+  return { diagnostics, playing, latestFrame };
 }

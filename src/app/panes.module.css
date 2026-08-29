@@ -7,6 +7,30 @@
   flex-direction: column;
 }
 
+/*
+  A pane whose content is taller than its dock (B: the inspector, cut off by the bottom
+  dock, with everything below the fold unreachable and those nodes therefore uneditable).
+
+  Two halves, and both are needed. `min-height: 0` all the way down the pane chain —
+  zone, panel, outlet, host, this box — because a flex child defaults to
+  `min-height: auto` and refuses to shrink below its content: without it the pane grows
+  past the dock and the overflow is CLIPPED rather than scrolled. And the scroll container
+  is THIS box, the pane's content region, rather than the zone or the pane: a scroller
+  further out would carry the inspector's sticky section headers away with the rows they
+  label.
+
+  It holds for a floated pane too, where the height comes from the child window instead
+  of the dock — the chain is the same, the number is different.
+*/
+.scrollFill {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 /* The canvas owns its own surface; the wrapper exists to carry the keymap context
    and to catch the library's drop. */
 .graph {
@@ -173,4 +197,29 @@
   font-family: var(--font-ui);
   font-size: var(--fs-ui);
   color: var(--text-dim);
+}
+
+/*
+  The viewer's presentation surface (T87/T161, §V64). The runtime blits into this canvas;
+  nothing here draws. `contain` keeps a resize of the picture from invalidating the pane's
+  layout, and the aspect box is the canvas's own so a non-square output is letterboxed
+  rather than stretched.
+*/
+.surface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-sunken);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

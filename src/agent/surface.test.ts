@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
-import { createDomainBus } from "@domain/commands/index.ts";
+import { attachStateSources, createDomainBus } from "@domain/commands/index.ts";
+import type { SelectionSnapshot } from "@domain/commands/state-queries.ts";
 import { createGraphStore, type GraphStore } from "@domain/graph/store.ts";
 import { createSequentialIdFactory } from "@domain/graph/ids.ts";
 import type { Actor, InvocationContext } from "@domain/types/commands.ts";
@@ -56,13 +57,21 @@ const previewPort: PreviewExport = {
     }),
 };
 
-function createFixture(options: { ports?: AgentPorts; requireApproval?: boolean } = {}): Fixture {
+function createFixture(
+  options: {
+    ports?: AgentPorts;
+    requireApproval?: boolean;
+    /** Attaches the `selection.get` source the composition root attaches (T175). */
+    selection?: () => SelectionSnapshot;
+  } = {},
+): Fixture {
   const store = createGraphStore({
     ids: createSequentialIdFactory("n"),
     now: () => "2026-08-29T00:00:00.000Z",
   });
   const registry = createNodeRegistry([solidNode, blurNode, compositeNode, evilNode]).view();
   const { bus } = createDomainBus({ store, registry });
+  if (options.selection !== undefined) attachStateSources(bus, { selection: options.selection });
 
   // Every call is recorded so a test can assert the tool went through the bus rather
   // than reaching into the store (§V29).
@@ -218,11 +227,11 @@ describe("tools with no command behind them report unavailable (§V39)", () => {
   it("reports a read tool whose source is not attached, and runs it once it is", async () => {
     const without = await fixture.surface.callTool("get_selection", {});
     expect(without.status).toBe("unavailable");
-    expect(without.diagnostics[0]?.code).toBe("tool.unavailablePort");
+    // §T175: the source is a bus QUERY, registered only once someone attaches a reader —
+    // so "nobody is watching the selection" and "nothing is selected" stay distinguishable.
+    expect(without.diagnostics[0]?.code).toBe("tool.unavailableQuery");
 
-    const wired = createFixture({
-      ports: { selection: { getSelection: () => ({ nodeIds: ["n1"], edgeIds: [] }) } },
-    });
+    const wired = createFixture({ selection: () => ({ nodeIds: ["n1"], edgeIds: [] }) });
     const outcome = await wired.surface.callTool("get_selection", {});
     expect(outcome.status).toBe("ok");
     expect(outcome.data).toEqual({ nodeIds: ["n1"], edgeIds: [] });

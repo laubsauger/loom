@@ -23,6 +23,7 @@ function fakeHandlers(): TransportHandlers & { playing: boolean; stepped: number
     togglePlay: () => {
       state.playing = !state.playing;
     },
+    seek: (frameIndex: number) => frameIndex,
     stepFrame: (frames: number) => {
       state.stepped.push(frames);
       return frames - 1;

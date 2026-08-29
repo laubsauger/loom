@@ -145,13 +145,36 @@
   color: var(--text-disabled);
 }
 
-/* Range fill: the value's position inside its declared range, made visible (doc §8.1
-   "Parameters show units and constrained ranges"). */
+/*
+  Value position, made visible (doc §8.1 "Parameters show units and constrained ranges").
+
+  The ACCENT is the leading edge, not the whole bar: a thin amber marker at the value,
+  with the region behind it in the same quiet raise the rest of the panel uses. A column
+  of ten parameters each carrying a large saturated block would fight for attention,
+  where a column of thin markers scans as a row of positions you can compare at a glance.
+
+  It is a marker ON the existing field — a border on the fill element that was already
+  there. No track widget, no ticks, no bubble: a control that grows chrome stops being
+  dense, which is the whole reason this panel is readable at 10-15 parameters a node.
+
+  It fills FROM THE RANGE MINIMUM, which is TD's choice and the one that keeps a signed
+  range honest: on Rotate's -180..180 the marker sits mid-field at 0 and travels to the
+  left edge at -180, so its position always means the same thing. Filling from zero would
+  leave the entire negative half reading as empty.
+
+  The accent derives from the live/active amber token, never a literal (§V17).
+*/
 .numberFill {
   position: absolute;
   inset: 0 auto 0 0;
+  box-sizing: border-box;
   background: var(--bg-active);
+  border-right: 2px solid var(--signal);
   pointer-events: none;
+}
+
+.number[data-disabled="true"] .numberFill {
+  border-right-color: var(--line-hot);
 }
 
 .numberInput {
@@ -408,4 +431,246 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- parameter modes (T204, §V107, §V108) ---------------------------- */
+
+/*
+  TD's four mode hues, mapped onto the palette the theme already ships: grey Constant,
+  blue Expression, purple Bind, green Driven (its Export analog). There is no dedicated
+  mode ramp in the token set and a literal would break §V17, so these alias the port
+  hues that already carry the right colours. Declared once, here, rather than repeated
+  per button.
+*/
+.modeButtons {
+  --mode-static: var(--text-dim);
+  --mode-expression: var(--port-pointset);
+  --mode-bind: var(--port-buffer);
+  --mode-driven: var(--ok);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.rowHost {
+  display: contents;
+}
+
+.rowExpanded {
+  background: var(--bg-raise);
+  border-radius: var(--radius);
+}
+
+/* The name is the disclosure (TD parity). It stays a name: same size, same colour,
+   no chevron competing with the value the user came to read. */
+.labelToggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.labelToggle:hover,
+.labelToggle[aria-expanded="true"] {
+  color: var(--text);
+}
+
+.expansion {
+  grid-column: 1 / -1;
+  padding: var(--space-2) 0 var(--space-1);
+}
+
+.modePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.modeButton {
+  position: relative;
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  cursor: default;
+}
+
+.modeButton:hover:not(:disabled) {
+  border-color: var(--line-hot);
+  color: var(--text);
+}
+
+.modeButton[data-mode="static"][aria-pressed="true"] {
+  border-color: var(--mode-static);
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.modeButton[data-mode="expression"][aria-pressed="true"] {
+  border-color: var(--mode-expression);
+  color: var(--mode-expression);
+}
+
+.modeButton[data-mode="bind"][aria-pressed="true"] {
+  border-color: var(--mode-bind);
+  color: var(--mode-bind);
+}
+
+.modeButton[data-mode="driven"][aria-pressed="true"] {
+  border-color: var(--mode-driven);
+  color: var(--mode-driven);
+}
+
+.modeButton:disabled {
+  color: var(--text-disabled);
+}
+
+/*
+  §V108's corner square: this INACTIVE mode still holds a value. It is the whole reason
+  mode switching is safe to experiment with — without it, flipping to Constant to read a
+  number looks like it might cost you the expression, so nobody flips.
+*/
+.modeRetained {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  background: var(--signal);
+  pointer-events: none;
+}
+
+.modePayload {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.modePayloadLabel {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  user-select: none;
+}
+
+.modePayloadInput {
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+}
+
+.modeDiagnostic {
+  margin: 0;
+  color: var(--warn);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+}
+
+/* ---- compound components (§V113) ------------------------------------- */
+
+.componentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--border-hairline);
+}
+
+.componentRow {
+  display: grid;
+  grid-template-columns: minmax(56px, auto) 1fr;
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.componentName {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  user-select: none;
+}
+
+/* ---- magnitude ladder (T228, §V133) ---------------------------------- */
+
+.numberHost {
+  position: relative;
+  min-width: 0;
+}
+
+/*
+  Anchored under the field it belongs to and floated above the rows below, so the reach
+  the user is choosing sits next to the number it will move.
+*/
+.ladder {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(100% + var(--space-1));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  padding: var(--space-1);
+  border: var(--hairline) solid var(--line-hot);
+  border-radius: var(--radius);
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-raise);
+}
+
+.ladderRung {
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  text-align: right;
+  cursor: default;
+}
+
+.ladderRung:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ladderRung[aria-selected="true"] {
+  color: var(--signal);
+}
+
+/* ---- inactive parameters (T245, §V146) ------------------------------- */
+
+/*
+  A parameter that cannot affect the output in the node's current state reads INACTIVE:
+  dimmed, with the reason on the label's hover like every other explanation (§V90). It is
+  NOT disabled — the value stays editable, because setting it before switching the mode
+  that makes it apply is a normal way to work, and TD lets you type into a greyed
+  parameter for exactly that reason.
+
+  Opacity rather than a colour swap: it dims the control, the value and the unit together
+  with one declaration, and it cannot introduce a literal (§V17).
+*/
+.rowInactive .control,
+.rowInactive .label {
+  opacity: 0.45;
+}
+
+.rowInactive .control:focus-within,
+.rowInactive:hover .control {
+  opacity: 1;
 }

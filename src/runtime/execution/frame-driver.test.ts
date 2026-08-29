@@ -212,6 +212,10 @@ describe("offline transport", () => {
     expect(first).toEqual({
       timeSeconds: 10 / 24,
       deltaSeconds: 0,
+      // T271/§V44: an offline render has no wall clock, so wall time IS the timeline —
+      // anything else would make the same sequence render differently twice.
+      wallSeconds: 10 / 24,
+      wallDeltaSeconds: 0,
       frameIndex: 10,
       mode: "fixed-step",
       randomSeed: 0,

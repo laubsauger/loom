@@ -10,12 +10,12 @@
   padding: var(--space-3) var(--space-4) var(--space-6);
 }
 
+/* Title and readout are ONE block: the rule goes under the pair, not between them. */
 .header {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  padding-bottom: var(--space-3);
-  border-bottom: var(--border-hairline);
+  padding-bottom: var(--space-1);
 }
 
 .title {
@@ -190,4 +190,76 @@
   color: var(--signal);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
+}
+
+/* ---- pages (T269, §V174) --------------------------------------------- */
+
+/*
+  The shared tab primitive is built for the bottom dock, where the panel OWNS a scroll
+  box of a definite height. The inspector is the opposite: it is a document that grows
+  and the PANE scrolls it, and the sticky group headers stick to that pane. Giving the
+  tab panel its own `overflow: auto` would make it the scroll container, and every
+  section header would then stick to the top of a box that never scrolls — i.e. stop
+  working. So the panel is returned to normal flow here.
+
+  The doubled class name is deliberate: these rules have to beat the primitive's own
+  module, which is a separate stylesheet whose order is a bundling detail rather than
+  something this file can rely on. Two classes is 0-2-0 against its 0-1-0, which wins
+  regardless of order.
+*/
+.pages.pages {
+  height: auto;
+  min-height: 0;
+}
+
+.page.page {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+/*
+  Full-bleed and sticky: it is the panel's tab bar, so it runs edge to edge past the
+  inspector's own padding and stays put while the parameters scroll under it. Above the
+  section headers in the stack, because a group heading sliding over the tabs would read
+  as the tabs having scrolled away.
+*/
+.pageList.pageList {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: auto;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 0 var(--space-2);
+}
+
+/* ---- header readout, compact (T269) ---------------------------------- */
+
+/*
+  One line of facts under the node name, replacing the bordered two-row block that used
+  to sit above every parameter. No border and no fill: it is a readout, not a control,
+  and boxing it gave it the visual weight of something you interact with.
+*/
+.readoutLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-hairline);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: help;
+}
+
+.readoutDot {
+  color: var(--line-hot);
+}
+
+.emptyPage {
+  padding: var(--space-4) 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
 }

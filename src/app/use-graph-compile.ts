@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { compileGraph } from "@compiler/index.ts";
-import type { ActiveSink, CompiledGraph } from "@compiler/index.ts";
+import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
+import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -9,6 +11,8 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeRunStatus, NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { AppRuntime } from "./app-runtime.ts";
+import { registerCompileCommand } from "./compile-command.ts";
+import type { CompileResultView } from "./compile-command.ts";
 
 /**
  * Compiles the document and routes the result to the two places that need it: the
@@ -30,6 +34,18 @@ export interface GraphCompileResult {
   readonly compiled: CompiledGraph | null;
   readonly diagnostics: readonly RuntimeDiagnostic[];
   readonly errorCount: number;
+  /**
+   * Re-resolves this graph AT a frame, for the per-frame values-only push (T259, §V163).
+   *
+   * NULL when nothing in the document animates — no expression, no driven slot, no bind.
+   * That is the gate, and it is why a static project pays literally nothing per frame:
+   * the frame loop has no function to call, not a function that returns early.
+   *
+   * The plan that comes back is the same plan structurally; only its pass uniform VALUES
+   * move. The caller pushes those with `updateUniforms` (§V5) — see
+   * `animate-parameters.ts`. It never reaches `backend.compile`.
+   */
+  readonly animate: ((frame: FrameEvaluationInput) => CompiledGraph | null) | null;
 }
 
 /**
@@ -58,6 +74,19 @@ function visiblePreviewSinks(graph: GraphDocument, registry: NodeRegistryView): 
   return sinks;
 }
 
+/**
+ * §V12: with no capability report there is nothing to validate formats against, and
+ * inventing a device is exactly what that invariant forbids. A caller is told that,
+ * rather than handed an empty plan that reads as "your graph compiles to nothing".
+ */
+const NO_DEVICE_DIAGNOSTIC: RuntimeDiagnostic = {
+  severity: "error",
+  code: "compile.noDevice",
+  message: "No GPU capability report, so nothing was compiled.",
+  suggestion:
+    "Compilation validates resolutions and formats against the live device. Open this where WebGPU is available.",
+};
+
 function statusFor(errors: number, warnings: number, compiled: boolean): NodeRunStatus {
   if (errors > 0) return "error";
   if (warnings > 0) return "warning";
@@ -68,6 +97,7 @@ function compileSafely(
   graph: GraphDocument,
   runtime: AppRuntime,
   capabilities: BackendCapabilities,
+  resolution: ParameterResolution = {},
 ): { compiled: CompiledGraph | null; diagnostics: RuntimeDiagnostic[] } {
   try {
     const compiled = compileGraph({
@@ -78,6 +108,7 @@ function compileSafely(
       // §V28a: EVERY visible texture-producing node, never a partial list — an explicit
       // list is authoritative, so passing some but not all would silently prune the rest.
       sinks: visiblePreviewSinks(graph, runtime.registry),
+      resolution,
     });
     return { compiled, diagnostics: [...compiled.diagnostics] };
   } catch (error) {
@@ -144,18 +175,79 @@ export function useGraphCompile(
     runtime.bus.store.getGraph,
   );
 
+  // Cache for `project.compile`, keyed by the revision it was produced from. Only a
+  // compile that actually ran is cached: "no device report" must stay a live answer, not
+  // a remembered empty one.
+  const cacheRef = useRef<{ revision: number; view: CompileResultView } | null>(null);
+
+  /**
+   * The channel resolver, for BOTH compiles (T238, T259).
+   *
+   * The structural compile gets it too, with no frame — so a driven parameter resolves at
+   * its zero-frame value rather than reporting "channel lfo1 is not attached". It IS
+   * attached; only the moment differs. Without this the problems tab tells the user their
+   * LFO is unwired on every compile of a graph that animates perfectly well, which is the
+   * kind of false alarm that teaches people to ignore the panel.
+   */
+  const channels = useMemo(() => graphChannelResolver(graph, runtime.registry), [graph, runtime]);
+
+  /**
+   * §V163's gate. `hasAnimatedParameters` is a scan of stored parameter modes — cheap,
+   * and run once per document revision rather than once per frame.
+   */
+  const animate = useMemo(() => {
+    if (capabilities === null || !hasAnimatedParameters(graph)) return null;
+    return (frame: FrameEvaluationInput): CompiledGraph | null =>
+      compileSafely(graph, runtime, capabilities, { frame, channels }).compiled;
+  }, [capabilities, channels, graph, runtime]);
+
   const result = useMemo<GraphCompileResult>(() => {
     if (capabilities === null) {
-      return { graph, compiled: null, diagnostics: [], errorCount: 0 };
+      return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null };
     }
-    const { compiled, diagnostics } = compileSafely(graph, runtime, capabilities);
+    const { compiled, diagnostics } = compileSafely(graph, runtime, capabilities, { channels });
+    cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
     return {
       graph,
       compiled,
       diagnostics,
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
+      animate,
     };
-  }, [graph, runtime, capabilities]);
+  }, [animate, channels, graph, runtime, capabilities]);
+
+  const capabilitiesRef = useRef(capabilities);
+  capabilitiesRef.current = capabilities;
+
+  /**
+   * What `project.compile` answers with (T220).
+   *
+   * Reads the store rather than the rendered `result`: a command handler runs inside
+   * `bus.execute`, synchronously after a patch, and React has not necessarily re-rendered
+   * yet — so an agent that patched and then compiled would otherwise be handed the plan
+   * from before its own edit. When the revision has not moved this returns the very
+   * object the UI is rendering, which is what keeps it one compile path and not two.
+   */
+  const compileNow = useCallback((): CompileResultView => {
+    const current = runtime.bus.store.getGraph();
+    const cached = cacheRef.current;
+    if (cached !== null && cached.revision === current.revision) return cached.view;
+    const capability = capabilitiesRef.current;
+    if (capability === null) {
+      return { compiled: null, diagnostics: [NO_DEVICE_DIAGNOSTIC] };
+    }
+    const view = compileSafely(current, runtime, capability);
+    cacheRef.current = { revision: current.revision, view };
+    return view;
+  }, [runtime]);
+
+  useEffect(() => {
+    const holder = registerCompileCommand(runtime.bus);
+    holder.current = { compileNow };
+    return () => {
+      if (holder.current?.compileNow === compileNow) holder.current = null;
+    };
+  }, [compileNow, runtime]);
 
   // The static half of the performance tab and of every node info popup (T41, §V85).
   // Once per compile, never per frame: the plan does not change between frames, and

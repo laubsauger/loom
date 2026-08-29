@@ -7,6 +7,26 @@ interface ParameterBase {
   animatable?: boolean;
   /** Compile-time parameters change shader structure and force targeted recompilation (§V5). */
   compileTime?: boolean;
+  /**
+   * §V146 — when this parameter CANNOT affect the output, and why (T245, B14).
+   *
+   * Returns the reason as a sentence, or `null` when the parameter applies. It is a
+   * function over the node's OWN effective parameter values, declared here beside the
+   * parameter it describes, because the node is the only thing that knows: Noise's
+   * `Time Speed` moves the fourth noise dimension, and a 2D type has no fourth
+   * dimension, so the shader discards it. The user sets it, presses play, sees a still
+   * frame, and goes looking for the fault in their own understanding — which is why a
+   * live control that does nothing is worse than one that is not there.
+   *
+   * It is a PREDICATE, not a table in the inspector: most nodes with a mode enum have
+   * parameters that only apply in some modes, and a lookup keyed by node type would have
+   * to be edited every time the catalogue grows.
+   *
+   * Inactive is NOT disabled. The value stays editable — TD lets you type into a greyed
+   * parameter, because setting it BEFORE switching the mode that makes it apply is a
+   * normal way to work, and read-only would take that away.
+   */
+  inactiveWhen?: (values: Readonly<Record<string, ParameterValue>>) => string | null;
 }
 
 export interface NumberParameter extends ParameterBase {

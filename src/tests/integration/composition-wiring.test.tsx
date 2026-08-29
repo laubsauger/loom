@@ -11,7 +11,9 @@ import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { ProjectDocument } from "@domain/types/graph.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { AgentToolSurface } from "@agent/index.ts";
 import { App } from "../../app/app.tsx";
+import type { OpenPaneWindow } from "../../app/pane-window.tsx";
 import { createAppRuntime, newProjectDocument } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
 import type { GpuStatus } from "../../app/gpu-status.ts";
@@ -91,6 +93,8 @@ interface MountOptions {
   readonly runtime?: AppRuntime;
   readonly createSnapshotStore?: () => SnapshotStore | undefined;
   readonly onRuntimeChange?: (runtime: AppRuntime) => void;
+  readonly onAgentSurface?: (surface: AgentToolSurface) => void;
+  readonly openPaneWindow?: OpenPaneWindow;
 }
 
 async function mountApp(options: MountOptions = {}) {
@@ -108,6 +112,8 @@ async function mountApp(options: MountOptions = {}) {
           ? {}
           : { createSnapshotStore: options.createSnapshotStore })}
         {...(options.onRuntimeChange === undefined ? {} : { onRuntimeChange: options.onRuntimeChange })}
+        {...(options.onAgentSurface === undefined ? {} : { onAgentSurface: options.onAgentSurface })}
+        {...(options.openPaneWindow === undefined ? {} : { openPaneWindow: options.openPaneWindow })}
       />,
     );
   });
@@ -736,5 +742,360 @@ describe("§V28a — preview sinks", () => {
       expect(runtime.telemetry.snapshot().plan).not.toBeNull();
     });
     expect(runtime.telemetry.snapshot().plan?.nodeCount).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// 8. Surfaces that were built, tested, and not connected (B12, T200, T188, T189)
+// ---------------------------------------------------------------------------------
+
+/**
+ * This whole section is the B12 shape: a finished, green track that the running app
+ * never constructs. Nothing here re-tests those tracks — each assertion is only that the
+ * thing is REACHABLE from a mounted app, which is the one property their own suites
+ * structurally cannot see.
+ */
+describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () => {
+  it("hands out a surface whose tools are available, not `unavailable`", async () => {
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, onAgentSurface: (next) => (surface = next) });
+
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("the composition root constructed no agent surface");
+
+    const byName = new Map(built.listTools().map((tool) => [tool.name, tool]));
+    // The read tools that used to need INJECTED PORTS. They are bus queries now (T175),
+    // and the root attaches the sources — so an out-of-process adapter sees them too.
+    for (const name of ["get_selection", "get_diagnostics", "get_runtime_metrics"]) {
+      expect(byName.get(name)?.available, `${name} has no source attached`).toBe(true);
+    }
+    // The mutation and workflow tools the criterion names.
+    for (const name of ["apply_graph_patch", "validate_project", "compile_project", "save_project"]) {
+      expect(byName.get(name)?.available, `${name} has no command behind it`).toBe(true);
+    }
+  });
+
+  it("reads the LIVE selection through the bus, not a snapshot taken at construction", async () => {
+    const runtime = newRuntime();
+    const nodeId = await seedRenderable(runtime);
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, runtime, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("no agent surface");
+
+    const before = await built.callTool("get_selection", {});
+    expect(before.data).toEqual({ nodeIds: [], edgeIds: [] });
+
+    const element = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    if (element === null) throw new Error("expected the seeded node on the canvas");
+    await select(element);
+
+    const after = await built.callTool("get_selection", {});
+    expect(after.status).toBe("ok");
+    expect(after.data).toEqual({ nodeIds: [nodeId], edgeIds: [] });
+  });
+
+  it("compiles through the bus, seeing an edit the agent has only just made (§V39)", async () => {
+    const runtime = newRuntime();
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, runtime, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("no agent surface");
+
+    interface Report {
+      readonly compiled: boolean;
+      readonly nodeCount: number;
+      readonly passCount: number;
+    }
+    // A holder rather than a `let`: TypeScript narrows a variable only assigned inside a
+    // closure to `never`, which reads as a type error about the test rather than the code.
+    const captured: { report: Report | null } = { report: null };
+    await act(async () => {
+      await built.callTool("apply_graph_patch", {
+        baseRevision: runtime.bus.store.getRevision(),
+        label: "agent builds a chain",
+        operations: [
+          { op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 } },
+          { op: "addNode", ref: "$out", type: "output", position: { x: 240, y: 0 } },
+          {
+            op: "connect",
+            source: { nodeId: "$solid", portId: "out" },
+            target: { nodeId: "$out", portId: "input" },
+          },
+        ],
+      });
+      // Deliberately NOT awaiting a re-render first: the handler must read the store, or
+      // an agent that edits and then compiles is handed the plan from before its edit.
+      const outcome = await built.callTool("compile_project", {});
+      captured.report = outcome.data as Report;
+      expect(outcome.status).toBe("ok");
+    });
+
+    expect(captured.report?.compiled).toBe(true);
+    expect(captured.report?.nodeCount).toBe(2);
+    expect(captured.report?.passCount).toBeGreaterThan(0);
+  });
+
+  it("shows what the agent is doing, rather than mutating invisibly (§V42)", async () => {
+    await mountApp({ status: READY });
+    // The presence pane is MOUNTED — the panel had no host at all before T220.
+    expect(await screen.findByTestId("agent-presence-panel")).toBeDefined();
+    expect(screen.getByTestId("agent-activity").textContent).toBe("Idle");
+  });
+});
+
+describe("help, and the two libraries that had no host", () => {
+  it("opens help from the top bar, not only from a shortcut nobody can see (T200)", async () => {
+    await mountApp({ status: READY });
+
+    // The owner asked for this twice, and asked for it in the TOP BAR: a keybinding is
+    // not an affordance. Same command as mod+/ and the palette entry (§V29, §V52).
+    const trigger = screen.getByTestId("open-help");
+    await act(async () => {
+      fireEvent.click(trigger);
+    });
+
+    const panel = await screen.findByRole("dialog", { name: /help/i });
+    expect(panel).toBeDefined();
+  });
+
+  it("mounts the component library beside the node library, both additive (§V93)", async () => {
+    await mountApp({ status: READY });
+    const left = document.querySelector('[data-dock-zone="left"]');
+    if (left === null) throw new Error("no left dock");
+    expect(left.querySelector('[data-pane-tab="library"]')).not.toBeNull();
+    expect(left.querySelector('[data-pane-tab="components"]')).not.toBeNull();
+  });
+
+  it("keeps the example library out of that pair — OPEN is the destructive verb (§V93)", async () => {
+    await mountApp({ status: READY });
+    const left = document.querySelector('[data-dock-zone="left"]');
+    if (left === null) throw new Error("no left dock");
+    // Mounted, and reachable…
+    expect(document.querySelector('[data-pane-tab="examples"]')).not.toBeNull();
+    // …but never a third tab one click from two harmless ones.
+    expect(left.querySelector('[data-pane-tab="examples"]')).toBeNull();
+  });
+});
+
+/**
+ * §V97 — a floated pane shares ONE bus, store and runtime. The assertion is a MUTATION:
+ * a second runtime in the child window would leave the two documents disagreeing, which
+ * is exactly the failure that shows up later as "my edits sometimes don't stick".
+ */
+describe("a floated pane is on the same bus as the dock (§V97, T192)", () => {
+  it("shows an edit made through the app's bus inside the child window", async () => {
+    const doc = document.implementation.createHTMLDocument("floating pane");
+    const child = {
+      document: doc,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      close: () => {},
+    };
+
+    const runtime = newRuntime();
+    const nodeId = await seedRenderable(runtime);
+    await mountApp({ status: READY, runtime, openPaneWindow: () => child });
+
+    const element = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    if (element === null) throw new Error("expected the seeded node on the canvas");
+    await select(element);
+    // The inspector is showing that node, in the dock.
+    const inspector = document.querySelector<HTMLElement>('[data-pane-host="inspector"]');
+    if (inspector === null) throw new Error("no inspector pane");
+    expect(inspector.textContent).toContain(nodeId);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Move inspector" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Float in its own window" }));
+    });
+
+    // The SAME element, now living in the child document.
+    expect(doc.body.contains(inspector)).toBe(true);
+
+    // ONE store: a mutation dispatched on the app's bus, in the main window, reaches the
+    // pane that is now in a different document. A second runtime over there would leave
+    // this node still sitting in the floated inspector — the quiet §V29 failure that
+    // surfaces later as "my edits sometimes don't stick".
+    await act(async () => {
+      await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "remove the selected node",
+          operations: [{ op: "removeNodes", nodeIds: [nodeId] }],
+        },
+        runtime.invocation,
+      );
+    });
+
+    await waitFor(() => {
+      expect(inspector.textContent).toContain("No node selected");
+    });
+    expect(inspector.textContent).not.toContain(nodeId);
+    expect(doc.body.contains(inspector)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// 9. New, and the confirmation that protects unsaved work (T261, §V165, §V166)
+// ---------------------------------------------------------------------------------
+
+/**
+ * §V165 puts New under §V93's rule: it is a destructive verb, so it asks when there is
+ * unsaved work. §V166 is the part that is usually built wrong — a two-button "are you
+ * sure?" makes the careful user do the most work and discarding one click. The assertions
+ * below are therefore about the SHAPE of the dialog as much as its outcomes.
+ */
+describe("New replaces the project, and asks first when work is unsaved", () => {
+  async function clickNew() {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("project-new"));
+    });
+  }
+
+  it("starts an empty project without asking when nothing is unsaved", async () => {
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    // Mounting AFTER the seed is what makes this document clean: the dirty flag is
+    // "the revision moved since it was last written", and nothing has moved since mount.
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+
+    await clickNew();
+
+    expect(screen.queryByTestId("unsaved-changes-dialog")).toBeNull();
+    const next = swapped as AppRuntime | null;
+    if (next === null) throw new Error("New did not replace the runtime");
+    expect(Object.keys(next.bus.store.getGraph().nodes)).toEqual([]);
+    // A NEW runtime, so nothing of the old project survives — not its undo history, not
+    // its settings, not its store.
+    expect(next.bus).not.toBe(runtime.bus);
+  });
+
+  it("asks before discarding unsaved work, and offers SAVE first (§V166)", async () => {
+    const runtime = newRuntime();
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+    // Edit AFTER mount: now there is unsaved work.
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+
+    await clickNew();
+
+    const dialog = await screen.findByTestId("unsaved-changes-dialog");
+    const buttons = [...dialog.querySelectorAll("button")].map((button) => button.textContent);
+    // Three outcomes, in this order. Two of them — "are you sure?" — is the shape §V166
+    // exists to rule out: it makes keeping your work the longest path through the dialog.
+    expect(buttons).toEqual(["Save and continue", "Discard", "Cancel"]);
+
+    // Nothing has happened yet: the command is suspended, not cancelled.
+    expect(swapped).toBeNull();
+    expect(Object.keys(runtime.bus.store.getGraph().nodes).length).toBe(2);
+  });
+
+  it("cancel leaves the document exactly as it was", async () => {
+    const runtime = newRuntime();
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+    const before = runtime.bus.store.getGraph();
+
+    await clickNew();
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    });
+
+    expect(swapped).toBeNull();
+    expect(runtime.bus.store.getGraph()).toBe(before);
+    expect(screen.queryByTestId("unsaved-changes-dialog")).toBeNull();
+  });
+
+  it("discard throws the work away and starts empty", async () => {
+    const runtime = newRuntime();
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+
+    await clickNew();
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    });
+
+    const next = swapped as AppRuntime | null;
+    if (next === null) throw new Error("Discard did not start a new project");
+    expect(Object.keys(next.bus.store.getGraph().nodes)).toEqual([]);
+  });
+
+  it("save-and-continue writes the file FIRST, then starts the new project", async () => {
+    const written: string[] = [];
+    installSavePicker((text) => written.push(text));
+
+    const runtime = newRuntime();
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+    await clickNew();
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Save and continue" }));
+    });
+
+    // The file holds the document as it stood BEFORE the new project replaced it — the
+    // whole point of the primary action. (`updatedAt` is stamped at write time, so the
+    // assertion is on the graph rather than on the byte string.)
+    expect(written).toHaveLength(1);
+    const file = JSON.parse(written[0] ?? "null") as { graph?: { nodes?: object } };
+    const nodes = file.graph?.nodes ?? {};
+    expect(Object.keys(nodes)).toHaveLength(2);
+    const next = swapped as AppRuntime | null;
+    if (next === null) throw new Error("Save and continue did not start a new project");
+    expect(Object.keys(next.bus.store.getGraph().nodes)).toEqual([]);
+  });
+
+  it("does not continue when the save the user asked for did not happen", async () => {
+    // A cancelled picker: `project.save` reports `saved: false`.
+    (globalThis as Record<string, unknown>)["showSaveFilePicker"] = async () => {
+      throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+    };
+
+    const runtime = newRuntime();
+    let swapped: AppRuntime | null = null;
+    await mountApp({ status: READY, runtime, onRuntimeChange: (next) => (swapped = next) });
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+
+    await clickNew();
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Save and continue" }));
+    });
+
+    // Continuing anyway would destroy exactly the work the user clicked Save to keep.
+    expect(swapped).toBeNull();
+    expect(Object.keys(runtime.bus.store.getGraph().nodes).length).toBe(2);
+  });
+
+  it("routes through the bus, so a hotkey or the palette asks the same question", async () => {
+    const runtime = newRuntime();
+    await mountApp({ status: READY, runtime });
+    await act(async () => {
+      await seedRenderable(runtime);
+    });
+
+    // Not the button: the command itself. §V52 — one action, one path.
+    await act(async () => {
+      void runtime.bus.execute("project.new", {}, runtime.invocation);
+    });
+
+    expect(await screen.findByTestId("unsaved-changes-dialog")).toBeDefined();
   });
 });

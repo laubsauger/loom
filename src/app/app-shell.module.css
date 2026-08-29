@@ -33,6 +33,14 @@
   min-width: 0;
 }
 
+/* Position context for the drop bands (T191): they cover the body while a pane tab is
+   being dragged, including the area of a zone that is currently collapsed to zero. */
+.bodyWrap {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+
 .body {
   min-height: 0;
 }
@@ -83,12 +91,6 @@
 .canvas > [data-node-info-host] {
   height: 100%;
   min-height: 0;
-}
-
-.dock {
-  height: 100%;
-  min-height: 0;
-  background: var(--bg-panel);
 }
 
 .layoutMenu {

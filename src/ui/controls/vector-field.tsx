@@ -26,6 +26,12 @@ export interface VectorFieldProps {
   value: readonly number[];
   definition: VectorParameter;
   disabled?: boolean;
+  /**
+   * Per-axis availability (§V113). A channel whose own slot runs an expression, a bind
+   * or a channel is not draggable — its value is decided elsewhere, and a field that
+   * accepts a gesture the resolver then overrides is a field that lies.
+   */
+  componentDisabled?: readonly boolean[];
   describedBy?: string;
   onChange: ValueListener<readonly number[]>;
 }
@@ -35,6 +41,7 @@ export function VectorField({
   value,
   definition,
   disabled = false,
+  componentDisabled,
   describedBy,
   onChange,
 }: VectorFieldProps) {
@@ -60,7 +67,7 @@ export function VectorField({
             value={value[index] ?? definition.default[index] ?? 0}
             defaultValue={definition.default[index] ?? 0}
             spec={spec}
-            disabled={disabled}
+            disabled={disabled || componentDisabled?.[index] === true}
             {...(describedBy === undefined ? {} : { describedBy })}
             onChange={(next, phase) => setAxis(index, next, phase)}
           />

@@ -3,12 +3,17 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { NumberParameter } from "@domain/types/parameters.ts";
 import { cx } from "../cx.ts";
 import {
+  DECADE_LADDER,
   DRAG_THRESHOLD_PX,
+  defaultDecade,
   dragModifierFrom,
+  formatDecade,
   formatNumber,
+  normalizeAtDecade,
   normalizeValue,
   nudge,
   rangeFraction,
+  shiftDecade,
   valueFromDrag,
 } from "./drag-math.ts";
 import { evaluateExpression } from "./expression.ts";
@@ -36,7 +41,20 @@ import styles from "./controls.module.css";
  * §V15/§V5: intermediate values are reported as `"live"` and the settled value as
  * `"commit"`. The editor holds one transaction across a gesture, so a drag applies
  * continuously but collapses into a single undo entry.
+ *
+ * ## The magnitude ladder (T228, §V133, §V134)
+ *
+ * Precision spans decades, and three modifier levels cannot cover that: the same field
+ * has to reach 0.0001 and 100 without anyone editing a `step` setting. Press and hold
+ * and a ladder of magnitudes appears — 0.001 · 0.01 · 0.1 · 1 · 10 · 100 — pick one and
+ * drag at it; mod+↑/↓ does the same from the keyboard (§V19). Shift and Alt keep giving
+ * ±1 decade from wherever the ladder was left. The manifest `step` chooses the rung the
+ * field starts on; it is a default, not a cap. Every value emitted still lands exactly
+ * on the chosen rung's grid (§V134) — reach must not cost exactness.
  */
+
+/** How long a press has to sit still before it means "show me the magnitudes". */
+const LADDER_HOLD_MS = 400;
 
 /** doc §8.1 — "Parameters show units". Symbols, not words: the row is 20 px tall. */
 const UNIT_SUFFIX: Readonly<Record<NonNullable<NumberParameter["unit"]>, string>> = {
@@ -75,6 +93,59 @@ interface DragState {
   last: number;
 }
 
+interface LadderProps {
+  label: string;
+  current: number;
+  onPick: (decade: number) => void;
+  onDismiss: () => void;
+}
+
+/**
+ * The ladder itself: one button per magnitude, the current rung marked. A listbox
+ * rather than a menu because it is a choice among values, and real buttons because the
+ * whole thing must work from the keyboard (§V19).
+ */
+function DecadeLadder({ label, current, onPick, onDismiss }: LadderProps) {
+  const selectedRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    selectedRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className={styles.ladder}
+      role="listbox"
+      aria-label={`${label} drag magnitude`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onDismiss();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onDismiss();
+      }}
+    >
+      {DECADE_LADDER.map((rung) => (
+        <button
+          key={rung}
+          type="button"
+          role="option"
+          aria-selected={rung === current}
+          className={cx(styles.ladderRung, "nodrag")}
+          {...(rung === current ? { ref: selectedRef } : {})}
+          onClick={() => onPick(rung)}
+        >
+          {formatDecade(rung)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function NumberField({
   label,
   value,
@@ -89,16 +160,30 @@ export function NumberField({
 }: NumberFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const holdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Value emitted by an in-flight keyboard repeat, awaiting its commit on keyup. */
   const keyRef = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** Null = the manifest step decides the drag, exactly as before the ladder existed. */
+  const [decade, setDecade] = useState<number | null>(null);
+  const [ladderOpen, setLadderOpen] = useState(false);
   /** Non-null while the user is typing. Null means "showing the value". */
   const [text, setText] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
 
   const editing = text !== null;
-  const display = text ?? formatNumber(value, spec);
+  const display = text ?? formatNumber(value, spec, decade ?? undefined);
   const fraction = rangeFraction(value, spec);
+  /** What the ladder marks as current: the picked rung, or the one the manifest implies. */
+  const shownDecade = decade ?? defaultDecade(spec);
+
+  const cancelHold = useCallback(() => {
+    if (holdRef.current === null) return;
+    clearTimeout(holdRef.current);
+    holdRef.current = null;
+  }, []);
+
+  useEffect(() => cancelHold, [cancelHold]);
 
   const emit = useCallback(
     (next: number, phase: EditPhase) => {
@@ -108,14 +193,14 @@ export function NumberField({
   );
 
   const beginTextEntry = useCallback(() => {
-    setText(formatNumber(value, spec));
+    setText(formatNumber(value, spec, decade ?? undefined));
     setInvalid(false);
     const input = inputRef.current;
     if (input === null) return;
     // Focus first: an input can only be selected once it is focusable and focused.
     input.focus();
     input.select();
-  }, [spec, value]);
+  }, [decade, spec, value]);
 
   const commitText = useCallback(
     (raw: string): boolean => {
@@ -126,10 +211,17 @@ export function NumberField({
       }
       setInvalid(false);
       setText(null);
-      emit(normalizeValue(parsed.value, spec), "commit");
+      // Typed entry is unchanged on a field nobody has touched the ladder on — the
+      // manifest step still quantises it. Once a rung IS picked it quantises there
+      // instead, because a field that drags to 0.0001 and then rounds a TYPED 0.0001 to
+      // zero would be two controls wearing one box (§V134).
+      emit(
+        decade === null ? normalizeValue(parsed.value, spec) : normalizeAtDecade(parsed.value, spec, decade),
+        "commit",
+      );
       return true;
     },
-    [emit, spec],
+    [decade, emit, spec],
   );
 
   const cancelTextEntry = useCallback(() => {
@@ -162,8 +254,19 @@ export function NumberField({
         moved: false,
         last: value,
       };
+      // A press that sits still is asking for the reach, not for a value (§V133). The
+      // drag is dropped when the ladder opens, so the release that follows neither
+      // commits a value nor falls through to click-to-type.
+      cancelHold();
+      holdRef.current = setTimeout(() => {
+        holdRef.current = null;
+        if (dragRef.current?.moved === true) return;
+        dragRef.current = null;
+        setDragging(false);
+        setLadderOpen(true);
+      }, LADDER_HOLD_MS);
     },
-    [disabled, editing, value],
+    [cancelHold, disabled, editing, value],
   );
 
   const onPointerMove = useCallback(
@@ -175,6 +278,7 @@ export function NumberField({
       if (!drag.moved) {
         if (Math.abs(deltaX) < DRAG_THRESHOLD_PX) return;
         drag.moved = true;
+        cancelHold();
         setDragging(true);
       }
       const next = valueFromDrag({
@@ -182,16 +286,18 @@ export function NumberField({
         deltaX,
         spec,
         modifier: dragModifierFrom(event),
+        ...(decade === null ? {} : { decade }),
       });
       if (next === drag.last) return;
       drag.last = next;
       emit(next, "live");
     },
-    [emit, spec],
+    [cancelHold, decade, emit, spec],
   );
 
   const endDrag = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      cancelHold();
       const drag = dragRef.current;
       if (drag === null || drag.pointerId !== event.pointerId) return;
       event.stopPropagation();
@@ -213,7 +319,7 @@ export function NumberField({
       // A press that never moved is a click: hand the field to the keyboard.
       if (!disabled) beginTextEntry();
     },
-    [beginTextEntry, disabled, emit],
+    [beginTextEntry, cancelHold, disabled, emit],
   );
 
   const onDoubleClick = useCallback(
@@ -248,6 +354,16 @@ export function NumberField({
         return;
       }
 
+      // mod+↑/↓ walks the magnitude ladder and shows it, so the reach the pointer gets
+      // by pressing and holding is reachable — and VISIBLE — without a pointer (§V19).
+      if ((event.metaKey || event.ctrlKey) && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault();
+        event.stopPropagation();
+        setDecade(shiftDecade(shownDecade, event.key === "ArrowUp" ? 1 : -1));
+        setLadderOpen(true);
+        return;
+      }
+
       const modifier = dragModifierFrom(event);
       const current = keyRef.current ?? value;
 
@@ -256,7 +372,14 @@ export function NumberField({
         // Only the keys this control actually handles are withheld from the keymap;
         // mod+z and friends must still reach the graph while a field has focus.
         event.stopPropagation();
-        const next = nudge({ value: current, direction, spec, modifier, steps });
+        const next = nudge({
+          value: current,
+          direction,
+          spec,
+          modifier,
+          steps,
+          ...(decade === null ? {} : { decade }),
+        });
         keyRef.current = next;
         // Held keys repeat; reporting them as live keeps the repeat in one undo group.
         emit(next, "live");
@@ -297,7 +420,19 @@ export function NumberField({
           return;
       }
     },
-    [beginTextEntry, cancelTextEntry, commitText, disabled, editing, emit, spec, text, value],
+    [
+      beginTextEntry,
+      cancelTextEntry,
+      commitText,
+      decade,
+      disabled,
+      editing,
+      emit,
+      shownDecade,
+      spec,
+      text,
+      value,
+    ],
   );
 
   const flushKeyboard = useCallback(() => {
@@ -315,8 +450,14 @@ export function NumberField({
     [flushKeyboard],
   );
 
-  // A field that loses focus mid-gesture must still close its undo group.
-  useEffect(() => flushKeyboard, [flushKeyboard]);
+  // A field that unmounts mid-gesture must still close its undo group. Kept in a ref
+  // with EMPTY deps on purpose (B10's sibling): `flushKeyboard` changes identity on
+  // every render, because the parent hands a fresh `onChange` down each time. With
+  // `[flushKeyboard]` the cleanup fired on every render — so a held arrow key committed
+  // once per repaint, turning one gesture into a pile of undo entries (§V15).
+  const flushRef = useRef(flushKeyboard);
+  flushRef.current = flushKeyboard;
+  useEffect(() => () => flushRef.current(), []);
 
   const onBlur = useCallback(() => {
     flushKeyboard();
@@ -327,7 +468,8 @@ export function NumberField({
   const valueText = unitSuffix(unit) === null ? display : `${display} ${unitSuffix(unit)}`;
 
   return (
-    // `nodrag` is React Flow's opt-out class; the handlers below are the real guarantee.
+    <div className={styles.numberHost}>
+    {/* `nodrag` is React Flow's opt-out class; the handlers below are the real guarantee. */}
     <div
       className={cx(styles.number, invalid && styles.numberInvalid, "nodrag", className)}
       data-dragging={dragging}
@@ -372,6 +514,22 @@ export function NumberField({
           {unitSuffix(unit)}
         </span>
       )}
+    </div>
+    {ladderOpen ? (
+      <DecadeLadder
+        label={label}
+        current={shownDecade}
+        onPick={(rung) => {
+          setDecade(rung);
+          setLadderOpen(false);
+          inputRef.current?.focus();
+        }}
+        onDismiss={() => {
+          setLadderOpen(false);
+          inputRef.current?.focus();
+        }}
+      />
+    ) : null}
     </div>
   );
 }

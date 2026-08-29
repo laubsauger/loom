@@ -1,0 +1,20 @@
+/* The pane's permanent container (T193). It is created in JS and moved between slots,
+   so it carries its own fill rules rather than inheriting them from whatever it is
+   parented to this second. */
+.host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* The slot a pane is currently shown in. Empty until the layout effect adopts a host. */
+.outlet {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}

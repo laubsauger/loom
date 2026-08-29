@@ -1,33 +1,44 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { scopeFromFrame } from "@domain/expressions/index.ts";
+import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { LoadProjectSuccess, SnapshotStore } from "@domain/project/index.ts";
+import { HelpHost, OPEN_HELP_COMMAND } from "@editor/help/index.ts";
 import { NodeInfoHost } from "@editor/inspect/index.ts";
 import { KeymapProvider } from "@editor/keymap/index.ts";
 import type { KeymapEnvironment } from "@editor/keymap/index.ts";
+import { ComponentLibrary, ExampleLibrary, useDocumentDirty } from "@editor/library/index.ts";
 import { CommandPalette } from "@editor/palette/index.ts";
 import { ProblemsPanel } from "@editor/shader-editor/index.ts";
 import { Button } from "@ui/index.ts";
+import { UnsavedChangesDialog } from "@ui/primitives/unsaved-changes-dialog.tsx";
 import { AppRuntimeContext } from "./app-context.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
+import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
-import { PerformancePane, ShaderPane } from "./dock-panes.tsx";
+import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import { sharedGpuProbe } from "./gpu-status.ts";
-import type { LayoutStorage } from "./layout-storage.ts";
+import { PANE_TITLES } from "./layout-storage.ts";
+import type { LayoutStorage, PaneId } from "./layout-storage.ts";
+import type { OpenPaneWindow } from "./pane-window.tsx";
 import { NoticeStrip } from "./notices.tsx";
 import type { Notice } from "./notices.tsx";
 import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
+import { TimelineReadout } from "./timeline-readout.tsx";
 import { TopBar } from "./top-bar.tsx";
+import { useAgentSurface } from "./use-agent-surface.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
+import { useMediaSources } from "./use-media-sources.ts";
 import { useProject } from "./use-project.ts";
 
 /**
@@ -78,6 +89,16 @@ export interface AppProps {
    * why opening rebuilds rather than mutating a store in place.
    */
   onRuntimeChange?: (runtime: AppRuntime) => void;
+  /**
+   * Notified with the agent tool surface this root constructs (T220).
+   *
+   * The surface is headless and has no other handle into the tree, so an adapter — a
+   * WebMCP bridge, a test asserting that B12 stays closed — needs one place to take it
+   * from. Same shape and same reason as `onRuntimeChange`.
+   */
+  onAgentSurface?: (surface: AgentToolSurface) => void;
+  /** Window opener for a floated pane (§V97). Injectable so a test needs no popup. */
+  openPaneWindow?: OpenPaneWindow;
 }
 
 const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
@@ -92,6 +113,8 @@ export function App({
   gpuProbe,
   createSnapshotStore,
   onRuntimeChange,
+  onAgentSurface,
+  openPaneWindow,
 }: AppProps = {}) {
   // The runtime is STATE, not a constant: opening a project replaces it wholesale.
   const [runtime, setRuntime] = useState<AppRuntime>(() => providedRuntime ?? createAppRuntime());
@@ -116,6 +139,8 @@ export function App({
   const [hoveredNodeId, setHoveredNodeId] = useState<NodeId | null>(null);
   const [portDrag, setPortDrag] = useState<PortDragOrigin | null>(null);
   const [rejection, setRejection] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
+  /** A pane the browser refused to open a window for (§V97). It is docked again. */
+  const [floatBlocked, setFloatBlocked] = useState<PaneId | null>(null);
   const actionsRef = useRef<GraphActions | null>(null);
 
   const onSelectionChange = useCallback((nodeIds: readonly NodeId[]) => {
@@ -165,7 +190,22 @@ export function App({
   // The frame loop (T184): the only caller of `backend.loop()` in the app. Without it
   // the compiler, the backend and the renderer each pass their own suite while zero
   // frames are ever submitted — see `use-frame-loop.ts`.
-  const frameLoop = useFrameLoop(runtime.bus, backend ?? null, compile.compiled, runtime.settings);
+  // T259/§V163 — `compile.animate` is non-null only when the document has an animated
+  // parameter, so a static project pays nothing per frame.
+  /**
+   * T264/§V135 — a Movie File In or a Webcam node is black until something registers a
+   * source behind it. This is that something; the node contract already says a node with
+   * no source shows black, and a denied camera reports rather than throwing.
+   */
+  const media = useMediaSources(runtime, backend ?? null, compile.graph);
+
+  const frameLoop = useFrameLoop(
+    runtime.bus,
+    backend ?? null,
+    compile.compiled,
+    runtime.settings,
+    compile.animate,
+  );
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
   // the button and the hotkey cannot drift into two different code paths for one action.
@@ -175,6 +215,15 @@ export function App({
   const onStepFrame = useCallback(() => {
     void runtime.bus.execute("transport.stepFrame", { frames: 1 }, runtime.invocation);
   }, [runtime]);
+  // T265/§V170 — the readout's frame field and the bar's reset button are the same
+  // command, and it replays rather than jumping a counter.
+  const onSeek = useCallback(
+    (frameIndex: number) => {
+      void runtime.bus.execute("transport.seek", { frameIndex }, runtime.invocation);
+    },
+    [runtime],
+  );
+  const onResetTime = useCallback(() => onSeek(0), [onSeek]);
 
   // ---- persistence ------------------------------------------------------------------
   const autosave = useAutosave(
@@ -216,9 +265,43 @@ export function App({
     [onRuntimeChange, storage],
   );
 
+  // T189/§V93: "is there unsaved work" is the one thing that makes OPEN ask first. The
+  // example library asks it; `markSaved` after a successful write is the other half.
+  const dirty = useDocumentDirty(runtime.bus);
+  // Read through a ref: the command handler asks at the moment it runs, not at the
+  // moment it was registered.
+  const dirtyRef = useRef(dirty.dirty);
+  dirtyRef.current = dirty.dirty;
+
+  /**
+   * A new, empty project (§V165).
+   *
+   * The same replacement an open performs, minus the file: a fresh runtime, so the new
+   * project cannot inherit the old one's undo history, unknown parameters or settings.
+   * It keeps the browser-local project id, which is exactly what launching the app fresh
+   * does — a new id would orphan the autosave slot this machine has been writing to.
+   */
+  const startNewProject = useCallback(() => {
+    const next = createAppRuntime({
+      ...(storage === undefined ? {} : { identityStorage: storage }),
+      actor: runtimeRef.current.invocation.actor,
+    });
+    owned.current = true;
+    setRuntime(next);
+    setSelection([]);
+    setHoveredNodeId(null);
+    setRejection(NO_DIAGNOSTICS);
+    onRuntimeChange?.(next);
+  }, [onRuntimeChange, storage]);
+
+  const isDirty = useCallback(() => dirtyRef.current, []);
+
   const project = useProject(runtime, {
     flushAutosave: autosave.flush,
     onDocumentLoaded: adoptDocument,
+    onNewProject: startNewProject,
+    isDirty,
+    onSaved: dirty.markSaved,
   });
 
   const problems = useMemo<RuntimeDiagnostic[]>(() => {
@@ -234,6 +317,7 @@ export function App({
     }
     list.push(
       ...compile.diagnostics,
+      ...media.diagnostics,
       ...rejection,
       ...autosave.diagnostics,
       ...project.diagnostics,
@@ -245,6 +329,7 @@ export function App({
     autosave.diagnostics,
     compile.diagnostics,
     frameLoop.diagnostics,
+    media.diagnostics,
     project.diagnostics,
     recovery.diagnostics,
     rejection,
@@ -253,6 +338,38 @@ export function App({
 
   const errorCount = problems.filter((diagnostic) => diagnostic.severity === "error").length;
   const selectedNodeId = selection[0] ?? null;
+
+  /**
+   * The agent tool surface (B12/T220), constructed HERE because there is nowhere else it
+   * could be: it needs the one bus, and the state sources it publishes — selection,
+   * diagnostics, metrics, project — exist only in this file. `attachStateSources` inside
+   * the hook is what turns them into bus queries an out-of-process adapter can read
+   * (§V39), and `AgentPane` below is what makes the agent's activity visible (§V42).
+   */
+  const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems });
+
+  /** The installed catalogue, for the library panes and the help panel's node reference. */
+  const definitions = useMemo(() => [...runtime.registry.list()], [runtime]);
+  const componentsView = useMemo(() => runtime.components.view(), [runtime]);
+
+  /**
+   * What an expression sees, SAMPLED at render (§V16, §V71).
+   *
+   * The help panel lists `time`, `delta` and `frame` with their current values. Those
+   * change every frame, so they are read from the frame loop's ref when this renders —
+   * never pushed into state, which would re-render the whole tree at 60 Hz. With no frame
+   * rendered yet there is no scope, and the panel says so rather than showing zeroes.
+   */
+  const lastFrame = frameLoop.latestFrame();
+  const helpScope: ExpressionScope | undefined =
+    lastFrame === null ? undefined : scopeFromFrame(lastFrame.frame);
+
+  const openHelp = useCallback(() => {
+    void runtime.bus.execute(OPEN_HELP_COMMAND, {}, runtime.invocation);
+  }, [runtime]);
+  useEffect(() => {
+    onAgentSurface?.(agentSurface);
+  }, [agentSurface, onAgentSurface]);
 
   const notices = useMemo<Notice[]>(() => {
     const list: Notice[] = [];
@@ -306,6 +423,16 @@ export function App({
       });
     }
 
+    if (floatBlocked !== null) {
+      list.push({
+        id: "float-blocked",
+        tone: "warn",
+        message: `Your browser blocked the window for the ${PANE_TITLES[floatBlocked]} pane.`,
+        detail: "Allow pop-ups for this site to float a pane.",
+        actions: [{ label: "Dismiss", onSelect: () => setFloatBlocked(null) }],
+      });
+    }
+
     if (runtime.unknownParameters.length > 0) {
       list.push({
         id: "newer-version",
@@ -316,7 +443,7 @@ export function App({
     }
 
     return list;
-  }, [autosave, project, recovery, runtime.unknownParameters.length]);
+  }, [autosave, floatBlocked, project, recovery, runtime.unknownParameters.length]);
 
   const environment = useMemo<KeymapEnvironment>(
     () => ({ context: "global", selection, hoveredNodeId }),
@@ -332,6 +459,8 @@ export function App({
       >
         <AppShell
           {...(storage === undefined ? {} : { storage })}
+          {...(openPaneWindow === undefined ? {} : { openPaneWindow })}
+          onFloatBlocked={setFloatBlocked}
           problemCount={errorCount}
           notices={<NoticeStrip notices={notices} />}
           topBar={
@@ -341,11 +470,17 @@ export function App({
               playing={frameLoop.playing}
               onPlayPause={onPlayPause}
               onStep={onStepFrame}
+              onResetTime={onResetTime}
+              timeline={
+                <TimelineReadout latestFrame={frameLoop.latestFrame} onSeek={onSeek} />
+              }
               trailing={
                 <ProjectActions
                   busy={project.busy}
+                  onNew={project.create}
                   onOpen={project.open}
                   onSave={project.save}
+                  onHelp={openHelp}
                 />
               }
             />
@@ -355,6 +490,22 @@ export function App({
               portDrag={portDrag}
               onClearPortDrag={clearPortDrag}
               actions={graphActions}
+            />
+          }
+          componentLibrary={
+            <ComponentLibrary
+              bus={runtime.bus}
+              context={runtime.invocation}
+              components={componentsView}
+              selection={selection}
+              onPlaced={onSelectionChange}
+            />
+          }
+          exampleLibrary={
+            <ExampleLibrary
+              bus={runtime.bus}
+              context={runtime.invocation}
+              dirty={dirty.dirty}
             />
           }
           graphCanvas={
@@ -395,7 +546,13 @@ export function App({
               unknownParameters={runtime.unknownParameters}
             />
           }
-          viewer={<ViewerPane compiled={compile.compiled} />}
+          viewer={
+            <ViewerPane
+              compiled={compile.compiled}
+              graph={compile.graph}
+              backend={backend ?? null}
+            />
+          }
           shaderEditor={
             <ShaderPane
               nodeId={selectedNodeId}
@@ -405,8 +562,26 @@ export function App({
           }
           problems={<ProblemsPanel diagnostics={problems} />}
           performance={<PerformancePane status={status} />}
+          agent={<AgentPane surface={agentSurface} />}
+        />
+        {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
+            New and Open cannot drift into asking two different questions. */}
+        <UnsavedChangesDialog
+          open={project.confirm !== null}
+          action={project.confirm?.action ?? ""}
+          onSave={() => project.confirm?.save()}
+          onDiscard={() => project.confirm?.discard()}
+          onCancel={() => project.confirm?.cancel()}
+          busy={project.busy}
         />
         <CommandPalette />
+        {/* Inside the KeymapProvider on purpose: the shortcuts tab reads the RESOLVED
+            keymap from its context, so mounting it outside would list nothing (T200). */}
+        <HelpHost
+          bus={runtime.bus}
+          nodes={definitions}
+          {...(helpScope === undefined ? {} : { scope: helpScope })}
+        />
       </KeymapProvider>
     </AppRuntimeContext.Provider>
   );
@@ -421,20 +596,32 @@ export function App({
  */
 function ProjectActions({
   busy,
+  onNew,
   onOpen,
   onSave,
+  onHelp,
 }: {
   busy: boolean;
+  onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
+  onHelp: () => void;
 }) {
   return (
     <>
+      <Button aria-label="New project" onClick={onNew} disabled={busy} data-testid="project-new">
+        new
+      </Button>
       <Button aria-label="Open project" onClick={onOpen} disabled={busy} data-testid="project-open">
         open
       </Button>
       <Button aria-label="Save project" onClick={onSave} disabled={busy} data-testid="project-save">
         save
+      </Button>
+      {/* The owner looked for help in the top bar and did not find it. Same command as
+          mod+/ and the palette entry — one route, three doors (§V29, §V52). */}
+      <Button aria-label="Help" onClick={onHelp} data-testid="open-help">
+        help
       </Button>
     </>
   );

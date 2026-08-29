@@ -308,6 +308,18 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     description: "Search every command on the bus and run it.",
   },
   {
+    // Help (T200). `?` — spelled `shift+/` — is already the graph context's node info,
+    // and TouchDesigner has no shortcut of its own here, so help takes `mod+/`: the
+    // same physical key, one modifier apart, and global rather than graph-only because
+    // a shortcut you can only reach from the canvas is not a way to learn the canvas.
+    id: "ui.help",
+    keys: "mod+/",
+    context: "global",
+    command: "ui.openHelp",
+    label: "Help",
+    description: "Shortcuts, node reference and expression reference.",
+  },
+  {
     id: "ui.settings",
     keys: "mod+,",
     context: "global",

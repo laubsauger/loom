@@ -16,6 +16,11 @@ export interface TopBarProps {
   fps?: number | null;
   gpuMs?: number | null;
   tier?: CapabilityTier | null;
+  /**
+   * Frame / time / fps (T265). A slot rather than props: the readout samples the frame
+   * loop at its own <= 10 Hz tick, so it must own its state and re-render alone (§V16).
+   */
+  timeline?: ReactNode;
   /** Extra trailing chrome (the shell puts its layout menu here). */
   trailing?: ReactNode;
 }
@@ -44,6 +49,7 @@ export function TopBar({
   fps = null,
   gpuMs = null,
   tier = null,
+  timeline,
   trailing,
 }: TopBarProps) {
   return (
@@ -87,12 +93,15 @@ export function TopBar({
       </div>
 
       <div className={styles.metrics}>
-        <div className={styles.metric}>
-          <span className={styles.metricLabel}>fps</span>
-          <span className={styles.metricValue} aria-label="Frames per second">
-            {formatFps(fps)}
-          </span>
-        </div>
+        {timeline}
+        {timeline === undefined ? (
+          <div className={styles.metric}>
+            <span className={styles.metricLabel}>fps</span>
+            <span className={styles.metricValue} aria-label="Frames per second">
+              {formatFps(fps)}
+            </span>
+          </div>
+        ) : null}
         <div className={styles.metric}>
           <span className={styles.metricLabel}>gpu</span>
           <span className={styles.metricValue} aria-label="GPU time per frame">

@@ -141,11 +141,12 @@ export function CommonSection({
 
   return (
     <section className={styles.section} aria-label="Common">
-      <div className={styles.sectionHeader}>
-        <span>Common</span>
-        <span className={styles.sectionRule} aria-hidden />
-      </div>
-
+      {/*
+        No section header: since T269 the TAB carries the name, and a heading repeating
+        the tab you just clicked is a line of chrome that tells you nothing. The block
+        readout is gone from here too — it lives in the inspector header now, where it
+        stays visible from the Parameters tab as well (§V174).
+      */}
       <ControlRow label="Resolution" variant={variant}>
         <EnumField
           label="Resolution mode"
@@ -203,8 +204,6 @@ export function CommonSection({
         />
       </ControlRow>
 
-      <CommonReadout size={size} format={resolvedFormat} />
-
       {formatDiagnostics.map((diagnostic, index) => (
         <div
           key={`${diagnostic.code}-${index}`}
@@ -244,13 +243,45 @@ function dimensionSpec(maxResolution: number | undefined): NumericSpec {
 export interface CommonReadoutProps {
   size: ResolvedSize;
   format: ResolvedFormat;
+  /**
+   * One dense line instead of a bordered block (T269). The inspector header uses it:
+   * the resolved size and format are the facts you glance at constantly — and they move
+   * as a CONSEQUENCE of edits elsewhere, when an input changes what a node inherits — so
+   * they stay visible while the Common controls that set them go behind their tab.
+   */
+  compact?: boolean;
 }
 
 /**
  * The resolved size and format, in one line. Exported on its own so the node body can
  * show exactly the same readout as the inspector without re-deriving it (T73).
+ *
+ * §V90 in the compact form: the SOURCE words ("node default", "project") explain where
+ * the number came from and are carried on hover rather than printed — they are the
+ * second question, asked once. The warning flags stay inline, because "clamped" and
+ * "unsupported" are STATE, not help, and state is one of the four things a dense row is
+ * allowed to say.
  */
-export function CommonReadout({ size, format }: CommonReadoutProps) {
+export function CommonReadout({ size, format, compact = false }: CommonReadoutProps) {
+  if (compact) {
+    return (
+      <div
+        className={styles.readoutLine}
+        aria-label="Resolved output"
+        title={`${size.width} × ${size.height} ${size.source} · ${format.format} ${format.source}`}
+      >
+        <span className={styles.readoutValue}>
+          {size.width} × {size.height}
+        </span>
+        <span className={styles.readoutDot} aria-hidden>
+          ·
+        </span>
+        <span className={styles.readoutValue}>{format.format}</span>
+        {size.clamped ? <span className={styles.readoutFlag}>clamped</span> : null}
+        {format.supported ? null : <span className={styles.readoutFlag}>unsupported</span>}
+      </div>
+    );
+  }
   return (
     <div className={styles.readout} aria-label="Resolved output">
       <span className={styles.readoutValue}>

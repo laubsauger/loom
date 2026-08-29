@@ -177,3 +177,46 @@
   font-size: var(--fs-micro);
   line-height: var(--lh-prose);
 }
+
+/* Component and example libraries (T188, T189). Same list vocabulary as the node pane:
+   three libraries with three verbs still look like one tool (§V93, §V17). */
+
+.saveRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.saveRow .search {
+  flex: 1 1 auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.row .item {
+  flex: 1 1 auto;
+  grid-template-columns: 1fr auto auto;
+  cursor: default;
+}
+
+.version {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.notice {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--border-hairline);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
+}
