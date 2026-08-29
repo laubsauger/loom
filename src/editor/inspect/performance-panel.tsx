@@ -60,10 +60,7 @@ export function PerformancePanel({ telemetry }: PerformancePanelProps) {
   if (snapshot === null) {
     return (
       <div className={styles.performance}>
-        <p className={styles.note}>
-          No telemetry is attached. Metrics arrive from the runtime, never from the
-          document (§V16), so nothing is shown until a runtime is running.
-        </p>
+        <p className={styles.note}>No telemetry attached</p>
       </div>
     );
   }
@@ -95,7 +92,7 @@ export function PerformanceView({ snapshot }: PerformanceViewProps) {
         {snapshot.timingAvailable ? null : (
           <p className={styles.note}>
             This device reports no <code>timestamp-query</code> feature, so per-pass GPU
-            spans are unavailable (§V12). Nothing is estimated in their place — a CPU-side
+            spans are unavailable. Nothing is estimated in their place — a CPU-side
             figure would be a different measurement wearing the same label.
           </p>
         )}

@@ -177,7 +177,7 @@ function FutureParameters({
         <p className={styles.note}>
           {nodeId} carries {unknown.length === 1 ? "a parameter value" : "parameter values"} written
           by a newer build of Shaderloom. {unknown.length === 1 ? "It is" : "They are"} kept exactly
-          as saved and written back unchanged (§V68), so nothing is lost — but this build cannot
+          as saved and written back unchanged, so nothing is lost — but this build cannot
           show a control over {unknown.length === 1 ? "it" : "them"} without inventing a value.
         </p>
         <ul className={styles.list}>
@@ -196,32 +196,30 @@ function FutureParameters({
 }
 
 export interface ViewerPaneProps {
-  status: GpuStatus;
   compiled: CompiledGraph | null;
 }
 
 /**
  * The viewer (§I.ui).
  *
- * There is no presentation surface yet — handing a canvas to the runtime is T87/§V64,
- * and the preview atlas is T34 — so this pane shows what IS known: the device the app
- * got, and the outputs the compiler resolved. What it must never do is show a black
- * rectangle that looks like a render, or nothing at all when WebGPU is missing (§V12).
+ * A content surface shows content, or names its empty state (§V91, §V92a) — device and
+ * build diagnostics (tier, formats, memory, reuse) belong on the performance surface
+ * instead, beside the rest of what a person diagnosing cost is already looking at
+ * (`PerformancePane`, `dock-panes.tsx`). There is no presentation surface wired to this
+ * pane yet (T87/§V64, T161), so what it shows is the outputs the compiler resolved;
+ * once previews land here this list is replaced by the pictures, not supplemented.
  */
-export function ViewerPane({ status, compiled }: ViewerPaneProps) {
+export function ViewerPane({ compiled }: ViewerPaneProps) {
+  const outputs = compiled?.outputs ?? [];
   return (
     <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
-      <GpuStatusCard status={status} />
-
       <section className={styles.block} aria-label="Resolved outputs">
         <h3 className={styles.blockTitle}>outputs</h3>
-        {compiled === null || compiled.outputs.length === 0 ? (
-          <p className={styles.note}>
-            Nothing to render yet. Add a node and connect it to an Output.
-          </p>
+        {outputs.length === 0 ? (
+          <p className={styles.note}>No output</p>
         ) : (
           <ul className={styles.list}>
-            {compiled.outputs.map((output) => (
+            {outputs.map((output) => (
               <li key={`${output.nodeId}:${output.portId}`} className={styles.row}>
                 <span className={styles.rowName}>
                   {output.nodeId}:{output.portId}
@@ -233,63 +231,7 @@ export function ViewerPane({ status, compiled }: ViewerPaneProps) {
             ))}
           </ul>
         )}
-        <p className={styles.note}>
-          Live pixels arrive with the preview system; the runtime owns the surface, not
-          this pane.
-        </p>
       </section>
     </div>
-  );
-}
-
-export function GpuStatusCard({ status }: { status: GpuStatus }) {
-  if (status.kind === "probing") {
-    return (
-      <section className={styles.block} aria-label="GPU status">
-        <h3 className={styles.blockTitle}>gpu</h3>
-        <p className={styles.note}>Requesting a WebGPU device…</p>
-      </section>
-    );
-  }
-
-  if (status.kind === "unavailable") {
-    return (
-      <section className={styles.block} data-tone="error" aria-label="GPU status" role="status">
-        <h3 className={styles.blockTitle}>gpu unavailable</h3>
-        <p className={styles.alert}>{status.reason}</p>
-        <p className={styles.note}>
-          The graph, the inspector and the shader editor still work — the document is the
-          source of truth and does not need a device. Rendering and compile validation stay
-          off until one is available.
-        </p>
-      </section>
-    );
-  }
-
-  const { capabilities, baseline } = status;
-  return (
-    <section className={styles.block} aria-label="GPU status">
-      <h3 className={styles.blockTitle}>gpu</h3>
-      <dl className={styles.facts}>
-        <div className={styles.fact}>
-          <dt>tier</dt>
-          <dd>{capabilities.tier}</dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>timestamp query</dt>
-          <dd>{capabilities.timestampQuery ? "yes" : "no"}</dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>formats</dt>
-          <dd>{capabilities.formats.join(", ")}</dd>
-        </div>
-      </dl>
-      {baseline ? null : (
-        <p className={styles.alert} role="status">
-          This device is below the Tier B baseline (rgba16float, compute, storage
-          buffers). Expect missing features rather than a working render.
-        </p>
-      )}
-    </section>
   );
 }

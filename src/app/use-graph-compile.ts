@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { compileGraph } from "@compiler/index.ts";
-import type { CompiledGraph } from "@compiler/index.ts";
+import type { ActiveSink, CompiledGraph } from "@compiler/index.ts";
 import { telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeRunStatus, NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
+import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -31,6 +32,32 @@ export interface GraphCompileResult {
   readonly errorCount: number;
 }
 
+/**
+ * Every visible texture-producing node previews by default (§V28b) — TD parity: a
+ * disconnected node shows its output rather than a blank box until it is wired to an
+ * Output. VISIBILITY, not `ui.preview`, is what makes a node a preview sink; `ui.preview`
+ * is an explicit PIN now (§V28b), not the on-switch, so it plays no part here.
+ *
+ * "Visible" at this layer means "exists in the graph with a texture output" — the
+ * compiler has no notion of scroll position, and recompiling on every pan would defeat
+ * §V16. On-screen visibility is a presentation-layer concern: §V28's scheduler (already
+ * built) suspends offscreen/collapsed previews cheaply, per frame, without touching the
+ * compiled plan (§V28c) — that is what makes this affordable for a 200-node graph.
+ *
+ * §V28a: this list is AUTHORITATIVE and passed on every compile, never partial.
+ */
+function visiblePreviewSinks(graph: GraphDocument, registry: NodeRegistryView): ActiveSink[] {
+  const sinks: ActiveSink[] = [];
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    const definition = registry.get(node.type);
+    if (definition === undefined) continue;
+    const texturePort = definition.outputs.find((port) => port.type.kind === "texture2d");
+    if (texturePort === undefined) continue;
+    sinks.push({ nodeId, portId: texturePort.id, kind: "preview" });
+  }
+  return sinks;
+}
+
 function statusFor(errors: number, warnings: number, compiled: boolean): NodeRunStatus {
   if (errors > 0) return "error";
   if (warnings > 0) return "warning";
@@ -48,13 +75,9 @@ function compileSafely(
       settings: runtime.settings,
       registry: runtime.registry,
       capabilities,
-      // §V28a: NO `sinks` key, deliberately. An explicit list is AUTHORITATIVE — an
-      // empty one means "no previews are visible", not "fall back to the document's
-      // `ui.preview` flags" — and this root cannot yet tell which previews are on
-      // screen, because visibility lives with the preview surface (T34/T161, still in
-      // flight). Passing a partial list would silently schedule the wrong set; omitting
-      // the key is the documented "use the flags" case. When visibility is derivable
-      // here, pass EVERY visible preview and never the union of the two rules.
+      // §V28a: EVERY visible texture-producing node, never a partial list — an explicit
+      // list is authoritative, so passing some but not all would silently prune the rest.
+      sinks: visiblePreviewSinks(graph, runtime.registry),
     });
     return { compiled, diagnostics: [...compiled.diagnostics] };
   } catch (error) {

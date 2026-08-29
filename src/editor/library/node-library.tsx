@@ -97,6 +97,7 @@ export function NodeLibrary({
           value={query}
           placeholder="Search nodes"
           aria-label="Search nodes"
+          title="Enter adds the top hit"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             // §V53: a text field swallows editing keys rather than driving the graph.
@@ -157,7 +158,7 @@ export function NodeLibrary({
           <p className={styles.empty}>
             {drag === null
               ? "No node matches that search."
-              : "No registered node accepts this port type. Insert a conversion node (§V13)."}
+              : "No compatible node — insert a conversion node instead."}
           </p>
         ) : (
           groups.map((group) => (
@@ -181,10 +182,6 @@ export function NodeLibrary({
           ))
         )}
       </div>
-      {/*
-      <p className={styles.hint}>
-        Drag onto the canvas, or press Enter to add the top hit.
-      </p> */}
     </div>
   );
 }

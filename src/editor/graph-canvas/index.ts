@@ -2,7 +2,7 @@ export { GraphCanvas } from "./graph-canvas.tsx";
 export type { GraphCanvasProps } from "./graph-canvas.tsx";
 
 export { GraphCanvasContext, useGraphCanvas, useNodeRuntime } from "./canvas-context.ts";
-export type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
+export type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
 
 export {
   IDLE_RUNTIME,

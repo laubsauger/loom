@@ -3,16 +3,21 @@ import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import { ReactFlowProvider, useConnection, useReactFlow } from "@xyflow/react";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { ShaderloomBus } from "@domain/commands/index.ts";
+import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
+import type { ResolvedOutput } from "@compiler/index.ts";
 import { GraphCanvas } from "@editor/graph-canvas/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
+import { NodePreviewSlot, createPreviewSlotBounds } from "@editor/viewer/index.ts";
+import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
+import { useNodePreviews } from "./use-node-previews.ts";
 import styles from "./panes.module.css";
 
 /**
@@ -51,7 +56,21 @@ export interface GraphPaneProps {
   onPatchResult: (result: CommandResult<"graph.applyPatch">) => void;
   /** Filled with the canvas actions while the pane is mounted. */
   actionsRef: RefObject<GraphActions | null>;
+  /**
+   * The live device, once the capability probe has one (§V12), and what the preview
+   * request builder needs to resolve a node's tile source (T182, T185). All optional so
+   * a caller that only wants the canvas — a test, an embedding — keeps working with no
+   * previews rather than being forced to wire a backend it does not have.
+   */
+  previewBackend?: ShaderloomBackend | null;
+  graph?: GraphDocument;
+  compiledOutputs?: ReadonlyArray<ResolvedOutput>;
+  previewFps?: number;
+  previewLongEdge?: number;
 }
+
+const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
+const EMPTY_OUTPUTS: ReadonlyArray<ResolvedOutput> = [];
 
 export function GraphPane(props: GraphPaneProps) {
   // The canvas mounts its own provider when there is none; hoisting it here lets the
@@ -71,10 +90,45 @@ function GraphPaneInner({
   onPortDragChange,
   onPatchResult,
   actionsRef,
+  previewBackend = null,
+  graph = EMPTY_GRAPH,
+  compiledOutputs = EMPTY_OUTPUTS,
+  previewFps = 20,
+  previewLongEdge = 192,
 }: GraphPaneProps) {
-  const { bus, invocation, nodeRuntime } = useAppRuntime();
+  const { bus, invocation, nodeRuntime, registry } = useAppRuntime();
   const flow = useReactFlow();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // One store per mounted pane: `NodePreviewSlot` writes each node's measured slot
+  // rect, the preview tick below reads it every frame (T185, design note §3).
+  const previewBounds = useMemo(() => createPreviewSlotBounds(), []);
+  const getViewport = useCallback(() => flow.getViewport(), [flow]);
+  // §V112 — React Flow's OWN live node array, never `GraphNode.position`: a drag stays
+  // uncommitted in the document for its whole duration, and this is exactly the window
+  // a preview must keep following the node through.
+  const getNodePosition = useCallback((nodeId: NodeId) => flow.getNode(nodeId)?.position, [flow]);
+
+  useNodePreviews({
+    backend: previewBackend,
+    canvasRef: previewCanvasRef,
+    bounds: previewBounds,
+    graph,
+    registry,
+    compiledOutputs,
+    nodeRuntime,
+    getViewport,
+    getNodePosition,
+    previewFps,
+    previewLongEdge,
+  });
+
+  const renderPreview = useCallback(
+    (nodeId: NodeId) => (
+      <NodePreviewSlot nodeId={nodeId} runtime={nodeRuntime} bounds={previewBounds} />
+    ),
+    [nodeRuntime, previewBounds],
+  );
 
   const dispatch = useCallback(
     (operations: GraphPatchOperation[], label: string) => {
@@ -212,11 +266,22 @@ function GraphPaneInner({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {/*
+        The one shared preview surface (T185, design note §2/§3): pooled tiles composited
+        GPU-to-GPU (§V7), never a canvas per node. It sits ON TOP of the graph — not
+        behind it with a hole punched through, which would need React Flow's own opaque
+        background pane made transparent — because nothing is drawn here outside a
+        tile's own rect, so everywhere else stays see-through. `--z-canvas-overlay` sits
+        above node chrome and below popovers/tooltips/dialogs, and `pointer-events: none`
+        keeps it out of every gesture the canvas below handles.
+      */}
+      <canvas ref={previewCanvasRef} className={styles.previewSurface} aria-hidden="true" />
       <GraphMenuHost bus={bus} selection={selection}>
         <GraphCanvas
           bus={bus}
           invocation={invocation}
           runtime={nodeRuntime}
+          renderPreview={renderPreview}
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
           onPatchResult={onPatchResult}

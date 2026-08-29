@@ -150,6 +150,8 @@ export interface FixtureContextOptions {
   registry: GraphCanvasContextValue["registry"];
   runtime?: NodeRuntimeStore;
   dispatch?: GraphDispatch;
+  selection?: GraphCanvasContextValue["selection"];
+  toggleUi?: GraphCanvasContextValue["toggleUi"];
   renderPreview?: GraphCanvasContextValue["renderPreview"];
   renderControls?: GraphCanvasContextValue["renderControls"];
 }
@@ -167,6 +169,8 @@ export function fixtureContext(options: FixtureContextOptions): {
       registry: options.registry,
       runtime,
       dispatch: options.dispatch ?? (() => {}),
+      selection: options.selection ?? [],
+      toggleUi: options.toggleUi ?? (() => {}),
       renderPreview: options.renderPreview,
       renderControls: options.renderControls,
     },

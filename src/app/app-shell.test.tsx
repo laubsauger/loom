@@ -38,10 +38,10 @@ describe("app shell layout (§I.ui)", () => {
     expect(screen.getByLabelText("GPU time per frame")).toBeDefined();
   });
 
-  it("shows a placeholder for a slot no track has filled yet", () => {
+  it("names the STATE for a slot no track has filled yet, not the pane's purpose (§V91)", () => {
     render(<AppShell storage={createMemoryStorage()} />);
-    expect(screen.getByText("Graph canvas")).toBeDefined();
-    expect(screen.getByText("Node library")).toBeDefined();
+    expect(screen.getByText("No canvas")).toBeDefined();
+    expect(screen.getByText("No library")).toBeDefined();
   });
 
   it("gives every divider a focusable separator with a name", () => {

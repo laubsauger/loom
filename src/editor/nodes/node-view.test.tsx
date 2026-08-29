@@ -33,6 +33,8 @@ interface Options {
   graph?: GraphDocument;
   renderPreview?: (nodeId: string) => React.ReactNode;
   renderControls?: (nodeId: string) => React.ReactNode;
+  /** Current canvas selection (§V101) — defaults to none. */
+  selection?: readonly string[];
 }
 
 /**
@@ -46,6 +48,7 @@ function mountNode(type: string, options: Options = {}) {
   });
   const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
   const dispatched: GraphPatchOperation[][] = [];
+  const toggled: { command: string; nodeIds: readonly string[] }[] = [];
 
   const seeded = Object.keys(bus.store.getGraph().nodes)[0];
   const nodeId = seeded ?? "pending";
@@ -61,6 +64,13 @@ function mountNode(type: string, options: Options = {}) {
         invocation,
       );
     },
+    selection: options.selection ?? [],
+    // Mirrors `graph-canvas.tsx`'s real `toggleUi` (§V101/§V102/§V29): a badge press
+    // runs the SAME bus command the keymap and the context menu use, never a raw patch.
+    toggleUi: (command, nodeIds) => {
+      toggled.push({ command, nodeIds });
+      void bus.execute(command, { nodeIds }, invocation);
+    },
     ...(options.renderPreview === undefined ? {} : { renderPreview: options.renderPreview }),
     ...(options.renderControls === undefined ? {} : { renderControls: options.renderControls }),
   });
@@ -71,7 +81,7 @@ function mountNode(type: string, options: Options = {}) {
     </CanvasFixture>,
   );
 
-  return { ...view, bus, runtime, nodeId, dispatched, type };
+  return { ...view, bus, runtime, nodeId, dispatched, toggled, type };
 }
 
 function graphWith(type: string, ui?: Record<string, boolean>): GraphDocument {
@@ -294,15 +304,17 @@ describe("V20 — a drag on embedded node chrome never becomes a node drag", () 
   });
 });
 
-describe("V29 — node chrome mutates only through the command bus", () => {
-  it("bypasses and un-bypasses through a graph patch", async () => {
-    const { bus, dispatched } = mountNode("test.blur", { graph: graphWith("test.blur") });
+describe("V29/V101/V102 — node badges run the same bus command as the keymap and the menu", () => {
+  it("bypasses and un-bypasses through node.toggleBypass, never a raw patch", async () => {
+    const { bus, dispatched, toggled } = mountNode("test.blur", { graph: graphWith("test.blur") });
 
     fireEvent.click(screen.getByRole("button", { name: "Bypass" }));
     await waitFor(() => {
       expect(bus.store.getGraph().nodes["n1"]?.ui?.bypassed).toBe(true);
     });
-    expect(dispatched[0]).toEqual([{ op: "setNodeUi", nodeId: "n1", ui: { bypassed: true } }]);
+    expect(toggled).toEqual([{ command: "node.toggleBypass", nodeIds: ["n1"] }]);
+    // The badge never falls back to a raw `setNodeUi` patch (§V29, §V101).
+    expect(dispatched).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "Bypass" }));
     await waitFor(() => {
@@ -318,6 +330,41 @@ describe("V29 — node chrome mutates only through the command bus", () => {
       expect(bus.store.getGraph().nodes["n1"]?.ui?.muted).toBe(true);
     });
     expect(screen.getByRole("button", { name: "Mute" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("targets this node alone when it is not part of the current selection (§V101)", async () => {
+    const { bus, toggled } = mountNode("test.blur", {
+      graph: graphWith("test.blur"),
+      selection: ["some-other-node"],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Bypass" }));
+    await waitFor(() => {
+      expect(bus.store.getGraph().nodes["n1"]?.ui?.bypassed).toBe(true);
+    });
+    expect(toggled).toEqual([{ command: "node.toggleBypass", nodeIds: ["n1"] }]);
+  });
+
+  it("targets the whole selection when this node is part of it (§V101, §V102)", async () => {
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        n1: { id: "n1", type: "test.blur", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        n2: { id: "n2", type: "test.blur", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, ui: { bypassed: true } },
+      },
+      edges: {},
+      groups: {},
+    };
+    const { bus, toggled } = mountNode("test.blur", { graph, selection: ["n1", "n2"] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Bypass" }));
+    await waitFor(() => {
+      // A mixed selection (n2 already bypassed, n1 not) becomes uniformly ON — never
+      // each node flipping independently, which would keep it mixed forever (§V102).
+      expect(bus.store.getGraph().nodes["n1"]?.ui?.bypassed).toBe(true);
+      expect(bus.store.getGraph().nodes["n2"]?.ui?.bypassed).toBe(true);
+    });
+    expect(toggled).toEqual([{ command: "node.toggleBypass", nodeIds: ["n1", "n2"] }]);
   });
 });
 

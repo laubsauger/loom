@@ -183,7 +183,7 @@ export function AppShell({
               >
                 <Pane title="Node Library">
                   {nodeLibrary ?? (
-                    <PaneEmpty label="Node library" />
+                    <PaneEmpty label="No library" />
                   )}
                 </Pane>
               </Panel>
@@ -198,7 +198,7 @@ export function AppShell({
               <Panel id="shell-graph" order={2} minSize={25} defaultSize={initial.columns[1]}>
                 <div className={styles.canvas}>
                   {graphCanvas ?? (
-                    <PaneEmpty label="Graph canvas" />
+                    <PaneEmpty label="No canvas" />
                   )}
                 </div>
               </Panel>

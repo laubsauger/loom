@@ -1,4 +1,5 @@
 import type { NodeId } from "@domain/types/ids.ts";
+import type { PreviewOutputRef, SuspendReason } from "@runtime/previews/index.ts";
 
 /**
  * Per-node runtime state for the graph view — status, per-pass GPU time, agent
@@ -34,6 +35,27 @@ export interface AgentActivity {
   detail?: string;
 }
 
+/**
+ * §V28b classification for a node's preview slot, published by the preview system
+ * (T185). Structurally identical to `NodePreviewState` (`@editor/viewer/node-preview.tsx`)
+ * on purpose rather than importing it: that file is presentation for this state, and
+ * importing it here would point this module at the editor surface that consumes it.
+ */
+export type NodePreviewRuntimeState =
+  | { readonly kind: "live" }
+  | { readonly kind: "suspended"; readonly reason: SuspendReason }
+  | { readonly kind: "idle" };
+
+export interface NodePreviewRuntime {
+  readonly output: PreviewOutputRef;
+  readonly state: NodePreviewRuntimeState;
+  /**
+   * Resolved size/format (§V100, T197). Present whenever the compiler resolved this
+   * output, live or not — a suspended or idle slot shows this instead of going blank.
+   */
+  readonly facts?: { readonly width: number; readonly height: number; readonly format: string };
+}
+
 export interface NodeRuntimeSnapshot {
   status: NodeRunStatus;
   /** Last measured GPU time for this node's pass, in ms. `null` = no timing yet. */
@@ -47,6 +69,8 @@ export interface NodeRuntimeSnapshot {
   stale: boolean;
   /** §V42. `null` when no agent is touching this node. */
   agent: AgentActivity | null;
+  /** §V28b. `null` when this node has no preview slot at all (no texture output). */
+  preview: NodePreviewRuntime | null;
 }
 
 /**
@@ -61,6 +85,7 @@ export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   warningCount: 0,
   stale: false,
   agent: null,
+  preview: null,
 });
 
 /** Read side, which is all a node or an edge component needs. */
@@ -95,7 +120,8 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&
     a.stale === b.stale &&
-    a.agent === b.agent
+    a.agent === b.agent &&
+    a.preview === b.preview
   );
 }
 

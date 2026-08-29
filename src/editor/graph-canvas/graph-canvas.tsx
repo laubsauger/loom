@@ -31,7 +31,7 @@ import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
 import { GraphCanvasContext } from "./canvas-context.ts";
-import type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
+import type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
 import type { LoomEdge, LoomNode } from "./derive.ts";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
@@ -239,11 +239,28 @@ export function GraphCanvas({
    * — the graph document models neither — but the keymap resolves selection-driven
    * command input against them (T77), so this is the seam.
    */
+  const [selectedIds, setSelectedIds] = useState<readonly NodeId[]>([]);
+
   const reportSelection = useCallback(
     ({ nodes }: { nodes: LoomNode[] }) => {
-      onSelectionChange?.(nodes.map((node) => node.id));
+      const ids = nodes.map((node) => node.id);
+      setSelectedIds(ids);
+      onSelectionChange?.(ids);
     },
     [onSelectionChange],
+  );
+
+  /**
+   * §V101/§V102/§V29 — the badge, `space`-style hotkeys and the context menu are one
+   * implementation: all three run this same bus command, and the command itself (not
+   * this callback) decides the ALL-ON-then-ALL-OFF semantics (`toggleFlagOperations`,
+   * `src/domain/commands/editor-commands.ts`). This callback only names which nodes.
+   */
+  const toggleUi = useCallback(
+    (command: NodeToggleCommand, nodeIds: readonly NodeId[]) => {
+      void bus.execute(command, { nodeIds }, invocation);
+    },
+    [bus, invocation],
   );
 
   const reportEnter = useCallback(
@@ -259,10 +276,12 @@ export function GraphCanvas({
       registry,
       runtime: runtimeSource,
       dispatch,
+      selection: selectedIds,
+      toggleUi,
       renderPreview,
       renderControls,
     }),
-    [bus.store, registry, runtimeSource, dispatch, renderPreview, renderControls],
+    [bus.store, registry, runtimeSource, dispatch, selectedIds, toggleUi, renderPreview, renderControls],
   );
 
   return (

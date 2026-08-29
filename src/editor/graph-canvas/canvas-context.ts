@@ -15,6 +15,9 @@ import type { NodeRuntimeSnapshot, NodeRuntimeSource } from "./node-runtime.ts";
  * geometry only, each node subscribes to its own document slice, and per-frame metrics
  * arrive on a separate channel that the document never sees.
  */
+/** The three per-node flags a TD-style badge toggles, each its own bus command. */
+export type NodeToggleCommand = "node.toggleBypass" | "node.toggleDisplay" | "node.toggleRender";
+
 export interface GraphCanvasContextValue {
   /** Read-only document projection. Mutation goes through `dispatch` (§V1, §V29). */
   store: GraphStoreView;
@@ -22,6 +25,14 @@ export interface GraphCanvasContextValue {
   runtime: NodeRuntimeSource;
   /** Every semantic edit the view makes, as one atomic patch on the bus (§V29, §V32). */
   dispatch: GraphDispatch;
+  /** Current canvas selection (§V101): a per-node toggle acts on it when the node is in it. */
+  selection: readonly NodeId[];
+  /**
+   * Runs a selection-scoped node toggle through the bus command the keymap and the
+   * context menu already use, never a raw patch (§V101, §V102, §V29, §V52) — so the
+   * badge, the hotkey and the menu item are one implementation, not three.
+   */
+  toggleUi: (command: NodeToggleCommand, nodeIds: readonly NodeId[]) => void;
   /** Preview slot. Track J (T34) fills it; until then the region stays empty. */
   renderPreview?: ((nodeId: NodeId) => ReactNode) | undefined;
   /**

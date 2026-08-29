@@ -109,6 +109,7 @@ describe("the TD field set (§I.info)", () => {
         warningCount: 2,
         stale: true,
         agent: null,
+        preview: null,
       },
       telemetry: null,
     });

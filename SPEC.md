@@ -915,11 +915,11 @@ T165|x|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its inpu
 T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
-T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T178|x|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
 T217|x|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE installing the program; route the failure to `onDiagnostic` + set `stale`; keep the previous program. AND make the mock reject the way Dawn does, else the test stays greener than the product|V9,V27
 T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
-T219|.|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
+T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
@@ -928,7 +928,7 @@ T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
 T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
 T222|.|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
 T223|.|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
-T224|.|move the Common block below the node's parameters (or behind a fold) — today it sits above them|V130,V90
+T224|x|move the Common block below the node's parameters (or behind a fold) — today it sits above them|V130,V90
 T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
 T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
@@ -941,7 +941,7 @@ T212|.|drop a connection ON AN EDGE → replaces it (takes that edge's target). 
 T213|.|drop a NODE on an edge → SPLICE it inline (upstream→node→downstream) when types allow. 1 patch. the sibling gesture: the edge as a drop target for a node, ⊥ only for a connection|V14b,V13,V32
 T208|.|node resize: React Flow NodeResizer + `setNodeSize` patch op, 1 patch per gesture, persisted ∈ the document, min size respected|V116,V15,V29
 T209|.|preview tile resolution follows the node's preview area (ladder-quantised, capped), aspect letterboxed ⊥ stretched|V117,V118,V28c
-T206|.|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
+T206|x|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
 T207|x|component-addressable slots: `color.r`/`t.x` each w/ own mode+value; resolver reassembles; compound editor writes ∀ components ∈ 1 patch|V113,V114,V107
 T202|x|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
 T203|x|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
@@ -949,10 +949,10 @@ T204|.|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's h
 T205|x|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
 T200|.|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
 T201|.|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
-T198|.|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
+T198|x|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
 T199|.|wire `read_points`: `createPointsReadback({ readBuffer, pointSetInfo, now })` — clock ! be INJECTED (the export boundary test caught a `Date.now` default)|V48,V16
-T197|.|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
-T196|.|move `GpuStatusCard` out of the viewer → performance panel (beside est. bytes, lastBuild, per-pass ms). viewer empty state = "No output" per V91; drop the implementation prose entirely|V91,V92a
+T197|x|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
+T196|x|move `GpuStatusCard` out of the viewer → performance panel (beside est. bytes, lastBuild, per-pass ms). viewer empty state = "No output" per V91; drop the implementation prose entirely|V91,V92a
 T195|x|standalone WGSL compile — today WGSL is only checked when the GRAPH compiles on a device ∴ a shader error ⊥ surface until the whole graph is wired + rendering|V9,V27
 T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
 T192|.|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
@@ -961,11 +961,11 @@ T188|.|component library browser — shipped + user, instantiate linked\|detache
 T189|.|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
 T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
 T187|.|`component-scope.ts::resolveInstanceValues` returns DECODED `.values` into the parent scope ∴ a display colour decodes TWICE (mid-grey → ~0.046). ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
-T184|.|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
-T185|.|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
-T186|.|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
-T182|.|previews default-on for visible texture nodes: composition root derives visible set → explicit sink list (V28a) ∀ compile. `ui.preview` becomes a PIN. today a disconnected node renders nothing|V28b,V28c,V28a,V25
-T183|.|`.subTrigger[data-state="open"]` uses `--bg-raise` while `.item[data-highlighted]` uses `--bg-active` ∴ the highlight visibly CHANGES when a submenu opens. open parent ! look identical to highlighted|V17
+T184|x|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
+T185|x|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
+T186|x|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
+T182|x|previews default-on for visible texture nodes: composition root derives visible set → explicit sink list (V28a) ∀ compile. `ui.preview` becomes a PIN. today a disconnected node renders nothing|V28b,V28c,V28a,V25
+T183|x|`.subTrigger[data-state="open"]` uses `--bg-raise` while `.item[data-highlighted]` uses `--bg-active` ∴ the highlight visibly CHANGES when a submenu opens. open parent ! look identical to highlighted|V17
 T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swap pass, so a stateful kernel's `out_` bindings reach the write half. today in/out are 2 separate buffers|V22,V75
 T180|x|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
 T181|~|GPU timer spans for dispatch/draw — literal draws DONE (f.pass gives clear+timer); indirect draws & ALL compute ⊥ measurable: vgpu has no timestampWrites hook on compute passes. UPSTREAM GAP — T163 covers effect passes only ∴ compute cost is unmeasured|V86
@@ -1117,7 +1117,7 @@ T49 Phase 1 exit, T62 Phase 1 agent exit.
 id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
-B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219
+B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
 B12|2026-08-29|`createAgentToolSurface` has NO CALLER anywhere ∈ `src/app/**` — the agent surface is built, tested & not wired into the product|T220
 B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
 B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓

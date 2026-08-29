@@ -21,10 +21,19 @@ export type NodePreviewState =
   | { readonly kind: "suspended"; readonly reason: SuspendReason }
   | { readonly kind: "idle" };
 
+/** Resolved size/format (§V100) — a node's preview NEVER goes blank just because the
+ *  tile isn't drawing right now; it shows what compiled, which is real data, not prose. */
+export interface NodePreviewFacts {
+  readonly width: number;
+  readonly height: number;
+  readonly format: string;
+}
+
 export interface NodePreviewProps {
   /** Named `output`, not `ref`: React 19 treats a `ref` prop as an element ref. */
   readonly output: PreviewOutputRef;
   readonly state: NodePreviewState;
+  readonly facts?: NodePreviewFacts | undefined;
 }
 
 const SUSPEND_LABELS: Readonly<Record<SuspendReason, string>> = {
@@ -36,19 +45,24 @@ const SUSPEND_LABELS: Readonly<Record<SuspendReason, string>> = {
   budget: "over budget",
 };
 
-export function NodePreview({ output, state }: NodePreviewProps) {
+export function NodePreview({ output, state, facts }: NodePreviewProps) {
   const live = state.kind === "live";
-  const label =
+  const reason =
     state.kind === "suspended" ? SUSPEND_LABELS[state.reason] : live ? "live" : "no signal";
+  // §V100/T197 — off does not mean empty: the compiler already resolved this output, so
+  // the slot shows it rather than the word for why the picture is not moving. The
+  // reason itself is not lost, only demoted to hover/focus (§V90).
+  const factsText = facts === undefined ? null : `${facts.width} × ${facts.height} · ${facts.format}`;
   return (
     <div
       className={cx(styles.slot, live && styles.slotLive)}
       data-testid={`preview-slot-${previewKey(output)}`}
       data-preview-state={state.kind}
       role="img"
-      aria-label={`Preview of ${previewKey(output)}: ${label}`}
+      aria-label={`Preview of ${previewKey(output)}: ${reason}`}
+      title={live ? undefined : reason}
     >
-      {live ? null : <span className={styles.slotStatus}>{label}</span>}
+      {live ? null : <span className={styles.slotStatus}>{factsText ?? reason}</span>}
     </div>
   );
 }

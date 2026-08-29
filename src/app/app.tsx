@@ -26,6 +26,7 @@ import { TopBar } from "./top-bar.tsx";
 import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
+import { useFrameLoop } from "./use-frame-loop.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useProject } from "./use-project.ts";
 
@@ -49,12 +50,11 @@ import { useProject } from "./use-project.ts";
  * commands are registered here because only here is there a window to open a picker in.
  *
  * ## What is NOT here, on purpose
- *  - no frame loop. There is no presentation surface yet (§V64, T87), so nothing would
- *    see the frames and §V28 says not to schedule invisible work.
  *  - no timing source on the hub. Timing is a GPU timer span or it is nothing (§V86);
- *    with no frame loop no pass is ever submitted, so nothing could be measured, and the
- *    panel says "unavailable" rather than showing a number nobody measured.
- *  - no GPU calls. React encodes none (§V2); the device is acquired by the runtime
+ *    the frame loop (T184, `useFrameLoop`) submits work, but a span only exists once
+ *    the device reports timestamp-query (§V12), so the panel still says "unavailable"
+ *    rather than showing a number nobody measured.
+ *  - no GPU calls made directly. React encodes none (§V2); the device is acquired by the runtime
  *    adapter and only its capability report reaches this tree (§V12).
  *  - no per-frame data in the document. Node status and timings ride the runtime
  *    channel, which repaints one node instead of the tree (§V16).
@@ -151,17 +151,30 @@ export function App({
    * `BackendStatus.lastBuild` → the hub (T41, T143).
    *
    * Reuse accounting for the most recent STRUCTURAL build: which resources and effects
-   * were carried rather than recreated (§V62b). Nothing in this root calls
-   * `backend.compile()` — the frame loop and the preview host own that — so it reads
-   * `undefined` today and the panel says "Nothing has been built yet", which is true.
-   * The seam is wired anyway: the first real build lights the panel up without anyone
-   * having to remember this file exists. Re-read on every backend report, since a
-   * rebuild after device loss is exactly a structural build (§V23).
+   * were carried rather than recreated (§V62b). `useFrameLoop` below is what actually
+   * calls `backend.compile()` (T184); this reads whatever that produced off the backend's
+   * own status, so the panel lights up without anyone having to remember this file
+   * exists. Re-read on every backend report, since a rebuild after device loss is
+   * exactly a structural build (§V23).
    */
   const backend = status.kind === "ready" ? status.backend : undefined;
   useEffect(() => {
     runtime.telemetry.setBuild(backend?.status.lastBuild ?? null);
   }, [backend, recovery.diagnostics, runtime]);
+
+  // The frame loop (T184): the only caller of `backend.loop()` in the app. Without it
+  // the compiler, the backend and the renderer each pass their own suite while zero
+  // frames are ever submitted — see `use-frame-loop.ts`.
+  const frameLoop = useFrameLoop(runtime.bus, backend ?? null, compile.compiled, runtime.settings);
+
+  // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
+  // the button and the hotkey cannot drift into two different code paths for one action.
+  const onPlayPause = useCallback(() => {
+    void runtime.bus.execute("transport.togglePlay", {}, runtime.invocation);
+  }, [runtime]);
+  const onStepFrame = useCallback(() => {
+    void runtime.bus.execute("transport.stepFrame", { frames: 1 }, runtime.invocation);
+  }, [runtime]);
 
   // ---- persistence ------------------------------------------------------------------
   const autosave = useAutosave(
@@ -225,11 +238,13 @@ export function App({
       ...autosave.diagnostics,
       ...project.diagnostics,
       ...recovery.diagnostics,
+      ...frameLoop.diagnostics,
     );
     return list;
   }, [
     autosave.diagnostics,
     compile.diagnostics,
+    frameLoop.diagnostics,
     project.diagnostics,
     recovery.diagnostics,
     rejection,
@@ -248,7 +263,7 @@ export function App({
         tone: "error",
         message: "GPU submission is halted — no frames are being rendered.",
         detail:
-          "The device was lost and the automatic rebuilds gave up. Your document is untouched (§V23).",
+          "The device was lost and the automatic rebuilds gave up. Your document is untouched.",
         actions: [
           {
             label: recovery.retrying ? "Retrying…" : "Retry GPU",
@@ -296,7 +311,7 @@ export function App({
         id: "newer-version",
         tone: "info",
         message: `This project carries ${runtime.unknownParameters.length} parameter value(s) written by a newer build.`,
-        detail: "They are kept exactly as saved and shown read-only rather than edited blind (§V68).",
+        detail: "They are kept exactly as saved and shown read-only rather than edited blind.",
       });
     }
 
@@ -323,6 +338,9 @@ export function App({
             <TopBar
               projectName={project.fileName ?? runtime.project.name}
               tier={status.kind === "ready" ? status.capabilities.tier : null}
+              playing={frameLoop.playing}
+              onPlayPause={onPlayPause}
+              onStep={onStepFrame}
               trailing={
                 <ProjectActions
                   busy={project.busy}
@@ -359,6 +377,11 @@ export function App({
                 onPortDragChange={onPortDragChange}
                 onPatchResult={onPatchResult}
                 actionsRef={actionsRef}
+                previewBackend={backend ?? null}
+                graph={compile.graph}
+                compiledOutputs={compile.compiled?.outputs ?? []}
+                previewFps={runtime.settings.previewFps}
+                previewLongEdge={runtime.settings.previewLongEdge}
               />
             </NodeInfoHost>
           }
@@ -372,7 +395,7 @@ export function App({
               unknownParameters={runtime.unknownParameters}
             />
           }
-          viewer={<ViewerPane status={status} compiled={compile.compiled} />}
+          viewer={<ViewerPane compiled={compile.compiled} />}
           shaderEditor={
             <ShaderPane
               nodeId={selectedNodeId}
@@ -380,13 +403,8 @@ export function App({
               diagnostics={compile.diagnostics}
             />
           }
-          problems={
-            <ProblemsPanel
-              diagnostics={problems}
-              emptyHint="Compile and runtime diagnostics appear here."
-            />
-          }
-          performance={<PerformancePane />}
+          problems={<ProblemsPanel diagnostics={problems} />}
+          performance={<PerformancePane status={status} />}
         />
         <CommandPalette />
       </KeymapProvider>

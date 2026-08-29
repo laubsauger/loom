@@ -45,9 +45,9 @@ export function ProblemsPanel({ diagnostics, onSelect, emptyHint }: ProblemsPane
       <div className={styles.panel}>
         <div className={styles.empty}>
           <span>No problems</span>
-          <span className={styles.emptyHint}>
-            {emptyHint ?? "Shader compile messages and runtime diagnostics appear here."}
-          </span>
+          {/* §V91 — the state IS the whole answer here; a hint exists only when the
+              next action is genuinely non-obvious, and "nothing is wrong" has none. */}
+          {emptyHint === undefined ? null : <span className={styles.emptyHint}>{emptyHint}</span>}
         </div>
       </div>
     );

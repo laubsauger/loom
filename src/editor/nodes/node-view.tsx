@@ -8,6 +8,7 @@ import { portFamilyColor } from "@ui/ports.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
+import type { NodeToggleCommand } from "@editor/graph-canvas/canvas-context.ts";
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import type { LoomNode } from "@editor/graph-canvas/derive.ts";
 import type { NodeRunStatus } from "@editor/graph-canvas/node-runtime.ts";
@@ -37,16 +38,24 @@ import styles from "./node-view.module.css";
  * number ticks.
  */
 export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomNode>) {
-  const { store, registry, runtime, dispatch, renderPreview, renderControls } = useGraphCanvas();
+  const { store, registry, runtime, selection, toggleUi, renderPreview, renderControls } =
+    useGraphCanvas();
   // Own slice only (§V16): another node's edit does not re-render this one.
   const node = useStore(store, (state) => state.graph.nodes[id]);
   const snapshot = useNodeRuntime(runtime, id);
 
-  const setUi = useCallback(
-    (key: "bypassed" | "muted" | "preview", value: boolean, label: string) => {
-      dispatch([{ op: "setNodeUi", nodeId: id, ui: { [key]: value } }], label);
+  /**
+   * §V101 — a badge press acts on the whole selection when this node is IN it, and on
+   * this node alone otherwise. §V102 (all-on-then-all-off for a multi-node press) is the
+   * bus command's job (`toggleFlagOperations`), not this component's — that is exactly
+   * what running the same command the keymap and the menu use buys (§V29, §V52).
+   */
+  const toggle = useCallback(
+    (command: NodeToggleCommand) => {
+      const targets = selection.includes(id) ? selection : [id];
+      toggleUi(command, targets);
     },
-    [dispatch, id],
+    [id, selection, toggleUi],
   );
 
   if (node === undefined) return null;
@@ -114,19 +123,19 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           title="Pin — keep previewing when scrolled off screen"
           short="P"
           pressed={pinned}
-          onToggle={() => setUi("preview", !pinned, pinned ? "Unpin preview" : "Pin preview")}
+          onToggle={() => toggle("node.toggleDisplay")}
         />
         <NodeToggle
           label="Bypass"
           short="B"
           pressed={bypassed}
-          onToggle={() => setUi("bypassed", !bypassed, bypassed ? "Un-bypass node" : "Bypass node")}
+          onToggle={() => toggle("node.toggleBypass")}
         />
         <NodeToggle
           label="Mute"
           short="M"
           pressed={muted}
-          onToggle={() => setUi("muted", !muted, muted ? "Unmute node" : "Mute node")}
+          onToggle={() => toggle("node.toggleRender")}
         />
       </header>
 

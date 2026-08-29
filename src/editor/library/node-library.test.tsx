@@ -51,7 +51,7 @@ describe("T39 — node library pane", () => {
         portDrag={{ type: { kind: "matrix", columns: 4, rows: 4 }, direction: "output" }}
       />,
     );
-    expect(screen.getByText(/Insert a conversion node/)).toBeDefined();
+    expect(screen.getByText(/insert a conversion node/i)).toBeDefined();
   });
 
   it("adds a node on click, through the caller's bus-backed handler (§V29)", () => {

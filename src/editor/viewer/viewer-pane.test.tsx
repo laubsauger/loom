@@ -43,9 +43,9 @@ describe("T36 — the large viewer pane", () => {
     expect(screen.getByTestId("viewer-readout").textContent).toContain("1280 × 720 · rgba16float");
   });
 
-  it("says so when there is nothing to show, instead of showing a black rectangle", () => {
+  it("names the state when there is nothing to show, instead of showing a black rectangle", () => {
     render(<ViewerPane outputs={[]} />);
-    expect(screen.getByText(/Nothing to render yet/)).toBeDefined();
+    expect(screen.getByText("No output")).toBeDefined();
   });
 
   it("switching output re-pins the viewer's request", async () => {

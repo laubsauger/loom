@@ -96,7 +96,7 @@ export function ComponentInspector({
         </header>
         <p className={styles.empty}>
           This component is not installed. Its values are preserved and will work again once
-          the package that defines it is available (§V10).
+          the package that defines it is available.
         </p>
       </div>
     );

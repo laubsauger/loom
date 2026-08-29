@@ -309,11 +309,7 @@ export function ViewerPane({
         onPointerLeave={onPointerLeave}
         onKeyDown={onKeyDown}
       >
-        {selected === undefined ? (
-          <p className={styles.stageEmpty}>
-            Nothing to render yet. Connect a node to an Output and the viewer picks it up.
-          </p>
-        ) : null}
+        {selected === undefined ? <p className={styles.stageEmpty}>No output</p> : null}
       </div>
 
       <dl className={styles.readout} data-testid="viewer-readout">
@@ -327,7 +323,9 @@ export function ViewerPane({
         <dd className={styles.readoutValue}>
           {cursor === null ? "—" : `${cursor.x}, ${cursor.y}`}
         </dd>
-        <dt className={styles.readoutKey}>value</dt>
+        <dt className={styles.readoutKey} title="Linear working space">
+          value
+        </dt>
         <dd className={styles.readoutValue} data-testid="viewer-value">
           {probe === undefined
             ? "pixel inspection unavailable"
@@ -338,11 +336,6 @@ export function ViewerPane({
                 : sample.rgba.map(formatValue).join("  ")}
         </dd>
       </dl>
-
-      <p className={styles.note}>
-        Values are linear working space (§V56). Pixel inspection is an explicit readback and
-        never runs from the frame loop.
-      </p>
     </div>
   );
 }

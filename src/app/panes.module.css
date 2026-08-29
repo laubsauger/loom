@@ -16,6 +16,18 @@
   background: var(--bg-sunken);
 }
 
+/* The shared node-preview surface (T185). Nothing is drawn outside a live tile's own
+   rect, so it stays fully see-through everywhere else; `pointer-events: none` keeps it
+   out of every canvas gesture. */
+.previewSurface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-canvas-overlay);
+  pointer-events: none;
+}
+
 .viewer,
 .performance {
   display: flex;

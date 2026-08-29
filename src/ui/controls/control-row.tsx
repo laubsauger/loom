@@ -62,7 +62,7 @@ export function ControlRow({
           {label}
         </span>
         {!compact && compileTime ? (
-          <span className={styles.compileBadge} title="Changing this recompiles the node (§V5)">
+          <span className={styles.compileBadge} title="Changing this recompiles the node">
             rc
           </span>
         ) : null}

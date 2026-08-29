@@ -109,7 +109,7 @@ export function NodeInfoPopup({ info }: NodeInfoPopupProps) {
         {info.timingAvailable ? null : (
           <p className={styles.note}>
             This device reports no <code>timestamp-query</code> feature, so per-pass GPU
-            spans cannot be measured (§V12). No timing is estimated in its place.
+            spans cannot be measured. No timing is estimated in its place.
           </p>
         )}
       </section>
