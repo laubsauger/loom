@@ -246,6 +246,34 @@
   border: var(--hairline) solid var(--bg-void);
   border-radius: 50%;
   background: var(--port-color);
+  /* Above the node body so a grab near the dot starts a CONNECTION, not a node drag. */
+  z-index: 2;
+}
+
+/*
+  The dot stays 7px because a bigger one would dominate a dense graph — but a 7px pointer
+  target is a coin toss, and missing it starts dragging the NODE instead, which is the
+  worst possible wrong outcome: you meant to wire and you moved the thing you were wiring.
+  This invisible pad gives it a ~23px target without changing a pixel of what you see.
+*/
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+
+/*
+  Grow the dot on approach so the target is legible before you commit — the affordance
+  appears when you are near it, rather than being permanently loud.
+*/
+.handle:hover,
+.handle:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--port-color) 30%, transparent);
+}
+
+.port:hover .handle {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--port-color) 22%, transparent);
 }
 
 .portIn .handle {

@@ -10,8 +10,24 @@ const tokensCss = readFileSync(TOKENS, "utf8");
 
 /** Literal colors: #rgb, #rgba, #rrggbb, #rrggbbaa. */
 const HEX = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g;
-/** Literal color functions, the other way to smuggle a color past the tokens. */
-const COLOR_FN = /\b(?:rgba?|hsla?|color-mix|oklch|oklab|lch|lab|hwb|light-dark)\(/g;
+/** Color functions — the other way to smuggle a literal past the tokens. */
+const COLOR_FN =
+  /\b(?:rgba?|hsla?|color-mix|oklch|oklab|lch|lab|hwb|light-dark)\((?:[^()]|\([^()]*\))*\)/g;
+
+/**
+ * A color function is only a violation if it introduces a LITERAL. Deriving from a token —
+ * `color-mix(in srgb, var(--port-color) 30%, transparent)` — is exactly what the tokens
+ * are for, and there is no other way to express a translucent tint of a themed colour.
+ * So a call is allowed when every colour argument is a var() or a colour keyword.
+ */
+const TOKEN_DERIVED = /^\w[\w-]*\((?:[^()]|var\([^()]*\))*\)$/;
+function introducesLiteral(call: string): boolean {
+  if (!TOKEN_DERIVED.test(call)) return true;
+  const withoutVars = call.replace(/var\([^()]*\)/g, "");
+  // Anything left that looks like a colour is a literal; numbers, percentages,
+  // colour-space keywords and `transparent`/`currentColor` are not.
+  return /#[0-9a-fA-F]{3,}|\b(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb)\(/.test(withoutVars);
+}
 
 function collect(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -64,7 +80,10 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
       // Hex literals are never exempt — only colour FUNCTIONS built from values.
       const allowsDynamic = ALLOW_MARKER.test(source);
       expect(source.match(HEX) ?? []).toEqual([]);
-      if (!allowsDynamic) expect(source.match(COLOR_FN) ?? []).toEqual([]);
+      if (!allowsDynamic) {
+        const literalCalls = (source.match(COLOR_FN) ?? []).filter(introducesLiteral);
+        expect(literalCalls).toEqual([]);
+      }
     },
   );
 

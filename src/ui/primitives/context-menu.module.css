@@ -78,9 +78,14 @@
   }
 }
 
-/* Sub-menu + toggle parts (U11). */
+/* Sub-menu + toggle parts (U11).
+   An open sub-trigger is highlighted the same as any other highlighted item (T183):
+   Radix keeps `data-highlighted` set on the trigger while its submenu is open, so this
+   rule must match `.item[data-highlighted]` exactly rather than layer a second colour —
+   two rules of equal specificity disagreeing here is what made the hover look "lost"
+   the instant a submenu opened. */
 .subTrigger[data-state="open"] {
-  background: var(--bg-raise);
+  background: var(--bg-active);
 }
 
 .subTrigger::after {

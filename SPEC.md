@@ -497,7 +497,7 @@ V14: input port accepts ≤ 1 incoming edge unless declared variadic. output fan
 V14a: dropping a connection on an OCCUPIED input REPLACES the existing edge — 1 patch, 1 undo group (V32, V34). ⊥ silently refuse: the user's intent is unambiguous and refusing makes them hunt for the old edge to delete first.
 V15: ∀ semantic edit undoable. continuous drag coalesced → 1 history entry, live values still applied.
 V16: per-frame metrics & preview pixels ⊥ enter document store. UI metric refresh ≤ 10 Hz.
-V17: theme dark-only v1. ∀ color from CSS var token. ⊥ hardcoded hex in component.
+V17: theme dark-only v1. ∀ color from CSS var token. ⊥ hardcoded hex in component. a color FUNCTION deriving from a token (`color-mix(in srgb, var(--x) 30%, transparent)`) = allowed — it introduces no literal & is the only way to express a translucent tint of a themed color. a literal ANYWHERE inside one, incl. nested, = caught.
 V18: pane sizes persisted ∈ localStorage, ⊥ ∈ project doc.
 V19: ∀ interactive control keyboard reachable, visible focus ring, `prefers-reduced-motion` honored (edge flow anim → static).
 V20: param control drag ⊥ start graph pan | node drag | selection.
@@ -575,6 +575,8 @@ V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query o
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
+V99: ∀ pointer target ≥ ~20px even when its VISUAL is smaller. a 7px port dot is a coin toss, and missing it drags the NODE — you meant to wire and you moved the thing you were wiring. expand w/ an invisible pad, ⊥ by growing the dot (a bigger dot dominates a dense graph).
+V100: a disabled preview region shows the node's RESOLVED FACTS (size, format, space) — ⊥ a black rectangle. off ⊥ mean empty: the space is already spent, so it should carry what the user would otherwise open the info popup for.
 V90: help = ON DEMAND, ⊥ ambient. carried by the LABEL — hover|focus it, ⊥ a separate `?` element. an indicator for something the label already implies is 1 more thing ∈ a dense panel, and a 3rd child ∈ a 2-column row wraps to its own line. inline text ∈ a control row limited to: label, value, unit, state badge. ∀ explanation → hover|focus|tooltip|`?` handle. a node has 10-15 params — a sentence under each buries the values the user came to read, is read once, then permanently ∈ the way. text ⊥ lost: reachable by hover, focus & screen reader.
 V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's purpose, ⊥ its implementation. "CodeMirror 6 mounts here" teaches a user nothing actionable. hint ? only when the next ACTION is genuinely non-obvious.
 V92a: device|build diagnostics (tier, timestamp query, format list, memory, resource counts) belong ∈ the PERFORMANCE surface, ⊥ ∈ a content surface. the viewer shows OUTPUT or an empty state — a GPU spec sheet where pixels belong is a debug affordance that outlived its debugging.
@@ -727,6 +729,7 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T197|.|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
 T196|.|move `GpuStatusCard` out of the viewer → performance panel (beside est. bytes, lastBuild, per-pass ms). viewer empty state = "No output" per V91; drop the implementation prose entirely|V91,V92a
 T195|.|standalone WGSL compile — today WGSL is only checked when the GRAPH compiles on a device ∴ a shader error ⊥ surface until the whole graph is wired + rendering|V9,V27
 T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
