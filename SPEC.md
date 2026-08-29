@@ -438,7 +438,7 @@ T81|.|plan IR: pass kind union render\|compute, resource kind union texture\|buf
 T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
 T83|.|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
 T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
-T85|.|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
+T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
 T87|.|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|.|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
@@ -471,14 +471,14 @@ T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px 
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
 T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
 T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47
-T37|.|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
-T38|.|inspector pane: manifest-driven full control set, grouped|V17
+T37|x|param control kit: draggable number (shift slow/alt fast), dbl-click reset, units, enum, color, bool|V20
+T38|x|inspector pane: manifest-driven full control set, grouped|V17
 T76|x|keymap engine: binding table, chord + context resolution, `mod` normalize, when-guards, dispatch → bus|V52,V53
 T77|x|default TD-informed keymap + `when` guards + selection-resolved inputs|V52
 T78|x|keybinding settings pane: rebind, conflict detect + warn, per-binding & full reset, persisted overrides|V54
 T79|x|command palette (mod+k): fuzzy search ∀ bus command, shows binding, runs via bus|V55,V29
-T73|.|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
-T39|.|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
+T73|x|node Common section: resolution select (auto\|project\|input\|1/8..8x\|custom) + w/h, format select, resolved size+format readout on node & inspector, unsupported-format warning|V50,V51,V17
+T39|x|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
 T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
 T41|.|GPU timer spans, per-pass ms, performance tab, resource count + mem estimate|V16,V24
