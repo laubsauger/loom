@@ -283,6 +283,31 @@ describe("graph store — actor-local undo (§V41)", () => {
   });
 });
 
+describe("graph store — bounded per-commit state (T103)", () => {
+  it("caps the audit log as a ring instead of growing per drag frame", async () => {
+    const built = await applyAs(alice, [addSolid("$a")]);
+    const nodeId = built.output.createdIds["$a"] as string;
+
+    for (let i = 0; i < 600; i += 1) {
+      await applyAs(alice, [{ op: "setParameters", nodeId, parameters: { amount: (i % 100) / 100 } }]);
+    }
+
+    const audit = harness.store.view.getAudit();
+    expect(audit.length).toBeLessThanOrEqual(512);
+    // The ring keeps the newest entries: the last mutation is still auditable.
+    expect(audit[audit.length - 1]?.revision).toBe(harness.store.view.getRevision());
+  });
+
+  it("bounds the owner map, evicting the oldest rows first", async () => {
+    const ops: GraphPatchOperation[] = Array.from({ length: 5000 }, (_, i) => addSolid(`$n${i}`, i));
+    const result = await applyAs(alice, ops);
+    expect(result.status).toBe("applied");
+
+    const owners = harness.store.raw.getState().owners;
+    expect(Object.keys(owners).length).toBeLessThanOrEqual(4096);
+  });
+});
+
 describe("graph store — restore keeps referential integrity (§V40, §V41)", () => {
   it("keeps a node whose undo would strand another actor's edge", async () => {
     const source = await applyAs(alice, [addSolid("$a")]);

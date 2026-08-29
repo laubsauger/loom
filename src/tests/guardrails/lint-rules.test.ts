@@ -160,3 +160,62 @@ describe("guardrail bypasses are closed", () => {
     expect(timer.length).toBeGreaterThan(0);
   });
 });
+
+describe("§V63 (T92) — compiler and runtime stay worker-ready", () => {
+  it("errors on window/document in src/compiler/** and src/runtime/**", async () => {
+    const { messages: win } = await lint(
+      `export const w = window.innerWidth;\n`,
+      "src/compiler/layout.ts",
+    );
+    const { messages: doc } = await lint(
+      `export const el = document.createElement("canvas");\n`,
+      "src/runtime/previews/tiles.ts",
+    );
+    expect(ruleIdsOf(win)).toContain("no-restricted-globals");
+    expect(ruleIdsOf(doc)).toContain("no-restricted-globals");
+  });
+
+  it("does NOT restrict DOM globals in the editor, which owns the DOM", async () => {
+    const { messages } = await lint(
+      `export const w = window.innerWidth;\n`,
+      "src/editor/graph-canvas/viewport.ts",
+    );
+    expect(ruleIdsOf(messages)).not.toContain("no-restricted-globals");
+  });
+});
+
+describe("§V29 (T93) — store internals unreachable outside the command bus", () => {
+  const pokesInternals = `import { createGraphStore } from "../domain/graph/store.ts";
+const store = createGraphStore();
+export const backdoor = store.internals;
+`;
+  const pokesRaw = `import { createGraphStore } from "../domain/graph/store.ts";
+const store = createGraphStore();
+export const backdoor = store.raw;
+`;
+
+  it("errors on .internals access from app/editor code", async () => {
+    const { messages: fromApp } = await lint(pokesInternals, "src/app/wiring.ts");
+    const { messages: fromEditor } = await lint(pokesInternals, "src/editor/inspector/hack.ts");
+    expect(ruleIdsOf(fromApp)).toContain("no-restricted-syntax");
+    expect(ruleIdsOf(fromEditor)).toContain("no-restricted-syntax");
+  });
+
+  it("errors on the store's .raw escape hatch outside the bus", async () => {
+    const { messages } = await lint(pokesRaw, "src/app/wiring.ts");
+    expect(ruleIdsOf(messages)).toContain("no-restricted-syntax");
+  });
+
+  it("still catches vgpu dynamic imports in the same files (rule values replace, not merge)", async () => {
+    const { messages } = await lint(
+      `export const lazy = () => import("vgpu");\n`,
+      "src/editor/inspector/hack.ts",
+    );
+    expect(ruleIdsOf(messages)).toContain("no-restricted-syntax");
+  });
+
+  it("does NOT fire inside src/domain/commands, which owns the mutation path", async () => {
+    const { messages } = await lint(pokesInternals, "src/domain/commands/wire.ts");
+    expect(ruleIdsOf(messages)).not.toContain("no-restricted-syntax");
+  });
+});

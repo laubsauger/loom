@@ -110,6 +110,31 @@ const v44RestrictedSyntax = [
   },
 ];
 
+// §V63 / T92: the compiler and runtime must stay movable into a worker with
+// OffscreenCanvas (the multi-window Phase 2 transport). DOM globals are the
+// dependency that would make that migration a rewrite; the one legitimate
+// surface-attachment module adds an explicit ignore here when it lands.
+const V63_MESSAGE =
+  "§V63: src/compiler/** and src/runtime/** must run in a worker — no DOM globals. " +
+  "Surface attachment belongs to the single presentation module, not here.";
+
+// §V29 / T93: the store's mutating half is the command bus's private property.
+// `internals`/`raw` reachable anywhere else is the one backdoor around the
+// sole-mutation-path invariant, and the only major invariant with no lint.
+const V29_MESSAGE =
+  "§V29: every mutation goes through AppCommandBus.execute — the graph store's " +
+  "internals/raw are reserved for src/domain/commands (and tests).";
+const v29RestrictedSyntax = [
+  {
+    selector: "MemberExpression[property.name='internals']",
+    message: `${V29_MESSAGE} (.internals access)`,
+  },
+  {
+    selector: "MemberExpression[object.name=/[Ss]tore$/][property.name='raw']",
+    message: `${V29_MESSAGE} (.raw store escape hatch)`,
+  },
+];
+
 export default tseslint.config(
   {
     // .probe/** is scratch API-exploration scripts (plain Node, not part of
@@ -196,10 +221,41 @@ export default tseslint.config(
     },
   },
   {
+    // T92 / §V63 — compiler and runtime stay worker-ready: no DOM globals.
+    // no-restricted-globals is unused by the other configs matching these files,
+    // so this cannot clobber anything under flat config's per-rule resolution.
+    files: ["src/compiler/**/*.{ts,tsx}", "src/runtime/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        { name: "window", message: V63_MESSAGE },
+        { name: "document", message: V63_MESSAGE },
+      ],
+    },
+  },
+  {
+    // T93 / §V29 — no store-internals access outside src/domain/commands.
+    // These files already receive vgpuRestrictedSyntax from the base §V3 config;
+    // flat config REPLACES a rule's value on overlap rather than merging, so the
+    // vgpu selectors must be repeated here or this config would silently drop them.
+    files: [
+      "src/app/**/*.{ts,tsx}",
+      "src/editor/**/*.{ts,tsx}",
+      "src/ui/**/*.{ts,tsx}",
+      "src/agent/**/*.{ts,tsx}",
+      "src/compiler/**/*.{ts,tsx}",
+      "src/runtime/**/*.{ts,tsx}",
+    ],
+    ignores: ["src/runtime/backend/vgpu/**", "**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": ["error", ...vgpuRestrictedSyntax, ...v29RestrictedSyntax],
+    },
+  },
+  {
     // T64 / §V44 — no wall-clock reads anywhere under src/nodes/**.
     files: ["src/nodes/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-syntax": ["error", ...v44RestrictedSyntax],
+      "no-restricted-syntax": ["error", ...v44RestrictedSyntax, ...v29RestrictedSyntax],
       // Selectors match spellings; this catches the ALIAS (`const p = performance`)
       // by restricting the global identifier itself wherever it is referenced.
       "no-restricted-globals": [

@@ -1,4 +1,4 @@
-import { produce, setAutoFreeze } from "immer";
+import { enablePatches, produce, produceWithPatches, setAutoFreeze } from "immer";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import type { Actor, AuditEntry } from "../types/commands.ts";
@@ -23,6 +23,18 @@ import { createIdFactory, type IdFactory } from "./ids.ts";
 // Frozen state makes an accidental direct mutation throw instead of silently
 // desynchronising the document from the audit log (§V29).
 setAutoFreeze(true);
+// Patches are how commits learn WHICH entities a recipe touched without diffing the
+// whole document per apply (T103): a one-parameter drag on a 1000-node graph must not
+// sort three thousand keys per frame.
+enablePatches();
+
+/**
+ * Bounds for per-commit state (T103). The audit array and owner map are copied on
+ * every commit, and a 60Hz drag writes a commit per frame — unbounded, both are a
+ * session-length memory leak with O(n) copies on top.
+ */
+const MAX_AUDIT_ENTRIES = 512;
+const MAX_OWNER_ENTRIES = 4096;
 
 export function emptyGraph(): GraphDocument {
   return { revision: 0, nodes: {}, edges: {}, groups: {} };
@@ -139,19 +151,52 @@ export interface GraphStoreOptions {
   historyLimit?: number;
 }
 
-function diffRecord<T>(
+/**
+ * Builds per-entity changes for a KNOWN candidate key set (T103). Callers hand in the
+ * keys a commit may have touched — from immer patches on apply, from the undo group on
+ * restore — so cost scales with the edit, not the document. Keys are sorted so two
+ * actors replaying the same edit build identical records (§V40).
+ */
+function diffRecordKeys<T>(
   before: Readonly<Record<string, T>>,
   after: Readonly<Record<string, T>>,
+  candidateKeys: Iterable<string>,
 ): Record<string, EntityChange<T>> {
   const changes: Record<string, EntityChange<T>> = {};
-  // Sorted so two actors replaying the same edit build identical records (§V40).
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
-  for (const key of keys) {
+  for (const key of [...new Set(candidateKeys)].sort()) {
     const prior = before[key];
     const next = after[key];
     if (prior !== next) changes[key] = { before: prior, after: next };
   }
   return changes;
+}
+
+type CollectionName = "nodes" | "edges" | "groups";
+
+/**
+ * Touched entity ids per collection, read off immer's patch list. A patch path deeper
+ * than the collection names one entity; a patch replacing a whole collection (rare —
+ * nothing does it today) degrades to every key of both sides, which is exactly the old
+ * full-diff behavior.
+ */
+function touchedKeys(
+  patches: ReadonlyArray<{ path: (string | number)[] }>,
+  collection: CollectionName,
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const patch of patches) {
+    if (patch.path[0] !== collection) continue;
+    const key = patch.path[1];
+    if (typeof key === "string") {
+      keys.add(key);
+    } else {
+      for (const k of Object.keys(before)) keys.add(k);
+      for (const k of Object.keys(after)) keys.add(k);
+    }
+  }
+  return keys;
 }
 
 function mergeChanges<T>(
@@ -271,13 +316,25 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       undoGroupId = group.id;
     }
 
-    const owners: Record<string, EntityOwner> = { ...state.owners };
+    let owners: Record<string, EntityOwner> = { ...state.owners };
     const touched = [
       ...Object.keys(changes.nodes).map((id) => `node:${id}`),
       ...Object.keys(changes.edges).map((id) => `edge:${id}`),
       ...Object.keys(changes.groups).map((id) => `group:${id}`),
     ];
     for (const entity of touched) owners[entity] = { actorKey: key, revision };
+    // T103: owner rows for long-gone entities (deleted nodes keep theirs so §V41 can
+    // still block a stale redo) must not accumulate forever. Evict the oldest rows once
+    // the map outgrows its bound; blocking degrades gracefully for ancient edits only.
+    const ownerKeysAll = Object.keys(owners);
+    if (ownerKeysAll.length > MAX_OWNER_ENTRIES) {
+      const keep = ownerKeysAll
+        .sort((a, b) => (owners[b]?.revision ?? 0) - (owners[a]?.revision ?? 0))
+        .slice(0, Math.floor(MAX_OWNER_ENTRIES * 0.75));
+      const pruned: Record<string, EntityOwner> = {};
+      for (const entity of keep) pruned[entity] = owners[entity] as EntityOwner;
+      owners = pruned;
+    }
 
     const entry: AuditEntry = {
       revision,
@@ -290,7 +347,9 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
 
     store.setState({
       graph,
-      audit: [...state.audit, entry],
+      // Bounded ring (T103): a 60Hz drag writes an entry per frame; unbounded, the
+      // audit array is the store's memory leak. The viewer shows the recent window.
+      audit: [...state.audit.slice(-(MAX_AUDIT_ENTRIES - 1)), entry],
       history: { ...state.history, [key]: { undo: undoStack, redo: redoStack } },
       owners,
     });
@@ -307,7 +366,8 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     const state = store.getState();
     const base = state.graph;
     // If the recipe throws, `produce` discards the draft: nothing is applied (§V32).
-    const drafted = produce(base, (draft) => {
+    // Patches record which entities were touched, so the commit diffs only those (T103).
+    const [drafted, patches] = produceWithPatches(base, (draft) => {
       input.recipe(draft as GraphDocument);
       // Revision belongs to the store, not to a command recipe.
       draft.revision = base.revision;
@@ -325,9 +385,9 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     return commit(
       drafted,
       {
-        nodes: diffRecord(base.nodes, drafted.nodes),
-        edges: diffRecord(base.edges, drafted.edges),
-        groups: diffRecord(base.groups, drafted.groups),
+        nodes: diffRecordKeys(base.nodes, drafted.nodes, touchedKeys(patches, "nodes", base.nodes, drafted.nodes)),
+        edges: diffRecordKeys(base.edges, drafted.edges, touchedKeys(patches, "edges", base.edges, drafted.edges)),
+        groups: diffRecordKeys(base.groups, drafted.groups, touchedKeys(patches, "groups", base.groups, drafted.groups)),
       },
       {
         actor: input.actor,
@@ -446,10 +506,11 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       }
     });
 
+    // The group already names every entity a restore may touch — no scan needed (T103).
     const changes = {
-      nodes: diffRecord(state.graph.nodes, nextGraph.nodes),
-      edges: diffRecord(state.graph.edges, nextGraph.edges),
-      groups: diffRecord(state.graph.groups, nextGraph.groups),
+      nodes: diffRecordKeys(state.graph.nodes, nextGraph.nodes, Object.keys(group.nodes)),
+      edges: diffRecordKeys(state.graph.edges, nextGraph.edges, Object.keys(group.edges)),
+      groups: diffRecordKeys(state.graph.groups, nextGraph.groups, Object.keys(group.groups)),
     };
 
     const result = commit(nextGraph, changes, {
@@ -506,7 +567,9 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
 
   function recordAudit(entry: Omit<AuditEntry, "timestamp">): void {
     const state = store.getState();
-    store.setState({ audit: [...state.audit, { ...entry, timestamp: now() }] });
+    store.setState({
+      audit: [...state.audit.slice(-(MAX_AUDIT_ENTRIES - 1)), { ...entry, timestamp: now() }],
+    });
   }
 
   const view: GraphStoreView = {
