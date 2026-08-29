@@ -112,6 +112,21 @@ export function resolveNodeResolution(request: ResolutionRequest): ResolutionOut
       case "fixed":
         raw = [override.width, override.height];
         break;
+      case "fit": {
+        // TD "Fit Resolution": largest size inside the box that keeps the input's aspect.
+        const base = inputSize(override.input, `input "${override.input ?? "(primary)"}"`);
+        const scale = Math.min(override.width / base[0], override.height / base[1]);
+        raw = [base[0] * scale, base[1] * scale];
+        break;
+      }
+      case "limit": {
+        // TD "Limit Resolution": only shrinks, and only when the input exceeds the box.
+        // Aspect is preserved so a limited image is never distorted, just smaller.
+        const base = inputSize(override.input, `input "${override.input ?? "(primary)"}"`);
+        const scale = Math.min(1, override.width / base[0], override.height / base[1]);
+        raw = [base[0] * scale, base[1] * scale];
+        break;
+      }
     }
   } else if (policy !== undefined) {
     source = "policy";

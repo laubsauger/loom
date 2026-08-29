@@ -234,3 +234,55 @@ describe("surfacing the compiler's format diagnostics, not re-deriving them", ()
     expect(formatDiagnosticsFor(nodeId, [])).toEqual([]);
   });
 });
+
+/**
+ * TD "Fit Resolution" and "Limit Resolution" (§V50). Both preserve aspect; the
+ * difference is that fit always scales to the box, while limit only ever shrinks.
+ */
+describe("fit and limit resolution modes", () => {
+  const ctx = (w: number, h: number) => ({
+    project: { width: 1920, height: 1080 },
+    inputs: [{ portId: "in", label: "Input", size: { width: w, height: h }, resolved: true }],
+  });
+
+  it("fit scales a large input down into the box, preserving aspect", () => {
+    const size = resolveNodeSize({ mode: "fit", width: 512, height: 512 }, undefined, ctx(2000, 1000));
+    expect(size.width).toBe(512);
+    expect(size.height).toBe(256);
+  });
+
+  it("fit scales a SMALL input UP to the box — that is what distinguishes it from limit", () => {
+    const size = resolveNodeSize({ mode: "fit", width: 800, height: 800 }, undefined, ctx(200, 100));
+    expect(size.width).toBe(800);
+    expect(size.height).toBe(400);
+  });
+
+  it("limit shrinks an oversized input", () => {
+    const size = resolveNodeSize({ mode: "limit", width: 512, height: 512 }, undefined, ctx(2000, 1000));
+    expect(size.width).toBe(512);
+    expect(size.height).toBe(256);
+  });
+
+  it("limit leaves an input already inside the box untouched", () => {
+    const size = resolveNodeSize({ mode: "limit", width: 800, height: 800 }, undefined, ctx(200, 100));
+    expect(size.width).toBe(200);
+    expect(size.height).toBe(100);
+  });
+
+  it("round-trips both modes through the select key", () => {
+    expect(resolutionModeKey({ mode: "fit", width: 512, height: 512 })).toBe("fit");
+    expect(resolutionModeKey({ mode: "limit", width: 512, height: 512 })).toBe("limit");
+  });
+
+  it("seeds the box from the current size so switching mode does not move the node", () => {
+    const fit = overrideForResolutionMode("fit", { width: 640, height: 360 }, "in");
+    expect(fit).toEqual({ mode: "fit", width: 640, height: 360, input: "in" });
+  });
+
+  it("offers both in the mode list, after the scale presets", () => {
+    const values = RESOLUTION_MODE_OPTIONS.map((o) => o.value);
+    expect(values).toContain("fit");
+    expect(values).toContain("limit");
+    expect(values.indexOf("fit")).toBeGreaterThan(values.indexOf("scale:1/2"));
+  });
+});

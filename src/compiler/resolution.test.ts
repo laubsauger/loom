@@ -207,3 +207,35 @@ describe("resolution propagation through a graph (§V21)", () => {
     expect(plan.outputs.find((output) => output.nodeId === "blur")?.size).toEqual([4096, 4096]);
   });
 });
+
+/**
+ * TD "Fit Resolution" / "Limit Resolution" (§V50). Both preserve aspect. The property
+ * that separates them: fit scales in BOTH directions, limit only ever shrinks.
+ */
+describe("resolveNodeResolution — fit and limit overrides", () => {
+  const withInput = (size: readonly [number, number], override: ResolutionRequest["override"]) =>
+    resolveNodeResolution(
+      request({ override, inputs: { byPort: { in: size }, primaryPort: "in" } }),
+    );
+
+  it("fit scales an oversized input down into the box", () => {
+    expect(withInput([2000, 1000], { mode: "fit", width: 512, height: 512 }).size).toEqual([512, 256]);
+  });
+
+  it("fit scales a small input UP to the box", () => {
+    expect(withInput([200, 100], { mode: "fit", width: 800, height: 800 }).size).toEqual([800, 400]);
+  });
+
+  it("limit shrinks an oversized input", () => {
+    expect(withInput([2000, 1000], { mode: "limit", width: 512, height: 512 }).size).toEqual([512, 256]);
+  });
+
+  it("limit leaves an input already inside the box alone", () => {
+    expect(withInput([200, 100], { mode: "limit", width: 800, height: 800 }).size).toEqual([200, 100]);
+  });
+
+  it("both report the override as the source", () => {
+    expect(withInput([2000, 1000], { mode: "fit", width: 512, height: 512 }).source).toBe("override");
+    expect(withInput([2000, 1000], { mode: "limit", width: 512, height: 512 }).source).toBe("override");
+  });
+});

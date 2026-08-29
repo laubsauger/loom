@@ -68,6 +68,18 @@ export const nodeResolutionOverrideSchema = z.discriminatedUnion("mode", [
     width: z.number().int().positive(),
     height: z.number().int().positive(),
   }),
+  z.object({
+    mode: z.literal("fit"),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    input: z.string().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal("limit"),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    input: z.string().min(1).optional(),
+  }),
 ]);
 
 export const nodeFormatOverrideSchema = z.discriminatedUnion("mode", [

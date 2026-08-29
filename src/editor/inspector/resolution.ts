@@ -158,6 +158,31 @@ export function resolveNodeSize(
     }
     case "fixed":
       return finish({ width: override.width, height: override.height }, "custom", context);
+    case "fit": {
+      // Largest size fitting inside the box while keeping the input's aspect.
+      const input = sizeOfInput(context, override.input);
+      const scale = Math.min(override.width / input.size.width, override.height / input.size.height);
+      return finish(
+        { width: input.size.width * scale, height: input.size.height * scale },
+        input.resolved ? `fit ${override.width}×${override.height} of ${input.label}` : "input unresolved",
+        context,
+      );
+    }
+    case "limit": {
+      // Only shrinks, and only when the input exceeds the box.
+      const input = sizeOfInput(context, override.input);
+      const scale = Math.min(1, override.width / input.size.width, override.height / input.size.height);
+      const limited = scale < 1;
+      return finish(
+        { width: input.size.width * scale, height: input.size.height * scale },
+        input.resolved
+          ? limited
+            ? `limited to ${override.width}×${override.height}`
+            : `within ${override.width}×${override.height}`
+          : "input unresolved",
+        context,
+      );
+    }
     default: {
       const never: never = override;
       void never;
@@ -174,6 +199,8 @@ export const RESOLUTION_MODE_AUTO = "auto";
 export const RESOLUTION_MODE_PROJECT = "project";
 export const RESOLUTION_MODE_INPUT = "input";
 export const RESOLUTION_MODE_CUSTOM = "custom";
+export const RESOLUTION_MODE_FIT = "fit";
+export const RESOLUTION_MODE_LIMIT = "limit";
 
 const scalePresets = RESOLUTION_SCALE_PRESETS;
 
@@ -192,6 +219,8 @@ export const RESOLUTION_MODE_OPTIONS: readonly ResolutionModeOption[] = [
   { value: RESOLUTION_MODE_PROJECT, label: "Project" },
   { value: RESOLUTION_MODE_INPUT, label: "Use input" },
   ...scalePresets.map((preset) => ({ value: `scale:${preset.label}`, label: preset.label })),
+  { value: RESOLUTION_MODE_FIT, label: "Fit resolution" },
+  { value: RESOLUTION_MODE_LIMIT, label: "Limit resolution" },
   { value: RESOLUTION_MODE_CUSTOM, label: "Custom" },
 ];
 
@@ -211,6 +240,10 @@ export function resolutionModeKey(override: NodeResolutionOverride | undefined):
     }
     case "fixed":
       return RESOLUTION_MODE_CUSTOM;
+    case "fit":
+      return RESOLUTION_MODE_FIT;
+    case "limit":
+      return RESOLUTION_MODE_LIMIT;
     default: {
       const never: never = override;
       void never;
@@ -242,6 +275,16 @@ export function overrideForResolutionMode(
       width: Math.max(MIN_DIMENSION, Math.round(current.width)),
       height: Math.max(MIN_DIMENSION, Math.round(current.height)),
     };
+  }
+  if (key === RESOLUTION_MODE_FIT || key === RESOLUTION_MODE_LIMIT) {
+    // Seeded from the current size so switching modes never moves the node, matching
+    // how "custom" behaves. Both carry a box the user then edits.
+    const box = {
+      width: Math.max(MIN_DIMENSION, Math.round(current.width)),
+      height: Math.max(MIN_DIMENSION, Math.round(current.height)),
+    };
+    const mode = key === RESOLUTION_MODE_FIT ? ("fit" as const) : ("limit" as const);
+    return inputPortId === undefined ? { mode, ...box } : { mode, ...box, input: inputPortId };
   }
   if (key.startsWith("scale:")) {
     const label = key.slice("scale:".length);

@@ -15,7 +15,11 @@ export type NodeResolutionOverride =
   | { mode: "project" }
   | { mode: "input"; input?: PortId }
   | { mode: "scale"; factor: number; input?: PortId }
-  | { mode: "fixed"; width: number; height: number };
+  | { mode: "fixed"; width: number; height: number }
+  /** TD "Fit Resolution": fit inside width x height, preserving the input's aspect. */
+  | { mode: "fit"; width: number; height: number; input?: PortId }
+  /** TD "Limit Resolution": clamp to width x height only when the input exceeds it. */
+  | { mode: "limit"; width: number; height: number; input?: PortId };
 
 /**
  * Per-instance output pixel format, set by the user on the node (TD "Common" page).

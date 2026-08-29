@@ -13,6 +13,8 @@ import type { ParameterEditor } from "./parameter-editor.ts";
 import {
   FORMAT_MODE_AUTO,
   RESOLUTION_MODE_CUSTOM,
+  RESOLUTION_MODE_FIT,
+  RESOLUTION_MODE_LIMIT,
   RESOLUTION_MODE_INPUT,
   RESOLUTION_MODE_OPTIONS,
   formatDiagnosticsFor,
@@ -85,8 +87,16 @@ export function CommonSection({
       : undefined) ?? inputs[0]?.portId;
 
   const modeKey = resolutionModeKey(resolution);
-  const isCustom = modeKey === RESOLUTION_MODE_CUSTOM;
-  const usesInput = modeKey === RESOLUTION_MODE_INPUT || modeKey.startsWith("scale:");
+  // fit and limit carry a box the user edits, exactly as custom does.
+  const hasDimensions =
+    modeKey === RESOLUTION_MODE_CUSTOM ||
+    modeKey === RESOLUTION_MODE_FIT ||
+    modeKey === RESOLUTION_MODE_LIMIT;
+  const usesInput =
+    modeKey === RESOLUTION_MODE_INPUT ||
+    modeKey === RESOLUTION_MODE_FIT ||
+    modeKey === RESOLUTION_MODE_LIMIT ||
+    modeKey.startsWith("scale:");
 
   const applyResolution = (override: NodeResolutionOverride | null): void => {
     setDraft(null);
@@ -114,7 +124,17 @@ export function CommonSection({
       return;
     }
     setDraft(null);
-    void editor.setResolution(nodeId, { mode: "fixed", width: next.width, height: next.height });
+    // Editing the box under fit/limit must not silently switch the node to fixed.
+    const mode =
+      modeKey === RESOLUTION_MODE_FIT ? "fit" : modeKey === RESOLUTION_MODE_LIMIT ? "limit" : "fixed";
+    void editor.setResolution(
+      nodeId,
+      mode === "fixed"
+        ? { mode, width: next.width, height: next.height }
+        : selectedInput === undefined
+          ? { mode, width: next.width, height: next.height }
+          : { mode, width: next.width, height: next.height, input: selectedInput },
+    );
   };
 
   const formatDiagnostics = formatDiagnosticsFor(nodeId, diagnostics);
@@ -146,7 +166,7 @@ export function CommonSection({
         </ControlRow>
       ) : null}
 
-      {isCustom ? (
+      {hasDimensions ? (
         <ControlRow label="Size" variant={variant} hint="px">
           <div className={styles.sizeFields}>
             <NumberField
