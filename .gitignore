@@ -1,0 +1,83 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+
+# build output
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+
+# test / coverage
+coverage/
+.nyc_output/
+playwright-report/
+blob-report/
+test-results/
+.playwright/
+__snapshots__/**/*.actual.png
+src/tests/**/*.actual.png
+
+# caches
+.vite/
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+.history/
+.lh/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Windows / Linux
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.directory
+.fuse_hidden*
+.nfs*
+
+# agent / tooling scratch
+.claude/settings.local.json
+scratchpad/
+*.local
+
+# project artifacts
+renders/
+exports/
+*.loomz
