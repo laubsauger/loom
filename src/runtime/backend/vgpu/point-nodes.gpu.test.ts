@@ -158,6 +158,21 @@ describe("TextureToAttribute bridge on Dawn (T124)", () => {
       }
       expect(litPixels).toBeGreaterThan(0);
       expect(litPixels).toBeLessThan(64 * 64);
+
+      // §V168: within a frame, plan order is execution order — the bridge samples the
+      // texture rendered THIS frame, not the previous one. "litPixels > 0" tolerated
+      // exactly that bug (this test was green while the bridge silently ran one frame
+      // late). A solid field makes the claim EXACT: every point's sampled attribute is
+      // the solid's linear colour [0,1,0,1], byte for byte, on the very first frames.
+      const sampleRaw = await backend.readBuffer("scratch:bridge:sample");
+      const samples = new Float32Array(sampleRaw);
+      for (let point = 0; point < 8; point += 1) {
+        const base = point * 4;
+        expect(samples[base], `point ${point} r`).toBeCloseTo(0, 5);
+        expect(samples[base + 1], `point ${point} g`).toBeCloseTo(1, 5);
+        expect(samples[base + 2], `point ${point} b`).toBeCloseTo(0, 5);
+        expect(samples[base + 3], `point ${point} a`).toBeCloseTo(1, 5);
+      }
     } finally {
       backend.dispose();
     }
