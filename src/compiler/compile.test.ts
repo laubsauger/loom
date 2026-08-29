@@ -483,6 +483,100 @@ describe("compileGraph — scratch targets (T147)", () => {
   });
 });
 
+describe("compileGraph — unfilterable bindings (T150/B5, §V57)", () => {
+  const rgba: { kind: "texture2d"; sample: "float"; channels: 4 } = {
+    kind: "texture2d",
+    sample: "float",
+    channels: 4,
+  };
+
+  /** Emits an r32float field — the classic data texture (displacement, SDF). */
+  const fieldNode: NodeDefinition = {
+    type: "fx.field",
+    version: 1,
+    title: "Field",
+    category: "generator",
+    inputs: [],
+    outputs: [{ id: "out", label: "Out", type: { ...rgba, space: "data" } }],
+    parameters: {},
+    formatPolicy: { kind: "fixed", format: "r32float" },
+    resolutionPolicy: { kind: "project" },
+    compile: (raw) => {
+      const context = asCompilerContext(raw);
+      const out = context.outputs["out"]?.resourceId;
+      return out === undefined
+        ? { passes: [] }
+        : { passes: [{ shader: "@fragment fn fs() -> @location(0) vec4f { return vec4f(0.0); }", target: out }] };
+    },
+  };
+
+  const consumer = (sampled: "filtered" | "unfiltered"): NodeDefinition => ({
+    type: `fx.consume-${sampled}`,
+    version: 1,
+    title: "Consume",
+    category: "filter",
+    inputs: [{ id: "source", label: "Source", type: { ...rgba, space: "data" } }],
+    outputs: [{ id: "out", label: "Out", type: rgba }],
+    parameters: {},
+    resolutionPolicy: { kind: "project" },
+    formatPolicy: { kind: "project" },
+    compile: (raw) => {
+      const context = asCompilerContext(raw);
+      const source = context.inputs["source"]?.[0]?.resourceId;
+      const out = context.outputs["out"]?.resourceId;
+      if (source === undefined || out === undefined) return { passes: [] };
+      return {
+        passes: [
+          {
+            shader: "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }",
+            target: out,
+            textures: [{ binding: "fieldTexture", resourceId: source, sampled }],
+          },
+        ],
+      };
+    },
+  });
+
+  const graphFor = (kind: "filtered" | "unfiltered"): GraphDocument =>
+    testGraph(
+      [testNode("field", "fx.field"), testNode("use", `fx.consume-${kind}`), testNode("out", "fx.output")],
+      [
+        testEdge("e1", ["field", "out"], ["use", "source"]),
+        testEdge("e2", ["use", "out"], ["out", "source"]),
+      ],
+    );
+
+  const registryFor = () =>
+    createCompilerTestRegistry([fieldNode, consumer("filtered"), consumer("unfiltered")]).view();
+
+  it("refuses sampling r32float through a sampler on a device that cannot filter it", () => {
+    const plan = compile(graphFor("filtered"), { registry: registryFor() });
+    const error = plan.diagnostics.find((d) => d.code === CompilerDiagnosticCode.bindingUnfilterable);
+    expect(error?.severity).toBe("error");
+    expect(error?.nodeId).toBe("use");
+    expect(plan.ok).toBe(false);
+  });
+
+  it("accepts the same field read with textureLoad (sampled: unfiltered)", () => {
+    const plan = compile(graphFor("unfiltered"), { registry: registryFor() });
+    expect(plan.diagnostics.filter((d) => d.code === CompilerDiagnosticCode.bindingUnfilterable)).toEqual([]);
+    expect(plan.ok).toBe(true);
+  });
+
+  it("accepts filtered sampling when the device has float32-filterable", () => {
+    const capabilities = { ...testCapabilities(), features: ["float32-filterable"] };
+    const plan = compile(graphFor("filtered"), { registry: registryFor(), capabilities });
+    expect(plan.diagnostics.filter((d) => d.code === CompilerDiagnosticCode.bindingUnfilterable)).toEqual([]);
+    expect(plan.ok).toBe(true);
+  });
+
+  it("carries an explicit output-port space claim through propagation (T83)", () => {
+    const plan = compile(graphFor("unfiltered"), { registry: registryFor() });
+    const field = plan.outputs.find((output) => output.nodeId === "field");
+    expect(field?.space).toBe("data");
+  });
+});
+
 describe("compileGraph — memory budget reporting (§V24)", () => {
   it("estimates plan texture memory and stays quiet inside the budget", () => {
     const plan = compile(fanOutGraph());

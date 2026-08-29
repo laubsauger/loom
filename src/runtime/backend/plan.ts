@@ -83,6 +83,15 @@ export interface TextureBindingDescriptor {
   readonly binding: string;
   /** Id of a `target` or `pingPong` resource. A ping-pong binds its read half. */
   readonly resourceId: string;
+  /**
+   * How the shader reads this texture (T150/B5). "filtered" (the default) means the
+   * shader samples it through a sampler, which requires a filterable format — r32float
+   * needs the float32-filterable feature for that. "unfiltered" means the shader uses
+   * `textureLoad` and pairs NO sampler, which any renderable format supports; data
+   * textures (§V57) declare it so an unfilterable field renders on baseline Tier B.
+   * Part of the pass structure key: a change here changes the pipeline (§V5, T143).
+   */
+  readonly sampled?: "filtered" | "unfiltered";
 }
 
 export interface SamplerBindingDescriptor {
@@ -233,9 +242,10 @@ function readBindings(value: unknown): ReadonlyArray<TextureBindingDescriptor> |
   const out: TextureBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId } = entry;
+    const { binding, resourceId, sampled } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
-    out.push({ binding, resourceId });
+    if (sampled !== undefined && sampled !== "filtered" && sampled !== "unfiltered") return undefined;
+    out.push(sampled === undefined ? { binding, resourceId } : { binding, resourceId, sampled });
   }
   return out;
 }
@@ -493,7 +503,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.shader,
           pass.target,
           pass.clear ?? true,
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
           (pass.samplers ?? []).map((s) => [s.binding, s.resourceId]),
           pass.uniformBinding ?? null,
           // Names, never values (§V5).
@@ -510,7 +520,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
             ? ["indirect", pass.workgroups.indirect]
             : pass.workgroups,
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
           Object.keys(pass.uniforms ?? {}).sort(),
         ];
       case "draw":
@@ -522,7 +532,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.topology,
           typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
         ];
       case "counter":
         return ["counter", pass.id, pass.op, pass.resourceId, pass.outputResourceId ?? null];

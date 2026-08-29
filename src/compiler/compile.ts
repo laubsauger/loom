@@ -166,7 +166,15 @@ function propagate(args: PropagationArgs): PropagationResult {
       const key = outputKey(edge.source.nodeId, edge.source.portId);
       const upstream = outputs.get(key) ?? seed?.get(key);
       if (upstream === undefined) continue;
-      spaceBindings.push({ portId: edge.target.portId, space: upstream.space });
+      // T83/B5: an input port DECLARING `space: "data"` reads its input as data no
+      // matter what arrives — a Mask's mask input takes any channel as coverage, and
+      // that is not a colour mismatch (§V57).
+      const inputPortType = definition.inputs.find((port) => port.id === edge.target.portId)?.type;
+      const readsAsData = inputPortType?.kind === "texture2d" && inputPortType.space === "data";
+      spaceBindings.push({
+        portId: edge.target.portId,
+        space: readsAsData ? "data" : upstream.space,
+      });
       if (sizeByPort[edge.target.portId] === undefined) {
         sizeByPort[edge.target.portId] = upstream.size;
         formatByPort[edge.target.portId] = upstream.format;
@@ -232,6 +240,14 @@ function propagate(args: PropagationArgs): PropagationResult {
     for (const slot of outputSlots(definition)) {
       const key = outputKey(nodeId, slot.portId);
       if (!materialized.has(key)) continue;
+      // T83/B5: an EXPLICIT `space` on the output port is the author's claim and wins
+      // over everything derived — a Mask's output declaring `data` stays data no matter
+      // what formats flowed in. Deliberately `type.space`, not `colorSpaceOf()`: the
+      // accessor's absent→linear normalization is for §V13 comparisons; here absence
+      // means "no claim", and the derived space (inputs, then format) fills it.
+      const portType = definition.outputs.find((port) => port.id === slot.portId)?.type;
+      const declaredSpace =
+        portType !== undefined && portType.kind === "texture2d" ? portType.space : undefined;
       outputs.set(key, {
         nodeId,
         portId: slot.portId,
@@ -242,7 +258,7 @@ function propagate(args: PropagationArgs): PropagationResult {
         resourceKind: slot.resourceKind,
         size: resolution.size,
         format: format.format,
-        space: space.space,
+        space: declaredSpace ?? space.space,
         temporal: slot.resourceKind === "pingPong",
       });
     }
@@ -657,6 +673,36 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const candidate: LogicalExecutionPlan = { passes, resources, diagnostics: [] };
   const read = readExecutionPlan(candidate);
   diagnostics.push(...read.diagnostics);
+
+  // T150/B5: a texture binding that SAMPLES an unfilterable format is refused here,
+  // with the node named, instead of surfacing as a cryptic vgpu bind error at render
+  // time. r32float is renderable everywhere; sampling it through a sampler needs the
+  // float32-filterable feature — a data texture avoids the whole question by declaring
+  // `sampled: "unfiltered"` and reading with textureLoad (§V57).
+  const formatById = new Map<string, TextureFormat>();
+  for (const resource of read.resources) {
+    if (resource.kind === "target" || resource.kind === "pingPong") formatById.set(resource.id, resource.format);
+  }
+  const float32Filterable = request.capabilities.features.includes("float32-filterable");
+  for (const pass of read.passes) {
+    if (pass.kind === "swap" || pass.kind === "counter") continue;
+    for (const binding of pass.textures ?? []) {
+      if (binding.sampled === "unfiltered") continue;
+      if (formatById.get(binding.resourceId) !== "r32float" || float32Filterable) continue;
+      diagnostics.push(
+        compilerDiagnostic(
+          "error",
+          CompilerDiagnosticCode.bindingUnfilterable,
+          `Pass "${pass.id}" samples "${binding.resourceId}" (r32float) through a sampler, but this device cannot filter 32-bit floats.`,
+          {
+            ...(pass.kind === "effect" && pass.nodeId !== undefined ? { nodeId: pass.nodeId } : {}),
+            suggestion:
+              'Read the texture with textureLoad and declare the binding { sampled: "unfiltered" }, or use a filterable format (§V57).',
+          },
+        ),
+      );
+    }
+  }
 
   // §V24: the project memory budget is REPORTED, not enforced — per-resource caps are
   // already clamped upstream (resolution.ts), so exceeding the budget is a warning the

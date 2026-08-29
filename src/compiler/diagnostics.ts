@@ -35,6 +35,7 @@ export const CompilerDiagnosticCode = {
   memoryBudget: "compiler/memory-budget",
   scratchInvalid: "compiler/scratch-invalid",
   resolutionParameter: "compiler/resolution-parameter",
+  bindingUnfilterable: "compiler/binding-unfilterable",
   /** Component flattening (T134, T135, §V82, §V83). */
   componentRecursion: "compiler/component-recursion",
   componentMissing: "compiler/component-missing",

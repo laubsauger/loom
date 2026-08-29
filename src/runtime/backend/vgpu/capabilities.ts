@@ -36,19 +36,16 @@ const REPORTED_LIMITS = [
 ] as const;
 
 /**
- * Renderable-and-filterable color formats the device actually supports (T96, §V51).
- *
- * rgba8unorm, rgba8unorm-srgb and rgba16float are WebGPU core: renderable and filterable
- * on every conforming device. r32float is renderable in core but SAMPLING it with a
- * filtering sampler requires the `float32-filterable` feature — our node pipeline binds
- * linear samplers by default, so without the feature the format is excluded from the
- * report and the format-override UI gets a real "unsupported" answer instead of a late
- * vgpu bind error.
+ * RENDERABLE color formats (T96, revised for T150/B5): everything in the canonical list
+ * is renderable on every conforming device, r32float included, so all of it is
+ * reported. FILTERABILITY is a separate, per-binding question — r32float can always be
+ * read with `textureLoad` (a data texture's natural access, §V57), and sampling it
+ * through a sampler additionally needs the `float32-filterable` feature, which the
+ * compiler checks per texture binding against `features` (compiler/binding-unfilterable)
+ * instead of pretending the format does not exist.
  */
-function supportedFormats(features: ReadonlySet<string>): ReadonlyArray<TextureFormat> {
-  return TEXTURE_FORMATS.filter(
-    (format) => format !== "r32float" || features.has("float32-filterable"),
-  );
+function supportedFormats(_features: ReadonlySet<string>): ReadonlyArray<TextureFormat> {
+  return TEXTURE_FORMATS;
 }
 
 function readLimits(limits: GPUSupportedLimits): Record<string, number> {

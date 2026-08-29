@@ -955,17 +955,21 @@ describe("vgpu backend — resize/compile reconciliation (R4)", () => {
   });
 });
 
-describe("vgpu backend — capability truth (T96, §V51)", () => {
-  it("excludes r32float without float32-filterable, includes it with the feature", async () => {
+describe("vgpu backend — capability truth (T96, revised T150)", () => {
+  it("reports every renderable format; filterability is per-binding, via features", async () => {
+    // r32float is always RENDERABLE (textureLoad reads it anywhere); whether it can be
+    // SAMPLED through a sampler is the float32-filterable feature's business, checked by
+    // the compiler per texture binding rather than by hiding the format.
     const plain = await harness();
-    expect(plain.backend.capabilities?.formats).not.toContain("r32float");
+    expect(plain.backend.capabilities?.formats).toContain("r32float");
     expect(plain.backend.capabilities?.formats).toContain("rgba16float");
+    expect(plain.backend.capabilities?.features).not.toContain("float32-filterable");
 
     const filterable = await harness(
       { features: ["float32-filterable"] },
       { requiredFeatures: ["float32-filterable"] },
     );
-    expect(filterable.backend.capabilities?.formats).toContain("r32float");
+    expect(filterable.backend.capabilities?.features).toContain("float32-filterable");
   });
 });
 
