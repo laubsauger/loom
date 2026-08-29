@@ -558,6 +558,8 @@ V11: ∀ node definition runs headless. ⊥ import React or @xyflow.
 V12: optional GPU feature discovered via capability report before use. ⊥ assumed.
 V13: connect requires exact `PortType` match. ⊥ implicit color-space/format/scalar/resolution conversion. conversion = visible node.
 V14: input port accepts ≤ 1 incoming edge unless declared variadic. output fan-out unbounded.
+V14b: an EDGE is a valid drop target for a connection. release over the line → the drag takes that edge's TARGET and replaces it. the line is a big target; the port is a 7px dot (V99) — requiring the dot when the wire is right there is asking for precision the task ⊥ need.
+V14c: edge hit area ! be generous (~10px each side of the stroke, invisible), same principle as V99. a 1px stroke is ⊥ a target.
 V14a: dropping a connection on an OCCUPIED input REPLACES the existing edge — 1 patch, 1 undo group (V32, V34). ⊥ silently refuse: the user's intent is unambiguous and refusing makes them hunt for the old edge to delete first.
 V15: ∀ semantic edit undoable. continuous drag coalesced → 1 history entry, live values still applied.
 V16: per-frame metrics & preview pixels ⊥ enter document store. UI metric refresh ≤ 10 Hz.
@@ -817,6 +819,8 @@ T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, libra
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
 T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
+T212|.|drop a connection ON AN EDGE → replaces it (takes that edge's target). 1 patch = disconnect + connect, 1 undo group. generous invisible hit area on the edge|V14b,V14c,V32,V34
+T213|.|drop a NODE on an edge → SPLICE it inline (upstream→node→downstream) when types allow. 1 patch. the sibling gesture: the edge as a drop target for a node, ⊥ only for a connection|V14b,V13,V32
 T208|.|node resize: React Flow NodeResizer + `setNodeSize` patch op, 1 patch per gesture, persisted ∈ the document, min size respected|V116,V15,V29
 T209|.|preview tile resolution follows the node's preview area (ladder-quantised, capped), aspect letterboxed ⊥ stretched|V117,V118,V28c
 T206|.|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, viewport)` ← React Flow's LIVE node positions, every display frame. today `node-preview-slot.tsx:39` measures w/ `getBoundingClientRect()` — the design note (§2) rejected measuring explicitly|V111,V112,V16
