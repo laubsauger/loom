@@ -604,13 +604,13 @@ T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, defa
 T81|x|SUPERSEDED by T115 (same union, landed w/ dispatch\|draw\|counter + buffer\|bufferPair)|V58
 T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
 T83|x|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
-T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
+T84|x|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|x|SUPERSEDED by T143 (backend per-entry carry-over; V62b now the rule)|V62,V22
 T87|x|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
-T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
+T90|x|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
 T91|x|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
 T92|x|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
 T93|x|lint: ⊥ import store `internals`\|`raw` outside src/domain/commands + tests|V29
@@ -637,9 +637,9 @@ T114|x|`pointset` port kind + attribute-requirement compat, replaces `geometry`|
 T115|x|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
 T116|x|`contractVersion` on `NodeDefinition` + kernel ABI check|V77
 T117|x|**attribute→WGSL codegen module** — own task, headless, heavily tested. TOP RISK|V76,V75
-T118|.|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24
-T119|.|scan/prefix-sum compaction for spawn/kill. ⊥ atomics|V74,V73
-T120|.|per-point RNG `hash(seed, pointId, frame)` + `pointId` identity|V72,V73,V45
+T118|x|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24
+T119|x|scan/prefix-sum compaction for spawn/kill. ⊥ atomics|V74,V73
+T120|x|per-point RNG `hash(seed, pointId, frame)` + `pointId` identity|V72,V73,V45
 T121|.|custom per-point WGSL kernel node (`fn process`)|V77,I.kernel
 T122|.|sprite render path (spine step 1 of sprites→instances→mesh)|V58
 T123|.|point viewer + attribute spreadsheet, windowed readback ≤10Hz|V48,V16
@@ -686,6 +686,7 @@ T164|x|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — 
 T165|.|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
 T166|.|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
+T172|.|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T169|.|`GraphStore.replace(graph, {clearHistory})` committing through the same path as `apply` + a `project.load` command, so open is in-place w/ an actor. today open = teardown+rebuild ∴ undo history ⊥ survives|V29,V30,V31,V41
 T170|.|`Inspector` accepts `unresolvedParameters?: readonly string[]` — today a node w/ ANY newer-version param suppresses ALL its controls|V68,V10
 T171|.|attach the timing source where the frame loop lives — T163's backend surface exists; composition root ⊥ runs a loop ∴ attaching there would park ∀ fields on "measuring…" forever|V86
@@ -732,6 +733,7 @@ T62|.|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compile
 wave = barrier. tracks ∈ wave run concurrent. track owns disjoint paths → ⊥ write collision.
 rule: track ⊥ edit file outside owned paths. shared contract frozen @ wave 0.
 cross-track need → raise, ⊥ patch other track path.
+⊥ `git stash` | `git checkout` | any tree-wide git op while tracks live — stash cycles OTHER tracks' uncommitted work. blame a file w/ `git diff HEAD -- <path>`, ⊥ tree-wide state changes.
 
 ### wave 0 — serial, 1 worker. contract freeze.
 T1, T9, T63
@@ -785,7 +787,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
