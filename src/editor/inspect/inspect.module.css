@@ -1,0 +1,233 @@
+/*
+ * Node info popup + performance tab (T145, T41).
+ * Colours are tokens only (§V17); layout matches the inspector's density.
+ */
+
+.popup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 300px;
+  max-width: 380px;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.name {
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  overflow-wrap: anywhere;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.badge {
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: calc(var(--space-5));
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+}
+
+.badge[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.badge[data-tone="error"] {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.badge[data-tone="signal"] {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: var(--border-hairline);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-1);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  overflow-wrap: anywhere;
+}
+
+/* A value that does not exist reads as absent, not as a number (§V86). */
+.absent {
+  color: var(--text-disabled);
+  font-style: normal;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-ui);
+}
+
+.message {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+.message[data-severity="error"] {
+  color: var(--error);
+}
+
+.message[data-severity="warning"] {
+  color: var(--warn);
+}
+
+/* ---- performance tab ------------------------------------------------- */
+
+.performance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.blockTitle {
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+}
+
+.statRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.statLabel {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+}
+
+.statValue {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  letter-spacing: var(--tracking-mono);
+}
+
+.statValue[data-tone="warn"] {
+  color: var(--warn);
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+}
+
+.table th {
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: var(--border-hairline);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-weight: var(--weight-header);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: var(--border-hairline);
+  color: var(--text);
+  vertical-align: top;
+}
+
+.numeric {
+  text-align: right;
+  white-space: nowrap;
+}

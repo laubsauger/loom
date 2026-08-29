@@ -1,0 +1,195 @@
+import { useCallback, useSyncExternalStore } from "react";
+import type { TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
+import { formatBytes, formatMs } from "./format.ts";
+import styles from "./inspect.module.css";
+
+/**
+ * The performance dock tab (T41, §I.ui, §V16, §V24, §V86).
+ *
+ * Everything on this pane is a fact the system already knows: the plan's pass and
+ * resource counts, `plan.estimatedResourceBytes` against the project memory budget, the
+ * backend's `lastBuild` reuse accounting, and per-pass GPU spans.
+ *
+ * The per-pass table is the point of the tab. A single frame-time number tells you the
+ * frame is slow; it does not tell you which pass to look at, which is the only question
+ * worth asking. So the rows carry the pass id, the node's source path (§V82 — the place
+ * the user can navigate to, not the flattened id) and its span.
+ *
+ * §V86 is visible here rather than hidden: when the device reports no timestamp query the
+ * ms column reads "unavailable" on every row. It does not read 0.000, and it does not
+ * quietly substitute CPU encode time, which on a real workload differs by more than an
+ * order of magnitude and would send someone optimising a pass that costs nothing.
+ *
+ * The whole pane re-renders once per telemetry tick — at most 10 times a second (§V16) —
+ * because the hub, not this component, owns the rate.
+ */
+
+export interface PerformancePanelProps {
+  readonly telemetry: TelemetrySource | null;
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "warn" | undefined;
+}) {
+  return (
+    <div className={styles.stat}>
+      <span className={styles.statLabel}>{label}</span>
+      <span className={styles.statValue} {...(tone === undefined ? {} : { "data-tone": tone })}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export function PerformancePanel({ telemetry }: PerformancePanelProps) {
+  const snapshot = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => telemetry?.subscribe(listener) ?? (() => {}),
+      [telemetry],
+    ),
+    useCallback(() => telemetry?.snapshot() ?? null, [telemetry]),
+    useCallback(() => telemetry?.snapshot() ?? null, [telemetry]),
+  );
+
+  if (snapshot === null) {
+    return (
+      <div className={styles.performance}>
+        <p className={styles.note}>
+          No telemetry is attached. Metrics arrive from the runtime, never from the
+          document (§V16), so nothing is shown until a runtime is running.
+        </p>
+      </div>
+    );
+  }
+
+  return <PerformanceView snapshot={snapshot} />;
+}
+
+export interface PerformanceViewProps {
+  readonly snapshot: TelemetrySnapshot;
+}
+
+/** Pure view over a snapshot — renders from a fixture with no GPU and no hub. */
+export function PerformanceView({ snapshot }: PerformanceViewProps) {
+  const { plan, build } = snapshot;
+  const frame = formatMs(snapshot.frame);
+
+  return (
+    <div className={styles.performance} data-testid="performance-panel">
+      <section aria-label="Frame">
+        <h3 className={styles.blockTitle}>frame</h3>
+        <div className={styles.statRow}>
+          <Stat label="gpu time" value={frame.text} />
+          <Stat label="frames" value={String(snapshot.framesRendered)} />
+          <Stat
+            label="frame index"
+            value={snapshot.lastFrameIndex === null ? "—" : String(snapshot.lastFrameIndex)}
+          />
+        </div>
+        {snapshot.timingAvailable ? null : (
+          <p className={styles.note}>
+            This device reports no <code>timestamp-query</code> feature, so per-pass GPU
+            spans are unavailable (§V12). Nothing is estimated in their place — a CPU-side
+            figure would be a different measurement wearing the same label.
+          </p>
+        )}
+      </section>
+
+      <section aria-label="Plan">
+        <h3 className={styles.blockTitle}>plan</h3>
+        {plan === null ? (
+          <p className={styles.note}>No plan is compiled.</p>
+        ) : (
+          <div className={styles.statRow}>
+            <Stat label="passes" value={String(plan.passes.length)} />
+            <Stat label="resources" value={String(plan.resourceCount)} />
+            <Stat label="nodes kept" value={String(plan.nodeCount)} />
+            <Stat label="nodes pruned" value={String(plan.prunedCount)} />
+            <Stat
+              label="gpu memory"
+              value={formatBytes(plan.estimatedResourceBytes)}
+              tone={snapshot.overBudget ? "warn" : undefined}
+            />
+            <Stat
+              label="budget"
+              value={plan.memoryBudgetBytes === null ? "—" : formatBytes(plan.memoryBudgetBytes)}
+            />
+          </div>
+        )}
+        {snapshot.overBudget ? (
+          // §V24: the project memory budget is reported, not silently exceeded. The
+          // compiler raises `compiler/memory-budget` for the same condition.
+          <p className={styles.note} data-testid="memory-budget-warning">
+            compiler/memory-budget — the plan&apos;s estimated texture memory exceeds the
+            project budget. Lower a node&apos;s resolution, or raise the budget in project
+            settings.
+          </p>
+        ) : null}
+      </section>
+
+      <section aria-label="Last build">
+        <h3 className={styles.blockTitle}>last build</h3>
+        {build === null ? (
+          <p className={styles.note}>Nothing has been built yet.</p>
+        ) : (
+          <div className={styles.statRow}>
+            <Stat label="resources built" value={String(build.resourcesCreated)} />
+            <Stat label="resources reused" value={String(build.resourcesReused)} />
+            <Stat label="effects built" value={String(build.effectsBuilt)} />
+            <Stat label="effects reused" value={String(build.effectsReused)} />
+          </div>
+        )}
+      </section>
+
+      <section aria-label="Passes">
+        <h3 className={styles.blockTitle}>passes</h3>
+        {snapshot.passes.length === 0 ? (
+          <p className={styles.note}>No passes in the current plan.</p>
+        ) : (
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">pass</th>
+                  <th scope="col">kind</th>
+                  <th scope="col">node</th>
+                  <th scope="col" className={styles.numeric}>
+                    gpu ms
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.passes.map((row) => {
+                  const ms = formatMs({
+                    availability: row.availability,
+                    gpuMs: row.gpuMs,
+                    passCount: 1,
+                    nodeCount: row.nodeId === null ? 0 : 1,
+                  });
+                  return (
+                    <tr key={row.passId}>
+                      <td>{row.passId}</td>
+                      <td>{row.kind}</td>
+                      <td>{row.sourcePath ?? row.nodeId ?? "—"}</td>
+                      <td
+                        className={`${styles.numeric} ${ms.absent ? styles.absent : ""}`.trim()}
+                      >
+                        {ms.text}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

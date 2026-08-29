@@ -660,8 +660,8 @@ T141|x|`compile()`|`loop()` await in-flight recovery, ⊥ throw "before initiali
 T142|x|compiler emits `compiler/memory-budget` warning vs `settings.limits.memoryBudgetBytes`; shared `estimateResourceBytes` ∈ plan.ts|V24
 T143|x|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
 T144|.|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
-T145|.|node info popup — TD MMB analog. res+aspect, format+space, est bytes, gpu ms, frames rendered, cooked-this-frame, pass count, warn/err, resolution source, bypass/mute/stale. MMB + keymap + context menu, all → 1 surface|V85,V86,I.info
-T146|.|component info aggregate: own | children | total time, pass + node count, over flattened source path|V87,V82
+T145|x|node info popup — TD MMB analog. res+aspect, format+space, est bytes, gpu ms, frames rendered, cooked-this-frame, pass count, warn/err, resolution source, bypass/mute/stale. MMB + keymap + context menu, all → 1 surface|V85,V86,I.info
+T146|x|component info aggregate: own | children | total time, pass + node count, over flattened source path|V87,V82
 T147|.|scratch/intermediate target kind ∈ plan IR — node needs >1 pass. unblocks separable Gaussian Blur (today: 1 pass, 81 taps, under-samples past ~dozens of px) + ∀ multi-pass filter|V58,V8
 T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers ∀ picker-driven nodes, ⊥ 20 in-shader curves|V56,V61
 T149|.|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
@@ -678,6 +678,8 @@ T159|.|fix B3 — `resolveSinks` doc ≠ impl on preview narrowing. pick one, ma
 T160|.|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V3-clean Dawn host. parity harness deletes its eslint-disable + imports it|V3,V47
 T161|.|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
 T162|.|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
+T163|.|backend GPU timing surface — `timer(gpu)` after init when `timestampQuery`, `timer: t.span(pass.id)` ∈ `f.pass()`, forward `t.onResults`. span name = pass id. ⊥ exists today ∴ T41 reads "unavailable" everywhere|V86,V12
+T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -694,8 +696,8 @@ T73|x|node Common section: resolution select (auto\|project\|input\|1/8..8x\|cus
 T39|x|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|x|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
 T40|x|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
-T41|.|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes`, `compiler/memory-budget` warning, `BackendStatus.lastBuild` {resourcesCreated/Reused, effectsBuilt/Reused}|V16,V24
-T42|.|metrics pipe outside document store, ≤10Hz UI tick|V16
+T41|x|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes`, `compiler/memory-budget` warning, `BackendStatus.lastBuild` {resourcesCreated/Reused, effectsBuilt/Reused}|V16,V24
+T42|x|metrics pipe outside document store, ≤10Hz UI tick|V16
 T68|.|export interface = sole readback surface. screenshot/PNG v1|V48,V7
 T54|.|read tools: get_project_summary, get_graph, get_selection, list_node_definitions, get_node_definition, get_node, get_diagnostics, get_runtime_metrics|I.tools,V37
 T55|.|`apply_graph_patch` — atomic ops, baseRevision conflict, temp→stable `createdIds`, 1 undo group|V32,V33,V34,V35
@@ -741,7 +743,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 2 — 5 tracks
 | track | tasks | owns |
 |---|---|---|
-| E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 | `src/compiler/**` |
+| E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
 | G controls | T37 T38 T73 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
@@ -773,7 +775,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
