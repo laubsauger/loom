@@ -765,6 +765,8 @@ LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects
 (carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
 unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
+V174: ∈ the inspector, PARAMETERS come first & COMMON is a separate TAB (TD's page model) — ⊥ both stacked on 1 page. common is chrome you set once; parameters are the work. prime real estate goes to the work.
+V175: a Ramp is N STOPS, ⊥ 2 colours. add|remove|move a stop, position per stop. 2-colour is the degenerate case of the general thing, & shipping only the degenerate case means every gradient anyone actually wants is impossible.
 V173: `pruned` means DEAD — "could have contributed GPU work & was excluded". a node that is NON-PLAN-RESIDENT BY DESIGN (the value trio: LFO, Constant, Timer — no ports, no passes) is ⊥ pruned, it was never a candidate. conflating them puts a `pruned` warning badge on a WORKING LFO & counts it ∈ "nodes pruned".
 V172: a graph edit produces a rendered frame BY ITSELF — ⊥ waiting on an unrelated event (zoom, resize, pointer move, next param change) to nudge it. "renders when I zoom" means the render is riding someone else's invalidation & the edit path has no trigger of its own. measure FIRST-FRAME-AFTER-EDIT ∈ a composed test, ⊥ eyeball it.
 V169: the timeline readout (frame, time, fps) reads the SAME `FrameEvaluationInput` the render consumed — ⊥ a parallel clock, ⊥ `performance.now`. a readout that can disagree w/ the picture is worse than no readout: it's the thing you check when you ⊥ trust the picture.
@@ -991,6 +993,8 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T269|.|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
+T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|.|`pruned` excludes non-plan-resident value nodes (B20). + E7 example lands once green|V173,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
@@ -1155,7 +1159,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 T227 T248 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 T245 T246 T247 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 T245 T246 T247 T269 T270 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
