@@ -12,6 +12,7 @@ import type {
   FrameLoopSettings,
   // Ours, NOT the DOM's Media Source Extensions global of the same name — without this
   // import the code below would silently typecheck against the wrong interface.
+  CookPolicy,
   MediaSource,
   PresentableCanvas,
   PresentationHandle,
@@ -172,6 +173,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let consecutiveFrameErrors = 0;
   let lastBuildStats: BuildStats | undefined;
   const presentations = new Map<string, PresentationState>();
+  /** §V157: the permanent bisect switch. Read by encode() once T254's gating exists. */
+  let cookPolicy: CookPolicy = "always";
   /** sourceId → frame producer (T229, §V135). Backend-lifetime: survives recompiles and device loss. */
   const mediaSources = new Map<string, MediaSource>();
   let presentationCounter = 0;
@@ -1632,6 +1635,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       }
       recovery = rebuildWithRetries().finally(() => (recovery = undefined));
       await recovery;
+    },
+
+    setCookPolicy(policy) {
+      // T249 (§V157): stored now, read by encode() when T254's gating lands. Until
+      // then "auto" IS "always" — which is exactly what the cook oracle pins, so the
+      // gating cannot land without staying byte-identical at every frame index.
+      cookPolicy = policy;
+      void cookPolicy;
     },
 
     registerMediaSource(sourceId, source) {

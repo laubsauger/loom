@@ -164,6 +164,15 @@ export interface ShaderloomBackend extends RenderBackend {
   recover(): Promise<void>;
 
   /**
+   * The cook policy (T249, §V157): `"always"` renders every pass every frame;
+   * `"auto"` MAY skip work — and is REQUIRED to be byte-identical to `"always"` at
+   * every frame index, which the cook oracle enforces. Ships before any gating exists
+   * (today the two are literally the same code path) and stays forever: it is the
+   * permanent bisect switch when someone suspects cooking in the wild.
+   */
+  setCookPolicy(policy: CookPolicy): void;
+
+  /**
    * Binds a CPU-side frame producer to a `sourceId` (T229, §V135). Every
    * `externalTexture` resource declaring that sourceId uploads from this source — on
    * frame-ready, never per render frame (§V136). Returns the unregister function.
@@ -173,6 +182,9 @@ export interface ShaderloomBackend extends RenderBackend {
    */
   registerMediaSource(sourceId: string, source: MediaSource): () => void;
 }
+
+/** §V157: "auto" must be byte-identical to "always" at EVERY frame index. */
+export type CookPolicy = "always" | "auto";
 
 /**
  * One decoded frame offered by a media source (T229).
