@@ -778,6 +778,18 @@ TRADE, stated: timeline time means dropped frames SLOW the animation (TD behaves
 wall time means dropped frames SKIP it (Notch's "frame-rate independence" = "visually
 similar", ⊥ identical). ⊥ 1 right answer ∴ ship both & DEFAULT to smooth.
 
+### the VALUE GRAPH — TD's CHOP network, ⊥ a 2nd product (T273-T277)
+value nodes today have ⊥ ports & are addressed by NAME (`driven` → `lfo1`). that works for a
+SOURCE. it ⊥ work the moment you want `mouse1 → lag1 → filter1 → parameter`: naming a chain
+∈ a parameter string is ⊥ a graph, it's a graph typed as text.
+TD wires CHOPs w/ cables ∴ so do we. a `value` PORT TYPE, value EDGES, & a CPU-side graph
+evaluated ∀ frame BEFORE the render. this is the same split TD has (CHOP network vs TOP
+network) ∈ 1 canvas.
+
+V179: value edges form a SEPARATE graph — CPU-side, topologically ordered, evaluated ∀ frame BEFORE the GPU plan. value nodes ⊥ enter the GPU plan & ⊥ allocate GPU resources. a value edge ⊥ a texture edge & the 2 ⊥ connect (V19 port typing already refuses it).
+V180: a value node publishes NAMED CHANNELS, ⊥ 1 anonymous number. address = `node` (first channel) | `node:channel` (`mouse1:x`). single-channel is the degenerate case — Mouse has x,y & shipping only 1 forces 2 nodes for 1 device.
+V181: a STATEFUL value node (Lag, Hold, Count, Slope) is unskippable (V155) & ! declare its reset (T214/T216). its state ⊥ a function of frame index ∴ a seek that ⊥ replay is ⊥ scrub-accurate (V170) & ! say so.
+V182: Mouse publishes the SAME pointer the shaders read (`FrameEvaluationInput.pointer`, the shared block's `pointer`). ⊥ a 2nd DOM listener — 2 sources for 1 device drift by a frame & the CPU & GPU halves of one graph disagree about where the cursor is.
 V177: project settings are DOCUMENT state — they serialize w/ the graph, mutate ONLY via `project.setSettings` (V29), bump the revision & make ONE undo entry ("Set frame rate", TD-style). `AppRuntime.settings` is a live VIEW of the store, ⊥ a snapshot.
 V178: settings edits classify PER FIELD. `outputResolution`, `workingFormat`, `limits` = STRUCTURAL → recompile. `fps`, `previewFps`, `previewLongEdge` = ⊥ structural → ⊥ recompile, ⊥ resource rebuild. w/o this someone writes "any settings edit rebuilds the world" & dragging an fps field rebuilds every resource @ 60Hz.
 V176: `time` ∈ expressions & the shared block is TIMELINE time = frameIndex/fps — uniform by construction. wall time is a SEPARATE name for when sync matters. a linear expression on `time` ! produce linear motion; if it visibly jitters the clock is wrong, ⊥ the user's expression.
@@ -1014,6 +1026,11 @@ T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop e
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
+T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, cycle rejection, ∀ frame pre-render)|V179,V19,V152
+T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
+T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
+T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
+T277|.|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
 T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
 T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
 T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
@@ -1193,7 +1210,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 T234 T235 T236 T237 T238 T239 T240 T241 T242 T243 T262 T263 T264 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T273 T274 T275 T276 T277 T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 T234 T235 T236 T237 T238 T239 T240 T241 T242 T243 T262 T263 T264 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
