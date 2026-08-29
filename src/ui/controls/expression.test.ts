@@ -70,7 +70,8 @@ describe("rejects everything outside the grammar, without throwing", () => {
   });
 
   it("never evaluates identifiers, so there is no path to the host environment", () => {
-    // The tokeniser has no identifier token at all: this is not a denylist.
+    // Text entry evaluates with an empty scope: every identifier is unknown by
+    // construction — this is not a denylist.
     expect(evaluateExpression("constructor").ok).toBe(false);
     expect(evaluateExpression("this").ok).toBe(false);
   });

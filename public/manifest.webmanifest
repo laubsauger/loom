@@ -1,0 +1,18 @@
+{
+  "name": "Shaderloom",
+  "short_name": "Shaderloom",
+  "description": "Browser-native WebGPU node compositor: typed graphs, live previews, WGSL effects.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

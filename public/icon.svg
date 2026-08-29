@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Colors mirror src/ui/tokens.css (--bg-void, --bg-raise, --signal, --text). -->
+  <rect width="512" height="512" rx="96" fill="#0b0e14"/>
+  <g fill="none" stroke="#384356" stroke-width="14">
+    <path d="M156 186 C 226 186, 226 256, 296 256"/>
+    <path d="M156 326 C 226 326, 226 256, 296 256"/>
+    <path d="M356 256 L 402 256"/>
+  </g>
+  <g>
+    <rect x="86" y="151" width="70" height="70" rx="16" fill="#1a202c" stroke="#f2a03d" stroke-width="10"/>
+    <rect x="86" y="291" width="70" height="70" rx="16" fill="#1a202c" stroke="#d6dce8" stroke-width="10"/>
+    <rect x="296" y="221" width="70" height="70" rx="16" fill="#f2a03d"/>
+    <circle cx="424" cy="256" r="26" fill="#d6dce8"/>
+  </g>
+</svg>
