@@ -473,6 +473,31 @@ describe("vgpu backend — plan handling", () => {
     expect(diagnostics.map((d) => d.code)).toContain(BackendDiagnosticCode.unknownOutput);
   });
 
+  it("resets ONE feedback pair by id, refusing unknowns loudly (T215, §V126)", async () => {
+    const { backend, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+
+    const resetsBefore = backend.status.temporalResets;
+    backend.resetTemporalHistory(["history"]);
+    expect(backend.status.temporalResets).toBe(resetsBefore + 1);
+    const info = diagnostics.filter((d) => d.code === BackendDiagnosticCode.temporalReset).at(-1);
+    expect(info?.message).toContain("1 feedback pair(s) cleared (of 1 requested)");
+
+    // Unknown id: reported with the known pairs named, never silently skipped.
+    backend.resetTemporalHistory(["nope"]);
+    const unknown = diagnostics.filter((d) => d.code === BackendDiagnosticCode.unknownResource).at(-1);
+    expect(unknown?.message).toContain('"nope"');
+    expect(unknown?.suggestion).toContain("history");
+    const after = diagnostics.filter((d) => d.code === BackendDiagnosticCode.temporalReset).at(-1);
+    expect(after?.message).toContain("0 feedback pair(s) cleared");
+
+    // No argument keeps the whole-backend semantics (device loss path).
+    backend.resetTemporalHistory();
+    const all = diagnostics.filter((d) => d.code === BackendDiagnosticCode.temporalReset).at(-1);
+    expect(all?.message).toContain("1 feedback pair(s) cleared.");
+  });
+
   it("routes shader build failures to onDiagnostic and flags the retained program stale (T95)", async () => {
     const { backend, diagnostics } = await harness();
     const good = await backend.compile(fixturePlan());

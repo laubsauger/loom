@@ -109,8 +109,13 @@ export interface ShaderloomBackend extends RenderBackend {
   /** Writes uniform values in place. Never rebuilds pipelines or targets (§V5). */
   updateUniforms(update: UniformUpdate): void;
 
-  /** Clears every ping-pong pair. Called automatically on device loss (§V22, §V23). */
-  resetTemporalHistory(): void;
+  /**
+   * Clears feedback history (§V22, §V23). No argument = every ping-pong pair (the
+   * device-loss semantics). With `resourceIds`, ONLY those pairs are cleared (T215) —
+   * what a pulse-based Feedback reset (§V126) and `runtime.resetFeedback` key on.
+   * Unknown ids are reported, never silently skipped.
+   */
+  resetTemporalHistory(resourceIds?: readonly string[]): void;
 
   /**
    * Attaches a presentable surface to a compiled output (T87, §V64/§V70). The surface is

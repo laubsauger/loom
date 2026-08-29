@@ -422,15 +422,42 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     for (const [passId, values] of target.liveUniforms) applyUniforms(target, passId, values);
   }
 
-  function clearTemporalHistory(reason: "device" | "resolution" | "explicit"): void {
+  function clearTemporalHistory(
+    reason: "device" | "resolution" | "explicit",
+    resourceIds?: readonly string[],
+  ): void {
     const gpu = session?.gpu;
     if (!gpu || !program) return;
-    const pairs = [...program.resources.pingPongs.values()];
+    // T215: an id filter clears ONLY those pairs — the pulse-based Feedback reset
+    // (§V126) and `runtime.resetFeedback` need one node's history gone, not every
+    // simulation's. No filter = every pair, the device-loss/whole-project semantics.
+    const pingPongs = program.resources.pingPongs;
+    const selected =
+      resourceIds === undefined
+        ? [...pingPongs.values()]
+        : resourceIds.flatMap((id) => {
+            const pair = pingPongs.get(id);
+            if (pair !== undefined) return [pair];
+            hub.report(
+              backendDiagnostic(
+                "warning",
+                BackendDiagnosticCode.unknownResource,
+                `resetTemporalHistory: no feedback pair "${id}" in the current program.`,
+                {
+                  suggestion:
+                    pingPongs.size === 0
+                      ? "The program has no temporal resources."
+                      : `Known pairs: ${[...pingPongs.keys()].sort().join(", ")}.`,
+                },
+              ),
+            );
+            return [];
+          });
     temporalResets += 1;
-    if (pairs.length > 0) {
+    if (selected.length > 0) {
       guard.assertOutsideFrame("temporal history clear");
       frame(gpu, (f) => {
-        for (const pair of pairs) {
+        for (const pair of selected) {
           f.pass({ target: pair.read, clear: true }, () => {});
           f.pass({ target: pair.write, clear: true }, () => {});
         }
@@ -440,7 +467,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       backendDiagnostic(
         "info",
         BackendDiagnosticCode.temporalReset,
-        `Temporal history reset (${reason}); ${pairs.length} feedback pair(s) cleared.`,
+        `Temporal history reset (${reason}); ${selected.length} feedback pair(s) cleared${
+          resourceIds === undefined ? "" : ` (of ${resourceIds.length} requested)`
+        }.`,
       ),
     );
   }
@@ -1245,8 +1274,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       applyUniforms(program, update.passId, update.values);
     },
 
-    resetTemporalHistory() {
-      clearTemporalHistory("explicit");
+    resetTemporalHistory(resourceIds?: readonly string[]) {
+      clearTemporalHistory("explicit", resourceIds);
     },
 
     present(canvas: PresentableCanvas, options: PresentationOptions): PresentationHandle {
