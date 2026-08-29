@@ -1,6 +1,7 @@
 import type { PortId } from "./ids.ts";
 import type { PortDefinition } from "./ports.ts";
-import type { ParameterSchema } from "./parameters.ts";
+import type { ParameterSchema, ParameterValue } from "./parameters.ts";
+import type { FrameEvaluationInput } from "./frame.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 
 export type ResolutionPolicy =
@@ -146,6 +147,19 @@ export interface NodeDefinition {
    * a spliced node; it exists so the definition stays executable stand-alone.
    */
   passthrough?: { readonly input: PortId; readonly output: PortId };
+  /**
+   * Declares this node a VALUE SOURCE (T238-T240, §V143): a pure function from its own
+   * effective parameter values and the frame clock to a number. The node's NAME (§V129)
+   * is its channel: a parameter in `driven` mode naming `lfo1` reads this function on
+   * the node named `lfo1`, through the resolver's channel seam (T203). Pure and
+   * deterministic BY CONTRACT — the frame is the only clock (§V44), so offline and live
+   * agree frame for frame (§V45). A source that cannot be a pure function (audio, MIDI)
+   * does not use this; it registers a runtime channel instead (Phase 2).
+   */
+  valueChannel?(
+    values: Readonly<Record<string, ParameterValue>>,
+    frame: FrameEvaluationInput,
+  ): number;
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
 }

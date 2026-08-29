@@ -6,8 +6,16 @@
  */
 export type {
   BackendStatus,
+  BuildStats,
   FrameLoopControl,
   FrameLoopSettings,
+  MediaSource,
+  MediaSourceFrame,
+  PresentableCanvas,
+  PresentationHandle,
+  PresentationOptions,
+  PreviewHostHandle,
+  ShaderCompileResult,
   ShaderloomBackend,
   UniformUpdate,
 } from "./backend-types.ts";
