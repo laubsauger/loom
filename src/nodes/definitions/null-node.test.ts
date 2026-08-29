@@ -168,3 +168,49 @@ describe("value sources are not 'pruned' (T268, §V173)", () => {
     expect(compiled.pruned).not.toContain("referenced");
   });
 });
+
+describe("bypass and mute reach the compiler (T250, B16)", () => {
+  it("a bypassed filter is a wire: the plan is byte-identical to the chain without it", () => {
+    const direct = graphOf(
+      [node("gen", "solid"), node("sink", "output")],
+      [["gen", "out", "sink", "input"]],
+    );
+    const bypassed = graphOf(
+      [node("gen", "solid"), { ...node("fx", "blur"), ui: { bypassed: true } }, node("sink", "output")],
+      [
+        ["gen", "out", "fx", "input"],
+        ["fx", "out", "sink", "input"],
+      ],
+    );
+    const a = compileGraph({ graph: direct, settings, registry: registry(), capabilities });
+    const b = compileGraph({ graph: bypassed, settings, registry: registry(), capabilities });
+    expect(b.signature).toBe(a.signature);
+    // Previewing the bypassed node shows its INPUT — the TD behaviour, via the alias.
+    expect(b.outputs.find((o) => o.nodeId === "fx")?.resourceId).toBe(
+      b.outputs.find((o) => o.nodeId === "gen")?.resourceId,
+    );
+  });
+
+  it("a muted node is silence: it and its edges leave the compile graph", () => {
+    const graph = graphOf(
+      [{ ...node("gen", "solid"), ui: { muted: true } }, node("sink", "output")],
+      [["gen", "out", "sink", "input"]],
+    );
+    const compiled = compileGraph({ graph, settings, registry: registry(), capabilities });
+    // The consumer sees a disconnected required input — the honest signal; the mute
+    // badge already explains why. And the muted node is not "pruned": it is not dead.
+    expect(compiled.diagnostics.some((d) => d.code === "compiler/input-missing")).toBe(true);
+    expect(compiled.passes.some((p) => "nodeId" in p && p["nodeId"] === "gen")).toBe(false);
+    expect(compiled.pruned).not.toContain("gen");
+  });
+
+  it("a bypassed SOURCE (nothing to pass through) mutes instead", () => {
+    const graph = graphOf(
+      [{ ...node("gen", "solid"), ui: { bypassed: true } }, node("sink", "output")],
+      [["gen", "out", "sink", "input"]],
+    );
+    const compiled = compileGraph({ graph, settings, registry: registry(), capabilities });
+    expect(compiled.diagnostics.some((d) => d.code === "compiler/input-missing")).toBe(true);
+    expect(compiled.passes.some((p) => "nodeId" in p && p["nodeId"] === "gen")).toBe(false);
+  });
+});

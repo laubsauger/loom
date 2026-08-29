@@ -437,13 +437,32 @@ function splicePassthroughNodes(validated: {
   readonly edges: ReadonlyArray<CompileEdge>;
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 }): PassthroughSplice {
+  // T250 (B16): a MUTED node is silence — it, and every edge touching it, leaves the
+  // compile graph. Its consumers see a disconnected input, which is the honest signal;
+  // the mute badge already explains why. Removed before wires resolve, so a wire fed
+  // only by a muted producer correctly reads as unconnected.
+  const muted = new Set<NodeId>();
+  for (const [nodeId, resolved] of validated.nodes) {
+    if (resolved.node.ui?.muted === true) muted.add(nodeId);
+  }
   const wires = new Map<NodeId, { input: PortId; output: PortId }>();
   for (const [nodeId, resolved] of validated.nodes) {
+    if (muted.has(nodeId)) continue;
     if (resolved.definition.passthrough !== undefined) {
       wires.set(nodeId, resolved.definition.passthrough);
+      continue;
+    }
+    // T250 (B16): BYPASS makes any node a wire, TD-style — first input through to
+    // first output. A bypassed source (no inputs) has nothing to pass and mutes
+    // instead: its output reads disconnected, exactly what "temporarily off" means.
+    if (resolved.node.ui?.bypassed === true) {
+      const input = resolved.definition.inputs[0]?.id;
+      const output = resolved.definition.outputs[0]?.id;
+      if (input !== undefined && output !== undefined) wires.set(nodeId, { input, output });
+      else muted.add(nodeId);
     }
   }
-  if (wires.size === 0) {
+  if (wires.size === 0 && muted.size === 0) {
     return {
       nodes: validated.nodes,
       edges: validated.edges,
@@ -454,9 +473,15 @@ function splicePassthroughNodes(validated: {
   }
 
   const diagnostics: RuntimeDiagnostic[] = [];
+  const edgesAfterMute =
+    muted.size === 0
+      ? validated.edges
+      : validated.edges.filter(
+          (edge) => !muted.has(edge.source.nodeId) && !muted.has(edge.target.nodeId),
+        );
   /** First edge into each wire's declared input. */
   const feeding = new Map<NodeId, { nodeId: NodeId; portId: PortId }>();
-  for (const edge of validated.edges) {
+  for (const edge of edgesAfterMute) {
     const wire = wires.get(edge.target.nodeId);
     if (wire !== undefined && edge.target.portId === wire.input && !feeding.has(edge.target.nodeId)) {
       feeding.set(edge.target.nodeId, edge.source);
@@ -497,7 +522,7 @@ function splicePassthroughNodes(validated: {
   };
 
   const edges: CompileEdge[] = [];
-  for (const edge of validated.edges) {
+  for (const edge of edgesAfterMute) {
     // Edges INTO a wire are consumed by the splice.
     if (wires.has(edge.target.nodeId)) continue;
     const sourceWire = wires.get(edge.source.nodeId);
@@ -512,7 +537,7 @@ function splicePassthroughNodes(validated: {
 
   const nodes = new Map<NodeId, ResolvedNode>();
   for (const [nodeId, resolved] of validated.nodes) {
-    if (!wires.has(nodeId)) nodes.set(nodeId, resolved);
+    if (!wires.has(nodeId) && !muted.has(nodeId)) nodes.set(nodeId, resolved);
   }
 
   const aliases: Array<[{ nodeId: NodeId; portId: PortId }, { nodeId: NodeId; portId: PortId }]> = [];
