@@ -380,7 +380,7 @@ T52|x|`revision` counter + `AuditEntry` log + actor identity, audit viewer in do
 T53|x|undo groups keyed to command\|patch, actor-local history|V34,V41
 T13|x|`RenderBackend` iface + vgpu adapter impl, device init, capability report|I.backend,V2,V12
 T14|x|device-loss handling: halt, diagnose, rebuild from graph, reset temporal|V23
-T15|.|Phase0 spike nodes: Solid, CustomWGSL, Output|I.wgsl
+T15|x|Phase0 spike nodes: Solid, CustomWGSL, Output|I.wgsl
 T16|x|frame loop via vgpu frameLoop, shared uniforms (time, frame, pointer, resolution)|V8
 T64|x|lint rule: ⊥ `Date.now`\|`performance.now`\|rAF ∈ `src/nodes/**` — frame input only|V44
 T65|x|seeded RNG: project seed + node seed → deterministic per frameIndex|V45

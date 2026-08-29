@@ -93,6 +93,12 @@ export interface NodeDefinition {
   temporal?: TemporalDefinition;
   stateful?: StatefulDeclaration;
   capabilities?: CapabilityRequirement[];
+  /**
+   * Marks this node as an ACTIVE SINK: the compiler traces dependencies backward from
+   * sinks and prunes everything else (§V25). Declared, never inferred — "has no outputs"
+   * is not the same claim, and a node with a side effect must survive pruning either way.
+   */
+  sink?: boolean;
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
 }
