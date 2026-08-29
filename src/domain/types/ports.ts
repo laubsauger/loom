@@ -1,6 +1,34 @@
 import type { PortId } from "./ids.ts";
 
 /**
+ * One data model for meshes and particles: a mesh is points plus topology, particles are
+ * points without it. There is no SOP/POP split — an operator that moves points does not
+ * care which it is looking at.
+ *
+ * Attributes are arbitrary and named from day one; the WGSL `Point` struct is generated
+ * from the schema (§V76) rather than hand-written, and storage is one buffer per
+ * attribute (§V75) so an operator binds only what it touches.
+ */
+export type PointAttributeType =
+  | "f32"
+  | "vec2f"
+  | "vec3f"
+  | "vec4f"
+  | "i32"
+  | "u32"
+  | "mat3x3f"
+  | "mat4x4f";
+
+export interface PointAttributeSpec {
+  /** Arbitrary name: "P", "vel", "age", "Cd". Identity is the name, not a slot. */
+  name: string;
+  type: PointAttributeType;
+}
+
+/** Absent topology = a particle system: points with no connectivity. */
+export type PointTopology = "points" | "lines" | "triangles";
+
+/**
  * Port families. `geometry`/`scene`/`material`/`camera`/`light`/`transform3d`/`event`/
  * `audioFeatures` are declared now but not implemented in v1 (§C scope).
  */
@@ -10,7 +38,7 @@ export type PortType =
   | { kind: "scalar"; scalar: "f32" | "i32" | "u32" | "bool" }
   | { kind: "vector"; scalar: "f32" | "i32" | "u32"; size: 2 | 3 | 4 }
   | { kind: "matrix"; columns: 3 | 4; rows: 3 | 4 }
-  | { kind: "geometry"; topology: "triangle-list" | "triangle-strip" | "line-list" | "point-list" }
+  | { kind: "pointset"; requires: ReadonlyArray<PointAttributeSpec>; topology?: PointTopology }
   | { kind: "scene" }
   | { kind: "material"; model: "unlit" | "pbr" | "custom" }
   | { kind: "camera" }

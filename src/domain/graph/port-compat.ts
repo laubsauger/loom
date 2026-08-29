@@ -35,9 +35,17 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
       const b = target as Extract<PortType, { kind: "matrix" }>;
       return source.columns === b.columns && source.rows === b.rows;
     }
-    case "geometry": {
-      const b = target as Extract<PortType, { kind: "geometry" }>;
-      return source.topology === b.topology;
+    case "pointset": {
+      const b = target as Extract<PortType, { kind: "pointset" }>;
+      // Attribute-requirement compatibility, in the spirit of V13: the CONSUMER states
+      // what it needs and the producer must satisfy every entry by name AND type. A
+      // producer carrying extra attributes is fine — that is a superset, not a mismatch,
+      // and refusing it would make every operator declare the whole schema. A missing or
+      // mistyped attribute is refused outright rather than silently defaulted, because a
+      // zero-filled "vel" that should have existed is a bug you debug in the render.
+      if (source.topology !== b.topology) return false;
+      const available = new Map(source.requires.map((attribute) => [attribute.name, attribute.type]));
+      return b.requires.every((needed) => available.get(needed.name) === needed.type);
     }
     case "material": {
       const b = target as Extract<PortType, { kind: "material" }>;
@@ -73,8 +81,10 @@ export function describePortType(type: PortType): string {
       return `vec${type.size}<${type.scalar}>`;
     case "matrix":
       return `mat${type.columns}x${type.rows}`;
-    case "geometry":
-      return `geometry<${type.topology}>`;
+    case "pointset": {
+      const attributes = type.requires.map((a) => `${a.name}:${a.type}`).join(",");
+      return `pointset<${type.topology ?? "points"}${attributes === "" ? "" : ` ${attributes}`}>`;
+    }
     case "material":
       return `material<${type.model}>`;
     default:

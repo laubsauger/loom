@@ -39,6 +39,28 @@ Browser WebGPU node compositor: typed graph → compiled pass plan → live mult
 - export order: 1 screenshot/still → 2 realtime browser recording → 3 deterministic frame sequence → 4 headless `vgpu/node` render queue → 5 video encode/alpha/HDR. v1 = step 1 only.
 - deploy: browser-only + PWA-ready manifest.
 
+### point model — unified pointset (TD POP analog), Phase 2/3
+ONE data model. mesh = points + topology. particles = points w/o topology. ⊥ SOP/POP split.
+- storage = structure-of-arrays: 1 buffer per attribute. kills WGSL alignment pain; op binds only what it touches.
+- arbitrary named attributes day 1. WGSL structs CODE-GENERATED from attribute schema.
+- kernel ABI: `fn process(p: Point, ctx) -> Point`. `Point` codegen'd. versioned (`contractVersion`), fusion-ready.
+- per-point RNG = `hash(seed, pointId, frame)`. `pointId` = identity, ⊥ slot index.
+- GPU-driven lifecycle from start via scan/prefix-sum COMPACTION, ⊥ atomics — atomics ⊥ deterministic, would break V45 + headless parity. cost = 2-3 extra passes, nothing else.
+- render spine: sprites → instances → mesh.
+- TOP↔POP bridges: `TextureToAttribute` (P3a), splat-to-texture (P3b), audio/pointer via resolver seam (V61). one instrument, ⊥ two apps.
+
+slices:
+- P3a (late Phase 2, beside audio-reactive): pointset core, SoA buffers, attribute codegen, custom per-point WGSL kernel node, sprite render, viewer + attribute spreadsheet, `TextureToAttribute`. flagship demo = audio-driven particles.
+- P3b: neighbors (flocking, SPH) — kernel ABI reserves the slot. indirect instancing, trails, splat-to-texture.
+- P3c: handoff §35.6 3D scene.
+
+gates:
+- P3a exit: audio-reactive 100k particles @ 60fps 1080p · seed-identical browser vs headless · agent builds a variant via patch + verifies via `render_preview` + `read_points`.
+- P3b exit: flocking 50k + indirect instancing + trails, 10-min stable resource count.
+
+TOP RISK: attribute→WGSL codegen = new center of gravity. own task, heavily tested, headless.
+⊥ a side effect of writing the first node.
+
 ### node catalog guideline
 TD TOP family = reference vocabulary for core node set — naming, param names, default behavior.
 map where it maps, ⊥ clone. POP/SOP families → later phase, same approach.
@@ -136,6 +158,7 @@ interface GraphPatchResult {
 patch-local temp IDs → stable IDs via `createdIds`. lets agent add N nodes + wire them in 1 request.
 
 ### agent tool surface — v1 subset (doc §30.3)
+read: `read_points` (reserved — windowed point attribute readback, ≤10Hz, via export iface V48)
 read: `get_project_summary` `get_graph` `get_selection` `list_node_definitions`
       `get_node_definition` `get_node` `get_diagnostics` `get_runtime_metrics` `render_preview`
 mutate: `apply_graph_patch` `add_node` `remove_nodes` `connect_ports` `disconnect_ports`
@@ -194,6 +217,26 @@ type PortType =
   | { kind: "geometry" } | { kind: "camera" }
   | { kind: "event" } | { kind: "audioFeatures" };
 ```
+
+### type: pointset port (replaces unimplemented `geometry`)
+```ts
+interface PointAttributeSpec {
+  name: string;                       // "P", "vel", "age", "Cd" — arbitrary, day 1
+  type: "f32" | "vec2f" | "vec3f" | "vec4f" | "i32" | "u32" | "mat3x3f" | "mat4x4f";
+}
+type PortType =
+  | …
+  | { kind: "pointset"; requires: PointAttributeSpec[]; topology?: "points" | "lines" | "triangles" };
+```
+compat (V13 spirit): consumer's `requires` ! be satisfied by producer's attributes — name AND
+type exact. superset OK (producer may carry more), missing|mistyped = ⊥. topology absent = particles.
+
+### kernel ABI
+```wgsl
+fn process(p: Point, ctx: KernelContext) -> Point
+```
+`Point` struct codegen'd from attribute schema. `ctx` carries frame input + `pointId`.
+`NodeDefinition.contractVersion` pins ABI; mismatch → diagnostic, ⊥ silent run.
 
 ### type: per-node output resolution override (TD Common page)
 ```ts
@@ -336,7 +379,7 @@ V20: param control drag ⊥ start graph pan | node drag | selection.
 V21: resolution & format propagation deterministic, happens @ compile/resize. ⊥ per-frame.
 V22: feedback = stable ping-pong pair. swap after ∀ current-frame consumers encoded.
 V23: device lost → halt submit, report diagnostic, rebuild resources from domain graph, reset temporal history.
-V24: resolution / dispatch / buffer-size caps enforced before dispatch. project memory budget reported.
+V24: caps enforced before dispatch — resolution, dispatch size, buffer bytes, point count, attribute count, per-point stride. ∀ checked vs `capabilities.limits` + `settings.limits`. project memory budget reported. over-cap → diagnostic + refuse, ⊥ device loss.
 V25: compiler evaluates only nodes reachable backward from active sinks. rest pruned.
 V26: edge visual hue = source port family color (§C). ⊥ arbitrary edge color.
 V27: WGSL compile message maps to editor line+col, surfaces on node badge + problems tab.
@@ -379,6 +422,12 @@ V65: undo|redo owner-checked ∀ directions. redo ⊥ clobber other actor newer 
 V66: ∀ patch input structurally validated (zod) before apply. malformed → diagnostic + audit entry, ⊥ raw throw, ⊥ unhandled rejection. non-finite position rejected (NaN → null → doc unloadable).
 V67: capability grant issued by bus-owned store keyed by actor. ⊥ read from caller-supplied context — self-grantable = ⊥ (V38).
 V68: unknown|future-version serialized data preserved through load→save round trip. closed param schema ⊥ reject whole doc (V10).
+V72: point identity = `pointId`, ⊥ slot index. compaction reorders slots; ∀ id-keyed state survives.
+V73: per-point RNG = `hash(seed, pointId, frame)`. same seed + id + frame → same value ∀ device, ∀ browser|headless (V45).
+V74: lifecycle (spawn|kill|compact) via scan/prefix-sum. ⊥ atomics ∈ lifecycle path — nondeterministic order ⊥ V45 + headless parity.
+V75: pointset storage = SoA, 1 buffer per attribute. op binds only attributes it declares. ⊥ monolithic Point buffer.
+V76: attribute→WGSL codegen = own module, headless-tested. ⊥ inlined ∈ node definition.
+V77: kernel `contractVersion` checked before run. mismatch → diagnostic + refuse, ⊥ silent run against wrong ABI.
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -466,6 +515,18 @@ T109|.|non-rAF frame loop option (worker + node realtime)|V49,V63
 T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
 T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
 T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps land|C
+T114|x|`pointset` port kind + attribute-requirement compat, replaces `geometry`|V13,I.pointset
+T115|.|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
+T116|x|`contractVersion` on `NodeDefinition` + kernel ABI check|V77
+T117|.|**attribute→WGSL codegen module** — own task, headless, heavily tested. TOP RISK|V76,V75
+T118|.|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24
+T119|.|scan/prefix-sum compaction for spawn/kill. ⊥ atomics|V74,V73
+T120|.|per-point RNG `hash(seed, pointId, frame)` + `pointId` identity|V72,V73,V45
+T121|.|custom per-point WGSL kernel node (`fn process`)|V77,I.kernel
+T122|.|sprite render path (spine step 1 of sprites→instances→mesh)|V58
+T123|.|point viewer + attribute spreadsheet, windowed readback ≤10Hz|V48,V16
+T124|.|`TextureToAttribute` bridge node (TOP→POP)|V13
+T125|.|`read_points` agent tool — windowed, via export iface|V37,V48
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
@@ -561,7 +622,13 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
 | R hardening | T95 T96 T97 T98 T100 T102 T103 T109 | `src/runtime/backend/**` `src/domain/graph/**` |
-| S guardrails+ | T90 T92 T93 T105 T108 T112 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+| S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+
+### P3a track (late Phase 2, parallel w/ audio-reactive) — new track T
+T117 codegen (FIRST, own task, blocks rest) → T118 SoA storage → T119 compaction →
+T120 RNG/identity → T121 kernel node → T122 sprite render → T123 viewer+spreadsheet →
+T124 TextureToAttribute → T125 read_points.
+owns `src/points/**` `src/nodes/definitions/points/**`.
 
 ### Phase 2 backlog (⊥ v1, committed direction)
 T110 multi-window perform mode · renderer-in-worker · AudioIn + analysis + WebMIDI (resolver

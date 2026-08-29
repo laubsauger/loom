@@ -13,7 +13,8 @@ export const PORT_FAMILY_VAR: Readonly<Record<PortKind, string>> = {
   scalar: "--port-scalar",
   vector: "--port-vector",
   matrix: "--port-matrix",
-  geometry: "--port-geometry",
+  // A pointset is one model for meshes and particles; blue reads as "structure".
+  pointset: "--port-pointset",
   scene: "--port-scene",
   material: "--port-material",
   camera: "--port-camera",

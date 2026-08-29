@@ -94,6 +94,12 @@ export interface NodeDefinition {
   stateful?: StatefulDeclaration;
   capabilities?: CapabilityRequirement[];
   /**
+   * Kernel ABI version this definition was written against (§V77). Checked before a
+   * point kernel runs; a mismatch refuses with a diagnostic rather than running a
+   * generated `Point` struct against a signature that no longer matches it.
+   */
+  contractVersion?: number;
+  /**
    * Marks this node as an ACTIVE SINK: the compiler traces dependencies backward from
    * sinks and prunes everything else (§V25). Declared, never inferred — "has no outputs"
    * is not the same claim, and a node with a side effect must survive pruning either way.

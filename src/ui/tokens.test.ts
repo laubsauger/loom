@@ -144,7 +144,7 @@ describe("V26 — port family colors are semantic and complete", () => {
       "--port-scalar": "#94a3b8",
       "--port-vector": "#f472b6",
       "--port-matrix": "#fbbf24",
-      "--port-geometry": "#60a5fa",
+      "--port-pointset": "#60a5fa",
       "--port-camera": "#34d399",
       "--port-event": "#fb7185",
       "--port-audioFeatures": "#c084fc",

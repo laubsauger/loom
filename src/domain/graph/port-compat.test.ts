@@ -86,11 +86,11 @@ describe("arePortsCompatible (§V13)", () => {
     ).toBe(false);
   });
 
-  it("rejects geometry topology and material model mismatches", () => {
+  it("rejects pointset topology and material model mismatches", () => {
     expect(
       arePortsCompatible(
-        { kind: "geometry", topology: "triangle-list" },
-        { kind: "geometry", topology: "point-list" },
+        { kind: "pointset", requires: [], topology: "triangles" },
+        { kind: "pointset", requires: [], topology: "points" },
       ),
     ).toBe(false);
     expect(
@@ -114,5 +114,44 @@ describe("arePortsCompatible (§V13)", () => {
     expect(describePortType(rgba)).toBe("texture2d<float,4>");
     expect(describePortType({ kind: "vector", scalar: "f32", size: 2 })).toBe("vec2<f32>");
     expect(describePortType({ kind: "scalar", scalar: "i32" })).toBe("scalar<i32>");
+  });
+});
+
+/**
+ * Pointset compatibility (§V13 spirit, §I.pointset): the CONSUMER declares what it needs.
+ */
+describe("pointset attribute requirements", () => {
+  const P = { name: "P", type: "vec3f" } as const;
+  const vel = { name: "vel", type: "vec3f" } as const;
+  const age = { name: "age", type: "f32" } as const;
+  const set = (requires: ReadonlyArray<{ name: string; type: "vec3f" | "f32" }>) =>
+    ({ kind: "pointset", requires }) as const;
+
+  it("accepts a producer carrying exactly what the consumer needs", () => {
+    expect(arePortsCompatible(set([P, vel]), set([P, vel]))).toBe(true);
+  });
+
+  /** A superset is fine — otherwise every operator would have to declare the whole schema. */
+  it("accepts a producer carrying MORE attributes than required", () => {
+    expect(arePortsCompatible(set([P, vel, age]), set([P]))).toBe(true);
+  });
+
+  it("rejects a missing attribute rather than defaulting it", () => {
+    expect(arePortsCompatible(set([P]), set([P, vel]))).toBe(false);
+  });
+
+  /** A zero-filled "vel" that should have existed is a bug you debug in the render. */
+  it("rejects a name match with the wrong type", () => {
+    expect(arePortsCompatible(set([P, { name: "vel", type: "f32" }]), set([P, vel]))).toBe(false);
+  });
+
+  it("treats absent topology (particles) as distinct from a mesh topology", () => {
+    expect(
+      arePortsCompatible({ kind: "pointset", requires: [P] }, { kind: "pointset", requires: [P], topology: "triangles" }),
+    ).toBe(false);
+  });
+
+  it("accepts two topology-free pointsets", () => {
+    expect(arePortsCompatible({ kind: "pointset", requires: [P] }, { kind: "pointset", requires: [P] })).toBe(true);
   });
 });
