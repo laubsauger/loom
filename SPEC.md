@@ -372,6 +372,25 @@ interface ParameterSlot {
 ∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
 number-only feature: TD drives menus + toggles from expressions & that is half its power.
 
+### node NAMES are identifiers, ⊥ decoration (TD: noise1, noise2, null1)
+prerequisite for expressions & binds: `op('noise1').par.period` only works because a name
+is UNIQUE within its network. ∴ names must land BEFORE reference syntax, ⊥ after.
+
+- ∀ node has a `name`, unique within its graph. auto-numbered on collision: `noise1`,
+  `noise2` — created from the definition type, lowercased.
+- rename to a taken name → auto-suffix, ⊥ reject. the user's intent is the WORD; the
+  number is bookkeeping.
+- `name` (identifier, unique, referenceable) ≠ a comment (free text, ⊥ unique). today's
+  `GraphNode.label` conflates them — it is display-only & unconstrained. `label` BECOMES
+  the name; a separate comment field arrives when someone wants one.
+- rename ! rewrite references that named it, or the rename silently breaks a bind (V110).
+  ∴ rename is a graph-wide patch, ⊥ a node-local one.
+
+**Null node** — TD `null1` idiom: 1 in, 1 out, passes through untouched. exists to be a
+STABLE REFERENCE POINT: reference `null1` & rewire upstream freely w/o touching any
+reference. cheap (⊥ pass emitted — compiler passes the binding through), and the standard
+place to park a bookmark ∈ a big graph.
+
 ### pulse parameters (TD Pulse) — momentary triggers
 TD: `Pulse` is a parameter TYPE, ⊥ a per-node feature. Feedback TOP has Reset; Timer has
 Start/Stop. ∴ ANY node can declare one and the mechanism is written once.
@@ -670,6 +689,9 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V127: node `name` = a unique IDENTIFIER within its graph, auto-numbered on collision (`noise1`, `noise2`). ⊥ decoration: it is the reference target for binds + expressions (V110), so uniqueness ! precede reference syntax.
+V128: rename rewrites ∀ reference naming that node, ∈ the SAME patch — else a rename silently breaks a bind. rename is graph-wide, ⊥ node-local.
+V129: a rename collision auto-suffixes, ⊥ rejects. the user's intent is the word; the number is bookkeeping, & a modal saying "name taken" is the tool arguing w/ a decision already made.
 V123: `pulse` = a parameter type, ⊥ a node feature — declared once, available to any node (TD Pulse). ∀ node w/ `stateful.reset === true` (V46) SHOULD expose one.
 V124: a pulse mutates RUNTIME state, ⊥ document state ∴ audited (V31), ⊥ undoable, ⊥ serialized. a pulse persisted as "on" would re-fire on load & wipe your work every open.
 V125: a pulse takes ∀ parameter mode (V107) — an expression firing it is how an automated reset happens: on a beat, a threshold, a frame count. a trigger you can only click is ⊥ a trigger, it is a button.
@@ -691,6 +713,7 @@ V104: a pointset TRANSFORM owns FRESH pairs for everything it outputs (position 
 V115: STATE outranks a transient pointer cue. selection|error|bypass ⊥ replaced by `:hover` — a selected node under the cursor ! still read as selected. hover adds (a ring, a tint), ⊥ overwrites the property state owns. specificity: state selectors ! be ≥ the hover selector, ⊥ rely on source order.
 V99: ∀ pointer target ≥ ~20px even when its VISUAL is smaller. a 7px port dot is a coin toss, and missing it drags the NODE — you meant to wire and you moved the thing you were wiring. expand w/ an invisible pad, ⊥ by growing the dot (a bigger dot dominates a dense graph).
 V100: a disabled preview region shows the node's RESOLVED FACTS (size, format, space) — ⊥ a black rectangle. off ⊥ mean empty: the space is already spent, so it should carry what the user would otherwise open the info popup for.
+V130: the Common block (resolution, format, space readout) goes LAST or behind a fold — ⊥ above the node's own parameters. TD puts it on a separate tab for a reason: it is chrome that is occasionally consulted, and the params are why the panel was opened. prime real estate belongs to the node's actual controls.
 V90: help = ON DEMAND, ⊥ ambient. carried by the LABEL — hover|focus it, ⊥ a separate `?` element. an indicator for something the label already implies is 1 more thing ∈ a dense panel, and a 3rd child ∈ a 2-column row wraps to its own line. inline text ∈ a control row limited to: label, value, unit, state badge. ∀ explanation → hover|focus|tooltip|`?` handle. a node has 10-15 params — a sentence under each buries the values the user came to read, is read once, then permanently ∈ the way. text ⊥ lost: reachable by hover, focus & screen reader.
 V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's purpose, ⊥ its implementation. "CodeMirror 6 mounts here" teaches a user nothing actionable. hint ? only when the next ACTION is genuinely non-obvious.
 V92a: device|build diagnostics (tier, timestamp query, format list, memory, resource counts) belong ∈ the PERFORMANCE surface, ⊥ ∈ a content surface. the viewer shows OUTPUT or an empty state — a GPU spec sheet where pixels belong is a debug affordance that outlived its debugging.
@@ -847,6 +870,10 @@ T217|.|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE
 T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
 T219|.|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
+T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
+T222|.|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
+T223|.|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
+T224|.|move the Common block below the node's parameters (or behind a fold) — today it sits above them|V130,V90
 T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
 T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
@@ -950,7 +977,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
-| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
+| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
@@ -959,7 +986,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
@@ -976,7 +1003,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
