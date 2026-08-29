@@ -307,6 +307,10 @@ function resourceSignature(resource: ResourceDescriptor): string {
     case "target":
     case "pingPong":
       return JSON.stringify([resource.kind, resource.size[0], resource.size[1], resource.format]);
+    case "buffer":
+      return JSON.stringify([resource.kind, resource.stride, resource.capacity, resource.usage]);
+    case "bufferPair":
+      return JSON.stringify([resource.kind, resource.stride, resource.capacity]);
   }
 }
 
@@ -327,6 +331,30 @@ function passSignature(pass: PassDescriptor): string {
         Object.keys(pass.uniforms ?? {}).sort(),
         pass.sharedBinding ?? null,
       ]);
+    case "dispatch":
+      return JSON.stringify([
+        "dispatch",
+        pass.shader,
+        pass.entryPoint,
+        typeof pass.workgroups === "object" && "indirect" in pass.workgroups
+          ? ["indirect", pass.workgroups.indirect]
+          : pass.workgroups,
+        (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+        (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+        Object.keys(pass.uniforms ?? {}).sort(),
+      ]);
+    case "draw":
+      return JSON.stringify([
+        "draw",
+        pass.shader,
+        pass.target,
+        pass.topology,
+        typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
+        (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+        (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+      ]);
+    case "counter":
+      return JSON.stringify(["counter", pass.op, pass.resourceId, pass.outputResourceId ?? null]);
   }
 }
 

@@ -171,9 +171,11 @@ describe("format propagation through a graph", () => {
     const plan = compile(chain(), capabilities);
 
     expect(plan.ok).toBe(true);
-    expect(plan.resources.some((resource) => resource.kind !== "sampler" && resource.format === "rgba16float")).toBe(
-      false,
+    const sized = plan.resources.filter(
+      (resource): resource is Extract<typeof resource, { format: string }> =>
+        resource.kind === "target" || resource.kind === "pingPong",
     );
+    expect(sized.some((resource) => resource.format === "rgba16float")).toBe(false);
     expect(plan.diagnostics.map((d) => d.code)).toContain(CompilerDiagnosticCode.formatUnsupported);
   });
 });

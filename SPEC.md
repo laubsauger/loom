@@ -516,7 +516,7 @@ T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas t
 T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
 T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps land|C
 T114|x|`pointset` port kind + attribute-requirement compat, replaces `geometry`|V13,I.pointset
-T115|.|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
+T115|x|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
 T116|x|`contractVersion` on `NodeDefinition` + kernel ABI check|V77
 T117|.|**attribute→WGSL codegen module** — own task, headless, heavily tested. TOP RISK|V76,V75
 T118|.|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24

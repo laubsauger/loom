@@ -46,10 +46,37 @@ export interface SamplerResourceDescriptor {
   readonly addressMode?: "clamp-to-edge" | "repeat" | "mirror-repeat";
 }
 
+/**
+ * Storage buffer. Declared now, emitted from the P3a point slice onward (§V58, §V75).
+ *
+ * Point storage is structure-of-arrays — one buffer per attribute — so an operator binds
+ * only the attributes it touches, and WGSL struct alignment stops being a source of bugs.
+ */
+export interface BufferResourceDescriptor {
+  readonly kind: "buffer";
+  readonly id: string;
+  /** Element stride in bytes; the attribute's WGSL type decides it. */
+  readonly stride: number;
+  readonly capacity: number;
+  readonly usage: "storage" | "storage-read" | "indirect" | "uniform";
+  readonly label?: string;
+}
+
+/** Ping-pong pair of storage buffers, for a simulation that reads last frame (§V22). */
+export interface BufferPairResourceDescriptor {
+  readonly kind: "bufferPair";
+  readonly id: string;
+  readonly stride: number;
+  readonly capacity: number;
+  readonly label?: string;
+}
+
 export type ResourceDescriptor =
   | TargetResourceDescriptor
   | PingPongResourceDescriptor
-  | SamplerResourceDescriptor;
+  | SamplerResourceDescriptor
+  | BufferResourceDescriptor
+  | BufferPairResourceDescriptor;
 
 export interface TextureBindingDescriptor {
   /** WGSL binding name in the pass shader. */
@@ -96,7 +123,62 @@ export interface SwapPassDescriptor {
   readonly resourceId: string;
 }
 
-export type PassDescriptor = EffectPassDescriptor | SwapPassDescriptor;
+/**
+ * Compute dispatch. Declared now so scheduling, pruning and resource assignment are
+ * written against the union rather than against a texture-only assumption (§V58) —
+ * adding compute later would otherwise mean rewriting all three.
+ */
+export interface DispatchPassDescriptor {
+  readonly kind: "dispatch";
+  readonly id: string;
+  readonly nodeId?: string;
+  readonly shader: string;
+  readonly entryPoint: string;
+  /** Literal workgroup counts, or a counter resource read on the GPU (indirect). */
+  readonly workgroups: readonly [number, number, number] | { readonly indirect: string };
+  readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
+  readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
+  readonly uniforms?: Readonly<Record<string, number | readonly number[]>>;
+}
+
+/** Instanced or indirect draw — the sprites → instances → mesh render spine. */
+export interface DrawPassDescriptor {
+  readonly kind: "draw";
+  readonly id: string;
+  readonly nodeId?: string;
+  readonly shader: string;
+  readonly target: string;
+  readonly topology: "point-list" | "line-list" | "triangle-list" | "triangle-strip";
+  /** A literal count, or a counter resource so the GPU decides how much to draw. */
+  readonly instances: number | { readonly indirect: string };
+  readonly vertexCount?: number;
+  readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
+  readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
+}
+
+/**
+ * Counter reset / prefix-sum scan for GPU-driven lifecycle.
+ *
+ * Spawn and kill compact via scan, never via atomics: atomic ordering is not
+ * deterministic, which would break seeded reproducibility (§V45) and browser/headless
+ * parity (§V47) — the whole reason the point system can be tested at all. The cost is
+ * two or three extra passes and nothing else.
+ */
+export interface CounterPassDescriptor {
+  readonly kind: "counter";
+  readonly id: string;
+  readonly nodeId?: string;
+  readonly op: "reset" | "scan" | "compact";
+  readonly resourceId: string;
+  readonly outputResourceId?: string;
+}
+
+export type PassDescriptor =
+  | EffectPassDescriptor
+  | SwapPassDescriptor
+  | DispatchPassDescriptor
+  | DrawPassDescriptor
+  | CounterPassDescriptor;
 
 export interface PlanReadResult {
   readonly resources: ReadonlyArray<ResourceDescriptor>;
@@ -305,12 +387,42 @@ export function readExecutionPlan(plan: LogicalExecutionPlan): PlanReadResult {
     passes.push(parsed);
   });
 
-  // Reference integrity: every id a pass names must exist.
+  // Reference integrity: every id a pass names must exist. Written per kind rather than
+  // as "swap vs everything else", so a new pass kind is a compile error here instead of
+  // silently skipping validation for whatever it references.
+  function referencedResourceIds(pass: PassDescriptor): string[] {
+    switch (pass.kind) {
+      case "swap":
+        return [pass.resourceId];
+      case "effect":
+        return [
+          pass.target,
+          ...(pass.textures ?? []).map((t) => t.resourceId),
+          ...(pass.samplers ?? []).map((s) => s.resourceId),
+        ];
+      case "dispatch":
+        return [
+          ...(typeof pass.workgroups === "object" && "indirect" in pass.workgroups
+            ? [pass.workgroups.indirect]
+            : []),
+          ...(pass.buffers ?? []).map((b) => b.resourceId),
+          ...(pass.textures ?? []).map((t) => t.resourceId),
+        ];
+      case "draw":
+        return [
+          pass.target,
+          ...(typeof pass.instances === "object" ? [pass.instances.indirect] : []),
+          ...(pass.buffers ?? []).map((b) => b.resourceId),
+          ...(pass.textures ?? []).map((t) => t.resourceId),
+        ];
+      case "counter":
+        return [pass.resourceId, ...(pass.outputResourceId === undefined ? [] : [pass.outputResourceId])];
+    }
+  }
+
+
   for (const pass of passes) {
-    const referenced =
-      pass.kind === "swap"
-        ? [pass.resourceId]
-        : [pass.target, ...(pass.textures ?? []).map((t) => t.resourceId), ...(pass.samplers ?? []).map((s) => s.resourceId)];
+    const referenced = referencedResourceIds(pass);
     for (const resourceId of referenced) {
       if (!seenResourceIds.has(resourceId)) {
         diagnostics.push(
@@ -341,16 +453,26 @@ export function planStructureSignature(
   resources: ReadonlyArray<ResourceDescriptor>,
   passes: ReadonlyArray<PassDescriptor>,
 ): string {
-  const resourceKeys = resources.map((resource) =>
-    resource.kind === "sampler"
-      ? ["sampler", resource.id, resource.filter ?? "nearest", resource.addressMode ?? "clamp-to-edge"]
-      : [resource.kind, resource.id, resource.size[0], resource.size[1], resource.format],
-  );
+  const resourceKeys = resources.map((resource): unknown[] => {
+    switch (resource.kind) {
+      case "sampler":
+        return ["sampler", resource.id, resource.filter ?? "nearest", resource.addressMode ?? "clamp-to-edge"];
+      case "target":
+      case "pingPong":
+        return [resource.kind, resource.id, resource.size[0], resource.size[1], resource.format];
+      case "buffer":
+        return [resource.kind, resource.id, resource.stride, resource.capacity, resource.usage];
+      case "bufferPair":
+        return [resource.kind, resource.id, resource.stride, resource.capacity];
+    }
+  });
 
-  const passKeys = passes.map((pass) =>
-    pass.kind === "swap"
-      ? ["swap", pass.id, pass.resourceId]
-      : [
+  const passKeys = passes.map((pass): unknown[] => {
+    switch (pass.kind) {
+      case "swap":
+        return ["swap", pass.id, pass.resourceId];
+      case "effect":
+        return [
           "effect",
           pass.id,
           pass.shader,
@@ -359,11 +481,38 @@ export function planStructureSignature(
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
           (pass.samplers ?? []).map((s) => [s.binding, s.resourceId]),
           pass.uniformBinding ?? null,
-          // Names, never values.
+          // Names, never values (§V5).
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.sharedBinding ?? null,
-        ],
-  );
+        ];
+      case "dispatch":
+        return [
+          "dispatch",
+          pass.id,
+          pass.shader,
+          pass.entryPoint,
+          typeof pass.workgroups === "object" && "indirect" in pass.workgroups
+            ? ["indirect", pass.workgroups.indirect]
+            : pass.workgroups,
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+          Object.keys(pass.uniforms ?? {}).sort(),
+        ];
+      case "draw":
+        return [
+          "draw",
+          pass.id,
+          pass.shader,
+          pass.target,
+          pass.topology,
+          typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId]),
+        ];
+      case "counter":
+        return ["counter", pass.id, pass.op, pass.resourceId, pass.outputResourceId ?? null];
+    }
+  });
 
   return JSON.stringify({ resourceKeys, passKeys });
 }

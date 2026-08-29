@@ -99,10 +99,20 @@ export function buildResources(
             label: resource.label ?? resource.id,
           }),
         );
-      } else {
+      } else if (resource.kind === "sampler") {
         samplers.set(
           resource.id,
           sampler(gpu, samplerDescriptor(resource.filter, resource.addressMode)),
+        );
+      } else {
+        // buffer / bufferPair: declared in the plan IR (§V58) for the point system, not
+        // built until that slice lands. Reported rather than silently skipped.
+        diagnostics.push(
+          backendDiagnostic(
+            "warning",
+            BackendDiagnosticCode.planInvalid,
+            `Resource "${resource.id}" of kind "${resource.kind}" is declared but not yet buildable by this backend.`,
+          ),
         );
       }
     } catch (error) {

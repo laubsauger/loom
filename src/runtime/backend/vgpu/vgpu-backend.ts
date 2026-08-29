@@ -315,6 +315,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           active.resources.pingPongs.get(pass.resourceId)?.swap();
           continue;
         }
+        // dispatch / draw / counter are declared in the plan IR but not encodable yet;
+        // the compiler does not emit them in v1, and skipping is safer than guessing.
+        if (pass.kind !== "effect") continue;
         const drawable = active.resources.effects.get(pass.id);
         const resolve = active.resources.renderTargets.get(pass.id);
         if (!drawable || !resolve) continue;
