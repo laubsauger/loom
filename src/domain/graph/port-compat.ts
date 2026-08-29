@@ -75,9 +75,31 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
   }
 }
 
-/** The working space a texture port declares; absent means the project default (§V56). */
+/**
+ * The space a texture port EXPLICITLY declares, or undefined when it declares none.
+ *
+ * Use this where absence means "no claim, derive it" — colour-space propagation, where a
+ * node's output space is computed from its inputs unless the port pins it.
+ */
+export function declaredColorSpace(
+  type: Extract<PortType, { kind: "texture2d" }>,
+): ColorSpace | undefined {
+  return type.space;
+}
+
+/**
+ * The space a texture port EFFECTIVELY carries; absent resolves to the project working
+ * space (§V56).
+ *
+ * Use this for compatibility comparison (§V13), where absence means the ordinary claim —
+ * an unannotated port and an explicitly-linear one are the same declaration.
+ *
+ * The two accessors exist because the same absent field answers two different questions:
+ * "what does this port accept?" (linear) and "what does this output carry?" (unknown yet).
+ * Reading the field raw at one site and through an accessor at the other hid that.
+ */
 export function colorSpaceOf(type: Extract<PortType, { kind: "texture2d" }>): ColorSpace {
-  return type.space ?? "linear";
+  return declaredColorSpace(type) ?? "linear";
 }
 
 /** Stable, human-readable label for diagnostics and for port-family lookup. */

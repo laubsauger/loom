@@ -506,7 +506,9 @@ V48: ∀ readback isolated behind export interface. ⊥ readback call outside it
 V49: runtime ⊥ couple graph eval to rAF | wall clock. scheduler = swappable transport source.
 V51: node format override = instance state, @ compile, ⊥ per-frame. absent → definition `formatPolicy`. ! validated vs capability report (V12) — unsupported → diagnostic + documented fallback, ⊥ crash, ⊥ silent swap. depth format ⊥ on color output. change → recreate targets + reset feedback (V22).
 V56: project working space = linear RGB. import|media node decodes → linear. encode + tonemap ONLY @ output|display node. texture carrying non-color data flagged `data`, bypasses ∀ conversion. ⊥ node silently mixes encoded & linear.
-V57: `texture2d` carries `space: "linear"|"encoded"|"data"`. exact-match under V13. mismatch → diagnostic naming conversion node to insert, ⊥ silent convert.
+V57: `texture2d` carries `space: "linear"|"encoded"|"data"`. exact-match under V13 — absent = linear (`colorSpaceOf`). ∈ propagation absent = NO CLAIM, derived fills it (`declaredColorSpace`). mismatch → diagnostic naming conversion node to insert, ⊥ silent convert.
+V57a: data textures SHOULD read UNFILTERED — `textureLoad`, binding declares `sampled:"unfiltered"`, ⊥ sampler paired. vgpu has ⊥ non-filtering-sampler path at all; its model = sampler-paired-means-filtering. ∴ real dichotomy = sampled-through-sampler vs textureLoad, ⊥ linear-vs-nearest sampler.
+V57b: compiler refuses ONLY the impossible case — filtered `r32float` w/o `float32-filterable` → `compiler/binding-unfilterable` error naming node + fix. filtering a filterable-format data texture (mask ∈ rgba8unorm) stays LEGAL: usually wrong, never unsafe. `space` ⊥ silently changes sampling — a silent switch changes rendered output invisibly (V13 philosophy).
 V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler & backend switch exhaustively. new kind → type error until handled everywhere. v1 emits `render` only, ⊥ texture-only assumption ∈ sort|prune|resource assign.
 V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|export|preview|tool surface. single-output node → default port `"out"`. ⊥ outputId ≡ nodeId.
 V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
@@ -634,7 +636,7 @@ T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps 
 T114|x|`pointset` port kind + attribute-requirement compat, replaces `geometry`|V13,I.pointset
 T115|x|plan IR: `dispatch` `draw` `counter` pass kinds + `buffer` resource kind, declared|V58
 T116|x|`contractVersion` on `NodeDefinition` + kernel ABI check|V77
-T117|.|**attribute→WGSL codegen module** — own task, headless, heavily tested. TOP RISK|V76,V75
+T117|x|**attribute→WGSL codegen module** — own task, headless, heavily tested. TOP RISK|V76,V75
 T118|.|SoA point storage: 1 buffer per attribute, alloc/resize/free|V75,V24
 T119|.|scan/prefix-sum compaction for spawn/kill. ⊥ atomics|V74,V73
 T120|.|per-point RNG `hash(seed, pointId, frame)` + `pointId` identity|V72,V73,V45
@@ -666,7 +668,7 @@ T146|x|component info aggregate: own | children | total time, pass + node count,
 T147|x|scratch/intermediate target kind ∈ plan IR — node needs >1 pass. unblocks separable Gaussian Blur (today: 1 pass, 81 taps, under-samples past ~dozens of px) + ∀ multi-pass filter|V58,V8
 T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers ∀ picker-driven nodes, ⊥ 20 in-shader curves|V56,V61
 T149|x|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
-T150|.|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
+T150|x|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
 T151|x|`ResolutionPolicy` derived from a parameter — Crop keeps input res + blanks outside region, ⊥ resizes like TD Crop TOP|V21,V50
 T152|x|**Feedback node** — `TemporalDefinition`, prev-frame read, swap after consumers, reset + seed input. compiler/backend support exists, ⊥ node declares it, ∴ feedback unreachable from UI|V22,V50
 T153|x|example E1 Feedback Echo — `.loom.json` + regression fixture + concept doc|V88,V89,V22
@@ -680,7 +682,7 @@ T160|x|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V
 T161|x|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
 T162|x|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
 T163|x|backend GPU timing surface — `timer(gpu)` after init when `timestampQuery`, `timer: t.span(pass.id)` ∈ `f.pass()`, forward `t.onResults`. span name = pass id. ⊥ exists today ∴ T41 reads "unavailable" everywhere|V86,V12
-T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
+T164|x|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
 T165|.|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
 T166|.|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|.|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
@@ -821,7 +823,7 @@ id|date|cause|fix
 B1|2026-08-29|`formatFallback` w/ unsupported `depth24plus` + `allowsDepth` → falls back to `supported[0]` = a COLOR format, warning only. depth output silently becomes color|T158 ✓
 B2|2026-08-29|`formatNoFallback` error path RETURNS the unsupported format ∴ plan carries a format the device ⊥ allocate|T158 ✓
 B3|2026-08-29|`resolveSinks` doc says caller may narrow preview list; impl unconditionally unions ∀ `ui.preview===true`. doc ≠ code|T159 ✓
-B5|2026-08-29|`data` space unshippable — `colorSpaceForFormat` derives `data` only ← `r32float`, but plan binds 1 shared LINEAR sampler ∀ textures & r32float ⊥ filterable on Tier B w/o `float32-filterable`. ∴ a V56-flagged displacement field ⊥ renders|T83+T150
+B5|2026-08-29|`data` space unshippable — `colorSpaceForFormat` derives `data` only ← `r32float`, but plan binds 1 shared LINEAR sampler ∀ textures & r32float ⊥ filterable on Tier B w/o `float32-filterable`. ∴ a V56-flagged displacement field ⊥ renders|T83+T150 ✓
 B6|2026-08-29|Output node target size/format follows its INPUT, ⊥ project. `outputNode` declares no resolution/format policy; its own doc says project surface. E5 presents 2048² ⊥ project 1280×720|T165
 B7|2026-08-29|`customWgsl.compile()` emits ⊥ `uniformBinding`/`sharedBinding` ∴ kernel ⊥ receive uniforms or time. shipped default `source` DECLARES a `params` block bound to nothing = trap for anyone editing it|T166
 B4|2026-08-29|⊥ Dawn host ∈ `src/runtime/backend/vgpu/` ∴ ⊥ V3-clean way to get a headless device. V47/T67/T69 were untestable; parity harness had to `eslint-disable` V3|T160 ✓
