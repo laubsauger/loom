@@ -34,7 +34,13 @@ export interface PaneEmptyProps {
 }
 
 /** Placeholder for a slot another track has not filled yet. */
-export function PaneEmpty({ label, hint }: PaneEmptyProps) {
+export /**
+ * Empty state. The label names the STATE ("No selection"), not the pane's purpose or its
+ * implementation — a user reading "CodeMirror 6 WGSL editor mounts here" learns nothing
+ * they can act on. `hint` exists for the case where the next action is genuinely
+ * non-obvious; leave it out otherwise (§V90).
+ */
+function PaneEmpty({ label, hint }: PaneEmptyProps) {
   return (
     <div className={styles.empty}>
       <span className={styles.emptyLabel}>{label}</span>

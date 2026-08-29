@@ -58,15 +58,15 @@ export function BottomDock({
       */}
       <TabsContent value="shader" forceMount>
         {shaderEditor ?? (
-          <PaneEmpty label="Shader editor" hint="CodeMirror 6 WGSL editor mounts here" />
+          <PaneEmpty label="No shader selected" />
         )}
       </TabsContent>
       <TabsContent value="problems" forceMount>
-        {problems ?? <PaneEmpty label="Problems" hint="compile and runtime diagnostics" />}
+        {problems ?? <PaneEmpty label="No problems" />}
       </TabsContent>
       <TabsContent value="performance" forceMount>
         {performance ?? (
-          <PaneEmpty label="Performance" hint="per-pass GPU ms, resource count, memory estimate" />
+          <PaneEmpty label="Not running" />
         )}
       </TabsContent>
     </TabsRoot>

@@ -79,7 +79,40 @@
   min-width: 0;
 }
 
-.description {
+.descriptionHandle {
+  /* Sits at the end of the row, quiet until wanted. Same footprint as a badge so it
+     cannot push the value out of alignment. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-size: var(--text-10);
+  line-height: 1;
+  cursor: help;
+}
+
+.descriptionHandle:hover,
+.descriptionHandle:focus-visible {
+  color: var(--text);
+  background: var(--bg-raise);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.descriptionLegacy {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--line-hot);

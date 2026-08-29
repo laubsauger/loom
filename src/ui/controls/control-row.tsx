@@ -43,6 +43,8 @@ export function ControlRow({
   children,
 }: ControlRowProps) {
   const compact = variant === "node";
+  // Node-embedded controls stay bare: the inspector is where the full set lives.
+  const hasDescription = !compact && description !== undefined && description !== "";
   return (
     <div className={cx(styles.row, compact && styles.rowCompact, stacked && styles.rowStacked)}>
       <label className={styles.label} {...(controlId === undefined ? {} : { htmlFor: controlId })}>
@@ -60,10 +62,25 @@ export function ControlRow({
         {!compact && hint ? <span className={styles.hint}>{hint}</span> : null}
       </label>
       <div className={styles.control}>{children}</div>
-      {!compact && description !== undefined && description !== "" ? (
-        <p className={styles.description} {...(descriptionId === undefined ? {} : { id: descriptionId })}>
-          {description}
-        </p>
+      {/*
+        A parameter's description is available ON DEMAND, never rendered inline. A node has
+        ten to fifteen parameters; a sentence under each is a wall of prose that buries the
+        values the user came to read, and it is read once and then permanently in the way.
+        It stays reachable by hover, by focus, and by screen reader — the text is not lost,
+        only the ambient noise is.
+      */}
+      {hasDescription ? (
+        <span
+          className={styles.descriptionHandle}
+          tabIndex={0}
+          role="note"
+          aria-label={`About ${label}`}
+          title={description}
+          {...(descriptionId === undefined ? {} : { id: descriptionId })}
+        >
+          <span aria-hidden="true">?</span>
+          <span className={styles.visuallyHidden}>{description}</span>
+        </span>
       ) : null}
     </div>
   );

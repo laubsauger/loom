@@ -183,7 +183,7 @@ export function AppShell({
               >
                 <Pane title="Node Library">
                   {nodeLibrary ?? (
-                    <PaneEmpty label="Node library" hint="searchable catalog, drag onto canvas" />
+                    <PaneEmpty label="Node library" />
                   )}
                 </Pane>
               </Panel>
@@ -198,7 +198,7 @@ export function AppShell({
               <Panel id="shell-graph" order={2} minSize={25} defaultSize={initial.columns[1]}>
                 <div className={styles.canvas}>
                   {graphCanvas ?? (
-                    <PaneEmpty label="Graph canvas" hint="typed node graph — the source of truth" />
+                    <PaneEmpty label="Graph canvas" />
                   )}
                 </div>
               </Panel>
@@ -230,7 +230,7 @@ export function AppShell({
                   <Panel id="shell-inspector" order={1} minSize={15} defaultSize={initial.rightRows[0]}>
                     <Pane title="Inspector">
                       {inspector ?? (
-                        <PaneEmpty label="Inspector" hint="parameters of the selected node" />
+                        <PaneEmpty label="No selection" />
                       )}
                     </Pane>
                   </Panel>
@@ -244,7 +244,7 @@ export function AppShell({
 
                   <Panel id="shell-viewer" order={2} minSize={15} defaultSize={initial.rightRows[1]}>
                     <Pane title="Viewer" scroll={false}>
-                      {viewer ?? <PaneEmpty label="Viewer" hint="pinned output, full resolution" />}
+                      {viewer ?? <PaneEmpty label="No output pinned" />}
                     </Pane>
                   </Panel>
                 </PanelGroup>

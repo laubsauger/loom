@@ -559,6 +559,9 @@ V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query o
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
+V90: help = ON DEMAND, ⊥ ambient. inline text ∈ a control row limited to: label, value, unit, state badge. ∀ explanation → hover|focus|tooltip|`?` handle. a node has 10-15 params — a sentence under each buries the values the user came to read, is read once, then permanently ∈ the way. text ⊥ lost: reachable by hover, focus & screen reader.
+V91: empty state names the STATE ("No selection", "No problems"), ⊥ the pane's purpose, ⊥ its implementation. "CodeMirror 6 mounts here" teaches a user nothing actionable. hint ? only when the next ACTION is genuinely non-obvious.
+V92: ⊥ decorative prose ∈ chrome — ⊥ taglines, ⊥ "Tip:", ⊥ restating a label in a sentence. if a label needs a sentence, the LABEL is wrong. dense pro tool: imagery = hero, chrome competes w/ it (§C).
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -700,6 +703,7 @@ T165|x|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its inpu
 T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|.|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
+T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T173|.|`RenderBackend.readOutput(id, {region?}) → ReadbackImage` — completes T82. today returns bare bytes ∴ format+stride come from a table BESIDE the copy, ⊥ from the thing that copied. also: a 1×1 probe pulls a whole 1080p frame|V60,V48
 T174|.|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
 T175|.|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
@@ -775,7 +779,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
