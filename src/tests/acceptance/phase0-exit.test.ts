@@ -403,34 +403,26 @@ describe("T23 Phase 0 exit — editing valid WGSL recompiles the effect", () => 
 });
 
 /**
- * ## FAILING GATE — read this before touching the assertions below
+ * ## §V9 — was RED until T217. Kept as history, because how it failed is worth knowing.
  *
- * On a real Dawn device this criterion is NOT met, and the test is left red on purpose.
- * `src/runtime/backend/vgpu/vgpu-backend.test.ts` covers the same invariant on `vgpu/mock`
- * and passes, because the mock's `effect()` rejects bad WGSL synchronously and Dawn's does
- * not. That is the exact shape of a gate that is greener than the product.
+ * This gate found a real defect: on a real Dawn device, invalid WGSL was ACCEPTED. vgpu
+ * raises `VGPUError VGPU-COMPILE-FAILED` from an ASYNCHRONOUS pipeline-store path
+ * (`where: "<label>.compileSync"`), so it never reached `buildResources`'s `try/catch` and
+ * surfaced as an unhandled rejection on stderr. `compile()` resolved, the broken program
+ * installed, the previous VALID program was released, `stale` stayed false, and zero
+ * diagnostics reached `onDiagnostic`. The picture only looked retained because Dawn
+ * discarded the whole command buffer.
  *
- * What actually happens, measured:
+ * The part worth remembering: `vgpu-backend.test.ts` covered this same invariant on
+ * `vgpu/mock` and PASSED throughout — the mock rejected bad WGSL synchronously and Dawn did
+ * not. A gate greener than the product. V9 had been false on real hardware since the
+ * backend landed, and every mock-based test agreed it was fine.
  *
- *  - `effect(gpu, badWgsl)` + `compileSync()` does NOT throw into `buildResources`'s
- *    `try/catch`. vgpu raises `VGPUError VGPU-COMPILE-FAILED` from an asynchronous
- *    pipeline-store path (`where: "Custom WGSL.compileSync"`), so it lands as an
- *    UNHANDLED REJECTION on stderr instead of a caught error.
- *  - `backend.compile()` therefore RESOLVES. `resourceBuilds` increments, the broken
- *    program is installed, the previously valid program is released, and `status.stale`
- *    stays `false`.
- *  - No `RuntimeDiagnostic` of any severity reaches `onDiagnostic`, so the problems tab
- *    and the node badge show nothing at all (§V27).
- *  - The next `render()` submits a command buffer containing an invalid pipeline; Dawn
- *    rejects the WHOLE submission. The output texture keeps its old contents because
- *    nothing was written to it — so the picture "looks retained", by accident. It is a
- *    dropped frame, not a retained plan: every other node's output freezes too, and there
- *    is no way back other than a further successful compile.
- *
- * The fix belongs in `src/runtime/backend/vgpu/resources.ts` (pipeline creation must be
- * awaited, or wrapped in `pushErrorScope`/`popErrorScope`, so the failure is caught and
- * turned into a `planInvalid` diagnostic before the program is installed). Do not weaken
- * these assertions to make the file green.
+ * T217 fixed both halves: the backend now drains the device's async verdict before
+ * installing a program, and the mock can be told to fail asynchronously through vgpu's own
+ * error-scope path — so the mock exercises the same code a device does rather than a
+ * kinder parallel one. Do not weaken either half; a mock more forgiving than the device is
+ * worse than no mock, because it converts an open question into a false answer.
  */
 describe("T23 Phase 0 exit — invalid WGSL keeps the last valid output and shows an error (§V9)", () => {
   it("retains the last good pixels, flags the output stale, and reports an error against the node", async () => {
