@@ -361,6 +361,32 @@ DROPPED (was guess, ⊥ in TD docs): P pin, M mute, mod+g group, 1..8 viewer.
 mouse: pan | zoom ⊥ documented @ Application_Shortcuts. use node-editor convention:
 middle-drag | space-drag pan, scroll zoom, alt+drag zoom. mark ? — ! confirm vs TD install.
 
+### node info — TD middle-click analog (verified vs docs.derivative.ca)
+TD: MMB on node → popup w/ most-recent cook time + "cooking every frame?".
+richer stats live in Info CHOP + TOP class. our popup merges both — 1 surface, ⊥ two.
+
+TD source fields → ours:
+```
+Info CHOP (common operator)        →  ours
+  cook_time                        →  gpuMs (timer span, ⊥ CPU encode duration)
+  total_cooks                      →  framesRendered
+  cooked_this_frame                →  renderedThisFrame
+  cook_frame / cook_abs_frame      →  lastRenderedFrame
+  warnings / errors                →  warningCount / errorCount
+TOP class                          →  ours
+  width / height                   →  resolution [w,h]
+  aspect / aspectWidth/Height      →  aspect
+  pixelFormat / pixelFormatName    →  format + label
+  gpuMemory                        →  estimatedBytes (← plan.ts estimateResourceBytes)
+  curPass                          →  passCount (nodes compile to ≥1 pass)
+```
+ours beyond TD: `space` (linear|encoded|data), resolution SOURCE (which override/policy
+decided it), bypassed|muted, stale (V9), agent activity (V42).
+
+COMPONENT: aggregate over flattened internal passes (V82) — own time, children time,
+total, pass count, node count. "time consumed within that component" = the ask.
+```
+
 ### type: diagnostic (user-facing error surface)
 ```ts
 interface RuntimeDiagnostic {
@@ -486,6 +512,9 @@ V81: `parent.<key>` resolved via resolver (V61), lexical up the instance chain. 
 V82: component compiles by FLATTENING into parent logical graph. source path preserved `Main/Feedback_2/Blur_1` ∀ diagnostic, timing, profile.
 V83: component recursion ⊥ — direct & indirect. detected @ instantiate, save, load.
 V84: instance pins component version. upgrade = explicit migration, ⊥ silent (V10).
+V85: node info = read-only view over the runtime telemetry channel (V16), ⊥ document store, ⊥ its own subscription. refresh ≤ 10Hz. ⊥ readback (V7) — every field ← plan + timer spans + diagnostics already collected.
+V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query optional (V12) — absent → field reads "unavailable", ⊥ a fabricated number.
+V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V52: ∀ hotkey → bus command by name (V29). binding = data, ⊥ inline handler, ⊥ hardcoded key ∈ component.
 V53: keymap context-scoped. narrowest context wins. `text` context swallows editing keys — mod+z ∈ shader editor ⊥ graph undo.
 V54: user override layered over defaults, ∈ localStorage, ⊥ ∈ project doc. conflict detected + surfaced, ⊥ silent shadow. reset-to-default per binding & whole map.
@@ -603,6 +632,8 @@ T141|x|`compile()`|`loop()` await in-flight recovery, ⊥ throw "before initiali
 T142|x|compiler emits `compiler/memory-budget` warning vs `settings.limits.memoryBudgetBytes`; shared `estimateResourceBytes` ∈ plan.ts|V24
 T143|x|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
 T144|.|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
+T145|.|node info popup — TD MMB analog. res+aspect, format+space, est bytes, gpu ms, frames rendered, cooked-this-frame, pass count, warn/err, resolution source, bypass/mute/stale. MMB + keymap + context menu, all → 1 surface|V85,V86,I.info
+T146|.|component info aggregate: own | children | total time, pass + node count, over flattened source path|V87,V82
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -686,7 +717,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
 | K node catalog | T70 T40 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
-| L telemetry | T41 T42 T99 | `src/runtime/telemetry/**` |
+| L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
 
