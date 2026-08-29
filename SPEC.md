@@ -309,8 +309,8 @@ T3|.|load Archivo + JetBrains Mono, self-host woff2, fallback stacks|C
 T4|.|app shell: `react-resizable-panels` layout per §I.ui, persisted localStorage|V18
 T5|.|Radix base primitives restyled to tokens: tooltip, popover, tabs, ctx menu, dialog|V17,V19
 T6|.|a11y floor: focus-visible rings, reduced-motion media query, tab order|V19
-T7|.|eslint rule: `vgpu` import restricted to `src/runtime/backend/vgpu/**`|V3
-T8|.|eslint rule: no react/@xyflow import in `src/nodes/definitions/**`|V11
+T7|x|eslint rule: `vgpu` import restricted to `src/runtime/backend/vgpu/**`|V3
+T8|x|eslint rule: no react/@xyflow import in `src/nodes/definitions/**`|V11
 T9|x|domain types — ProjectDocument, GraphDocument, GraphNode, GraphEdge + zod schemas|I.file,V10
 T63|x|`FrameEvaluationInput` type + live scheduler feeding it from browser clock|I.frame,V49
 T10|.|zustand+immer graph store, semantic command layer, undo/redo w/ drag coalescing|V1,V15
@@ -324,7 +324,7 @@ T13|.|`RenderBackend` iface + vgpu adapter impl, device init, capability report|
 T14|.|device-loss handling: halt, diagnose, rebuild from graph, reset temporal|V23
 T15|.|Phase0 spike nodes: Solid, CustomWGSL, Output|I.wgsl
 T16|.|frame loop via vgpu frameLoop, shared uniforms (time, frame, pointer, resolution)|V8
-T64|.|lint rule: ⊥ `Date.now`\|`performance.now`\|rAF ∈ `src/nodes/**` — frame input only|V44
+T64|x|lint rule: ⊥ `Date.now`\|`performance.now`\|rAF ∈ `src/nodes/**` — frame input only|V44
 T65|.|seeded RNG: project seed + node seed → deterministic per frameIndex|V45
 T17|.|uniform-only update path, ⊥ recompile|V5
 T18|.|custom node component: title bar, status dot, ports L/R, preview slot, bypass/mute|V26
