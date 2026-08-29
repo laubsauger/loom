@@ -464,7 +464,9 @@ V71: expression eval = own grammar ∈ `src/domain/expressions/`, sole engine. w
 V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
 V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
 V62a: `resize()` ! reconcile retained program's descriptors + signature + memory estimate w/ live targets. ∴ recompile @ post-resize size = cache HIT → feedback history SURVIVES viewport resize. compile asking a size live targets ⊥ have → real rebuild. device-loss rebuild reallocates @ post-resize sizes, ⊥ silently reverts to compile-time sizes.
-V62b: REMAINDER — backend still keys rebuild on whole-plan signature for non-resize edits. compiler already emits per-entry `resourceSignatures`; backend ! diff those. until then an unrelated structural edit still wipes feedback.
+V62b: backend carries per-entry, ⊥ whole-plan. resource carried ⟺ structure key (id+kind+size+format) unchanged. effect carried ⟺ pass key unchanged AND target carried AND ∀ bound resources carried — a carried effect's bindings reference carried OBJECTS, so identity consistency is what makes reuse safe. carried pingpong → contents PRESERVED. recreated pingpong (size|format change) → zeroed = the correct reset (V22, V51 resetOn).
+V62c: release by object identity, ⊥ by id — a rebuilt resource shares its id w/ predecessor; only predecessor dies. failed build releases NOTHING (carried objects still belong to retained program, V9).
+V62d: `planStructureSignature` DERIVED from the same per-entry key fns. whole-plan fast path & per-entry diff ⊥ can disagree — 1 identity definition, ⊥ 2.
 V63: ∀ data crossing compile→render boundary structured-clone-safe. ⊥ function, ⊥ DOM ref, ⊥ class instance. `NodeDefinition.compile` emits plain data (WGSL text + binding desc), ⊥ callback.
 V64: presentable surface handed TO runtime, ⊥ owned by React tree. runtime supports N presentation surfaces per compiled output. opening|closing pane ⊥ stalls output.
 V65: undo|redo owner-checked ∀ directions. redo ⊥ clobber other actor newer edit. restore ! preserve referential integrity — ⊥ dangling edge @ missing node (V40 cascade applies to restore, ⊥ only to removeNodes op).
@@ -599,7 +601,8 @@ T138|x|fully-blocked undo ⊥ consume history entry — today it empties, bumps 
 T140|x|`resize()` reconciles descriptors + signature + memory estimate w/ live targets|V62a,V21
 T141|x|`compile()`|`loop()` await in-flight recovery, ⊥ throw "before initialize()"|V23,V98
 T142|x|compiler emits `compiler/memory-budget` warning vs `settings.limits.memoryBudgetBytes`; shared `estimateResourceBytes` ∈ plan.ts|V24
-T143|.|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
+T143|x|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature — unrelated edit ⊥ wipes feedback|V62,V62b,V22
+T144|.|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -616,7 +619,7 @@ T73|x|node Common section: resolution select (auto\|project\|input\|1/8..8x\|cus
 T39|x|node library pane: search, categories, drag-to-canvas, port-drag→compatible-node search|V13
 T70|.|Noise node — TD Noise TOP parity. type: perlin2d/3d/4d, simplex2d/3d/4d, sparse, hermite, harmonic, alligator, random, randomgpu. params (TD names): seed, period, harmon, spread, gain, rough, exp, amp, offset, mono, aspectcorrect + TRS xform (xord/rord/t/r/s/p) + t4d/s4d. 4D translate = time evolve ← `FrameEvaluationInput`, ⊥ wall clock|V44,V45,I.registry
 T40|.|core node set, TD TOP vocabulary: Ramp, UV, Checker, Circle/SDF, Transform, Crop, Tile/Mirror, Level, HSV, Blur, Threshold, Displace, Lookup/Colorize, Over, Add, Multiply, Screen, Difference, Mask|I.registry
-T41|.|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes` + `compiler/memory-budget` warning|V16,V24
+T41|.|GPU timer spans, per-pass ms, performance tab, resource count + surface `plan.estimatedResourceBytes`, `compiler/memory-budget` warning, `BackendStatus.lastBuild` {resourcesCreated/Reused, effectsBuilt/Reused}|V16,V24
 T42|.|metrics pipe outside document store, ≤10Hz UI tick|V16
 T68|.|export interface = sole readback surface. screenshot/PNG v1|V48,V7
 T54|.|read tools: get_project_summary, get_graph, get_selection, list_node_definitions, get_node_definition, get_node, get_diagnostics, get_runtime_metrics|I.tools,V37
@@ -695,7 +698,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
