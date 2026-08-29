@@ -99,11 +99,19 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   color: var(--text);
+  /* The row is a <button> for keyboard activation, and browsers make button text
+     unselectable by default — so an error message could be read but never copied, which is
+     the first thing anyone wants to do with one. Opting the text back in keeps both: drag
+     to select, click to jump. */
+  user-select: text;
+  cursor: text;
 }
 
 .code {
   display: block;
   color: var(--text-dim);
+  user-select: text;
+  cursor: text;
 }
 
 .location {

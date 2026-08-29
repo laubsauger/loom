@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -172,6 +172,36 @@ describe("problems panel (§V27)", () => {
   it("shows the line and column each message maps to", () => {
     render(<ProblemsPanel diagnostics={DIAGNOSTICS} />);
     expect(screen.getByRole("region", { name: "errors" }).textContent).toContain("12:5");
+  });
+
+  it("lets a message be selected and copied, and does not jump while selecting", async () => {
+    // The row is a <button> so it can be reached by keyboard, and browsers make button text
+    // unselectable — so an error could be read but never copied, which is the first thing
+    // anyone does with one. The text opts back in; the click guard is what stops the drag
+    // that ends a selection from also navigating the editor out from under it.
+    const onSelect = vi.fn();
+    render(<ProblemsPanel diagnostics={DIAGNOSTICS} onSelect={onSelect} />);
+
+    const row = screen.getAllByRole("button")[0] as HTMLElement;
+    const message = row.querySelector("span:nth-of-type(2)") as HTMLElement;
+    const selection = row.ownerDocument.getSelection();
+    if (selection === null) throw new Error("no selection API in this environment");
+    const range = row.ownerDocument.createRange();
+    range.selectNodeContents(message);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    expect(selection.toString().length).toBeGreaterThan(0);
+
+    // `fireEvent.click`, not `userEvent.click`: a real select-drag ends with mouseup and
+    // then a click while the selection still stands, whereas userEvent's synthetic mousedown
+    // collapses the selection first and would model the wrong gesture entirely.
+    fireEvent.click(row);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // With nothing selected the row still navigates — the guard is narrow, not a disable.
+    selection.removeAllRanges();
+    await userEvent.click(row);
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("gives every problem a focusable control that reports the selection (V19)", async () => {

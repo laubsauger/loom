@@ -104,7 +104,21 @@ function DiagnosticRow({ tone, diagnostic, onSelect }: DiagnosticRowProps) {
     <button
       type="button"
       className={cx(styles.row, ROW_CLASS[tone], TONE_CLASS[tone])}
-      onClick={() => onSelect?.(diagnostic)}
+      onClick={(event) => {
+        // Selecting the text ends in a click, and jumping the editor mid-selection would
+        // undo the thing the user was doing. If they highlighted something inside this row,
+        // they were copying, not navigating.
+        const selection = event.currentTarget.ownerDocument.getSelection();
+        if (
+          selection !== null &&
+          selection !== undefined &&
+          selection.toString().length > 0 &&
+          event.currentTarget.contains(selection.anchorNode)
+        ) {
+          return;
+        }
+        onSelect?.(diagnostic);
+      }}
     >
       <span className={styles.marker} aria-hidden="true" />
       <span className={styles.message}>
