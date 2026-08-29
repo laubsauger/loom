@@ -522,7 +522,7 @@ V56: project working space = linear RGB. import|media node decodes → linear. e
 V57: `texture2d` carries `space: "linear"|"encoded"|"data"`. exact-match under V13 — absent = linear (`colorSpaceOf`). ∈ propagation absent = NO CLAIM, derived fills it (`declaredColorSpace`). mismatch → diagnostic naming conversion node to insert, ⊥ silent convert.
 V57a: data textures SHOULD read UNFILTERED — `textureLoad`, binding declares `sampled:"unfiltered"`, ⊥ sampler paired. vgpu has ⊥ non-filtering-sampler path at all; its model = sampler-paired-means-filtering. ∴ real dichotomy = sampled-through-sampler vs textureLoad, ⊥ linear-vs-nearest sampler.
 V57b: compiler refuses ONLY the impossible case — filtered `r32float` w/o `float32-filterable` → `compiler/binding-unfilterable` error naming node + fix. filtering a filterable-format data texture (mask ∈ rgba8unorm) stays LEGAL: usually wrong, never unsafe. `space` ⊥ silently changes sampling — a silent switch changes rendered output invisibly (V13 philosophy).
-V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler & backend switch exhaustively. new kind → type error until handled everywhere. v1 emits `render` only, ⊥ texture-only assumption ∈ sort|prune|resource assign.
+V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler & backend switch exhaustively. new kind → type error until handled everywhere. v1 emits `render` only, ⊥ texture-only assumption ∈ sort|prune|resource assign. `counter` kind = RESERVED, ⊥ encoded — lifecycle expresses scan/compact as ordinary `dispatch` passes, which proved cleaner. ⊥ wait for it.
 V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|export|preview|tool surface. single-output node → default port `"out"`. ⊥ outputId ≡ nodeId.
 V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
 V69: `ParameterValue` = envelope `{kind:"static", value}` | reserved bound kinds. unknown kind preserved through load→save, ⊥ rejects doc (V10, V68).
@@ -702,8 +702,11 @@ T164|x|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — 
 T165|x|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
 T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
-T172|.|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
+T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swap pass, so a stateful kernel's `out_` bindings reach the write half. today in/out are 2 separate buffers|V22,V75
+T180|.|`clear` knob on draw passes — vgpu's standalone draw clears by default; trails-style accumulate needs `clear:false`|V58
+T181|.|GPU timer spans for dispatch/draw — T163 covers effect passes only ∴ compute cost is unmeasured|V86
 T173|.|`RenderBackend.readOutput(id, {region?}) → ReadbackImage` — completes T82. today returns bare bytes ∴ format+stride come from a table BESIDE the copy, ⊥ from the thing that copied. also: a 1×1 probe pulls a whole 1080p frame|V60,V48
 T174|.|bus commands the agent surface needs & ⊥ exist: `graph.setOutput` `runtime.resetFeedback` `project.validate` `project.compile` `transport.play|pause`|V39
 T175|.|bus QUERIES for `get_selection` `get_diagnostics` `get_runtime_metrics` `project.get` — injected ports work in-tab only; an out-of-process MCP server needs real queries|V39
