@@ -77,3 +77,29 @@
     opacity: 1;
   }
 }
+
+/* Sub-menu + toggle parts (U11). */
+.subTrigger[data-state="open"] {
+  background: var(--bg-raise);
+}
+
+.subTrigger::after {
+  content: "›";
+  margin-left: auto;
+  padding-left: var(--space-8, 8px);
+  color: var(--text-dim);
+}
+
+.toggleItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+}
+
+.toggleMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  color: var(--signal);
+}

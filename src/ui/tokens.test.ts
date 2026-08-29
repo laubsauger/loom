@@ -11,7 +11,7 @@ const tokensCss = readFileSync(TOKENS, "utf8");
 /** Literal colors: #rgb, #rgba, #rrggbb, #rrggbbaa. */
 const HEX = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g;
 /** Literal color functions, the other way to smuggle a color past the tokens. */
-const COLOR_FN = /\b(?:rgba?|hsla?|color-mix|oklch|lab)\(/g;
+const COLOR_FN = /\b(?:rgba?|hsla?|color-mix|oklch|oklab|lch|lab|hwb|light-dark)\(/g;
 
 function collect(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -21,13 +21,23 @@ function collect(dir: string, out: string[] = []): string[] {
       continue;
     }
     // "Component file" = anything that renders or styles.
-    if (!/\.(tsx|css)$/.test(entry.name)) continue;
+    if (!/\.(tsx|ts|css)$/.test(entry.name)) continue;
     if (/\.test\.(ts|tsx)$/.test(entry.name)) continue;
     if (path === TOKENS) continue;
     out.push(path);
   }
   return out;
 }
+
+/**
+ * Escape hatch for files that legitimately COMPUTE a colour from data rather than
+ * theming with one — a colour-picker swatch turning a ColorParameter into a CSS
+ * colour, for example. Such a file must carry the marker below with a reason, so the
+ * exception is visible and reviewable instead of being an unnoticed hole in the guard.
+ *
+ *   // v17-allow-dynamic-color: swatch renders the user's colour parameter value
+ */
+const ALLOW_MARKER = /v17-allow-dynamic-color:\s*\S+/;
 
 describe("V17 — dark-only theme, every color comes from a token", () => {
   const files = collect(SRC);
@@ -37,12 +47,24 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
     expect(files.length).toBeGreaterThan(5);
   });
 
+  it("every dynamic-colour exemption states a reason", () => {
+    // Guards the escape hatch: a bare marker with no reason does not count.
+    const bare = files.filter((file) => {
+      const text = readFileSync(file, "utf8");
+      return text.includes("v17-allow-dynamic-color") && !ALLOW_MARKER.test(text);
+    });
+    expect(bare).toEqual([]);
+  });
+
   it.each(files.map((file) => [relative(SRC, file), file]))(
     "%s declares no literal color",
     (_name, file) => {
       const source = readFileSync(file, "utf8");
+      // A file that computes colours from data may opt out with a stated reason.
+      // Hex literals are never exempt — only colour FUNCTIONS built from values.
+      const allowsDynamic = ALLOW_MARKER.test(source);
       expect(source.match(HEX) ?? []).toEqual([]);
-      expect(source.match(COLOR_FN) ?? []).toEqual([]);
+      if (!allowsDynamic) expect(source.match(COLOR_FN) ?? []).toEqual([]);
     },
   );
 

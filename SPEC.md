@@ -50,11 +50,22 @@ per-node parity notes ∈ node manifest `description`, ⊥ ∈ spec.
 - agent authority: graph edit | shader edit | param set = free + undoable, ⊥ confirm. local file | network | upload | export | recording | component install | project delete = capability grant + confirm.
 - save: single `.loom.json` + external `AssetReference`. unresolved → relink flow. bundle → Phase 2.
 
+### locked — owner interview 2026-08-29
+- color: `space` ∈ `texture2d` port type. linear working space, decode @ load, encode+tonemap @ output only.
+- param modulation: resolver invariant AND `ParameterValue` envelope `{kind:"static",value}` | reserved bound — both land now, before ∀ `.loom.json` ∈ wild. envelope passthrough lane fixes closed-union anti-V10.
+- perform mode: full multi-window output = COMMITTED Phase 2 deliverable (multi display, VJ). presentation seam designed now, ⊥ prep-only.
+- revision contention: param-only carve-out. value-only edits on disjoint entities ⊥ conflict w/ structural patch. amends V33.
+- workers: renderer-in-worker COMMITTED Phase 2. worker owns device + ∀ surfaces; window transfers `OffscreenCanvas` in = also multi-window transport. v1 main-thread + clone-safe invariant + DOM-free lint + non-rAF loop.
+- audio-reactive: early Phase 2 headline. AudioIn (mic|file) → analysis (FFT bands, beat, envelope) → params via resolver. first consumer proving modulation arch. WebMIDI alongside. OSC → Phase 3 (needs bridge).
+- expressions: own minimal grammar. jsep-style AST, whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx. deterministic + sandboxed by construction. v1 = arithmetic only, 1 evaluator module.
+- autosave: IndexedDB ring. 2s debounce after last mutation. keep last 20 + 1 per 10min pinned. restore-on-launch prompt. manual save still writes `.loom.json`.
+- recording: first realtime export = WebCodecs → mp4 (`VideoEncoder`, exact-frame capture ← render loop). ⊥ MediaRecorder stopgap. Chrome ≥128 guarantees WebCodecs.
+
 ### open ? — ⊥ blocking Phase 0/1
 - extension trust: declarative graph + manifest + WGSL only, ⊥ 3rd-party JS. ?
 - 3D scope: doc §36.6 option 1 — procedural + loaded geometry → texture graph. ?
 - when deterministic media seek + stateful-sim checkpoints enter roadmap. ?
-- exact realtime recording + offline delivery formats @ first export milestone. ?
+- perform mode display-selection UX: single fullscreen toggle vs true multi-window. ?
 
 ## §I INTERFACES
 
@@ -334,7 +345,7 @@ V29: ∀ mutation → `AppCommandBus.execute`. ⊥ adapter mutates zustand | Rea
 V30: ∀ command carries `InvocationContext.actor`. ⊥ anonymous mutation.
 V31: ∀ mutation → `AuditEntry`. audit log inspectable in UI.
 V32: `GraphPatch` atomic — ∀ ops apply | 0 apply.
-V33: stale `baseRevision` → status `conflict`. ⊥ silent rebase.
+V33: stale `baseRevision` → `conflict` ⟺ actual entity overlap. ⊥ silent rebase. patch ops classified value-only (param, position, ui) | structural (add, remove, connect, disconnect). value-only on disjoint entities ⊥ conflict w/ concurrent structural patch — else 60Hz human drag starves ∀ agent patch (T62 gate passes quiet, unusable next to live human).
 V34: 1 patch → 1 undo group unless explicitly split.
 V35: patch temp IDs resolved to stable IDs, returned ∈ `createdIds`.
 V36: `dryRun: true` → validate + return diagnostics, ⊥ mutate, ⊥ audit as applied.
@@ -357,6 +368,9 @@ V57: `texture2d` carries `space: "linear"|"encoded"|"data"`. exact-match under V
 V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler & backend switch exhaustively. new kind → type error until handled everywhere. v1 emits `render` only, ⊥ texture-only assumption ∈ sort|prune|resource assign.
 V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|export|preview|tool surface. single-output node → default port `"out"`. ⊥ outputId ≡ nodeId.
 V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
+V69: `ParameterValue` = envelope `{kind:"static", value}` | reserved bound kinds. unknown kind preserved through load→save, ⊥ rejects doc (V10, V68).
+V70: presentation surface count = N per compiled output, worker-transferable (`OffscreenCanvas`). ⊥ React tree owns surface (V64).
+V71: expression eval = own grammar, whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx. ⊥ `eval`, ⊥ `Function`, ⊥ host global. deterministic by construction (V44, V45).
 V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
 V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
 V63: ∀ data crossing compile→render boundary structured-clone-safe. ⊥ function, ⊥ DOM ref, ⊥ class instance. `NodeDefinition.compile` emits plain data (WGSL text + binding desc), ⊥ callback.
@@ -445,6 +459,14 @@ T102|.|dryRun returns `validated` status + ⊥ mint real ids|V36
 T103|.|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
 T104|.|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
 T105|.|PWA manifest|C
+T106|.|`ParameterValue` envelope migration + passthrough lane for unknown kinds|V69,V68,V10
+T107|.|patch-op classification value-only\|structural + overlap-scoped conflict|V33
+T108|.|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
+T109|.|non-rAF frame loop option (worker + node realtime)|V49,V63
+T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
+T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
+T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps land|C
+T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|.|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
 T36|.|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
@@ -518,17 +540,17 @@ barrier: **T23 Phase 0 exit** ← C, H, I.
 barrier (wave 2 → 3) — contract changes, ⊥ parallel:
 T80 OutputRef · T81 plan IR unions · T82 readback descriptor · T83 texture2d.space ·
 T84 colorPolicy · T85 resolveParameters · T86 rebuild granularity · T88 undo/redo fixes ·
-T89 patch zod · T94 resize bug · T104 group/viewport ops · resolution `fit`+`limit` modes.
+T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelope · T107 op classification · resolution `fit`+`limit` modes.
 ∀ = frozen-contract edits. do serial, broadcast, then fan out.
 
 ### wave 3 — 5 tracks
 | track | tasks | owns |
 |---|---|---|
-| J preview | T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
+| J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
 | K node catalog | T70 T40 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T101 | `src/domain/project/**` `src/domain/migrations/**` |
-| N export | T68 T82 | `src/runtime/export/**` |
+| N export | T68 T82 T111 | `src/runtime/export/**` |
 
 barrier: **T51** route ∀ human action through bus — toolbar, menu, keybind, inspector, drag-connect.
 serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools assume bus = only mutation path (V29).
@@ -538,8 +560,13 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
-| R hardening | T95 T96 T97 T98 T100 T102 T103 | `src/runtime/backend/**` `src/domain/graph/**` |
-| S guardrails+ | T90 T92 T93 T105 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+| R hardening | T95 T96 T97 T98 T100 T102 T103 T109 | `src/runtime/backend/**` `src/domain/graph/**` |
+| S guardrails+ | T90 T92 T93 T105 T108 T112 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+
+### Phase 2 backlog (⊥ v1, committed direction)
+T110 multi-window perform mode · renderer-in-worker · AudioIn + analysis + WebMIDI (resolver
+consumers, prove modulation arch) · T111 WebCodecs mp4 · components/subgraphs · media nodes ·
+WebMCP + MCP adapters.
 
 ### wave 5 — serial gates
 T49 Phase 1 exit, T62 Phase 1 agent exit.

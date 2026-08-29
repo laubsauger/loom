@@ -52,3 +52,52 @@ export function ContextMenuSeparator({
 export function ContextMenuShortcut({ className, ...rest }: ComponentProps<"span">) {
   return <span className={cx(styles.shortcut, className)} {...rest} />;
 }
+
+/**
+ * Sub-menu and toggle parts (U11). The graph canvas needs bypass/mute checkboxes and
+ * an add-node submenu; without these a track would either fork the primitive or reach
+ * for raw Radix and lose the token styling.
+ */
+export type ContextMenuSubTriggerProps = ComponentProps<typeof ContextMenuPrimitive.SubTrigger>;
+
+export function ContextMenuSubTrigger({ className, ...rest }: ContextMenuSubTriggerProps) {
+  return <ContextMenuPrimitive.SubTrigger className={cx(styles.item, styles.subTrigger, className)} {...rest} />;
+}
+
+export type ContextMenuSubContentProps = ComponentProps<typeof ContextMenuPrimitive.SubContent>;
+
+export function ContextMenuSubContent({ className, ...rest }: ContextMenuSubContentProps) {
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.SubContent className={cx(styles.content, className)} {...rest} />
+    </ContextMenuPrimitive.Portal>
+  );
+}
+
+export type ContextMenuCheckboxItemProps = ComponentProps<typeof ContextMenuPrimitive.CheckboxItem>;
+
+export function ContextMenuCheckboxItem({ className, children, ...rest }: ContextMenuCheckboxItemProps) {
+  return (
+    <ContextMenuPrimitive.CheckboxItem className={cx(styles.item, styles.toggleItem, className)} {...rest}>
+      <span className={styles.toggleMark} aria-hidden="true">
+        <ContextMenuPrimitive.ItemIndicator>✓</ContextMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </ContextMenuPrimitive.CheckboxItem>
+  );
+}
+
+export const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
+
+export type ContextMenuRadioItemProps = ComponentProps<typeof ContextMenuPrimitive.RadioItem>;
+
+export function ContextMenuRadioItem({ className, children, ...rest }: ContextMenuRadioItemProps) {
+  return (
+    <ContextMenuPrimitive.RadioItem className={cx(styles.item, styles.toggleItem, className)} {...rest}>
+      <span className={styles.toggleMark} aria-hidden="true">
+        <ContextMenuPrimitive.ItemIndicator>•</ContextMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </ContextMenuPrimitive.RadioItem>
+  );
+}

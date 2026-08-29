@@ -126,6 +126,38 @@
   --z-popover: 100;
   --z-dialog: 200;
   --z-tooltip: 300;
+
+  /* ---- syntax highlighting (requested by the shader editor) ----
+     Deliberately their own hues rather than borrowed port-family colours: under V26 a
+     port hue MEANS a data type on the canvas, and reusing e.g. --port-vector for
+     keywords would make the same pink mean two unrelated things in one app. Muted
+     against --bg-panel so code reads as text first, colour second. */
+  --syntax-comment: #55607a;
+  --syntax-keyword: #c99bf5;
+  --syntax-modifier: #9d8cd6;
+  --syntax-type: #6fc7d8;
+  --syntax-builtin: #7fb2f0;
+  --syntax-number: #d9a441;
+  --syntax-atom: #d9a441;
+  --syntax-string: #96c47c;
+  --syntax-attribute: #e0996b;
+  --syntax-definition: #dbe2ee;
+  --syntax-variable: #c3cbdb;
+  --syntax-operator: #8b95a8;
+  --syntax-punctuation: #6b7488;
+  --syntax-invalid: #ff5c57;
+
+  /* ---- U9: gaps found in review ---- */
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --radius-sm: 2px;
+  --radius-lg: 6px;
+  --radius-pill: 999px;
+  --text-disabled: #5a6478;
+  --selection-bg: #24405c;
+  --z-canvas-overlay: 30;
+  --z-toast: 90;
 }
 
 @media (prefers-reduced-motion: reduce) {

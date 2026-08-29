@@ -39,9 +39,14 @@ export type {
 } from "./primitives/tabs.tsx";
 
 export {
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuRoot,
   ContextMenuSeparator,
   ContextMenuShortcut,
