@@ -786,6 +786,9 @@ TD wires CHOPs w/ cables ∴ so do we. a `value` PORT TYPE, value EDGES, & a CPU
 evaluated ∀ frame BEFORE the render. this is the same split TD has (CHOP network vs TOP
 network) ∈ 1 canvas.
 
+V183: know WHICH crossing costs. SCALARS crossing CPU↔GPU are ~free — a value graph is a handful of f32 & the uniform write already happens ∀ frame (V5's path). TEXTURES crossing are ⊥ free. ∴ the value graph is CPU-side BECAUSE it is scalars; the rule ⊥ generalize to pixels.
+V184: ⊥ NEW GPU→CPU route. the ONLY readback is the existing ASYNC between-frames one (V48/V7/V144), 1 frame late by contract. ⊥ `mapAsync`-await inside the frame loop, ⊥ a "just this once" sync read. a stall is invisible ∈ a test & fatal ∈ a 60Hz loop.
+V185: readbacks are COUNTED & SHOWN. N Analyze nodes = N readbacks/frame; the perf panel reports the count & total bytes ∴ a user who drops 20 of them SEES why it got slow, ⊥ guesses. an invisible cost gets paid repeatedly.
 V179: value edges form a SEPARATE graph — CPU-side, topologically ordered, evaluated ∀ frame BEFORE the GPU plan. value nodes ⊥ enter the GPU plan & ⊥ allocate GPU resources. a value edge ⊥ a texture edge & the 2 ⊥ connect (V19 port typing already refuses it).
 V180: a value node publishes NAMED CHANNELS, ⊥ 1 anonymous number. address = `node` (first channel) | `node:channel` (`mouse1:x`). single-channel is the degenerate case — Mouse has x,y & shipping only 1 forces 2 nodes for 1 device.
 V181: a STATEFUL value node (Lag, Hold, Count, Slope) is unskippable (V155) & ! declare its reset (T214/T216). its state ⊥ a function of frame index ∴ a seek that ⊥ replay is ⊥ scrub-accurate (V170) & ! say so.
@@ -1030,6 +1033,7 @@ T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, 
 T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
 T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
 T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
+T278|.|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
 T277|.|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
 T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
 T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
