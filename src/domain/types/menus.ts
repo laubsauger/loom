@@ -25,8 +25,11 @@ export interface MenuTarget {
 }
 
 export interface MenuItem {
-  /** The bus command this item runs. No inline handlers. */
-  command: CommandName;
+  /**
+   * The bus command this item runs. No inline handlers.
+   * Omitted only for a submenu parent, which has no action of its own.
+   */
+  command?: CommandName;
   /** Static arguments; anything target-derived is filled in when the menu opens. */
   input?: unknown;
   label: string;

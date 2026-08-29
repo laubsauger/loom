@@ -1,0 +1,22 @@
+/*
+ * The host wraps a whole pane but must not participate in its layout — one menu root
+ * over the graph canvas cannot be allowed to change how the canvas sizes itself.
+ */
+.host {
+  display: contents;
+}
+
+/* Takes the slack, so the shortcut chip and the tag both sit hard right. */
+.label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Same wording the command palette uses for a command no track has registered yet. */
+.tag {
+  padding-left: var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  font-style: italic;
+}

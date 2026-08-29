@@ -93,7 +93,10 @@ describe("shader editor panel", () => {
         onSourceChange={() => {}}
       />,
     );
-    expect(screen.getByTestId("shader-editor-surface").getAttribute("data-key-context")).toBe("text");
+    // Must match the keymap engine's KEYMAP_CONTEXT_ATTRIBUTE exactly. These were two
+    // different spellings for a while and V53 held only by accident, via the
+    // contenteditable fallback — mod+z would have reached graph undo if that changed.
+    expect(screen.getByTestId("shader-editor-surface").getAttribute("data-keymap-context")).toBe("text");
   });
 
   it("says the output is stale, and says why, when a compile failed (§V9)", () => {

@@ -1,0 +1,164 @@
+/* Chrome for the slots the composition root fills. Every colour is a token (V17). */
+
+.fill {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The canvas owns its own surface; the wrapper exists to carry the keymap context
+   and to catch the library's drop. */
+.graph {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-sunken);
+}
+
+.viewer,
+.performance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  color: var(--text);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+}
+
+.block[data-tone="error"] {
+  border-color: var(--error);
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  color: var(--text-dim);
+  text-transform: lowercase;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.fact dt {
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+}
+
+.fact dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.rowName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowValue {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-prose);
+  color: var(--text-dim);
+}
+
+.alert {
+  margin: 0;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-prose);
+  color: var(--error);
+}
+
+/* Bottom dock */
+
+.shader {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.shaderStatus {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--border-hairline);
+  background: var(--bg-panel);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.dockEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-6);
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  color: var(--text-dim);
+}

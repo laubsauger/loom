@@ -1,0 +1,157 @@
+import type { MenuItem, MenuTarget } from "@domain/types/menus.ts";
+import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import type { MenuContext } from "./guards.ts";
+import { edgesForTarget, parameterDefault } from "./guards.ts";
+
+/**
+ * Turning a target into command input (T126).
+ *
+ * A `MenuItem` carries only static `input`; everything that depends on WHAT was clicked
+ * is filled in here, when the menu opens. Keeping it in one table rather than in each
+ * item is what lets the same schema serve a right-click on one node and a right-click
+ * inside a multi-selection without the schema knowing about either.
+ *
+ * A builder that cannot produce a complete input refuses, with a reason — the item then
+ * renders disabled. Half-formed input never reaches the bus (§V29, §V32).
+ */
+
+export type MenuInputResolution =
+  | { ok: true; input: Record<string, unknown> }
+  | { ok: false; reason: string };
+
+type InputBuilder = (
+  item: MenuItem,
+  target: MenuTarget,
+  context: MenuContext,
+) => MenuInputResolution;
+
+/** One patch, so a menu action is one undo group (§V34). */
+function patch(
+  context: MenuContext,
+  label: string,
+  operations: GraphPatchOperation[],
+): MenuInputResolution {
+  return { ok: true, input: { baseRevision: context.revision, label, operations } };
+}
+
+/**
+ * Right-clicking a node inside a selection acts on the whole selection; right-clicking
+ * outside one acts on that node alone. Any other rule surprises someone: acting on a
+ * hidden selection, or silently dropping the other nine nodes the user just picked.
+ */
+const nodeIds: InputBuilder = (_item, target, context) => {
+  const { nodeId } = target;
+  if (nodeId === undefined) return { ok: false, reason: "No node under the cursor." };
+  const ids = context.selection.includes(nodeId)
+    ? [...new Set(context.selection)].sort()
+    : [nodeId];
+  return { ok: true, input: { nodeIds: ids } };
+};
+
+const nodeRef: InputBuilder = (_item, target) =>
+  target.nodeId === undefined
+    ? { ok: false, reason: "No node under the cursor." }
+    : { ok: true, input: { nodeId: target.nodeId } };
+
+const portRef: InputBuilder = (_item, target) =>
+  target.nodeId === undefined || target.portId === undefined
+    ? { ok: false, reason: "No port under the cursor." }
+    : { ok: true, input: { nodeId: target.nodeId, portId: target.portId } };
+
+const edgeRef: InputBuilder = (_item, target) =>
+  target.edgeId === undefined
+    ? { ok: false, reason: "No edge under the cursor." }
+    : { ok: true, input: { edgeId: target.edgeId } };
+
+const parameterRef: InputBuilder = (_item, target) =>
+  target.nodeId === undefined || target.parameterKey === undefined
+    ? { ok: false, reason: "No parameter under the cursor." }
+    : { ok: true, input: { nodeId: target.nodeId, parameterKey: target.parameterKey } };
+
+const cursorPosition: InputBuilder = (_item, target) =>
+  target.position === undefined
+    ? { ok: true, input: {} }
+    : { ok: true, input: { position: { x: target.position.x, y: target.position.y } } };
+
+/** "Add node here": the leaf item names the type, the target says where. */
+const addNode: InputBuilder = (item, target, context) => {
+  const type = (item.input as { type?: unknown } | undefined)?.type;
+  if (typeof type !== "string") return { ok: false, reason: "This item names no node type." };
+  const position = target.position ?? { x: 0, y: 0 };
+  return patch(context, "Add node", [
+    { op: "addNode", ref: "$added", type, position: { x: position.x, y: position.y } },
+  ]);
+};
+
+const disconnect: InputBuilder = (_item, target, context) => {
+  const edgeIds = edgesForTarget(target, context);
+  if (edgeIds.length === 0) return { ok: false, reason: "Nothing is connected here." };
+  return patch(context, target.surface === "edge" ? "Delete edge" : "Disconnect", [
+    { op: "disconnect", edgeIds },
+  ]);
+};
+
+const resetParameter: InputBuilder = (_item, target, context) => {
+  const { nodeId, parameterKey } = target;
+  if (nodeId === undefined || parameterKey === undefined) {
+    return { ok: false, reason: "No parameter under the cursor." };
+  }
+  const fallback = parameterDefault(target, context);
+  if (fallback === undefined) {
+    return { ok: false, reason: "This parameter has no declared default." };
+  }
+  return patch(context, "Reset parameter", [
+    { op: "setParameters", nodeId, parameters: { [parameterKey]: fallback } },
+  ]);
+};
+
+/**
+ * Keyed by `surface:command` first, then by `command`. The surface key exists because
+ * `graph.applyPatch` is a real, registered command that means something different on
+ * each surface — which is how "delete edge" and "disconnect port" work TODAY instead of
+ * waiting, greyed out, for a bespoke command to be registered.
+ */
+const BUILDERS: Record<string, InputBuilder> = {
+  "canvas:graph.applyPatch": addNode,
+  "canvas:ui.openNodeSearch": cursorPosition,
+  "port:graph.applyPatch": disconnect,
+  "edge:graph.applyPatch": disconnect,
+  "parameter:graph.applyPatch": resetParameter,
+
+  "graph.removeNodes": nodeIds,
+  "graph.copySelection": nodeIds,
+  "graph.cutSelection": nodeIds,
+  "graph.duplicateSelection": nodeIds,
+  "node.toggleBypass": nodeIds,
+  "node.toggleDisplay": nodeIds,
+  "node.toggleRender": nodeIds,
+
+  "node.rename": nodeRef,
+  "node.openColorPalette": nodeRef,
+  "graph.diveIn": nodeRef,
+
+  "graph.insertConversion": portRef,
+  "graph.rerouteEdge": edgeRef,
+
+  "parameter.copyPath": parameterRef,
+  "component.publishParameter": parameterRef,
+};
+
+export function resolveMenuInput(
+  item: MenuItem,
+  target: MenuTarget,
+  context: MenuContext,
+): MenuInputResolution {
+  // A submenu parent names no command and needs no input builder.
+  if (item.command === undefined) {
+    return { ok: true, input: { ...((item.input as Record<string, unknown> | undefined) ?? {}) } };
+  }
+  const builder = BUILDERS[`${target.surface}:${item.command}`] ?? BUILDERS[item.command];
+  // No builder: the item's static input is the whole input. `graph.paste` and
+  // `graph.selectAll` want nothing from the target, and saying so by omission is
+  // better than a builder that returns `{}`.
+  if (builder === undefined) {
+    return { ok: true, input: { ...((item.input as Record<string, unknown> | undefined) ?? {}) } };
+  }
+  return builder(item, target, context);
+}

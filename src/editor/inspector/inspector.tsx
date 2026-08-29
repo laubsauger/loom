@@ -104,7 +104,7 @@ export function Inspector({
     }));
 
   return (
-    <div className={styles.inspector}>
+    <div className={styles.inspector} data-node-id={node.id} data-keymap-context="inspector">
       <header className={styles.header}>
         <span className={styles.title}>{definition?.title ?? node.type}</span>
         <span className={styles.type}>{node.type}</span>
@@ -147,8 +147,10 @@ export function Inspector({
             <span className={styles.sectionRule} aria-hidden />
           </div>
           {group.entries.map((entry) => (
+            // data-parameter-key lets the context menu resolve which parameter was
+            // right-clicked (§V78). The control kit itself stays menu-agnostic.
+            <div key={entry.key} data-parameter-key={entry.key}>
             <ParameterControl
-              key={entry.key}
               parameterKey={entry.key}
               definition={entry.definition}
               value={entry.value}
@@ -156,6 +158,7 @@ export function Inspector({
               driven={entry.driven}
               onChange={(value, phase) => editor.setParameter(node.id, entry.key, value, phase)}
             />
+            </div>
           ))}
         </section>
       ))}

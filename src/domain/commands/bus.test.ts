@@ -74,10 +74,18 @@ describe("command bus — registration surface (§V39)", () => {
     // Exact, not toContain: a new registration should have to be declared here.
     expect(harness.bus.listCommands()).toEqual([
       "graph.applyPatch",
+      "graph.copySelection",
+      "graph.cutSelection",
+      "graph.duplicateSelection",
+      "graph.paste",
       "graph.redo",
+      "graph.removeNodes",
       "graph.undo",
       "node.setFormat",
       "node.setResolution",
+      "node.toggleBypass",
+      "node.toggleDisplay",
+      "node.toggleRender",
     ]);
     expect(harness.bus.listQueries()).toEqual(["graph.audit", "graph.get", "graph.history"]);
     expect(harness.bus.hasCommand("graph.applyPatch")).toBe(true);

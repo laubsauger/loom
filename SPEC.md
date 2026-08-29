@@ -505,7 +505,7 @@ T10|x|zustand+immer graph store, semantic command layer, undo/redo w/ drag coale
 T11|x|`PortType` union + `arePortsCompatible()` exact-match check|I.port,V13
 T12|x|node registry + `NodeDefinition` manifest type|I.registry
 T50|x|`AppCommandBus`: command+query registry, `InvocationContext`, dryRun, result types|I.bus,V29,V30
-T51|.|route ∀ human action through bus — toolbar, menu, keybind, inspector edit, drag-connect|V29
+T51|x|route ∀ human action through bus — toolbar, menu, keybind, inspector edit, drag-connect|V29
 T52|x|`revision` counter + `AuditEntry` log + actor identity, audit viewer in dock|V31,V40
 T53|x|undo groups keyed to command\|patch, actor-local history|V34,V41
 T13|x|`RenderBackend` iface + vgpu adapter impl, device init, capability report|I.backend,V2,V12
@@ -581,8 +581,8 @@ T122|.|sprite render path (spine step 1 of sprites→instances→mesh)|V58
 T123|.|point viewer + attribute spreadsheet, windowed readback ≤10Hz|V48,V16
 T124|.|`TextureToAttribute` bridge node (TOP→POP)|V13
 T125|.|`read_points` agent tool — windowed, via export iface|V37,V48
-T126|.|context menu engine: `MenuTarget` resolution, items ← bus registry, keys ← keymap, 1 root per surface|V78,V29,V55
-T127|.|menus for canvas (add node @ cursor, paste, layout), node (bypass, mute, preview, rename, color, delete, dive in), port (disconnect, insert conversion), edge (delete, reroute), parameter (reset, copy path, publish)|V78
+T126|x|context menu engine: `MenuTarget` resolution, items ← bus registry, keys ← keymap, 1 root per surface|V78,V29,V55
+T127|x|menus for canvas (add node @ cursor, paste, layout), node (bypass, mute, preview, rename, color, delete, dive in), port (disconnect, insert conversion), edge (delete, reroute), parameter (reset, copy path, publish)|V78
 T128|.|`GraphComponentDefinition` + instance type + zod + component registry|V79,V84
 T129|.|save-selection-as-component + instantiate (linked \| detached copy)|V79,V83
 T130|.|enter/exit component, breadcrumb trail, nested editing|V82

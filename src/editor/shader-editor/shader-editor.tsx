@@ -40,7 +40,7 @@ const readOnlyCompartment = new Compartment();
  *
  * ## §V53 — this is a `text` key context
  *
- * The container carries `data-key-context="text"`, and CodeMirror's own history keymap
+ * The container carries `data-keymap-context="text"`, and CodeMirror's own history keymap
  * handles `mod+z` inside it. Both halves matter: the attribute is what lets the keymap
  * engine (`src/editor/keymap`, track Q) resolve the narrowest context and *not* dispatch
  * the graph's undo, and the history keymap is what makes the undo the user does get be
@@ -154,7 +154,7 @@ export function ShaderEditor({
     <div
       ref={hostRef}
       className={cx(styles.editor, className)}
-      data-key-context="text"
+      data-keymap-context="text"
       data-testid="shader-editor-surface"
     />
   );

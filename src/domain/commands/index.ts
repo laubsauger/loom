@@ -1,6 +1,7 @@
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../graph/store.ts";
 import { createCommandBus, type ShaderloomBus } from "./bus.ts";
+import { registerEditorCommands } from "./editor-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
 
@@ -25,6 +26,13 @@ export type {
   ShaderloomBus,
 } from "./bus.ts";
 export { SHADER_SOURCE_PARAMETER, applyGraphPatch } from "./apply-patch.ts";
+export { registerEditorCommands } from "./editor-commands.ts";
+export type {
+  ClipboardCommandOutput,
+  DuplicateInput,
+  NodeSelectionInput,
+  PasteInput,
+} from "./editor-commands.ts";
 export { registerGraphCommands } from "./graph-commands.ts";
 export { registerNodeOutputCommands } from "./node-output-commands.ts";
 export type {
@@ -52,5 +60,6 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   });
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
+  registerEditorCommands(bus);
   return { bus, store };
 }
