@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FrameInputs } from "../../../domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
@@ -412,6 +414,39 @@ describe("vgpu backend — plan handling", () => {
     expect(diagnostics.map((d) => d.code)).toContain(BackendDiagnosticCode.planNotCurrent);
   });
 
+  it("keeps rendering cleanly after a sampled intermediate target resizes (T94)", async () => {
+    // "scene" is a plain target sampled by the feedback pass. Target.resize() destroys
+    // and recreates its textures, and vgpu follows the recreation automatically only
+    // when the Target itself is bound — a bound .color texture keeps pointing at the
+    // destroyed one, and on a real device every later frame samples a dead texture.
+    const { backend, diagnostics } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+
+    backend.resize("scene", [128, 128]);
+    backend.render(plan, frameInputs(1));
+
+    expect(backend.status.framesSubmitted).toBe(2);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("binds plain targets as Targets so resize recreation re-points them (T94)", () => {
+    // The mock device cannot observe destroyed-texture sampling (no lifecycle
+    // validation at encode, and bind-group descriptors carry opaque views), so the
+    // binding CHOICE is asserted at the source level, the way §V1/§V11 are. The real
+    // runtime coverage is the Dawn headless snapshot suite (T47/T69).
+    const source = readFileSync(
+      fileURLToPath(new URL("./resources.ts", import.meta.url)),
+      "utf8",
+    );
+    const readTexture = source.slice(source.indexOf("const readTexture"), source.indexOf("for (const pass of passes)"));
+    // Plain targets bind the Target (auto re-pointed via onTexturesRecreated)…
+    expect(readTexture).toMatch(/if \(plain\) return plain;/);
+    // …while ping-pong halves stay per-frame rebound and must NOT bind a half Target,
+    // whose identity is frozen at build time while parity swaps every frame.
+    expect(readTexture).toMatch(/return pair\.read\.color;/);
+  });
+
   it("resizes an output and resets the feedback history that resize invalidated", async () => {
     const { backend, diagnostics } = await harness();
     const plan = await backend.compile(fixturePlan());
@@ -423,5 +458,156 @@ describe("vgpu backend — plan handling", () => {
 
     backend.resize("nope", [16, 16]);
     expect(diagnostics.map((d) => d.code)).toContain(BackendDiagnosticCode.unknownOutput);
+  });
+
+  it("routes shader build failures to onDiagnostic and flags the retained program stale (T95)", async () => {
+    const { backend, diagnostics } = await harness();
+    const good = await backend.compile(fixturePlan());
+    expect(backend.status.stale).toBe(false);
+
+    await expect(
+      backend.compile(fixturePlan({ generateShader: "this is not wgsl at all {" })),
+    ).rejects.toThrow();
+
+    // §V9/§V27: the problems tab listens on onDiagnostic, so the failure must arrive
+    // there, not only inside the thrown error.
+    expect(diagnostics.map((d) => d.code)).toContain(BackendDiagnosticCode.planInvalid);
+    expect(backend.status.stale).toBe(true);
+
+    // The previous program keeps rendering while stale.
+    backend.render(good, frameInputs(0));
+    expect(backend.status.framesSubmitted).toBe(1);
+
+    // A successful compile clears the flag.
+    await backend.compile(fixturePlan());
+    expect(backend.status.stale).toBe(false);
+  });
+
+  it("rejects resources beyond device texture limits before allocating anything (T97)", async () => {
+    const { backend, diagnostics } = await harness();
+    const buildsBefore = backend.status.resourceBuilds;
+
+    await expect(backend.compile(fixturePlan({ size: [1_000_000, 8] }))).rejects.toThrow();
+
+    expect(diagnostics.map((d) => d.code)).toContain(BackendDiagnosticCode.resourceLimit);
+    // §V24: the limit is enforced before allocation, not discovered as a device error.
+    expect(backend.status.resourceBuilds).toBe(buildsBefore);
+  });
+
+  it("reports an estimate of the program's texture memory (§V24)", async () => {
+    const { backend } = await harness();
+    await backend.compile(fixturePlan());
+    // scene 64×64 rgba16float (8B) + output 64×64 rgba8unorm (4B) + history ping-pong
+    // 64×64 rgba16float ×2 halves.
+    expect(backend.status.estimatedResourceBytes).toBe(64 * 64 * (8 + 4 + 8 * 2));
+  });
+});
+
+describe("vgpu backend — capability truth (T96, §V51)", () => {
+  it("excludes r32float without float32-filterable, includes it with the feature", async () => {
+    const plain = await harness();
+    expect(plain.backend.capabilities?.formats).not.toContain("r32float");
+    expect(plain.backend.capabilities?.formats).toContain("rgba16float");
+
+    const filterable = await harness(
+      { features: ["float32-filterable"] },
+      { requiredFeatures: ["float32-filterable"] },
+    );
+    expect(filterable.backend.capabilities?.formats).toContain("r32float");
+  });
+});
+
+describe("vgpu backend — recovery hardening (T98)", () => {
+  /** Wraps the mock host so `create` fails a set number of times before succeeding. */
+  function flaky(inner: MockGpuHost, failures: number): MockGpuHost & { setFailures(n: number): void } {
+    let remaining = failures;
+    return {
+      ...inner,
+      get instrumentation() {
+        return inner.instrumentation;
+      },
+      get sessionsCreated() {
+        return inner.sessionsCreated;
+      },
+      loseDevice: (info) => inner.loseDevice(info),
+      setFailures(n: number) {
+        remaining = n;
+      },
+      async create(options) {
+        if (remaining > 0) {
+          remaining -= 1;
+          throw new Error("adapter unavailable (simulated)");
+        }
+        return inner.create(options);
+      },
+    };
+  }
+
+  it("retries the rebuild and recovers on a later attempt", async () => {
+    const inner = mockGpuHost();
+    const host = flaky(inner, 0);
+    const backend = createVgpuBackend({ host, retryDelay: () => Promise.resolve() });
+    teardown.push(() => backend.dispose());
+    await backend.initialize({});
+    await backend.compile(fixturePlan());
+
+    const generation = backend.status.deviceGeneration;
+    host.setFailures(2); // first two re-acquires fail, the third succeeds
+    inner.loseDevice();
+    await until(() => backend.status.deviceGeneration > generation, "recovery after retries");
+    await backend.whenSettled();
+
+    expect(backend.status.halted).toBe(false);
+  });
+
+  it("gives up after the attempt budget and comes back through recover()", async () => {
+    const inner = mockGpuHost();
+    const host = flaky(inner, 0);
+    const diagnostics: RuntimeDiagnostic[] = [];
+    const backend = createVgpuBackend({
+      host,
+      maxRebuildAttempts: 2,
+      retryDelay: () => Promise.resolve(),
+    });
+    backend.onDiagnostic((d) => diagnostics.push(d));
+    teardown.push(() => backend.dispose());
+    await backend.initialize({});
+    await backend.compile(fixturePlan());
+
+    host.setFailures(Number.POSITIVE_INFINITY);
+    inner.loseDevice();
+    await until(
+      () => diagnostics.some((d) => d.code === BackendDiagnosticCode.submissionHalted),
+      "halt after exhausted retries",
+    );
+    expect(backend.status.halted).toBe(true);
+
+    // The GPU comes back; an explicit recover() must not be a dead end (§V23).
+    host.setFailures(0);
+    await backend.recover();
+    expect(backend.status.halted).toBe(false);
+    expect(backend.status.deviceGeneration).toBe(2);
+  });
+
+  it("halts the loop after repeated frame errors instead of throwing into rAF forever", async () => {
+    const { backend, diagnostics } = await harness();
+    await backend.compile(fixturePlan());
+
+    backend.loop(() => {
+      throw new Error("pass exploded");
+    });
+    await until(
+      () => diagnostics.some((d) => d.code === BackendDiagnosticCode.submissionHalted),
+      "halt after frame-error streak",
+    );
+
+    expect(backend.status.halted).toBe(true);
+    expect(diagnostics.some((d) => d.code === BackendDiagnosticCode.frameError)).toBe(true);
+
+    // The session is still alive — recover() resumes without a device rebuild.
+    const generation = backend.status.deviceGeneration;
+    await backend.recover();
+    expect(backend.status.halted).toBe(false);
+    expect(backend.status.deviceGeneration).toBe(generation);
   });
 });

@@ -35,8 +35,21 @@ const REPORTED_LIMITS = [
   "maxComputeWorkgroupsPerDimension",
 ] as const;
 
-/** Core-guaranteed formats in WebGPU. Anything beyond baseline is gated on a feature. */
-const CORE_FORMATS: ReadonlyArray<TextureFormat> = TEXTURE_FORMATS;
+/**
+ * Renderable-and-filterable color formats the device actually supports (T96, §V51).
+ *
+ * rgba8unorm, rgba8unorm-srgb and rgba16float are WebGPU core: renderable and filterable
+ * on every conforming device. r32float is renderable in core but SAMPLING it with a
+ * filtering sampler requires the `float32-filterable` feature — our node pipeline binds
+ * linear samplers by default, so without the feature the format is excluded from the
+ * report and the format-override UI gets a real "unsupported" answer instead of a late
+ * vgpu bind error.
+ */
+function supportedFormats(features: ReadonlySet<string>): ReadonlyArray<TextureFormat> {
+  return TEXTURE_FORMATS.filter(
+    (format) => format !== "r32float" || features.has("float32-filterable"),
+  );
+}
 
 function readLimits(limits: GPUSupportedLimits): Record<string, number> {
   const source = limits as unknown as Record<string, unknown>;
@@ -71,16 +84,17 @@ export function describeCapabilities(gpu: Gpu): BackendCapabilities {
   return {
     tier: classifyTier(features, limits),
     features: [...features].sort(),
-    formats: CORE_FORMATS,
+    formats: supportedFormats(features),
     timestampQuery: features.has("timestamp-query"),
     limits,
   };
 }
 
-/** True when the device clears the product baseline (§C, §V12). */
+/**
+ * True when the device clears the product baseline (§C, §V12). The tier already encodes
+ * the real checks (storage buffers, compute, texture size read off the device); the
+ * format list is device-derived too, so this is no longer tautological.
+ */
 export function meetsBaseline(capabilities: BackendCapabilities): boolean {
-  return (
-    capabilities.tier !== "C" &&
-    capabilities.formats.includes("rgba16float")
-  );
+  return capabilities.tier !== "C" && capabilities.formats.includes("rgba16float");
 }

@@ -32,6 +32,8 @@ function recordingBackend(): ShaderloomBackend & {
     resourceBuilds: 1,
     framesSubmitted: 0,
     readbacks: 0,
+    stale: false,
+    estimatedResourceBytes: 0,
   };
 
   return {
@@ -62,6 +64,7 @@ function recordingBackend(): ShaderloomBackend & {
     },
     updateUniforms() {},
     resetTemporalHistory() {},
+    recover: () => Promise.resolve(),
   };
 }
 

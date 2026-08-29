@@ -49,6 +49,35 @@ export interface VgpuBackendOptions {
   readonly host?: GpuHost;
   /** Rebuild automatically after device loss. Default true (§V23). */
   readonly recoverFromDeviceLoss?: boolean;
+  /** Rebuild attempts per recovery before giving up and waiting for `recover()`. Default 3. */
+  readonly maxRebuildAttempts?: number;
+  /** Injectable backoff between rebuild attempts; deterministic in tests. */
+  readonly retryDelay?: (attempt: number) => Promise<void>;
+}
+
+/** A rendering exception storm means something structural broke; stop before attempt 4. */
+const MAX_CONSECUTIVE_FRAME_ERRORS = 3;
+
+const defaultRetryDelay = (attempt: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+
+const BYTES_PER_PIXEL: Record<string, number> = {
+  rgba8unorm: 4,
+  "rgba8unorm-srgb": 4,
+  rgba16float: 8,
+  r32float: 4,
+};
+
+/** §V24 reporting: coarse texture-memory estimate for the program's declared resources. */
+function estimateResourceBytes(resources: ReadonlyArray<ResourceDescriptor>): number {
+  let total = 0;
+  for (const resource of resources) {
+    if (resource.kind !== "target" && resource.kind !== "pingPong") continue;
+    const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
+    const pixels = resource.size[0] * resource.size[1];
+    total += pixels * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
+  }
+  return total;
 }
 
 /** `ShaderloomBackend` plus a settle hook for shutdown and deterministic tests. */
@@ -80,6 +109,8 @@ interface LoopRegistration {
 export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend {
   const host = options.host ?? browserGpuHost();
   const recover = options.recoverFromDeviceLoss ?? true;
+  const maxRebuildAttempts = options.maxRebuildAttempts ?? 3;
+  const retryDelay = options.retryDelay ?? defaultRetryDelay;
   const hub = createDiagnosticHub();
   const guard = createFrameGuard();
 
@@ -99,6 +130,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let framesSubmitted = 0;
   let readbacks = 0;
   let planCounter = 0;
+  /** §V9: latest compile attempt failed; the retained program is what still renders. */
+  let stale = false;
+  let estimatedBytes = 0;
+  let consecutiveFrameErrors = 0;
 
   const status: BackendStatus = {
     get initialized() {
@@ -124,6 +159,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
     get readbacks() {
       return readbacks;
+    },
+    get stale() {
+      return stale;
+    },
+    get estimatedResourceBytes() {
+      return estimatedBytes;
     },
   };
 
@@ -171,8 +212,26 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           { suggestion: "Resources are being rebuilt from the current graph." },
         ),
       );
-      if (recover) recovery = rebuild().finally(() => (recovery = undefined));
+      if (recover) recovery = rebuildWithRetries().finally(() => (recovery = undefined));
     });
+  }
+
+  /** §V23 + T98: one failed re-acquire must not strand the backend halted forever. */
+  async function rebuildWithRetries(): Promise<void> {
+    for (let attempt = 0; attempt < maxRebuildAttempts; attempt += 1) {
+      if (disposed) return;
+      if (attempt > 0) await retryDelay(attempt - 1);
+      await rebuild();
+      if (!halted) return;
+    }
+    hub.report(
+      backendDiagnostic(
+        "error",
+        BackendDiagnosticCode.submissionHalted,
+        `GPU submission is halted: ${maxRebuildAttempts} rebuild attempt(s) failed.`,
+        { suggestion: "Call recover() (or use the UI retry) once the GPU is available again." },
+      ),
+    );
   }
 
   function stopLoops(): void {
@@ -303,6 +362,31 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     currentFrame = f;
     try {
       guard.duringFrame(onFrame);
+      consecutiveFrameErrors = 0;
+    } catch (error) {
+      // T98: a throw inside vgpu's rAF callback would otherwise explode every frame
+      // with no diagnostic. Report it; a streak means something structural broke, so
+      // halt instead of letting the storm continue.
+      consecutiveFrameErrors += 1;
+      hub.report(
+        backendDiagnostic(
+          "error",
+          BackendDiagnosticCode.frameError,
+          `Frame callback threw: ${describeError(error)}`,
+        ),
+      );
+      if (consecutiveFrameErrors >= MAX_CONSECUTIVE_FRAME_ERRORS && !halted) {
+        halted = true;
+        stopLoops();
+        hub.report(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.submissionHalted,
+            `GPU submission halted after ${consecutiveFrameErrors} consecutive frame errors.`,
+            { suggestion: "Fix the failing pass, then call recover() to resume." },
+          ),
+        );
+      }
     } finally {
       currentFrame = previous;
     }
@@ -389,7 +473,36 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
       const read = readExecutionPlan(plan);
       for (const diagnostic of read.diagnostics) hub.report(diagnostic);
-      if (!read.ok) throw new ResourceBuildError(read.diagnostics);
+      if (!read.ok) {
+        stale = program !== undefined;
+        throw new ResourceBuildError(read.diagnostics);
+      }
+
+      // §V24 (T97): device limits are enforced before anything is allocated. A 30k×30k
+      // target must become a diagnostic here, not a device loss three calls later.
+      const maxDimension = capabilities?.limits["maxTextureDimension2D"] ?? 0;
+      if (maxDimension > 0) {
+        const oversized = read.resources
+          .filter(
+            (resource): resource is ResourceDescriptor & { size: readonly [number, number] } =>
+              resource.kind === "target" || resource.kind === "pingPong",
+          )
+          .filter((resource) => resource.size[0] > maxDimension || resource.size[1] > maxDimension);
+        if (oversized.length > 0) {
+          const limitDiagnostics = oversized.map((resource) =>
+            backendDiagnostic(
+              "error",
+              BackendDiagnosticCode.resourceLimit,
+              `Resource "${resource.id}" (${resource.size[0]}×${resource.size[1]}) exceeds this device's ` +
+                `maxTextureDimension2D of ${maxDimension}.`,
+              { suggestion: "Lower the node or project resolution below the device limit." },
+            ),
+          );
+          for (const diagnostic of limitDiagnostics) hub.report(diagnostic);
+          stale = program !== undefined;
+          throw new ResourceBuildError(limitDiagnostics);
+        }
+      }
 
       const signature = planStructureSignature(read.resources, read.passes);
 
@@ -398,10 +511,31 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         for (const [passId, values] of planUniformValues(read.passes)) {
           applyUniforms(program, passId, values);
         }
+        stale = false;
         return program.compiled;
       }
 
-      const resources = buildResources(active.gpu, read.resources, read.passes, guard);
+      let resources: ResourceSet;
+      try {
+        resources = buildResources(active.gpu, read.resources, read.passes, guard);
+      } catch (error) {
+        // T95 (§V9, §V27): shader and allocation failures must reach onDiagnostic — the
+        // problems tab listens there, not on thrown errors. The previous program is
+        // retained and keeps rendering, flagged stale.
+        stale = program !== undefined;
+        if (error instanceof ResourceBuildError) {
+          for (const diagnostic of error.diagnostics) hub.report(diagnostic);
+        } else {
+          hub.report(
+            backendDiagnostic(
+              "error",
+              BackendDiagnosticCode.compileFailed,
+              `Plan compile failed: ${describeError(error)}`,
+            ),
+          );
+        }
+        throw error;
+      }
       resourceBuilds += 1;
       planCounter += 1;
       const id = `plan-${planCounter}`;
@@ -417,6 +551,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         resources,
       };
       if (previous) releaseResources(previous.resources);
+      stale = false;
+      estimatedBytes = estimateResourceBytes(read.resources);
       return program.compiled;
     },
 
@@ -442,7 +578,20 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (open) {
         encode(open, active);
       } else {
-        frame(session.gpu, (f) => encode(f, active));
+        try {
+          frame(session.gpu, (f) => encode(f, active));
+        } catch (error) {
+          // Direct (non-loop) render: the caller sees the throw, the problems tab sees
+          // the diagnostic. Loop renders get the same treatment inside runFrame().
+          hub.report(
+            backendDiagnostic(
+              "error",
+              BackendDiagnosticCode.frameError,
+              `Frame callback threw: ${describeError(error)}`,
+            ),
+          );
+          throw error;
+        }
       }
       framesSubmitted += 1;
     },
@@ -533,6 +682,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
     resetTemporalHistory() {
       clearTemporalHistory("explicit");
+    },
+
+    async recover() {
+      if (disposed) throw new Error("recover() called after dispose().");
+      if (recovery) {
+        await recovery;
+        return;
+      }
+      if (!halted) return;
+      // A halt from a frame-error storm still has a live session; only rebuild when the
+      // device itself is gone. Either way submission resumes only on success.
+      if (session) {
+        consecutiveFrameErrors = 0;
+        halted = false;
+        restartLoops();
+        return;
+      }
+      recovery = rebuildWithRetries().finally(() => (recovery = undefined));
+      await recovery;
     },
 
     async whenSettled() {

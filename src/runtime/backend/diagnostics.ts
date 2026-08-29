@@ -20,6 +20,8 @@ export const BackendDiagnosticCode = {
   timestampUnavailable: "backend/timestamp-unavailable",
   frameError: "backend/frame-error",
   submissionHalted: "backend/submission-halted",
+  compileFailed: "backend/compile-failed",
+  resourceLimit: "backend/resource-limit",
 } as const;
 
 export type BackendDiagnosticCodeValue =
@@ -36,9 +38,22 @@ export interface DiagnosticHub {
 
 const MAX_LOG = 256;
 
-export function createDiagnosticHub(): DiagnosticHub {
+/** Repeats of an identical diagnostic inside this window are counted, not re-emitted (T99). */
+const DEDUPE_WINDOW_MS = 1000;
+
+export interface DiagnosticHubOptions {
+  /** Injectable clock for deterministic dedupe tests. */
+  now?: () => number;
+}
+
+export function createDiagnosticHub(options: DiagnosticHubOptions = {}): DiagnosticHub {
+  const now = options.now ?? Date.now;
   const listeners = new Set<DiagnosticListener>();
   const log: RuntimeDiagnostic[] = [];
+  // Keyed by the full identity of the diagnostic: two *different* messages with the
+  // same code (say, two invalid passes in one compile) must both surface — only true
+  // per-frame repeats (a stale-plan warning at 60fps) are collapsed.
+  const recent = new Map<string, { lastEmitted: number; suppressed: number }>();
 
   return {
     get log() {
@@ -51,9 +66,24 @@ export function createDiagnosticHub(): DiagnosticHub {
       };
     },
     report(diagnostic) {
-      log.push(diagnostic);
+      const key = `${diagnostic.code}|${diagnostic.nodeId ?? ""}|${diagnostic.message}`;
+      const at = now();
+      const seen = recent.get(key);
+      if (seen !== undefined && at - seen.lastEmitted < DEDUPE_WINDOW_MS) {
+        seen.suppressed += 1;
+        return;
+      }
+
+      const emitted =
+        seen !== undefined && seen.suppressed > 0
+          ? { ...diagnostic, message: `${diagnostic.message} (${seen.suppressed} repeat(s) suppressed)` }
+          : diagnostic;
+      recent.set(key, { lastEmitted: at, suppressed: 0 });
+      if (recent.size > MAX_LOG) recent.delete(recent.keys().next().value as string);
+
+      log.push(emitted);
       if (log.length > MAX_LOG) log.splice(0, log.length - MAX_LOG);
-      for (const listener of listeners) listener(diagnostic);
+      for (const listener of listeners) listener(emitted);
     },
   };
 }

@@ -35,6 +35,13 @@ export interface BackendStatus {
   readonly framesSubmitted: number;
   /** Readbacks performed. Playback must leave this at zero (§V7, §V48). */
   readonly readbacks: number;
+  /**
+   * §V9: true when the latest compile attempt failed and the retained program from an
+   * earlier compile is what is still rendering. The UI flags the output as stale.
+   */
+  readonly stale: boolean;
+  /** Estimated GPU memory of the current program's targets, in bytes (§V24 reporting). */
+  readonly estimatedResourceBytes: number;
 }
 
 /**
@@ -55,4 +62,10 @@ export interface ShaderloomBackend extends RenderBackend {
 
   /** Clears every ping-pong pair. Called automatically on device loss (§V22, §V23). */
   resetTemporalHistory(): void;
+
+  /**
+   * Re-attempts device recovery after automatic rebuilds gave up (§V23). Resolves when
+   * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
+   */
+  recover(): Promise<void>;
 }

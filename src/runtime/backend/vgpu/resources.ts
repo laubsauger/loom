@@ -127,8 +127,14 @@ export function buildResources(
   }
 
   const readTexture = (resourceId: string): unknown => {
+    // T94: bind the Target itself, never its .color texture. vgpu wires
+    // onTexturesRecreated only for Target values, and Target.resize() destroys and
+    // recreates its textures — a bound .color would keep pointing at the destroyed
+    // one after resize, and every pass sampling it would break.
     const plain = targets.get(resourceId);
-    if (plain) return plain.color;
+    if (plain) return plain;
+    // Ping-pong halves swap identity per frame; they are re-pointed explicitly by
+    // rebindDynamicTextures before each render, so no recreation wiring is needed here.
     const pair = pingPongs.get(resourceId);
     if (pair) return pair.read.color;
     return undefined;
