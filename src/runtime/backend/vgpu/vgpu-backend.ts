@@ -1,5 +1,6 @@
 import { effect, frame, frameLoop, sampler, surface, timer } from "vgpu";
 import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer } from "vgpu";
+import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import type {
   BackendCapabilities,
   BackendInitOptions,
