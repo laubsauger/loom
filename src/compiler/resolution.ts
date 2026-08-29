@@ -27,6 +27,35 @@ export interface ResolutionInputs {
   readonly primaryPort: PortId | undefined;
 }
 
+/**
+ * Resolution derived from the node's own parameters (T151): the size a Crop actually
+ * crops to, expressed as data the compiler can read at propagation time (§V21 — still
+ * compile-time, never per frame). `width`/`height` name NUMBER parameters; "fraction"
+ * multiplies them by the named (or primary) input's size, "pixels" uses them directly.
+ *
+ * Declared structurally until the frozen ResolutionPolicy union grows the kind — the
+ * same landing pattern as scratch targets (T147): definitions cast today, the typed
+ * field is an additive domain change later, and this reader tolerates both.
+ */
+export interface ParameterResolutionPolicy {
+  readonly kind: "parameter";
+  readonly width: string;
+  readonly height: string;
+  readonly unit?: "pixels" | "fraction";
+  readonly input?: PortId;
+}
+
+export function isParameterPolicy(policy: unknown): policy is ParameterResolutionPolicy {
+  const candidate = policy as { kind?: unknown; width?: unknown; height?: unknown };
+  return (
+    candidate !== null &&
+    typeof candidate === "object" &&
+    candidate.kind === "parameter" &&
+    typeof candidate.width === "string" &&
+    typeof candidate.height === "string"
+  );
+}
+
 export interface ResolutionRequest {
   readonly nodeId: NodeId;
   readonly nodeType: string;
@@ -34,6 +63,8 @@ export interface ResolutionRequest {
   readonly policy: ResolutionPolicy | undefined;
   readonly inputs: ResolutionInputs;
   readonly settings: ProjectSettings;
+  /** The node's validated parameter values, for `kind: "parameter"` policies (T151). */
+  readonly parameters?: Readonly<Record<string, unknown>>;
   /**
    * Device limits, when known. The project cap is a budget the user chose; the device cap
    * is physics. Both are enforced before anything is dispatched (§V24, §V12).
@@ -127,6 +158,36 @@ export function resolveNodeResolution(request: ResolutionRequest): ResolutionOut
         raw = [base[0] * scale, base[1] * scale];
         break;
       }
+    }
+  } else if (policy !== undefined && isParameterPolicy(policy)) {
+    // T151: the size lives in the node's own parameters (a Crop's extents). Read, not
+    // guessed — a missing or non-numeric parameter says so and falls back rather than
+    // silently blanking the node. The cast exists because "parameter" is structural
+    // until the frozen ResolutionPolicy union grows the kind (same landing as T147).
+    const parameterPolicy = policy as unknown as ParameterResolutionPolicy;
+    source = "policy";
+    const read = (name: string): number | undefined => {
+      const value = request.parameters?.[name];
+      return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+    };
+    const width = read(parameterPolicy.width);
+    const height = read(parameterPolicy.height);
+    if (width === undefined || height === undefined) {
+      const missing = width === undefined ? parameterPolicy.width : parameterPolicy.height;
+      diagnostics.push(
+        compilerDiagnostic(
+          "warning",
+          CompilerDiagnosticCode.resolutionParameter,
+          `Node "${nodeId}" (${nodeType}) derives its resolution from parameter "${missing}", which is missing or not a positive number; the project resolution is used instead.`,
+          { nodeId, suggestion: "Give the parameter a positive numeric value." },
+        ),
+      );
+      raw = project;
+    } else if (parameterPolicy.unit === "fraction") {
+      const base = inputSize(parameterPolicy.input, `input "${parameterPolicy.input ?? "(primary)"}"`);
+      raw = [base[0] * width, base[1] * height];
+    } else {
+      raw = [width, height];
     }
   } else if (policy !== undefined) {
     source = "policy";

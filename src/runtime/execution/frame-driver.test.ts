@@ -76,6 +76,7 @@ function recordingBackend(): ShaderloomBackend & {
       presentPreviews() {},
       dispose() {},
     }),
+    onGpuTimings: () => () => {},
   };
 }
 

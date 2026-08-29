@@ -189,6 +189,7 @@ function propagate(args: PropagationArgs): PropagationResult {
       inputs: { byPort: sizeByPort, primaryPort },
       settings: request.settings,
       capabilities: request.capabilities,
+      parameters: resolved.parameters,
     });
 
     const format = resolveNodeFormat({
@@ -204,12 +205,24 @@ function propagate(args: PropagationArgs): PropagationResult {
 
     // Colour space rides alongside format, with the same precedence: inherited when the
     // format was inherited, implied by the resolved format otherwise (doc §16.2).
+    // T149: the space comes from the PORT the format precedence actually named — an
+    // instance override in "input" mode, or the policy's inherit port — never from
+    // whichever connected input happens to sort first in edge order.
+    const inheritPort =
+      node.format !== undefined && node.format.mode !== "auto"
+        ? node.format.mode === "input"
+          ? (node.format.input ?? primaryPort)
+          : undefined
+        : definition.formatPolicy?.kind === "inherit"
+          ? definition.formatPolicy.input
+          : undefined;
     const space = resolveColorSpace({
       nodeId,
       nodeType: node.type,
       inputs: spaceBindings,
       resolved: colorSpaceForFormat(format.format),
-      inherited: format.source === "policy" && definition.formatPolicy?.kind === "inherit",
+      inherited: inheritPort !== undefined,
+      inheritPort,
     });
 
     if (collectDiagnostics) {

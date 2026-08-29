@@ -128,6 +128,15 @@ export interface ShaderloomBackend extends RenderBackend {
   previewHost(canvas: PresentableCanvas): PreviewHostHandle;
 
   /**
+   * Per-pass GPU timings in milliseconds, keyed by PASS ID (T163, §V16) — node and
+   * component attribution key on that. Fires only when the device has timestamp-query
+   * (§V12: `capabilities.timestampQuery`); without it, no listener ever fires and every
+   * timing surface honestly reads "unavailable". Results arrive asynchronously, a few
+   * frames after the work they measure.
+   */
+  onGpuTimings(listener: (spans: Readonly<Record<string, number>>) => void): () => void;
+
+  /**
    * Re-attempts device recovery after automatic rebuilds gave up (§V23). Resolves when
    * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
    */

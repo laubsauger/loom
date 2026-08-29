@@ -1,5 +1,5 @@
-import { effect, frame, frameLoop, sampler, surface } from "vgpu";
-import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target } from "vgpu";
+import { effect, frame, frameLoop, sampler, surface, timer } from "vgpu";
+import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer } from "vgpu";
 import type {
   BackendCapabilities,
   BackendInitOptions,
@@ -169,6 +169,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   const presentations = new Map<string, PresentationState>();
   let presentationCounter = 0;
   let presentSampler: GPUSampler | undefined;
+  /** GPU pass timer (T163). Exists only when the device has timestamp-query (§V12). */
+  let gpuTimer: Timer | undefined;
+  const timingListeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
+  let unsubscribeTimer: (() => void) | undefined;
 
   interface PreviewHostState {
     readonly canvas: PresentableCanvas;
@@ -345,6 +349,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       capabilities = describeCapabilities(next.gpu);
       reportCapabilities(capabilities);
       watchDeviceLoss(next);
+      attachTimer();
 
       if (program) {
         // §V23: rebuilt from the retained plan, which is the compiled form of the domain graph.
@@ -490,7 +495,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         const resolve = active.resources.renderTargets.get(pass.id);
         if (!drawable || !resolve) continue;
         const renderTarget: Target = resolve();
-        f.pass({ target: renderTarget, clear: pass.clear ?? true }, drawable);
+        // T163: span name = PASS ID — node and component timing attribution key on it.
+        const span = gpuTimer?.span(pass.id);
+        f.pass(
+          span === undefined
+            ? { target: renderTarget, clear: pass.clear ?? true }
+            : { target: renderTarget, clear: pass.clear ?? true, timer: span },
+          drawable,
+        );
       }
 
       encodePresentations(f);
@@ -576,6 +588,31 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     for (const p of presentations.values()) ensurePresentation(p);
   }
 
+  /** Creates the pass timer on the live device, when it can exist at all (T163, §V12). */
+  function attachTimer(): void {
+    unsubscribeTimer?.();
+    unsubscribeTimer = undefined;
+    gpuTimer = undefined;
+    const active = session;
+    if (!active || capabilities?.timestampQuery !== true) return;
+    try {
+      const created = timer(active.gpu);
+      gpuTimer = created;
+      unsubscribeTimer = created.onResults((spans) => {
+        for (const listener of timingListeners) listener(spans);
+      });
+    } catch (error) {
+      // Absence degrades to "no GPU timings", exactly like the capability being missing.
+      hub.report(
+        backendDiagnostic(
+          "info",
+          BackendDiagnosticCode.timestampUnavailable,
+          `GPU timer could not be created: ${describeError(error)}`,
+        ),
+      );
+    }
+  }
+
   /** The main program's resources, as binding sources for the preview program (T161). */
   function mainExternals(): ExternalResources {
     if (!program) return noExternalResources;
@@ -657,7 +694,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   /** After a main recompile, preview bindings into replaced main resources are re-pointed (T143 interplay). */
   function refreshPreviewExternals(): void {
     for (const h of previewHosts) {
-      if (h.disposed || h.set === undefined) continue;
+      if (h.disposed) continue;
+      if (h.set === undefined) {
+        // A program that arrived BEFORE the first main compile could not resolve its
+        // external bindings then; the main program exists now, so the build succeeds.
+        // This is what lets the preview scheduler start in any order (T161).
+        if (h.program !== undefined) buildPreviewHost(h);
+        continue;
+      }
       for (const external of h.externalBindings) {
         const source = presentationSource(external.resourceId);
         if (source === undefined) continue;
@@ -697,6 +741,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         capabilities = describeCapabilities(created.gpu);
         reportCapabilities(capabilities);
         watchDeviceLoss(created);
+        attachTimer();
         // §V47: no surface is created here, with or without `options.canvas`. The plan
         // always renders offscreen; a canvas becomes visible only through present() (T87).
         return capabilities;
@@ -914,6 +959,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
     onDiagnostic(listener) {
       return hub.subscribe(listener);
+    },
+
+    onGpuTimings(listener) {
+      timingListeners.add(listener);
+      return () => {
+        timingListeners.delete(listener);
+      };
     },
 
     loop(onFrame, settings = {}) {
@@ -1153,6 +1205,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       presentations.clear();
+      unsubscribeTimer?.();
+      unsubscribeTimer = undefined;
+      gpuTimer = undefined;
+      timingListeners.clear();
       for (const h of previewHosts) {
         h.disposed = true;
         try {

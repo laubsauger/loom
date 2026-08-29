@@ -503,6 +503,41 @@ describe("vgpu backend — plan handling", () => {
   });
 });
 
+describe("vgpu backend — GPU pass timings (T163, §V16, §V12)", () => {
+  it("delivers per-pass spans keyed by PASS ID when timestamp-query exists", async () => {
+    const { backend } = await harness(
+      { features: ["timestamp-query"] },
+      { requiredFeatures: ["timestamp-query"] },
+    );
+    const results: Array<Readonly<Record<string, number>>> = [];
+    backend.onGpuTimings((spans) => results.push(spans));
+
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+    backend.render(plan, frameInputs(1));
+    await backend.whenSettled();
+    await until(() => results.length > 0, "timer results");
+
+    const spans = results[0] ?? {};
+    // Span name = pass id — node/component attribution keys on it.
+    expect(Object.keys(spans)).toContain("generate");
+    for (const value of Object.values(spans)) expect(Number.isFinite(value)).toBe(true);
+  });
+
+  it("never fires without the feature, and rendering is unaffected (§V12)", async () => {
+    const { backend } = await harness();
+    let fired = 0;
+    backend.onGpuTimings(() => {
+      fired += 1;
+    });
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+    await backend.whenSettled();
+    expect(fired).toBe(0);
+    expect(backend.status.framesSubmitted).toBe(1);
+  });
+});
+
 describe("vgpu backend — timer-driven loop (T109, §V49)", () => {
   it("drives frames off setInterval through the same frame path as rAF", async () => {
     const { backend, diagnostics } = await harness();

@@ -85,6 +85,42 @@ describe("resolveNodeResolution — policies (T27, §V21)", () => {
   });
 });
 
+describe("resolveNodeResolution — parameter-derived policy (T151)", () => {
+  const parameterPolicy = (unit?: "pixels" | "fraction") =>
+    ({ kind: "parameter", width: "outWidth", height: "outHeight", unit, input: "in" }) as unknown as NonNullable<
+      ResolutionRequest["policy"]
+    >;
+
+  it("reads absolute pixel sizes from the named parameters", () => {
+    const outcome = resolveNodeResolution(
+      request({ policy: parameterPolicy(), parameters: { outWidth: 640, outHeight: 360 } }),
+    );
+    expect(outcome.size).toEqual([640, 360]);
+    expect(outcome.source).toBe("policy");
+    expect(outcome.diagnostics).toEqual([]);
+  });
+
+  it("scales the input by fractional parameters — the Crop case", () => {
+    const outcome = resolveNodeResolution(
+      request({
+        policy: parameterPolicy("fraction"),
+        parameters: { outWidth: 0.5, outHeight: 0.25 },
+        inputs: { byPort: { in: [800, 400] }, primaryPort: "in" },
+      }),
+    );
+    expect(outcome.size).toEqual([400, 100]);
+  });
+
+  it("falls back with a diagnostic when a named parameter is missing or non-positive", () => {
+    const outcome = resolveNodeResolution(
+      request({ policy: parameterPolicy(), parameters: { outWidth: 640, outHeight: -3 } }),
+    );
+    expect(outcome.size).toEqual([1920, 1080]);
+    expect(outcome.diagnostics[0]?.code).toBe(CompilerDiagnosticCode.resolutionParameter);
+    expect(outcome.diagnostics[0]?.message).toContain("outHeight");
+  });
+});
+
 describe("resolveNodeResolution — instance override (T72, §V50)", () => {
   it("beats the definition's policy", () => {
     const outcome = resolveNodeResolution(

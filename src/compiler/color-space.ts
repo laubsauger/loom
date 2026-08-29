@@ -37,8 +37,14 @@ export interface ColorSpaceRequest {
   readonly inputs: ReadonlyArray<{ readonly portId: PortId; readonly space: ColorSpace }>;
   /** Space implied by the format this node resolved to. */
   readonly resolved: ColorSpace;
-  /** True when the node's format came from an input rather than from a policy or override. */
+  /** True when the node's format came from an input (policy inherit or input-mode override). */
   readonly inherited: boolean;
+  /**
+   * The port the format precedence named (T149). The inherited space comes from THIS
+   * port's binding — not from whichever connected input happens to sort first. Absent or
+   * unbound, the resolved-format space stands, mirroring format's own project fallback.
+   */
+  readonly inheritPort?: PortId | undefined;
 }
 
 export interface ColorSpaceOutcome {
@@ -52,7 +58,7 @@ export interface ColorSpaceOutcome {
  * never inserts a conversion the user cannot see.
  */
 export function resolveColorSpace(request: ColorSpaceRequest): ColorSpaceOutcome {
-  const { nodeId, nodeType, inputs, resolved, inherited } = request;
+  const { nodeId, nodeType, inputs, resolved, inherited, inheritPort } = request;
   const diagnostics: RuntimeDiagnostic[] = [];
 
   // Data inputs are exempt: a mask alongside a colour layer is normal, not a mismatch.
@@ -76,7 +82,11 @@ export function resolveColorSpace(request: ColorSpaceRequest): ColorSpaceOutcome
     );
   }
 
-  const first = colorInputs[0];
-  const space = inherited && first !== undefined ? first.space : resolved;
+  // T149: inherit from the NAMED port's binding. Falling back to `colorInputs[0]` here
+  // would re-open the bug — a two-input node whose first-sorted edge lands on the other
+  // port would inherit the wrong space and no one would see why.
+  const named =
+    inheritPort === undefined ? undefined : inputs.find((input) => input.portId === inheritPort);
+  const space = inherited && named !== undefined ? named.space : resolved;
   return { space, diagnostics };
 }
