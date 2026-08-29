@@ -481,6 +481,7 @@ V11: ∀ node definition runs headless. ⊥ import React or @xyflow.
 V12: optional GPU feature discovered via capability report before use. ⊥ assumed.
 V13: connect requires exact `PortType` match. ⊥ implicit color-space/format/scalar/resolution conversion. conversion = visible node.
 V14: input port accepts ≤ 1 incoming edge unless declared variadic. output fan-out unbounded.
+V14a: dropping a connection on an OCCUPIED input REPLACES the existing edge — 1 patch, 1 undo group (V32, V34). ⊥ silently refuse: the user's intent is unambiguous and refusing makes them hunt for the old edge to delete first.
 V15: ∀ semantic edit undoable. continuous drag coalesced → 1 history entry, live values still applied.
 V16: per-frame metrics & preview pixels ⊥ enter document store. UI metric refresh ≤ 10 Hz.
 V17: theme dark-only v1. ∀ color from CSS var token. ⊥ hardcoded hex in component.
@@ -706,6 +707,9 @@ T166|x|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a ker
 T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
+T184|.|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
+T185|.|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
+T186|.|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
 T182|.|previews default-on for visible texture nodes: composition root derives visible set → explicit sink list (V28a) ∀ compile. `ui.preview` becomes a PIN. today a disconnected node renders nothing|V28b,V28c,V28a,V25
 T183|.|`.subTrigger[data-state="open"]` uses `--bg-raise` while `.item[data-highlighted]` uses `--bg-active` ∴ the highlight visibly CHANGES when a submenu opens. open parent ! look identical to highlighted|V17
 T179|.|buffer binding half-selector (`resourceId` + `half:"read"|"write"`) + swap pass, so a stateful kernel's `out_` bindings reach the write half. today in/out are 2 separate buffers|V22,V75
@@ -786,7 +790,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
