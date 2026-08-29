@@ -19,6 +19,8 @@ export type GraphPatchOperation =
   | { op: "setShaderSource"; nodeId: NodeRef; source: string }
   | { op: "moveNodes"; positions: Record<NodeId, { x: number; y: number }> }
   | { op: "setNodeUi"; nodeId: NodeRef; ui: Record<string, unknown> }
+  /** null clears the label, returning the node to its definition's title. */
+  | { op: "setNodeLabel"; nodeId: NodeRef; label: string | null }
   | { op: "setNodeResolution"; nodeId: NodeRef; resolution: NodeResolutionOverride | null }
   | { op: "setNodeFormat"; nodeId: NodeRef; format: NodeFormatOverride | null };
 

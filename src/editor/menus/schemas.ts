@@ -41,7 +41,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "ui.openNodeSearch",
   "graph.layoutAll",
   "view.frameAll",
-  "node.rename",
   "node.openColorPalette",
   "graph.diveIn",
   "graph.insertConversion",
@@ -51,13 +50,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
 ];
 
 const planned = (name: PlannedCommandName): CommandName => name as CommandName;
-
-/**
- * A submenu parent performs nothing itself, but `MenuItem.command` is required by the
- * contract, so it names the command its children run and the renderer ignores it when
- * `submenu` is present. (Worth loosening in `MenuSchema` later — reported, not forked.)
- */
-const SUBMENU_PARENT: CommandName = "graph.applyPatch";
 
 /** Toggles show their state, so bypass/mute/preview are checkbox items. */
 export const TOGGLE_GUARD: Readonly<Record<string, MenuGuardName>> = {
@@ -86,7 +78,6 @@ export function addNodeSubmenu(registry: NodeRegistryView): MenuItem[] {
   return [...byCategory.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([category, items]) => ({
-      command: SUBMENU_PARENT,
       label: category,
       submenu: items,
     }));
@@ -96,7 +87,7 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
   return {
     surface: "canvas",
     entries: [
-      { command: SUBMENU_PARENT, label: "Add node", submenu: addNodeSubmenu(registry) },
+      { label: "Add node", submenu: addNodeSubmenu(registry) },
       { command: planned("ui.openNodeSearch"), label: "Search nodes…" },
       { separator: true },
       { command: "graph.paste", label: "Paste" },

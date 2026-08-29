@@ -6,6 +6,7 @@ import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { spikeNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { createComponentSystem, registerComponentCommands } from "@domain/components/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { LayoutStorage } from "./layout-storage.ts";
 import { defaultLayoutStorage } from "./layout-storage.ts";
@@ -25,6 +26,8 @@ import { defaultLayoutStorage } from "./layout-storage.ts";
 export interface AppRuntime {
   readonly bus: ShaderloomBus;
   readonly registry: NodeRegistryView;
+  /** Component catalogue. Definitions live here, not in the GraphDocument. */
+  readonly components: ReturnType<typeof createComponentSystem>["components"];
   /** Status / GPU-ms / agent-activity channel. Never the document store (§V16). */
   readonly nodeRuntime: NodeRuntimeStore;
   /** Actor + project identity stamped on every command (§V30). Stable per browser. */
@@ -91,8 +94,15 @@ export interface AppRuntimeOptions {
 export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   const storage = options.identityStorage === undefined ? defaultLayoutStorage() : options.identityStorage;
 
-  const registry = createNodeRegistry(spikeNodeDefinitions).view();
+  // The bus is given the COMPONENT-AWARE registry, not the raw node registry: a component
+  // instance is an ordinary node whose type is `component:<id>@<version>`, and without the
+  // wrapper every instance reads as an unknown node type. The wrapper composes over the
+  // node registry rather than replacing it, so re-authoring a component changes every
+  // linked instance with no cache to invalidate (§V79).
+  const nodeRegistry = createNodeRegistry(spikeNodeDefinitions).view();
+  const { components, nodes: registry } = createComponentSystem(nodeRegistry);
   const { bus } = createDomainBus({ registry });
+  registerComponentCommands(bus, { components });
   const nodeRuntime = createNodeRuntimeStore();
 
   const actor: Actor = options.actor ?? {
@@ -112,6 +122,7 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   return {
     bus,
     registry,
+    components,
     nodeRuntime,
     invocation,
     settings: options.settings ?? DEFAULT_PROJECT_SETTINGS,

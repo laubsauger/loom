@@ -436,6 +436,30 @@ function executeOperation(
       return;
     }
 
+    case "setNodeLabel": {
+      const node = requireNode(operation.nodeId);
+      // null clears it: absence IS "follow the definition's title", so a cleared node
+      // keeps tracking the definition if that is later retitled.
+      if (operation.label === null) {
+        delete node.label;
+        return;
+      }
+      const label = operation.label.trim();
+      if (label === "") {
+        fail("node.label.empty", "a node label may not be blank.", {
+          nodeId: node.id,
+          suggestion: "Pass null to clear the label and fall back to the definition title.",
+        });
+      }
+      if (label.length > 120) {
+        fail("node.label.tooLong", `label is ${label.length} characters; the limit is 120.`, {
+          nodeId: node.id,
+        });
+      }
+      node.label = label;
+      return;
+    }
+
     case "setNodeResolution": {
       const node = requireNode(operation.nodeId);
       // null clears the override, returning the node to its definition's policy (§V50).

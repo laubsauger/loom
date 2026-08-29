@@ -84,8 +84,12 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           aria-label={`Status: ${STATUS_LABEL[status]}`}
           title={STATUS_LABEL[status]}
         />
-        <span className={styles.name} title={definition?.title ?? node.type}>
-          {definition?.title ?? node.type}
+        {/*
+          A user-given label wins over the definition title; absence means "follow the
+          definition", so an unrenamed node tracks a retitled definition (§V29 rename).
+        */}
+        <span className={styles.name} title={node.label ?? definition?.title ?? node.type}>
+          {node.label ?? definition?.title ?? node.type}
         </span>
         {/* Compile/diagnostic badge is track H's component (§V27) — it renders nothing
             at all when the node is clean, which is what keeps the chrome quiet. */}

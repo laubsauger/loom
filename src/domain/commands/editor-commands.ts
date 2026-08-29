@@ -27,6 +27,12 @@ import { applyGraphPatch } from "./apply-patch.ts";
  *  - `graph.selectAll`, `ui.*` — selection and chrome are view state, not document state.
  *    Their owner registers them (the palette does exactly this for `ui.openCommandPalette`).
  */
+export interface RenameInput {
+  nodeId: NodeId;
+  /** null clears the label so the node follows its definition's title again. */
+  label: string | null;
+}
+
 declare module "../types/commands.ts" {
   interface CommandMap {
     /** Delete nodes and their incident edges (§V40). */
@@ -45,6 +51,8 @@ declare module "../types/commands.ts" {
     "node.toggleDisplay": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `r` — node does GPU work at all. */
     "node.toggleRender": { input: NodeSelectionInput; output: GraphPatchResult };
+    /** TD `n` — rename a node. `label: null` clears it back to the definition's title. */
+    "node.rename": { input: RenameInput; output: GraphPatchResult };
   }
 }
 
@@ -335,6 +343,16 @@ export function registerEditorCommands(bus: ShaderloomBus): void {
       const offset = input.offset ?? { x: CASCADE.x, y: CASCADE.y };
       return patchThrough(context, "Duplicate", recreateOperations(copied, offset));
     },
+    rejectionOutput: rejection,
+  });
+
+  bus.registerCommand({
+    name: "node.rename",
+    description: "Rename a node, or clear the name back to its definition title (§V29).",
+    handler: (input, context) =>
+      patchThrough(context, input.label === null ? "Clear name" : "Rename", [
+        { op: "setNodeLabel", nodeId: input.nodeId, label: input.label },
+      ]),
     rejectionOutput: rejection,
   });
 

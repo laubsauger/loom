@@ -148,3 +148,77 @@ describe("node output overrides", () => {
     expect(result.status).toBe("rejected");
   });
 });
+
+/**
+ * Renaming (§V29). A label is per-instance; absence means "use the definition's title",
+ * so an unrenamed node keeps following a definition that is later retitled.
+ */
+describe("node.rename", () => {
+  let h2: Harness;
+  let id: string;
+
+  beforeEach(async () => {
+    h2 = createHarness();
+    const created = await h2.bus.execute(
+      "graph.applyPatch",
+      patch(0, [{ op: "addNode", ref: "$n", type: "test.blur", position: { x: 0, y: 0 } }]),
+      contextFor(alice),
+    );
+    id = created.output.createdIds["$n"] as string;
+  });
+
+  const node2 = () => h2.store.view.getGraph().nodes[id];
+
+  it("a new node carries no label", () => {
+    expect(node2()?.label).toBeUndefined();
+  });
+
+  it("sets a label", async () => {
+    await h2.bus.execute("node.rename", { nodeId: id, label: "Bloom pass" }, contextFor(alice));
+    expect(node2()?.label).toBe("Bloom pass");
+  });
+
+  it("trims surrounding whitespace rather than storing it", async () => {
+    await h2.bus.execute("node.rename", { nodeId: id, label: "  Edge detect  " }, contextFor(alice));
+    expect(node2()?.label).toBe("Edge detect");
+  });
+
+  /** Clearing is null, not "" — absence is what "follow the definition" means. */
+  it("null clears the label", async () => {
+    await h2.bus.execute("node.rename", { nodeId: id, label: "Temp" }, contextFor(alice));
+    await h2.bus.execute("node.rename", { nodeId: id, label: null }, contextFor(alice));
+    expect(node2()?.label).toBeUndefined();
+  });
+
+  it("rejects a blank label instead of storing an invisible name", async () => {
+    const result = await h2.bus.execute("node.rename", { nodeId: id, label: "   " }, contextFor(alice));
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.some((d) => d.code === "node.label.empty")).toBe(true);
+    expect(node2()?.label).toBeUndefined();
+  });
+
+  it("rejects an absurdly long label", async () => {
+    const result = await h2.bus.execute(
+      "node.rename",
+      { nodeId: id, label: "x".repeat(200) },
+      contextFor(alice),
+    );
+    expect(result.status).toBe("rejected");
+  });
+
+  it("is undoable as one step", async () => {
+    await h2.bus.execute("node.rename", { nodeId: id, label: "First" }, contextFor(alice));
+    await h2.bus.execute("node.rename", { nodeId: id, label: "Second" }, contextFor(alice));
+    await h2.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(node2()?.label).toBe("First");
+  });
+
+  it("rejects renaming a node that does not exist", async () => {
+    const result = await h2.bus.execute(
+      "node.rename",
+      { nodeId: "nope", label: "X" },
+      contextFor(alice),
+    );
+    expect(result.status).toBe("rejected");
+  });
+});

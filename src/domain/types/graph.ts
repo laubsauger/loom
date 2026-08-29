@@ -51,6 +51,12 @@ export interface GraphNode {
   position: { x: number; y: number };
   size?: { width: number; height: number };
   parameters: Record<string, ParameterValue>;
+  /**
+   * User-given name for THIS node. Absent means "use the definition's title", which is
+   * the default and what an untouched node shows — so renaming is additive and a node
+   * that was never renamed keeps following its definition if that is retitled.
+   */
+  label?: string;
   /** Optional per-instance output resolution. Absent = the definition's policy (§V50). */
   resolution?: NodeResolutionOverride;
   /** Optional per-instance output pixel format. Absent = the definition's policy (§V51). */

@@ -97,6 +97,7 @@ export const graphNodeSchema = z.object({
   position: vec2,
   size: z.object({ width: z.number(), height: z.number() }).optional(),
   parameters: z.record(parameterValueSchema),
+  label: z.string().min(1).max(120).optional(),
   resolution: nodeResolutionOverrideSchema.optional(),
   format: nodeFormatOverrideSchema.optional(),
   state: z.record(z.unknown()).optional(),

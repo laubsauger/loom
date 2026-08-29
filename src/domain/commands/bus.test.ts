@@ -81,6 +81,7 @@ describe("command bus — registration surface (§V39)", () => {
       "graph.redo",
       "graph.removeNodes",
       "graph.undo",
+      "node.rename",
       "node.setFormat",
       "node.setResolution",
       "node.toggleBypass",

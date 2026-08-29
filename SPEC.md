@@ -548,18 +548,18 @@ T88|x|fix redo owner check + undo referential integrity (edge cascade on restore
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
 T90|.|bus-owned capability grant store keyed by actor, injectable clock for expiry|V67
 T91|.|forward-compat passthrough lane: unknown params/nodes preserved through round trip|V68,V10
-T92|.|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
-T93|.|lint: ⊥ import store `internals`\|`raw` outside src/domain/commands + tests|V29
-T94|.|fix resize: bind Target not `plain.color` — sampled intermediates hold destroyed texture|V21
-T95|.|route WGSL compile failures to `onDiagnostic`; represent V9 stale flag in backend status|V9,V27
-T96|.|real capability format query (⊥ hardcoded list); `float32-filterable` gates r32float sampling|V12,V51
-T97|.|clamp plan sizes vs `capabilities.limits` + memory accounting|V24,R7
-T98|.|frame-loop error boundary + device-loss retry API, ⊥ terminal halt|V23
-T99|.|diagnostic dedupe/rate-limit; ⊥ per-frame flood|V16
+T92|x|lint: ⊥ document\|window ∈ src/compiler, src/runtime (except surface module)|V63
+T93|x|lint: ⊥ import store `internals`\|`raw` outside src/domain/commands + tests|V29
+T94|x|fix resize: bind Target not `plain.color` — sampled intermediates hold destroyed texture|V21
+T95|x|route WGSL compile failures to `onDiagnostic`; represent V9 stale flag in backend status|V9,V27
+T96|x|real capability format query (⊥ hardcoded list); `float32-filterable` gates r32float sampling|V12,V51
+T97|x|clamp plan sizes vs `capabilities.limits` + memory accounting|V24,R7
+T98|x|frame-loop error boundary + device-loss retry API, ⊥ terminal halt|V23
+T99|x|diagnostic dedupe/rate-limit; ⊥ per-frame flood|V16
 T100|x|live clock: accumulate time from clamped deltas, reset time base; f32 time rebase|V44,V49
 T101|x|autosave: dirty state, debounced IndexedDB/OPFS ring (20), restore-on-launch flow|V10
 T102|.|dryRun returns `validated` status + ⊥ mint real ids|V36
-T103|.|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
+T103|x|commit cost: immer patches for dirty keys, audit ring buffer, owner GC|V16
 T104|.|group + viewport patch ops (groups undoable but uncreatable via bus today)|V29
 T105|x|PWA manifest|C
 T106|.|`ParameterValue` envelope migration + passthrough lane for unknown kinds|V69,V68,V10

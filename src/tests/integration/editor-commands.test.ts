@@ -198,7 +198,8 @@ describe("commands the keymap names but nothing implements", () => {
     // Registering any of these would make the palette look complete while the action
     // silently did nothing — the failure mode this task explicitly forbids.
     for (const name of [
-      "node.rename",
+      // node.rename moved OUT of this list when GraphNode.label and the setNodeLabel
+      // patch op landed — it is now a real command, not a would-be no-op.
       "view.home",
       "view.frameAll",
       "graph.layout",

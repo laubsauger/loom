@@ -272,6 +272,14 @@ const SEPARATOR = " ";
  * updates on every pointer move during a drag — re-renders nothing but this null. The
  * selector collapses that stream to a string that changes twice per gesture: once when
  * the drag starts, once when it ends.
+ *
+ * The drag SURVIVES an end that made no connection. That is what completes V13's
+ * "drag out of a port and pick a compatible node": the user releases on empty canvas,
+ * the library stays filtered to what can accept that port, and the node they choose is
+ * wired up on drop. Clearing on every end — including a miss — left the filter alive for
+ * no time at all and made `connectTo` unreachable in practice. A drag that DID connect
+ * clears, since the intent is satisfied; so does starting another drag, or an explicit
+ * clear from the library once it has been used.
  */
 function PortDragBridge({ onChange }: { onChange: (drag: PortDragOrigin | null) => void }) {
   const { bus, registry } = useAppRuntime();
@@ -284,6 +292,11 @@ function PortDragBridge({ onChange }: { onChange: (drag: PortDragOrigin | null) 
         ].join(SEPARATOR)
       : "",
   );
+
+  // Edge count at the moment a drag begins. If it is unchanged when the drag ends, the
+  // user released on empty canvas and we keep the filter alive for the library.
+  const edgeCountAtStart = useRef<number | null>(null);
+  const lastDrag = useRef<PortDragOrigin | null>(null);
 
   const parsed = useMemo<PortDragOrigin | null>(() => {
     if (handleKey === "") return null;
@@ -299,8 +312,27 @@ function PortDragBridge({ onChange }: { onChange: (drag: PortDragOrigin | null) 
   }, [bus, handleKey, registry]);
 
   useEffect(() => {
-    onChange(parsed);
-  }, [onChange, parsed]);
+    if (parsed !== null) {
+      // A drag started (or replaced an earlier one).
+      edgeCountAtStart.current = Object.keys(bus.store.getGraph().edges).length;
+      lastDrag.current = parsed;
+      onChange(parsed);
+      return;
+    }
+
+    // A drag just ended. Nothing to do if there was not one.
+    const previous = lastDrag.current;
+    if (previous === null) return;
+    lastDrag.current = null;
+
+    const before = edgeCountAtStart.current;
+    edgeCountAtStart.current = null;
+    const connected = before !== null && Object.keys(bus.store.getGraph().edges).length > before;
+
+    // Connected: intent satisfied, drop the filter. Missed: keep it, so the library is
+    // still showing compatible nodes when the user goes looking for one.
+    if (connected) onChange(null);
+  }, [bus, onChange, parsed]);
 
   return null;
 }
