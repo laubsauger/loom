@@ -485,7 +485,8 @@ V58: plan pass kind & resource kind = closed unions ∈ domain types. compiler &
 V59: output identity = port-scoped. `OutputRef = {nodeId, portId}` ∀ backend|export|preview|tool surface. single-output node → default port `"out"`. ⊥ outputId ≡ nodeId.
 V60: readback returns descriptor + bytes — {width, height, format, rowStride, bytes}. ⊥ bare `Uint8Array`.
 V69: `ParameterValue` = envelope `{kind:"static", value}` | reserved bound kinds. unknown kind preserved through load→save, ⊥ rejects doc (V10, V68).
-V70: presentation surface count = N per compiled output, worker-transferable (`OffscreenCanvas`). ⊥ React tree owns surface (V64).
+V70: presentation surface count = N per compiled output, worker-transferable (`OffscreenCanvas`). ⊥ React tree owns surface (V64). surface handed IN — `present(canvas, {outputId})`, canvas structural ({width, height, getContext}) so HTMLCanvas | OffscreenCanvas | stub all fit.
+V70a: present blit = RAW copy. ⊥ sRGB encode, ⊥ tonemap ∈ present path. display transform belongs to the Output node ∈ graph (V56). ⊥ "fix" washed-out output by sneaking an encode into the blit — that hides which node is wrong and double-encodes once Output does its job.
 V71: expression eval = own grammar ∈ `src/domain/expressions/`, sole engine. whitelisted fns, vars only ← `FrameEvaluationInput` + node ctx (frame names win on collision). ⊥ `eval`, ⊥ `Function`, ⊥ host global. deterministic by construction (V44, V45). `src/ui/controls/expression.ts` = thin wrapper, ⊥ 2nd evaluator.
 V61: ∀ param read for eval|display → `resolveParameters(node, definition, frame)`. ⊥ other code reads `GraphNode.parameters` for evaluation. v1 = static passthrough; sole future injection point ∀ expression, curve, audio, MIDI, link.
 V62: rebuild granularity = per-resource. unrelated graph edit ⊥ resets unchanged feedback pair. feedback resource identity stable ∀ unrelated edits (V22).
@@ -634,6 +635,11 @@ T143|x|backend diffs per-entry `resourceSignatures` ⊥ whole-plan signature —
 T144|.|unify identity: `CompiledGraph.resourceSignatures`/`passSignatures` ← plan.ts `resourceStructureKey`/`passStructureKey`. compiler + backend share 1 definition, ⊥ 2 that drift|V62d
 T145|.|node info popup — TD MMB analog. res+aspect, format+space, est bytes, gpu ms, frames rendered, cooked-this-frame, pass count, warn/err, resolution source, bypass/mute/stale. MMB + keymap + context menu, all → 1 surface|V85,V86,I.info
 T146|.|component info aggregate: own | children | total time, pass + node count, over flattened source path|V87,V82
+T147|.|scratch/intermediate target kind ∈ plan IR — node needs >1 pass. unblocks separable Gaussian Blur (today: 1 pass, 81 taps, under-samples past ~dozens of px) + ∀ multi-pass filter|V58,V8
+T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers ∀ picker-driven nodes, ⊥ 20 in-shader curves|V56,V61
+T149|.|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
+T150|.|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
+T151|.|`ResolutionPolicy` derived from a parameter — Crop keeps input res + blanks outside region, ⊥ resizes like TD Crop TOP|V21,V50
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|.|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -697,7 +703,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 2 — 5 tracks
 | track | tasks | owns |
 |---|---|---|
-| E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 | `src/compiler/**` |
+| E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
 | G controls | T37 T38 T73 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
@@ -730,7 +736,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 | `src/tests/**` |
 | R hardening | T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 | `src/runtime/backend/**` `src/domain/graph/**` |
-| S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 | `eslint.config.js` `src/domain/commands/**` `public/**` |
+| S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
 T126 T127 menus (owns `src/editor/menus/**`) — depends bus + keymap, both landed.
