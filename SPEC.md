@@ -678,7 +678,7 @@ T158|x|fix B1+B2 — depth fallback ⊥ pick a color format; `formatNoFallback` 
 T159|x|fix B3 — `resolveSinks` doc ≠ impl on preview narrowing. pick one, make the other match|V25
 T160|x|`nodeGpuHost()` ∈ `src/runtime/backend/vgpu/node-gpu-host.ts` — the V3-clean Dawn host. parity harness deletes its eslint-disable + imports it|V3,V47
 T161|x|preview pass-SUBSET encoding: `render()` accepts pass ids to encode this frame. w/o it refresh cadence = rebuilding the plan @ 15-30Hz|V8,V28
-T162|.|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
+T162|x|CI needs a GPU-capable runner for the Dawn suite — tests fail loud when Dawn absent, ⊥ skip into green|V89
 T163|.|backend GPU timing surface — `timer(gpu)` after init when `timestampQuery`, `timer: t.span(pass.id)` ∈ `f.pass()`, forward `t.onResults`. span name = pass id. ⊥ exists today ∴ T41 reads "unavailable" everywhere|V86,V12
 T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10

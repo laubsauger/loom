@@ -6,7 +6,14 @@ import {
   solidGraph,
   PARITY_SIZE,
 } from "../fixtures/parity-graphs.ts";
-import { dawnGpuHost, probeDawn } from "./dawn-host.ts";
+// The sanctioned Dawn host (T160): `src/runtime/backend/vgpu/` is the only place a
+// `vgpu` import is legal (§V3), and the node entry point now lives behind that
+// boundary like every other one. Aliased to `dawnGpuHost` because every claim in
+// this file is about Dawn specifically, not about "some node-side host".
+import {
+  nodeGpuHost as dawnGpuHost,
+  probeDawn,
+} from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import {
   TOLERANCE_CROSS_GPU,
   compareFrames,
