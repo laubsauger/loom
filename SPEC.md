@@ -765,6 +765,9 @@ LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects
 (carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
 unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
+V169: the timeline readout (frame, time, fps) reads the SAME `FrameEvaluationInput` the render consumed — ⊥ a parallel clock, ⊥ `performance.now`. a readout that can disagree w/ the picture is worse than no readout: it's the thing you check when you ⊥ trust the picture.
+V170: SEEKING BACKWARD ∈ a graph w/ temporal state (feedback, Cache, point sim) ⊥ free — the state ∉ a function of frame index alone. ∴ a backward seek ! either RESET stateful nodes or SAY it ⊥ scrub-accurate. ⊥ silently show a state that belongs to a different history. forward seek = run the frames | same problem.
+V171: resolution is a LADDER: project → component → node override (V-existing per-node). each level defaults to its parent & says WHERE its value came from ∈ the UI. an inherited value that looks authored is how someone edits the wrong level.
 V167: a capability is ⊥ SHIPPED until a node can DECLARE it & a user can REACH it. T229 built `ExternalTextureResourceDescriptor` + `registerMediaSource` + upload gating, ∀ tested — & ⊥ node can request one ∴ `ScratchRequest` has no `external` kind. the plan layer & the backend layer are both green & the catalogue has no media node. same shape as B12.
 V168: within 1 frame, PLAN ORDER = EXECUTION ORDER. vgpu `compute.dispatch()` submits IMMEDIATELY while render passes submit @ frame close ∴ ∀ dispatch ran before ∀ render pass regardless of plan order (B19). ⊥ observable ∈ any mock.
 V165: `project.new` is a 4th DESTRUCTIVE verb (w/ open) — ! confirm when dirty, same rule as V93's open.
@@ -986,6 +989,8 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
+T266|.|project settings UI: resolution, fps, seed, working format. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
 T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
 T263|.|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
 T264|.|app side: file picker → `MediaSource`, `getUserMedia` → `MediaSource`, both → `registerMediaSource`. permission denial is a DIAGNOSTIC ⊥ a crash|V167,V136
@@ -1136,7 +1141,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 1 — 4 tracks
 | track | tasks | owns |
 |---|---|---|
-| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 T261 | `src/ui/**` `src/app/**` |
+| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 T261 T265 T266 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 T244 T260 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
