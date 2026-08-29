@@ -765,6 +765,7 @@ LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects
 (carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
 unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
+V164: ∈ dev, a surface that drew NOTHING ! be distinguishable from one that correctly drew BLACK. preview overlay is `alphaMode:"premultiplied"`, clear `[0,0,0,0]` (V106) ∴ "compositor produced nothing" reads as clean black over a dark app — indistinguishable from a working black picture. a distinct dev clear turns a silent class of bug into an obvious one.
 V163: a graph w/ ANY animated parameter (driven | time-dependent expression) re-resolves & pushes VALUES-ONLY updates ∀ frame. `hasAnimatedParameters(graph)` gates it ∴ a static graph pays ⊥. w/o this the resolver moves & the SCREEN ⊥ — a correct resolver is ⊥ the feature.
 V160: a preview tile's size derives from the node's preview AREA (V117), ⊥ from its on-screen rect. the rect carries ZOOM ∴ sizing from it reallocates on camera move (B13).
 V161: HOLDING a tile ≠ DRAWING into it — separate lifetimes. suspension (V28) governs per-frame GPU WORK; the pool governs ALLOCATION. a suspended preview keeps its slot until the pool needs it for an on-screen one. conflating them = panning a node off screen blanks it & (per V162) everything else.
@@ -981,6 +982,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T260|.|dev-only distinct preview clear colour — "drew nothing" ⊥ look like "drew black" (V164). ⊥ ship ∈ prod builds|V164,V106
 T259|.|**per-frame driven/expression push** ∈ composition root — gate on `hasAnimatedParameters`, re-resolve, values-only update (isUniformOnlyChange → updateUniforms). THE last inch of "something moves"|V163,V5,V143
 T257|.|**preview-side carry-over** ∈ `buildPreviewHost` — reuse T143's mechanism. w/o it V142 holds only below the 48-tile pool; above it a camera move still blanks everything|V162,V142
 T258|.|preview host resilience: 1 unresolvable binding currently blanks the WHOLE host (`buildPreviewHost` catches → `h.set` unusable). ⊥ let 1 bad node black out ∀ previews. widens w/ T252|V162,V28
@@ -1129,7 +1131,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
-| D guardrails | T7 T8 T64 T244 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
+| D guardrails | T7 T8 T64 T244 T260 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
 ### wave 2 — 5 tracks
 | track | tasks | owns |
