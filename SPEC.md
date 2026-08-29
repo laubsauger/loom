@@ -399,6 +399,23 @@ interface ParameterSlot {
 ∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
 number-only feature: TD drives menus + toggles from expressions & that is half its power.
 
+### Composite node + individual blend nodes — BOTH, sharing one implementation
+TD ships a Composite TOP w/ an Operation menu AND standalone Add/Multiply/etc. keep both:
+- **Composite** — variadic inputs + an `operation` ENUM. flexible: change the blend w/o
+  rewiring, drive the mode by expression (V107), reach a mode you ⊥ have a node for.
+- **Over/Add/Multiply/Screen/Difference** — fixed operation. a graph reading `Multiply`
+  says what it does at a glance; `Composite` makes you open it. when you KNOW the op, the
+  named node is the better documentation.
+
+**⊥ two implementations of the blend math.** blend fns live ∈ 1 WGSL module; Composite
+selects @ compile time; a named node binds a fixed selection of the SAME fn. else Over ∈
+Composite and the Over node drift & only one gets the bug fix.
+
+`operation` is `compileTime: true` — it changes the SHADER, ⊥ a uniform. specialise per
+mode (the shader cache already keys on constants) ⊥ branch per pixel: a per-pixel switch
+on a value that changes ~never is the wrong trade, and V5's uniform-only fast path stays
+meaningful only if mode changes are honestly classified as structural.
+
 ### variadic inputs (1+n) — the mechanism exists, ⊥ node uses it
 `PortDefinition.variadic` is ∈ the contract, honored by the patch layer (V14), the
 compiler (`CompiledInputBinding` is an ARRAY per port), and the canvas. **⊥ production
@@ -731,6 +748,8 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V140: a blend operation has ONE implementation. Composite selects it @ compile time, a named node binds a fixed selection of the SAME fn. ⊥ 2 copies of the math — else the node and the mode drift and only 1 gets the fix.
+V141: a parameter that changes the SHADER is `compileTime: true` & recompiles (V5, V31 classifier). ⊥ a per-pixel branch on a value that changes ~never. V5's uniform-only fast path is only meaningful if structural changes are classified honestly.
 V131: a variadic port's input ORDER is explicit & user-controllable — the edge carries it. ⊥ edge-id|creation order: for Over|Composite the layer order IS the operation, and an order the user ⊥ change is a wrong answer they ⊥ fix.
 V132: variadic UI = n connected slots + 1 free, reorder by drag. reorder = 1 patch, 1 undo entry (V15). the free slot is how "1+n" is discoverable ⊥ documentation.
 V127: node `name` = a unique IDENTIFIER within its graph, auto-numbered on collision (`noise1`, `noise2`). ⊥ decoration: it is the reference target for binds + expressions (V110), so uniqueness ! precede reference syntax.
@@ -923,6 +942,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T232|.|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
 T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
@@ -1061,7 +1081,7 @@ T89 patch zod · T94 resize bug · T104 group/viewport ops · T106 param envelop
 | track | tasks | owns |
 |---|---|---|
 | J preview | T113 T34 T35 T36 T87 | `src/runtime/previews/**` `src/editor/viewer/**` |
-| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
+| K node catalog | T70 T40 T152 T165 T166 T190 T194 T210 T211 T216 T223 T226 T231 T232 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | L telemetry | T41 T42 T99 T145 T146 | `src/runtime/telemetry/**` |
 | M persistence | T43 T44 T91 T139 T230 | `src/domain/project/**` `src/domain/migrations/**` |
 | N export | T68 T82 T111 | `src/runtime/export/**` |
