@@ -503,6 +503,59 @@ describe("vgpu backend — plan handling", () => {
   });
 });
 
+describe("vgpu backend — per-resource reuse across recompiles (T143, §V22)", () => {
+  it("adding an unrelated node carries the feedback pair over instead of recreating it", async () => {
+    const { backend, host, diagnostics } = await harness();
+    const first = await backend.compile(fixturePlan());
+    backend.render(first, frameInputs(0));
+    backend.render(first, frameInputs(1));
+
+    const shaderModules = snapshot(host.instrumentation).createShaderModule ?? 0;
+    const resets = backend.status.temporalResets;
+
+    const second = await backend.compile(fixturePlan({ extraGenerator: true }));
+    backend.render(second, frameInputs(2));
+
+    // scene + output + history + sampler carried; only "extra" is new.
+    expect(backend.status.lastBuild).toEqual({
+      resourcesCreated: 1,
+      resourcesReused: 4,
+      effectsBuilt: 1,
+      effectsReused: 3,
+    });
+    // Only the new pass compiled a shader — carried effects skipped compilation.
+    expect(snapshot(host.instrumentation).createShaderModule).toBe(shaderModules + 1);
+    // The carried pair was never cleared or recreated: its CONTENTS survived the edit.
+    expect(backend.status.temporalResets).toBe(resets);
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("a shader edit rebuilds that effect alone; everything else is carried", async () => {
+    const { backend } = await harness();
+    await backend.compile(fixturePlan());
+
+    await backend.compile(fixturePlan({ generateShader: GENERATE_WGSL_EDITED }));
+
+    expect(backend.status.lastBuild).toEqual({
+      resourcesCreated: 0,
+      resourcesReused: 4,
+      effectsBuilt: 1, // generate
+      effectsReused: 2, // feedback + composite
+    });
+  });
+
+  it("a full first build reports zero reuse", async () => {
+    const { backend } = await harness();
+    await backend.compile(fixturePlan());
+    expect(backend.status.lastBuild).toEqual({
+      resourcesCreated: 4,
+      resourcesReused: 0,
+      effectsBuilt: 3,
+      effectsReused: 0,
+    });
+  });
+});
+
 describe("vgpu backend — resize/compile reconciliation (R4)", () => {
   it("does not rebuild when the compiler hands back the sizes resize() already applied", async () => {
     const { backend } = await harness();

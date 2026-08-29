@@ -50,6 +50,8 @@ export interface FixtureOptions {
   readonly uniforms?: UniformValues;
   /** Swapped in to prove that a *structural* change does rebuild (§V5 control case). */
   readonly generateShader?: string;
+  /** Adds an unrelated generator + target: the T143 "one new node must not wipe feedback" case. */
+  readonly extraGenerator?: boolean;
 }
 
 export function fixturePlan(options: FixtureOptions = {}): LogicalExecutionPlan {
@@ -97,6 +99,17 @@ export function fixturePlan(options: FixtureOptions = {}): LogicalExecutionPlan 
     // §V22: the pair swaps only after every current-frame consumer has been encoded.
     { kind: "swap", id: "history-swap", resourceId: "history" },
   ];
+
+  if (options.extraGenerator === true) {
+    resources.push({ kind: "target", id: "extra", size, format: "rgba8unorm" });
+    passes.push({
+      kind: "effect",
+      id: "extra-generate",
+      nodeId: "node-extra",
+      shader: `@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.5, 1.0); }`,
+      target: "extra",
+    });
+  }
 
   return { passes, resources, diagnostics: [] };
 }

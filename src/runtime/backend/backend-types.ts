@@ -20,6 +20,14 @@ export interface UniformUpdate {
   readonly values: UniformValues;
 }
 
+/** Reuse accounting for one structural compile (T143). */
+export interface BuildStats {
+  resourcesCreated: number;
+  resourcesReused: number;
+  effectsBuilt: number;
+  effectsReused: number;
+}
+
 export interface BackendStatus {
   readonly initialized: boolean;
   readonly disposed: boolean;
@@ -40,6 +48,11 @@ export interface BackendStatus {
    * earlier compile is what is still rendering. The UI flags the output as stale.
    */
   readonly stale: boolean;
+  /**
+   * What the most recent structural compile did (T143, §V22): unchanged resources and
+   * effects are carried over — a carried ping-pong keeps its feedback contents.
+   */
+  readonly lastBuild?: BuildStats | undefined;
   /** Estimated GPU memory of the current program's targets, in bytes (§V24 reporting). */
   readonly estimatedResourceBytes: number;
 }

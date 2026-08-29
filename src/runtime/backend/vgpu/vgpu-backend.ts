@@ -5,7 +5,7 @@ import type {
   BackendInitOptions,
   CompiledExecutionPlan,
 } from "../../../domain/types/backend.ts";
-import type { BackendStatus, FrameLoopSettings, ShaderloomBackend } from "../backend-types.ts";
+import type { BackendStatus, BuildStats, FrameLoopSettings, ShaderloomBackend } from "../backend-types.ts";
 import {
   BackendDiagnosticCode,
   backendDiagnostic,
@@ -15,7 +15,9 @@ import {
 import { createFrameGuard } from "../frame-guard.ts";
 import {
   estimateResourceBytes,
+  passStructureKey,
   planStructureSignature,
+  resourceStructureKey,
   planUniformValues,
   readExecutionPlan,
   type PassDescriptor,
@@ -25,7 +27,14 @@ import {
 import { sharedUniformsFromFrame } from "../shared-uniforms.ts";
 import { describeCapabilities, meetsBaseline } from "./capabilities.ts";
 import { browserGpuHost, type GpuHost, type GpuSession } from "./gpu-host.ts";
-import { ResourceBuildError, buildResources, toMutable, type ResourceSet } from "./resources.ts";
+import {
+  ResourceBuildError,
+  buildResources,
+  emptyCarryOver,
+  toMutable,
+  type CarryOver,
+  type ResourceSet,
+} from "./resources.ts";
 
 /**
  * The vgpu adapter: the only implementation of `RenderBackend`, and the only place in the
@@ -118,6 +127,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let stale = false;
   let estimatedBytes = 0;
   let consecutiveFrameErrors = 0;
+  let lastBuildStats: BuildStats | undefined;
 
   const status: BackendStatus = {
     get initialized() {
@@ -149,6 +159,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
     get estimatedResourceBytes() {
       return estimatedBytes;
+    },
+    get lastBuild() {
+      return lastBuildStats;
     },
   };
 
@@ -502,13 +515,21 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         return program.compiled;
       }
 
+      // T143 (§V22): diff per-entry structure keys against the retained program and
+      // carry over everything unchanged. A carried ping-pong keeps its CONTENTS, so an
+      // unrelated structural edit no longer zeroes anyone's feedback history; carried
+      // effects skip shader recompilation, so the edit hitch scales with the edit.
+      const carry = program ? computeCarryOver(program, read.resources, read.passes) : emptyCarryOver;
+      const stats: BuildStats = { resourcesCreated: 0, resourcesReused: 0, effectsBuilt: 0, effectsReused: 0 };
+
       let resources: ResourceSet;
       try {
-        resources = buildResources(active.gpu, read.resources, read.passes, guard);
+        resources = buildResources(active.gpu, read.resources, read.passes, guard, carry, stats);
       } catch (error) {
         // T95 (§V9, §V27): shader and allocation failures must reach onDiagnostic — the
         // problems tab listens there, not on thrown errors. The previous program is
-        // retained and keeps rendering, flagged stale.
+        // retained and keeps rendering, flagged stale. Carried objects still belong to
+        // the retained program, which is why nothing is released on this path.
         stale = program !== undefined;
         if (error instanceof ResourceBuildError) {
           for (const diagnostic of error.diagnostics) hub.report(diagnostic);
@@ -537,7 +558,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         liveUniforms: new Map(planUniformValues(read.passes)),
         resources,
       };
-      if (previous) releaseResources(previous.resources);
+      if (previous) releaseResourcesExcept(previous.resources, resources);
+      // Reused uniform blocks still hold pre-recompile values; the plan's values are
+      // authoritative (they come from the domain graph), so sync every block.
+      flushUniforms(program);
+      lastBuildStats = stats;
       stale = false;
       estimatedBytes = estimateResourceBytes(read.resources);
       return program.compiled;
@@ -734,12 +759,70 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 }
 
 /**
- * vgpu's public `Target` / `SharedUniforms` interfaces do not declare `destroy()`, but the
- * concrete `OffscreenTarget` and shared-uniform block both implement it and both would
- * otherwise live until `gpu.dispose()` — a leak across every shader edit (§T49 asks for a
- * stable resource count over ten minutes). Duck-typed on purpose, and tolerant.
+ * Decides what the new build may carry over from the retained program (T143).
+ *
+ * A resource is reusable when its per-entry structure key is unchanged. An effect is
+ * reusable only when its own pass key is unchanged AND its render target and every
+ * bound resource are reusable — a rebuilt binding target means the effect's set bag
+ * would reference a destroyed object.
  */
-function releaseResources(set: ResourceSet): void {
+function computeCarryOver(
+  previous: Program,
+  nextResources: ReadonlyArray<ResourceDescriptor>,
+  nextPasses: ReadonlyArray<PassDescriptor>,
+): CarryOver {
+  const oldResourceKeys = new Map(
+    previous.resourceDescriptors.map((resource) => [resource.id, resourceStructureKey(resource)]),
+  );
+  const reusable = new Set<string>();
+  for (const resource of nextResources) {
+    if (oldResourceKeys.get(resource.id) === resourceStructureKey(resource)) reusable.add(resource.id);
+  }
+
+  const targets = new Map<string, NonNullable<ReturnType<ResourceSet["targets"]["get"]>>>();
+  const pingPongs = new Map<string, NonNullable<ReturnType<ResourceSet["pingPongs"]["get"]>>>();
+  const samplers = new Map<string, GPUSampler>();
+  for (const id of reusable) {
+    const target = previous.resources.targets.get(id);
+    if (target) targets.set(id, target);
+    const pair = previous.resources.pingPongs.get(id);
+    if (pair) pingPongs.set(id, pair);
+    const sampler = previous.resources.samplers.get(id);
+    if (sampler) samplers.set(id, sampler);
+  }
+
+  const oldPassKeys = new Map(previous.passes.map((pass) => [pass.id, passStructureKey(pass)]));
+  const effects = new Map<string, NonNullable<ReturnType<ResourceSet["effects"]["get"]>>>();
+  const passUniforms = new Map<string, NonNullable<ReturnType<ResourceSet["passUniforms"]["get"]>>>();
+  for (const pass of nextPasses) {
+    if (pass.kind !== "effect") continue;
+    if (oldPassKeys.get(pass.id) !== passStructureKey(pass)) continue;
+    const existing = previous.resources.effects.get(pass.id);
+    if (!existing) continue;
+    const bound = [
+      pass.target,
+      ...(pass.textures ?? []).map((binding) => binding.resourceId),
+      ...(pass.samplers ?? []).map((binding) => binding.resourceId),
+    ];
+    if (!bound.every((id) => reusable.has(id))) continue;
+    effects.set(pass.id, existing);
+    const block = previous.resources.passUniforms.get(pass.id);
+    if (block) passUniforms.set(pass.id, block);
+  }
+
+  return { targets, pingPongs, samplers, effects, passUniforms, shared: previous.resources.shared };
+}
+
+/**
+ * Destroys everything in `previous` that did not survive into `next` (T143). Identity
+ * comparison, not id comparison: a rebuilt resource shares its id with the object it
+ * replaced, and only the replaced object may die.
+ *
+ * `destroy()` is duck-typed: vgpu's public `Target` / `SharedUniforms` interfaces do not
+ * declare it, but the concrete implementations have it, and without it every shader edit
+ * leaks the replaced objects until `gpu.dispose()` (§T49's stable-resource-count gate).
+ */
+function releaseResourcesExcept(previous: ResourceSet, next: ResourceSet): void {
   const destroy = (value: unknown): void => {
     const candidate = value as { destroy?: () => void };
     if (typeof candidate?.destroy === "function") {
@@ -751,11 +834,18 @@ function releaseResources(set: ResourceSet): void {
     }
   };
 
-  for (const t of set.targets.values()) destroy(t);
-  for (const pair of set.pingPongs.values()) {
-    destroy(pair.read);
-    destroy(pair.write);
+  for (const [id, target] of previous.targets) {
+    if (next.targets.get(id) !== target) destroy(target);
   }
-  for (const block of set.passUniforms.values()) destroy(block);
-  destroy(set.shared);
+  for (const [id, pair] of previous.pingPongs) {
+    if (next.pingPongs.get(id) !== pair) {
+      destroy(pair.read);
+      destroy(pair.write);
+    }
+  }
+  for (const [id, block] of previous.passUniforms) {
+    if (next.passUniforms.get(id) !== block) destroy(block);
+  }
+  if (next.shared !== previous.shared) destroy(previous.shared);
 }
+

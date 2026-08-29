@@ -2,6 +2,7 @@ import { effect, pingPong, sampler, target, uniforms } from "vgpu";
 import type { Effect, Gpu, PingPongTargets, SharedUniforms, Target } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import { BackendDiagnosticCode, backendDiagnostic, describeError } from "../diagnostics.ts";
+import type { BuildStats } from "../backend-types.ts";
 import type { FrameGuard } from "../frame-guard.ts";
 import type {
   EffectPassDescriptor,
@@ -37,6 +38,30 @@ export interface ResourceSet {
   readonly renderTargets: ReadonlyMap<string, () => Target>;
 }
 
+/**
+ * GPU objects carried over from the previous program because their structure keys are
+ * unchanged (T143, §V22). A carried ping-pong keeps its CONTENTS — adding an unrelated
+ * node must not zero someone's feedback history. A carried effect is reused only when
+ * its pass key AND everything it binds survived; the caller decides that.
+ */
+export interface CarryOver {
+  readonly targets: ReadonlyMap<string, Target>;
+  readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
+  readonly samplers: ReadonlyMap<string, GPUSampler>;
+  readonly effects: ReadonlyMap<string, Effect>;
+  readonly passUniforms: ReadonlyMap<string, SharedUniforms<Record<string, unknown>>>;
+  readonly shared: SharedUniforms<SharedUniformValues> | undefined;
+}
+
+export const emptyCarryOver: CarryOver = {
+  targets: new Map(),
+  pingPongs: new Map(),
+  samplers: new Map(),
+  effects: new Map(),
+  passUniforms: new Map(),
+  shared: undefined,
+};
+
 export class ResourceBuildError extends Error {
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 
@@ -66,6 +91,8 @@ export function buildResources(
   resources: ReadonlyArray<ResourceDescriptor>,
   passes: ReadonlyArray<PassDescriptor>,
   guard: FrameGuard,
+  carry: CarryOver = emptyCarryOver,
+  stats?: BuildStats,
 ): ResourceSet {
   guard.assertOutsideFrame("plan resources");
 
@@ -78,11 +105,21 @@ export function buildResources(
   const renderTargets = new Map<string, () => Target>();
   const diagnostics: RuntimeDiagnostic[] = [];
 
-  const shared = uniforms<SharedUniformValues>(gpu, initialSharedUniforms());
+  const shared = carry.shared ?? uniforms<SharedUniformValues>(gpu, initialSharedUniforms());
+
+  const note = (field: keyof BuildStats): void => {
+    if (stats) stats[field] += 1;
+  };
 
   for (const resource of resources) {
     try {
       if (resource.kind === "target") {
+        const carried = carry.targets.get(resource.id);
+        if (carried) {
+          targets.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
         targets.set(
           resource.id,
           target(gpu, {
@@ -91,7 +128,16 @@ export function buildResources(
             label: resource.label ?? resource.id,
           }),
         );
+        note("resourcesCreated");
       } else if (resource.kind === "pingPong") {
+        // A carried pair keeps its texture CONTENTS: this is what makes feedback
+        // history survive an unrelated structural edit (§V22, T143).
+        const carried = carry.pingPongs.get(resource.id);
+        if (carried) {
+          pingPongs.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
         pingPongs.set(
           resource.id,
           pingPong(gpu, resource.size[0], resource.size[1], {
@@ -99,11 +145,19 @@ export function buildResources(
             label: resource.label ?? resource.id,
           }),
         );
+        note("resourcesCreated");
       } else if (resource.kind === "sampler") {
+        const carried = carry.samplers.get(resource.id);
+        if (carried) {
+          samplers.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
         samplers.set(
           resource.id,
           sampler(gpu, samplerDescriptor(resource.filter, resource.addressMode)),
         );
+        note("resourcesCreated");
       } else {
         // buffer / bufferPair: declared in the plan IR (§V58) for the point system, not
         // built until that slice lands. Reported rather than silently skipped.
@@ -143,9 +197,6 @@ export function buildResources(
   for (const pass of passes) {
     if (pass.kind !== "effect") continue;
 
-    const setBag = buildSetBag(pass, { readTexture, samplers, shared, passUniforms, gpu, diagnostics });
-    if (!setBag) continue;
-
     const plainTarget = targets.get(pass.target);
     const pair = pingPongs.get(pass.target);
     if (!plainTarget && !pair) {
@@ -161,6 +212,23 @@ export function buildResources(
     }
     const resolveTarget: () => Target = plainTarget ? () => plainTarget : () => pair!.write;
 
+    // A carried effect's set bag already points at the carried resource objects — the
+    // caller only offers it when the pass key and everything it binds survived.
+    const carriedEffect = carry.effects.get(pass.id);
+    if (carriedEffect) {
+      effects.set(pass.id, carriedEffect);
+      renderTargets.set(pass.id, resolveTarget);
+      const carriedUniforms = carry.passUniforms.get(pass.id);
+      if (carriedUniforms) passUniforms.set(pass.id, carriedUniforms);
+      const dynamic = (pass.textures ?? []).filter((binding) => pingPongs.has(binding.resourceId));
+      if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);
+      note("effectsReused");
+      continue;
+    }
+
+    const setBag = buildSetBag(pass, { readTexture, samplers, shared, passUniforms, gpu, diagnostics });
+    if (!setBag) continue;
+
     try {
       const created = effect(gpu, pass.shader, {
         set: setBag,
@@ -170,6 +238,7 @@ export function buildResources(
       created.compileSync(resolveTarget());
       effects.set(pass.id, created);
       renderTargets.set(pass.id, resolveTarget);
+      note("effectsBuilt");
 
       const dynamic = (pass.textures ?? []).filter((binding) => pingPongs.has(binding.resourceId));
       if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);

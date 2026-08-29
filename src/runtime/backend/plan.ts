@@ -449,26 +449,41 @@ export function readExecutionPlan(plan: LogicalExecutionPlan): PlanReadResult {
  * produce a different signature, so it cannot reach the resource-building path at all —
  * §V5 is enforced by what this function reads, not by a rule someone has to remember.
  */
+/**
+ * Per-resource structural identity (T143). Two descriptors with equal keys are
+ * interchangeable at the GPU level, so the backend may keep the existing allocation —
+ * including a feedback pair's CONTENTS — across a recompile (§V22).
+ */
+export function resourceStructureKey(resource: ResourceDescriptor): string {
+  switch (resource.kind) {
+    case "sampler":
+      return JSON.stringify(["sampler", resource.id, resource.filter ?? "nearest", resource.addressMode ?? "clamp-to-edge"]);
+    case "target":
+    case "pingPong":
+      return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format]);
+    case "buffer":
+      return JSON.stringify([resource.kind, resource.id, resource.stride, resource.capacity, resource.usage]);
+    case "bufferPair":
+      return JSON.stringify([resource.kind, resource.id, resource.stride, resource.capacity]);
+  }
+}
+
+/** Per-pass structural identity. Uniform NAMES only, never values (§V5). */
+export function passStructureKey(pass: PassDescriptor): string {
+  return JSON.stringify(passKeyParts(pass));
+}
+
 export function planStructureSignature(
   resources: ReadonlyArray<ResourceDescriptor>,
   passes: ReadonlyArray<PassDescriptor>,
 ): string {
-  const resourceKeys = resources.map((resource): unknown[] => {
-    switch (resource.kind) {
-      case "sampler":
-        return ["sampler", resource.id, resource.filter ?? "nearest", resource.addressMode ?? "clamp-to-edge"];
-      case "target":
-      case "pingPong":
-        return [resource.kind, resource.id, resource.size[0], resource.size[1], resource.format];
-      case "buffer":
-        return [resource.kind, resource.id, resource.stride, resource.capacity, resource.usage];
-      case "bufferPair":
-        return [resource.kind, resource.id, resource.stride, resource.capacity];
-    }
-  });
+  const resourceKeys = resources.map(resourceStructureKey);
+  const passKeys = passes.map(passKeyParts);
+  return JSON.stringify({ resourceKeys, passKeys });
+}
 
-  const passKeys = passes.map((pass): unknown[] => {
-    switch (pass.kind) {
+function passKeyParts(pass: PassDescriptor): unknown[] {
+  switch (pass.kind) {
       case "swap":
         return ["swap", pass.id, pass.resourceId];
       case "effect":
@@ -511,10 +526,7 @@ export function planStructureSignature(
         ];
       case "counter":
         return ["counter", pass.id, pass.op, pass.resourceId, pass.outputResourceId ?? null];
-    }
-  });
-
-  return JSON.stringify({ resourceKeys, passKeys });
+  }
 }
 
 const BYTES_PER_PIXEL: Record<string, number> = {
