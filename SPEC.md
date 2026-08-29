@@ -683,7 +683,7 @@ T163|.|backend GPU timing surface — `timer(gpu)` after init when `timestampQue
 T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
-T34|.|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
+T34|x|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
 T35|x|debug preview effects: color, single-channel, alpha-on-checker, NaN/Inf highlight|V7
 T36|x|large viewer pane: pinned output, channel toggles, px value under cursor|I.ui
 T67|x|plan renders to offscreen target w/o visible surface — headless path shares compiler|V47

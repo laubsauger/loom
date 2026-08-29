@@ -172,7 +172,11 @@ export interface PreviewCompositeTile {
 
 /** The per-frame decision. Everything here is cheap to recompute every display frame. */
 export interface PreviewFrameCommand {
-  /** Pass ids to encode this frame. A preview that is not due contributes nothing. */
+  /**
+   * Pass ids to encode this frame. A preview that is not due contributes nothing — this is the
+   * pass-subset capability the backend implements, and the reason refresh cadence costs a set
+   * membership rather than a plan rebuild.
+   */
   readonly refresh: ReadonlyArray<string>;
   /** Every active tile, due or not — a pan moves rects without changing pixels. */
   readonly composite: ReadonlyArray<PreviewCompositeTile>;
@@ -181,17 +185,27 @@ export interface PreviewFrameCommand {
 }
 
 /**
- * The seam T87 fills (§V64, §V70).
- *
- * This is deliberately the ONLY thing the presentation track has to satisfy for previews to
- * light up. Everything above it — the plan, the scheduling, the debug effects, the viewer — is
- * real and tested against a fake host today.
+ * The presentation seam (T87, §V64, §V70). IMPLEMENTED: `backend.previewHost(canvas)` returns
+ * this interface plus a `dispose()`, and imports it type-only from here — so this declaration
+ * is the contract both sides code against, not a placeholder for one.
  *
  * Note what is absent: there is no read, fetch or sample method. Previews are GPU→GPU (§V7);
  * the one permitted pixel read is the viewer's cursor probe, which goes through the export
  * interface (§V48) and never through here.
  */
 export interface PreviewRuntimeHost {
+  /**
+   * Install the program. ALLOCATES — tile targets and preview pipelines — so it must be called
+   * OUTSIDE frame encoding: the backend asserts that (§V8), and `backend.loop(onFrame)` runs
+   * its callback with a frame already open. `PreviewSystem.plan()` is the phase that calls it.
+   *
+   * The backend gates on `PreviewProgram.signature`, so an identical program is free; that is
+   * a safety net, not a licence to call this every frame.
+   */
   setPreviewProgram(program: PreviewProgram): void;
+  /**
+   * Encode the named refresh passes and composite every listed tile. Never allocates, and works
+   * inside an open loop frame or standalone, exactly like `backend.render()`.
+   */
   presentPreviews(command: PreviewFrameCommand): void;
 }

@@ -168,13 +168,86 @@ describe("preview system", () => {
     expect(result.program.resources.filter((resource) => resource.kind === "target")).toHaveLength(1);
   });
 
-  it("empties the program when nothing is left to preview", () => {
+  it("§V28a — an empty request list means NONE, never 'carry on with last frame'", () => {
+    // The mistake this guards is specific: treating an empty authoritative sink list as
+    // "nothing was said" and leaving the previous tiles live. Empty must free every tile.
     const host = fakeHost();
     const system = createPreviewSystem({ host, capacity: 4 });
-    run(system, [request("a")], 1);
-    run(system, [], 1, { startIndex: 1 });
+    run(system, [request("a"), request("b")], 1);
+    expect(host.programs[0]?.passes).toHaveLength(2);
+
+    const emptied = system.update({
+      requests: [],
+      frame: frame(1 / 60, 1),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    expect(emptied.schedule.active).toEqual([]);
+    expect(emptied.command.refresh).toEqual([]);
+    expect(emptied.command.composite).toEqual([]);
     expect(host.programs[host.programs.length - 1]?.passes).toEqual([]);
     expect(host.programs[host.programs.length - 1]?.resources).toEqual([]);
+  });
+
+  it("§V28a — the request list is the only thing consulted; nothing is unioned in", () => {
+    // The scheduler reads `requests` and nothing else. A node whose document `ui.preview` flag
+    // is set but which the composition root did not pass simply is not previewing.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    run(system, [request("a"), request("b")], 1);
+    const narrowed = system.update({
+      requests: [request("b")],
+      frame: frame(1 / 60, 1),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    expect(narrowed.schedule.active.map((entry) => entry.ref.nodeId)).toEqual(["b"]);
+    expect(narrowed.schedule.suspended).toEqual([]);
+  });
+
+  describe("phase split against the real host contract", () => {
+    it("plan() is the only phase that hands the host a program", () => {
+      // `setPreviewProgram` allocates and the backend asserts it runs outside frame encoding
+      // (§V8). `present()` must therefore never reach it, or driving previews from inside
+      // backend.loop() would throw the first time a mode changed.
+      const host = fakeHost();
+      const system = createPreviewSystem({ host, capacity: 4 });
+      const planned = system.plan({
+        requests: [request("a")],
+        frame: frame(0, 0),
+        surface: SURFACE,
+        devicePixelRatio: 2,
+        previewFps: 15,
+        previewLongEdge: 192,
+      });
+      expect(host.programs).toHaveLength(1);
+      expect(host.commands).toHaveLength(0);
+
+      system.present(planned.command);
+      expect(host.programs).toHaveLength(1);
+      expect(host.commands).toEqual([planned.command]);
+    });
+
+    it("present() can be replayed inside a frame without touching the program", () => {
+      const host = fakeHost();
+      const system = createPreviewSystem({ host, capacity: 4 });
+      const planned = system.plan({
+        requests: [request("a")],
+        frame: frame(0, 0),
+        surface: SURFACE,
+        devicePixelRatio: 2,
+        previewFps: 15,
+        previewLongEdge: 192,
+      });
+      system.present(planned.command);
+      system.present(planned.command);
+      expect(host.programs).toHaveLength(1);
+      expect(host.commands).toHaveLength(2);
+    });
   });
 
   it("never asks the host for anything but a program and a frame command (§V7)", () => {

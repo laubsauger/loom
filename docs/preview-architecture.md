@@ -242,26 +242,73 @@ scheduling optimisation rather than a memory one, and the 200-node graph would s
 
 ---
 
-## 7. The seam this is built against (T87)
+## 7. The seam (T87) — implemented
 
-There is no presentation surface in the app today: the backend renders offscreen only (§V47),
-`initialize()` accepts a canvas and ignores it, and `present(outputRef, surface)` is T87. Everything
-above is therefore built against one injected interface, `PreviewRuntimeHost`:
+`backend.previewHost(canvas)` returns `PreviewHostHandle`, which is this directory's
+`PreviewRuntimeHost` plus a `dispose()`. The backend imports the interface type-only from
+`src/runtime/previews/types.ts`, so neither track edited the other's files and the interface is
+the single thing keeping them in step — `host-contract.test.ts` fails to compile if it drifts.
 
 ```ts
 interface PreviewRuntimeHost {
-  /** Stable resources + passes. Called only when the program changes (§V8). */
-  setPreviewProgram(program: PreviewProgram): void;
-  /** Per display frame: encode these passes, then composite these tiles (§V7). */
-  presentPreviews(command: PreviewFrameCommand): void;
+  setPreviewProgram(program: PreviewProgram): void;  // allocates; OUTSIDE frame encoding (§V8)
+  presentPreviews(command: PreviewFrameCommand): void; // never allocates; inside a frame or not
 }
 ```
 
 `PreviewProgram` is plain data — `ResourceDescriptor[]` and `EffectPassDescriptor[]` from the
-existing plan IR — so it is structured-clone-safe (§V63) and mergeable into a
-`LogicalExecutionPlan` without new pass kinds. `PreviewFrameCommand` is the per-frame decision:
-which pass ids to encode, and where each live tile lands on the surface.
+existing plan IR — so it is structured-clone-safe (§V63) and needed no growth of the closed pass
+or resource unions (§V58). Tile passes sample the main program's outputs as **external bindings**
+(lookup-only: never rendered into, never destroyed by preview lifecycle), which is what lets a
+preview reference a compiled output without owning it.
 
-That interface is deliberately the *only* thing T87 has to satisfy for previews to light up, and
-what it needs from the runtime is spelled out in §8 of the track report rather than guessed at
-here.
+**The phase split follows from the seam, and is the one thing the design changed to meet it.**
+`setPreviewProgram` builds tile targets and pipelines, so the backend guards it with
+`assertOutsideFrame` — and `backend.loop(onFrame)` runs its callback with a frame already open.
+A single `update()` that did both would therefore throw the first time a debug mode changed
+while driving previews from inside `loop()`. So `PreviewSystem` exposes:
+
+- `plan(input)` — schedule, build, hand over the program. Outside the frame.
+- `present(command)` — encode the due passes, composite every tile. Inside or outside.
+- `update(input)` — both, for a standalone tick.
+
+That is not a workaround for the guard; it is §4's stable/per-frame distinction showing up a
+second time, now as a hard boundary rather than a convention.
+
+**Two things the implementation settled that this note had guessed at.**
+
+*Compositing needs no scissor.* vgpu supports a **viewport per pass**, so each tile blits to the
+shared surface at its own dpr-scaled viewport. The atlas rejection in §2 rested on
+`EffectPassDescriptor` having no viewport or scissor for **rendering into** a sub-rect, which is
+still true and still the reason tiles are pooled targets. Compositing **out of** them turned out
+to be free. The bin-packing argument against a texture atlas — varying aspect ratios, sizes that
+step with the zoom ladder, repacking on the one gesture that must stay cheap — stands on its own.
+
+*Refresh cadence costs a set membership.* `PreviewFrameCommand.refresh` names pass ids and the
+host encodes only those, which is the pass-subset capability §6 needed. Cadence therefore never
+rebuilds a plan.
+
+### Ordering: a program before the first main compile
+
+A preview program installed before the first main compile builds its tiles but leaves the
+main-output external bindings unresolved until the compile fires `refreshPreviewExternals` — one
+blank tick.
+
+**This cannot happen through the intended wiring, so no lazy rebind is needed.** A
+`PreviewRequest` carries `source.resourceId`, which only exists once `CompiledGraph.outputs` has
+been produced. There is nothing to reference before the first compile, so the composition root
+has nothing to request and `plan()` emits an empty program. The ordering constraint is satisfied
+by the shape of the data rather than by a rule anyone has to remember.
+
+### Recompiles, device loss, and §V28a
+
+External bindings are re-pointed after every main compile and ping-pong sources per frame, so a
+structural recompile does not interrupt previews. Device loss rebuilds the surface and tiles from
+the retained program; `PreviewSystem.reset()` remains the caller's way to drop **cadence** state
+(refresh clocks and tile keys), which the backend cannot know about.
+
+§V28a — an explicit sink list is authoritative, an empty list means none — matches the scheduler's
+existing shape exactly: `PreviewSystemFrame.requests` is the only thing consulted, nothing is
+unioned with document `ui.preview` flags, and an empty array frees every tile rather than leaving
+the previous frame's live. Both halves are asserted in `system.test.ts`, because "empty means
+nothing was said" is precisely the plausible-looking mistake V28a was written against.
