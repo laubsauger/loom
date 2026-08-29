@@ -104,7 +104,14 @@ recording belongs ∈ the GRAPH, ⊥ a global "record" button. TD makes it a nod
 decides what is recorded: an intermediate branch, several outputs at once, a pass you are
 debugging — ⊥ only whatever the single main output happens to be.
 
-- **MovieFileIn** — image | video | sequence → texture. play/pause/seek/loop/rate, in|out
+- **MovieFileIn** — ONE node for STILL, SEQUENCE and VIDEO, as TD's Movie File In TOP is.
+  ⊥ a separate ImageIn: the param set overlaps almost entirely (file, color space, alpha,
+  filter/wrap, native res) and 2 nodes would mean choosing the wrong one before you know
+  what the file is. a still simply has no timeline — playback params HIDE when the loaded
+  asset has 1 frame, ⊥ sit there inert (V90: ⊥ show a control that does nothing).
+  **NOTHING loads a file today** — the catalogue is entirely procedural, so this is the
+  first node that reads from disk and the first real consumer of `AssetReference`.
+  image | video | sequence → texture. play/pause/seek/loop/rate, in|out
   points, native res, current time, duration, frame-ready event. asset by `AssetReference`,
   ⊥ a raw path (V10). decode behind a media-source abstraction: `HTMLVideoElement` first,
   WebCodecs later where it measurably wins.
@@ -641,6 +648,7 @@ V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit p
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
 V119: recording is a NODE, ⊥ a global action. topology decides what is recorded ∴ several recorders may run at once, on intermediate branches. a recorder declares `sink: true` (V25) — recording is its side effect & it ⊥ be pruned for having no consumer.
 V120: a recorder captures by `frameIndex` via the export interface (V48, T111), ⊥ by sampling a clock. a take that dropped|duplicated frames = a WRONG recording, ⊥ a shorter one — it ! fail the take, ⊥ silently ship.
+V122: 1 media-in node covers still|sequence|video (TD Movie File In). params that ⊥ apply to the loaded asset are HIDDEN, ⊥ disabled-and-visible — a still has no in|out point, and showing one teaches the user the node is broken.
 V121: media nodes reference an `AssetReference`, ⊥ a raw path or an object URL (V10). unresolved asset → relink flow, keeps identity. decode behind a media-source abstraction ∴ WebCodecs can replace `HTMLVideoElement` w/o touching a node.
 V116: node size = DOCUMENT state (`GraphNode.size`, already ∈ contract) — persisted, undoable, 1 patch per gesture (V15). resize is how a graph gets a layout: a key node big, the rest small. ⊥ view-only state, else a saved project loses its composition.
 V117: a resized node buys a BIGGER TILE, ⊥ a stretched one. preview resolution follows the node's preview area, quantised to the size ladder + capped by `previewLongEdge` (V28c) — the cap is what keeps default-on previews affordable, so it survives resizing.
