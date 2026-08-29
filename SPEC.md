@@ -998,7 +998,7 @@ T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, re
 T245|x|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
 T244|.|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
-T234|.|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
+T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
 T236|.|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|.|**Cache / Time Machine** — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
