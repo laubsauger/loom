@@ -2,6 +2,7 @@ import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../graph/store.ts";
 import { createCommandBus, type ShaderloomBus } from "./bus.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
+import { registerNodeOutputCommands } from "./node-output-commands.ts";
 
 export {
   CapabilityDeniedError,
@@ -25,6 +26,7 @@ export type {
 } from "./bus.ts";
 export { SHADER_SOURCE_PARAMETER, applyGraphPatch } from "./apply-patch.ts";
 export { registerGraphCommands } from "./graph-commands.ts";
+export { registerNodeOutputCommands } from "./node-output-commands.ts";
 export type {
   HistoryCommandOutput,
   HistoryGroupSummary,
@@ -49,5 +51,6 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
     ...(registry === undefined ? {} : { registry }),
   });
   registerGraphCommands(bus);
+  registerNodeOutputCommands(bus);
   return { bus, store };
 }

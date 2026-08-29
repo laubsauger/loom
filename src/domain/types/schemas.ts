@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SELECTABLE_COLOR_FORMATS, TEXTURE_FORMATS } from "./node-definition.ts";
 
 /**
  * Runtime validation for the serialized surface only (§V10).
@@ -74,7 +75,7 @@ export const nodeFormatOverrideSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("project") }),
   z.object({ mode: z.literal("input"), input: z.string().min(1).optional() }),
   // Depth is deliberately absent: it is not a user-selectable colour output (§V51).
-  z.object({ mode: z.literal("fixed"), format: z.enum(["rgba8unorm", "rgba16float", "r32float"]) }),
+  z.object({ mode: z.literal("fixed"), format: z.enum(SELECTABLE_COLOR_FORMATS) }),
 ]);
 
 export const graphNodeSchema = z.object({
@@ -139,7 +140,7 @@ export const assetReferenceSchema = z.object({
 
 export const projectSettingsSchema = z.object({
   outputResolution: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
-  workingFormat: z.enum(["rgba8unorm", "rgba16float", "r32float", "depth24plus"]),
+  workingFormat: z.enum(TEXTURE_FORMATS),
   randomSeed: z.number().int(),
   previewLongEdge: z.number().int().positive(),
   previewFps: z.number().positive(),

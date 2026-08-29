@@ -204,7 +204,7 @@ type NodeFormatOverride =
   | { mode: "fixed"; format: TextureFormat }; // rgba8unorm | rgba16float | r32float
 ```
 lives on `GraphNode.format?`. depth ⊥ selectable — color outputs only.
-⊥ `rgba8unorm-srgb` yet: union growth mid-flight breaks exhaustive switches. → barrier.
+`rgba8unorm-srgb` landed @ barrier. `TEXTURE_FORMATS` const = single source, type derived from it.
 
 ### type: diagnostic (user-facing error surface)
 ```ts
@@ -333,8 +333,8 @@ T20|.|CodeMirror6 WGSL editor in bottom dock, theme from tokens|C
 T21|.|shader diagnostics: debounce, async compile, line/col map, node badge + problems tab|V9,V27
 T22|.|retain last valid program + stale-output indicator|V9
 T23|.|**Phase0 exit**: uniform live-update, WGSL recompile, invalid WGSL keeps output|V5,V9
-T71|.|`NodeResolutionOverride` on `GraphNode` + zod + `setNodeResolution` patch op + bus command|V50,I.res
-T74|.|`NodeFormatOverride` on `GraphNode` + zod + `setNodeFormat` patch op + bus command|V51,I.fmt
+T71|x|`NodeResolutionOverride` on `GraphNode` + zod + `setNodeResolution` patch op + bus command|V50,I.res
+T74|x|`NodeFormatOverride` on `GraphNode` + zod + `setNodeFormat` patch op + bus command|V51,I.fmt
 T24|.|compiler: resolve defs, validate params+connections|V13,V14
 T25|.|compiler: split temporal edges, reject illegal cycles, topo sort|V4
 T26|.|compiler: active-sink trace + prune|V25

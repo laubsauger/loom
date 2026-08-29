@@ -10,7 +10,30 @@ export type ResolutionPolicy =
   | { kind: "project" }
   | { kind: "custom" };
 
-export type TextureFormat = "rgba8unorm" | "rgba16float" | "r32float" | "depth24plus";
+/**
+ * Canonical texture format list. The TextureFormat type is DERIVED from it, so a new
+ * format cannot be added to the type without every runtime list that validates against
+ * it seeing the addition too.
+ */
+export const TEXTURE_FORMATS = [
+  "rgba8unorm",
+  "rgba8unorm-srgb",
+  "rgba16float",
+  "r32float",
+  "depth24plus",
+] as const;
+
+export type TextureFormat = (typeof TEXTURE_FORMATS)[number];
+
+/** Formats a user may select for a colour output. Depth is never offered here (§V51). */
+export const SELECTABLE_COLOR_FORMATS = [
+  "rgba8unorm",
+  "rgba8unorm-srgb",
+  "rgba16float",
+  "r32float",
+] as const satisfies ReadonlyArray<TextureFormat>;
+
+export type SelectableColorFormat = (typeof SELECTABLE_COLOR_FORMATS)[number];
 
 export type FormatPolicy =
   | { kind: "inherit"; input: PortId }

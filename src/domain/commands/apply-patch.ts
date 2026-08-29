@@ -1,3 +1,5 @@
+import { SELECTABLE_COLOR_FORMATS } from "../types/node-definition.ts";
+import { nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, NodeId, PortId } from "../types/ids.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
@@ -431,6 +433,41 @@ function executeOperation(
         ui[key] = value;
       }
       node.ui = ui as NonNullable<GraphNode["ui"]>;
+      return;
+    }
+
+    case "setNodeResolution": {
+      const node = requireNode(operation.nodeId);
+      // null clears the override, returning the node to its definition's policy (§V50).
+      if (operation.resolution === null) {
+        delete node.resolution;
+        return;
+      }
+      const parsed = nodeResolutionOverrideSchema.safeParse(operation.resolution);
+      if (!parsed.success) {
+        fail("node.resolution.invalid", `invalid resolution override: ${parsed.error.issues[0]?.message ?? "bad shape"}.`, {
+          nodeId: node.id,
+          suggestion: 'Use {mode:"auto"|"project"|"input"|"scale"|"fixed"}; scale needs a positive factor, fixed needs positive integer width/height.',
+        });
+      }
+      node.resolution = operation.resolution;
+      return;
+    }
+
+    case "setNodeFormat": {
+      const node = requireNode(operation.nodeId);
+      if (operation.format === null) {
+        delete node.format;
+        return;
+      }
+      const parsed = nodeFormatOverrideSchema.safeParse(operation.format);
+      if (!parsed.success) {
+        fail("node.format.invalid", `invalid format override: ${parsed.error.issues[0]?.message ?? "bad shape"}.`, {
+          nodeId: node.id,
+          suggestion: `Selectable colour formats: ${SELECTABLE_COLOR_FORMATS.join(", ")}. Depth is not a colour output (§V51).`,
+        });
+      }
+      node.format = operation.format;
       return;
     }
 

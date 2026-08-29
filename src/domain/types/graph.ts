@@ -1,6 +1,6 @@
 import type { AssetId, EdgeId, GroupId, NodeId, PortId, Revision } from "./ids.ts";
 import type { ParameterValue } from "./parameters.ts";
-import type { TextureFormat } from "./node-definition.ts";
+import type { SelectableColorFormat, TextureFormat } from "./node-definition.ts";
 
 /**
  * Per-instance output resolution, set by the user on the node (TD "Common" page).
@@ -28,10 +28,7 @@ export type NodeFormatOverride =
   | { mode: "auto" }
   | { mode: "project" }
   | { mode: "input"; input?: PortId }
-  | { mode: "fixed"; format: TextureFormat };
-
-/** Formats a user may select for a colour output. Depth is never offered here (§V51). */
-export const SELECTABLE_COLOR_FORMATS = ["rgba8unorm", "rgba16float", "r32float"] as const;
+  | { mode: "fixed"; format: SelectableColorFormat };
 
 /** TD-style presets. "auto" and "custom" are handled outside this list. */
 export const RESOLUTION_SCALE_PRESETS = [

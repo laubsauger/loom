@@ -1,5 +1,6 @@
 import type { EdgeId, NodeId, PortId, Revision } from "./ids.ts";
 import type { ParameterValue } from "./parameters.ts";
+import type { NodeFormatOverride, NodeResolutionOverride } from "./graph.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 
 /**
@@ -17,7 +18,9 @@ export type GraphPatchOperation =
   | { op: "setParameters"; nodeId: NodeRef; parameters: Record<string, ParameterValue> }
   | { op: "setShaderSource"; nodeId: NodeRef; source: string }
   | { op: "moveNodes"; positions: Record<NodeId, { x: number; y: number }> }
-  | { op: "setNodeUi"; nodeId: NodeRef; ui: Record<string, unknown> };
+  | { op: "setNodeUi"; nodeId: NodeRef; ui: Record<string, unknown> }
+  | { op: "setNodeResolution"; nodeId: NodeRef; resolution: NodeResolutionOverride | null }
+  | { op: "setNodeFormat"; nodeId: NodeRef; format: NodeFormatOverride | null };
 
 export interface GraphPatch {
   baseRevision: Revision;

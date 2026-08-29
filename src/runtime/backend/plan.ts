@@ -1,4 +1,5 @@
 import type { NodeId } from "../../domain/types/ids.ts";
+import { TEXTURE_FORMATS } from "../../domain/types/node-definition.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
@@ -105,12 +106,7 @@ export interface PlanReadResult {
   readonly ok: boolean;
 }
 
-const TEXTURE_FORMATS: ReadonlyArray<TextureFormat> = [
-  "rgba8unorm",
-  "rgba16float",
-  "r32float",
-  "depth24plus",
-];
+// TEXTURE_FORMATS is imported from the domain contract — see the import above.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

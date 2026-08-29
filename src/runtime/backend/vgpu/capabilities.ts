@@ -1,5 +1,6 @@
 import type { Gpu } from "vgpu";
 import type { BackendCapabilities, CapabilityTier } from "../../../domain/types/backend.ts";
+import { TEXTURE_FORMATS } from "../../../domain/types/node-definition.ts";
 import type { TextureFormat } from "../../../domain/types/node-definition.ts";
 
 /**
@@ -35,7 +36,7 @@ const REPORTED_LIMITS = [
 ] as const;
 
 /** Core-guaranteed formats in WebGPU. Anything beyond baseline is gated on a feature. */
-const CORE_FORMATS: ReadonlyArray<TextureFormat> = ["rgba8unorm", "rgba16float", "r32float", "depth24plus"];
+const CORE_FORMATS: ReadonlyArray<TextureFormat> = TEXTURE_FORMATS;
 
 function readLimits(limits: GPUSupportedLimits): Record<string, number> {
   const source = limits as unknown as Record<string, unknown>;
