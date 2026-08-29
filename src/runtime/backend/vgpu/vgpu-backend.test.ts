@@ -982,6 +982,71 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     preview.dispose();
   });
 
+  /**
+   * T258: fault isolation + the retry that ends the blackout. A preview program racing
+   * the main compile references outputs the current main program lacks; strict
+   * building threw the whole set away and the retry fired only before the FIRST
+   * compile — so one bad binding blacked out every preview, permanently.
+   */
+  it("builds a PARTIAL set around a bad binding and keeps the good tiles (T258)", async () => {
+    const { backend, host, diagnostics } = await harness();
+    await backend.compile(fixturePlan());
+    const { canvas, surfaceFrames } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+
+    preview.setPreviewProgram({
+      resources: [
+        { kind: "sampler" as const, id: "preview:sampler", filter: "linear" as const },
+        { kind: "target" as const, id: "preview:tile:0", size: [192, 108] as const, format: "rgba8unorm" as const },
+        { kind: "target" as const, id: "preview:tile:1", size: [192, 108] as const, format: "rgba8unorm" as const },
+      ],
+      passes: [
+        {
+          kind: "effect" as const,
+          id: "preview:pass:0",
+          shader: PREVIEW_WGSL,
+          target: "preview:tile:0",
+          samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+          textures: [{ binding: "previewSource", resourceId: "output" }],
+        },
+        {
+          kind: "effect" as const,
+          id: "preview:pass:1",
+          shader: PREVIEW_WGSL,
+          target: "preview:tile:1",
+          // The race shape: an output id the CURRENT main program does not have.
+          samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+          textures: [{ binding: "previewSource", resourceId: "target:ghost:out" }],
+        },
+      ],
+      signature: "partial",
+    });
+
+    // The bad binding is reported (as a warning — the preview keeps running)...
+    expect(
+      diagnostics.some(
+        (d) => d.code === BackendDiagnosticCode.unknownResource && d.severity === "warning",
+      ),
+    ).toBe(true);
+    // ...and the GOOD tile was built and presents. One bad binding = one absent tile.
+    expect(preview.lastBuildStats?.effectsBuilt).toBe(1);
+    preview.presentPreviews({
+      refresh: ["preview:pass:0"],
+      composite: [
+        { ref: { nodeId: "n", portId: "out" }, resourceId: "preview:tile:0", dest: { x: 0, y: 0, width: 96, height: 54 } },
+      ],
+      surface: { size: [800, 600] as const, dpr: 1 },
+    });
+    expect(surfaceFrames()).toBeGreaterThan(0);
+
+    // Every subsequent STRUCTURAL main compile retries a dirty host — not just the
+    // first one. The retry is visible in the stats: the good tile CARRIES (§V162)
+    // instead of rebuilding, which also proves the retry ran a fresh build.
+    await backend.compile(fixturePlan({ generateShader: GENERATE_WGSL_EDITED }));
+    expect(preview.lastBuildStats).toMatchObject({ effectsBuilt: 0, effectsReused: 1 });
+    preview.dispose();
+  });
+
   it("keeps presenting after a structural recompile of the main program (T143 interplay)", async () => {
     const { backend, host, diagnostics } = await harness();
     const first = await backend.compile(fixturePlan());

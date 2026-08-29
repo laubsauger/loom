@@ -189,6 +189,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     built: { resources: ReadonlyArray<ResourceDescriptor>; passes: ReadonlyArray<PassDescriptor> } | undefined;
     /** Counters of the latest build — what proves a rebuild CARRIED instead of blanking (§V162). */
     stats: BuildStats | undefined;
+    /**
+     * The latest build was partial or failed — typically a race where the preview
+     * program referenced main outputs the CURRENT main program does not have yet.
+     * Every main compile retries a dirty host (T258); the set keeps presenting
+     * whatever it has in the meantime.
+     */
+    dirty: boolean;
     blit: Effect | undefined;
     /** External texture bindings per pass, for re-pointing after a main recompile. */
     externalBindings: Array<{ passId: string; binding: string; resourceId: string }>;
@@ -897,6 +904,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             )
           : emptyCarryOver;
       const stats: BuildStats = { resourcesCreated: 0, resourcesReused: 0, effectsBuilt: 0, effectsReused: 0 };
+      // T258: TOLERANT. A preview program racing the main compile references outputs
+      // the current main program does not have yet; strict building threw, the catch
+      // left the stale set installed, and — because the old retry fired only before the
+      // FIRST main compile — one bad binding blacked out every preview forever. Now the
+      // partial set installs (good tiles keep working, the bad tile is absent), the
+      // problems are reported, and `dirty` makes every subsequent main compile retry.
+      const partial: { diagnostics: RuntimeDiagnostic[] } = { diagnostics: [] };
       h.set = buildResources(
         active.gpu,
         h.program.resources,
@@ -905,8 +919,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         { ...carry, shared: sharedFromMain ?? carry.shared },
         stats,
         mainExternals(),
+        partial,
       );
       h.stats = stats;
+      h.dirty = partial.diagnostics.length > 0;
+      for (const diagnostic of partial.diagnostics) {
+        hub.report({ ...diagnostic, severity: "warning" });
+      }
       h.built = { resources: h.program.resources, passes: h.program.passes };
       // Identity-based: carried objects live in BOTH sets and survive; only the
       // replaced ones are destroyed. The shared block is kept iff it is the main
@@ -934,6 +953,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         });
       }
     } catch (error) {
+      // Allocation-level failure (not a binding problem — those are tolerated above).
+      // The previous set keeps presenting; the next main compile retries (T258).
+      h.dirty = true;
       hub.report(
         backendDiagnostic(
           "error",
@@ -948,10 +970,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   function refreshPreviewExternals(): void {
     for (const h of previewHosts) {
       if (h.disposed) continue;
-      if (h.set === undefined) {
-        // A program that arrived BEFORE the first main compile could not resolve its
-        // external bindings then; the main program exists now, so the build succeeds.
-        // This is what lets the preview scheduler start in any order (T161).
+      if (h.set === undefined || h.dirty) {
+        // Either the program arrived BEFORE the first main compile, or the last build
+        // was partial — a race where the preview referenced outputs the main program
+        // did not have yet (T258). A main compile just landed, so retry NOW, every
+        // time, not only before the first compile: the once-only retry is exactly what
+        // turned one bad binding into a permanent blackout.
         if (h.program !== undefined) buildPreviewHost(h);
         continue;
       }
@@ -1428,6 +1452,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         set: undefined,
         built: undefined,
         stats: undefined,
+        dirty: false,
         blit: undefined,
         externalBindings: [],
         disposed: false,

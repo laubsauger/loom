@@ -150,6 +150,14 @@ export function buildResources(
   carry: CarryOver = emptyCarryOver,
   stats?: BuildStats,
   externals: ExternalResources = noExternalResources,
+  /**
+   * T258: fault isolation. When given, problems land HERE and the build returns the
+   * PARTIAL set — every pass that resolved still runs; a pass with a broken binding is
+   * simply absent. The preview host uses this: one node's bad binding must black out
+   * ONE tile, never every preview. The main program stays strict (absent = throw),
+   * because a half-built main program rendering quietly is §V9's bug inverted.
+   */
+  tolerate?: { diagnostics: RuntimeDiagnostic[] },
 ): ResourceSet {
   guard.assertOutsideFrame("plan resources");
 
@@ -544,7 +552,10 @@ export function buildResources(
     }
   }
 
-  if (diagnostics.length > 0) throw new ResourceBuildError(diagnostics);
+  if (diagnostics.length > 0) {
+    if (tolerate === undefined) throw new ResourceBuildError(diagnostics);
+    tolerate.diagnostics.push(...diagnostics);
+  }
 
   return {
     targets,
