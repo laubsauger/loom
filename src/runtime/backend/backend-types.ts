@@ -226,6 +226,12 @@ export interface ShaderCompileResult {
 /** The preview track's injected seam, plus the lifecycle the backend owns. */
 export interface PreviewHostHandle extends PreviewRuntimeHost {
   dispose(): void;
+  /**
+   * Counters of the latest tile-resource build (T257, §V162): a program change must
+   * REUSE surviving tiles, not blank them. Diagnostic surface; undefined before the
+   * first build.
+   */
+  readonly lastBuildStats?: BuildStats | undefined;
 }
 
 export type { PreviewFrameCommand, PreviewProgram, PreviewRuntimeHost };

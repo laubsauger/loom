@@ -185,6 +185,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     surface: Surface | undefined;
     program: PreviewProgram | undefined;
     set: ResourceSet | undefined;
+    /** Descriptors `set` was built from — the previous side of the T257 carry diff. */
+    built: { resources: ReadonlyArray<ResourceDescriptor>; passes: ReadonlyArray<PassDescriptor> } | undefined;
+    /** Counters of the latest build — what proves a rebuild CARRIED instead of blanking (§V162). */
+    stats: BuildStats | undefined;
     blit: Effect | undefined;
     /** External texture bindings per pass, for re-pointing after a main recompile. */
     externalBindings: Array<{ passId: string; binding: string; resourceId: string }>;
@@ -385,6 +389,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       for (const h of previewHosts) {
         h.surface = undefined;
         h.set = undefined;
+        h.built = undefined; // T257: never carry across a device loss — the objects died
         h.blit = undefined;
         h.externalBindings = [];
         buildPreviewHost(h);
@@ -869,16 +874,44 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
       const previous = h.set;
       const sharedFromMain = program?.resources.shared;
+      // T257 (§V162): the T143 per-entry diff, applied to the preview host. Without it,
+      // ANY program change rebuilt every tile from nothing — one node crossing the
+      // screen edge blanked all of them. Tile targets whose structure keys survive keep
+      // their objects AND their contents; effects carry when everything they bind
+      // survived, counting bindings into the MAIN program as stable (a main recompile
+      // re-points those separately via refreshPreviewExternals).
+      const declaredIds = new Set(h.program.resources.map((resource) => resource.id));
+      const externalIds = new Set<string>();
+      for (const pass of h.program.passes) {
+        for (const binding of pass.textures ?? []) {
+          if (!declaredIds.has(binding.resourceId)) externalIds.add(binding.resourceId);
+        }
+      }
+      const carry =
+        previous !== undefined && h.built !== undefined && previous.shared === sharedFromMain
+          ? computeCarryOver(
+              { resourceDescriptors: h.built.resources, passes: h.built.passes, resources: previous },
+              h.program.resources,
+              h.program.passes,
+              externalIds,
+            )
+          : emptyCarryOver;
+      const stats: BuildStats = { resourcesCreated: 0, resourcesReused: 0, effectsBuilt: 0, effectsReused: 0 };
       h.set = buildResources(
         active.gpu,
         h.program.resources,
         h.program.passes,
         guard,
-        { ...emptyCarryOver, shared: sharedFromMain },
-        undefined,
+        { ...carry, shared: sharedFromMain ?? carry.shared },
+        stats,
         mainExternals(),
       );
-      if (previous) releasePreviewSet(previous, previous.shared === sharedFromMain);
+      h.stats = stats;
+      h.built = { resources: h.program.resources, passes: h.program.passes };
+      // Identity-based: carried objects live in BOTH sets and survive; only the
+      // replaced ones are destroyed. The shared block is kept iff it is the main
+      // program's (whose lifecycle owns it) or carried forward.
+      if (previous) releaseResourcesExcept(previous, h.set);
 
       // Bindings that live in the MAIN program get re-pointed after its recompiles.
       h.externalBindings = [];
@@ -1393,6 +1426,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         surface: undefined,
         program: undefined,
         set: undefined,
+        built: undefined,
+        stats: undefined,
         blit: undefined,
         externalBindings: [],
         disposed: false,
@@ -1409,6 +1444,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           guard.assertOutsideFrame("preview program build");
           h.program = next;
           buildPreviewHost(h);
+        },
+        get lastBuildStats() {
+          return h.stats;
         },
         presentPreviews(command: PreviewFrameCommand) {
           if (h.disposed || disposed || halted) return;
@@ -1631,10 +1669,24 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
  * bound resource are reusable — a rebuilt binding target means the effect's set bag
  * would reference a destroyed object.
  */
+/** What a per-entry diff needs from the previous build — the main Program or a preview set (T257). */
+interface CarrySource {
+  readonly resourceDescriptors: ReadonlyArray<ResourceDescriptor>;
+  readonly passes: ReadonlyArray<PassDescriptor>;
+  readonly resources: ResourceSet;
+}
+
 function computeCarryOver(
-  previous: Program,
+  previous: CarrySource,
   nextResources: ReadonlyArray<ResourceDescriptor>,
   nextPasses: ReadonlyArray<PassDescriptor>,
+  /**
+   * Resource ids that are STABLE ACROSS THIS REBUILD despite not being in either
+   * resource list — a preview pass's bindings into the MAIN program (T257). Safe
+   * because a main recompile re-points them separately (`refreshPreviewExternals`);
+   * without this, no preview effect could ever carry.
+   */
+  stableExternalIds?: ReadonlySet<string>,
 ): CarryOver {
   const oldResourceKeys = new Map(
     previous.resourceDescriptors.map((resource) => [resource.id, resourceStructureKey(resource)]),
@@ -1681,7 +1733,7 @@ function computeCarryOver(
       bound.push(...(pass.buffers ?? []).map((binding) => binding.resourceId));
     }
     bound.push(...(pass.textures ?? []).map((binding) => binding.resourceId));
-    if (!bound.every((id) => reusable.has(id))) continue;
+    if (!bound.every((id) => reusable.has(id) || stableExternalIds?.has(id) === true)) continue;
 
     if (pass.kind === "effect") {
       const existing = previous.resources.effects.get(pass.id);

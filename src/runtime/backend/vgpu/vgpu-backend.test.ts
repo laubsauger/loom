@@ -931,6 +931,57 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     preview.dispose();
   });
 
+  /**
+   * T257 (§V162): the flicker root cause. buildPreviewHost used to rebuild from
+   * emptyCarryOver, so ANY program change destroyed and recreated EVERY tile — one node
+   * crossing the screen edge blanked all previews. The T143 per-entry diff now applies:
+   * a tile whose structure key survives keeps its object and its contents.
+   */
+  it("carries surviving tiles across a preview program change (T257, §V162)", async () => {
+    const { backend, host } = await harness();
+    await backend.compile(fixturePlan());
+    const { canvas } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+
+    const tiles = (count: number, signature: string) => ({
+      resources: [
+        { kind: "sampler" as const, id: "preview:sampler", filter: "linear" as const },
+        ...Array.from({ length: count }, (_, i) => ({
+          kind: "target" as const,
+          id: `preview:tile:${i}`,
+          size: [192, 108] as const,
+          format: "rgba8unorm" as const,
+        })),
+      ],
+      passes: Array.from({ length: count }, (_, i) => ({
+        kind: "effect" as const,
+        id: `preview:pass:${i}`,
+        shader: PREVIEW_WGSL,
+        target: `preview:tile:${i}`,
+        samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+        textures: [{ binding: "previewSource", resourceId: "output" }],
+      })),
+      signature,
+    });
+
+    preview.setPreviewProgram(tiles(2, "two"));
+    expect(preview.lastBuildStats).toMatchObject({ resourcesCreated: 3, effectsBuilt: 2 });
+
+    // One MORE tile: the two existing tiles and their effects must carry, not rebuild.
+    preview.setPreviewProgram(tiles(3, "three"));
+    expect(preview.lastBuildStats).toMatchObject({
+      resourcesCreated: 1,
+      resourcesReused: 3, // 2 tiles + the sampler
+      effectsBuilt: 1,
+      effectsReused: 2,
+    });
+
+    // One FEWER: nothing new is allocated at all; the survivors carry.
+    preview.setPreviewProgram(tiles(2, "two-again"));
+    expect(preview.lastBuildStats).toMatchObject({ resourcesCreated: 0, resourcesReused: 3, effectsReused: 2 });
+    preview.dispose();
+  });
+
   it("keeps presenting after a structural recompile of the main program (T143 interplay)", async () => {
     const { backend, host, diagnostics } = await harness();
     const first = await backend.compile(fixturePlan());
