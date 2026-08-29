@@ -43,14 +43,45 @@ const BLEND_SHADERS = {
 type BlendType = keyof typeof BLEND_SHADERS;
 
 /**
- * Builds one two-input blend node.
- *
- * Five node definitions from one factory rather than five near-identical files: they share
- * their ports, their policies, their alpha convention and their `opacity` parameter, and
- * differ only in which shader they name. Each is still a separate `NodeDefinition` with its
- * own type string, title and shader text — nothing is decided at runtime.
+ * The operation menu for the Composite node. Order is presentation only — the shader is
+ * chosen by NAME, so reordering this list cannot silently repoint an existing project at a
+ * different blend the way an index-based enum would.
  */
-function blendNode(type: BlendType, title: string, description: string): NodeDefinition {
+const BLEND_OPTIONS = [
+  { value: "over", label: "Over" },
+  { value: "add", label: "Add" },
+  { value: "multiply", label: "Multiply" },
+  { value: "screen", label: "Screen" },
+  { value: "difference", label: "Difference" },
+] as const;
+
+function readBlend(params: Record<string, unknown>, fallback: BlendType): BlendType {
+  const value = params["operation"];
+  return typeof value === "string" && value in BLEND_SHADERS ? (value as BlendType) : fallback;
+}
+
+/**
+ * Builds one two-input blend node — either with its operation fixed, or with the operation
+ * chosen by a parameter (§T232).
+ *
+ * WHY BOTH EXIST, since TD ships both and the reasons differ. The named nodes are for
+ * READABILITY: a graph reading `Multiply` says what it does at a glance, where `Composite`
+ * makes you open it. When you know the operation, the named node is better documentation
+ * than a parameter. `Composite` is for FLEXIBILITY: change the blend without rewiring, and
+ * drive the operation by expression (§V107), which no fixed node can do.
+ *
+ * §V140 is what makes shipping both safe: there is ONE implementation of the blend maths.
+ * `BLEND_SHADERS` is the single source; a named node binds a fixed key and Composite reads
+ * one from a parameter. Two copies would mean Over-inside-Composite and the Over node
+ * drifting apart, with only one of them getting the next bug fix.
+ */
+function blendNode(
+  type: string,
+  title: string,
+  description: string,
+  /** `null` = the node's `operation` parameter chooses (Composite). */
+  fixed: BlendType | null,
+): NodeDefinition {
   return {
     type,
     version: 1,
@@ -68,6 +99,22 @@ function blendNode(type: BlendType, title: string, description: string): NodeDef
     ],
     outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
     parameters: {
+      ...(fixed === null
+        ? {
+            operation: {
+              // §V141: this selects the SHADER, so it recompiles rather than branching per
+              // pixel on a value that changes approximately never. Leaving it a uniform
+              // would also quietly weaken §V5 — the uniform-only fast path only means
+              // anything while structural changes are classified as structural.
+              type: "enum" as const,
+              label: "Operation",
+              default: "over",
+              options: [...BLEND_OPTIONS],
+              compileTime: true,
+              description: "Which blend to apply. Same maths as the named nodes (§V140).",
+            },
+          }
+        : {}),
       opacity: {
         type: "number",
         label: "Opacity",
@@ -93,10 +140,14 @@ function blendNode(type: BlendType, title: string, description: string): NodeDef
               : 'input port "in2"';
         return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
       }
+      // The pass id carries the operation so that changing it produces a different
+      // structure key: a Composite switched from Over to Add is new contents, never a
+      // carry-over of the old picture.
+      const blend = fixed ?? readBlend(parameters, "over");
       const pass: EffectPassDescriptor = {
         kind: "effect",
-        id: `${nodeId}:${type}`,
-        shader: BLEND_SHADERS[type],
+        id: `${nodeId}:${blend}`,
+        shader: BLEND_SHADERS[blend],
         target,
         textures: [
           { binding: "frontTexture", resourceId: front.resource },
@@ -106,7 +157,7 @@ function blendNode(type: BlendType, title: string, description: string): NodeDef
         uniformBinding: "params",
         uniforms: { opacity: readNumber(parameters, "opacity", 1) },
         nodeId,
-        label: title,
+        label: fixed === null ? `${title} (${blend})` : title,
       };
       return { passes: [pass] };
     },
@@ -117,22 +168,39 @@ export const overNode = blendNode(
   "over",
   "Over",
   "Composites input 1 over input 2 using its alpha. TD Over TOP.",
+  "over",
 );
-export const addNode = blendNode("add", "Add", "Adds the two inputs channel by channel. TD Add TOP.");
+export const addNode = blendNode(
+  "add",
+  "Add",
+  "Adds the two inputs channel by channel. TD Add TOP.",
+  "add",
+);
 export const multiplyNode = blendNode(
   "multiply",
   "Multiply",
   "Multiplies the two inputs channel by channel. TD Multiply TOP.",
+  "multiply",
 );
 export const screenNode = blendNode(
   "screen",
   "Screen",
   "Inverse-multiplies the two inputs: 1 - (1-a)(1-b). TD Composite TOP, screen operation.",
+  "screen",
 );
 export const differenceNode = blendNode(
   "difference",
   "Difference",
   "Absolute difference between the two inputs. TD Composite TOP, difference operation.",
+  "difference",
+);
+
+/** TD Composite TOP: the same blends, chosen by a parameter instead of by node type. */
+export const compositeNode = blendNode(
+  "composite",
+  "Composite",
+  "Blends two inputs with a selectable operation. TD Composite TOP.",
+  null,
 );
 
 /**
@@ -210,6 +278,7 @@ export const maskNode: NodeDefinition = {
 
 /** The compositing group, in library order. */
 export const compositeNodes: readonly NodeDefinition[] = [
+  compositeNode,
   overNode,
   addNode,
   multiplyNode,

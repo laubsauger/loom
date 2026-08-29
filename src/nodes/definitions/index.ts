@@ -10,8 +10,10 @@ import { filterNodes } from "./filters.ts";
 import { compositeNodes } from "./composite.ts";
 import { temporalNodes } from "./feedback.ts";
 import { pointNodeDefinitions } from "./points.ts";
+import { nullNode } from "./null-node.ts";
 
 export { solidNode } from "./solid.ts";
+export { nullNode } from "./null-node.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
 export { outputNode } from "./output.ts";
 export { isSinkNode, SINK_TAG } from "./sink.ts";
@@ -25,6 +27,7 @@ export { transformNode, cropNode, tileNode, transformNodes } from "./transforms.
 export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
 export { blurNode, displaceNode, filterNodes } from "./filters.ts";
 export {
+  compositeNode,
   overNode,
   addNode,
   multiplyNode,
@@ -61,6 +64,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...compositeNodes,
   ...temporalNodes,
   ...pointNodeDefinitions,
+  nullNode,
 ];
 
 /**

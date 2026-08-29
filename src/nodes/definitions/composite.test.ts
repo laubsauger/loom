@@ -4,6 +4,7 @@ import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import {
   addNode,
+  compositeNode,
   compositeNodes,
   differenceNode,
   maskNode,
@@ -33,12 +34,62 @@ describe("compositing nodes (T40)", () => {
     for (const definition of compositeNodes) expect(validateNodeDefinition(definition)).toEqual([]);
     expect(createNodeRegistry(compositeNodes).list().map((d) => d.type)).toEqual([
       "add",
+      "composite",
       "difference",
       "mask",
       "multiply",
       "over",
       "screen",
     ]);
+  });
+
+  /**
+   * The Composite node (T232) — TD's Composite TOP: the same blends, selected by parameter.
+   *
+   * The first test here is the one that matters. §V140 says a blend operation has ONE
+   * implementation, and the way that claim dies is not deliberately: someone tweaks Over's
+   * alpha handling in the named node, misses the Composite path, and the two silently
+   * disagree for months because nothing compares them. Comparing the emitted SHADER TEXT is
+   * the cheapest possible check that they are literally the same code, and it fails the
+   * moment anyone forks the maths.
+   */
+  describe("the Composite node", () => {
+    it("emits the identical shader to the named node for every operation (§V140)", () => {
+      const named = { over: overNode, add: addNode, multiply: multiplyNode, screen: screenNode, difference: differenceNode };
+      for (const [operation, node] of Object.entries(named)) {
+        expect(firstPass(compositeNode, { operation }).shader).toBe(firstPass(node).shader);
+      }
+    });
+
+    it("defaults to over, and falls back to over on an unknown operation", () => {
+      const fallback = firstPass(compositeNode, { operation: "not-a-blend" }).shader;
+      expect(firstPass(compositeNode).shader).toBe(firstPass(overNode).shader);
+      // A project written by a newer build naming an operation this one lacks must still
+      // render something recognisable rather than failing to compile.
+      expect(fallback).toBe(firstPass(overNode).shader);
+    });
+
+    it("puts the operation in the pass id, so switching it is new contents not a carry-over", () => {
+      // Carry-over keys on structure: if the id were stable across operations, switching
+      // Over to Add would keep the old picture until something else invalidated it.
+      expect(firstPass(compositeNode, { operation: "add" }).id).not.toBe(
+        firstPass(compositeNode, { operation: "screen" }).id,
+      );
+    });
+
+    it("marks the operation compile-time, since it selects the shader (§V141)", () => {
+      // Not a uniform. §V5's uniform-only fast path only means anything while structural
+      // changes are classified as structural, and a dropdown is exactly the parameter
+      // someone would be tempted to treat as a value.
+      expect(compositeNode.parameters["operation"]?.compileTime).toBe(true);
+      expect(compositeNode.parameters["opacity"]?.compileTime).toBeUndefined();
+    });
+
+    it("keeps the named nodes free of an operation parameter", () => {
+      // The named nodes exist to be self-documenting; giving them a menu would make them
+      // Composite with extra steps.
+      for (const node of blendNodes) expect(node.parameters["operation"]).toBeUndefined();
+    });
   });
 
   describe("the blend family", () => {
