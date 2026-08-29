@@ -48,7 +48,19 @@ export function ControlRow({
   return (
     <div className={cx(styles.row, compact && styles.rowCompact, stacked && styles.rowStacked)}>
       <label className={styles.label} {...(controlId === undefined ? {} : { htmlFor: controlId })}>
-        <span className={styles.labelText}>{label}</span>
+        {/*
+          The description lives on the LABEL — hover or focus it and you get the text.
+          An earlier version put a `?` handle after the control, which wrapped onto its own
+          line because the row is a two-column grid, and it added an indicator for
+          something the label already implies. Fewer elements, same information.
+        */}
+        <span
+          className={cx(styles.labelText, hasDescription && styles.labelDescribed)}
+          {...(hasDescription ? { title: description } : {})}
+          {...(hasDescription && descriptionId !== undefined ? { id: descriptionId } : {})}
+        >
+          {label}
+        </span>
         {!compact && compileTime ? (
           <span className={styles.compileBadge} title="Changing this recompiles the node (§V5)">
             rc
@@ -62,26 +74,7 @@ export function ControlRow({
         {!compact && hint ? <span className={styles.hint}>{hint}</span> : null}
       </label>
       <div className={styles.control}>{children}</div>
-      {/*
-        A parameter's description is available ON DEMAND, never rendered inline. A node has
-        ten to fifteen parameters; a sentence under each is a wall of prose that buries the
-        values the user came to read, and it is read once and then permanently in the way.
-        It stays reachable by hover, by focus, and by screen reader — the text is not lost,
-        only the ambient noise is.
-      */}
-      {hasDescription ? (
-        <span
-          className={styles.descriptionHandle}
-          tabIndex={0}
-          role="note"
-          aria-label={`About ${label}`}
-          title={description}
-          {...(descriptionId === undefined ? {} : { id: descriptionId })}
-        >
-          <span aria-hidden="true">?</span>
-          <span className={styles.visuallyHidden}>{description}</span>
-        </span>
-      ) : null}
+
     </div>
   );
 }
