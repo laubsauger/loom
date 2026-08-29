@@ -765,6 +765,7 @@ LAYERING — 3 rows, ⊥ 1: compile = does node EXIST. build = which GPU objects
 (carry-over, already built). cook = does this pass RUN THIS FRAME. cooking is only row 3.
 unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
+V163: a graph w/ ANY animated parameter (driven | time-dependent expression) re-resolves & pushes VALUES-ONLY updates ∀ frame. `hasAnimatedParameters(graph)` gates it ∴ a static graph pays ⊥. w/o this the resolver moves & the SCREEN ⊥ — a correct resolver is ⊥ the feature.
 V160: a preview tile's size derives from the node's preview AREA (V117), ⊥ from its on-screen rect. the rect carries ZOOM ∴ sizing from it reallocates on camera move (B13).
 V161: HOLDING a tile ≠ DRAWING into it — separate lifetimes. suspension (V28) governs per-frame GPU WORK; the pool governs ALLOCATION. a suspended preview keeps its slot until the pool needs it for an on-screen one. conflating them = panning a node off screen blanks it & (per V162) everything else.
 V162: the preview host ! carry over per-resource like the main program (V62b/T143). today `buildPreviewHost` builds w/ `emptyCarryOver` ∴ ANY program change destroys & recreates EVERY tile — 1 node crossing the screen edge blanks ∀ of them on the same frame. that is the "IN SYNC" ∈ B13 and it is still live above the 48-tile pool.
@@ -975,11 +976,12 @@ T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE to
 T178|x|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
 T217|x|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE installing the program; route the failure to `onDiagnostic` + set `stale`; keep the previous program. AND make the mock reject the way Dawn does, else the test stays greener than the product|V9,V27
-T218|.|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
+T218|x|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
 T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
-T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
+T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T259|.|**per-frame driven/expression push** ∈ composition root — gate on `hasAnimatedParameters`, re-resolve, values-only update (isUniformOnlyChange → updateUniforms). THE last inch of "something moves"|V163,V5,V143
 T257|.|**preview-side carry-over** ∈ `buildPreviewHost` — reuse T143's mechanism. w/o it V142 holds only below the 48-tile pool; above it a camera move still blanks everything|V162,V142
 T258|.|preview host resilience: 1 unresolvable binding currently blanks the WHOLE host (`buildPreviewHost` catches → `h.set` unusable). ⊥ let 1 bad node black out ∀ previews. widens w/ T252|V162,V28
 T249|.|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
@@ -993,16 +995,16 @@ T256|.|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, bette
 T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
 T247|.|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
-T245|.|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
+T245|x|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
 T244|.|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|.|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
 T236|.|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|.|**Cache / Time Machine** — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
-T238|.|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
-T239|.|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
-T240|.|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
+T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
+T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
+T240|x|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
 T241|.|Edge + Convolve (arbitrary kernel) filters|-
 T242|.|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
 T243|.|Text generator — glyph atlas → texture|-
@@ -1029,10 +1031,10 @@ T206|x|preview tiles follow a node drag: compute rects w/ `slotScreenRect(slot, 
 T207|x|component-addressable slots: `color.r`/`t.x` each w/ own mode+value; resolver reassembles; compound editor writes ∀ components ∈ 1 patch|V113,V114,V107
 T202|x|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
 T203|x|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
-T204|.|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's has-a-value corner mark; ctrl/cmd+E edits the expression; right-click menu|V107,V108,V90
+T204|x|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's has-a-value corner mark; ctrl/cmd+E edits the expression; right-click menu|V107,V108,V90
 T205|x|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
-T200|.|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
-T201|.|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
+T200|x|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
+T201|x|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
 T198|x|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
 T199|.|wire `read_points`: `createPointsReadback({ readBuffer, pointSetInfo, now })` — clock ! be INJECTED (the export boundary test caught a `Date.now` default)|V48,V16
 T197|x|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
@@ -1041,8 +1043,8 @@ T195|x|standalone WGSL compile — today WGSL is only checked when the GRAPH com
 T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
 T192|.|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
 T193|.|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
-T188|.|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
-T189|.|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
+T188|x|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
+T189|x|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
 T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
 T187|.|`component-scope.ts::resolveInstanceValues` returns DECODED `.values` into the parent scope ∴ a display colour decodes TWICE (mid-grey → ~0.046). ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
 T184|x|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
@@ -1124,7 +1126,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 1 — 4 tracks
 | track | tasks | owns |
 |---|---|---|
-| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
+| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 T244 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
