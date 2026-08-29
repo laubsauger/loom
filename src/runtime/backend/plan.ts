@@ -148,6 +148,14 @@ export interface DispatchPassDescriptor {
   readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
   readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
   readonly uniforms?: Readonly<Record<string, number | readonly number[]>>;
+  /**
+   * WGSL binding name of the pass's uniform block (T172). CONVENTION: when present,
+   * the backend writes `timeSeconds`, `deltaSeconds` and `frameIndex` into this block
+   * every frame, merged over the static values — which is exactly the KernelFrame
+   * struct the point codegen generates, fed from FrameInputs and nothing else (§V44).
+   * Static members (seed, count) stay updatable through updateUniforms (§V5).
+   */
+  readonly uniformBinding?: string;
 }
 
 /** Instanced or indirect draw — the sprites → instances → mesh render spine. */
@@ -163,6 +171,13 @@ export interface DrawPassDescriptor {
   readonly vertexCount?: number;
   readonly buffers?: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>;
   readonly textures?: ReadonlyArray<TextureBindingDescriptor>;
+  /** Per-pass uniform values (sprite size, tint). Values only, never structure (§V5). */
+  readonly uniforms?: UniformValues;
+  readonly uniformBinding?: string;
+  /** Binding name of the shared frame block, when the shader declares it. */
+  readonly sharedBinding?: string;
+  /** Blend applied to the color target. Sprites usually want "additive" or "alpha". */
+  readonly blend?: "alpha" | "additive" | "premultiplied";
 }
 
 /**
@@ -283,6 +298,26 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
     };
   }
 
+  if (kind === "buffer" || kind === "bufferPair") {
+    const stride = value["stride"];
+    const capacity = value["capacity"];
+    if (!(Number.isInteger(stride) && (stride as number) >= 1)) return undefined;
+    if (!(Number.isInteger(capacity) && (capacity as number) >= 1)) return undefined;
+    const label = value["label"];
+    const base = {
+      id,
+      stride: stride as number,
+      capacity: capacity as number,
+      ...(typeof label === "string" ? { label } : {}),
+    };
+    if (kind === "bufferPair") return { kind: "bufferPair", ...base };
+    const usage = value["usage"];
+    if (usage !== "storage" && usage !== "storage-read" && usage !== "indirect" && usage !== "uniform") {
+      return undefined;
+    }
+    return { kind: "buffer", usage, ...base };
+  }
+
   return undefined;
 }
 
@@ -297,6 +332,8 @@ function readPass(value: unknown): PassDescriptor | undefined {
     return { kind: "swap", id, resourceId };
   }
 
+  if (kind === "dispatch") return readDispatchPass(id, value);
+  if (kind === "draw") return readDrawPass(id, value);
   if (kind !== "effect") return undefined;
 
   const shader = value["shader"];
@@ -336,6 +373,121 @@ function readPass(value: unknown): PassDescriptor | undefined {
     ...(typeof sharedBinding === "string" ? { sharedBinding } : {}),
     ...(typeof nodeId === "string" ? { nodeId } : {}),
     ...(typeof label === "string" ? { label } : {}),
+  };
+}
+
+function readBufferBindings(
+  value: unknown,
+): ReadonlyArray<{ binding: string; resourceId: string }> | undefined {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return undefined;
+  const out: Array<{ binding: string; resourceId: string }> = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return undefined;
+    const { binding, resourceId } = entry;
+    if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
+    out.push({ binding, resourceId });
+  }
+  return out;
+}
+
+function readDispatchPass(id: string, value: Record<string, unknown>): DispatchPassDescriptor | undefined {
+  const shader = value["shader"];
+  const entryPoint = value["entryPoint"];
+  if (typeof shader !== "string" || shader.length === 0) return undefined;
+  if (typeof entryPoint !== "string" || entryPoint.length === 0) return undefined;
+
+  const rawWorkgroups = value["workgroups"];
+  let workgroups: DispatchPassDescriptor["workgroups"] | undefined;
+  if (Array.isArray(rawWorkgroups) && rawWorkgroups.length === 3 && rawWorkgroups.every((n) => Number.isInteger(n) && n >= 1)) {
+    workgroups = [rawWorkgroups[0], rawWorkgroups[1], rawWorkgroups[2]];
+  } else if (isRecord(rawWorkgroups) && typeof rawWorkgroups["indirect"] === "string") {
+    workgroups = { indirect: rawWorkgroups["indirect"] };
+  }
+  if (workgroups === undefined) return undefined;
+
+  const buffers = readBufferBindings(value["buffers"]);
+  const textures = readBindings(value["textures"]);
+  if (buffers === undefined || textures === undefined) return undefined;
+
+  const rawUniforms = value["uniforms"];
+  const uniforms = rawUniforms === undefined ? undefined : readUniformValues(rawUniforms);
+  if (rawUniforms !== undefined && uniforms === undefined) return undefined;
+  const uniformBinding = value["uniformBinding"];
+  if (uniforms !== undefined && typeof uniformBinding !== "string") return undefined;
+
+  const nodeId = value["nodeId"];
+  return {
+    kind: "dispatch",
+    id,
+    shader,
+    entryPoint,
+    workgroups,
+    buffers,
+    textures,
+    ...(uniforms === undefined
+      ? {}
+      : { uniforms: uniforms as NonNullable<DispatchPassDescriptor["uniforms"]>, uniformBinding: uniformBinding as string }),
+    ...(typeof nodeId === "string" ? { nodeId } : {}),
+  };
+}
+
+function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescriptor | undefined {
+  const shader = value["shader"];
+  const target = value["target"];
+  const topology = value["topology"];
+  if (typeof shader !== "string" || shader.length === 0) return undefined;
+  if (typeof target !== "string" || target.length === 0) return undefined;
+  if (
+    topology !== "point-list" &&
+    topology !== "line-list" &&
+    topology !== "triangle-list" &&
+    topology !== "triangle-strip"
+  ) {
+    return undefined;
+  }
+
+  const rawInstances = value["instances"];
+  let instances: DrawPassDescriptor["instances"] | undefined;
+  if (typeof rawInstances === "number" && Number.isInteger(rawInstances) && rawInstances >= 0) {
+    instances = rawInstances;
+  } else if (isRecord(rawInstances) && typeof rawInstances["indirect"] === "string") {
+    instances = { indirect: rawInstances["indirect"] };
+  }
+  if (instances === undefined) return undefined;
+
+  const vertexCount = value["vertexCount"];
+  if (vertexCount !== undefined && !(Number.isInteger(vertexCount) && (vertexCount as number) >= 1)) return undefined;
+
+  const buffers = readBufferBindings(value["buffers"]);
+  const textures = readBindings(value["textures"]);
+  if (buffers === undefined || textures === undefined) return undefined;
+
+  const rawUniforms = value["uniforms"];
+  const uniforms = rawUniforms === undefined ? undefined : readUniformValues(rawUniforms);
+  if (rawUniforms !== undefined && uniforms === undefined) return undefined;
+  const uniformBinding = value["uniformBinding"];
+  if (uniforms !== undefined && typeof uniformBinding !== "string") return undefined;
+  const sharedBinding = value["sharedBinding"];
+  if (sharedBinding !== undefined && typeof sharedBinding !== "string") return undefined;
+  const blend = value["blend"];
+  if (blend !== undefined && blend !== "alpha" && blend !== "additive" && blend !== "premultiplied") return undefined;
+
+  const nodeId = value["nodeId"];
+  return {
+    kind: "draw",
+    id,
+    shader,
+    target,
+    topology,
+    instances,
+    ...(vertexCount === undefined ? {} : { vertexCount: vertexCount as number }),
+    buffers,
+    textures,
+    ...(uniforms === undefined ? {} : { uniforms, uniformBinding: uniformBinding as string }),
+    ...(typeof sharedBinding === "string" ? { sharedBinding } : {}),
+    ...(blend === undefined ? {} : { blend }),
+    ...(typeof nodeId === "string" ? { nodeId } : {}),
   };
 }
 
@@ -522,6 +674,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
           Object.keys(pass.uniforms ?? {}).sort(),
+          pass.uniformBinding ?? null,
         ];
       case "draw":
         return [
@@ -533,6 +686,10 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
+          Object.keys(pass.uniforms ?? {}).sort(),
+          pass.uniformBinding ?? null,
+          pass.sharedBinding ?? null,
+          pass.blend ?? null,
         ];
       case "counter":
         return ["counter", pass.id, pass.op, pass.resourceId, pass.outputResourceId ?? null];
@@ -575,7 +732,9 @@ export function planUniformValues(
 ): ReadonlyMap<string, UniformValues> {
   const out = new Map<string, UniformValues>();
   for (const pass of passes) {
-    if (pass.kind === "effect" && pass.uniforms) out.set(pass.id, pass.uniforms);
+    if ((pass.kind === "effect" || pass.kind === "dispatch" || pass.kind === "draw") && pass.uniforms) {
+      out.set(pass.id, pass.uniforms as UniformValues);
+    }
   }
   return out;
 }

@@ -486,10 +486,38 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       for (const pass of active.passes) {
         if (pass.kind === "swap") {
           active.resources.pingPongs.get(pass.resourceId)?.swap();
+          active.resources.bufferPairs.get(pass.resourceId)?.swap();
           continue;
         }
-        // dispatch / draw / counter are declared in the plan IR but not encodable yet;
-        // the compiler does not emit them in v1, and skipping is safer than guessing.
+        if (pass.kind === "dispatch") {
+          // T172: kernels run in the frame. Indirect counts come from a GPU buffer the
+          // lifecycle wrote — the CPU never knows the number, and does not need to.
+          const pipeline = active.resources.computes.get(pass.id);
+          if (!pipeline) continue;
+          if ("indirect" in (pass.workgroups as object)) {
+            const counter = active.resources.buffers.get((pass.workgroups as { indirect: string }).indirect);
+            if (counter) pipeline.dispatch({ indirect: counter });
+          } else {
+            const [x, y, z] = pass.workgroups as readonly [number, number, number];
+            pipeline.dispatch(x, y, z);
+          }
+          continue;
+        }
+        if (pass.kind === "draw") {
+          const drawable = active.resources.draws.get(pass.id);
+          const resolve = active.resources.renderTargets.get(pass.id);
+          if (!drawable || !resolve) continue;
+          const indirect =
+            typeof pass.instances === "object"
+              ? active.resources.buffers.get(pass.instances.indirect)
+              : undefined;
+          // Draw owns its own pass on the current frame; DrawCallOptions.target names
+          // where it lands, indirect counts come from the GPU-written args buffer.
+          drawable.draw(indirect ? { target: resolve(), indirect } : { target: resolve() });
+          continue;
+        }
+        // counter is reserved for the scan/compact convenience ops; the lifecycle
+        // module currently expresses those as ordinary dispatch passes.
         if (pass.kind !== "effect") continue;
         const drawable = active.resources.effects.get(pass.id);
         const resolve = active.resources.renderTargets.get(pass.id);
@@ -509,15 +537,30 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     });
   }
 
-  /** Re-points ping-pong texture bindings after a swap. Outside the frame: rebinding only. */
+  /** Re-points ping-pong texture and buffer-pair bindings after swaps. `set()` only — no allocation. */
   function rebindDynamicTextures(active: Program): void {
+    const settableFor = (passId: string): { set(values: Record<string, unknown>): unknown } | undefined =>
+      active.resources.effects.get(passId) ??
+      active.resources.computes.get(passId) ??
+      active.resources.draws.get(passId);
+
     for (const [passId, bindings] of active.resources.dynamicTextures) {
-      const drawable = active.resources.effects.get(passId);
+      const drawable = settableFor(passId);
       if (!drawable) continue;
       const values: Record<string, unknown> = {};
       for (const binding of bindings) {
         const pair = active.resources.pingPongs.get(binding.resourceId);
         if (pair) values[binding.binding] = pair.read.color;
+      }
+      drawable.set(values);
+    }
+    for (const [passId, bindings] of active.resources.dynamicBuffers) {
+      const drawable = settableFor(passId);
+      if (!drawable) continue;
+      const values: Record<string, unknown> = {};
+      for (const binding of bindings) {
+        const pair = active.resources.bufferPairs.get(binding.resourceId);
+        if (pair) values[binding.binding] = pair.read;
       }
       drawable.set(values);
     }
@@ -632,9 +675,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       buffers: new Map(),
       bufferPairs: new Map(),
       effects: new Map(),
+      computes: new Map(),
+      draws: new Map(),
       passUniforms: new Map(),
       shared: keepShared ? previous.shared : (undefined as unknown as ResourceSet["shared"]),
       dynamicTextures: new Map(),
+      dynamicBuffers: new Map(),
       renderTargets: new Map(),
     });
   }
@@ -883,6 +929,18 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
       const active = program;
       active.resources.shared.set(sharedUniformsFromFrame(frameInputs));
+      // T172 convention: a dispatch pass's uniform block receives the frame fields each
+      // render, merged over its static values (seed, count) — the KernelFrame contract,
+      // fed from FrameInputs and nothing else (§V44).
+      for (const pass of active.passes) {
+        if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) {
+          applyUniforms(active, pass.id, {
+            timeSeconds: frameInputs.frame.timeSeconds,
+            deltaSeconds: frameInputs.frame.deltaSeconds,
+            frameIndex: frameInputs.frame.frameIndex,
+          });
+        }
+      }
       rebindDynamicTextures(active);
 
       const open = currentFrame;
@@ -1272,24 +1330,51 @@ function computeCarryOver(
 
   const oldPassKeys = new Map(previous.passes.map((pass) => [pass.id, passStructureKey(pass)]));
   const effects = new Map<string, NonNullable<ReturnType<ResourceSet["effects"]["get"]>>>();
+  const computes = new Map<string, NonNullable<ReturnType<ResourceSet["computes"]["get"]>>>();
+  const draws = new Map<string, NonNullable<ReturnType<ResourceSet["draws"]["get"]>>>();
   const passUniforms = new Map<string, NonNullable<ReturnType<ResourceSet["passUniforms"]["get"]>>>();
   for (const pass of nextPasses) {
-    if (pass.kind !== "effect") continue;
+    if (pass.kind === "swap" || pass.kind === "counter") continue;
     if (oldPassKeys.get(pass.id) !== passStructureKey(pass)) continue;
-    const existing = previous.resources.effects.get(pass.id);
-    if (!existing) continue;
-    const bound = [
-      pass.target,
-      ...(pass.textures ?? []).map((binding) => binding.resourceId),
-      ...(pass.samplers ?? []).map((binding) => binding.resourceId),
-    ];
+
+    const bound: string[] = [];
+    if (pass.kind === "effect" || pass.kind === "draw") bound.push(pass.target);
+    if (pass.kind === "effect") bound.push(...(pass.samplers ?? []).map((binding) => binding.resourceId));
+    if (pass.kind === "dispatch" || pass.kind === "draw") {
+      bound.push(...(pass.buffers ?? []).map((binding) => binding.resourceId));
+    }
+    bound.push(...(pass.textures ?? []).map((binding) => binding.resourceId));
     if (!bound.every((id) => reusable.has(id))) continue;
-    effects.set(pass.id, existing);
+
+    if (pass.kind === "effect") {
+      const existing = previous.resources.effects.get(pass.id);
+      if (!existing) continue;
+      effects.set(pass.id, existing);
+    } else if (pass.kind === "dispatch") {
+      const existing = previous.resources.computes.get(pass.id);
+      if (!existing) continue;
+      computes.set(pass.id, existing);
+    } else {
+      const existing = previous.resources.draws.get(pass.id);
+      if (!existing) continue;
+      draws.set(pass.id, existing);
+    }
     const block = previous.resources.passUniforms.get(pass.id);
     if (block) passUniforms.set(pass.id, block);
   }
 
-  return { targets, pingPongs, samplers, buffers, bufferPairs, effects, passUniforms, shared: previous.resources.shared };
+  return {
+    targets,
+    pingPongs,
+    samplers,
+    buffers,
+    bufferPairs,
+    effects,
+    computes,
+    draws,
+    passUniforms,
+    shared: previous.resources.shared,
+  };
 }
 
 /**

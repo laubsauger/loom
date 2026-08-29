@@ -1,5 +1,5 @@
-import { effect, pingPong, pingPongStorage, sampler, storage, target, uniforms } from "vgpu";
-import type { Effect, Gpu, PingPongStorage, PingPongTargets, SharedUniforms, StorageBuffer, Target } from "vgpu";
+import { compute, draw, effect, pingPong, pingPongStorage, sampler, storage, target, uniforms } from "vgpu";
+import type { Compute, Draw, Effect, Gpu, PingPongStorage, PingPongTargets, SharedUniforms, StorageBuffer, Target } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import { BackendDiagnosticCode, backendDiagnostic, describeError } from "../diagnostics.ts";
 import type { BuildStats } from "../backend-types.ts";
@@ -29,6 +29,10 @@ export interface ResourceSet {
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   readonly effects: ReadonlyMap<string, Effect>;
+  /** Compute pipelines per dispatch pass (T172). */
+  readonly computes: ReadonlyMap<string, Compute>;
+  /** Draw pipelines per draw pass (T172) — the sprite/instances/mesh spine. */
+  readonly draws: ReadonlyMap<string, Draw>;
   readonly passUniforms: ReadonlyMap<string, SharedUniforms<Record<string, unknown>>>;
   readonly shared: SharedUniforms<SharedUniformValues>;
   /**
@@ -37,6 +41,8 @@ export interface ResourceSet {
    * it allocates nothing (§V8).
    */
   readonly dynamicTextures: ReadonlyMap<string, ReadonlyArray<TextureBindingDescriptor>>;
+  /** Buffer bindings whose source is a bufferPair read half — re-pointed after each swap. */
+  readonly dynamicBuffers: ReadonlyMap<string, ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>>;
   /** Render target per effect pass, resolved once. Ping-pong passes render into the write half. */
   readonly renderTargets: ReadonlyMap<string, () => Target>;
 }
@@ -55,6 +61,8 @@ export interface CarryOver {
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   readonly effects: ReadonlyMap<string, Effect>;
+  readonly computes: ReadonlyMap<string, Compute>;
+  readonly draws: ReadonlyMap<string, Draw>;
   readonly passUniforms: ReadonlyMap<string, SharedUniforms<Record<string, unknown>>>;
   readonly shared: SharedUniforms<SharedUniformValues> | undefined;
 }
@@ -66,6 +74,8 @@ export const emptyCarryOver: CarryOver = {
   buffers: new Map(),
   bufferPairs: new Map(),
   effects: new Map(),
+  computes: new Map(),
+  draws: new Map(),
   passUniforms: new Map(),
   shared: undefined,
 };
@@ -130,8 +140,11 @@ export function buildResources(
   const buffers = new Map<string, StorageBuffer>();
   const bufferPairs = new Map<string, PingPongStorage>();
   const effects = new Map<string, Effect>();
+  const computes = new Map<string, Compute>();
+  const draws = new Map<string, Draw>();
   const passUniforms = new Map<string, SharedUniforms<Record<string, unknown>>>();
   const dynamicTextures = new Map<string, ReadonlyArray<TextureBindingDescriptor>>();
+  const dynamicBuffers = new Map<string, ReadonlyArray<{ binding: string; resourceId: string }>>();
   const renderTargets = new Map<string, () => Target>();
   const diagnostics: RuntimeDiagnostic[] = [];
 
@@ -257,7 +270,168 @@ export function buildResources(
     return undefined;
   };
 
+  const bufferValue = (resourceId: string): unknown => {
+    const plain = buffers.get(resourceId);
+    if (plain) return plain;
+    // A pair binds its READ half; identity swaps per frame, re-pointed by the backend
+    // exactly like ping-pong textures.
+    const pair = bufferPairs.get(resourceId);
+    if (pair) return pair.read;
+    return undefined;
+  };
+
+  /** Builds a dispatch/draw set bag: buffers + textures + uniforms. Returns undefined on a bad ref. */
+  const buildComputeDrawBag = (
+    passId: string,
+    nodeId: string | undefined,
+    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>,
+    textureBindings: ReadonlyArray<TextureBindingDescriptor>,
+    uniformsValue: Readonly<Record<string, unknown>> | undefined,
+    uniformBinding: string | undefined,
+  ): Record<string, unknown> | undefined => {
+    const bag: Record<string, unknown> = {};
+    for (const binding of bufferBindings) {
+      const value = bufferValue(binding.resourceId);
+      if (value === undefined) {
+        diagnostics.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.unknownResource,
+            `Pass "${passId}" binds unknown buffer resource "${binding.resourceId}".`,
+            nodeId === undefined ? {} : { nodeId },
+          ),
+        );
+        return undefined;
+      }
+      bag[binding.binding] = value;
+    }
+    for (const binding of textureBindings) {
+      const value = readTexture(binding.resourceId);
+      if (value === undefined) {
+        diagnostics.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.unknownResource,
+            `Pass "${passId}" binds unknown texture resource "${binding.resourceId}".`,
+            nodeId === undefined ? {} : { nodeId },
+          ),
+        );
+        return undefined;
+      }
+      bag[binding.binding] = value;
+    }
+    if (uniformsValue !== undefined && uniformBinding !== undefined) {
+      const block = uniforms<Record<string, unknown>>(gpu, { ...uniformsValue });
+      passUniforms.set(passId, block);
+      bag[uniformBinding] = block;
+    }
+    return bag;
+  };
+
+  const noteDynamicBindings = (
+    passId: string,
+    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string }>,
+    textureBindings: ReadonlyArray<TextureBindingDescriptor>,
+  ): void => {
+    const dynamicTex = textureBindings.filter(
+      (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+    );
+    if (dynamicTex.length > 0) dynamicTextures.set(passId, dynamicTex);
+    const dynamicBuf = bufferBindings.filter((binding) => bufferPairs.has(binding.resourceId));
+    if (dynamicBuf.length > 0) dynamicBuffers.set(passId, dynamicBuf);
+  };
+
   for (const pass of passes) {
+    if (pass.kind === "dispatch") {
+      // T172: kernels run in frames. Carried pipelines skip WGSL recompilation exactly
+      // like effects; the caller's carry rules decided reuse safety.
+      const carried = carry.computes.get(pass.id);
+      if (carried) {
+        computes.set(pass.id, carried);
+        const carriedUniforms = carry.passUniforms.get(pass.id);
+        if (carriedUniforms) passUniforms.set(pass.id, carriedUniforms);
+        noteDynamicBindings(pass.id, pass.buffers ?? [], pass.textures ?? []);
+        note("effectsReused");
+        continue;
+      }
+      const bag = buildComputeDrawBag(pass.id, pass.nodeId, pass.buffers ?? [], pass.textures ?? [], pass.uniforms, pass.uniformBinding);
+      if (bag === undefined) continue;
+      try {
+        computes.set(pass.id, compute(gpu, pass.shader, { set: bag, entry: pass.entryPoint, label: pass.id }));
+        noteDynamicBindings(pass.id, pass.buffers ?? [], pass.textures ?? []);
+        note("effectsBuilt");
+      } catch (error) {
+        diagnostics.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.planInvalid,
+            `Dispatch pass "${pass.id}" failed to compile: ${describeError(error)}`,
+            pass.nodeId === undefined ? {} : { nodeId: pass.nodeId },
+          ),
+        );
+      }
+      continue;
+    }
+
+    if (pass.kind === "draw") {
+      const plainTarget = targets.get(pass.target);
+      const pair = pingPongs.get(pass.target);
+      if (!plainTarget && !pair) {
+        diagnostics.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.unknownResource,
+            `Draw pass "${pass.id}" renders into unknown target "${pass.target}".`,
+            pass.nodeId === undefined ? {} : { nodeId: pass.nodeId },
+          ),
+        );
+        continue;
+      }
+      const resolveTarget: () => Target = plainTarget ? () => plainTarget : () => pair!.write;
+
+      const carried = carry.draws.get(pass.id);
+      if (carried) {
+        draws.set(pass.id, carried);
+        renderTargets.set(pass.id, resolveTarget);
+        const carriedUniforms = carry.passUniforms.get(pass.id);
+        if (carriedUniforms) passUniforms.set(pass.id, carriedUniforms);
+        noteDynamicBindings(pass.id, pass.buffers ?? [], pass.textures ?? []);
+        note("effectsReused");
+        continue;
+      }
+      const bag = buildComputeDrawBag(pass.id, pass.nodeId, pass.buffers ?? [], pass.textures ?? [], pass.uniforms, pass.uniformBinding);
+      if (bag === undefined) continue;
+      if (pass.sharedBinding !== undefined) bag[pass.sharedBinding] = shared;
+      try {
+        const created = draw(gpu, {
+          shader: pass.shader,
+          set: bag,
+          label: pass.id,
+          // Topology rides on a minimal geometry descriptor — vgpu has no top-level
+          // topology option; a buffer-less GeometryLike carries it for vertex-pulling
+          // draws (positions come from storage buffers, not vertex buffers).
+          geometry: { topology: pass.topology, vertexCount: pass.vertexCount ?? 6 },
+          ...(typeof pass.instances === "number" ? { instances: pass.instances } : {}),
+          ...(pass.blend === undefined ? {} : { blend: pass.blend }),
+        });
+        created.compileSync(resolveTarget());
+        draws.set(pass.id, created);
+        renderTargets.set(pass.id, resolveTarget);
+        noteDynamicBindings(pass.id, pass.buffers ?? [], pass.textures ?? []);
+        note("effectsBuilt");
+      } catch (error) {
+        diagnostics.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.planInvalid,
+            `Draw pass "${pass.id}" failed to compile: ${describeError(error)}`,
+            pass.nodeId === undefined ? {} : { nodeId: pass.nodeId },
+          ),
+        );
+      }
+      continue;
+    }
+
     if (pass.kind !== "effect") continue;
 
     const plainTarget = targets.get(pass.target);
@@ -330,9 +504,12 @@ export function buildResources(
     buffers,
     bufferPairs,
     effects,
+    computes,
+    draws,
     passUniforms,
     shared,
     dynamicTextures,
+    dynamicBuffers,
     renderTargets,
   };
 }
