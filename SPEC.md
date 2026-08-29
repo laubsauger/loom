@@ -323,6 +323,32 @@ interface MenuItem {
 ONE menu root per surface, target resolved from event on open. ⊥ Radix root per node —
 dense graph cost. keys rendered ← keymap (V55), ⊥ literal "⌘Z" strings.
 
+### parameter modes — TD parity (verified vs docs.derivative.ca)
+TD: ∀ parameter has a MODE. click the param NAME to expand → 4 square mode buttons.
+grey=Constant · blue=Expression · green=Export(CHOP-driven) · purple=Bind(bi-directional).
+right-click = popup menu. ctrl/cmd+E = edit the expression.
+
+**THE DETAIL THAT MATTERS**: an inactive mode that HAS a value shows a small square ∈ the
+button's lower-left corner. ∴ **each mode retains its own value independently** — switching
+to Constant ⊥ destroys the expression. that is why the indicator exists, and it is what
+makes mode-switching safe to experiment with.
+
+```ts
+type ParameterBinding =
+  | { kind: "static"; value: ParameterValue }
+  | { kind: "expression"; source: string }            // OUR grammar (V71), ⊥ Python
+  | { kind: "bind"; ref: string }                     // another param | `parent.<key>`
+  | { kind: "driven"; channel: string };              // TD Export analog — audio|MIDI|LFO, Phase 2
+
+interface ParameterSlot {
+  mode: ParameterBinding["kind"];
+  /** EVERY mode's last value, kept. mode switch ⊥ destructive. */
+  bindings: Partial<Record<ParameterBinding["kind"], ParameterBinding>>;
+}
+```
+∀ parameter TYPE takes ∀ mode — number, vector, color, bool, enum, string alike. ⊥ a
+number-only feature: TD drives menus + toggles from expressions & that is half its power.
+
 ### type: per-node output resolution override (TD Common page)
 ```ts
 type NodeResolutionOverride =
@@ -575,6 +601,10 @@ V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query o
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
+V107: ∀ parameter, ∀ TYPE, accepts ∀ mode: static | expression | bind | driven. ⊥ expressions-on-numbers-only — a mode available on some parameters is a mode users ⊥ trust.
+V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and the UI shows which inactive modes hold one (TD's corner square). flipping to Constant to check a number ⊥ costs you the expression you were writing.
+V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
+V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
 V106: a preview surface composited OVER the graph ! be genuinely transparent — WebGPU canvas `alphaMode` defaults to **opaque**, so a transparent CLEAR still paints black. `alphaMode:"premultiplied"` + clear to (0,0,0,0). an opaque overlay hides the entire app except its tiles.
 V101: a per-node UI toggle (bypass|preview|mute) acts on the SELECTION when that node is in it, else on that node alone. ⊥ badge dispatching a raw patch: it ! go through the same bus command the key + menu use, else three surfaces diverge (V29, V52).
@@ -735,6 +765,10 @@ T167|x|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped 
 T172|x|backend `encode()` wires `dispatch`/`draw` passes — buffers ALLOCATE today but kernels ⊥ run ∈ a frame. blocks T121 kernel node rendering|V58,V8
 T178|.|UI copy audit vs V90/V91/V92 — ∀ surface: node body, inspector, library, viewer, dock, palette, menus, agent panel. + a guard test bounding inline prose per surface|V90,V91,V92
 T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scratch, pointset outputs materialize as a marker, pair swaps, chain test. point family registered ∴ rides the catalogue sweep. (landed ∈ commit 4ca9c4f, which is MISLABELLED T176 — T176 is the bus track's zod lift, still open)|V58,V22,V75
+T202|.|`ParameterSlot` + `ParameterBinding` ∈ domain types + zod + passthrough for unknown kinds (extends T106). ∀ mode keeps its own value|V107,V108,V69
+T203|.|resolver evaluates ∀ modes — static, expression (V71 evaluator), bind (incl. `parent.<key>`), driven reserved. sole eval point|V109,V61,V71
+T204|.|parameter mode UI: click the LABEL to expand → 4 mode buttons w/ TD's has-a-value corner mark; ctrl/cmd+E edits the expression; right-click menu|V107,V108,V90
+T205|.|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
 T200|.|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
 T201|.|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
 T198|.|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
@@ -823,7 +857,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 | track | tasks | owns |
 |---|---|---|
 | A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 | `src/ui/**` `src/app/**` |
-| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
+| B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
 
@@ -832,7 +866,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
@@ -862,7 +896,7 @@ serial, crosses `src/editor/**` + `src/app/**`. ! before wave 4: agent tools ass
 |---|---|---|
 | O agent surface | T54 T55 T56 T57 T58 T59 T60 | `src/agent/**` |
 | P tests | T45 T46 T47 T69 T48 T61 T157 T162 | `src/tests/**` |
-| R hardening | T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
+| R hardening | T199 T195 T173 T179 T180 T181 T172 T95 T96 T97 T98 T102 T103 T109 T138 T140 T141 T142 T143 T144 T158 T159 T160 T161 T163 | `src/runtime/backend/**` `src/domain/graph/**` |
 | S guardrails+ | T90 T92 T93 T105 T108 T112 T114 T115 T116 T148 T150 | `eslint.config.js` `src/domain/commands/**` `public/**` |
 
 ### track U — components + menus (core, ⊥ Phase 2 backlog)
