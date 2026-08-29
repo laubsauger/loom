@@ -601,12 +601,12 @@ T32|x|branch reuse: 1 render per output, shared by N consumers|V6
 T33|x|Feedback node: pingPong pair, swap after encode, reset triggers|V22
 T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpoint\|randomAccess|V46
 T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
-T81|.|plan IR: pass kind union render\|compute, resource kind union texture\|buffer, exhaustive switch|V58
+T81|x|SUPERSEDED by T115 (same union, landed w/ dispatch\|draw\|counter + buffer\|bufferPair)|V58
 T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
 T83|x|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
 T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
-T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
+T86|x|SUPERSEDED by T143 (backend per-entry carry-over; V62b now the rule)|V62,V22
 T87|x|presentation seam: `present(outputRef, surface)`, N surfaces, runtime-owned|V64,V7
 T88|x|fix redo owner check + undo referential integrity (edge cascade on restore)|V65
 T89|.|zod validation of patch input @ bus boundary → diagnostic + audit, ⊥ throw|V66
