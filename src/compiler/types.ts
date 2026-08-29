@@ -74,8 +74,10 @@ export interface ResolvedOutput {
   readonly portId: PortId;
   /** Id of the resource in the emitted plan. */
   readonly resourceId: string;
-  /** Resource kind, read from the port rather than assumed. */
-  readonly resourceKind: "target" | "pingPong";
+  /** Resource kind, read from the port rather than assumed. "pointset" is a MARKER: the
+   *  edge propagates (consumers get the producer's identity) but no texture resource is
+   *  emitted — storage is the producer's per-attribute buffer pairs (T121/T176). */
+  readonly resourceKind: "target" | "pingPong" | "pointset";
   readonly size: readonly [number, number];
   readonly format: TextureFormat;
   /** Working-space tracking (doc §16.2). Carried here until `PortType` grows the field. */

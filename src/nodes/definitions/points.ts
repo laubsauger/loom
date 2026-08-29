@@ -21,18 +21,22 @@ import { readColor, readNumber } from "./parameter-readers.ts";
  * swaps as ONE identity, so T143 carry-over keeps simulation state across unrelated
  * edits exactly as texture feedback survives them (§V22).
  *
- * COMPILER ENABLEMENT PENDING: these two definitions emit `dispatch`/`draw` passes and
- * declare bufferPair scratch entries, which `compileGraph` does not accept yet (its
- * emittable-kinds gate and scratch handler are effect/target-only, and pointset outputs
- * do not propagate). They are exported as `pointNodeDefinitions` and deliberately NOT
- * folded into `coreNodeDefinitions` until those compiler deltas land — registering a
- * node whose chain-compile fails loudly would be honest but useless. The fixture-level
- * and Dawn tests exercise everything below the compiler for real.
+ * Chain-compiled for real: `compileGraph` accepts dispatch/draw emission, materializes
+ * the bufferPair scratch entries, propagates pointset edges as markers and appends the
+ * pair swaps after all consumers (T176). The fixture and Dawn tests cover everything
+ * below the compiler; the chain test covers the seam.
  */
 
-/** The producer/consumer id contract for a pointset attribute's ping-pong pair. */
+import { scratchResourceId } from "../../compiler/resources.ts";
+
+/**
+ * The producer/consumer id contract for a pointset attribute's ping-pong pair. ONE
+ * definition: the compiler materializes the producer's bufferPair scratch entries under
+ * `scratchResourceId(nodeId, attribute)`, and consumers derive the identical id from
+ * the edge's source identity — no second convention to drift.
+ */
 export function pointPairId(nodeId: string, attribute: string): string {
-  return `points:${nodeId}:${attribute}`;
+  return scratchResourceId(nodeId, attribute);
 }
 
 export const DEFAULT_POINT_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
@@ -53,6 +57,13 @@ function parseAttributes(raw: unknown): { attributes?: ReadonlyArray<PointAttrib
   const attributes = parsed as PointAttributeSchema[];
   const check = validateAttributes(attributes);
   if (!check.ok) return { error: check.errors.join("; ") };
+  // The output PORT advertises `position: vec3f` (that is what makes it wirable into a
+  // renderer under §V13's provides ⊇ requires rule), so every schema must honor it —
+  // a port type is a static promise a dynamic parameter is not allowed to break.
+  const position = attributes.find((attribute) => attribute.name === "position");
+  if (position === undefined || position.type !== "vec3f") {
+    return { error: 'the schema must include { name: "position", type: "vec3f" } — the output port promises it' };
+  }
   return { attributes };
 }
 
@@ -83,8 +94,11 @@ export const pointKernelNode: NodeDefinition = {
     {
       id: "out",
       label: "Points",
-      type: { kind: "pointset", requires: [] },
-      description: "The simulated point set. Attributes are whatever the schema declares.",
+      // The producer's `requires` is its PROVIDES list (§V13): consumers may demand any
+      // subset. Position is guaranteed by schema validation above; everything else in a
+      // custom schema rides along without appearing here.
+      type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
+      description: "The simulated point set. position:vec3f is guaranteed; other attributes follow the schema.",
     },
   ],
   parameters: {

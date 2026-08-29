@@ -214,6 +214,9 @@ function bytesForOutput(
 ): number {
   const descriptor = resources.find((resource) => resource.id === output.resourceId);
   if (descriptor !== undefined) return estimateResourceBytes([descriptor]);
+  // A pointset marker owns no texture; its memory is the producer's buffer pairs,
+  // which the resource list above already accounts for (T121/T176).
+  if (output.resourceKind === "pointset") return 0;
   // No descriptor: estimate from what the compiler resolved, so a node still reports a
   // size rather than a blank. Same function the plan and the backend use (§V24).
   return estimateResourceBytes([

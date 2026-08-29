@@ -77,10 +77,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * `TARGETED_PASS_KINDS` are the two places that learn about it — scheduling, pruning and
  * ordering never look at a pass kind at all.
  */
-const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect"]);
+const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "dispatch", "draw"]);
 
 /** Pass kinds that render into a resource and therefore need a target. */
-const TARGETED_PASS_KINDS: ReadonlySet<string> = new Set(["effect"]);
+const TARGETED_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "draw"]);
 
 /**
  * Which resource kind an output materializes into, read off the port rather than assumed.
@@ -92,14 +92,18 @@ const TARGETED_PASS_KINDS: ReadonlySet<string> = new Set(["effect"]);
 function resourceKindForOutput(
   portType: PortType,
   temporal: boolean,
-): "target" | "pingPong" | undefined {
+): "target" | "pingPong" | "pointset" | undefined {
+  // T121/T176: a pointset output materializes as a MARKER, not a texture resource — the
+  // edge must survive propagation so consumers receive the producer's identity, but the
+  // actual GPU storage is the per-attribute buffer pairs the node's scratch declares.
+  if (portType.kind === "pointset") return "pointset";
   if (portType.kind !== "texture2d") return undefined;
   return temporal ? "pingPong" : "target";
 }
 
 interface OutputSlot {
   readonly portId: PortId;
-  readonly resourceKind: "target" | "pingPong";
+  readonly resourceKind: "target" | "pingPong" | "pointset";
 }
 
 /**
@@ -256,7 +260,9 @@ function propagate(args: PropagationArgs): PropagationResult {
         resourceId:
           slot.resourceKind === "pingPong"
             ? pingPongResourceId(nodeId, slot.portId)
-            : targetResourceId(nodeId, slot.portId),
+            : slot.resourceKind === "pointset"
+              ? `points:${nodeId}:${slot.portId}`
+              : targetResourceId(nodeId, slot.portId),
         resourceKind: slot.resourceKind,
         size: resolution.size,
         format: format.format,
@@ -335,6 +341,9 @@ function describeResource(output: ResolvedOutput): Record<string, unknown> {
         format: output.format,
         label: `${output.nodeId}.${output.portId}`,
       };
+    case "pointset":
+      // The caller filters markers out before this point; reaching here is a bug.
+      throw new Error(`pointset output "${output.resourceId}" materializes no resource (T121).`);
   }
 }
 
@@ -486,14 +495,19 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const propagated = propagate({ ...base, seed: firstSweep.outputs, collectDiagnostics: true });
   diagnostics.push(...propagated.diagnostics);
 
-  // 5. one persistent resource per materialized output (T29, §V6, §V8)
+  // 5. one persistent resource per materialized output (T29, §V6, §V8). Pointset
+  // markers emit NO resource — their storage is the per-attribute pairs the producing
+  // node's scratch declares (T121/T176).
   const resources: Array<Record<string, unknown>> = [];
   for (const output of propagated.outputs.values()) {
+    if (output.resourceKind === "pointset") continue;
     resources.push(describeResource(output));
   }
 
   // 6. compile each node exactly once (T32, §V6)
   const passes: Array<Record<string, unknown>> = [];
+  /** BufferPair scratch ids emitted this compile; each gets a swap after all consumers (§V22). */
+  const scratchPairIds: string[] = [];
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -533,7 +547,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         space: output.space,
         temporal: output.temporal,
       };
-      if (target === undefined) {
+      if (target === undefined && output.resourceKind !== "pointset") {
         target = output.resourceId;
         resolution = output.size;
         format = output.format;
@@ -596,8 +610,36 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         );
       }
       for (const raw of entries) {
-        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown };
+        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown };
         const key = typeof entry.key === "string" && entry.key !== "" ? entry.key : undefined;
+        // T121/T176: a bufferPair scratch entry — SoA point storage. One identity per
+        // attribute; the compiler appends its swap after all consumers (§V22), and T143
+        // carry-over keeps its contents across unrelated edits.
+        if (entry.kind === "bufferPair") {
+          const stride = entry.stride;
+          const bufferCapacity = entry.capacity;
+          if (
+            key === undefined ||
+            seenScratch.has(key) ||
+            !(Number.isInteger(stride) && (stride as number) >= 1) ||
+            !(Number.isInteger(bufferCapacity) && (bufferCapacity as number) >= 1)
+          ) {
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.scratchInvalid,
+                `Node "${nodeId}" (${node.type}) declared an invalid or duplicate bufferPair scratch entry ${JSON.stringify(raw)}.`,
+                { nodeId, suggestion: 'A bufferPair entry is { key, kind: "bufferPair", stride >= 1, capacity >= 1 }.' },
+              ),
+            );
+            continue;
+          }
+          seenScratch.add(key);
+          const pairId = scratchResourceId(nodeId, key);
+          resources.push({ kind: "bufferPair", id: pairId, stride, capacity: bufferCapacity, label: `${nodeId} points ${key}` });
+          scratchPairIds.push(pairId);
+          continue;
+        }
         const scale =
           entry.scale === undefined
             ? 1
@@ -661,6 +703,12 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const feedbackOutputs = [...propagated.outputs.values()].filter((output) => output.temporal);
   for (const output of feedbackOutputs) {
     passes.push({ kind: "swap", id: swapPassId(output.resourceId), resourceId: output.resourceId });
+  }
+  // Point-pair swaps ride the SAME placement rule as texture feedback: after every
+  // pass, so no per-pair last-consumer bookkeeping has to be right for all pairs at
+  // once (§V22). This frame's kernel writes become next frame's reads.
+  for (const pairId of scratchPairIds) {
+    passes.push({ kind: "swap", id: swapPassId(pairId), resourceId: pairId });
   }
 
   // One shared sampler for the plan. Emitted whenever anything renders: deciding per-plan

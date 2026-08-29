@@ -173,9 +173,12 @@ describe("the catalogue compiles through the real compiler", () => {
       expect(read.ok, definition.type).toBe(true);
 
       // The node under test must actually contribute a pass — a node that compiles to
-      // nothing "passes" every structural check while rendering nothing at all.
+      // nothing "passes" every structural check while rendering nothing at all. Any
+      // kind counts: point nodes contribute dispatch/draw passes (T121/T122).
       expect(
-        read.passes.some((pass) => pass.kind === "effect" && pass.nodeId === "subject"),
+        read.passes.some(
+          (pass) => pass.kind !== "swap" && "nodeId" in pass && pass.nodeId === "subject",
+        ),
         definition.type,
       ).toBe(true);
       expect(plan.pruned, definition.type).not.toContain("subject");
@@ -195,12 +198,14 @@ describe("the catalogue compiles through the real compiler", () => {
     for (const definition of coreNodeDefinitions) {
       const plan = compile(minimalGraphFor(definition));
       const passes = plan.passes.filter(
-        (pass) => pass.kind === "effect" && pass.nodeId === "subject",
+        (pass) =>
+          (pass.kind === "effect" || pass.kind === "dispatch" || pass.kind === "draw") &&
+          pass.nodeId === "subject",
       );
       expect(passes.length, definition.type).toBeGreaterThan(0);
 
       for (const pass of passes) {
-        if (pass.kind !== "effect" || pass.uniforms === undefined) continue;
+        if (pass.kind === "swap" || pass.kind === "counter" || pass.uniforms === undefined) continue;
         const binding = pass.uniformBinding;
         expect(binding, definition.type).toBeTypeOf("string");
         const declared = uniformStructMembers(pass.shader, binding as string);
@@ -209,7 +214,7 @@ describe("the catalogue compiles through the real compiler", () => {
 
         // A shared-block binding must name a real declaration too, or the runtime binds a
         // value the shader never reads and vgpu rejects the whole pass.
-        if (pass.sharedBinding !== undefined) {
+        if (pass.kind !== "dispatch" && pass.sharedBinding !== undefined) {
           expect(pass.shader, definition.type).toContain(`var<uniform> ${pass.sharedBinding}:`);
         }
       }
@@ -311,13 +316,23 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
 
   definition.inputs.forEach((port, index) => {
     const feedId = `feed${index}`;
-    nodes[feedId] = node(feedId, "checker");
+    // Feeders match the port FAMILY: textures come from a checker, pointsets from a
+    // point kernel (T121) — wiring a texture into a pointset port is exactly the §V13
+    // mismatch this sweep would otherwise report as a false failure.
+    nodes[feedId] = node(feedId, port.type.kind === "pointset" ? "pointKernel" : "checker");
     edges[`in${index}`] = edge(`in${index}`, [feedId, "out"], ["subject", port.id]);
   });
 
   const firstOutput = definition.outputs[0];
   if (firstOutput !== undefined) {
-    edges["sink"] = edge("sink", ["subject", firstOutput.id], ["sink", "input"]);
+    if (firstOutput.type.kind === "pointset") {
+      // A pointset is observed by drawing it: subject -> renderPoints -> output.
+      nodes["observe"] = node("observe", "renderPoints");
+      edges["observe-in"] = edge("observe-in", ["subject", firstOutput.id], ["observe", "points"]);
+      edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
+    } else {
+      edges["sink"] = edge("sink", ["subject", firstOutput.id], ["sink", "input"]);
+    }
   }
 
   return { revision: 1, nodes, edges, groups: {} };

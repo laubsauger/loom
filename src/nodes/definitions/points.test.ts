@@ -113,6 +113,73 @@ describe("renderPoints — manifest and emission (T122)", () => {
   });
 });
 
+describe("pointKernel → renderPoints → output through the REAL compiler (T176)", () => {
+  it("materializes pairs, propagates the pointset edge, swaps after all consumers", async () => {
+    const { compileGraph } = await import("../../compiler/index.ts");
+    const { createNodeRegistry } = await import("../registry/registry.ts");
+    const { allNodeDefinitions } = await import("./index.ts");
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: {
+        revision: 1,
+        nodes: {
+          sim: { id: "sim", type: "pointKernel", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { capacity: 512 } },
+          draw: { id: "draw", type: "renderPoints", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { count: 512 } },
+          out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        },
+        edges: {
+          e1: { id: "e1", source: { nodeId: "sim", portId: "out" }, target: { nodeId: "draw", portId: "points" } },
+          e2: { id: "e2", source: { nodeId: "draw", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+        },
+        groups: {},
+      },
+      settings: {
+        outputResolution: { width: 640, height: 360 },
+        workingFormat: "rgba16float",
+        randomSeed: 1,
+        previewLongEdge: 192,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      },
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      },
+    });
+
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(plan.ok).toBe(true);
+
+    // One pair per default attribute, materialized from the node's scratch declaration.
+    const pairs = plan.resources.filter((resource) => resource.kind === "bufferPair");
+    expect(pairs.map((pair) => pair.id).sort()).toEqual(
+      DEFAULT_POINT_ATTRIBUTES.map((attribute) => pointPairId("sim", attribute.name)).sort(),
+    );
+    // …and NO texture resource for the pointset marker itself.
+    expect(plan.resources.some((resource) => resource.id.startsWith("points:sim"))).toBe(false);
+
+    // The consumer found the producer through the propagated edge.
+    const drawPass = plan.passes.find((pass) => pass.kind === "draw");
+    expect(drawPass?.buffers?.[0]?.resourceId).toBe(pointPairId("sim", "position"));
+
+    // §V22: every pair swap comes after every non-swap pass.
+    const lastRealPass = plan.passes.map((pass) => pass.kind).filter((kind) => kind !== "swap").length;
+    const swapIndices = plan.passes
+      .map((pass, index) => (pass.kind === "swap" ? index : -1))
+      .filter((index) => index >= 0);
+    expect(swapIndices).toHaveLength(DEFAULT_POINT_ATTRIBUTES.length);
+    for (const index of swapIndices) expect(index).toBeGreaterThanOrEqual(lastRealPass);
+
+    // The whole plan reads cleanly through the backend's own validation.
+    expect(readExecutionPlan(plan).ok).toBe(true);
+  });
+});
+
 describe("the emitted output is a plan the backend accepts", () => {
   it("kernel + render + pairs + swaps read cleanly end to end", () => {
     const kernel = pointKernelNode.compile(

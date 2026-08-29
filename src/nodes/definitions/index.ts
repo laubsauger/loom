@@ -9,6 +9,7 @@ import { colorNodes } from "./color.ts";
 import { filterNodes } from "./filters.ts";
 import { compositeNodes } from "./composite.ts";
 import { temporalNodes } from "./feedback.ts";
+import { pointNodeDefinitions } from "./points.ts";
 
 export { solidNode } from "./solid.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
@@ -59,6 +60,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...filterNodes,
   ...compositeNodes,
   ...temporalNodes,
+  ...pointNodeDefinitions,
 ];
 
 /**
