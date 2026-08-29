@@ -137,6 +137,29 @@ export interface ParentScopeDriverOptions {
  * stored value — the last value the parameter actually had — and a diagnostic explains
  * why the binding is not in effect.
  */
+/**
+ * The slot-side twin of `parentScopeDrivers` (T203, §V107): resolves a `parent.*` bind
+ * REF for the resolver's `bind` mode. Same lookup, same walk, same failure wording —
+ * `parent.<key>` written in `state.parentBindings` (legacy) and `parent.<key>` written
+ * as a bind slot go through the ONE `lookupParentScope`, so they can never disagree.
+ *
+ * Structurally matches the resolver's `ParentBindResolver`; declared here so the
+ * dependency keeps pointing components → parameters, never back.
+ */
+export function parentBindResolver(
+  scope: ParentScope | undefined,
+): (ref: string) => { ok: true; value: ParameterValue } | { ok: false; message: string } {
+  return (ref) => {
+    const reference = parseParentReference(ref);
+    if (reference === null) {
+      return { ok: false, message: `"${ref}" is not a parent reference; expected parent.<key> (§V81).` };
+    }
+    const lookup = lookupParentScope(scope, reference);
+    if (!lookup.found) return { ok: false, message: lookup.message };
+    return { ok: true, value: lookup.value };
+  };
+}
+
 export function parentScopeDrivers(
   node: GraphNode,
   scope: ParentScope | undefined,

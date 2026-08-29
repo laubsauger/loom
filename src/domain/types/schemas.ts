@@ -57,6 +57,28 @@ export const parameterValueSchema = z.union([
   z.null(),
 ]);
 
+/** One mode's payload (T202, §V107). Closed: this is what THIS build writes. */
+export const parameterBindingSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("static"), value: parameterValueSchema }),
+  z.object({ kind: z.literal("expression"), source: z.string() }),
+  z.object({ kind: z.literal("bind"), ref: z.string().min(1) }),
+  z.object({ kind: z.literal("driven"), channel: z.string().min(1) }),
+]);
+
+export const parameterModeSchema = z.enum(["static", "expression", "bind", "driven"]);
+
+/**
+ * The mode envelope (T202, §V108). A bare-value parameter never parses as this — a
+ * `ParameterValue` is never a plain object — so the union below is unambiguous.
+ */
+export const parameterSlotSchema = z.object({
+  mode: parameterModeSchema,
+  bindings: z.record(parameterModeSchema, parameterBindingSchema),
+});
+
+/** What a stored parameter may be: a bare (static) value or a mode envelope. */
+export const storedParameterSchema = z.union([parameterValueSchema, parameterSlotSchema]);
+
 export const nodeResolutionOverrideSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("auto") }),
   z.object({ mode: z.literal("project") }),
@@ -99,7 +121,7 @@ export const graphNodeSchema = z.object({
   definitionVersion: z.number().int().nonnegative(),
   position: vec2,
   size: z.object({ width: z.number(), height: z.number() }).optional(),
-  parameters: z.record(parameterValueSchema),
+  parameters: z.record(storedParameterSchema),
   label: z.string().min(1).max(120).optional(),
   resolution: nodeResolutionOverrideSchema.optional(),
   format: nodeFormatOverrideSchema.optional(),
@@ -213,7 +235,9 @@ const patchBounds = z
 /** A stable id or a patch-local `$temp` ref; `applyGraphPatch` tells them apart (§V35). */
 const refString = z.string().min(1);
 const patchPortRef = z.object({ nodeId: refString, portId: z.string().min(1) }).strict();
-const patchParameters = z.record(parameterValueSchema);
+// Patches carry slots too: the compound editor writes all components in ONE patch
+// (§V114) and a mode switch is a setParameters like any other edit.
+const patchParameters = z.record(storedParameterSchema);
 
 /**
  * Resolution and format overrides are checked for SHAPE here and for meaning by the

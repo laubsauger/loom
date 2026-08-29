@@ -7,7 +7,8 @@ import type {
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../domain/types/graph.ts";
 import type { NodeId, PortId } from "../domain/types/ids.ts";
-import type { ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
+import type { ParameterSchema, ParameterValue, StoredParameter } from "../domain/types/parameters.ts";
+import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import {
   buildParentScope,
@@ -16,6 +17,7 @@ import {
   detectComponentRecursion,
   effectiveInternalOverrides,
   instanceDisplayNames,
+  parentBindResolver,
   parentScopeDrivers,
   parseInternalParameterPath,
   readComponentInstance,
@@ -250,11 +252,41 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
     forNode: Readonly<Record<string, ParameterValue>>,
     scope: ParentScope | undefined,
     flatId: NodeId,
-  ): Record<string, ParameterValue> => {
-    const parameters: Record<string, ParameterValue> = { ...node.parameters };
+  ): Record<string, StoredParameter> => {
+    const parameters: Record<string, StoredParameter> = { ...node.parameters };
     for (const key of Object.keys(forNode).sort()) {
       const value = forNode[key];
       if (value !== undefined) parameters[key] = value;
+    }
+
+    // Slot-mode `parent.*` binds (§V107, T203) are baked here, where the scope exists —
+    // the flat graph is a compile artifact resolved without one. A bind that cannot
+    // resolve is reported and falls back to the slot's retained static value (§V108) by
+    // simply leaving the slot in place minus its scope, i.e. deleting nothing.
+    const resolveRef = parentBindResolver(scope);
+    for (const key of Object.keys(parameters).sort()) {
+      const stored = parameters[key];
+      if (stored === undefined || !isParameterSlot(stored)) continue;
+      if (stored.mode !== "bind") continue;
+      const binding = stored.bindings.bind;
+      if (binding?.kind !== "bind" || !binding.ref.startsWith("parent.")) continue;
+      const lookup = resolveRef(binding.ref);
+      if (!lookup.ok) {
+        report(
+          compilerDiagnostic(
+            "warning",
+            CompilerDiagnosticCode.componentParameterConflict,
+            `"${key}" is bound to "${binding.ref}": ${lookup.message}`,
+            { suggestion: "Fix the ref, or switch the parameter back to its static value (§V108)." },
+          ),
+          flatId,
+        );
+        const retained = storedStaticValue(stored);
+        if (retained === undefined) delete parameters[key];
+        else parameters[key] = retained;
+        continue;
+      }
+      parameters[key] = lookup.value;
     }
 
     const drivers = parentScopeDrivers(node, scope, {

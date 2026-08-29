@@ -1,5 +1,5 @@
 import type { AssetId, EdgeId, GroupId, NodeId, PortId, Revision } from "./ids.ts";
-import type { ParameterValue } from "./parameters.ts";
+import type { StoredParameter } from "./parameters.ts";
 import type { SelectableColorFormat, TextureFormat } from "./node-definition.ts";
 
 /**
@@ -50,7 +50,7 @@ export interface GraphNode {
   definitionVersion: number;
   position: { x: number; y: number };
   size?: { width: number; height: number };
-  parameters: Record<string, ParameterValue>;
+  parameters: Record<string, StoredParameter>;
   /**
    * User-given name for THIS node. Absent means "use the definition's title", which is
    * the default and what an untouched node shows — so renaming is additive and a node

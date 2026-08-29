@@ -62,6 +62,7 @@ export {
   buildParentScope,
   formatParentReference,
   lookupParentScope,
+  parentBindResolver,
   parentScopeDrivers,
   parseParentReference,
 } from "./parent-scope.ts";

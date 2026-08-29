@@ -6,6 +6,8 @@ import type { ParameterSchema, ParameterValue } from "../domain/types/parameters
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
 import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
+import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
+import { isComponentKeyOf } from "../domain/parameters/slots.ts";
 import type { ResolvedParameters } from "../domain/parameters/resolve.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
@@ -77,6 +79,11 @@ export function resolveNodeParameters(
 ): ResolvedParameters {
   const resolved = resolveParameterSchema(node, parameters);
 
+  // §V110 belt-and-braces: the patch gate refuses cycles at write time, but a document
+  // can arrive from a file. Surfacing them here keeps compile the second line, and the
+  // resolver's visited-set guard the last.
+  diagnostics.push(...bindCycleDiagnostics(node, parameters));
+
   // Sorted by key, not manifest order: a diagnostic list is read by a human scanning for
   // a parameter name, and the order must not change when a manifest is reordered.
   for (const entry of [...resolved.entries].sort((a, b) => a.key.localeCompare(b.key))) {
@@ -85,6 +92,8 @@ export function resolveNodeParameters(
 
   for (const key of Object.keys(node.parameters).sort()) {
     if (key in parameters) continue;
+    // `color.r` addresses a component of a declared compound (§V113), not an unknown key.
+    if (isComponentKeyOf(parameters, key)) continue;
     diagnostics.push(
       compilerDiagnostic(
         "warning",

@@ -1,6 +1,6 @@
 import type { ComponentId, NodeId, PortId } from "./ids.ts";
 import type { GraphDocument } from "./graph.ts";
-import type { ParameterDefinition, ParameterValue } from "./parameters.ts";
+import type { ParameterDefinition, ParameterValue, StoredParameter } from "./parameters.ts";
 import type { CapabilityRequirement } from "./node-definition.ts";
 
 /**
@@ -69,8 +69,8 @@ export interface GraphComponentDefinition {
 export interface ComponentInstanceState {
   componentId: ComponentId;
   version: number;
-  /** Values for the component's PUBLISHED parameters, not for its internals. */
-  parameters: Record<string, ParameterValue>;
+  /** Values for the component's PUBLISHED parameters, not for its internals (§V107: modes apply here too). */
+  parameters: Record<string, StoredParameter>;
   /**
    * Per-instance overrides of an internal node's parameter, addressed by internal path.
    * An escape hatch for the case publishing did not anticipate; used sparingly.

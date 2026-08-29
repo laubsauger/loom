@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { ParameterSchema } from "../types/parameters.ts";
-import { defaultParameters, validateParameterValue, validateParameters } from "./validate.ts";
+import {
+  defaultParameters,
+  validateParameterValue,
+  validateParameters,
+  validateStoredParameter,
+} from "./validate.ts";
 
 /**
  * Parameter values reaching the document come from agents, files and inspector drags —
@@ -119,5 +124,49 @@ describe("validateParameterValue", () => {
     if (definition === undefined) throw new Error("fixture");
     expect(validateParameterValue("amount", definition, 0.5)).toBeNull();
     expect(validateParameterValue("amount", definition, 5)?.code).toBe("parameter.range");
+  });
+});
+
+describe("validateStoredParameter — the slot write gate (T202, §V108)", () => {
+  const amount = schema["amount"];
+  const tint = schema["tint"];
+  if (amount === undefined || tint === undefined) throw new Error("fixture");
+
+  it("checks EVERY retained payload, not only the active mode", () => {
+    // Static payload is out of range while expression mode is active: still refused —
+    // a retained payload the resolver cannot trust is not a fallback (§V108).
+    const bad = {
+      mode: "expression" as const,
+      bindings: {
+        expression: { kind: "expression" as const, source: "time" },
+        static: { kind: "static" as const, value: 42 },
+      },
+    };
+    expect(validateStoredParameter("amount", amount, bad)?.code).toBe("parameter.range");
+  });
+
+  it("refuses an expression that does not parse, at write time (§V110 spirit)", () => {
+    const bad = {
+      mode: "expression" as const,
+      bindings: { expression: { kind: "expression" as const, source: "time +" } },
+    };
+    expect(validateStoredParameter("amount", amount, bad)?.code).toBe("parameter.expression.syntax");
+  });
+
+  it("refuses a slot whose active mode has no payload", () => {
+    const empty = { mode: "bind" as const, bindings: {} };
+    expect(validateStoredParameter("amount", amount, empty)?.code).toBe("parameter.slot.empty");
+  });
+
+  it("validates a component key against its derived definition, not as unknown", () => {
+    const diagnostics = validateParameters(schema, { "tint.g": 0.5, "offset.y": 3 });
+    expect(diagnostics).toEqual([]);
+    expect(validateParameters(schema, { "tint.q": 1 })[0]?.code).toBe("parameter.unknown");
+    expect(validateParameters(schema, { "amount.x": 1 })[0]?.code).toBe("parameter.unknown");
+  });
+
+  it("still accepts every bare value the old gate accepted", () => {
+    expect(validateStoredParameter("amount", amount, 0.5)).toBeNull();
+    expect(validateStoredParameter("tint", tint, [0, 0, 0, 1])).toBeNull();
   });
 });

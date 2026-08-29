@@ -4,30 +4,45 @@ import type { GraphNode } from "../types/graph.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import type {
   ParameterDefinition,
+  ParameterMode,
   ParameterSchema,
+  ParameterSlot,
   ParameterValue,
+  StoredParameter,
 } from "../types/parameters.ts";
+import { evaluateExpression, scopeFromFrame, type ExpressionScope } from "../expressions/index.ts";
+import {
+  componentDefinition,
+  componentKey,
+  componentNamesFor,
+  isParameterSlot,
+  parseComponentKey,
+  staticBindingValue,
+} from "./slots.ts";
 import { defaultParameterValue, validateParameterValue } from "./validate.ts";
 
 /**
- * THE parameter read path (doc §8.2, §V61).
+ * THE parameter read path (doc §8.2, §V61, §V109).
  *
  * Nothing reads `node.parameters[key]` to work out what a parameter is worth. Every
  * effective value — for a control, for a diagnostic, and for evaluation — comes through
- * `resolveParameters`. In v1 that is a passthrough of the stored static value with a
- * manifest-default fallback, and it is supposed to look trivial.
+ * `resolveParameters`. Since T203 that is no longer a passthrough: a stored parameter
+ * may be a bare value (static) or a `ParameterSlot` whose active mode is an expression
+ * (§V71 grammar), a bind (a sibling parameter or `parent.<key>`, §V81) or a driven
+ * channel (reserved for Phase 2 audio/MIDI). This module is the single place any of
+ * those become a value (§V109); a second evaluator anywhere is B8 wearing a new hat.
  *
- * The reason it exists now is what §8.2 defers but tells us to design for: keyframes,
- * expressions, MIDI/OSC mapping, audio-reactive modulation and parameter linking. In
- * TouchDesigner terms, anything can drive any parameter. The day a parameter can be
- * *driven*, the difference between "the value stored in the document" and "the value in
- * effect this frame" becomes real. If that distinction has to be introduced across
- * every reader in the codebase it never lands; introduced here, a driver source is one
- * new branch in one function, and every control already renders the effective value and
- * already knows whether it is showing a driven one.
+ * Compound parameters (§V113): the manifest declares `color` once, but storage may
+ * carry a slot PER COMPONENT (`color.r`, `t.x`) so each channel has its own mode. The
+ * resolver reassembles components into the compound value the shader wants — the OUTPUT
+ * stays compound-keyed (`values.color` is a vec4, never four scalars). Component
+ * addressing is a storage and binding concern; node authors and the compiler never see
+ * component keys in `values`.
  *
- * The `stored` value is kept alongside, because an editor writes to the static value
- * even while a driver overrides what is displayed.
+ * Failure never hangs and never invents: an active mode that cannot produce a value
+ * falls back to the slot's retained static payload (§V108), else the manifest default,
+ * and says why in a diagnostic. Bind cycles are caught at authoring time
+ * (`bind-cycles.ts`, §V110); the visited-set guard here is the runtime backstop.
  *
  * ## Why this module is in `src/domain/`, and headless (T168, B8)
  *
@@ -45,8 +60,18 @@ export type ParameterSource =
   | "static"
   /** The document has no value (or one the manifest rejects); the default is in effect. */
   | "default"
-  /** A driver (keyframe, expression, MIDI, audio, link) supplied the value. */
+  /** A driver, expression, bind or channel supplied the value this resolution. */
   | "driven";
+
+/** One component of a compound parameter, resolved (§V113). For the UI's per-channel rows. */
+export interface ResolvedComponent {
+  name: string;
+  mode: ParameterMode;
+  value: number;
+  /** The stored per-component slot, when one exists. Undefined = follows the compound. */
+  slot: ParameterSlot | undefined;
+  diagnostic: RuntimeDiagnostic | null;
+}
 
 export interface ResolvedParameter {
   key: string;
@@ -59,27 +84,30 @@ export interface ResolvedParameter {
    * `ResolvedParameters.values` instead.
    */
   value: ParameterValue;
-  /** The static value in the document, which is what an edit writes back to. */
-  stored: ParameterValue | undefined;
+  /** What the document stores at the bare key — bare value or slot — for write-back. */
+  stored: StoredParameter | undefined;
   source: ParameterSource;
+  /** The active mode. Bare values are `static`; fallbacks still report the ACTIVE mode. */
+  mode: ParameterMode;
+  /** The stored envelope at the bare key, when there is one. What a mode UI renders. */
+  slot: ParameterSlot | undefined;
   /** Convenience for the "this parameter is being driven" affordance. */
   driven: boolean;
+  /** Per-component resolutions for compound parameters (§V113); undefined for scalars. */
+  components?: readonly ResolvedComponent[] | undefined;
   /**
    * Why the value in effect is not the one the document (or the driver) supplied — the
-   * manifest refused it and the default is standing in. Null when nothing was rejected.
-   *
-   * Validation lives HERE rather than compiler-side because validation is what DECIDES
-   * the value: reject and you get the default, accept and you get the stored number. Two
-   * callers that validate differently resolve differently, which is B8 with a different
-   * parameter type. The compiler forwards these into its diagnostics; the inspector is
-   * free to ignore them.
+   * manifest refused it, an expression failed, a bind broke — and what stood in. Null
+   * when nothing was rejected. Per-component problems live on `components[].diagnostic`
+   * and are all forwarded through `ResolvedParameters.diagnostics`.
    */
   diagnostic: RuntimeDiagnostic | null;
 }
 
 /**
- * A parameter driver. Not implemented in v1 for keyframes/expressions/audio — but
- * `parent.<key>` (§V81) already arrives this way, which is what the seam was for.
+ * A parameter driver — the pre-slot injection seam (`parent.<key>` fan-out from
+ * flattening arrives this way, §V80/§V81). A driver outranks the stored slot: it is the
+ * outer, per-instance statement.
  */
 export interface ParameterDriverContext {
   node: GraphNode;
@@ -91,20 +119,48 @@ export interface ParameterDriverContext {
 
 export type ParameterDriver = (context: ParameterDriverContext) => ParameterValue | undefined;
 
+export type BindLookupResult =
+  | { ok: true; value: ParameterValue }
+  | { ok: false; message: string };
+
+/**
+ * Resolves a `parent.*` bind ref. The components track supplies one
+ * (`parentBindResolver` in `src/domain/components/parent-scope.ts`) — declared here
+ * structurally so this module never imports the components layer (§V81 stays one-way).
+ */
+export type ParentBindResolver = (ref: string) => BindLookupResult;
+
+/** Reads a `driven` channel. Absent or returning undefined = channel not attached. */
+export type ChannelResolver = (
+  channel: string,
+  context: ParameterDriverContext,
+) => ParameterValue | undefined;
+
 export interface ResolveParametersOptions {
-  /** Per-node driver lookup, keyed by parameter. */
+  /** Per-node driver lookup, keyed by parameter. Outranks the stored slot. */
   drivers?: Readonly<Record<string, ParameterDriver>> | undefined;
   frame?: FrameEvaluationInput | undefined;
+  /** Resolves `parent.*` bind refs (§V81). Absent = such binds report and fall back. */
+  parentBind?: ParentBindResolver | undefined;
+  /** Resolves `driven` channels. Absent = driven parameters retain their static value. */
+  channels?: ChannelResolver | undefined;
+  /**
+   * The sibling schema, for same-node bind refs. `resolveParameterSchema` supplies it;
+   * a caller resolving one parameter in isolation may omit it, and same-node binds then
+   * report "sibling schema unavailable" rather than guessing.
+   */
+  schema?: ParameterSchema | undefined;
 }
 
 export interface ResolvedParameters {
   entries: readonly ResolvedParameter[];
   get: (key: string) => ResolvedParameter | undefined;
   /**
-   * Effective values only — the shape evaluation wants. Unlike `entries[].value`, a
-   * `color` parameter here is decoded to linear when its manifest says `space:
-   * "display"` (T148, §V56): this is the read path evaluation is meant to use, so the
-   * decode belongs here rather than in each shader that would otherwise redo it.
+   * Effective values only — the shape evaluation wants, compound-keyed. Unlike
+   * `entries[].value`, a `color` parameter here is decoded to linear when its manifest
+   * says `space: "display"` (T148, §V56): this is the read path evaluation is meant to
+   * use, so the decode belongs here rather than in each shader that would otherwise
+   * redo it.
    */
   values: Readonly<Record<string, ParameterValue>>;
   /** Every rejected value, in manifest order. Empty when the document is clean. */
@@ -182,6 +238,427 @@ function checkAgainstManifest(
   return { value: defaultParameterValue(definition), diagnostic };
 }
 
+const ZERO_FRAME_SCOPE: ExpressionScope = { time: 0, delta: 0, frame: 0 };
+
+/** No frame = the deterministic zero frame (§V44), so a compile-time resolve of `time*2` is 0, not an error. */
+function expressionScope(options: ResolveParametersOptions): ExpressionScope {
+  return options.frame === undefined ? ZERO_FRAME_SCOPE : scopeFromFrame(options.frame);
+}
+
+type Coerced = { ok: true; value: ParameterValue } | { ok: false; message: string };
+
+/**
+ * An expression evaluates to a NUMBER (§V71); this is the documented bridge to every
+ * parameter type (§V107). Number clamps into its declared range (an expression grazing
+ * a limit should pin, not snap to default); boolean is ≠0; enum is a menu INDEX, the TD
+ * convention for driving menus; string renders the number; a compound at its BARE key
+ * broadcasts (per-channel expressions belong on component slots, §V113 — colour
+ * broadcasts rgb and leaves alpha opaque, because a brightness expression should not
+ * fade the layer out). Curve and asset stay out of reach on purpose: §V107 names
+ * number, vector, colour, bool, enum, string — a curve from a scalar is not a thing.
+ */
+function coerceExpressionResult(definition: ParameterDefinition, result: number): Coerced {
+  if (!Number.isFinite(result)) return { ok: false, message: "the expression is not finite" };
+  switch (definition.type) {
+    case "number": {
+      let value = result;
+      if (definition.min !== undefined) value = Math.max(definition.min, value);
+      if (definition.max !== undefined) value = Math.min(definition.max, value);
+      return { ok: true, value };
+    }
+    case "boolean":
+      return { ok: true, value: result !== 0 };
+    case "enum": {
+      const index = Math.min(definition.options.length - 1, Math.max(0, Math.floor(result)));
+      const option = definition.options[index];
+      if (option === undefined) return { ok: false, message: "the enum has no options" };
+      return { ok: true, value: option.value };
+    }
+    case "string":
+      return { ok: true, value: String(result) };
+    case "vector": {
+      let value = result;
+      if (definition.min !== undefined) value = Math.max(definition.min, value);
+      if (definition.max !== undefined) value = Math.min(definition.max, value);
+      return { ok: true, value: Array.from({ length: definition.size }, () => value) };
+    }
+    case "color":
+      return { ok: true, value: [result, result, result, 1] };
+    default:
+      return {
+        ok: false,
+        message: `a "${definition.type}" parameter cannot take an expression (§V107)`,
+      };
+  }
+}
+
+/** What one stored parameter (bare key OR component key) resolved to. */
+interface StoredResolution {
+  value: ParameterValue;
+  mode: ParameterMode;
+  source: ParameterSource;
+  driven: boolean;
+  diagnostic: RuntimeDiagnostic | null;
+}
+
+function diag(
+  severity: RuntimeDiagnostic["severity"],
+  code: string,
+  message: string,
+  nodeId: string,
+  suggestion?: string,
+): RuntimeDiagnostic {
+  return { severity, code, message, nodeId, ...(suggestion === undefined ? {} : { suggestion }) };
+}
+
+/**
+ * §V108's fallback ladder: the active mode failed, so the slot's retained static value
+ * stands in when the manifest accepts it, else the default. The ACTIVE mode is still
+ * reported — the UI must show the expression square lit even while its value is broken.
+ */
+function fallback(
+  node: GraphNode,
+  key: string,
+  definition: ParameterDefinition,
+  slot: ParameterSlot,
+  diagnostic: RuntimeDiagnostic,
+): StoredResolution {
+  const retained = staticBindingValue(slot);
+  if (retained !== undefined && validateParameterValue(key, definition, retained, node.id) === null) {
+    return { value: retained, mode: slot.mode, source: "static", driven: false, diagnostic };
+  }
+  return {
+    value: defaultParameterValue(definition),
+    mode: slot.mode,
+    source: "default",
+    driven: false,
+    diagnostic,
+  };
+}
+
+/** Per-resolution state: the visited set is the runtime bind-cycle backstop (§V110). */
+interface ResolveContext {
+  node: GraphNode;
+  options: ResolveParametersOptions;
+  visited: Set<string>;
+}
+
+function resolveStored(
+  context: ResolveContext,
+  key: string,
+  definition: ParameterDefinition,
+  stored: StoredParameter | undefined,
+): StoredResolution {
+  const { node } = context;
+  if (stored === undefined) {
+    return {
+      value: defaultParameterValue(definition),
+      mode: "static",
+      source: "default",
+      driven: false,
+      diagnostic: null,
+    };
+  }
+
+  if (!isParameterSlot(stored)) {
+    const checked = checkAgainstManifest(key, definition, stored, node);
+    return {
+      value: checked.value,
+      mode: "static",
+      source: checked.diagnostic === null ? "static" : "default",
+      driven: false,
+      diagnostic: checked.diagnostic,
+    };
+  }
+
+  const slot = stored;
+  const binding = slot.bindings[slot.mode];
+  if (binding === undefined || binding.kind !== slot.mode) {
+    return fallback(
+      node,
+      key,
+      definition,
+      slot,
+      diag(
+        "warning",
+        "parameter.slot.empty",
+        `Parameter "${key}" is in ${slot.mode} mode but carries no ${slot.mode} payload.`,
+        node.id,
+        "Author the payload, or switch the mode back (§V108 keeps the old one).",
+      ),
+    );
+  }
+
+  switch (binding.kind) {
+    case "static": {
+      const checked = checkAgainstManifest(key, definition, binding.value, node);
+      return {
+        value: checked.value,
+        mode: "static",
+        source: checked.diagnostic === null ? "static" : "default",
+        driven: false,
+        diagnostic: checked.diagnostic,
+      };
+    }
+
+    case "expression": {
+      const evaluated = evaluateExpression(binding.source, expressionScope(context.options));
+      if (!evaluated.ok) {
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "warning",
+            "parameter.expression",
+            `Parameter "${key}" expression "${binding.source}" failed: ${evaluated.reason}`,
+            node.id,
+          ),
+        );
+      }
+      const coerced = coerceExpressionResult(definition, evaluated.value);
+      if (!coerced.ok) {
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "warning",
+            "parameter.expression",
+            `Parameter "${key}" expression "${binding.source}": ${coerced.message}.`,
+            node.id,
+          ),
+        );
+      }
+      const checked = checkAgainstManifest(key, definition, coerced.value, node);
+      if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
+      return { value: checked.value, mode: "expression", source: "driven", driven: true, diagnostic: null };
+    }
+
+    case "bind": {
+      const lookup = resolveBindRef(context, key, definition, binding.ref);
+      if (!lookup.ok) {
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "warning",
+            "parameter.bind",
+            `Parameter "${key}" is bound to "${binding.ref}": ${lookup.message}`,
+            node.id,
+          ),
+        );
+      }
+      const checked = checkAgainstManifest(key, definition, lookup.value, node);
+      if (checked.diagnostic !== null) {
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "warning",
+            "parameter.bind",
+            `Parameter "${key}" is bound to "${binding.ref}", which does not fit it: ${checked.diagnostic.message}`,
+            node.id,
+          ),
+        );
+      }
+      return { value: checked.value, mode: "bind", source: "driven", driven: true, diagnostic: null };
+    }
+
+    case "driven": {
+      const supplied = context.options.channels?.(binding.channel, {
+        node,
+        key,
+        definition,
+        frame: context.options.frame,
+      });
+      if (supplied === undefined) {
+        // Reserved, not broken (T203): the mode is declared now, its consumers are
+        // Phase 2. Info severity — a project full of driven parameters with no device
+        // attached is a normal state, not a wall of warnings.
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "info",
+            "parameter.driven",
+            `Parameter "${key}" is driven by channel "${binding.channel}", which is not attached; the retained value is in effect.`,
+            node.id,
+          ),
+        );
+      }
+      const checked = checkAgainstManifest(key, definition, supplied, node);
+      if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
+      return { value: checked.value, mode: "driven", source: "driven", driven: true, diagnostic: null };
+    }
+
+    default: {
+      const never: never = binding;
+      void never;
+      return fallback(
+        node,
+        key,
+        definition,
+        slot,
+        diag("warning", "parameter.slot.unknown", `Parameter "${key}" uses an unknown mode.`, node.id),
+      );
+    }
+  }
+}
+
+/**
+ * A bind ref, resolved. `parent.*` goes through the injected resolver (§V81); anything
+ * else is a sibling parameter on the same node — bare (`radius`, `color`) or a
+ * component (`color.r`) — resolved through the SAME effective-value path, so a bind
+ * reads what the inspector shows, expression siblings included.
+ */
+function resolveBindRef(
+  context: ResolveContext,
+  key: string,
+  definition: ParameterDefinition,
+  ref: string,
+): BindLookupResult {
+  void definition;
+  if (ref.startsWith("parent.")) {
+    const resolver = context.options.parentBind;
+    if (resolver === undefined) {
+      return { ok: false, message: "no parent scope is attached to this resolution (§V81)." };
+    }
+    return resolver(ref);
+  }
+
+  const schema = context.options.schema;
+  if (schema === undefined) {
+    return { ok: false, message: "the sibling schema is unavailable in this resolution." };
+  }
+
+  if (Object.hasOwn(schema, ref)) {
+    if (ref === key) return { ok: false, message: "a parameter cannot bind to itself." };
+    const target = resolveEffective(context, ref, schema[ref] as ParameterDefinition);
+    if (!target.ok) return target;
+    return target;
+  }
+
+  const parsed = parseComponentKey(ref);
+  if (parsed !== null && Object.hasOwn(schema, parsed.base)) {
+    const baseDefinition = schema[parsed.base] as ParameterDefinition;
+    const names = componentNamesFor(baseDefinition);
+    const index = names?.indexOf(parsed.component) ?? -1;
+    if (names === null || index < 0) {
+      return {
+        ok: false,
+        message: `"${parsed.base}" has no component "${parsed.component}"${
+          names === null ? "" : ` (it has ${names.join(", ")})`
+        }.`,
+      };
+    }
+    const target = resolveEffective(context, parsed.base, baseDefinition);
+    if (!target.ok) return target;
+    const tuple = target.value;
+    const component = Array.isArray(tuple) ? tuple[index] : undefined;
+    if (typeof component !== "number") {
+      return { ok: false, message: `"${parsed.base}" did not resolve to a numeric tuple.` };
+    }
+    return { ok: true, value: component };
+  }
+
+  const known = Object.keys(schema).sort();
+  return {
+    ok: false,
+    message: `it names no parameter on this node${known.length === 0 ? "" : ` (it has ${known.join(", ")})`}.`,
+  };
+}
+
+/** Full effective value of a sibling, compound assembly included, cycle-guarded. */
+function resolveEffective(
+  context: ResolveContext,
+  key: string,
+  definition: ParameterDefinition,
+): BindLookupResult {
+  if (context.visited.has(key)) {
+    return {
+      ok: false,
+      message: `the bind chain is circular (through "${key}"); authoring should have refused it (§V110).`,
+    };
+  }
+  context.visited.add(key);
+  try {
+    const names = componentNamesFor(definition);
+    if (names === null) {
+      const resolved = resolveStored(context, key, definition, context.node.parameters[key]);
+      return { ok: true, value: resolved.value };
+    }
+    const compound = resolveCompound(context, key, definition, names);
+    return { ok: true, value: compound.value };
+  } finally {
+    context.visited.delete(key);
+  }
+}
+
+interface CompoundResolution extends StoredResolution {
+  components: readonly ResolvedComponent[];
+}
+
+/**
+ * Compound assembly (§V113): the bare key supplies the base tuple, then every stored
+ * component slot overrides its channel. `color.g` carrying an expression while r, b, a
+ * stay put is exactly this loop.
+ */
+function resolveCompound(
+  context: ResolveContext,
+  key: string,
+  definition: ParameterDefinition,
+  names: readonly string[],
+): CompoundResolution {
+  const base = resolveStored(context, key, definition, context.node.parameters[key]);
+  const assembled: number[] = Array.isArray(base.value)
+    ? [...(base.value as readonly number[])]
+    : (defaultParameterValue(definition) as readonly number[]).slice();
+
+  const components: ResolvedComponent[] = [];
+  let driven = base.driven;
+  for (let index = 0; index < names.length; index += 1) {
+    const name = names[index] as string;
+    const storedComponent = context.node.parameters[componentKey(key, name)];
+    if (storedComponent === undefined) {
+      components.push({
+        name,
+        mode: base.mode,
+        value: assembled[index] ?? 0,
+        slot: undefined,
+        diagnostic: null,
+      });
+      continue;
+    }
+    const resolved = resolveStored(
+      context,
+      componentKey(key, name),
+      componentDefinition(definition, name, index),
+      storedComponent,
+    );
+    const value = typeof resolved.value === "number" ? resolved.value : (assembled[index] ?? 0);
+    assembled[index] = value;
+    driven = driven || resolved.driven;
+    components.push({
+      name,
+      mode: resolved.mode,
+      value,
+      slot: isParameterSlot(storedComponent) ? storedComponent : undefined,
+      diagnostic: resolved.diagnostic,
+    });
+  }
+
+  return { ...base, value: assembled, driven, components };
+}
+
 export function resolveParameter(
   node: GraphNode,
   key: string,
@@ -208,33 +685,44 @@ export function resolveParameter(
         value: checked.value,
         stored,
         source: "driven",
+        mode: "static",
+        slot: isParameterSlot(stored) ? stored : undefined,
         driven: true,
         diagnostic: checked.diagnostic,
       };
     }
   }
 
-  if (stored === undefined) {
+  const context: ResolveContext = { node, options, visited: new Set([key]) };
+  const names = componentNamesFor(definition);
+
+  if (names === null) {
+    const resolved = resolveStored(context, key, definition, stored);
     return {
       key,
       definition,
-      value: defaultParameterValue(definition),
+      value: resolved.value,
       stored,
-      source: "default",
-      driven: false,
-      diagnostic: null,
+      source: resolved.source,
+      mode: resolved.mode,
+      slot: isParameterSlot(stored) ? stored : undefined,
+      driven: resolved.driven,
+      diagnostic: resolved.diagnostic,
     };
   }
 
-  const checked = checkAgainstManifest(key, definition, stored, node);
+  const compound = resolveCompound(context, key, definition, names);
   return {
     key,
     definition,
-    value: checked.value,
+    value: compound.value,
     stored,
-    source: checked.diagnostic === null ? "static" : "default",
-    driven: false,
-    diagnostic: checked.diagnostic,
+    source: compound.source,
+    mode: compound.mode,
+    slot: isParameterSlot(stored) ? stored : undefined,
+    driven: compound.driven,
+    components: compound.components,
+    diagnostic: compound.diagnostic,
   };
 }
 
@@ -253,12 +741,17 @@ export function resolveParameterSchema(
   const entries: ResolvedParameter[] = [];
   const values: Record<string, ParameterValue> = {};
   const diagnostics: RuntimeDiagnostic[] = [];
+  const withSchema: ResolveParametersOptions =
+    options.schema === undefined ? { ...options, schema } : options;
 
   for (const [key, parameter] of Object.entries(schema)) {
-    const resolved = resolveParameter(node, key, parameter, options);
+    const resolved = resolveParameter(node, key, parameter, withSchema);
     entries.push(resolved);
     values[key] = evaluationValue(parameter, resolved.value);
     if (resolved.diagnostic !== null) diagnostics.push(resolved.diagnostic);
+    for (const component of resolved.components ?? []) {
+      if (component.diagnostic !== null) diagnostics.push(component.diagnostic);
+    }
   }
 
   const byKey = new Map(entries.map((entry) => [entry.key, entry]));

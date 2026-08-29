@@ -802,3 +802,55 @@ describe("graph.applyPatch — groups and viewport (T104)", () => {
     }
   });
 });
+
+describe("graph.applyPatch — bind cycles refused at write time (T205, §V110)", () => {
+  const bind = (ref: string) => ({ mode: "bind", bindings: { bind: { kind: "bind", ref } } });
+
+  it("rejects a patch whose slots close a loop, discarding the whole draft", async () => {
+    const seed = await apply([addSolid("$a")]);
+    const nodeId = seed.output.createdIds["$a"] as string;
+    const snapshot = graph();
+
+    const result = await apply([
+      { op: "setParameters", nodeId, parameters: { amount: bind("label"), label: bind("amount") } as never },
+    ]);
+
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.some((d) => d.code === "parameter.bindCycle")).toBe(true);
+    expect(graph()).toBe(snapshot);
+  });
+
+  it("rejects a loop that closes through a parameter the patch never touched", async () => {
+    const seed = await apply([addSolid("$a")]);
+    const nodeId = seed.output.createdIds["$a"] as string;
+
+    const first = await apply([
+      { op: "setParameters", nodeId, parameters: { amount: bind("label") } as never },
+    ]);
+    expect(first.status).toBe("applied");
+
+    // Only `label` is in this patch; the cycle needs the `amount` already stored.
+    const second = await apply([
+      { op: "setParameters", nodeId, parameters: { label: bind("amount") } as never },
+    ]);
+    expect(second.status).toBe("rejected");
+    expect(second.diagnostics.some((d) => d.code === "parameter.bindCycle")).toBe(true);
+  });
+
+  it("accepts an acyclic slot patch — modes are ordinary parameter writes (§V114)", async () => {
+    const seed = await apply([addSolid("$a")]);
+    const nodeId = seed.output.createdIds["$a"] as string;
+
+    const result = await apply([
+      {
+        op: "setParameters",
+        nodeId,
+        parameters: {
+          amount: { mode: "expression", bindings: { expression: { kind: "expression", source: "time" } } },
+          "color.r": { mode: "static", bindings: { static: { kind: "static", value: 1 } } },
+        } as never,
+      },
+    ]);
+    expect(result.status).toBe("applied");
+  });
+});

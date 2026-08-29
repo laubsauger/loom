@@ -10,9 +10,9 @@ import {
   graphNodeSchema,
   nodeFormatOverrideSchema,
   nodeResolutionOverrideSchema,
-  parameterValueSchema,
   projectDocumentSchema,
   projectSettingsSchema,
+  storedParameterSchema,
 } from "../types/schemas.ts";
 
 /**
@@ -123,7 +123,9 @@ export function classifyUnknownParameters(graph: GraphDocument): UnknownParamete
     if (node === undefined) continue;
     for (const key of Object.keys(node.parameters).sort()) {
       const value: unknown = node.parameters[key];
-      if (parameterValueSchema.safeParse(value).success) continue;
+      // A mode envelope (T202) is a shape this build understands; only a slot whose
+      // bindings carry kinds we do not know falls through to the unknown lane.
+      if (storedParameterSchema.safeParse(value).success) continue;
       const kind = readKind(value);
       unknown.push({ nodeId, key, ...(kind === undefined ? {} : { kind }) });
     }

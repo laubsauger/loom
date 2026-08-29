@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildParentScope, parentScopeDrivers } from "../components/parent-scope.ts";
+import { buildParentScope, parentBindResolver, parentScopeDrivers } from "../components/parent-scope.ts";
 import type { ParentScope } from "../types/components.ts";
 import type { GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
@@ -209,5 +209,226 @@ describe("parent.<key> bindings, at depth (§V81, T133)", () => {
     });
     expect(resolved.get("color")?.value).toEqual([0.5, 0.5, 0.5, 1]);
     expect((resolved.values["color"] as readonly number[])[0]).toBeCloseTo(0.2140, 4);
+  });
+});
+
+/**
+ * Parameter modes (T202/T203, §V107, §V108) and compound components (T207, §V113).
+ * The claims: every type takes every mode; a failed mode falls back to the retained
+ * static value, never hangs; component slots drive one channel while siblings hold.
+ */
+describe("parameter modes (T203, §V107)", () => {
+  const frame = {
+    timeSeconds: 2,
+    deltaSeconds: 0.016,
+    frameIndex: 120,
+    mode: "realtime",
+    randomSeed: 7,
+  } as const;
+
+  const slot = (mode: "static" | "expression" | "bind" | "driven", bindings: object) =>
+    ({ mode, bindings }) as GraphNode["parameters"][string];
+
+  const expr = (source: string, retained?: number) =>
+    slot("expression", {
+      expression: { kind: "expression", source },
+      ...(retained === undefined ? {} : { static: { kind: "static", value: retained } }),
+    });
+
+  it("evaluates an expression against the frame (§V71, §V44)", () => {
+    const resolved = resolveParameters(nodeWith({ gain: expr("time * 3") }), solidLike, { frame });
+    expect(resolved.get("gain")).toMatchObject({ value: 6, mode: "expression", source: "driven", driven: true });
+  });
+
+  it("resolves the deterministic zero frame when no frame is given — compile-time, not an error", () => {
+    const resolved = resolveParameters(nodeWith({ gain: expr("10 + time") }), solidLike);
+    expect(resolved.get("gain")?.value).toBe(10);
+    expect(resolved.diagnostics).toEqual([]);
+  });
+
+  it("clamps an expression into the declared range instead of snapping to default", () => {
+    const resolved = resolveParameters(nodeWith({ gain: expr("9999") }), solidLike, { frame });
+    expect(resolved.get("gain")?.value).toBe(64);
+  });
+
+  it("falls back to the RETAINED static value when the expression breaks (§V108)", () => {
+    const resolved = resolveParameters(nodeWith({ gain: expr("nope + 1", 12) }), solidLike, { frame });
+    const entry = resolved.get("gain");
+    expect(entry?.value).toBe(12);
+    expect(entry?.mode).toBe("expression"); // the active mode still shows, value or not
+    expect(entry?.diagnostic?.code).toBe("parameter.expression");
+  });
+
+  it("drives every type from a number: bool ≠0, enum by index, string rendered (§V107)", () => {
+    const definition: NodeDefinition = {
+      ...solidLike,
+      parameters: {
+        on: { type: "boolean", label: "On", default: false },
+        blend: {
+          type: "enum",
+          label: "Blend",
+          default: "normal",
+          options: [
+            { value: "normal", label: "Normal" },
+            { value: "add", label: "Add" },
+            { value: "multiply", label: "Multiply" },
+          ],
+        },
+        note: { type: "string", label: "Note", default: "" },
+      },
+    };
+    const resolved = resolveParameters(
+      nodeWith({ on: expr("time"), blend: expr("1"), note: expr("time * 10") }),
+      definition,
+      { frame },
+    );
+    expect(resolved.get("on")?.value).toBe(true);
+    expect(resolved.get("blend")?.value).toBe("add");
+    expect(resolved.get("note")?.value).toBe("20");
+  });
+
+  it("binds a sibling parameter, reading its EFFECTIVE value", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        gain: expr("time"),
+        linearColor: [0, 0, 0, 1],
+        color: slot("bind", { bind: { kind: "bind", ref: "linearColor" } }),
+      }),
+      solidLike,
+      { frame },
+    );
+    expect(resolved.get("color")?.value).toEqual([0, 0, 0, 1]);
+    expect(resolved.get("color")?.driven).toBe(true);
+  });
+
+  it("binds parent.* through the injected resolver — one lookup with the legacy path", () => {
+    const node = nodeWith({ gain: slot("bind", { bind: { kind: "bind", ref: "parent.gain" } }) });
+    const resolved = resolveParameters(node, solidLike, {
+      parentBind: parentBindResolver(buildParentScope([{ gain: 9 }])),
+    });
+    expect(resolved.get("gain")).toMatchObject({ value: 9, mode: "bind", driven: true });
+  });
+
+  it("reports and retains when a bind names nothing", () => {
+    const node = nodeWith({
+      gain: slot("bind", { bind: { kind: "bind", ref: "missing" }, static: { kind: "static", value: 2 } }),
+    });
+    const resolved = resolveParameters(node, solidLike);
+    expect(resolved.get("gain")?.value).toBe(2);
+    expect(resolved.get("gain")?.diagnostic?.code).toBe("parameter.bind");
+  });
+
+  it("survives a circular bind at runtime — backstop, not the contract (§V110)", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        gain: slot("bind", { bind: { kind: "bind", ref: "gain" } }),
+      }),
+      solidLike,
+    );
+    expect(resolved.get("gain")?.value).toBe(4); // default; no hang, no throw
+    expect(resolved.get("gain")?.diagnostic?.code).toBe("parameter.bind");
+  });
+
+  it("holds a driven parameter at its retained value until a channel attaches (T203 reserved)", () => {
+    const stored = slot("driven", {
+      driven: { kind: "driven", channel: "audio.rms" },
+      static: { kind: "static", value: 8 },
+    });
+    const idle = resolveParameters(nodeWith({ gain: stored }), solidLike);
+    expect(idle.get("gain")?.value).toBe(8);
+    expect(idle.get("gain")?.diagnostic?.severity).toBe("info");
+
+    const attached = resolveParameters(nodeWith({ gain: stored }), solidLike, {
+      channels: (channel) => (channel === "audio.rms" ? 32 : undefined),
+    });
+    expect(attached.get("gain")).toMatchObject({ value: 32, mode: "driven", driven: true });
+  });
+
+  it("retains every mode's payload across the active-mode switch (§V108)", () => {
+    // The same slot resolved twice with only `mode` differing: neither resolution
+    // destroys or ignores the other mode's payload.
+    const bindings = {
+      static: { kind: "static", value: 12 },
+      expression: { kind: "expression", source: "time * 3" },
+    };
+    const asStatic = resolveParameters(nodeWith({ gain: slot("static", bindings) }), solidLike, { frame });
+    const asExpr = resolveParameters(nodeWith({ gain: slot("expression", bindings) }), solidLike, { frame });
+    expect(asStatic.get("gain")?.value).toBe(12);
+    expect(asExpr.get("gain")?.value).toBe(6);
+    expect(asStatic.get("gain")?.slot?.bindings.expression).toEqual(bindings.expression);
+  });
+});
+
+describe("compound components (T207, §V113)", () => {
+  const frame = {
+    timeSeconds: 0.5,
+    deltaSeconds: 0.016,
+    frameIndex: 30,
+    mode: "realtime",
+    randomSeed: 7,
+  } as const;
+
+  it("lets one channel run an expression while its siblings stay put", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        linearColor: [0.1, 0.2, 0.3, 1],
+        "linearColor.g": {
+          mode: "expression",
+          bindings: { expression: { kind: "expression", source: "time" } },
+        } as unknown as GraphNode["parameters"][string],
+      }),
+      solidLike,
+      { frame },
+    );
+    const entry = resolved.get("linearColor");
+    expect(entry?.value).toEqual([0.1, 0.5, 0.3, 1]);
+    expect(entry?.driven).toBe(true);
+    expect(entry?.components?.map((c) => c.mode)).toEqual(["static", "expression", "static", "static"]);
+  });
+
+  it("keeps the output compound-keyed — component keys never reach values", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        linearColor: [0, 0, 0, 1],
+        "linearColor.r": {
+          mode: "static",
+          bindings: { static: { kind: "static", value: 1 } },
+        } as unknown as GraphNode["parameters"][string],
+      }),
+      solidLike,
+    );
+    expect(Object.keys(resolved.values)).not.toContain("linearColor.r");
+    expect(resolved.values["linearColor"]).toEqual([1, 0, 0, 1]);
+  });
+
+  it("decodes display colour AFTER assembly, so a driven channel is decoded too", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        color: [0, 0, 0, 1],
+        "color.r": {
+          mode: "expression",
+          bindings: { expression: { kind: "expression", source: "time" } },
+        } as unknown as GraphNode["parameters"][string],
+      }),
+      solidLike,
+      { frame },
+    );
+    // entry.value stays display-encoded; values gets the linear decode of 0.5.
+    expect((resolved.get("color")?.value as readonly number[])[0]).toBe(0.5);
+    expect((resolved.values["color"] as readonly number[])[0]).toBeCloseTo(0.214, 3);
+  });
+
+  it("binds a scalar to one component of a sibling compound", () => {
+    const resolved = resolveParameters(
+      nodeWith({
+        linearColor: [0.25, 0, 0, 1],
+        gain: {
+          mode: "bind",
+          bindings: { bind: { kind: "bind", ref: "linearColor.r" } },
+        } as unknown as GraphNode["parameters"][string],
+      }),
+      solidLike,
+    );
+    expect(resolved.get("gain")?.value).toBe(0.25);
   });
 });

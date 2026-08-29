@@ -4,7 +4,10 @@ import type {
   ParameterDefinition,
   ParameterSchema,
   ParameterValue,
+  StoredParameter,
 } from "../types/parameters.ts";
+import { parseExpression } from "../expressions/index.ts";
+import { componentDefinition, componentNamesFor, isParameterSlot, parseComponentKey } from "./slots.ts";
 
 /**
  * Parameter validation against a node manifest's `ParameterSchema`.
@@ -122,33 +125,118 @@ function describeValue(value: ParameterValue): string {
  */
 export function validateParameters(
   schema: ParameterSchema,
-  values: Readonly<Record<string, ParameterValue>>,
+  values: Readonly<Record<string, StoredParameter>>,
   nodeId?: NodeId,
 ): RuntimeDiagnostic[] {
   const diagnostics: RuntimeDiagnostic[] = [];
   for (const key of Object.keys(values).sort()) {
-    const definition = schema[key];
+    let definition = schema[key];
     if (definition === undefined) {
-      const known = Object.keys(schema).sort().join(", ");
-      diagnostics.push(
-        error(
-          "parameter.unknown",
-          `Unknown parameter "${key}".`,
-          nodeId,
-          known.length > 0 ? `Known parameters: ${known}.` : undefined,
-        ),
-      );
-      continue;
+      // A component key (`color.r`, §V113) validates against the derived scalar
+      // definition of its channel — it is not an unknown parameter.
+      const parsed = parseComponentKey(key);
+      const base = parsed === null ? undefined : schema[parsed.base];
+      const names = base === undefined ? null : componentNamesFor(base);
+      const index = parsed === null || names === null ? -1 : names.indexOf(parsed.component);
+      if (base !== undefined && index >= 0 && parsed !== null) {
+        definition = componentDefinition(base, parsed.component, index);
+      } else {
+        const known = Object.keys(schema).sort().join(", ");
+        diagnostics.push(
+          error(
+            "parameter.unknown",
+            `Unknown parameter "${key}".`,
+            nodeId,
+            known.length > 0 ? `Known parameters: ${known}.` : undefined,
+          ),
+        );
+        continue;
+      }
     }
     const value = values[key];
     if (value === undefined) {
       diagnostics.push(error("parameter.undefined", `Parameter "${key}" was set to undefined.`, nodeId));
       continue;
     }
-    const diagnostic = validateParameterValue(key, definition, value, nodeId);
+    const diagnostic = validateStoredParameter(key, definition, value, nodeId);
     if (diagnostic !== null) diagnostics.push(diagnostic);
   }
   return diagnostics;
+}
+
+/**
+ * Validates one stored parameter — a bare value or a mode envelope (T202).
+ *
+ * A slot is checked at WRITE time in every retained mode, not just the active one
+ * (§V108): a static payload the manifest rejects, an expression that does not parse, an
+ * empty bind ref — each is an authoring error the moment it is stored, and refusing it
+ * here is what lets the resolver treat retained payloads as trustworthy fallbacks.
+ * Whether a bind's TARGET exists is resolution's business (a sibling may arrive in the
+ * same patch); whether the chain cycles is the patch gate's (`bindCycleDiagnostics`).
+ */
+export function validateStoredParameter(
+  key: string,
+  definition: ParameterDefinition,
+  stored: StoredParameter,
+  nodeId?: NodeId,
+): RuntimeDiagnostic | null {
+  if (!isParameterSlot(stored)) return validateParameterValue(key, definition, stored, nodeId);
+
+  for (const mode of Object.keys(stored.bindings).sort()) {
+    const binding = stored.bindings[mode as keyof typeof stored.bindings];
+    if (binding === undefined) continue;
+    if (binding.kind !== mode) {
+      return error(
+        "parameter.slot.shape",
+        `Parameter "${key}" stores a ${binding.kind} payload under its ${mode} binding.`,
+        nodeId,
+      );
+    }
+    switch (binding.kind) {
+      case "static": {
+        const invalid = validateParameterValue(key, definition, binding.value, nodeId);
+        if (invalid !== null) return invalid;
+        break;
+      }
+      case "expression": {
+        const parsed = parseExpression(binding.source);
+        if (!parsed.ok) {
+          return error(
+            "parameter.expression.syntax",
+            `Parameter "${key}" expression "${binding.source}" does not parse: ${parsed.reason}`,
+            nodeId,
+          );
+        }
+        break;
+      }
+      case "bind": {
+        if (binding.ref.trim().length === 0) {
+          return error("parameter.bind.empty", `Parameter "${key}" has an empty bind ref.`, nodeId);
+        }
+        break;
+      }
+      case "driven": {
+        if (binding.channel.trim().length === 0) {
+          return error("parameter.driven.empty", `Parameter "${key}" has an empty channel name.`, nodeId);
+        }
+        break;
+      }
+      default: {
+        const never: never = binding;
+        void never;
+      }
+    }
+  }
+
+  if (stored.bindings[stored.mode] === undefined) {
+    return error(
+      "parameter.slot.empty",
+      `Parameter "${key}" is in ${stored.mode} mode but carries no ${stored.mode} payload.`,
+      nodeId,
+      "Author the payload, or switch the mode back (§V108 keeps the old one).",
+    );
+  }
+  return null;
 }
 
 /**

@@ -3,7 +3,7 @@ import { graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchem
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
-import type { ParameterValue } from "../types/parameters.ts";
+import type { ParameterValue, StoredParameter } from "../types/parameters.ts";
 import type {
   GraphPatch,
   GraphPatchOperation,
@@ -14,6 +14,7 @@ import type {
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { arePortsCompatible, describePortType } from "../graph/port-compat.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
+import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
 import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 
@@ -499,7 +500,15 @@ function executeOperation(
         throw new PatchAbort();
       }
       for (const [key, value] of Object.entries(operation.parameters)) {
-        node.parameters[key] = value as ParameterValue;
+        node.parameters[key] = value as StoredParameter;
+      }
+      // §V110: a bind cycle is refused at the moment it is written — checked on the
+      // MERGED result, because the loop may close through a parameter this patch never
+      // touched. The draft is discarded whole, so the document can never hold one.
+      const cycles = bindCycleDiagnostics(node, definition.parameters);
+      if (cycles.length > 0) {
+        run.diagnostics.push(...cycles);
+        throw new PatchAbort();
       }
       return;
     }
