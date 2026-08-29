@@ -30,6 +30,11 @@ const v145Plugin = {
         // Names the FILE introduces itself — by import, or by declaring its own.
         // Either one means the reference cannot silently resolve to the global.
         const local = new Set();
+        // Reports are DEFERRED to Program:exit rather than emitted as we walk, because
+        // a type may legitimately be used above its own declaration — `backend-types.ts`
+        // uses MediaSource at line 174 and declares it at 202. Reporting inline made the
+        // rule order-dependent and produced exactly that false positive on its first run.
+        const suspects = [];
         return {
           ImportDeclaration(node) {
             for (const specifier of node.specifiers) local.add(specifier.local.name);
@@ -38,14 +43,19 @@ const v145Plugin = {
             if (node.id?.name) local.add(node.id.name);
           },
           "TSTypeReference > Identifier"(node) {
-            if (!COLLIDING_DOMAIN_TYPES.has(node.name) || local.has(node.name)) return;
-            context.report({
-              node,
-              message:
-                `§V145: "${node.name}" is both one of our domain types and a DOM global. ` +
-                "Without an explicit import this resolves to the GLOBAL and typechecks green " +
-                "against the wrong contract — the silence is the bug. Import it explicitly.",
-            });
+            if (COLLIDING_DOMAIN_TYPES.has(node.name)) suspects.push(node);
+          },
+          "Program:exit"() {
+            for (const node of suspects) {
+              if (local.has(node.name)) continue;
+              context.report({
+                node,
+                message:
+                  `§V145: "${node.name}" is both one of our domain types and a DOM global. ` +
+                  "Without an explicit import this resolves to the GLOBAL and typechecks green " +
+                  "against the wrong contract — the silence is the bug. Import it explicitly.",
+              });
+            }
           },
         };
       },
