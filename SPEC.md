@@ -748,6 +748,8 @@ V108: mode switch is NON-DESTRUCTIVE — each mode keeps its own last value, and
 V109: mode evaluation happens ONLY ∈ `resolveParameters` (V61). the compiler, the inspector & the runtime ∀ read the resolved value — ⊥ a second evaluator, ⊥ a node reading its own raw slot.
 V110: `bind` = a REFERENCE, resolved lexically (`parent.<key>`) or by explicit path. cycles detected @ bind time, ⊥ @ evaluation — an expression cycle discovered per-frame is a hang, discovered @ authoring it is a diagnostic.
 V105: help content DERIVED from live sources — shortcuts ← keymap (V55), node docs ← manifests, expression fns ← the evaluator's own whitelist. ⊥ a hand-written copy: a rebound key or a renamed param makes hand-written help WRONG, and wrong help is worse than none because it is trusted.
+V148: "copy parameter reference" yields a string that PASTES INTO an expression & resolves to that same parameter. round-trip tested (copy → paste → evaluate == source value). a reference format that ⊥ paste back is the whole feature failing silently.
+V149: reset-to-default restores BOTH value & mode, & SAYS what it cleared when an expression|reference was discarded. ⊥ silently drop authored work. per-mode retained values (V107) survive a value reset — clearing the mode ≠ clearing its memory.
 V146: a parameter that CANNOT affect output ∈ current state ! read INACTIVE (dimmed + reason on hover, TD-style) — ⊥ silently ignored. ∀ node declares each param's applicability as a predicate over its OWN params. a live control that does nothing is worse than a control that isn't there: user did everything right & got nothing.
 V147: a claim about the PICTURE is tested on the picture. "shader source contains X" ⊥ evidence that X reaches a pixel. ∀ per-frame behaviour (motion, feedback, carry-over) needs ≥1 texel-level test @ real device.
 V145: a domain type sharing a name w/ a DOM|Node GLOBAL (`MediaSource`, `Text`, `Selection`, `Range`, `Event`, `Image`, `Path`, `Node`, `Screen`, `Cache`, `Transform`…) ! be imported explicitly @ ∀ use. lint-enforced. w/o import tsc resolves the GLOBAL & goes GREEN against the WRONG interface — the silence is the bug.
@@ -948,6 +950,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|.|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
 T245|.|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
 T244|.|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|.|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
@@ -1083,7 +1086,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 T227 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 T245 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 T178 T182 T183 T184 T185 T186 T187 T188 T189 T196 T197 T198 T200 T201 T204 T218 T219 T220 T224 T228 T245 T246 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |
