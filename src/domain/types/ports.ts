@@ -9,6 +9,9 @@ import type { PortId } from "./ids.ts";
  * from the schema (§V76) rather than hand-written, and storage is one buffer per
  * attribute (§V75) so an operator binds only what it touches.
  */
+/** Working space of a texture's values. Linear is the project working space (§V56). */
+export type ColorSpace = "linear" | "encoded" | "data";
+
 export type PointAttributeType =
   | "f32"
   | "vec2f"
@@ -33,7 +36,26 @@ export type PointTopology = "points" | "lines" | "triangles";
  * `audioFeatures` are declared now but not implemented in v1 (§C scope).
  */
 export type PortType =
-  | { kind: "texture2d"; sample: "float" | "unfilterable-float" | "depth"; channels?: 1 | 2 | 4 }
+  | {
+      kind: "texture2d";
+      sample: "float" | "unfilterable-float" | "depth";
+      channels?: 1 | 2 | 4;
+      /**
+       * Colour space this texture carries (§V56, §V57).
+       *
+       * Absent means `"linear"`, because linear IS the project working space — so an
+       * unannotated port is making the ordinary claim, not an unknown one. This is
+       * deliberately UNLIKE `channels`, where absence is a distinct declaration rather
+       * than a default: a 1-channel and a 4-channel texture are genuinely different
+       * things, whereas every texture has a colour space whether or not anyone said so.
+       *
+       * `data` marks a texture whose values are not colour at all — a displacement field,
+       * a mask, an SDF — and must bypass every colour conversion. A gamma curve applied
+       * to a displacement field silently moves geometry, which is why this is a port-level
+       * fact and not something inferred from the pixel format.
+       */
+      space?: ColorSpace;
+    }
   | { kind: "buffer"; element: string; access: "read" | "write" | "read-write" }
   | { kind: "scalar"; scalar: "f32" | "i32" | "u32" | "bool" }
   | { kind: "vector"; scalar: "f32" | "i32" | "u32"; size: 2 | 3 | 4 }

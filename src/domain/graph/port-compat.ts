@@ -1,4 +1,4 @@
-import type { PortType } from "../types/ports.ts";
+import type { ColorSpace, PortType } from "../types/ports.ts";
 
 /**
  * Port compatibility (§V13, T11).
@@ -17,7 +17,14 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
   switch (source.kind) {
     case "texture2d": {
       const b = target as Extract<PortType, { kind: "texture2d" }>;
-      return source.sample === b.sample && source.channels === b.channels;
+      // Absence normalises to "linear" (the project working space), so an unannotated
+      // port and an explicitly-linear one are the SAME declaration. `channels` above is
+      // deliberately not treated this way — see the note on PortType.
+      return (
+        source.sample === b.sample &&
+        source.channels === b.channels &&
+        colorSpaceOf(source) === colorSpaceOf(b)
+      );
     }
     case "buffer": {
       const b = target as Extract<PortType, { kind: "buffer" }>;
@@ -68,11 +75,16 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
   }
 }
 
+/** The working space a texture port declares; absent means the project default (§V56). */
+export function colorSpaceOf(type: Extract<PortType, { kind: "texture2d" }>): ColorSpace {
+  return type.space ?? "linear";
+}
+
 /** Stable, human-readable label for diagnostics and for port-family lookup. */
 export function describePortType(type: PortType): string {
   switch (type.kind) {
     case "texture2d":
-      return `texture2d<${type.sample}${type.channels === undefined ? "" : `,${type.channels}`}>`;
+      return `texture2d<${type.sample}${type.channels === undefined ? "" : `,${type.channels}`},${colorSpaceOf(type)}>`;
     case "buffer":
       return `buffer<${type.element},${type.access}>`;
     case "scalar":

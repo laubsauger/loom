@@ -83,7 +83,7 @@ describe("§V13 — port-drag mode narrows the catalogue to what will actually c
 
   it("shows only exactly-compatible nodes, and names the type being dragged", () => {
     render(<NodeLibrary definitions={testNodeDefinitions} portDrag={portDrag} />);
-    expect(screen.getByText("texture2d<float,4>")).toBeDefined();
+    expect(screen.getByText("texture2d<float,4,linear>")).toBeDefined();
     expect(screen.getByText("Blur")).toBeDefined();
     expect(screen.getByText("Composite")).toBeDefined();
     // Near misses stay out: a different channel count or sample type is not "close".

@@ -111,7 +111,7 @@ describe("arePortsCompatible (§V13)", () => {
   });
 
   it("describes types distinguishably for diagnostics", () => {
-    expect(describePortType(rgba)).toBe("texture2d<float,4>");
+    expect(describePortType(rgba)).toBe("texture2d<float,4,linear>");
     expect(describePortType({ kind: "vector", scalar: "f32", size: 2 })).toBe("vec2<f32>");
     expect(describePortType({ kind: "scalar", scalar: "i32" })).toBe("scalar<i32>");
   });
@@ -153,5 +153,41 @@ describe("pointset attribute requirements", () => {
 
   it("accepts two topology-free pointsets", () => {
     expect(arePortsCompatible({ kind: "pointset", requires: [P] }, { kind: "pointset", requires: [P] })).toBe(true);
+  });
+});
+
+/**
+ * Colour space on a texture port (§V56/§V57, T83). It is a PORT-level fact rather than
+ * something inferred from the pixel format: a gamma curve applied to a displacement field
+ * silently moves geometry, and no format tells you that field is not colour.
+ */
+describe("texture2d colour space", () => {
+  const tex = (space?: "linear" | "encoded" | "data") =>
+    ({ kind: "texture2d", sample: "float", ...(space === undefined ? {} : { space }) }) as const;
+
+  /** Absence IS linear — the project working space — not an unknown. */
+  it("treats an unannotated port and an explicitly linear one as the same declaration", () => {
+    expect(arePortsCompatible(tex(), tex("linear"))).toBe(true);
+    expect(arePortsCompatible(tex("linear"), tex())).toBe(true);
+  });
+
+  it("refuses to feed encoded pixels into a linear input", () => {
+    expect(arePortsCompatible(tex("encoded"), tex("linear"))).toBe(false);
+    expect(arePortsCompatible(tex("encoded"), tex())).toBe(false);
+  });
+
+  /** The case the invariant exists for: data must never be colour-converted. */
+  it("refuses to feed a data texture into a colour input, and vice versa", () => {
+    expect(arePortsCompatible(tex("data"), tex("linear"))).toBe(false);
+    expect(arePortsCompatible(tex("linear"), tex("data"))).toBe(false);
+  });
+
+  it("accepts data into data", () => {
+    expect(arePortsCompatible(tex("data"), tex("data"))).toBe(true);
+  });
+
+  it("names the space in the description, so a diagnostic says which mismatched", () => {
+    expect(describePortType(tex("data"))).toContain("data");
+    expect(describePortType(tex())).toContain("linear");
   });
 });

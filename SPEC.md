@@ -601,7 +601,7 @@ T66|x|manifest field: stateful node declares reset\|deterministicReplay\|checkpo
 T80|.|`OutputRef {nodeId, portId}` ∀ backend/export/preview/tool surface, default port `"out"`|V59
 T81|.|plan IR: pass kind union render\|compute, resource kind union texture\|buffer, exhaustive switch|V58
 T82|.|readback descriptor {width,height,format,rowStride,bytes} replaces bare Uint8Array|V60,V48
-T83|.|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
+T83|x|`texture2d.space` linear\|encoded\|data + compiler propagation + mismatch diagnostic|V56,V57
 T84|.|`ProjectSettings.colorPolicy` {workingSpace, displayTransform} + zod + defaults|V56
 T85|x|`resolveParameters(node, def, frame)` ∈ `src/domain/parameters`, sole eval read path|V61
 T86|.|per-resource rebuild granularity — unrelated edit ⊥ resets feedback pair|V62,V22
@@ -683,6 +683,7 @@ T163|x|backend GPU timing surface — `timer(gpu)` after init when `timestampQue
 T164|.|`ResolvedOutput` carries `resolutionSource` `formatSource` `clamped` — compiler computes them ∈ `propagate()` then discards. popup MIRRORS the precedence today = drift risk|V50,V51,V85
 T165|.|fix B6 — Output node targets the PROJECT surface, ⊥ inherits its input's size/format|V21,V50
 T166|.|fix B7 — `customWgsl` emits `uniformBinding` + `sharedBinding` so a kernel gets uniforms + time; default `source` ⊥ declare a block bound to nothing|V5,V44
+T167|.|friendlier port label ∀ UI — `describePortType` is diagnostic-shaped (`texture2d<float,4,linear>`); the library port-drag chip renders it raw|V17,V19
 T139|.|wire autosave into composition root: subscribe to commits, flush before save/unload, restore-on-launch prompt, IndexedDB-unavailable diagnostic|V10
 T113|x|preview atlas design note BEFORE impl — atlas-behind-DOM vs per-node canvas, dpr + zoom|V7,V28
 T34|x|preview system: shared atlas, tile alloc for visible \|pinned only, 192px long edge, 15-30fps|V7,V28
@@ -748,7 +749,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 |---|---|---|
 | E compiler | T24 T25 T26 T27 T72 T28 T75 T29 T30 T31 T32 T33 T147 T149 T151 T164 | `src/compiler/**` |
 | F graph view | T18 T19 | `src/editor/graph-canvas/**` `src/editor/nodes/**` `src/editor/edges/**` |
-| G controls | T37 T38 T73 T39 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
+| G controls | T37 T38 T73 T39 T167 | `src/editor/inspector/**` `src/editor/library/**` `src/ui/controls/**` |
 | H shader editor | T20 T21 T22 | `src/editor/shader-editor/**` |
 | I spike nodes | T15 | `src/nodes/definitions/**` `src/nodes/shaders/**` |
 | Q input + keymap | T76 T77 T78 T79 | `src/editor/keymap/**` `src/editor/palette/**` |

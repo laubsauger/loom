@@ -15,6 +15,7 @@ export const portTypeSchema = z.discriminatedUnion("kind", [
     kind: z.literal("texture2d"),
     sample: z.enum(["float", "unfilterable-float", "depth"]),
     channels: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional(),
+    space: z.enum(["linear", "encoded", "data"]).optional(),
   }),
   z.object({
     kind: z.literal("buffer"),
