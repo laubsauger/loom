@@ -26,7 +26,14 @@ export type { NodeCompileInputs } from "./compile-context.ts";
 export { readCompileInputs, missingCompileResource } from "./compile-context.ts";
 
 export { noiseNode } from "./noise.ts";
-export { rampNode, uvNode, checkerNode, circleNode, generatorNodes } from "./generators.ts";
+export {
+  rampNode,
+  uvNode,
+  checkerNode,
+  circleNode,
+  rectangleNode,
+  generatorNodes,
+} from "./generators.ts";
 export { transformNode, cropNode, tileNode, transformNodes } from "./transforms.ts";
 export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
 export { blurNode, edgeNode, convolveNode, displaceNode, filterNodes } from "./filters.ts";

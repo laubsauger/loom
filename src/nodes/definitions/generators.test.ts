@@ -24,6 +24,7 @@ describe("generator nodes (T40)", () => {
       "checker",
       "circle",
       "ramp",
+      "rectangle",
       "uv",
     ]);
   });

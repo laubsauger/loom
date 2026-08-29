@@ -4,6 +4,7 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readEnumIndex, readFlag, readNumber, readVector } from "./parameter-readers.ts";
 import {
+  RECTANGLE_FRAGMENT_WGSL,
   CHECKER_FRAGMENT_WGSL,
   CIRCLE_FRAGMENT_WGSL,
   RAMP_FRAGMENT_WGSL,
@@ -304,4 +305,95 @@ export const circleNode: NodeDefinition = {
 };
 
 /** The source group, in library order. */
-export const generatorNodes: readonly NodeDefinition[] = [rampNode, uvNode, checkerNode, circleNode];
+/**
+ * Rectangle — Circle's sibling (T242). TD's Rectangle TOP.
+ *
+ * Same parameter vocabulary, same two modes, same aspect handling as Circle, so the two read
+ * as one family. `roundness` is the one addition, and it costs nothing: offsetting a signed
+ * distance field inflates the shape in every direction, and an inflated box is a rounded box.
+ */
+export const rectangleNode: NodeDefinition = {
+  type: "rectangle",
+  version: 1,
+  title: "Rectangle",
+  category: "generator",
+  description: "Anti-aliased rounded rectangle, or its signed distance field. TD Rectangle TOP.",
+  inputs: [],
+  outputs: [
+    {
+      id: "out",
+      label: "Out",
+      type: RGBA_TEXTURE,
+      description:
+        "Linear colour in Fill mode; DATA (signed distance in red, uv units) in Signed Distance mode.",
+    },
+  ],
+  parameters: {
+    mode: { type: "enum", label: "Mode", default: "fill", options: [...CIRCLE_MODE_OPTIONS] },
+    center: { type: "vector", size: 2, label: "Center", default: [0.5, 0.5], min: -2, max: 3 },
+    size: { type: "vector", size: 2, label: "Size", default: [0.25, 0.25], min: 0, max: 4 },
+    roundness: {
+      type: "number",
+      label: "Roundness",
+      default: 0,
+      min: 0,
+      max: 1,
+      description: "Corner radius in uv units. At half the smaller extent a square is a circle.",
+    },
+    softness: {
+      type: "number",
+      label: "Softness",
+      default: 0.005,
+      min: 0,
+      max: 1,
+      description: "Width of the edge gradient, in uv units. Fill mode only.",
+    },
+    fillcolor: { type: "color", label: "Fill Color", default: WHITE, space: "display" },
+    bgcolor: { type: "color", label: "Background", default: TRANSPARENT, space: "display" },
+    aspectcorrect: {
+      type: "boolean",
+      label: "Aspect Correct",
+      default: true,
+      description: "Keeps a square square on a non-square output.",
+    },
+  },
+  resolutionPolicy: { kind: "project" },
+  formatPolicy: { kind: "project" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, parameters, resolution } = readCompileInputs(context);
+    const target = outputs["out"];
+    if (target === undefined) {
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, 'output port "out"')] };
+    }
+    const aspect =
+      readFlag(parameters, "aspectcorrect", true) === 1 ? resolution[0] / resolution[1] : 1;
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:rectangle`,
+      shader: RECTANGLE_FRAGMENT_WGSL,
+      target,
+      uniformBinding: "params",
+      uniforms: {
+        fillcolor: readColor(parameters, "fillcolor", WHITE),
+        bgcolor: readColor(parameters, "bgcolor", TRANSPARENT),
+        center: readVector(parameters, "center", [0.5, 0.5]),
+        size: readVector(parameters, "size", [0.25, 0.25]),
+        roundness: readNumber(parameters, "roundness", 0),
+        softness: readNumber(parameters, "softness", 0.005),
+        aspect,
+        mode: readEnumIndex(parameters, "mode", CIRCLE_MODE_OPTIONS, "fill"),
+      },
+      nodeId,
+      label: "Rectangle",
+    };
+    return { passes: [pass] };
+  },
+};
+
+export const generatorNodes: readonly NodeDefinition[] = [
+  rampNode,
+  uvNode,
+  checkerNode,
+  circleNode,
+  rectangleNode,
+];

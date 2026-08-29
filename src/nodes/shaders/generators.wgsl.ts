@@ -130,3 +130,55 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let inside = 1.0 - smoothstep(-edge * 0.5, edge * 0.5, dist);
   return mix(params.bgcolor, params.fillcolor, inside);
 }`;
+
+/**
+ * Rectangle — anti-aliased box with rounded corners, or its signed distance field (T242).
+ * TD's Rectangle TOP.
+ *
+ * Circle's sibling: same parameter vocabulary, same two modes, same aspect handling, so the
+ * two read as one family rather than two people's ideas of a shape node.
+ *
+ * The box SDF is exact, unlike the "distance to the nearest edge" approximation people
+ * usually reach for. `length(max(q, 0))` handles the region diagonally outside a corner —
+ * where the nearest point on the box IS the corner — and `min(max(q.x, q.y), 0)` handles the
+ * interior, where the distance is to the nearest face. The approximation is wrong exactly in
+ * the corners, which is where a rounded rectangle spends all of its interesting geometry.
+ *
+ * `roundness` is subtracted from the distance, which is the standard trick and is why it
+ * costs nothing: offsetting a distance field inflates the shape by that amount in every
+ * direction, and an inflated box is a rounded box. It is clamped to half the smaller extent
+ * because beyond that the corners would overlap and the field would fold inside out — at
+ * exactly that value a square becomes a circle, which is the correct limit.
+ */
+export const RECTANGLE_FRAGMENT_WGSL = `struct Params {
+  fillcolor: vec4f,
+  bgcolor: vec4f,
+  center: vec2f,
+  size: vec2f,
+  roundness: f32,
+  softness: f32,
+  aspect: f32,
+  mode: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let size = max(abs(params.size), vec2f(1e-6));
+  // Aspect is applied to the coordinate, not the size, so a square stays square on a
+  // non-square output — the same convention Circle uses.
+  let p = (uv - params.center) * vec2f(params.aspect, 1.0);
+  // Beyond half the smaller extent the corners would overlap and the field would fold; at
+  // exactly that value a square becomes a circle, which is the right limit.
+  let round = clamp(params.roundness, 0.0, min(size.x, size.y));
+  let q = abs(p) - (size - vec2f(round));
+  let dist = (length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0)) - round;
+
+  if (params.mode > 0.5) {
+    return vec4f(dist, 0.0, 0.0, 1.0);
+  }
+
+  let edge = max(params.softness, 1e-5);
+  let inside = 1.0 - smoothstep(-edge * 0.5, edge * 0.5, dist);
+  return mix(params.bgcolor, params.fillcolor, inside);
+}`;
