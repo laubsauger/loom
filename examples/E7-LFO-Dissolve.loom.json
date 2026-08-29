@@ -1,0 +1,156 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bars-mix": {
+        "id": "e-bars-mix",
+        "source": {
+          "nodeId": "bars",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-field-mix": {
+        "id": "e-field-mix",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in1"
+        }
+      },
+      "e-mix-out": {
+        "id": "e-mix-out",
+        "source": {
+          "nodeId": "mix",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bars": {
+        "definitionVersion": 1,
+        "id": "bars",
+        "label": "checker1",
+        "parameters": {},
+        "position": {
+          "x": -640,
+          "y": 40
+        },
+        "type": "checker"
+      },
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "noise1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.35,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.4,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -640,
+          "y": -140
+        },
+        "type": "noise"
+      },
+      "lfo": {
+        "definitionVersion": 1,
+        "id": "lfo",
+        "label": "lfo1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.25,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -640,
+          "y": 220
+        },
+        "type": "lfo"
+      },
+      "mix": {
+        "definitionVersion": 1,
+        "id": "mix",
+        "label": "cross1",
+        "parameters": {
+          "cross": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -260,
+          "y": -60
+        },
+        "type": "cross"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": -60
+        },
+        "type": "output"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E7 LFO Dissolve",
+  "projectId": "example-e7-lfo-dissolve",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 11,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

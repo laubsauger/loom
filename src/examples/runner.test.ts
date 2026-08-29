@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
+import { documentLiveness } from "../domain/graph/liveness.ts";
+import { allNodeDefinitions } from "../nodes/definitions/index.ts";
+import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { listExamples } from "./catalogue.ts";
 import {
   errorsOf,
@@ -34,7 +37,7 @@ const FRAME_COUNT = 6;
 
 describe("examples: the gate", () => {
   it("finds the examples the spec names", () => {
-    // §C names six. Discovery would happily report "0 examples, all passing".
+    // §C names them. Discovery would happily report "0 examples, all passing".
     expect(examples.map((file) => file.fileName)).toEqual([
       "E1-Feedback-Echo.loom.json",
       "E2-Reaction-Diffusion.loom.json",
@@ -42,6 +45,7 @@ describe("examples: the gate", () => {
       "E4-Bloom.loom.json",
       "E5-Kaleidoscope.loom.json",
       "E6-Displacement-Stack.loom.json",
+      "E7-LFO-Dissolve.loom.json",
     ]);
   });
 });
@@ -94,7 +98,20 @@ describe.each(examples)("example $fileName", (file) => {
     const { plan, document } = requireExample(file);
 
     expect(plan.pruned).toEqual([]);
-    expect([...plan.order].sort()).toEqual(Object.keys(document.graph.nodes).sort());
+    // Not every live node is a PLAN node. A value source (LFO, Constant, Timer) has no
+    // ports and never compiles to GPU work — it is alive through channel addressing, and
+    // `plan.order` correctly omits it (§V173b). Asserting order === all node ids would
+    // therefore fail on a working document, so the claim is split: everything is live,
+    // and everything that should compile did.
+    const registry = createNodeRegistry(allNodeDefinitions);
+    expect([...documentLiveness(document.graph, registry).dead]).toEqual([]);
+    const expectedOrder = Object.keys(document.graph.nodes)
+      .filter((id) => {
+        const node = document.graph.nodes[id];
+        return node === undefined || registry.get(node.type)?.valueChannel === undefined;
+      })
+      .sort();
+    expect([...plan.order].sort()).toEqual(expectedOrder);
     expect(plan.passes.length).toBeGreaterThan(0);
   });
 
