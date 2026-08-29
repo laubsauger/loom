@@ -626,7 +626,7 @@ T105|x|PWA manifest|C
 T106|.|`ParameterValue` envelope migration + passthrough lane for unknown kinds|V69,V68,V10
 T107|.|patch-op classification value-only\|structural + overlap-scoped conflict|V33
 T108|x|expression evaluator: jsep-style AST, whitelisted fns, `FrameEvaluationInput` vars only. v1 arithmetic|V71,V44,V45
-T109|.|non-rAF frame loop option (worker + node realtime)|V49,V63
+T109|x|non-rAF frame loop option (worker + node realtime)|V49,V63
 T110|.|Phase 2 seam: multi-window perform mode — N surfaces, OffscreenCanvas transfer|V70,V64
 T111|.|WebCodecs mp4 export — VideoEncoder, exact-frame capture ← render loop|V48
 T112|.|lazy-boundary convention: dock tab + canvas code-split before heavy deps land|C
@@ -667,7 +667,7 @@ T148|.|decode `space:"display"` color params → linear @ resolver. 1 fix covers
 T149|.|`resolveColorSpace` ! follow the port named by `formatPolicy.inherit`, ⊥ `colorInputs[0]` ∈ edge-id order|V57
 T150|.|per-node sampler | extend-mode resources — today 1 shared clamp-to-edge sampler per plan, repeat/mirror done as in-shader coord math|V58
 T151|.|`ResolutionPolicy` derived from a parameter — Crop keeps input res + blanks outside region, ⊥ resizes like TD Crop TOP|V21,V50
-T152|.|**Feedback node** — `TemporalDefinition`, prev-frame read, swap after consumers, reset + seed input. compiler/backend support exists, ⊥ node declares it, ∴ feedback unreachable from UI|V22,V50
+T152|x|**Feedback node** — `TemporalDefinition`, prev-frame read, swap after consumers, reset + seed input. compiler/backend support exists, ⊥ node declares it, ∴ feedback unreachable from UI|V22,V50
 T153|.|example E1 Feedback Echo — `.loom.json` + regression fixture + concept doc|V88,V89,V22
 T154|.|example E2 Reaction-Diffusion — Gray-Scott CustomWGSL kernel, seeded init, pause/step/reset|V88,V89,V45
 T155|.|example E3 Animated Noise Field — perlin4d t4d ← frame time, fan-out once|V88,V89,V44,V6
