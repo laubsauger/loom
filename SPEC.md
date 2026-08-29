@@ -767,6 +767,18 @@ unit = NODE ⊥ pass (Blur's 2 passes share a node-private scratch).
 
 V174: ∈ the inspector, PARAMETERS come first & COMMON is a separate TAB (TD's page model) — ⊥ both stacked on 1 page. common is chrome you set once; parameters are the work. prime real estate goes to the work.
 V175: a Ramp is N STOPS, ⊥ 2 colours. add|remove|move a stop, position per stop. 2-colour is the degenerate case of the general thing, & shipping only the degenerate case means every gradient anyone actually wants is impossible.
+### jitter ∈ `time * k` — ⊥ rounding, it's the CLOCK (B21)
+`liveClock` accumulates WALL deltas (clamped, epoch 0 — both already right). but rAF deltas
+jitter ~16.6ms ± several ∴ `time` advances NON-UNIFORMLY ∴ `time * 0.15` on a translate
+steps unevenly. spatially straight, temporally ragged. ⊥ f32, ⊥ JS rounding — f64 on CPU,
+& they already start @ 0 which is the real f32 mitigation.
+TD's answer: 2 clocks. `absTime.seconds` = wall. timeline time = frame/fps, UNIFORM BY
+CONSTRUCTION. animation uses the timeline one.
+TRADE, stated: timeline time means dropped frames SLOW the animation (TD behaves this way);
+wall time means dropped frames SKIP it (Notch's "frame-rate independence" = "visually
+similar", ⊥ identical). ⊥ 1 right answer ∴ ship both & DEFAULT to smooth.
+
+V176: `time` ∈ expressions & the shared block is TIMELINE time = frameIndex/fps — uniform by construction. wall time is a SEPARATE name for when sync matters. a linear expression on `time` ! produce linear motion; if it visibly jitters the clock is wrong, ⊥ the user's expression.
 V173b: LIVENESS has 3 sources, ⊥ 1: (a) a data EDGE to a sink, (b) a DRIVEN slot naming a value node's channel, (c) an `op()` REFERENCE ∈ an expression. ∀ consumer of liveness uses the SAME answer — `plan.pruned`, the example gate's dead-node check, cooking's dirty set, the UI's pruned badge. 4 places computing it separately = 4 chances to disagree, & they will.
 V173: `pruned` means DEAD — "could have contributed GPU work & was excluded". a node that is NON-PLAN-RESIDENT BY DESIGN (the value trio: LFO, Constant, Timer — no ports, no passes) is ⊥ pruned, it was never a candidate. conflating them puts a `pruned` warning badge on a WORKING LFO & counts it ∈ "nodes pruned".
 V172: a graph edit produces a rendered frame BY ITSELF — ⊥ waiting on an unrelated event (zoom, resize, pointer move, next param change) to nudge it. "renders when I zoom" means the render is riding someone else's invalidation & the edit path has no trigger of its own. measure FIRST-FRAME-AFTER-EDIT ∈ a composed test, ⊥ eyeball it.
@@ -994,6 +1006,7 @@ T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "s
 T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T271|.|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
 T269|.|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|.|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
@@ -1150,7 +1163,7 @@ patch-op union + bus command land @ wave 1 barrier, ⊥ mid-flight (union growth
 ### wave 1 — 4 tracks
 | track | tasks | owns |
 |---|---|---|
-| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 T261 T265 T266 T267 | `src/ui/**` `src/app/**` |
+| A design system + shell | T2 T3 T5 T4 T6 T169 T170 T171 T191 T192 T193 T259 T261 T265 T266 T267 T271 | `src/ui/**` `src/app/**` |
 | B domain + bus | T11 T12 T10 T50 T52 T53 T65 T66 T174 T175 T176 T177 T202 T203 T205 T207 T214 T221 T222 T225 | `src/domain/graph/**` `src/domain/parameters/**` `src/domain/commands/**` |
 | C gpu backend | T13 T14 T16 T17 T67 | `src/runtime/backend/**` `src/runtime/execution/**` |
 | D guardrails | T7 T8 T64 T244 T260 | `eslint.config.*` `vitest.config.*` `playwright.config.*` `.github/**` |
@@ -1234,6 +1247,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B21|2026-08-30|**`time * k` animates JITTERY.** owner guessed JS rounding; ⊥ — `liveClock` accumulates WALL deltas & rAF jitters ~±several ms ∴ time advances unevenly & a linear expression steps unevenly. clock already does the 2 hard things right (clamped delta, epoch 0 for f32). missing piece = a TIMELINE clock, uniform by construction. workaround today: `frame * k` (`frame` IS ∈ scope)|V176
 B20|2026-08-30|**a WORKING LFO reports as PRUNED.** value trio has ⊥ ports ∴ never enters the plan; `pruneToActiveSinks` walks edges ∴ lists them ∈ `plan.pruned`. `node-info-popup` renders `<Badge tone="warn">pruned</Badge>` & the perf panel counts them. the node works — the driven channel resolves off the DOCUMENT — & the UI says it's dead. found by writing E7, ⊥ by a test|V173
 B19|2026-08-30|**DISPATCH RAN BEFORE ALL RENDER PASSES, same frame.** vgpu computes have ⊥ frame-level pass API — `compute.dispatch()` makes its OWN encoder & SUBMITS IMMEDIATELY; render passes submit @ frame close. ∴ ∈ 1 frame every dispatch executed before every render pass regardless of plan order. Analyze read all-zeros; `textureToAttribute` (TOP→POP bridge) has sampled the PREVIOUS frame SINCE IT LANDED & its Dawn test tolerated it. ⊥ visible ∈ any mock, ⊥ per-layer test failed. fixed for the DIRECT path (segmented encoding); LOOP path keeps 1-frame effect→dispatch latency until vgpu gains a frame compute hook|V168
 B16|2026-08-30|**BYPASS & MUTE DO NOTHING.** `ui.bypassed`/`ui.muted` have toggles, badges & edge-flow styling; `compile.ts` NEVER READS THEM. classifier already calls them structural (`recompile-region`) ∴ the edit is classified right & then ignored. user toggles bypass, sees the badge, picture ⊥ change|V25
