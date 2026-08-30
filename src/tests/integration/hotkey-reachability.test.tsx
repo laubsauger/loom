@@ -7,6 +7,7 @@ import { DEFAULT_BINDINGS } from "@editor/keymap/defaults.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE, activeContextsFor, detectPlatform } from "@editor/keymap/index.ts";
 import type { KeyContext } from "@editor/keymap/index.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import { layoutGraph } from "@domain/graph/layout.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -689,5 +690,71 @@ describe("T430/§V354 — `F` frames the graph and `f` frames the selection", ()
     });
 
     expect(container.textContent ?? "").toContain("nothing to frame");
+  });
+});
+
+/**
+ * B84/T440/§V354 — `l` and `L`, the two keys that tidied nothing while the canvas they
+ * tidy filled the window.
+ *
+ * The algorithm shipped in T279 and only the AGENT could reach it: `layout_graph` called
+ * `layoutGraph` directly while `L`/`l` named planned commands nobody registered, so the
+ * keys reported `unresolved` and a user watching a model tidy their graph could not do it
+ * themselves. This is the runtime half of the fix — the mounted app, a real keypress, and
+ * the DOCUMENT as the observable (§V350), not a command result.
+ *
+ * The assertion is equality with `layoutGraph` rather than "something moved": §V191's
+ * claim is that the key and the tool reach the SAME implementation, and only an exact
+ * comparison can tell that from two arrangements that both look tidy.
+ */
+describe("B84/T440/§V354 — `l` lays the graph out and `L` lays the selection out", () => {
+  const positionsOf = (runtime: AppRuntime): Record<string, { x: number; y: number }> =>
+    Object.fromEntries(
+      Object.values(runtime.bus.store.getGraph().nodes).map((node) => [node.id, { ...node.position }]),
+    );
+
+  it("moves every node to the positions `layoutGraph` computes when `l` is pressed", async () => {
+    const { runtime, container } = await mountWithNodes(3);
+    const before = positionsOf(runtime);
+    const expected = layoutGraph(runtime.bus.store.getGraph(), runtime.bus.registry);
+
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "l" });
+    });
+
+    await waitFor(() => {
+      expect(positionsOf(runtime), "`l` did not lay the graph out").not.toEqual(before);
+    });
+    expect(positionsOf(runtime)).toEqual(expected);
+  });
+
+  it("moves only the selected node when `L` is pressed", async () => {
+    const { runtime, container } = await mountWithNodes(3);
+    const before = positionsOf(runtime);
+    const expected = layoutGraph(runtime.bus.store.getGraph(), runtime.bus.registry);
+
+    const node = container.querySelectorAll(".react-flow__node")[2];
+    if (node === undefined) throw new Error("expected three nodes");
+    const selectedId = node.getAttribute("data-id") ?? "";
+    expect(selectedId).not.toBe("");
+
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "L", shiftKey: true });
+    });
+
+    await waitFor(() => {
+      expect(positionsOf(runtime)[selectedId], "`L` did not move the selected node").toEqual(
+        expected[selectedId],
+      );
+    });
+    for (const [nodeId, position] of Object.entries(before)) {
+      if (nodeId === selectedId) continue;
+      expect(positionsOf(runtime)[nodeId], `${nodeId} moved, and it was not selected`).toEqual(position);
+    }
   });
 });

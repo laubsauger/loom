@@ -1,8 +1,8 @@
 import type { GraphPatchOperation, TempId } from "@domain/types/patch.ts";
 import type { StoredParameter } from "@domain/types/parameters.ts";
-import type { NodeId, Revision } from "@domain/types/ids.ts";
+import type { Revision } from "@domain/types/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
-import { layoutGraph, placeRelative } from "@domain/graph/layout.ts";
+import { placeRelative } from "@domain/graph/layout.ts";
 
 import {
   addNodeInput,
@@ -109,7 +109,12 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
     let at = input.position;
     if (at === undefined && input.placement !== undefined) {
       const graph = await runtime.query<GraphDocument>("graph.get", {});
-      at = placeRelative(graph, input.placement.relativeTo, input.placement.direction ?? "right");
+      at = placeRelative(
+        graph,
+        runtime.bus.registry,
+        input.placement.relativeTo,
+        input.placement.direction ?? "right",
+      );
     }
     return dispatchOperations("add_node", runtime, [operationsForAdd(input, at ?? { x: 0, y: 0 })], {
       label: "Add node",
@@ -137,38 +142,35 @@ function operationsForAdd(
 }
 
 /**
- * `layout_graph` (T279, §V78): the deterministic tidy, shared verbatim with the canvas
- * menu and the `L` key — an agent-built graph and a human-tidied one converge on the
- * same picture. One `moveNodes` operation, one undo group.
+ * `layout_graph` (T279, B84, §V78, §V191): the deterministic tidy — the SAME bus command
+ * the canvas menu's "Layout" row and the `L`/`l` keys run. One `moveNodes` operation, one
+ * undo group.
+ *
+ * It dispatches `graph.layout`/`graph.layoutAll` rather than calling `layoutGraph`, and
+ * that is the whole point of B84. This tool used to call the layout function directly
+ * while no command existed at all, so the algorithm shipped to agents and not to users —
+ * and the day the button arrived there would have been two call sites to keep in step.
+ * §V191 says one implementation reached by BOTH; "both" is only structural if the agent
+ * goes through the same door a keypress does.
+ *
+ * An empty graph, an empty selection and an already-tidy graph come back as the command's
+ * own named refusals (§V288) instead of a fabricated `applied` with zero operations, which
+ * is what this tool used to answer for the empty case.
  */
 export const layoutGraphTool: AgentTool<LayoutGraphInput, PatchToolData> = {
   name: "layout_graph",
   title: "Layout graph",
   description:
-    "Auto-arrange nodes in reading order: data flows left to right, ranks by depth, crossings minimized, deterministic. Restrict with nodeIds; one undo step.",
+    "Auto-arrange nodes in reading order: data flows left to right, ranks by depth from the sources, deterministic. Restrict with nodeIds; one undo step.",
   kind: "mutate",
   inputSchema: layoutGraphInput,
-  requires: { commands: ["graph.applyPatch"] },
+  requires: { commands: ["graph.layoutAll"] },
   capabilities: [],
   mutates: true,
   async run(input, runtime) {
-    const graph = await runtime.query<GraphDocument>("graph.get", {});
-    const only = input.nodeIds === undefined ? undefined : new Set(input.nodeIds as NodeId[]);
-    const positions = layoutGraph(graph, only === undefined ? {} : { only });
-    if (Object.keys(positions).length === 0) {
-      // An empty document tidies to nothing; saying so beats an empty patch round-trip.
-      return result<PatchToolData>("layout_graph", "ok", {
-        status: "applied",
-        revision: input.baseRevision as Revision,
-        appliedOperations: 0,
-        createdIds: {},
-        undoGroupId: null,
-      });
-    }
-    return dispatchOperations("layout_graph", runtime, [{ op: "moveNodes", positions }], {
-      label: "Layout graph",
-      baseRevision: input.baseRevision,
-    });
+    return input.nodeIds === undefined
+      ? dispatchPatchCommand("layout_graph", "graph.layoutAll", {}, runtime)
+      : dispatchPatchCommand("layout_graph", "graph.layout", { nodeIds: input.nodeIds }, runtime);
   },
 };
 

@@ -180,12 +180,20 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
   {
     // §I lists `L layout` and `l layout all` — the reverse of the H/h and F/f case
     // convention. Transcribed literally from the spec table rather than "corrected"
-    // to match the pattern; flagged so a real TD install can settle it.
+    // to match the pattern; `unconfirmed` stays until a real TD install settles it.
+    //
+    // B84/T440: both were PLANNED commands until the layout commands landed, so the
+    // engine answered `unresolved` and the keys did nothing while the canvas they tidy
+    // filled the window (§V354). `L` carries the selection because "layout" without a
+    // target is "layout all", which is what `l` is for.
     id: "graph.layout",
     keys: "L",
     context: "graph",
     command: "graph.layout",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
     label: "Layout",
+    description: "Move the selected nodes to where the whole-graph layout would put them.",
     unconfirmed: true,
   },
   {
@@ -194,6 +202,7 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     context: "graph",
     command: "graph.layoutAll",
     label: "Layout all",
+    description: "Arrange every node in reading order: data flows left to right.",
     unconfirmed: true,
   },
   {

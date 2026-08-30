@@ -78,6 +78,8 @@ describe("command bus — registration surface (§V39)", () => {
       "graph.copySelection",
       "graph.cutSelection",
       "graph.duplicateSelection",
+      "graph.layout",
+      "graph.layoutAll",
       "graph.paste",
       "graph.redo",
       "graph.removeNodes",

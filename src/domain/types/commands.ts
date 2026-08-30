@@ -88,9 +88,9 @@ export type QueryName = keyof QueryMap;
  * the two cases WRITTEN DOWN, so a gate can tell them apart.
  *
  * It is ONE list for both tables on purpose: the menus and the keymap name overlapping
- * sets (`view.frameAll`, `graph.diveIn`, `node.openColorPalette`, `ui.openNodeSearch`,
- * `graph.layoutAll` are named by both), and two lists would mean promoting one command
- * required remembering two deletions.
+ * sets (`graph.diveIn` and `ui.openNodeSearch` are named by both, and `view.frameAll` and
+ * `graph.layoutAll` were before they were built), and two lists would mean promoting one
+ * command required remembering two deletions.
  *
  * `composition-seams.test.ts` holds it exact in BOTH directions:
  *
@@ -109,8 +109,6 @@ export type PlannedCommandName =
   | "graph.diveIn"
   | "graph.insertConversion"
   | "graph.jumpUp"
-  | "graph.layout"
-  | "graph.layoutAll"
   | "graph.rerouteEdge"
   | "node.openColorPalette"
   | "ui.cancel"
@@ -121,8 +119,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.diveIn",
   "graph.insertConversion",
   "graph.jumpUp",
-  "graph.layout",
-  "graph.layoutAll",
   "graph.rerouteEdge",
   "node.openColorPalette",
   "ui.cancel",

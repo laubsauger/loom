@@ -15,8 +15,16 @@ import { publishesValueChannels } from "@domain/types/node-definition.ts";
  *
  * §V389 is the rule that came out of it: where positions are authored, the geometry gets
  * a gate, so the next size change fails loudly instead of shipping crooked. The gate is
- * `example-layout.test.ts`; this is the function it measures with, and the same one a
- * real auto-layout would need the day `L`/`layoutAll` stops being honestly-absent.
+ * `src/examples/layout.test.ts`; this is the function it measures with.
+ *
+ * ## Why a model of a DOM lives in `src/domain/`
+ *
+ * It was in `src/editor/nodes/` until B84, when `layoutGraph` — which had been carrying its
+ * own 180×100 GUESS — was made to ask it instead. Layout is domain code and runs headless
+ * (the MCP server has no editor), so it cannot import the editor. This file only ever took
+ * a `GraphNode` and a `NodeDefinition`, both domain types, and returned arithmetic; the
+ * CSS it models is a fact about the app, not a dependency of this function. The measuring
+ * spec (`src/tests/e2e/node-box.spec.ts`) is where the browser stays involved.
  *
  * ## It is a MODEL of a DOM, and that is a liability
  *

@@ -86,7 +86,10 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       { command: "graph.paste", label: "Paste" },
       { command: "graph.selectAll", label: "Select all" },
       { separator: true },
-      { command: planned("graph.layoutAll"), label: "Layout" },
+      // B84/T440/§V354: live since `createDomainBus` registers it. The menu row, `l` and
+      // the agent's `layout_graph` are the same command, so a click, a keypress and a tool
+      // call cannot mean different things (§V78, §V191).
+      { command: "graph.layoutAll", label: "Layout" },
       // T430/§V354: live since the canvas registers it — the menu row and `F` are the
       // same command, so a click and a keypress cannot mean different things (§V78).
       { command: "view.frameAll", label: "Frame all" },

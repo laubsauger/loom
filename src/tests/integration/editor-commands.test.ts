@@ -299,7 +299,9 @@ describe("commands the keymap names but nothing implements", () => {
       // patch op landed — it is now a real command, not a would-be no-op.
       "view.home",
       "view.frameAll",
-      "graph.layout",
+      // `graph.layout`/`graph.layoutAll` left this list in B84: they ARE registered now,
+      // by `registerLayoutCommands` in `createDomainBus`. `view.*` stay because their
+      // registrar lives beside the canvas, not on the domain bus.
       "graph.diveIn",
       "graph.jumpUp",
       "transport.togglePlay",

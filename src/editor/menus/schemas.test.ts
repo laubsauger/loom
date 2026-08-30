@@ -110,9 +110,12 @@ describe("what the menus promise but nobody has built", () => {
     expect(missing.filter((command) => !declaredPlanned.has(command))).toEqual([]);
     // Non-vacuity: the menus really do name unimplemented commands, so an empty `missing`
     // would mean the walk broke rather than that the menus got finished.
-    // T463 displaced the planned "Set colour…" row (still keymap-reachable), so the
-    // menus now promise five unbuilt commands rather than six.
-    expect(missing.length).toBeGreaterThan(4);
+    // T463 displaced the planned "Set colour…" row (still keymap-reachable) and B84 built
+    // the canvas menu's "Layout", so the menus now promise four unbuilt commands rather
+    // than six. The floor tracks that number down as rows get built — it is a non-vacuity
+    // guard, not a quota, and the day it reaches zero this assertion should be DELETED
+    // along with the disabled-item machinery, not weakened to `>= 0`.
+    expect(missing.length).toBeGreaterThan(3);
   });
 
   it("every command it treats as live is really on a bus", () => {

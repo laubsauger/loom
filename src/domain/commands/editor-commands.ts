@@ -17,8 +17,10 @@ import { applyGraphPatch } from "./apply-patch.ts";
  * a second mutation route would be a second place to forget them.
  *
  * DELIBERATELY NOT REGISTERED, and reported `unresolved` by the engine instead:
- *  - `view.*`, `graph.layout*`, `graph.diveIn`, `graph.jumpUp` — viewport and subgraph
- *    navigation, neither of which exists yet.
+ *  - `view.*`, `graph.diveIn`, `graph.jumpUp` — viewport and subgraph navigation. `view.*`
+ *    is built and registers beside the canvas (`src/app/view-commands.ts`); subgraphs do
+ *    not exist. `graph.layout*` was on this list until B84 and now registers in
+ *    `./layout-commands.ts` — same bus, same patch path, its own module.
  *  - `transport.*`, `runtime.resetFeedback` — there is no running frame loop to drive.
  *  - `project.save` — persistence is T43.
  *  - `node.rename` — `GraphNode` has NO per-instance name field, and no patch operation

@@ -150,10 +150,13 @@ describe("commands nobody has registered yet", () => {
   it("renders them disabled and says why, instead of hiding them", () => {
     setup();
     openOn("pane");
-    const layout = itemNamed("Layout");
-    expect(layout.getAttribute("aria-disabled")).toBe("true");
-    expect(layout.getAttribute("title")).toContain("not available yet");
-    expect(within(layout).getByText("unavailable")).toBeDefined();
+    // Was "Layout" until B84 registered `graph.layoutAll`. `ui.openNodeSearch` is the
+    // remaining canvas row with no command behind it — and unlike layout, the surface it
+    // names does not exist either, so §V354 is satisfied by leaving it disabled.
+    const planned = itemNamed("Search nodes…");
+    expect(planned.getAttribute("aria-disabled")).toBe("true");
+    expect(planned.getAttribute("title")).toContain("not available yet");
+    expect(within(planned).getByText("unavailable")).toBeDefined();
   });
 
   it("does not throw and does not dispatch when one is clicked", async () => {

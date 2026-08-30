@@ -2,6 +2,7 @@ import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../graph/store.ts";
 import { createCommandBus, type ShaderloomBus } from "./bus.ts";
 import { registerEditorCommands } from "./editor-commands.ts";
+import { registerLayoutCommands } from "./layout-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
 import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
@@ -31,6 +32,7 @@ export type {
 } from "./bus.ts";
 export { SHADER_SOURCE_PARAMETER, applyGraphPatch } from "./apply-patch.ts";
 export { registerEditorCommands } from "./editor-commands.ts";
+export { registerLayoutCommands } from "./layout-commands.ts";
 export type {
   ClipboardCommandOutput,
   DuplicateInput,
@@ -106,6 +108,7 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus);
+  registerLayoutCommands(bus);
   registerParameterCommands(bus, { ...(clipboard === undefined ? {} : { writeClipboard: clipboard }) });
   registerValidateCommand(bus);
   registerSettingsCommands(bus);

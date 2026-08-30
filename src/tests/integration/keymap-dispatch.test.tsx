@@ -158,19 +158,25 @@ describe("§V53 — a text context swallows the graph's single-key bindings", ()
   });
 });
 
+/**
+ * These used to be written against `L`/`graph.layout`, which was the honest example until
+ * B84 built it. `i`/`graph.diveIn` replaced it: subgraphs really do not exist, so the
+ * binding is still a promise rather than a dead key, and §V354's distinction survives
+ * (nothing on screen offers to dive into anything).
+ */
 describe("a binding whose command nothing registered", () => {
   it("reports unresolved instead of throwing or mutating", async () => {
     const { runtime, element } = await mountWithNode();
     await select(element);
     const before = runtime.bus.store.getRevision();
 
-    // `L` — layout. Declared in the default keymap on purpose, implemented by nobody.
+    // `i` — dive in. Declared in the default keymap on purpose, implemented by nobody.
     expect(() => {
-      fireEvent.keyDown(element, { key: "L", shiftKey: true });
+      fireEvent.keyDown(element, { key: "i" });
     }).not.toThrow();
 
     expect(runtime.bus.store.getRevision()).toBe(before);
-    expect(runtime.bus.hasCommand("graph.layout")).toBe(false);
+    expect(runtime.bus.hasCommand("graph.diveIn")).toBe(false);
   });
 
   it("is reported as `unresolved` by the engine, not swallowed", () => {
@@ -186,16 +192,27 @@ describe("a binding whose command nothing registered", () => {
       onDispatch: (dispatch) => dispatches.push(dispatch),
     });
 
-    engine.handleKey({ key: "L", shiftKey: true });
+    engine.handleKey({ key: "i" });
     expect(dispatches.at(-1)).toMatchObject({
       status: "unresolved",
-      command: "graph.layout",
+      command: "graph.diveIn",
       consumed: false,
     });
 
     // The same table, the same engine, a command that IS registered: dispatched.
     engine.handleKey({ key: "b" });
     expect(dispatches.at(-1)).toMatchObject({ status: "dispatched", command: "node.toggleBypass" });
+  });
+
+  /**
+   * B84/T440, the other direction: `L` and `l` were in exactly the state above until the
+   * layout commands landed, and this is what says they left it. A key that moves the
+   * largest surface in the app cannot be verified by "it did not throw".
+   */
+  it("no longer describes `L` and `l`, which now reach the layout commands", () => {
+    const runtime = newRuntime();
+    expect(runtime.bus.hasCommand("graph.layout")).toBe(true);
+    expect(runtime.bus.hasCommand("graph.layoutAll")).toBe(true);
   });
 });
 

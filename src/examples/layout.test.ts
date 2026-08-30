@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { boxGap, boxesOverlap, nodeBox, type NodeBox } from "@editor/nodes/node-box.ts";
+import { boxGap, boxesOverlap, nodeBox, type NodeBox } from "@domain/graph/node-box.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { exampleRegistry } from "./runner.ts";
 

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { nodeBox } from "@editor/nodes/node-box.ts";
+import { nodeBox } from "@domain/graph/node-box.ts";
 import { EXAMPLE_DOCUMENTS } from "../../examples/documents.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -10,7 +10,7 @@ import { APP_VIEWPORT } from "./app.ts";
 /**
  * THE SIZE MODEL IS PINNED TO THE REAL DOM (T460, §V389, §V339).
  *
- * `src/editor/nodes/node-box.ts` predicts a node's rendered box from its definition and
+ * `src/domain/graph/node-box.ts` predicts a node's rendered box from its definition and
  * the document, and `src/examples/layout.test.ts` gates every shipped example on it. That
  * gate is worth exactly as much as the model: if the CSS moves and the arithmetic does
  * not, the gate goes green while the examples overlap — which is the bug it exists to
