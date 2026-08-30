@@ -114,3 +114,61 @@ describe("core catalogue (T70, T40)", () => {
     }
   });
 });
+
+/**
+ * §V123/T216 — a node declaring `stateful.reset` SHOULD expose a pulse that triggers it.
+ *
+ * The field has been declaring the capability with nothing wired to it. This test is the
+ * enumeration that keeps the gap visible instead of silent: a new stateful node gets its
+ * reset the day it is written, and the ones that still cannot have one are listed HERE,
+ * with why, rather than being quietly absent (the shape of B12/B23/§V193).
+ */
+describe("reset is exposed where it is declared (§V123, T216)", () => {
+  /**
+   * Nodes whose runtime state nothing can currently clear. Not oversights — each is
+   * blocked on machinery that does not exist yet, and a pulse pointing at a command that
+   * cannot reach the state would be a button that lies.
+   */
+  const KNOWN_GAPS: Readonly<Record<string, string>> = {
+    // `runtime.resetFeedback` resolves through `CompiledGraph.feedback`, whose entries
+    // are TEXTURE pairs (they carry a `TextureFormat`). A point simulation's state lives
+    // in `bufferPair` resources, which never appear in that table, so there is nothing
+    // for a scoped reset to name.
+    pointKernel: "point bufferPairs are not in the compiled feedback table",
+    // The value graph's per-node state lives in `createValueGraphSession`, which has no
+    // caller outside its own tests — there is no running session to reset.
+    // NOTE: `trigger` and `lag` are unprefixed, which §V194 says they should not be
+    // (`valueSlope` and `valueFilter` beside them are). Named as they actually are here
+    // so this list stays a true statement; the rename belongs to the value-graph track.
+    valueSlope: "the value-graph session is not mounted in the app",
+    trigger: "the value-graph session is not mounted in the app",
+    lag: "the value-graph session is not mounted in the app",
+    valueFilter: "the value-graph session is not mounted in the app",
+  };
+
+  it("every stateful node either fires a reset or is a listed gap", () => {
+    const missing: string[] = [];
+    for (const definition of coreNodeDefinitions) {
+      if (definition.stateful?.reset !== true) continue;
+      const pulses = Object.values(definition.parameters).filter(
+        (parameter) => parameter.type === "pulse",
+      );
+      if (pulses.length > 0) continue;
+      if (definition.type in KNOWN_GAPS) continue;
+      missing.push(definition.type);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("does not keep gap entries for nodes that have since grown a pulse", () => {
+    // A stale exemption is how a list like this stops meaning anything.
+    for (const type of Object.keys(KNOWN_GAPS)) {
+      const definition = coreNodeDefinitions.find((entry) => entry.type === type);
+      if (definition === undefined) continue;
+      const hasPulse = Object.values(definition.parameters).some(
+        (parameter) => parameter.type === "pulse",
+      );
+      expect(hasPulse, `${type} has a pulse now — drop its exemption`).toBe(false);
+    }
+  });
+});

@@ -8,6 +8,7 @@ import type { BackendCapabilities, FrameInputs } from "../../domain/types/backen
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
 import { allNodeDefinitions } from "./index.ts";
 import { feedbackNode } from "./feedback.ts";
+import { FEEDBACK_FRAGMENT_WGSL } from "../shaders/feedback.wgsl.ts";
 import { compileContext, readNodePlan } from "./test-support.ts";
 
 /**
@@ -120,7 +121,7 @@ describe("feedback node — manifest and emitted pass", () => {
     const pass = read.passes[0];
     expect(pass?.kind).toBe("effect");
     if (pass?.kind === "effect") {
-      expect(pass.uniforms).toEqual({ clearColor: [0, 0, 0, 1], persistence: 0.5 });
+      expect(pass.uniforms).toEqual({ clearColor: [0, 0, 0, 1], persistence: 0.5, hold: 0 });
     }
   });
 
@@ -191,5 +192,40 @@ describe("feedback node — history behaves across frames and edits (T143, §V22
     expect(errors).toEqual([]);
     expect(backend.status.framesSubmitted).toBe(4);
     backend.dispose();
+  });
+});
+
+/**
+ * §V123/T216 — the capability `stateful.reset` has been declaring since it landed now
+ * has something that triggers it. TD's Feedback TOP ships both halves and so does this:
+ * a HELD reset (a state the shader honours every frame) and a momentary PULSE (an event
+ * that clears the pair once, through the command that owns the GPU-side history).
+ */
+describe("Reset (T216)", () => {
+  it("declares both halves TouchDesigner pairs", () => {
+    expect(feedbackNode.stateful?.reset).toBe(true);
+    expect(feedbackNode.parameters["reset"]?.type).toBe("boolean");
+    expect(feedbackNode.parameters["resetPulse"]?.type).toBe("pulse");
+  });
+
+  it("scopes the pulse to its own pair (§V126)", () => {
+    const pulse = feedbackNode.parameters["resetPulse"];
+    if (pulse?.type !== "pulse") throw new Error("resetPulse is not a pulse");
+    expect(pulse.fires).toBe("runtime.resetFeedback");
+    // An unscoped clear would wipe every other loop in the graph — the whole reason
+    // this command waited for per-resource reset.
+    expect(pulse.input).toEqual({ nodeIds: ["$node"] });
+  });
+
+  it("holds the loop cleared while Reset is on", () => {
+    const result = feedbackNode.compile(
+      compileContext({ inputs: ["in"], parameters: { reset: true, persistence: 1 } }),
+    );
+    const pass = readNodePlan(result.passes, { inputs: ["in"] }).passes[0];
+    expect(pass?.kind).toBe("effect");
+    if (pass?.kind === "effect") expect(pass.uniforms?.["hold"]).toBe(1);
+    // The claim about the PICTURE (§V147) is the shader's: with `hold` set it returns
+    // Clear Color and never samples the source, so persistence cannot keep a trail alive.
+    expect(FEEDBACK_FRAGMENT_WGSL).toContain("if (params.hold > 0.5)");
   });
 });

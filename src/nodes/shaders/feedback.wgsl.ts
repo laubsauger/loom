@@ -10,11 +10,19 @@
  * loop: 1 stores the input untouched (a pure one-frame delay), lower values make trails
  * die out inside the loop without needing an extra Level node.
  *
+ * `hold` is the Reset TOGGLE (T216). TD's Feedback TOP pairs a momentary Reset pulse
+ * with a held Reset, and they answer different questions: the pulse clears the pair ONCE
+ * (through `runtime.resetFeedback`, which owns the GPU-side history), the toggle keeps
+ * writing `clearColor` for as long as it is on. Holding it is how you park a loop while
+ * you rewire what feeds it, and it is why the toggle cannot just be "pulse repeatedly":
+ * the pulse is an event and the hold is a state.
+ *
  * COLOUR (§V56): operates on linear working-space values, like the rest of the catalogue.
  */
 export const FEEDBACK_FRAGMENT_WGSL = `struct Params {
   clearColor: vec4f,
   persistence: f32,
+  hold: f32,
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -23,6 +31,9 @@ export const FEEDBACK_FRAGMENT_WGSL = `struct Params {
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  if (params.hold > 0.5) {
+    return params.clearColor;
+  }
   let source = textureSample(sourceTexture, inputSampler, uv);
   return mix(params.clearColor, source, params.persistence);
 }`;

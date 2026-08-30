@@ -3,7 +3,7 @@ import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { FEEDBACK_FRAGMENT_WGSL } from "../shaders/feedback.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { readColor, readNumber } from "./parameter-readers.ts";
+import { readColor, readFlag, readNumber } from "./parameter-readers.ts";
 
 /**
  * Feedback — the explicit temporal boundary (T152, §V4, §V22). TD Feedback TOP.
@@ -68,6 +68,29 @@ export const feedbackNode: NodeDefinition = {
       space: "display",
       description: "What the image fades toward, and what a reset clears the history to.",
     },
+    /**
+     * §V123/T216 — the two halves of TD's Feedback TOP reset, and they are not
+     * interchangeable. `reset` is a STATE: while it is on the node writes Clear Color
+     * every frame, which is how you park a loop while rewiring what feeds it.
+     * `resetPulse` is an EVENT: it clears the ping-pong pair once and the loop carries
+     * on from empty.
+     */
+    reset: {
+      type: "boolean",
+      label: "Reset",
+      default: false,
+      description: "Holds the loop cleared to Clear Color for as long as it is on.",
+    },
+    resetPulse: {
+      type: "pulse",
+      label: "Reset Pulse",
+      // §V126: scoped to THIS node's pair. An unscoped clear would wipe every other
+      // feedback loop in the graph, which is the reason this command waited for
+      // per-resource reset rather than shipping against the whole-backend one.
+      fires: "runtime.resetFeedback",
+      input: { nodeIds: ["$node"] },
+      description: "Clears this loop's history once.",
+    },
   },
   resolutionPolicy: { kind: "inherit", input: "in" },
   formatPolicy: { kind: "inherit", input: "in" },
@@ -76,7 +99,8 @@ export const feedbackNode: NodeDefinition = {
     resetOn: ["resolution", "format", "shader-interface", "device", "load"],
   },
   // §V46: replay from frame zero with the same inputs reproduces the same history;
-  // there is no checkpointing yet, so seeking requires a reset and a re-run.
+  // there is no checkpointing yet, so seeking requires a reset and a re-run. §V123: the
+  // capability this field declares now has something that triggers it (`resetPulse`).
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
@@ -97,6 +121,7 @@ export const feedbackNode: NodeDefinition = {
       uniforms: {
         clearColor: readColor(parameters, "clearColor", [0, 0, 0, 0]),
         persistence: readNumber(parameters, "persistence", 1),
+        hold: readFlag(parameters, "reset", false),
       },
       nodeId,
       label: "Feedback",
