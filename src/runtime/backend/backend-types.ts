@@ -77,6 +77,8 @@ export interface BackendStatus {
   readonly resourceBuilds: number;
   /** Frames actually submitted. */
   readonly framesSubmitted: number;
+  /** Frames the cook gate skipped outright (T254, cookPolicy "auto"). Optional: older fakes omit it. */
+  readonly framesSkipped?: number;
   /** Readbacks performed. Playback must leave this at zero (§V7, §V48). */
   readonly readbacks: number;
   /**

@@ -111,6 +111,17 @@ interface Program {
   resources: ResourceSet;
   /** externalTexture resource ids whose contents changed THIS frame (T253, §V136). */
   mediaDirty?: ReadonlySet<string>;
+  /**
+   * T254 (§V156, statically derived): true when ANY pass must run every frame — it
+   * reads the clock (shared-frame or kernel-frame binding) or touches evolving state
+   * (ping-pong, buffer pair, external texture). A plan where this is false is FULLY
+   * STATIC: with nothing dirty, re-encoding it redraws identical pixels, so under
+   * cookPolicy "auto" the frame is skipped outright. §V155 is safe by construction —
+   * a stateful pass makes the plan every-frame, so nothing skippable has state.
+   */
+  everyFrame: boolean;
+  /** Something changed since the last encoded frame: uniforms, a compile, a reset. */
+  dirty: boolean;
 }
 
 interface LoopRegistration {
@@ -167,6 +178,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let temporalResets = 0;
   let resourceBuilds = 0;
   let framesSubmitted = 0;
+  /** Frames the T254 idle gate skipped outright under cookPolicy "auto". */
+  let framesSkipped = 0;
   let readbacks = 0;
   let planCounter = 0;
   /** §V9: latest compile attempt failed; the retained program is what still renders. */
@@ -230,6 +243,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
     get framesSubmitted() {
       return framesSubmitted;
+    },
+    get framesSkipped() {
+      return framesSkipped;
     },
     get readbacks() {
       return readbacks;
@@ -1094,6 +1110,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         for (const [passId, values] of planUniformValues(read.passes)) {
           applyUniforms(program, passId, values);
         }
+        program.dirty = true; // values moved; the next frame must draw them (§V159)
         stale = false;
         return program.compiled;
       }
@@ -1178,6 +1195,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         compiled: { id, logical: plan },
         liveUniforms: new Map(planUniformValues(read.passes)),
         resources,
+        everyFrame: planRequiresEveryFrame(read.passes, read.resources),
+        dirty: true, // a fresh program must draw its first frame
       };
       if (previous) releaseResourcesExcept(previous.resources, resources);
       // Reused uniform blocks still hold pre-recompile values; the plan's values are
@@ -1224,6 +1243,22 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       rebindDynamicTextures(active);
       active.mediaDirty = uploadExternalTextures(active);
 
+      // T254 (§V157): the whole-plan idle skip — the gate the census justified. A fully
+      // static plan (nothing reads the clock, nothing holds state) with nothing dirty
+      // would re-encode IDENTICAL pixels; under "auto" the frame is skipped and every
+      // surface keeps presenting what it has. Per-node gating measured at 0-25% on
+      // animated graphs and was not worth its correctness risk; this is the 100% case.
+      if (
+        cookPolicy === "auto" &&
+        !active.everyFrame &&
+        !active.dirty &&
+        active.mediaDirty.size === 0
+      ) {
+        framesSkipped += 1;
+        return;
+      }
+      active.dirty = false;
+
       const open = currentFrame;
       if (open) {
         encode(open, active);
@@ -1248,6 +1283,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
     resize(outputId, size) {
       guard.assertOutsideFrame("target resize");
+      if (program) program.dirty = true;
       const found = lookupTargets(outputId);
       if (found.length === 0) {
         hub.report(
@@ -1379,6 +1415,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
 
     updateUniforms(update) {
+      if (program) program.dirty = true; // §V159: dirty marks are set at THE backend entry point
       // §V5: values in, values only. There is no path from here to resource construction.
       if (!program) {
         hub.report(
@@ -1404,6 +1441,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     },
 
     resetTemporalHistory(resourceIds?: readonly string[]) {
+      if (program) program.dirty = true;
       clearTemporalHistory("explicit", resourceIds);
     },
 
@@ -1715,6 +1753,32 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
  * bound resource are reusable — a rebuilt binding target means the effect's set bag
  * would reference a destroyed object.
  */
+/** T254: does any pass read the clock or touch evolving state? Shared with the census. */
+function planRequiresEveryFrame(
+  passes: ReadonlyArray<PassDescriptor>,
+  resources: ReadonlyArray<ResourceDescriptor>,
+): boolean {
+  const kinds = new Map(resources.map((resource) => [resource.id, resource.kind]));
+  const evolving = (id: string | undefined): boolean =>
+    id !== undefined && (kinds.get(id) === "pingPong" || kinds.get(id) === "bufferPair" || kinds.get(id) === "externalTexture");
+  return passes.some((pass) => {
+    if (pass.kind === "swap" || pass.kind === "counter") return false;
+    if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) return true;
+    if ((pass.kind === "effect" || pass.kind === "draw") && pass.sharedBinding !== undefined) return true;
+    if (pass.kind === "effect" && /frameU|SharedFrame/.test(pass.shader) && pass.sharedBinding === undefined) {
+      // Defensive: a shader reading the shared block through a binding the descriptor
+      // forgot to declare still counts as time-dependent rather than skippable.
+      return true;
+    }
+    const bound = [
+      "target" in pass ? pass.target : undefined,
+      ...(pass.textures ?? []).map((binding) => binding.resourceId),
+      ...("buffers" in pass ? (pass.buffers ?? []).map((binding) => binding.resourceId) : []),
+    ];
+    return bound.some(evolving);
+  });
+}
+
 /** What a per-entry diff needs from the previous build — the main Program or a preview set (T257). */
 interface CarrySource {
   readonly resourceDescriptors: ReadonlyArray<ResourceDescriptor>;

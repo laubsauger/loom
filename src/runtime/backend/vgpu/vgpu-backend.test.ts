@@ -1323,3 +1323,52 @@ describe("vgpu backend — recovery hardening (T98)", () => {
     expect(backend.status.deviceGeneration).toBe(generation);
   });
 });
+
+describe("the idle cook gate (T254, §V157)", () => {
+  /** A plan nothing in which reads the clock or holds state — fully static. */
+  const staticPlan = () => ({
+    resources: [{ kind: "target" as const, id: "flat", size: [8, 8] as const, format: "rgba8unorm" as const }],
+    passes: [
+      {
+        kind: "effect" as const,
+        id: "fill",
+        shader: `@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.0, 1.0); }`,
+        target: "flat",
+      },
+    ],
+    diagnostics: [],
+  });
+
+  it("skips idle frames of a static plan under 'auto', and only then", async () => {
+    const { backend } = await harness();
+    backend.setCookPolicy("auto");
+    const compiled = await backend.compile(staticPlan());
+
+    backend.render(compiled, frameInputs(0)); // first frame draws (fresh program is dirty)
+    backend.render(compiled, frameInputs(1));
+    backend.render(compiled, frameInputs(2));
+    expect(backend.status.framesSkipped).toBe(2);
+
+    // §V159: a value change at the backend entry point makes the next frame draw.
+    backend.updateUniforms({ passId: "fill", values: {} });
+    backend.render(compiled, frameInputs(3));
+    expect(backend.status.framesSkipped).toBe(2);
+
+    // "always" never skips — the permanent bisect switch (§V157).
+    backend.setCookPolicy("always");
+    backend.render(compiled, frameInputs(4));
+    backend.render(compiled, frameInputs(5));
+    expect(backend.status.framesSkipped).toBe(2);
+  });
+
+  it("never skips a plan that reads the clock or holds state", async () => {
+    const { backend } = await harness();
+    backend.setCookPolicy("auto");
+    // The fixture plan has feedback (pingPong) and shared-frame uniforms: every frame.
+    const compiled = await backend.compile(fixturePlan());
+    backend.render(compiled, frameInputs(0));
+    backend.render(compiled, frameInputs(1));
+    backend.render(compiled, frameInputs(2));
+    expect(backend.status.framesSkipped).toBe(0);
+  });
+});
