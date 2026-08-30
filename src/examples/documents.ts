@@ -1795,21 +1795,41 @@ const audioRdDocument = document(
       node("kscale", "valueMath", [-500, 740], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
 
       // ---- the chemistry map (E2's, verbatim in spirit) -------------------------
+      /* T535: `t4d` is 0.37, not 0. Zero sits ON a lattice plane of the 4D noise, where the
+         gradient basis collapses and amplitude with it — so frame 0 is systematically
+         flatter than every later frame, and frame 0 is exactly what a gallery thumbnail
+         shows. Starting off-lattice makes the first frame representative of the piece.
+         `exp` above 1 is T507's negative space at the SOURCE: a power on a 0..1 field pulls
+         the midtones down, so the chemistry map has broad quiet plains with peaks standing
+         out of them instead of a uniform mid-grey everywhere. */
       node("broad", "noise", [-1460, -140], {
-        type: "perlin4d", seed: 5, period: 0.55, harmon: 2, spread: 2, gain: 0.55,
-        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
-        t4d: 0, s4d: 1, speed: 0.05,
+        type: "perlin4d", seed: 5, period: 0.62, harmon: 2, spread: 2, gain: 0.55,
+        rough: 0.5, exp: 1.25, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.05,
       }, { label: "broad1" }),
       node("detail", "noise", [-1460, 100], {
-        type: "perlin4d", seed: 19, period: 0.13, harmon: 3, spread: 2, gain: 0.5,
-        rough: 0.6, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
-        t4d: 0, s4d: 1, speed: 0.09,
+        type: "perlin4d", seed: 19, period: 0.15, harmon: 3, spread: 2, gain: 0.5,
+        rough: 0.6, exp: 1.2, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.09,
       }, { label: "detail1" }),
       node("warp", "displace", [-1180, -60], {
         weight: [0.22, 0.22], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
       }, { label: "warp1" }),
       node("shape", "level", [-940, -60], {
-        blacklevel: 0.28, contrast: 1.6, brightness: 1, gamma1: 1,
+        /* T507 — NEGATIVE SPACE. The owner's read was that the dish sat too dense: every
+           part of the frame in the labyrinth regime at once, so the reaction-diffusion had
+           no empty field to resolve against and the whole thing read as one texture. This
+           is the lever, and the DIRECTION is the finding: my first attempt raised
+           `blacklevel` to push more of the map to the LOW end of the band, and the frame
+           came back DENSER — wall-to-wall labyrinth. Gray-Scott's low corner
+           (feed 0.028 / kill 0.0545) is the labyrinth regime; the HIGH corner is spots
+           and mitosis, which is where the empty field lives. So negative space here means
+           lowering the black point and lifting the midtones (gamma under 1), not raising
+           them. Measured at four settings; 0.09 was too sparse to be a picture, 0.46 was
+           the fingerprint, and this sits where a coherent organism has a void around it.
+           §V427 is the reason to fix it HERE rather than by masking the output: the
+           structure is the simulation's, and giving it room is a chemistry decision. */
+        blacklevel: 0.235, contrast: 1.5, brightness: 1, gamma1: 0.93,
       }, {
         label: "shape1",
         parameters: { whitelevel: drivenSlot("wlevel1:lowMid", 0.72) },
@@ -1854,20 +1874,69 @@ const audioRdDocument = document(
           scale: drivenSlot("kscale1:onsetCount", 2.4),
         },
       }),
+      /* ---- T507: THREE LENSES, and the point is that they are at different SCALES ----
+       *
+       * The owner's reference stacked roughly three layers of lens. Stacking is not "turn
+       * the displacement up": one strong displacement is a smear, and a smear has no
+       * depth in it. Three at genuinely different spatial frequencies and rates read as
+       * separated layers of glass — a broad slow swell you feel rather than see, a mid one
+       * that gives the fronts their sway, and a fine fast one that is the only thing
+       * touching the individual ridges.
+       *
+       * Each is ~2.5x finer and ~2.5x faster than the one before it, with a third of the
+       * weight, so no layer can dominate. The weights come down as the frequency goes up
+       * for the same reason a fractal's gain does: equal weight at every scale is white
+       * noise, not depth.
+       *
+       * MONO IS OFF ON ALL THREE, and that is the difference between a lens and a shear.
+       * `displace` reads x from red and y from green; a MONOCHROME field has red == green,
+       * so every pixel moves along the SAME 45-degree diagonal and the image slides rather
+       * than warps. (E24's older `warp1` on the chemistry map is mono and does exactly
+       * that — deliberately, because a diagonal shear of a feed/kill map is a fine thing
+       * to want; it is not what a lens is.)
+       *
+       * They sit AFTER the palette and BEFORE the cache rings, so the RGB delay tastes the
+       * lens motion: glass that moves disperses, and the fringing follows the warp.
+       */
+      node("lensA", "noise", [60, 700], {
+        type: "perlin4d", seed: 71, period: 1.15, harmon: 1, spread: 2, gain: 0.5,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.018,
+      }, { label: "lensa1" }),
+      node("warpA", "displace", [320, 380], {
+        weight: [0.062, 0.062], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, { label: "warpa1" }),
+      node("lensB", "noise", [320, 700], {
+        type: "perlin4d", seed: 137, period: 0.42, harmon: 2, spread: 2, gain: 0.55,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.046,
+      }, { label: "lensb1" }),
+      node("warpB", "displace", [580, 380], {
+        weight: [0.024, 0.024], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, { label: "warpb1" }),
+      node("lensC", "noise", [580, 700], {
+        type: "perlin4d", seed: 211, period: 0.14, harmon: 1, spread: 2, gain: 0.5,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.115,
+      }, { label: "lensc1" }),
+      node("warpC", "displace", [840, 380], {
+        weight: [0.009, 0.009], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, { label: "warpc1" }),
+
       // The RGB delay: three taps into time, one per channel. Full scale — this ring
       // is read for its colour, not just its motion.
-      node("tapR", "cache", [320, 300], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
-      node("tapG", "cache", [320, 480], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
-      node("tapB", "cache", [320, 660], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
+      node("tapR", "cache", [1100, 240], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
+      node("tapG", "cache", [1100, 500], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
+      node("tapB", "cache", [1100, 760], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
       // Reorder is two-input, so the three taps braid in two steps: red-with-green
       // first, then the blue tap joins.
-      node("fringeRG", "reorder", [580, 370], {
+      node("fringeRG", "reorder", [1360, 330], {
         outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a",
       }, { label: "fringerg1" }),
-      node("fringe", "reorder", [820, 440], {
+      node("fringe", "reorder", [1620, 600], {
         outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a",
       }, { label: "fringe1" }),
-      node("out", "output", [1080, 440]),
+      node("out", "output", [1880, 600]),
     ],
     [
       // sound. BOTH sources reach the Switch; exactly one leaves it.
@@ -1896,9 +1965,16 @@ const audioRdDocument = document(
       // colour then time
       edge("e-rd-tint", ["rd", "out"], ["tint", "source"]),
       edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
-      edge("e-tint-tapr", ["tint", "out"], ["tapR", "input"]),
-      edge("e-tint-tapg", ["tint", "out"], ["tapG", "input"]),
-      edge("e-tint-tapb", ["tint", "out"], ["tapB", "input"]),
+      // three lenses, coarse to fine, in series
+      edge("e-tint-warpa", ["tint", "out"], ["warpA", "source"]),
+      edge("e-lensa-warpa", ["lensA", "out"], ["warpA", "disp"]),
+      edge("e-warpa-warpb", ["warpA", "out"], ["warpB", "source"]),
+      edge("e-lensb-warpb", ["lensB", "out"], ["warpB", "disp"]),
+      edge("e-warpb-warpc", ["warpB", "out"], ["warpC", "source"]),
+      edge("e-lensc-warpc", ["lensC", "out"], ["warpC", "disp"]),
+      edge("e-warpc-tapr", ["warpC", "out"], ["tapR", "input"]),
+      edge("e-warpc-tapg", ["warpC", "out"], ["tapG", "input"]),
+      edge("e-warpc-tapb", ["warpC", "out"], ["tapB", "input"]),
       edge("e-tapr-fringerg", ["tapR", "out"], ["fringeRG", "in1"]),
       edge("e-tapg-fringerg", ["tapG", "out"], ["fringeRG", "in2"]),
       edge("e-fringerg-fringe", ["fringeRG", "out"], ["fringe", "in1"]),

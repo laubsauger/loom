@@ -91,6 +91,39 @@
           "portId": "a"
         }
       },
+      "e-lensa-warpa": {
+        "id": "e-lensa-warpa",
+        "source": {
+          "nodeId": "lensA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpA",
+          "portId": "disp"
+        }
+      },
+      "e-lensb-warpb": {
+        "id": "e-lensb-warpb",
+        "source": {
+          "nodeId": "lensB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpB",
+          "portId": "disp"
+        }
+      },
+      "e-lensc-warpc": {
+        "id": "e-lensc-warpc",
+        "source": {
+          "nodeId": "lensC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpC",
+          "portId": "disp"
+        }
+      },
       "e-music-source": {
         "id": "e-music-source",
         "source": {
@@ -234,37 +267,15 @@
           "portId": "in1"
         }
       },
-      "e-tint-tapb": {
-        "id": "e-tint-tapb",
+      "e-tint-warpa": {
+        "id": "e-tint-warpa",
         "source": {
           "nodeId": "tint",
           "portId": "out"
         },
         "target": {
-          "nodeId": "tapB",
-          "portId": "input"
-        }
-      },
-      "e-tint-tapg": {
-        "id": "e-tint-tapg",
-        "source": {
-          "nodeId": "tint",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "tapG",
-          "portId": "input"
-        }
-      },
-      "e-tint-tapr": {
-        "id": "e-tint-tapr",
-        "source": {
-          "nodeId": "tint",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "tapR",
-          "portId": "input"
+          "nodeId": "warpA",
+          "portId": "source"
         }
       },
       "e-track-source": {
@@ -297,6 +308,61 @@
         },
         "target": {
           "nodeId": "shape",
+          "portId": "input"
+        }
+      },
+      "e-warpa-warpb": {
+        "id": "e-warpa-warpb",
+        "source": {
+          "nodeId": "warpA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpB",
+          "portId": "source"
+        }
+      },
+      "e-warpb-warpc": {
+        "id": "e-warpb-warpc",
+        "source": {
+          "nodeId": "warpB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpC",
+          "portId": "source"
+        }
+      },
+      "e-warpc-tapb": {
+        "id": "e-warpc-tapb",
+        "source": {
+          "nodeId": "warpC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapB",
+          "portId": "input"
+        }
+      },
+      "e-warpc-tapg": {
+        "id": "e-warpc-tapg",
+        "source": {
+          "nodeId": "warpC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapG",
+          "portId": "input"
+        }
+      },
+      "e-warpc-tapr": {
+        "id": "e-warpc-tapr",
+        "source": {
+          "nodeId": "warpC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapR",
           "portId": "input"
         }
       },
@@ -343,18 +409,18 @@
         "parameters": {
           "amp": 1,
           "aspectcorrect": true,
-          "exp": 1,
+          "exp": 1.25,
           "gain": 0.55,
           "harmon": 2,
           "mono": true,
           "offset": 0,
-          "period": 0.55,
+          "period": 0.62,
           "rough": 0.5,
           "s4d": 1,
           "seed": 5,
           "speed": 0.05,
           "spread": 2,
-          "t4d": 0,
+          "t4d": 0.37,
           "type": "perlin4d"
         },
         "position": {
@@ -386,18 +452,18 @@
         "parameters": {
           "amp": 1,
           "aspectcorrect": true,
-          "exp": 1,
+          "exp": 1.2,
           "gain": 0.5,
           "harmon": 3,
           "mono": true,
           "offset": 0,
-          "period": 0.13,
+          "period": 0.15,
           "rough": 0.6,
           "s4d": 1,
           "seed": 19,
           "speed": 0.09,
           "spread": 2,
-          "t4d": 0,
+          "t4d": 0.37,
           "type": "perlin4d"
         },
         "position": {
@@ -430,8 +496,8 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 820,
-          "y": 440
+          "x": 1620,
+          "y": 600
         },
         "type": "reorder"
       },
@@ -446,8 +512,8 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 580,
-          "y": 370
+          "x": 1360,
+          "y": 330
         },
         "type": "reorder"
       },
@@ -492,6 +558,87 @@
         },
         "type": "valueMath"
       },
+      "lensA": {
+        "definitionVersion": 1,
+        "id": "lensA",
+        "label": "lensa1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 1,
+          "mono": false,
+          "offset": 0,
+          "period": 1.15,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 71,
+          "speed": 0.018,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": 60,
+          "y": 700
+        },
+        "type": "noise"
+      },
+      "lensB": {
+        "definitionVersion": 1,
+        "id": "lensB",
+        "label": "lensb1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0,
+          "period": 0.42,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 137,
+          "speed": 0.046,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": 320,
+          "y": 700
+        },
+        "type": "noise"
+      },
+      "lensC": {
+        "definitionVersion": 1,
+        "id": "lensC",
+        "label": "lensc1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 1,
+          "mono": false,
+          "offset": 0,
+          "period": 0.14,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 211,
+          "speed": 0.115,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": 580,
+          "y": 700
+        },
+        "type": "noise"
+      },
       "music": {
         "definitionVersion": 1,
         "id": "music",
@@ -511,8 +658,8 @@
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 1080,
-          "y": 440
+          "x": 1880,
+          "y": 600
         },
         "type": "output"
       },
@@ -655,10 +802,10 @@
         "id": "shape",
         "label": "shape1",
         "parameters": {
-          "blacklevel": 0.28,
+          "blacklevel": 0.235,
           "brightness": 1,
-          "contrast": 1.6,
-          "gamma1": 1,
+          "contrast": 1.5,
+          "gamma1": 0.93,
           "whitelevel": {
             "bindings": {
               "driven": {
@@ -743,8 +890,8 @@
           "scale": 1
         },
         "position": {
-          "x": 320,
-          "y": 660
+          "x": 1100,
+          "y": 760
         },
         "type": "cache"
       },
@@ -758,8 +905,8 @@
           "scale": 1
         },
         "position": {
-          "x": 320,
-          "y": 480
+          "x": 1100,
+          "y": 500
         },
         "type": "cache"
       },
@@ -773,8 +920,8 @@
           "scale": 1
         },
         "position": {
-          "x": 320,
-          "y": 300
+          "x": 1100,
+          "y": 240
         },
         "type": "cache"
       },
@@ -864,6 +1011,75 @@
         "position": {
           "x": -1180,
           "y": -60
+        },
+        "type": "displace"
+      },
+      "warpA": {
+        "definitionVersion": 1,
+        "id": "warpA",
+        "label": "warpa1",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.062,
+            0.062
+          ]
+        },
+        "position": {
+          "x": 320,
+          "y": 380
+        },
+        "type": "displace"
+      },
+      "warpB": {
+        "definitionVersion": 1,
+        "id": "warpB",
+        "label": "warpb1",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.024,
+            0.024
+          ]
+        },
+        "position": {
+          "x": 580,
+          "y": 380
+        },
+        "type": "displace"
+      },
+      "warpC": {
+        "definitionVersion": 1,
+        "id": "warpC",
+        "label": "warpc1",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.009,
+            0.009
+          ]
+        },
+        "position": {
+          "x": 840,
+          "y": 380
         },
         "type": "displace"
       },

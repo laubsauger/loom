@@ -29,7 +29,7 @@ broad1 ─► warp1 ◄─ detail1        state1(feedback, source: pack1)
               ▼                        ▼
           shape1 ─────────────► pack1 ◄─ rd1 ◄─ wind1 ◄─ (the loop)
                                               rd1 ─► tint1 ◄─ palette1
-tint1 ─► tapr1 ─► fringerg1 ─► fringe1 ─► out1
+tint1 ─► warpa1 ─► warpb1 ─► warpc1 (three lenses, coarse→fine) ─► tapr1 ─► fringerg1 ─► fringe1 ─► out1
      └─► tapg1 ──────┘             │
      └─► tapb1 ────────────────────┘
 ```
@@ -75,6 +75,63 @@ on the in point, a scrub finds the same second, and an offline render reproduces
 §V45). Once T493's transport UI is exercised, driving `cue` from the graph would let the
 track be re-triggered as part of a performance; that is the obvious next thing this example
 should show and it is not shown yet.
+
+## Three lenses and some room to breathe (T507)
+
+The owner's two notes on the look were that the reference "used something like 3 layers of
+lenses or displacements to make things more interesting", and that "the two noises need a
+little more negative space too for more structure". They are separate fixes.
+
+### Negative space, and the direction of the fix is the finding
+
+The dish used to sit wall-to-wall in the labyrinth regime: every part of the frame striped
+at once, so there was no empty field for the structure to resolve against and the whole
+thing read as one texture — a fingerprint.
+
+`shape1` is the lever, and **the first attempt went the wrong way.** Raising `blacklevel`
+pushes more of the map to the LOW end of the feed/kill band, and I expected that to sparsen
+it. It did the opposite: **Gray-Scott's low corner (feed 0.028 / kill 0.0545) IS the
+labyrinth**, and the high corner is spots and mitosis, which is where the empty field lives.
+So negative space here means *lowering* the black point and lifting the midtones. Measured
+at four settings: 0.46 was the fingerprint, 0.09 was too sparse to be a picture, and 0.235
+with gamma 0.93 is where a coherent organism has a void around it.
+
+Fixed at the chemistry rather than by masking the output, because §V427's whole point is
+that the structure belongs to the simulation. Giving it room is a chemistry decision.
+
+The two source noises are also gentler now (`exp` 1.25 / 1.2, a power on a 0..1 field pulls
+the midtones down), so the map has quiet plains with peaks standing out of them rather than
+being mid-grey everywhere.
+
+### Three lenses, and the point is that they are at different scales
+
+Stacking is not "turn the displacement up". One strong displacement is a smear and a smear
+has no depth in it. `warpa1`, `warpb1` and `warpc1` run in series on the coloured output,
+each about **2.5× finer and 2.5× faster than the one before it, with a third of the
+weight**:
+
+| | period | speed | weight |
+| --- | --- | --- | --- |
+| `warpa1` | 1.15 | 0.018 | 0.062 — a broad swell you feel rather than see |
+| `warpb1` | 0.42 | 0.046 | 0.024 — the sway the fronts ride on |
+| `warpc1` | 0.14 | 0.115 | 0.009 — the only one touching individual ridges |
+
+The weights come down as the frequency goes up for the same reason a fractal's gain does:
+equal weight at every scale is white noise, not depth.
+
+**`mono` is off on all three, and that is the difference between a lens and a shear.**
+`displace` reads x from red and y from green, so a *monochrome* field has red == green and
+every pixel moves along the same 45° diagonal — the image slides rather than warps. (E24's
+older `warp1` on the chemistry map is mono and does exactly that, deliberately; a diagonal
+shear of a feed/kill map is a fine thing to want. It is just not a lens.)
+
+They sit **after** the palette and **before** the cache rings, so the RGB delay tastes the
+lens motion: glass that moves disperses, and the fringing follows the warp.
+
+All three noises run on `absTime` (T497) and start at `t4d: 0.37` rather than 0 — zero sits
+on a lattice plane of the 4D noise where amplitude collapses, which makes frame 0
+systematically flatter than the piece it is supposed to represent, and frame 0 is what a
+gallery thumbnail shows (T535).
 
 ## The mappings, and why each is shaped the way it is
 
