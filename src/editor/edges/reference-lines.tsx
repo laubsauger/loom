@@ -3,7 +3,7 @@ import { ViewportPortal, useNodes, useStore as useFlowStore } from "@xyflow/reac
 import type { ParameterDependency, ParameterDependencyKind } from "@domain/graph/parameter-dependencies.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
-import { arrowPoints, screenScale, segmentBetween } from "./reference-geometry.ts";
+import { arrowPoints, screenScale, segmentBetween, segmentsBounds } from "./reference-geometry.ts";
 import type { Rect } from "./reference-geometry.ts";
 import styles from "./reference-lines.module.css";
 
@@ -42,21 +42,39 @@ import styles from "./reference-lines.module.css";
  * a stub at the viewport edge, because a stub points at nothing and invites being clicked.
  */
 
-/** §V26-adjacent: a reference is not a port family, so neither line borrows a port hue. */
+/**
+ * One tier BELOW the wire each kind echoes (T391).
+ *
+ * The owner's verdict on the first landing was "ugly", twice: a heavy light-grey dash was
+ * the loudest thing on a canvas of thin muted wires, while describing the WEAKER of the
+ * two relationships. So the hue keeps saying which kind of relationship it is, and every
+ * one of them is pulled down a step from the port token a real edge would use — `driven`
+ * furthest, because `--port-value` is deliberately the lightest token in the set (see
+ * `tokens.css`) and was the one on screen. Weight and opacity do the rest, in the
+ * stylesheet; §V17 keeps every literal colour in the token file.
+ */
 const KIND_COLOR: Record<ParameterDependencyKind, string> = {
-  // The CHOP wire's own token: a driven parameter IS a value-graph relationship.
-  driven: "var(--port-value)",
+  // Still the number family, one tier down from the CHOP wire it echoes.
+  driven: "var(--port-scalar)",
   // An expression reference belongs to no family; quiet grey, clearly not a signal.
   reference: "var(--text-dim)",
   // T350: the feedback loop the user used to WIRE — the temporal family's own hue,
-  // because this line is the loop.
+  // because this line is the loop. It reads as a loop at this weight, not as a wire.
   feedback: "var(--port-texture2d)",
 };
 
-const DASH_PX = 6;
-const GAP_PX = 5;
-const STROKE_PX = 1.25;
-const ARROW_PX = 7;
+/**
+ * Tighter and lighter than a data edge, and all four scale with zoom (T391).
+ *
+ * A data edge at rest is `stroke-width: 1.25` at opacity 0.45 (`signal-edge.module.css`).
+ * A reference must read as subordinate to that at every zoom, which is why the arrowhead
+ * goes through `screenScale` exactly as the dash does: a fixed-size arrow on a thinning
+ * line is what makes a line look wrong at one zoom and fine at another.
+ */
+const DASH_PX = 3;
+const GAP_PX = 3.5;
+const STROKE_PX = 0.75;
+const ARROW_PX = 4.5;
 
 /** One line to draw: a node pair, a kind, and every parameter that put it there. */
 interface ReferenceLine {
@@ -129,28 +147,59 @@ export const ReferenceLines = memo(function ReferenceLines({ dependencies }: Ref
 
   const scale = screenScale(zoom);
 
+  /**
+   * The segments, resolved BEFORE the box — because the box is measured from them (B47).
+   *
+   * This used to be computed inside the JSX and the `<svg>` was zero-sized with
+   * `overflow: visible`. An outermost `<svg>` with a zero-width or zero-height viewport
+   * renders nothing at all, so every line was in the DOM and none of them was ever
+   * painted. The layer now spans exactly what it draws.
+   */
+  const drawn = lines.flatMap((line) => {
+    const from = rects.get(line.source);
+    const to = rects.get(line.target);
+    if (from === undefined || to === undefined) return [];
+    const segment = segmentBetween(from, to);
+    if (segment === null) return [];
+    return [{ line, segment }];
+  });
+  // The arrowhead sits back from the endpoint and spreads across the line; the stroke
+  // straddles its path. Both overhang the raw endpoints, and both scale with zoom.
+  const box = segmentsBounds(
+    drawn.map(({ segment }) => segment),
+    (ARROW_PX + STROKE_PX) * scale,
+  );
+  if (box === null) return null;
+
   return (
     <ViewportPortal>
       {/*
         `pointer-events: none` is INLINE rather than in the stylesheet because it is not a
-        style — it is §V151 ("never a drop target") holding at runtime. The children are
-        painted outside this zero-sized box, so without it they would swallow clicks meant
-        for the node underneath. Inline, it is one source of truth and a testable fact.
+        style — it is §V151 ("never a drop target") holding at runtime. The box spans the
+        whole span of the lines, so without it it would swallow clicks meant for the nodes
+        underneath. Inline, it is one source of truth and a testable fact.
       */}
       <svg
         className={styles.layer}
-        style={{ pointerEvents: "none" }}
+        /*
+          Placed AND sized from the content, with a `viewBox` in the same coordinates, so
+          the children go on carrying raw flow numbers while the element itself has a real
+          viewport. Inline rather than in the stylesheet because it is derived per render.
+        */
+        style={{
+          pointerEvents: "none",
+          left: box.x,
+          top: box.y,
+          width: box.width,
+          height: box.height,
+        }}
+        viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`}
         data-testid="reference-lines"
         aria-hidden
       >
-        {lines.flatMap((line) => {
-          const from = rects.get(line.source);
-          const to = rects.get(line.target);
-          if (from === undefined || to === undefined) return [];
-          const segment = segmentBetween(from, to);
-          if (segment === null) return [];
+        {drawn.map(({ line, segment }) => {
           const color = KIND_COLOR[line.kind];
-          return [
+          return (
             <g
               key={line.key}
               data-testid={`reference-line-${line.source}-${line.target}`}
@@ -173,8 +222,8 @@ export const ReferenceLines = memo(function ReferenceLines({ dependencies }: Ref
                 points={arrowPoints(segment, ARROW_PX * scale)}
                 fill={color}
               />
-            </g>,
-          ];
+            </g>
+          );
         })}
       </svg>
     </ViewportPortal>

@@ -6,6 +6,7 @@ import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { Inspector } from "@editor/inspector/index.ts";
 import type { InputResolution } from "@editor/inspector/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
@@ -67,6 +68,12 @@ export interface InspectorPaneProps {
   graph: GraphDocument;
   compiled: CompiledGraph | null;
   diagnostics: readonly RuntimeDiagnostic[];
+  /**
+   * The compile's own channel resolver (B46, §V61) — see `Inspector`'s prop. Passed
+   * straight through: this pane invents no resolver of its own, because a second one is
+   * the bug B8 recorded.
+   */
+  channels?: ChannelResolver;
   status: GpuStatus;
   /** Values the open file carried that this build cannot read (§V68, §V69). */
   unknownParameters?: readonly UnknownParameter[];
@@ -114,6 +121,7 @@ export function InspectorPane({
   graph,
   compiled,
   diagnostics,
+  channels,
   status,
   unknownParameters = [],
 }: InspectorPaneProps) {
@@ -175,6 +183,7 @@ export function InspectorPane({
           diagnostics={diagnostics}
           capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
           inputResolutions={inputResolutions}
+          {...(channels === undefined ? {} : { channels })}
         />
       </div>
     </ContextMenuHost>

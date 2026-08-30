@@ -41,6 +41,27 @@ import type { CompileResultView } from "./compile-command.ts";
 
 export interface GraphCompileResult {
   readonly graph: GraphDocument;
+  /**
+   * The channel resolver this compile used — published so the INSPECTOR reads through it
+   * too (B46, T374, §V61).
+   *
+   * §V61 says there is one parameter read path, and the inspector has always been on it.
+   * What it did not have was this OPTION, so `resolveParameters` ran there with no
+   * channel resolver at all and every `driven` parameter in the panel fell back to its
+   * retained static and reported `parameter.driven`: "channel lfo1 is not attached", on a
+   * project whose LFO was visibly animating the same parameter a few pixels away. That is
+   * B8 with the sides swapped — the inspector showing the fallback while the GPU shows the
+   * reference — and the fix B8 recorded is that the two must not be two resolvers.
+   *
+   * So it is the same object, not an equivalent one. Handing the panel its own merge of
+   * the same inputs would be a second resolver that agrees today by inspection.
+   *
+   * Frameless on the inspector's side: `useValueGraph`'s resolver answers a no-frame read
+   * from a THROWAWAY zero-frame session keyed on the document revision, so rendering a
+   * panel cannot advance a stateful stage (a Lag must not move because someone opened the
+   * inspector). Stable identity, so it does not re-key anything downstream.
+   */
+  readonly channels: ChannelResolver;
   /** Null while the capability report is missing — see §V12 note above. */
   readonly compiled: CompiledGraph | null;
   readonly diagnostics: readonly RuntimeDiagnostic[];
@@ -356,7 +377,18 @@ export function useGraphCompile(
 
   const result = useMemo<GraphCompileResult>(() => {
     if (capabilities === null) {
-      return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null, valuesOnly: false };
+      // No device, no plan (§V12) — but the panel still resolves, so the resolver still
+      // travels. Dropping it here would make "the inspector says lfo1 is not attached"
+      // true again on exactly the machines that cannot compile.
+      return {
+        graph,
+        channels,
+        compiled: null,
+        diagnostics: [],
+        errorCount: 0,
+        animate: null,
+        valuesOnly: false,
+      };
     }
     const previous = lastCompile.current;
     const settingsKey = structuralSettingsKey(runtime.settings);
@@ -379,6 +411,7 @@ export function useGraphCompile(
       lastCompile.current = { ...previous, graph };
       return {
         graph,
+        channels,
         compiled: previous.view.compiled,
         diagnostics: previous.view.diagnostics,
         errorCount: previous.view.diagnostics.filter((entry) => entry.severity === "error").length,
@@ -405,6 +438,7 @@ export function useGraphCompile(
     };
     return {
       graph,
+      channels,
       compiled,
       diagnostics,
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,

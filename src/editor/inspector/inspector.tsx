@@ -5,6 +5,7 @@ import type { InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
@@ -69,6 +70,21 @@ export interface InspectorProps {
   /** Injectable for tests; otherwise the pane owns its editor. */
   editor?: ParameterEditor;
   variant?: ControlVariant;
+  /**
+   * The channel resolver a `driven` parameter reads through (B46, T374, §V61).
+   *
+   * §V61 has one read path and this pane is on it — but `resolveParameters` only answers
+   * a driven slot when it is GIVEN a resolver, and nothing in the editor ever passed one.
+   * So every driven parameter in the panel fell back to its retained static and reported
+   * "channel lfo1 is not attached" while the LFO drove it in the plan. B8 with the sides
+   * swapped, and B8's ruling is that the answer is one resolver, not two.
+   *
+   * It is the compile's own (`useGraphCompile().channels`), passed down, so the panel
+   * cannot disagree with the plan. Optional because a caller that has no value graph —
+   * a component editor, a test of the layout — should show §V108's retained value rather
+   * than be forced to fabricate a resolver, which is the state that shipped.
+   */
+  channels?: ChannelResolver;
 }
 
 export function Inspector({
@@ -81,6 +97,7 @@ export function Inspector({
   inputResolutions,
   editor: providedEditor,
   variant = "inspector",
+  channels,
 }: InspectorProps) {
   const graph = useSyncExternalStore<GraphDocument>(
     bus.store.subscribe,
@@ -152,6 +169,17 @@ export function Inspector({
       graph,
       schemaOf: (target) => bus.registry.get(target.type)?.parameters,
     }),
+    /**
+     * B46 — and deliberately with NO `frame`.
+     *
+     * A frameless read is §V44's deterministic zero frame, which `useValueGraph` answers
+     * from a throwaway session keyed on the document revision. Passing the live frame
+     * instead would make a stateful stage advance because a panel re-rendered — a Lag
+     * jumping every time you drag a node — and it would put this pane on a per-frame
+     * render path §V16 forbids. The panel shows the resolved value at t=0 and, crucially,
+     * stops claiming the channel is unattached when it is.
+     */
+    ...(channels === undefined ? {} : { channels }),
   });
   const groups = groupParameters(resolved.entries);
 

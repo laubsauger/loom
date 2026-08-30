@@ -741,6 +741,8 @@ export function App({
               graph={compile.graph}
               compiled={compile.compiled}
               diagnostics={compile.diagnostics}
+              // B46/§V61: the panel resolves through the resolver the COMPILE used.
+              channels={compile.channels}
               status={status}
               unknownParameters={runtime.unknownParameters}
             />

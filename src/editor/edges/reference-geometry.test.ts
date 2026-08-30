@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { arrowPoints, screenScale, segmentBetween } from "./reference-geometry.ts";
+import { arrowPoints, screenScale, segmentBetween, segmentsBounds } from "./reference-geometry.ts";
 import { referenceLinesOf } from "./reference-lines.tsx";
 import type { ParameterDependency } from "@domain/graph/parameter-dependencies.ts";
 
@@ -112,5 +112,48 @@ describe("referenceLinesOf", () => {
       dependency("b", "a", "size", "reference"),
     ]);
     expect(lines.map((line) => line.kind).sort()).toEqual(["driven", "reference"]);
+  });
+});
+
+/**
+ * The box the layer needs to be PAINTED AT ALL (B47, T374).
+ *
+ * A zero-width or zero-height outermost `<svg>` renders nothing — the element is
+ * disabled, not clipped, so `overflow: visible` cannot rescue it. That is what shipped:
+ * every reference line was in the DOM with a real client rect and no pixel of it was ever
+ * drawn. jsdom paints nothing, so no DOM assertion can see the difference; the box is
+ * arithmetic, and this is where the arithmetic is held.
+ */
+describe("the layer's box (§V151, B47)", () => {
+  it("covers both endpoints of every segment", () => {
+    const box = segmentsBounds(
+      [
+        { x1: -462, y1: 242, x2: -260, y2: 125 },
+        { x1: 40, y1: -80, x2: 900, y2: 600 },
+      ],
+      0,
+    );
+    expect(box).toEqual({ x: -462, y: -80, width: 1362, height: 680 });
+  });
+
+  it("is never zero on either axis for a straight horizontal or vertical line", () => {
+    // The case that would reintroduce the bug on one axis: a line with no extent in y
+    // gives a zero-height svg, and a zero-height svg draws nothing.
+    const horizontal = segmentsBounds([{ x1: 0, y1: 50, x2: 400, y2: 50 }], 8);
+    expect(horizontal?.height).toBeGreaterThan(0);
+    expect(horizontal?.width).toBeGreaterThan(0);
+
+    const vertical = segmentsBounds([{ x1: 50, y1: 0, x2: 50, y2: 400 }], 8);
+    expect(vertical?.width).toBeGreaterThan(0);
+    expect(vertical?.height).toBeGreaterThan(0);
+  });
+
+  it("pads outward on all four sides, so an arrowhead is not sliced off", () => {
+    const box = segmentsBounds([{ x1: 100, y1: 100, x2: 200, y2: 200 }], 10);
+    expect(box).toEqual({ x: 90, y: 90, width: 120, height: 120 });
+  });
+
+  it("has no box when there is nothing to draw", () => {
+    expect(segmentsBounds([], 10)).toBeNull();
   });
 });

@@ -5,16 +5,19 @@
  */
 
 /*
- * One SVG at the flow origin with `overflow: visible`, so the children can carry raw
- * flow coordinates and be drawn anywhere on the canvas. Zero-sized on purpose: it is a
- * coordinate space, not a box.
+ * One SVG in flow coordinates. Its POSITION AND SIZE are inline, computed from the lines
+ * it draws, with a matching `viewBox` — see `reference-lines.tsx`.
+ *
+ * B47: this used to be a zero-sized box at the flow origin relying on `overflow: visible`
+ * to paint outside itself. An outermost `<svg>` with a zero-width or zero-height viewport
+ * renders NOTHING — it is disabled, not clipped, and `overflow` cannot bring it back. So
+ * every line was in the DOM, measurable, and invisible. No size is set here on purpose:
+ * a fallback here would be a second answer to a question the component already answers.
  */
 .layer {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
+  /* Kept as slack for the arrowhead's outermost pixel at fractional zoom. It is NOT what
+     makes the layer paint — the non-zero viewport is. */
   overflow: visible;
   /*
    * §V151 — a reference line is a VIEW of a dependency, never a target: nothing here can
@@ -22,16 +25,36 @@
    * the element (see the component) so the guarantee is one source of truth and can be
    * asserted; it is deliberately not repeated here.
    */
-  /* Behind the nodes: the line explains the network, the nodes ARE the network. */
-  z-index: 0;
+  /*
+   * BEHIND THE WHOLE NODE CARD, and behind the data edges (T391).
+   *
+   * `ViewportPortal` appends after `.react-flow__edges` and `.react-flow__nodes`, so a
+   * positioned layer at level 0 wins the tie on tree order and paints over everything —
+   * over node headers, port rows and chrome. `z-index: 0` was written as "behind the
+   * nodes" and did the opposite.
+   *
+   * A NEGATIVE index is what actually puts it under them: `.react-flow__viewport` is a
+   * stacking context of its own (`position: absolute; z-index: 2`), so -1 paints beneath
+   * every positioned child of that context — the edge layer and the node layer both —
+   * while staying above the canvas ground, which is a sibling of the viewport and lower
+   * still. Re-ordering WITHIN the node layer is what produced the half-state the owner
+   * saw: under a node's preview canvas but over its body.
+   */
+  z-index: -1;
 }
 
 .line {
-  /* Quieter than a data edge at rest (0.45): a relationship, not a signal. */
-  opacity: 0.55;
+  /*
+   * T391: well under a data edge at rest (0.45). The line is findable when you look for
+   * it and ignorable when you are not — it describes a relationship between two nodes and
+   * must never out-shout the nodes themselves.
+   */
+  opacity: 0.3;
   stroke-linecap: round;
 }
 
 .arrow {
-  opacity: 0.75;
+  /* Direction still has to survive at low zoom, so the head is the one part kept a
+     little above the line's own opacity — a shape this small reads as a smudge below it. */
+  opacity: 0.45;
 }

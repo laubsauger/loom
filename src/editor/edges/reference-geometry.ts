@@ -101,6 +101,51 @@ export function arrowPoints(segment: Segment, size: number): string {
 }
 
 /**
+ * The box every drawn segment fits inside, padded (B47, T374).
+ *
+ * The layer used to be a ZERO-SIZED `<svg>` at the flow origin, relying on
+ * `overflow: visible` to let children carrying raw flow coordinates paint outside it.
+ * That does not work: an outermost `<svg>` whose viewport has zero width or height
+ * renders NOTHING, and `overflow` has no say in it — the element is disabled, not
+ * clipped. So every reference line was in the DOM, with a real `getBoundingClientRect`,
+ * and no pixel of it was ever painted. Measured in Chromium on E10: giving the same
+ * `<svg>` a non-zero box made the line appear with no other change.
+ *
+ * jsdom paints nothing, so no DOM assertion anywhere can see this — which is why the
+ * box is computed by a function with its own test rather than left as a style.
+ *
+ * `padding` is the arrowhead plus the stroke, in the same units as the segments: the
+ * polygon sits back from `x2` and spreads perpendicular to the line, and a stroke
+ * straddles its path, so both overhang the raw endpoint box.
+ */
+export function segmentsBounds(
+  segments: readonly Segment[],
+  padding: number,
+): { x: number; y: number; width: number; height: number } | null {
+  if (segments.length === 0) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const segment of segments) {
+    minX = Math.min(minX, segment.x1, segment.x2);
+    minY = Math.min(minY, segment.y1, segment.y2);
+    maxX = Math.max(maxX, segment.x1, segment.x2);
+    maxY = Math.max(maxY, segment.y1, segment.y2);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  const pad = Number.isFinite(padding) ? Math.max(padding, 0) : 0;
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    // A horizontal or vertical line has zero extent on one axis, and a zero-sized svg is
+    // the whole bug — the padding is what keeps both dimensions positive.
+    width: maxX - minX + pad * 2,
+    height: maxY - minY + pad * 2,
+  };
+}
+
+/**
  * The factor that keeps a length CONSTANT IN SCREEN PIXELS inside the zoomed viewport.
  *
  * The lines live in flow coordinates, so everything drawn there is multiplied by the
