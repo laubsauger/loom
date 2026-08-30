@@ -158,7 +158,18 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    * root fills it from the compiled output like any other tile.
    */
   const presentsTexture = definition?.sink === true;
-  const hasPreview = producesTexture || producesValue || producesPointset || presentsTexture;
+  /**
+   * T462 (§V85): a camera, light or material output previews as its own payload in a
+   * stock scene — B65's lesson applied BEFORE the bug this time: the compiler-side
+   * synthesis, the candidates and this slot all key on the same payload kinds, so the
+   * pipeline cannot be complete with its last millimetre missing again. Geometry
+   * ("scene" kind) is deliberately not here — see `previewCandidates`.
+   */
+  const producesScenePayload = (definition?.outputs ?? []).some(
+    (port) => port.type.kind === "camera" || port.type.kind === "light" || port.type.kind === "material",
+  );
+  const hasPreview =
+    producesTexture || producesValue || producesPointset || producesScenePayload || presentsTexture;
   const agent = snapshot.agent;
 
   /**

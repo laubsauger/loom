@@ -90,8 +90,18 @@ export function nodeHasPreview(node: GraphNode, definition: NodeDefinition | und
   if (definition === undefined) return false;
   const producesTexture = definition.outputs.some((port) => port.type.kind === "texture2d");
   const producesPointset = definition.outputs.some((port) => port.type.kind === "pointset");
+  // T462 (§V85): scene payloads preview as stock scenes — geometry ("scene") does not.
+  const producesScenePayload = definition.outputs.some(
+    (port) => port.type.kind === "camera" || port.type.kind === "light" || port.type.kind === "material",
+  );
   // T438 (§V316): channel publication is declared, never read off the category shelf.
-  return producesTexture || producesPointset || publishesValueChannels(definition) || definition.sink === true;
+  return (
+    producesTexture ||
+    producesPointset ||
+    producesScenePayload ||
+    publishesValueChannels(definition) ||
+    definition.sink === true
+  );
 }
 
 /**

@@ -53,3 +53,11 @@ export const SHARED_SAMPLER_ID = "sampler:linear";
  * is keyed under this reserved id rather than under the bare node id.
  */
 export const SINK_TARGET_PORT = "$target";
+
+/**
+ * The synthesized stock-scene target a watched scene-payload output previews into
+ * (T462, §V85) — a camera's reference scene, a light's or material's ball.
+ */
+export function scenePreviewResourceId(nodeId: NodeId, portId: PortId): string {
+  return `preview:scene:${nodeId}:${portId}`;
+}

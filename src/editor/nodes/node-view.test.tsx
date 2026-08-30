@@ -477,3 +477,26 @@ describe("T457 (V387) — reference-fed inputs render NO socket", () => {
     expect(inputs).toEqual([]);
   });
 });
+
+describe("T462 (§V85) — a scene payload node owns a preview slot", () => {
+  it("camera, light and material render the slot; geometry deliberately does not", () => {
+    const catalogue = createNodeRegistry(allNodeDefinitions).view();
+    for (const type of ["camera", "light", "materialPhong"]) {
+      const { container, unmount } = mountNode(type, {
+        graph: graphWith(type),
+        registry: catalogue,
+        renderPreview: () => <div>tile</div>,
+      });
+      // B65's lesson asserted on the DISPLAY side this time: no slot div means no
+      // bounds, no sink, no target — the whole pipeline with its last millimetre gone.
+      expect(container.querySelector("[data-testid^='node-preview-']"), type).not.toBeNull();
+      unmount();
+    }
+    const { container } = mountNode("geometry", {
+      graph: graphWith("geometry"),
+      registry: catalogue,
+      renderPreview: () => <div>tile</div>,
+    });
+    expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();
+  });
+});

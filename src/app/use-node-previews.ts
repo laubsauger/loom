@@ -102,6 +102,15 @@ export interface PreviewCandidate {
   readonly on: boolean;
 }
 
+/** Output port kinds whose nodes preview (T373 textures/pointsets, T462 scene payloads). */
+const PREVIEWABLE_PORT_KINDS: ReadonlySet<string> = new Set([
+  "texture2d",
+  "pointset",
+  "camera",
+  "light",
+  "material",
+]);
+
 /** Exported for the T373 coverage gate — the product path itself only calls it below. */
 export function previewCandidates(
   graph: GraphDocument,
@@ -119,11 +128,12 @@ export function previewCandidates(
     // T373 (§V85): a pointset output previews as its own splat — the compiler
     // synthesizes the target when this candidate becomes a preview sink, so the same
     // materialization dance texture nodes use (T252) covers point generators too.
-    // Keyed on the port KIND, so every present and future point producer is a
-    // candidate by construction (§V316, §V319).
-    const port = definition.outputs.find(
-      (candidate) => candidate.type.kind === "texture2d" || candidate.type.kind === "pointset",
-    );
+    // T462 extends the same shape to scene payloads: a camera, light or material
+    // output previews as its payload in a stock scene. Keyed on the port KIND, so
+    // every present and future producer is a candidate by construction (§V316, §V319).
+    // Geometry ("scene" kind) deliberately absent: its shape is upstream's splat, its
+    // material is the material node's ball, and its pairing is its render's picture.
+    const port = definition.outputs.find((candidate) => PREVIEWABLE_PORT_KINDS.has(candidate.type.kind));
     if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true, on });
     else if (definition.sink === true && fed.has(nodeId)) {
       found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false, on });

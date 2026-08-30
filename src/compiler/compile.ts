@@ -34,12 +34,20 @@ import {
   SINK_TARGET_PORT,
   pingPongResourceId,
   pointsPreviewResourceId,
+  scenePreviewResourceId,
   scratchResourceId,
   swapPassId,
   targetResourceId,
 } from "./resources.ts";
-import { viewProjection } from "../domain/geometry/camera.ts";
 import { POINTS_PREVIEW_VERTEX_COUNT, pointsPreviewWgsl } from "../nodes/shaders/points-preview.wgsl.ts";
+import {
+  CAMERA_PREVIEW_VERTEX_COUNT,
+  SCENE_PREVIEW_BALL_VERTEX_COUNT,
+  cameraPreviewWgsl,
+  scenePreviewBallWgsl,
+} from "../nodes/shaders/scene-preview.wgsl.ts";
+import { cameraPayloadMatrix, viewProjection } from "../domain/geometry/camera.ts";
+import { DEFAULT_MATERIAL } from "../domain/types/scene.ts";
 import { applySubstepLoops, planSubstepLoops } from "./substeps.ts";
 import { orderNodes } from "./topology.ts";
 import { isTemporalOutput, validateGraph, validateRequiredInputs } from "./validate.ts";
@@ -100,6 +108,27 @@ const POINTS_PREVIEW_CAMERA = viewProjection([1.7, 1.2, 2.4], [0, 0, 0], { aspec
 
 /** Clip-space disc half-extent — ~3px on a 192px tile, readable without occluding. */
 const POINTS_PREVIEW_POINT_SIZE = 0.03;
+
+/**
+ * T462: the stock rig every scene-payload preview shares. The ball camera looks
+ * straight down -z so the ball's centre texel faces the viewer exactly — which is what
+ * makes the §V147 pins below arithmetic instead of screenshots. The fill light's
+ * direction has no z component, so its lambert term is ZERO at that centre texel: the
+ * key alone sets the pinned value, and the fill only models the terminator.
+ */
+const SCENE_PREVIEW_CAMERA = viewProjection([0, 0, 2.6], [0, 0, 0], {
+  fovY: Math.PI / 4,
+  aspect: 1,
+  near: 0.1,
+  far: 10,
+});
+const SCENE_PREVIEW_EYE = [0, 0, 2.6, 0] as const;
+const SCENE_PREVIEW_BACKGROUND = [0.055, 0.06, 0.075, 1] as const;
+const SCENE_PREVIEW_AMBIENT = 0.08;
+/** Straight down the preview axis: |N·L| = 1 at the ball's centre. */
+const SCENE_PREVIEW_KEY = { direction: [0, 0, -1] as const, color: [1, 0.96, 0.9] as const, intensity: 0.85 };
+/** No z component: contributes nothing at the centre texel, shapes the terminator. */
+const SCENE_PREVIEW_FILL = { direction: [1, -0.4, 0] as const, color: [0.75, 0.85, 1] as const, intensity: 0.35 };
 
 /** Pass kinds that render into a resource and therefore need a target. */
 const TARGETED_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "draw"]);
@@ -866,6 +895,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
   /** T373: synthesized preview targets, later swapped into the outputs projection. */
   const pointsPreviewOutputs = new Map<string, ResolvedOutput>();
+  /** T462: synthesized scene-payload preview targets, concatenated into the projection
+   *  (a scene producer materializes no row of its own to replace). */
+  const scenePreviewOutputs = new Map<string, ResolvedOutput>();
   /** T447: scene payloads (camera/light/geometry/material) per output — the pointsets
    *  channel's sibling, all CPU values, re-published on every animate recompile. */
   const sceneInfoByOutput = new Map<string, ScenePayload>();
@@ -1326,6 +1358,141 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         temporal: false,
       });
     }
+
+    /*
+     * T462 (§V85): a SCENE PAYLOAD output — camera, light, material — previews as its
+     * own payload in a tiny stock scene, whenever a preview sink watches it. Keyed on
+     * the PAYLOAD KIND, never the node type (§V316/§V319), exactly as the pointset
+     * splat above keys on the port kind. Gated on the same sink set (§V309): off costs
+     * nothing — no pass, no target, no bytes.
+     *
+     * Geometry ("scene" payloads) deliberately does NOT preview: its shape is already
+     * the upstream pointset's splat, its material is the material node's ball, and what
+     * it uniquely adds — the pairing — is what the render it feeds shows.
+     *
+     * Everything analytic (no buffers); a material's map textures bind because they ARE
+     * its look, and the wires that carry them keep their producers alive. Payload
+     * values land as uniforms with the render's own field names, so an orbiting light
+     * animates its preview as a value update (§V5) and never a rebuild.
+     */
+    for (const port of definition.outputs) {
+      const key = outputKey(nodeId, port.id);
+      if (!previewSinkKeys.has(key)) continue;
+      const payload = sceneInfoByOutput.get(key);
+      if (payload === undefined || payload.kind === "geometry") continue;
+      const edgePx = Math.max(1, Math.round(settings.previewLongEdge));
+      const previewId = scenePreviewResourceId(nodeId, port.id);
+      resources.push({
+        kind: "target",
+        id: previewId,
+        size: [edgePx, edgePx],
+        format: "rgba8unorm",
+        depth: true,
+        label: `${nodeId}.${port.id} ${payload.kind} preview`,
+      });
+      const passBase = {
+        kind: "draw" as const,
+        id: `${nodeId}#scenePreview:${port.id}`,
+        nodeId,
+        target: previewId,
+        topology: "triangle-list" as const,
+        instances: 1,
+        uniformBinding: "params",
+        clear: true,
+      };
+      if (payload.kind === "camera") {
+        passes.push({
+          ...passBase,
+          shader: cameraPreviewWgsl(),
+          vertexCount: CAMERA_PREVIEW_VERTEX_COUNT,
+          uniforms: {
+            viewProjection: Array.from(cameraPayloadMatrix(payload, 1)),
+            background: [...SCENE_PREVIEW_BACKGROUND],
+          },
+        });
+      } else if (payload.kind === "light") {
+        // The stock ball in the DEFAULT material, lit by ONLY this light, zero
+        // ambient: a light at zero intensity previews black — true, and the point.
+        const light = payload.light;
+        passes.push({
+          ...passBase,
+          shader: scenePreviewBallWgsl({ model: "lambert", lightCount: 1 }),
+          vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
+          uniforms: {
+            viewProjection: Array.from(SCENE_PREVIEW_CAMERA),
+            eye: [...SCENE_PREVIEW_EYE],
+            ambientColor: [0, 0, 0, 0],
+            baseColor: [...DEFAULT_MATERIAL.baseColor],
+            specular: [...DEFAULT_MATERIAL.specularColor, DEFAULT_MATERIAL.shininess],
+            material: [DEFAULT_MATERIAL.metallic, DEFAULT_MATERIAL.roughness, 0, 0],
+            background: [...SCENE_PREVIEW_BACKGROUND],
+            light0Meta: [light.type === "point" ? 1 : 0, light.intensity, 0, 0],
+            light0Color: [...light.color, 0],
+            light0Vector: [...(light.type === "point" ? light.position : light.direction), 0],
+          },
+        });
+      } else {
+        // Material: the shaded ball under the fixed warm key and cool fill — the
+        // model/specular mapping is the scene Render's own (T428's pbr-through-phong).
+        const model =
+          payload.model === "unlit" ? "unlit" : payload.model === "phong" || payload.model === "pbr" ? "phong" : "lambert";
+        const specularColor =
+          payload.model === "pbr"
+            ? ([
+                1 + (payload.baseColor[0] - 1) * payload.metallic,
+                1 + (payload.baseColor[1] - 1) * payload.metallic,
+                1 + (payload.baseColor[2] - 1) * payload.metallic,
+              ] as const)
+            : payload.specularColor;
+        const shininess = payload.model === "pbr" ? 96 : payload.shininess;
+        const maps = {
+          ...(payload.maps.albedo === undefined ? {} : { albedo: true }),
+          ...(payload.maps.roughness === undefined ? {} : { roughness: true }),
+        };
+        passes.push({
+          ...passBase,
+          shader: scenePreviewBallWgsl({ model, lightCount: 2, maps }),
+          vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
+          ...(payload.maps.albedo === undefined && payload.maps.roughness === undefined
+            ? {}
+            : {
+                textures: [
+                  ...(payload.maps.albedo === undefined
+                    ? []
+                    : [{ binding: "albedoMap", resourceId: payload.maps.albedo, sampled: "unfiltered" as const }]),
+                  ...(payload.maps.roughness === undefined
+                    ? []
+                    : [{ binding: "roughnessMap", resourceId: payload.maps.roughness, sampled: "unfiltered" as const }]),
+                ],
+              }),
+          uniforms: {
+            viewProjection: Array.from(SCENE_PREVIEW_CAMERA),
+            eye: [...SCENE_PREVIEW_EYE],
+            ambientColor: [1, 1, 1, SCENE_PREVIEW_AMBIENT],
+            baseColor: [...payload.baseColor],
+            specular: [...specularColor, shininess],
+            material: [payload.metallic, payload.roughness, 0, 0],
+            background: [...SCENE_PREVIEW_BACKGROUND],
+            light0Meta: [0, SCENE_PREVIEW_KEY.intensity, 0, 0],
+            light0Color: [...SCENE_PREVIEW_KEY.color, 0],
+            light0Vector: [...SCENE_PREVIEW_KEY.direction, 0],
+            light1Meta: [0, SCENE_PREVIEW_FILL.intensity, 0, 0],
+            light1Color: [...SCENE_PREVIEW_FILL.color, 0],
+            light1Vector: [...SCENE_PREVIEW_FILL.direction, 0],
+          },
+        });
+      }
+      scenePreviewOutputs.set(key, {
+        nodeId,
+        portId: port.id,
+        resourceId: previewId,
+        resourceKind: "target",
+        size: [edgePx, edgePx],
+        format: "rgba8unorm",
+        space: colorSpaceForFormat("rgba8unorm"),
+        temporal: false,
+      });
+    }
   }
 
   // §V22: the pair swaps only after every current-frame consumer has been encoded. Placing
@@ -1531,6 +1698,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const outputs = [...propagated.outputs.values()]
     .map((output) => pointsPreviewOutputs.get(outputKey(output.nodeId, output.portId)) ?? output)
     .concat(aliasOutputs)
+    // T462: scene-payload previews ADD rows — camera/light/material outputs never had
+    // a materialized row to replace.
+    .concat([...scenePreviewOutputs.values()])
     .sort((a, b) => outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)));
 
   // §V82: every diagnostic that names a node inside a component carries its source path.
