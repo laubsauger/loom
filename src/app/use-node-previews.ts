@@ -37,6 +37,18 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
 const PREVIEW_TILE_CAPACITY = 48;
 
+/**
+ * T501 — how many sink slots a tick reserves for previews that have NEVER painted.
+ *
+ * Bounded on purpose, and the bound is the whole design. Reserving nothing is the bug
+ * (a preview that needs the idle round-trip is served only with leftovers, and when
+ * there are none it is starved permanently). Reserving everything would evict the
+ * drawing set on the tick a paste drops forty nodes in. Eight of forty-eight drains any
+ * backlog at six previews per tick — a hundred waiting previews are all materialized
+ * inside seventeen ticks — while leaving five sixths of the pool to what is on screen.
+ */
+const FIRST_PAINT_RESERVE = 8;
+
 export interface NodePreviewInputs {
   /**
    * T252 (§V158): where the scheduler's kept set goes, so the COMPILER materializes
@@ -64,6 +76,17 @@ export interface NodePreviewInputs {
    * the entire gesture — exactly the window a preview must keep up in.
    */
   readonly getNodePosition: (nodeId: NodeId) => { readonly x: number; readonly y: number } | undefined;
+  /**
+   * Which DOCUMENT is open (T519, B106).
+   *
+   * A tile is keyed by NODE ID, and two documents share node ids the moment they share
+   * node names — `out` is in every shipped example. So on a load the atlas already holds
+   * a tile under the incoming document's keys, the scheduler's refresh clock says that
+   * key is not due yet, and the node shows the PREVIOUS PROJECT'S pixels until something
+   * makes it repaint. `PreviewSystem.reset()` has named "project load" as one of its
+   * three callers since T34 and there has never been one; this is it.
+   */
+  readonly documentIdentity: string;
   readonly previewFps: number;
   readonly previewLongEdge: number;
 }
@@ -154,7 +177,17 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     const host = backend.previewHost(canvas);
     const system: PreviewSystem = createPreviewSystem({ host, capacity: PREVIEW_TILE_CAPACITY });
     const clock = liveClock();
+    /**
+     * T501: preview keys that have ever had a materialized output — i.e. that have had
+     * their chance. Membership is what retires a first-paint reservation; it is NOT
+     * "has drawn", because a preview the scheduler suspends by budget has still been
+     * given its turn and must not hold a reserved slot forever.
+     */
+    const everMaterialized = new Set<string>();
     let lastDeviceGeneration = backend.status.deviceGeneration;
+    // T519: the load boundary, watched the same way the device boundary is — inside the
+    // tick, so a load costs a comparison and never a teardown of the host.
+    let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
     const tick = (): void => {
@@ -169,6 +202,14 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       }
 
       const current = inputsRef.current;
+      // T519/B106 — a DIFFERENT DOCUMENT is open. Every tile and every refresh clock in
+      // here is keyed by node id, and those ids belong to the project that just closed.
+      if (current.documentIdentity !== lastDocumentIdentity) {
+        lastDocumentIdentity = current.documentIdentity;
+        system.reset();
+        everMaterialized.clear();
+      }
+
       const rect = canvas.getBoundingClientRect();
       const surface = { x: 0, y: 0, width: rect.width, height: rect.height };
       const viewport = current.getViewport();
@@ -182,7 +223,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       );
       const requests: PreviewRequest[] = [];
       const idle: Array<{ nodeId: NodeId; portId: string }> = [];
-      const visibleIdle: Array<{ nodeId: NodeId; portId: string }> = [];
+      /** T501: on-screen area travels, so the idle queue is ordered by the SAME rule the
+       *  scheduler ranks tiles by (largest on screen first) rather than by map order. */
+      const visibleIdle: Array<{ nodeId: NodeId; portId: string; area: number }> = [];
       /** Switched off (§V297): reported to the body, and nowhere else. */
       const off: Array<{ nodeId: NodeId; portId: string }> = [];
       // §V100/T197 — a slot that is not live still shows what the compiler resolved for
@@ -230,12 +273,20 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
               !ungated.has(nodeId) &&
               (onScreen || current.graph.nodes[nodeId]?.ui?.previewPinned === true)
             ) {
-              visibleIdle.push({ nodeId, portId });
+              visibleIdle.push({
+                nodeId,
+                portId,
+                area: Math.max(0, screen.width) * Math.max(0, screen.height),
+              });
             }
           }
           idle.push({ nodeId, portId });
           continue;
         }
+        // T501: this node HAS a materialized output, so it is a request from here on and
+        // competes under the scheduler's stated policy. That is what retires its claim on
+        // a first-paint slot — the claim is "has never had a chance", not "is not drawing".
+        everMaterialized.add(`${nodeId}:${portId}`);
         const node = current.graph.nodes[nodeId];
         // §V118 — LETTERBOX inside the node's preview area, never stretch to fill it.
         // The area is whatever the user dragged the node to (§V116); the texture's aspect
@@ -295,10 +346,56 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const activeSinks = result.schedule.active
         .filter((entry) => !ungated.has(entry.ref.nodeId as string))
         .map((entry) => ({ nodeId: entry.ref.nodeId as string, portId: entry.ref.portId }));
+
+      /*
+       * T501 — FIRST PAINT IS RESERVED, exactly the way §V454 reserves a base.
+       *
+       * The sink set holds `capacity` refs. It used to be filled with every preview that
+       * was ALREADY drawing and then, with whatever was left over, the previews waiting to
+       * materialize. Measured on 44 texture nodes + 8 point generators, all on screen and
+       * all inside the tile budget: 44/44 textures painted on tick 2, 4/8 point generators
+       * painted on tick 2 and the other 4 NEVER painted — not late, never, deterministically,
+       * because the leftover was zero on every subsequent tick and the same four lost it.
+       *
+       * Point/camera/light/material previews take the whole of that damage, and not by
+       * anyone's decision: a texture node materializes the moment it is a sink and never
+       * re-enters the idle queue, while a synthesized preview does not EXIST until its sink
+       * triggers the synthesis — so the idle queue is the only door it has.
+       *
+       * So the pool is spent in §V454's order: previews that have never had a chance are
+       * RESERVED first, then the drawing set spends the rest. The reservation is bounded
+       * (`FIRST_PAINT_RESERVE` of the pool) so a burst cannot evict the whole screen, and
+       * it is self-cancelling — a preview leaves the queue the moment it materializes,
+       * after which the scheduler's stated policy decides whether it draws or reports
+       * `suspended`. Both are answers; black-and-silent was not.
+       */
+      visibleIdle.sort((a, b) => b.area - a.area);
+      const unpainted = visibleIdle.filter(
+        (entry) => !everMaterialized.has(`${entry.nodeId}:${entry.portId}`),
+      );
+      const reserved = unpainted.slice(0, Math.min(FIRST_PAINT_RESERVE, system.capacity));
+      const room = Math.max(0, system.capacity - reserved.length);
+      const drawing = activeSinks.slice(0, room);
+      const returning = visibleIdle
+        .filter((entry) => !reserved.includes(entry))
+        .slice(0, Math.max(0, room - drawing.length));
+      const asRef = (entry: { nodeId: NodeId; portId: string }) => ({
+        nodeId: entry.nodeId as string,
+        portId: entry.portId,
+      });
       current.previewSinks?.set([
-        ...activeSinks,
-        ...visibleIdle.slice(0, Math.max(0, system.capacity - activeSinks.length)),
+        ...reserved.map(asRef),
+        ...drawing,
+        ...returning.map(asRef),
       ]);
+
+      // Keys that left the graph entirely forget they ever painted; a node that is merely
+      // suspended or scrolled away does NOT (§V455 — what a suspended thing reports must
+      // not change because the active policy did).
+      const candidateKeys = new Set(candidates.map(({ nodeId, portId }) => `${nodeId}:${portId}`));
+      for (const key of [...everMaterialized]) {
+        if (!candidateKeys.has(key)) everMaterialized.delete(key);
+      }
 
       for (const entry of result.schedule.active) {
         const found = facts.get(entry.ref.nodeId);
