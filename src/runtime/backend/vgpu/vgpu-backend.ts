@@ -29,6 +29,7 @@ import {
   describeError,
 } from "../diagnostics.ts";
 import { createFrameGuard } from "../frame-guard.ts";
+import { createPacedGate } from "../frame-pacing.ts";
 import {
   bytesPerPixelFor,
   estimateResourceBytes,
@@ -404,7 +405,29 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       return;
     }
 
-    registration.handle = frameLoop(gpu, (f) => runFrame(f, registration.onFrame), registration.settings);
+    // T351 (§V290): the fps cap runs HERE, not in vgpu. vgpu's gate is
+    // `elapsed >= interval` with `last = timestamp` — no phase carry, no tolerance —
+    // so on any display FASTER than the target the due tick often lands a fraction of
+    // a millisecond early, gets skipped, and the frame runs a whole refresh late:
+    // 120 Hz asking for 60 alternates 16.6/25 ms and averages 45-55 fps on EVERY
+    // graph. The paced gate below runs the tick CLOSEST to the due time (half-a-tick
+    // tolerance) and advances the due time by the exact interval, so the long-run
+    // rate is the target by construction; a large gap (hidden tab) resyncs instead
+    // of bursting to catch up.
+    const targetFps = registration.settings.fps;
+    if (targetFps === undefined || targetFps <= 0) {
+      registration.handle = frameLoop(gpu, (f) => runFrame(f, registration.onFrame));
+      return;
+    }
+    const gate = createPacedGate();
+    registration.handle = frameLoop(gpu, (f) => {
+      // Interval read PER TICK off the registration, so a live settings.fps change
+      // takes effect without a loop restart — the clock reads its rate the same way
+      // (T271), and the two must not disagree.
+      const fps = registration.settings.fps ?? targetFps;
+      if (!gate.due(performance.now(), 1000 / (fps > 0 ? fps : targetFps))) return;
+      runFrame(f, registration.onFrame);
+    });
   }
 
   function restartLoops(): void {
