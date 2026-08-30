@@ -74,6 +74,13 @@ export function useFrameLoop(
    * is precisely the confusion §V124 exists to prevent.
    */
   observe: ((frame: FrameEvaluationInput) => void) | null = null,
+  /**
+   * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
+   *
+   * A SUGGESTION, never an instruction — the compile effect below verifies it against the
+   * real plans before acting on it, and falls back to a full compile when they disagree.
+   */
+  valuesOnly = false,
 ): FrameLoopResult {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
@@ -85,7 +92,19 @@ export function useFrameLoop(
   animateRef.current = animate;
   const observeRef = useRef<((frame: FrameEvaluationInput) => void) | null>(observe);
   observeRef.current = observe;
-  const planRef = useRef<CompiledGraph | null>(compiled);
+  // Read, not depended on: it changes in lockstep with `compiled`, and putting it in the
+  // effect's dependency list would re-run the compile effect for a value that only ever
+  // accompanies one.
+  const valuesOnlyRef = useRef(valuesOnly);
+  valuesOnlyRef.current = valuesOnly;
+  /**
+   * The plan the BACKEND has actually built, which is what the uniform pushes below write
+   * into — so it starts null and is set only when a compile has completed. It used to be
+   * seeded with the first `compiled`, which was harmless while every edit recompiled and
+   * is not now: a value edit arriving while the first compile is still in flight would
+   * otherwise push uniforms at passes the backend had not created yet.
+   */
+  const planRef = useRef<CompiledGraph | null>(null);
   const animatorRef = useRef(createUniformAnimator());
   const driftRef = useRef(false);
   const pointerRef = useRef<PointerSource | null>(null);
@@ -246,6 +265,39 @@ export function useFrameLoop(
     const driver = driverRef.current;
     if (backend === null || backend === undefined || driver === null) return;
     if (compiled === null || !compiled.ok) return;
+
+    /**
+     * §V5, made real (T308, B26).
+     *
+     * `classifyEdit` had no production caller, so every document revision reached
+     * `backend.compile`: five value-only parameter edits measured five compiles and zero
+     * `updateUniforms`. The uniform-only path was not merely unenforced — for a static
+     * edit it did not exist, because rebuilding the plan was the only way a new value
+     * ever reached the GPU.
+     *
+     * The classification is CHECKED, not trusted. `push` asserts `isUniformOnlyChange`
+     * against the two real plans and returns null if they are not values-only variations
+     * of each other, in which case this falls straight through to a full compile. That is
+     * what keeps a wrong answer in `classify-revision.ts` a wasted comparison rather than
+     * a new class of bug: the worst it can do is recompile something it need not have.
+     *
+     * `animatorRef.reset()` is deliberately NOT called here, and its absence is a FIX
+     * rather than an omission: the reset belongs to replacing the structural plan, and
+     * running it per edit — which is what happened when every edit recompiled — made the
+     * next animated frame re-push every uniform block in the graph because the animator
+     * had just forgotten what was already on the GPU. Restoring it here would restore
+     * that.
+     */
+    const built = planRef.current;
+    if (valuesOnlyRef.current && built !== null) {
+      const written = animatorRef.current.push(backend, built, compiled);
+      if (written !== null) {
+        // Later pushes diff against the newest values, so a slider dragged through ten
+        // positions writes each block once, not ten times against a stale base.
+        planRef.current = compiled;
+        return;
+      }
+    }
 
     const generation = (generationRef.current += 1);
     void backend

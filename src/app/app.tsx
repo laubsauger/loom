@@ -258,6 +258,7 @@ export function App({
     runtime.settings,
     compile.animate,
     observeFrame,
+    compile.valuesOnly,
   );
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):

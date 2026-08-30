@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { compileGraph } from "@compiler/index.ts";
+import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
 import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
@@ -55,6 +56,21 @@ export interface GraphCompileResult {
    * `animate-parameters.ts`. It never reaches `backend.compile`.
    */
   readonly animate: ((frame: FrameEvaluationInput) => CompiledGraph | null) | null;
+  /**
+   * True when this revision changed VALUES ONLY, so the backend may be handed new
+   * uniforms instead of a new plan (T308, §V5).
+   *
+   * Deliberately a separate channel rather than a suppressed `compiled`: the fresh plan
+   * still reaches the telemetry hub, the per-node status badges (§V27), the
+   * `project.compile` cache and the preview request builder exactly as before. Only the
+   * BACKEND behaves differently, which keeps the blast radius of this optimisation to the
+   * one seam it is about.
+   *
+   * False whenever there is any doubt — see `classify-revision.ts`. And it is a
+   * suggestion, not an instruction: the consumer verifies it against the real plans
+   * before acting on it.
+   */
+  readonly valuesOnly: boolean;
 }
 
 /**
@@ -247,10 +263,51 @@ export function useGraphCompile(
       compileSafely(graph, runtime, capabilities, { frame, channels }).compiled;
   }, [capabilities, channels, graph, runtime]);
 
+  /**
+   * The inputs of the LAST compile, for classifying the next one (T308).
+   *
+   * §V210 is the reason this holds four things and not just the graph: the compile gate
+   * has several independent structural triggers and the document revision is only one of
+   * them. An input that changes without producing a document edit is invisible to a
+   * revision-keyed gate, so each one is compared explicitly and any of them forces a full
+   * compile:
+   *
+   *  (a) the SINK SET — opening or closing a preview is not a document edit at all, so
+   *      there is nothing to classify and a document diff would answer "nothing changed"
+   *      while the plan needs a sink materialized;
+   *  (b) BACKEND CAPABILITIES — a device recovery can hand back a different adapter, and
+   *      a plan compiled against the old one is not valid against the new;
+   *  (d) SETTINGS — compile input (resolution, working format, limits). They cannot change
+   *      today (`AppRuntime.settings` is captured once and `project.setSettings` is T272),
+   *      which is exactly why the comparison is here NOW: when settings become live this
+   *      gate already treats them as structural instead of silently classifying a
+   *      resolution change as "no document edit".
+   *
+   * (c), component-catalogue edits, is the one trigger with nothing to do: `compileSafely`
+   * passes no `components` to `compileGraph`, so component flattening is not part of this
+   * compile path at all and an edit to a component definition cannot reach it. That is a
+   * gap worth its own task; it is not one this gate can widen.
+   */
+  const lastCompile = useRef<{
+    graph: GraphDocument;
+    sinks: unknown;
+    capabilities: BackendCapabilities | null;
+    settings: AppRuntime["settings"];
+  } | null>(null);
+
   const result = useMemo<GraphCompileResult>(() => {
     if (capabilities === null) {
-      return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null };
+      return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null, valuesOnly: false };
     }
+    const previous = lastCompile.current;
+    const sameInputs =
+      previous !== null &&
+      previous.sinks === scheduledPreviews &&
+      previous.capabilities === capabilities &&
+      previous.settings === runtime.settings;
+    const valuesOnly =
+      sameInputs && isValuesOnly(classifyGraphChange(previous.graph, graph, runtime.registry));
+
     const { compiled, diagnostics } = compileSafely(
       graph,
       runtime,
@@ -259,12 +316,19 @@ export function useGraphCompile(
       previewSinks === undefined ? undefined : scheduledPreviews,
     );
     cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
+    lastCompile.current = {
+      graph,
+      sinks: scheduledPreviews,
+      capabilities,
+      settings: runtime.settings,
+    };
     return {
       graph,
       compiled,
       diagnostics,
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
       animate,
+      valuesOnly,
     };
   }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews]);
 
