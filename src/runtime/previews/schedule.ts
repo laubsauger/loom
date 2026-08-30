@@ -133,14 +133,21 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
       const pixelBudget = capacity * baseCap * baseCap;
 
       // The sizing FLOOR: the node's own preview area, same at any zoom (§V142's rule for
-      // everything outside the budgeted path).
-      const baseTileFor = (request: PreviewRequest): readonly [number, number] =>
-        tileSizeFor({
+      // everything outside the budgeted path). A SUSPENDED preview keeps the step it was
+      // last granted: its tile still exists at that size (§V142 keeps tiles across
+      // scrolls), and reporting base here resized the tile the moment a boosted preview
+      // left the screen — one program reinstall on the way out and another on the way
+      // back, which is B13 wearing the budget's clothes.
+      const baseTileFor = (request: PreviewRequest): readonly [number, number] => {
+        const held = grantedStep.get(previewKey(request.ref));
+        return tileSizeFor({
           sourceSize: request.source.size,
-          areaLongEdge: Math.max(request.area.width, request.area.height),
-          devicePixelRatio: input.devicePixelRatio,
-          maxLongEdge: baseCap,
+          // A held step is already dpr-scaled and ladder-quantised, like a fresh grant.
+          areaLongEdge: held ?? Math.max(request.area.width, request.area.height),
+          devicePixelRatio: held === undefined ? input.devicePixelRatio : 1,
+          maxLongEdge: held ?? baseCap,
         });
+      };
 
       const suspended: SuspendedPreview[] = [];
       const eligible: PreviewRequest[] = [];
@@ -202,8 +209,12 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         spent += granted * granted - base * base;
         grantedByKey.set(key, granted);
       }
+      // A grant is remembered while the preview EXISTS at all — a suspended one keeps
+      // its tile at the granted size, so it keeps the memory of it too. Only a preview
+      // that vanished from the request set entirely forgets.
+      const requestedKeys = new Set(requests.map((request) => previewKey(request.ref)));
       for (const key of [...grantedStep.keys()]) {
-        if (!grantedByKey.has(key)) grantedStep.delete(key);
+        if (!requestedKeys.has(key)) grantedStep.delete(key);
       }
       for (const [key, step] of grantedByKey) grantedStep.set(key, step);
 

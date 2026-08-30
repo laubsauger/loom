@@ -264,6 +264,29 @@ describe("§V142 — a camera move costs no allocation (B13)", () => {
 
     // Zoom really changed — a pan-only assertion would have passed the whole time.
     expect(transformOf(view.container)).not.toBe(panned);
-    expect({ ...counters, programs: baseline.programs }).toEqual(baseline);
+    // T490 amended B13's contract here, deliberately: zooming IN may buy a sharper tile
+    // now, so a sweep that crosses ladder rungs is allowed a QUANTISED number of
+    // recompiles — bounded by the rungs crossed, never one per wheel tick — and it
+    // still re-registers no surface and rebuilds nothing per frame.
+    expect(counters.surfaceRegistrations).toBe(baseline.surfaceRegistrations);
+    const zoomCompiles = counters.compiles - baseline.compiles;
+    expect(zoomCompiles).toBeLessThanOrEqual(3);
+
+    // Hysteresis: easing back out re-costs nothing — the granted step is kept until the
+    // ask falls a full rung below it, and the area floor rules below 1:1 as before.
+    const afterZoomIn = { ...counters };
+    await act(async () => {
+      for (let step = 0; step < 4; step += 1) {
+        const wheel = new (pane.ownerDocument.defaultView as Window & typeof globalThis).WheelEvent(
+          "wheel",
+          { bubbles: true, cancelable: true, deltaY: 40, clientX: 500, clientY: 400 },
+        );
+        Object.defineProperty(wheel, "view", { value: pane.ownerDocument.defaultView });
+        pane.dispatchEvent(wheel);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    });
+    await ticks();
+    expect({ ...counters, programs: afterZoomIn.programs }).toEqual(afterZoomIn);
   }, 30_000);
 });
