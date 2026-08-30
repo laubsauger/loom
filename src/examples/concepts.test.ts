@@ -318,3 +318,98 @@ describe("E6 Displacement Stack", () => {
     expect(asData.outputs.find((o) => o.nodeId === "warp")?.space).toBe("linear");
   });
 });
+
+describe("E8 Slit Scan", () => {
+  const { plan } = example("E8-Slit-Scan.loom.json");
+
+  /**
+   * T321's claim: per-pixel time needs the WHOLE history as one binding. If the scan
+   * pass ever degrades to a fixed tap — one moment for every pixel — this example
+   * still renders and stops being a slit-scan.
+   */
+  it("binds the ring as a whole-array texture, not a fixed tap", () => {
+    const scan = plan.passes.find(
+      (pass) => pass.kind === "effect" && pass.id.endsWith(":scan"),
+    ) as EffectPassDescriptor;
+    const history = scan.textures?.find((binding) => binding.binding === "history");
+    expect(history?.array).toBe(true);
+    expect(history?.tap).toBeUndefined();
+  });
+
+  /**
+   * §V228 and the row's own words: 8 frames is a smear, the EFFECT wants depth. A
+   * shallow ring here would demonstrate nothing the Cache does not.
+   */
+  it("carries real temporal depth", () => {
+    const ring = plan.resources.find((resource) => resource.kind === "ring") as { frames: number };
+    expect(ring.frames).toBe(48);
+  });
+});
+
+describe("E9 Particle Fountain", () => {
+  const { document, plan } = example("E9-Particle-Fountain.loom.json");
+
+  /**
+   * T322/T323's claim: the population CHANGES COUNT on the GPU. If the spawn tail or
+   * the counted indirect draw regress, this graph still compiles — and the fountain
+   * freezes at frame zero's census. The pass roster and the indirect draw are the
+   * structural halves of "it keeps flowing".
+   */
+  it("compiles the full lifecycle: kernel, scans, scatter, spawn tail, hook", () => {
+    const ids = plan.passes
+      .filter((pass) => pass.nodeId === "sim")
+      .map((pass) => (pass as { id: string }).id.split(":").pop());
+    for (const stage of ["kernel", "scanLocal", "scanBlocks", "spawnScanLocal", "spawnScanBlocks", "spawnIdentity", "spawnFinalize", "spawnHook"]) {
+      expect(ids, stage).toContain(stage);
+    }
+  });
+
+  it("draws INDIRECTLY off the GPU-resident live count", () => {
+    const draw = plan.passes.find((pass) => pass.kind === "draw") as {
+      instances: number | { indirect: string };
+    };
+    expect(typeof draw.instances).toBe("object");
+  });
+
+  /**
+   * The document half of the claim: births come from the HOOK, so each child launches
+   * on its own pointRand(id) draw — delete the hook and the fountain becomes a single
+   * column of identical copies.
+   */
+  it("ships a spawn hook", () => {
+    const sim = document.graph.nodes["sim"] as GraphNode;
+    expect(String(sim.parameters["spawn"])).toContain("fn spawn(");
+  });
+});
+
+describe("E10 Instanced Torus", () => {
+  const { document, plan } = example("E10-Instanced-Torus.loom.json");
+
+  /**
+   * T296/T299's claim: the renderer binds the GENERATOR'S pair by edge payload — no
+   * naming convention, no copy. The draw's position buffer must be the torus's own
+   * scratch pair, and the primitive is real 3D (36 vertices, depth-attached target).
+   */
+  it("wears the generator's positions by payload, as depth-tested boxes", () => {
+    const draw = plan.passes.find((pass) => pass.kind === "draw") as {
+      vertexCount?: number;
+      buffers?: ReadonlyArray<{ resourceId: string }>;
+      target: string;
+    };
+    expect(draw.vertexCount).toBe(36);
+    expect(draw.buffers?.[0]?.resourceId).toBe("scratch:points:position");
+    const target = plan.resources.find((resource) => resource.id === draw.target);
+    expect((target as { depth?: boolean }).depth).toBe(true);
+  });
+
+  /**
+   * E7's mechanism on one COMPONENT of a compound (§V113): rotate.y is driven while
+   * its siblings stay static, so the formation spins with no recompile anywhere.
+   */
+  it("drives rotate.y through a component slot", () => {
+    const draw = document.graph.nodes["draw"] as GraphNode;
+    const slot = draw.parameters["rotate.y"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
+    expect(slot.mode).toBe("driven");
+    expect(slot.bindings?.driven?.channel).toBe("lfo1");
+  });
+});

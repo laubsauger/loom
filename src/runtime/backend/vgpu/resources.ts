@@ -99,10 +99,15 @@ function createRing(
   const count = Math.max(2, Math.floor(frames));
   const raw = gpu.gpu;
   const writeTarget = target(gpu, { size, format, label: `${label} [write]` });
+  // Literal usage bits with a global fallback: the mock host has no GPUTextureUsage
+  // global, and the values are spec constants (TEXTURE_BINDING = 4, COPY_DST = 2).
+  const usage =
+    (globalThis as { GPUTextureUsage?: { TEXTURE_BINDING: number; COPY_DST: number } }).GPUTextureUsage ??
+    { TEXTURE_BINDING: 4, COPY_DST: 2 };
   const history = raw.createTexture({
     size: { width: size[0], height: size[1], depthOrArrayLayers: count },
     format,
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    usage: usage.TEXTURE_BINDING | usage.COPY_DST,
     label: `${label} [history]`,
   });
   const layerViews = Array.from({ length: count }, (_, index) =>

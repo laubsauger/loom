@@ -574,6 +574,193 @@ const lfoDissolveDocument = document(
   ),
 );
 
+
+/**
+ * E8 — Slit Scan (T321, T237).
+ *
+ * Per-pixel time: a 48-frame history of an evolving noise field, read back through a
+ * vertical ramp so every ROW shows a different moment — the classic slit-scan smear,
+ * newest at the black end of the ramp, ~1.6 seconds ago at the white end.
+ *
+ * This is the file that fails if the temporal stack regresses: the ring's
+ * copy-on-rotate (V276 — archive at frame entry, never mid-encode), the
+ * `texture_2d_array` binding and its per-frame head uniforms, and §V229's clamp while
+ * the ring fills (the first two seconds are a growing smear, not a flash of black).
+ * The memory is the parameter (§V228): 48 frames at 720p rgba16float ≈ 169 MiB, and
+ * the frames knob says so where it is set.
+ */
+const slitScanDocument = document(
+  "e8-slit-scan",
+  "E8 Slit Scan",
+  settings({ randomSeed: 21 }),
+  graph(
+    [
+      node(
+        "field",
+        "noise",
+        [-640, -120],
+        {
+          type: "perlin4d",
+          period: 0.5,
+          harmon: 3,
+          spread: 2,
+          gain: 0.5,
+          rough: 0.5,
+          exp: 1,
+          amp: 1,
+          offset: 0,
+          mono: false,
+          aspectcorrect: true,
+          seed: 9,
+          s4d: 1,
+          t4d: 0,
+          // Fast enough that 48 frames of history span a visible evolution.
+          speed: 0.8,
+        },
+        { label: "noise1" },
+      ),
+      node("gradient", "ramp", [-640, 140], { type: "vertical" }, { label: "ramp1", definitionVersion: 2 }),
+      node("scan", "slitScan", [-260, 0], { frames: 48, depth: 1 }, { label: "slitscan1" }),
+      node("out", "output", [120, 0], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-field-scan", ["field", "out"], ["scan", "input"]),
+      edge("e-gradient-scan", ["gradient", "out"], ["scan", "map"]),
+      edge("e-scan-out", ["scan", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
+/**
+ * E9 — Particle Fountain (T322, T323, T339).
+ *
+ * The whole lifecycle in one graph: slot 0 is a pinned EMITTER that spawns two
+ * children a frame; everyone else flies ballistically and DIES leaving the frame.
+ * Frame zero kills all but the emitter, so the population you see grew entirely from
+ * births — compacted deterministically, ids minted from the monotone cursor, each
+ * child's launch angle drawn from pointRand(id, salt) in the spawn hook, so the same
+ * seed is the same fountain on every machine (§V74).
+ *
+ * If spawning, compaction, the counted indirect draw or the hook's newborn-range
+ * guard regress, this file is where it shows: a fountain that freezes, doubles, or
+ * sprays identical particles.
+ */
+const PARTICLE_FOUNTAIN_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  if (ctx.frameIndex == 0u) {
+    q.id = ctx.index;
+    if (ctx.index > 0u) {
+      q.alive = 0u; /* the population grows from births alone */
+      return q;
+    }
+  }
+  if (q.id == 0u) {
+    /* The emitter: pinned at the base, feeding the fountain. */
+    q.position = vec3f(0.0, -0.85, 0.0);
+    q.velocity = vec3f(0.0);
+    q.spawnCount = 2u;
+    return q;
+  }
+  q.velocity = q.velocity + vec3f(0.0, -0.9, 0.0) * ctx.delta;
+  q.position = q.position + q.velocity * ctx.delta;
+  if (q.position.y < -1.1 || abs(q.position.x) > 1.25) {
+    q.alive = 0u;
+  }
+  return q;
+}`;
+
+const PARTICLE_FOUNTAIN_SPAWN = `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  /* Identity is already the child's own: distinct ids, distinct draws (§V74). */
+  let angle = (pointRand(q.id, 1u) - 0.5) * 1.1;
+  let speed = 0.9 + pointRand(q.id, 2u) * 0.6;
+  q.velocity = vec3f(sin(angle) * 0.45, speed, 0.0);
+  return q;
+}`;
+
+const particleFountainDocument = document(
+  "e9-particle-fountain",
+  "E9 Particle Fountain",
+  settings({ randomSeed: 13 }),
+  graph(
+    [
+      node(
+        "sim",
+        "pointKernelAdvanced",
+        [-640, 0],
+        { capacity: 4096, seed: 13, kernel: PARTICLE_FOUNTAIN_KERNEL, spawn: PARTICLE_FOUNTAIN_SPAWN },
+        { label: "fountain1" },
+      ),
+      node(
+        "draw",
+        "renderPoints",
+        [-260, 0],
+        { count: 4096, sizePixels: 3, color: [0.55, 0.8, 1, 1], blend: "additive" },
+        { label: "renderpoints1" },
+      ),
+      node("out", "output", [120, 0], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-sim-draw", ["sim", "out"], ["draw", "points"]),
+      edge("e-draw-out", ["draw", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
+/**
+ * E10 — Instanced Torus (T298, T299, T296).
+ *
+ * A torus of points wearing a box each: the generator publishes its pairs and analytic
+ * topology on the edge (T296), renderInstances binds the position pair BY PAYLOAD and
+ * puts a lit primitive on every point through the §V198 camera. An LFO drives
+ * `rotate.y` in `driven` mode — the E7 mechanism, on one COMPONENT of a compound
+ * parameter (§V113), spinning the whole formation without a recompile (§V5: rotation
+ * is sixteen uniform floats and one integer away from any other frame).
+ */
+const instancedTorusDocument = document(
+  "e10-instanced-torus",
+  "E10 Instanced Torus",
+  settings({ randomSeed: 5 }),
+  graph(
+    [
+      node("lfo", "lfo", [-640, 220], { shape: "saw", frequency: 0.1, amplitude: 360, offset: 0, phase: 0 }, { label: "lfo1" }),
+      node(
+        "points",
+        "pointTorus",
+        [-640, 0],
+        { count: 1152, cols: 48, rows: 24, radius: 0.85, radius2: 0.33 },
+        { label: "torus1" },
+      ),
+      node("draw", "renderInstances", [-260, 0], {}, {
+        label: "instances1",
+        // All in `extra.parameters`: the slot for rotate.y lives beside the plain
+        // values, exactly the envelope a real save writes (§V107/§V113).
+        parameters: {
+          count: 1152,
+          shape: "box",
+          scale: 0.045,
+          color: [1, 0.62, 0.25, 1],
+          eye: [0, 1.1, 2.6],
+          lookAt: [0, 0, 0],
+          fov: 55,
+          "rotate.y": {
+            mode: "driven",
+            bindings: {
+              static: { kind: "static", value: 0 },
+              driven: { kind: "driven", channel: "lfo1" },
+            },
+          },
+        },
+      }),
+      node("out", "output", [120, 0], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-points-draw", ["points", "out"], ["draw", "points"]),
+      edge("e-draw-out", ["draw", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 /** Every example, in the order they are meant to be read. */
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -583,4 +770,7 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   kaleidoscopeDocument,
   displacementStackDocument,
   lfoDissolveDocument,
+  slitScanDocument,
+  particleFountainDocument,
+  instancedTorusDocument,
 ];

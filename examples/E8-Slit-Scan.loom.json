@@ -1,0 +1,130 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-field-scan": {
+        "id": "e-field-scan",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "scan",
+          "portId": "input"
+        }
+      },
+      "e-gradient-scan": {
+        "id": "e-gradient-scan",
+        "source": {
+          "nodeId": "gradient",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "scan",
+          "portId": "map"
+        }
+      },
+      "e-scan-out": {
+        "id": "e-scan-out",
+        "source": {
+          "nodeId": "scan",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "noise1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": false,
+          "offset": 0,
+          "period": 0.5,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 9,
+          "speed": 0.8,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -640,
+          "y": -120
+        },
+        "type": "noise"
+      },
+      "gradient": {
+        "definitionVersion": 2,
+        "id": "gradient",
+        "label": "ramp1",
+        "parameters": {
+          "type": "vertical"
+        },
+        "position": {
+          "x": -640,
+          "y": 140
+        },
+        "type": "ramp"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "scan": {
+        "definitionVersion": 1,
+        "id": "scan",
+        "label": "slitscan1",
+        "parameters": {
+          "depth": 1,
+          "frames": 48
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "slitScan"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E8 Slit Scan",
+  "projectId": "example-e8-slit-scan",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 21,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

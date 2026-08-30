@@ -1,0 +1,102 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-draw-out": {
+        "id": "e-draw-out",
+        "source": {
+          "nodeId": "draw",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-sim-draw": {
+        "id": "e-sim-draw",
+        "source": {
+          "nodeId": "sim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "draw",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "draw": {
+        "definitionVersion": 1,
+        "id": "draw",
+        "label": "renderpoints1",
+        "parameters": {
+          "blend": "additive",
+          "color": [
+            0.55,
+            0.8,
+            1,
+            1
+          ],
+          "count": 4096,
+          "sizePixels": 3
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "renderPoints"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "sim": {
+        "definitionVersion": 1,
+        "id": "sim",
+        "label": "fountain1",
+        "parameters": {
+          "capacity": 4096,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  if (ctx.frameIndex == 0u) {\n    q.id = ctx.index;\n    if (ctx.index > 0u) {\n      q.alive = 0u; /* the population grows from births alone */\n      return q;\n    }\n  }\n  if (q.id == 0u) {\n    /* The emitter: pinned at the base, feeding the fountain. */\n    q.position = vec3f(0.0, -0.85, 0.0);\n    q.velocity = vec3f(0.0);\n    q.spawnCount = 2u;\n    return q;\n  }\n  q.velocity = q.velocity + vec3f(0.0, -0.9, 0.0) * ctx.delta;\n  q.position = q.position + q.velocity * ctx.delta;\n  if (q.position.y < -1.1 || abs(q.position.x) > 1.25) {\n    q.alive = 0u;\n  }\n  return q;\n}",
+          "seed": 13,
+          "spawn": "fn spawn(child: Point, ctx: PointCtx) -> Point {\n  var q = child;\n  /* Identity is already the child's own: distinct ids, distinct draws (§V74). */\n  let angle = (pointRand(q.id, 1u) - 0.5) * 1.1;\n  let speed = 0.9 + pointRand(q.id, 2u) * 0.6;\n  q.velocity = vec3f(sin(angle) * 0.45, speed, 0.0);\n  return q;\n}"
+        },
+        "position": {
+          "x": -640,
+          "y": 0
+        },
+        "type": "pointKernelAdvanced"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E9 Particle Fountain",
+  "projectId": "example-e9-particle-fountain",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 13,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

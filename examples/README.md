@@ -20,6 +20,10 @@ happened:
 | [E4 Bloom](./E4-Bloom.md) | multi-branch converge, HDR intermediate through a per-node format override (§V51, §V6) |
 | [E5 Kaleidoscope](./E5-Kaleidoscope.md) | extend modes, per-node resolution override, cheap chain at high resolution (§V50) |
 | [E6 Displacement Stack](./E6-Displacement-Stack.md) | `data` vs `linear` space discipline; a displacement field is never colour-converted (§V56, §V57) |
+| [E7 LFO Dissolve](./E7-LFO-Dissolve.md) | a parameter animated through `driven` mode; channel liveness without edges (§V143, §V173b) |
+| [E8 Slit Scan](./E8-Slit-Scan.md) | per-pixel time from a 48-frame ring bound as one texture array (T321, §V229) |
+| [E9 Particle Fountain](./E9-Particle-Fountain.md) | GPU-side kill and spawn, deterministic compaction, indirect draw off a live count (§V74, T322/T323) |
+| [E10 Instanced Torus](./E10-Instanced-Torus.md) | lit 3D primitives on generated points via the edge payload; a driven component spins it (§V197, §V198, §V113) |
 
 ## Running them
 

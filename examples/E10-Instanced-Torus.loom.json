@@ -1,0 +1,144 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-draw-out": {
+        "id": "e-draw-out",
+        "source": {
+          "nodeId": "draw",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-points-draw": {
+        "id": "e-points-draw",
+        "source": {
+          "nodeId": "points",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "draw",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "draw": {
+        "definitionVersion": 1,
+        "id": "draw",
+        "label": "instances1",
+        "parameters": {
+          "color": [
+            1,
+            0.62,
+            0.25,
+            1
+          ],
+          "count": 1152,
+          "eye": [
+            0,
+            1.1,
+            2.6
+          ],
+          "fov": 55,
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "rotate.y": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "scale": 0.045,
+          "shape": "box"
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "renderInstances"
+      },
+      "lfo": {
+        "definitionVersion": 1,
+        "id": "lfo",
+        "label": "lfo1",
+        "parameters": {
+          "amplitude": 360,
+          "frequency": 0.1,
+          "offset": 0,
+          "phase": 0,
+          "shape": "saw"
+        },
+        "position": {
+          "x": -640,
+          "y": 220
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "points": {
+        "definitionVersion": 1,
+        "id": "points",
+        "label": "torus1",
+        "parameters": {
+          "cols": 48,
+          "count": 1152,
+          "radius": 0.85,
+          "radius2": 0.33,
+          "rows": 24
+        },
+        "position": {
+          "x": -640,
+          "y": 0
+        },
+        "type": "pointTorus"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E10 Instanced Torus",
+  "projectId": "example-e10-instanced-torus",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 5,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
