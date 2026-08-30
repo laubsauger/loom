@@ -20,7 +20,9 @@ import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
+import { ProjectSettingsDialog } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
+import type { ProjectSettings } from "@domain/types/graph.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -271,6 +273,19 @@ export function App({
    * the switch ships reachable and defaults to the behaviour the product already had;
    * §V157 keeps it forever either way, as the bisect for "is it cooking?".
    */
+  /**
+   * Project settings (T266). The dialog holds no settings state — every edit leaves
+   * through `project.setSettings`, which classifies it per field (§V178) so a target-fps
+   * change costs no recompile while a resolution change does.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const onSettingsChange = useCallback(
+    (patch: Partial<ProjectSettings>, label: string) => {
+      void runtime.bus.execute("project.setSettings", { settings: patch, label }, runtime.invocation);
+    },
+    [runtime],
+  );
+
   const [cookPolicy, setCookPolicy] = useState<CookPolicyValue>("always");
   useEffect(() => {
     backend?.setCookPolicy(cookPolicy);
@@ -652,6 +667,7 @@ export function App({
                   onNew={project.create}
                   onOpen={project.open}
                   onSave={project.save}
+                  onSettings={() => setSettingsOpen(true)}
                   onHelp={openHelp}
                 />
               }
@@ -749,6 +765,12 @@ export function App({
         />
         {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
             New and Open cannot drift into asking two different questions. */}
+        <ProjectSettingsDialog
+          settings={runtime.settings}
+          onChange={onSettingsChange}
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+        />
         <UnsavedChangesDialog
           open={project.confirm !== null}
           action={project.confirm?.action ?? ""}
@@ -782,12 +804,14 @@ function ProjectActions({
   onNew,
   onOpen,
   onSave,
+  onSettings,
   onHelp,
 }: {
   busy: boolean;
   onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
+  onSettings: () => void;
   onHelp: () => void;
 }) {
   return (
@@ -800,6 +824,13 @@ function ProjectActions({
       </Button>
       <Button aria-label="Save project" onClick={onSave} disabled={busy} data-testid="project-save">
         save
+      </Button>
+      <Button
+        aria-label="Project settings"
+        onClick={onSettings}
+        data-testid="open-project-settings"
+      >
+        settings
       </Button>
       {/* The owner looked for help in the top bar and did not find it. Same command as
           mod+/ and the palette entry — one route, three doors (§V29, §V52). */}

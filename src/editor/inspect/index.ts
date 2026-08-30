@@ -43,6 +43,8 @@ export type {
 } from "./node-info-model.ts";
 
 export type { CookPolicyValue } from "./performance-panel.tsx";
+export { ProjectSettingsDialog } from "./project-settings.tsx";
+export type { ProjectSettingsProps } from "./project-settings.tsx";
 export { PerformancePanel, PerformanceView } from "./performance-panel.tsx";
 export type { PerformancePanelProps, PerformanceViewProps } from "./performance-panel.tsx";
 
