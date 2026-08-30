@@ -1,3 +1,4 @@
+import { acceptedFunctions } from "../../domain/expressions/reference.ts";
 import { evaluateExpression, scopeFromFrame } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -34,39 +35,13 @@ export interface ExpressionSample {
   readonly value: number;
 }
 
-/** Names a whitelist might plausibly carry. Membership here proves nothing (see above). */
-export const CANDIDATE_FUNCTIONS: readonly string[] = [
-  "abs",
-  "acos",
-  "asin",
-  "atan",
-  "atan2",
-  "ceil",
-  "clamp",
-  "cos",
-  "exp",
-  "floor",
-  "fract",
-  "hypot",
-  "lerp",
-  "log",
-  "log2",
-  "max",
-  "min",
-  "mix",
-  "mod",
-  "pow",
-  "round",
-  "sign",
-  "sin",
-  "smoothstep",
-  "sqrt",
-  "step",
-  "tan",
-  "trunc",
-];
+/**
+ * The candidate list and the probe now live in `@domain/expressions/reference.ts`, so the
+ * help panel and the completion menu at the parameter cannot drift apart (§V150). Re-exported
+ * rather than re-implemented for exactly that reason.
+ */
+export { CANDIDATE_FUNCTIONS } from "../../domain/expressions/reference.ts";
 
-/** Operator forms to probe. Each shows its own arithmetic, so the row carries a value. */
 const CANDIDATE_OPERATORS: readonly string[] = [
   "1 + 2",
   "3 - 1",
@@ -107,20 +82,9 @@ export function expressionOperators(): readonly ExpressionSample[] {
   return accepted;
 }
 
-/**
- * Function names the evaluator accepts TODAY. Empty while the grammar rejects calls,
- * and that emptiness is the honest answer — §V90 would rather show no row than a row
- * for something that does not work.
- */
+/** Function names the evaluator accepts today. One probe, two consumers (§V150). */
 export function expressionFunctions(): readonly string[] {
-  const accepted: string[] = [];
-  for (const name of CANDIDATE_FUNCTIONS) {
-    // One, two and three arguments: arity is part of what is being asked, and a
-    // function that only takes two must not be judged by its one-argument call.
-    const calls = [`${name}(1)`, `${name}(1, 1)`, `${name}(1, 1, 1)`];
-    if (calls.some((call) => evaluateExpression(call).ok)) accepted.push(name);
-  }
-  return accepted;
+  return acceptedFunctions();
 }
 
 /**

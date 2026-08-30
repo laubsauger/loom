@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parseExpression } from "@domain/expressions/index.ts";
+import type { ExpressionScope } from "@domain/expressions/index.ts";
+import { applyCompletion, completionAt } from "./expression-completion.ts";
 import type { ParameterBinding, ParameterMode, ParameterSlot, ParameterValue } from "@domain/types/parameters.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { cx } from "../cx.ts";
@@ -58,6 +60,13 @@ export interface ParameterModePanelProps {
   autoFocus?: boolean;
   /** Why the active mode is not producing a value, when the resolver said so. */
   diagnostic?: RuntimeDiagnostic | null;
+  /**
+   * Names an expression may read here, with their current values (§V71). Supplying it
+   * turns on completion (T247); without it the field still works, it just cannot suggest.
+   */
+  scope?: ExpressionScope;
+  /** Node names, for completing inside `op('…')`. */
+  nodeNames?: readonly string[];
   onChange: (slot: ParameterSlot) => void;
 }
 
@@ -88,6 +97,8 @@ export function ParameterModePanel({
   disabled = false,
   autoFocus = false,
   diagnostic = null,
+  scope,
+  nodeNames,
   onChange,
 }: ParameterModePanelProps) {
   const payloadRef = useRef<HTMLInputElement>(null);
@@ -96,8 +107,21 @@ export function ParameterModePanel({
   /** Non-null while the payload field is being edited. Null means "showing the slot". */
   const [draft, setDraft] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  /** Which candidate the arrow keys have moved to. Reset whenever the menu changes. */
+  const [highlighted, setHighlighted] = useState(0);
+  const [caret, setCaret] = useState(0);
 
   const active = pendingMode ?? slot.mode;
+
+  /**
+   * Completion is offered for EXPRESSIONS only. `bind` and `driven` name a parameter or a
+   * channel, which are different vocabularies — suggesting `time` while someone types a
+   * channel name would be worse than suggesting nothing.
+   */
+  const completion = useMemo(() => {
+    if (active !== "expression" || draft === null || scope === undefined) return null;
+    return completionAt(draft, caret, scope, nodeNames ?? []);
+  }, [active, draft, caret, scope, nodeNames]);
   const text = draft ?? payloadText(slot.bindings[active]);
 
   // The document caught up with the mode the panel was holding.
@@ -197,6 +221,34 @@ export function ParameterModePanel({
             // the graph keymap.
             onKeyDown={(event) => {
               event.stopPropagation();
+              // §V150: the menu never takes Enter or Escape. Those commit and cancel the
+              // PARAMETER, and a popup that swallows them turns every expression edit into
+              // a fight with the tool. TAB accepts — which is what the owner asked for and
+              // what leaves the field's own contract untouched.
+              if (completion !== null && event.key === "Tab" && !event.shiftKey) {
+                const candidate = completion.candidates[highlighted] ?? completion.candidates[0];
+                if (candidate !== undefined) {
+                  event.preventDefault();
+                  const applied = applyCompletion(draft ?? "", completion, candidate);
+                  setDraft(applied.source);
+                  setProblem(null);
+                  setHighlighted(0);
+                  // The caret must land after the inserted text, and React will not move
+                  // it for us — the value change alone would leave it where it was.
+                  window.requestAnimationFrame(() => {
+                    payloadRef.current?.setSelectionRange(applied.caret, applied.caret);
+                    setCaret(applied.caret);
+                  });
+                  return;
+                }
+              }
+              if (completion !== null && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                event.preventDefault();
+                const count = completion.candidates.length;
+                const step = event.key === "ArrowDown" ? 1 : count - 1;
+                setHighlighted((current) => (current + step) % count);
+                return;
+              }
               if (event.key === "Enter") {
                 event.preventDefault();
                 commitPayload();
@@ -205,12 +257,49 @@ export function ParameterModePanel({
                 cancelPayload();
               }
             }}
+            onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
             onChange={(event) => {
               setDraft(event.target.value);
+              setCaret(event.target.selectionStart ?? event.target.value.length);
+              setHighlighted(0);
               setProblem(null);
             }}
             onBlur={commitPayload}
           />
+          {completion === null ? null : (
+            <ul className={styles.completion} role="listbox" aria-label="Expression completions">
+              {completion.candidates.slice(0, 8).map((candidate, index) => (
+                <li
+                  key={`${candidate.kind}:${candidate.text}`}
+                  role="option"
+                  aria-selected={index === highlighted}
+                  className={cx(
+                    styles.completionItem,
+                    index === highlighted && styles.completionItemActive,
+                  )}
+                  // Mouse-down, not click: the field's blur commits, and a click would
+                  // land after the value had already been written away.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    const applied = applyCompletion(draft ?? "", completion, candidate);
+                    setDraft(applied.source);
+                    setProblem(null);
+                    setHighlighted(0);
+                    window.requestAnimationFrame(() => {
+                      payloadRef.current?.focus();
+                      payloadRef.current?.setSelectionRange(applied.caret, applied.caret);
+                      setCaret(applied.caret);
+                    });
+                  }}
+                >
+                  <span className={styles.completionName}>{candidate.text}</span>
+                  {candidate.detail === undefined ? null : (
+                    <span className={styles.completionDetail}>{candidate.detail}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </label>
       )}
 

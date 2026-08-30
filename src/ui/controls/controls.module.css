@@ -553,6 +553,54 @@
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: var(--space-2);
+  /* The completion menu is absolutely positioned against this row. */
+  position: relative;
+}
+
+/*
+ * Expression completion (T247). Transient, on focus, over the layout — §V90's rule is that
+ * the inspector must not accumulate permanent chrome, and a menu that pushes the rows below
+ * it down every time someone types would be exactly that.
+ */
+.completion {
+  position: absolute;
+  z-index: 3;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1);
+  list-style: none;
+  max-height: calc(var(--space-6) * 5);
+  overflow-y: auto;
+  background: var(--bg-raise);
+  border: var(--border-hairline);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-raise);
+}
+
+.completionItem {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.completionItemActive {
+  background: var(--bg-active);
+}
+
+.completionName {
+  white-space: nowrap;
+}
+
+.completionDetail {
+  color: var(--text-dim);
 }
 
 .modePayloadLabel {
