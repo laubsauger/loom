@@ -41,6 +41,8 @@ import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useProject } from "./use-project.ts";
@@ -176,8 +178,27 @@ export function App({
   // T252 (§V158): one store links the preview scheduler's kept set to the compiler's
   // preview sinks — what is watched is what materializes, and nothing else renders.
   const previewSinks = useMemo(() => createPreviewSinkStore(), []);
-  const compile = useGraphCompile(runtime, capabilities, previewSinks);
+  const backend = status.kind === "ready" ? status.backend : undefined;
+
+  /**
+   * B25/T305 — the CPU half of Analyze, constructed. Before this, `createAnalyzeChannels`
+   * had exactly one construction site in the tree (its own GPU test), so an Analyze node
+   * published no channel and the image→parameter loop was not closed in the product.
+   *
+   * It is built ABOVE the compile because the compile consumes its resolver, and it reads
+   * the backend through a ref so a device-loss rebuild does not lose the latest values.
+   */
+  const analyze = useAnalyzeChannels(backend, runtime.registry);
+  const analyzeChannels = useMemo(() => [analyze.resolver], [analyze.resolver]);
+  const compile = useGraphCompile(runtime, capabilities, previewSinks, analyzeChannels);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
+
+  // The tracked set is a function of the DOCUMENT (which nodes are Analyze) and of the
+  // PLAN (whether the reduction buffer was actually allocated), so it is re-derived where
+  // both are known — after every compile, never per frame.
+  useEffect(() => {
+    analyze.track(compile.graph, compile.compiled);
+  }, [analyze, compile.graph, compile.compiled]);
 
   /**
    * `BackendStatus.lastBuild` → the hub (T41, T143).
@@ -189,7 +210,6 @@ export function App({
    * exists. Re-read on every backend report, since a rebuild after device loss is
    * exactly a structural build (§V23).
    */
-  const backend = status.kind === "ready" ? status.backend : undefined;
   useEffect(() => {
     runtime.telemetry.setBuild(backend?.status.lastBuild ?? null);
     // T278: the OBSERVED half of the readback budget. The plan half says what the graph
@@ -213,13 +233,29 @@ export function App({
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
   const pulses = usePulseFiring(runtime.bus, runtime.invocation);
+
+  /**
+   * The frame observer, shared (T214, T305).
+   *
+   * Two riders, both needing a frame and neither producing a uniform value: the pulse
+   * watcher fires on a rising edge, and Analyze queues its between-frames readback. One
+   * seam rather than two parameters, so a third rider is a line here and not another
+   * argument on the frame loop.
+   */
+  const observeFrame = useCallback(
+    (frame: FrameEvaluationInput) => {
+      pulses.observe(frame);
+      analyze.observe(frame);
+    },
+    [analyze, pulses],
+  );
   const frameLoop = useFrameLoop(
     runtime.bus,
     backend ?? null,
     compile.compiled,
     runtime.settings,
     compile.animate,
-    pulses.observe,
+    observeFrame,
   );
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):

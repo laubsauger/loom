@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "r
 import { compileGraph } from "@compiler/index.ts";
 import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { analyzeReadbacks, nodeCategories, telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
@@ -10,6 +11,9 @@ import type { PreviewSinkStore } from "./preview-sinks.ts";
 /** A stable no-op store so the hook's subscription arity never changes. */
 const EMPTY_SINKS: ReadonlyArray<ActiveSink> = [];
 const NO_STORE = { subscribe: () => () => {}, get: () => EMPTY_SINKS };
+
+/** Shared empty default, so omitting the argument does not re-key the compile memo. */
+const NO_CHANNELS: readonly ChannelResolver[] = [];
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -177,6 +181,18 @@ export function useGraphCompile(
   runtime: AppRuntime,
   capabilities: BackendCapabilities | null,
   previewSinks?: PreviewSinkStore,
+  /**
+   * Channel resolvers consulted BEFORE the graph one, in order (T305, §V144).
+   *
+   * Analyze publishes its node's name as a channel from a readback, and the graph resolver
+   * publishes value-source nodes from their parameters. They share one namespace (§V129:
+   * names are identifiers), so the merge order is the contract: an Analyze named `meter1`
+   * wins over anything else called `meter1`, because a readback is a measurement of the
+   * running program and the other is a computation about it.
+   *
+   * Each must keep a stable identity — they key the compile memo.
+   */
+  extraChannels: readonly ChannelResolver[] = NO_CHANNELS,
 ): GraphCompileResult {
   const graph = useSyncExternalStore<GraphDocument>(
     runtime.bus.store.subscribe,
@@ -205,7 +221,21 @@ export function useGraphCompile(
    * LFO is unwired on every compile of a graph that animates perfectly well, which is the
    * kind of false alarm that teaches people to ignore the panel.
    */
-  const channels = useMemo(() => graphChannelResolver(graph, runtime.registry), [graph, runtime]);
+  const channels = useMemo(() => {
+    const graphChannels = graphChannelResolver(graph, runtime.registry);
+    if (extraChannels.length === 0) return graphChannels;
+    const merged: ChannelResolver = (channel, context) => {
+      for (const resolver of extraChannels) {
+        const value = resolver(channel, context);
+        // FIRST NON-UNDEFINED WINS. `undefined` means "not mine", which is different from
+        // a channel that exists and is momentarily 0 — collapsing the two would let a
+        // silent Analyze fall through to a same-named LFO and animate from the wrong source.
+        if (value !== undefined) return value;
+      }
+      return graphChannels(channel, context);
+    };
+    return merged;
+  }, [extraChannels, graph, runtime]);
 
   /**
    * §V163's gate. `hasAnimatedParameters` is a scan of stored parameter modes — cheap,
