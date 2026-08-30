@@ -49,12 +49,31 @@ export interface LeafNode {
 
 export type LayoutNode = SplitNode | LeafNode;
 
+/**
+ * T486 (V423): how a CLOSED role comes back. Closing deletes the tab — there is no
+ * object left to carry a `home` the way a floating tab carries one — so the layout
+ * remembers a RECIPE per role: the leaf it lived in, and if that leaf itself was
+ * closed, the split that would recreate its area (which surviving leaf to split, in
+ * which direction, at what ratio, on which side).
+ */
+export type RestoreHint =
+  | { readonly kind: "leaf"; readonly leaf: PaneKey }
+  | {
+      readonly kind: "split";
+      readonly target: PaneKey;
+      readonly direction: "row" | "column";
+      readonly ratio: number;
+      readonly side: "first" | "second";
+    };
+
 export interface PaneTreeLayout {
   readonly root: LayoutNode;
   /** Tabs currently in their own window (§V97). Never also in a leaf. */
   readonly floating: readonly PaneTab[];
   /** Mint counter for keys — deterministic, persisted with the layout. */
   readonly nextKey: number;
+  /** T486: where each CLOSED role would come back. Absent = never closed. */
+  readonly homes?: Readonly<Partial<Record<PaneRole, RestoreHint>>>;
 }
 
 // ---- walking ------------------------------------------------------------------------
@@ -119,9 +138,13 @@ export function splitLeaf(
   layout: PaneTreeLayout,
   leafId: PaneKey,
   direction: "row" | "column",
+  options?: { readonly ratio?: number; readonly side?: "first" | "second" },
 ): PaneTreeLayout {
   const emptyLeafMint = mint(layout, "graph");
   const splitMint = { key: `split-${layout.nextKey + 1}`, next: layout.nextKey + 2 };
+  const fresh: LeafNode = { kind: "leaf", id: `leaf-${emptyLeafMint.key}`, tabs: [], active: null };
+  const side = options?.side ?? "second";
+  const ratio = Math.max(5, Math.min(95, options?.ratio ?? 50));
   let split = false;
   const root = mapNode(layout.root, (node) => {
     if (node.kind !== "leaf" || node.id !== leafId || split) return node;
@@ -130,9 +153,11 @@ export function splitLeaf(
       kind: "split",
       id: splitMint.key,
       direction,
-      ratio: 50,
-      first: node,
-      second: { kind: "leaf", id: `leaf-${emptyLeafMint.key}`, tabs: [], active: null },
+      ratio,
+      // T486: a restore recreates a closed area on the SIDE it lived on; a user split
+      // keeps its old shape (existing tabs first, fresh empty leaf second).
+      first: side === "second" ? node : fresh,
+      second: side === "second" ? fresh : node,
     } as SplitNode;
   });
   return split ? { ...layout, root, nextKey: splitMint.next } : layout;
@@ -164,10 +189,25 @@ export function assignRole(layout: PaneTreeLayout, key: PaneKey, role: PaneRole)
   };
 }
 
-/** Removes a tab wherever it is. An emptied leaf stays — closing the LEAF is explicit. */
+/** Removes a tab wherever it is. An emptied leaf stays — closing the LEAF is explicit.
+ *  The tab's ROLE remembers the leaf it left (T486), so the layout menu can offer it
+ *  back into the same place. */
 export function closeTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
+  const leaf = leavesOf(layout.root).find((entry) => entry.tabs.some((tab) => tab.key === key));
+  const closing = leaf?.tabs.find((tab) => tab.key === key) ?? layout.floating.find((tab) => tab.key === key);
+  const homes =
+    closing === undefined
+      ? layout.homes
+      : {
+          ...layout.homes,
+          [closing.role]:
+            leaf !== undefined
+              ? ({ kind: "leaf", leaf: leaf.id } satisfies RestoreHint)
+              : (layout.homes?.[closing.role] ?? { kind: "leaf", leaf: leavesOf(layout.root)[0]?.id ?? "" }),
+        };
   return {
     ...layout,
+    ...(homes === undefined ? {} : { homes }),
     root: mapNode(layout.root, (node) => {
       if (node.kind !== "leaf") return node;
       if (!node.tabs.some((tab) => tab.key === key)) return node;
@@ -183,13 +223,55 @@ export function closeTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
  *  are gone with it — closing a leaf is closing its panes, and the control says so. */
 export function closeLeaf(layout: PaneTreeLayout, leafId: PaneKey): PaneTreeLayout {
   if (layout.root.kind === "leaf") return layout; // the last leaf is the shell; it stays
+  /* T486: before collapsing, remember the RECIPE that would recreate this area — the
+     parent split's direction, ratio and side, anchored on a surviving leaf of the
+     sibling subtree — for every role this close takes down. */
+  let recipe: Omit<Extract<RestoreHint, { kind: "split" }>, "kind"> | undefined;
+  let closedTabs: readonly PaneTab[] = [];
+  const inspect = (node: LayoutNode): void => {
+    if (node.kind === "leaf") return;
+    const closing =
+      node.first.kind === "leaf" && node.first.id === leafId
+        ? ("first" as const)
+        : node.second.kind === "leaf" && node.second.id === leafId
+          ? ("second" as const)
+          : undefined;
+    if (closing !== undefined) {
+      const closedLeaf = (closing === "first" ? node.first : node.second) as LeafNode;
+      const sibling = closing === "first" ? node.second : node.first;
+      const anchor = leavesOf(sibling)[0];
+      if (anchor !== undefined) {
+        recipe = {
+          target: anchor.id,
+          direction: node.direction,
+          ratio: closing === "first" ? node.ratio : node.ratio,
+          side: closing,
+        };
+      }
+      closedTabs = closedLeaf.tabs;
+      return;
+    }
+    inspect(node.first);
+    inspect(node.second);
+  };
+  inspect(layout.root);
   const collapse = (node: LayoutNode): LayoutNode => {
     if (node.kind === "leaf") return node;
     if (node.first.kind === "leaf" && node.first.id === leafId) return collapse(node.second);
     if (node.second.kind === "leaf" && node.second.id === leafId) return collapse(node.first);
     return { ...node, first: collapse(node.first), second: collapse(node.second) };
   };
-  return { ...layout, root: collapse(layout.root) };
+  const stamped = recipe;
+  const homes =
+    stamped === undefined || closedTabs.length === 0
+      ? layout.homes
+      : {
+          ...layout.homes,
+          ...Object.fromEntries(
+            closedTabs.map((tab) => [tab.role, { kind: "split", ...stamped } satisfies RestoreHint]),
+          ),
+        };
+  return { ...layout, root: collapse(layout.root), ...(homes === undefined ? {} : { homes }) };
 }
 
 /** Moves a tab into a leaf (at `index`, default last); it becomes that leaf's active. */
@@ -379,6 +461,31 @@ export function shellLayoutFromTree(layout: PaneTreeLayout): ShellLayout | null 
 
 export const DEFAULT_PANE_TREE: PaneTreeLayout = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
 
+/**
+ * T486 (V423): bring a CLOSED role back. The layout menu enumerates the POSSIBILITY
+ * space — all ten roles — so an absent one is offered rather than unreachable; picking
+ * it lands here. The remembered recipe is tried first: the leaf it lived in, or the
+ * split that recreates its area (the owner's exact case — close the bottom bar, get
+ * the bottom bar back, not a tab wedged into the left dock). A stale recipe degrades
+ * to the first leaf rather than failing: restored SOMEWHERE beats restored nowhere.
+ */
+export function restoreRole(layout: PaneTreeLayout, role: PaneRole): PaneTreeLayout {
+  if (allTabs(layout).some((tab) => tab.role === role)) return layout; // present: nothing to restore
+  const hint = layout.homes?.[role];
+  if (hint?.kind === "leaf" && findLeaf(layout, hint.leaf) !== undefined) {
+    return addTab(layout, hint.leaf, role);
+  }
+  if (hint?.kind === "split" && findLeaf(layout, hint.target) !== undefined) {
+    // The recipe's ratio is the parent split's FIRST-child share, which is what
+    // splitLeaf's ratio means on either side — no inversion.
+    const split = splitLeaf(layout, hint.target, hint.direction, { ratio: hint.ratio, side: hint.side });
+    const fresh = leavesOf(split.root).find((leaf) => leaf.tabs.length === 0);
+    if (fresh !== undefined) return addTab(split, fresh.id, role);
+  }
+  const first = leavesOf(layout.root)[0];
+  return first === undefined ? layout : addTab(layout, first.id, role);
+}
+
 /** A floating tab's home: the first leaf carrying its role, else the first leaf —
  *  role-shaped, where the flat model's homes were zone-shaped. */
 export function homeLeafFor(layout: PaneTreeLayout, role: PaneRole): PaneKey | null {
@@ -416,9 +523,27 @@ export function repairPaneTree(raw: unknown): PaneTreeLayout {
   if (!Array.isArray(candidate.floating) || !candidate.floating.every(isTab)) return DEFAULT_PANE_TREE;
   const keys = allTabs(candidate).map((tab) => tab.key);
   if (new Set(keys).size !== keys.length) return DEFAULT_PANE_TREE; // duplicate identity: corrupt
+  /* T486: carry the restore hints through repair — an invalid entry is dropped alone,
+     never the arrangement with it. */
+  const homes: Partial<Record<PaneRole, RestoreHint>> = {};
+  for (const [role, hint] of Object.entries(candidate.homes ?? {})) {
+    if (typeof hint !== "object" || hint === null) continue;
+    const shaped = hint as RestoreHint;
+    if (shaped.kind === "leaf" && typeof shaped.leaf === "string") homes[role as PaneRole] = shaped;
+    else if (
+      shaped.kind === "split" &&
+      typeof shaped.target === "string" &&
+      (shaped.direction === "row" || shaped.direction === "column") &&
+      typeof shaped.ratio === "number" &&
+      (shaped.side === "first" || shaped.side === "second")
+    ) {
+      homes[role as PaneRole] = shaped;
+    }
+  }
   return {
     root: candidate.root,
     floating: candidate.floating,
     nextKey: typeof candidate.nextKey === "number" && candidate.nextKey > 0 ? candidate.nextKey : keys.length + 1,
+    ...(Object.keys(homes).length === 0 ? {} : { homes }),
   };
 }

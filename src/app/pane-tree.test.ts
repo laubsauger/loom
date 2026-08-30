@@ -15,6 +15,7 @@ import {
   leavesOf,
   moveTab,
   repairPaneTree,
+  restoreRole,
   selectTab,
   setSplitRatio,
   shellLayoutFromTree,
@@ -250,5 +251,74 @@ describe("repair degrades to the default, never a throw (V385's cousin)", () => 
     const minted = addTab(repaired, "leaf-left", "graph");
     const keys = allTabs(minted).map((tab) => tab.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("a closed role comes BACK (T486, V423)", () => {
+  it("a closed tab restores into the leaf it left", () => {
+    const tree = DEFAULT_PANE_TREE;
+    const shader = allTabs(tree).find((tab) => tab.role === "shader")!;
+    const closed = closeTab(tree, shader.key);
+    expect(allTabs(closed).some((tab) => tab.role === "shader")).toBe(false);
+
+    const restored = restoreRole(closed, "shader");
+    const bottom = findLeaf(restored, "leaf-bottom")!;
+    expect(bottom.tabs.some((tab) => tab.role === "shader")).toBe(true);
+    // The restored pane is ACTIVE — the user asked for it; showing it buried would
+    // look like the restore did nothing.
+    expect(bottom.tabs.find((tab) => tab.key === bottom.active)?.role).toBe("shader");
+  });
+
+  it("the owner's exact trap: close the bottom AREA, restore recreates the bottom bar", () => {
+    const tree = DEFAULT_PANE_TREE;
+    const closed = closeLeaf(tree, "leaf-bottom");
+    expect(findLeaf(closed, "leaf-bottom")).toBeUndefined();
+
+    const restored = restoreRole(closed, "shader");
+    // Not a tab wedged into a surviving dock: a fresh BOTTOM area, below the work
+    // area, at the ratio the closed split held.
+    const leaves = leavesOf(restored.root);
+    expect(leaves.length).toBe(5);
+    const fresh = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "shader"))!;
+    expect(fresh).toBeDefined();
+    const parent = ((): { direction: string; ratio: number; secondIsFresh: boolean } | null => {
+      let found: { direction: string; ratio: number; secondIsFresh: boolean } | null = null;
+      const walk = (node: (typeof restored)["root"]): void => {
+        if (node.kind === "leaf") return;
+        if (node.second.kind === "leaf" && node.second.id === fresh.id) {
+          found = { direction: node.direction, ratio: node.ratio, secondIsFresh: true };
+          return;
+        }
+        if (node.first.kind === "leaf" && node.first.id === fresh.id) {
+          found = { direction: node.direction, ratio: node.ratio, secondIsFresh: false };
+          return;
+        }
+        walk(node.first);
+        walk(node.second);
+      };
+      walk(restored.root);
+      return found;
+    })();
+    // A COLUMN split with the new area on the second (bottom) side, at the old 72/28.
+    expect(parent?.direction).toBe("column");
+    expect(parent?.secondIsFresh).toBe(true);
+    expect(parent?.ratio).toBe(72);
+  });
+
+  it("a stale recipe degrades to the first leaf — restored somewhere beats nowhere", () => {
+    const tree = DEFAULT_PANE_TREE;
+    const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
+    let mutated = closeTab(tree, viewer.key);
+    // The remembered leaf then closes too, invalidating the hint.
+    mutated = closeLeaf(mutated, "leaf-right");
+    const restored = restoreRole(mutated, "viewer");
+    expect(allTabs(restored).some((tab) => tab.role === "viewer")).toBe(true);
+  });
+
+  it("restoring a PRESENT role is a no-op, and repair keeps the hints", () => {
+    expect(restoreRole(DEFAULT_PANE_TREE, "graph")).toBe(DEFAULT_PANE_TREE);
+    const closed = closeLeaf(DEFAULT_PANE_TREE, "leaf-bottom");
+    const repaired = repairPaneTree(JSON.parse(JSON.stringify(closed)));
+    expect(repaired.homes?.shader?.kind).toBe("split");
   });
 });

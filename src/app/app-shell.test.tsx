@@ -14,7 +14,7 @@ import {
   readLayoutStore,
   zoneOf,
 } from "./layout-storage.ts";
-import { PANE_TREE_STORAGE_KEY } from "./pane-tree-storage.ts";
+import { PANE_TREE_STORAGE_KEY, readPaneTreeStore } from "./pane-tree-storage.ts";
 import type { ShellLayout } from "./layout-storage.ts";
 
 beforeAll(installDomStubs);
@@ -878,5 +878,49 @@ describe("V340 — a pane can change what it shows without moving", () => {
     const instances = screen.getAllByText("problems slot");
     expect(instances).toHaveLength(2);
     expect(instances.some((element) => zoneElement("right").contains(element))).toBe(true);
+  });
+});
+
+/**
+ * T486 (V423) — the owner's trap, walked in the shell: close the bottom AREA, then
+ * bring it back from the layout menu. A control that lists what is PRESENT cannot
+ * restore what is ABSENT, so the menu offers closed ROLES — the possibility space —
+ * and restoring one re-splits the area it lived in.
+ */
+describe("T486 — a closed area comes back through the layout menu", () => {
+  it("close every bottom tab's area, restore the shader from the menu, the bar returns", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
+
+    // Close the bottom area from its own menu.
+    const bottom = zoneElement("bottom");
+    await user.click(within(bottom).getByRole("button", { name: "Split or close this pane area" }));
+    await user.click(screen.getByRole("button", { name: "Close area" }));
+    expect(document.querySelector('[data-pane-leaf="leaf-bottom"]')).toBeNull();
+    expect(screen.queryByText("editor slot")).toBeNull();
+
+    // The layout menu offers the closed roles — and ONLY the closed ones.
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+    expect(screen.queryByRole("button", { name: "Restore graph" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Restore shader editor" }));
+
+    // A fresh bottom area exists again, holding a live shader editor.
+    const restored = document.querySelector('[data-pane-leaf^="leaf-"] [data-pane-role="shader"]');
+    expect(restored).not.toBeNull();
+    expect(screen.getByText("editor slot")).toBeDefined();
+    // And it persisted: a reload reads the restored arrangement back.
+    const persisted = readPaneTreeStore(storage);
+    let hasShader = false;
+    const walk = (node: (typeof persisted.current)["root"]): void => {
+      if (node.kind === "leaf") {
+        hasShader ||= node.tabs.some((tab) => tab.role === "shader");
+        return;
+      }
+      walk(node.first);
+      walk(node.second);
+    };
+    walk(persisted.current.root);
+    expect(hasShader).toBe(true);
   });
 });

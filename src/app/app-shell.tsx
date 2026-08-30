@@ -21,6 +21,7 @@ import {
   addTab,
   allTabs,
   assignRole,
+  restoreRole,
   closeLeaf,
   closeTab,
   dockTab,
@@ -274,6 +275,12 @@ export function AppShell({
     (key: PaneKey, role: PaneRole) => applyLayout((layout) => assignRole(layout, key, role)),
     [applyLayout],
   );
+  // T486 (V423): a closed role comes back through the menu — restored to the leaf it
+  // left, or by re-splitting the area it lived in (the recipe stamped at close).
+  const onRestoreRole = useCallback(
+    (role: PaneRole) => applyLayout((layout) => restoreRole(layout, role)),
+    [applyLayout],
+  );
 
   /** RESTORE a named layout: the stored ratios must win, so the groups remount. */
   const restoreLayout = useCallback(
@@ -507,6 +514,8 @@ export function AppShell({
                 store={menuStore}
                 collapsed={collapsed}
                 floating={tree.floating}
+                absentRoles={PANE_IDS.filter((role) => !tabs.some((tab) => tab.role === role))}
+                onRestoreRole={onRestoreRole}
                 presentToggles={TOGGLE_TARGETS.filter((target) =>
                   target.id.startsWith("leaf-")
                     ? findLeaf(tree, target.id) !== undefined
@@ -549,6 +558,9 @@ interface LayoutMenuProps {
   store: PaneTreeStore;
   collapsed: Record<string, boolean>;
   floating: ReadonlyArray<{ readonly key: PaneKey; readonly role: PaneRole }>;
+  /** T486 (V423): the roles with NO pane anywhere — the possibility space, not the tree. */
+  absentRoles: readonly PaneId[];
+  onRestoreRole: (role: PaneRole) => void;
   presentToggles: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   onToggle: (id: string) => void;
   onDock: (key: PaneKey) => void;
@@ -569,6 +581,8 @@ function LayoutMenu({
   store,
   collapsed,
   floating,
+  absentRoles,
+  onRestoreRole,
   presentToggles,
   onToggle,
   onDock,
@@ -709,6 +723,17 @@ function LayoutMenu({
               <span>{PANE_TITLES[tab.role]} (window)</span>
               <Button aria-label={`Dock ${PANE_TITLES[tab.role]}`} onClick={() => onDock(tab.key)}>
                 dock
+              </Button>
+            </div>
+          ))}
+          {/* T486 (V423): a control listing what is PRESENT cannot restore what is
+              ABSENT — closed roles are offered here, and grow only with the user's own
+              closes, never with the catalogue. */}
+          {absentRoles.map((role) => (
+            <div key={role} className={styles.layoutRow}>
+              <span>{PANE_TITLES[role]} (closed)</span>
+              <Button aria-label={`Restore ${PANE_TITLES[role]}`} onClick={() => onRestoreRole(role)}>
+                restore
               </Button>
             </div>
           ))}
