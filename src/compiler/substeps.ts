@@ -95,7 +95,15 @@ export function planSubstepLoops(input: SubstepPlanInput): SubstepPlan {
 
     const raw = resolved.parameters[key];
     const requested = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : 1;
-    if (requested <= 1) continue;
+    /*
+     * T425: the region is emitted even at ONE iteration, whenever the loop is real.
+     * T387 skipped count <= 1 — harmless when the count was structural — but the count
+     * is a per-frame VALUE now, and a region that appears only above 1 would make
+     * "substeps driven from 1 to 3" a STRUCTURAL change the animator must refuse
+     * (§V5). The markers cost nothing at count 1: the encoder expands the body once,
+     * exactly the un-marked order.
+     */
+    const requestedAtLeastOne = Math.max(1, requested);
     /*
      * The ceiling is already enforced where a user meets it: the manifest declares
      * `max: MAX_SUBSTEPS`, so an over-range value is REFUSED by name at parameter
@@ -105,13 +113,16 @@ export function planSubstepLoops(input: SubstepPlanInput): SubstepPlan {
      * WHOLE PLAN over a number the user has already been told about would turn one loud
      * parameter error into a black frame.
      */
-    const count = Math.min(requested, MAX_SUBSTEPS);
+    const count = Math.min(requestedAtLeastOne, MAX_SUBSTEPS);
 
     const bodyNodes = loopBody(output.nodeId, output.portId, input);
     // A Feedback node whose output nothing consumes is a one-node "loop": iterating it
     // would re-copy the same input N times, which costs N times as much and changes
     // nothing. Say so rather than charging for it.
     if (bodyNodes.size < 2) {
+      // No loop to iterate: at an ASKED count above one that is a warning; at the
+      // default single step it is simply a Feedback nobody reads back — no region.
+      if (count <= 1) continue;
       diagnostics.push(
         compilerDiagnostic(
           "warning",
@@ -228,6 +239,12 @@ export function applySubstepLoops(
         entry.passes.some((pass) => pass["kind"] === "swap" && pass["id"] !== loop.swapPassId),
     );
     if (trapped !== undefined) {
+      // T425 emits regions at count 1 too — but a loop that CANNOT reorder (a foreign
+      // swap trapped in its span) gets no region, and at one step that is not worth a
+      // warning: the user asked for nothing and loses nothing. Driving substeps on
+      // such a loop later surfaces as the animator's structural-drift warning, which
+      // names the real constraint.
+      if (loop.count <= 1) continue;
       diagnostics.push(
         compilerDiagnostic(
           "warning",

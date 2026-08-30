@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { GraphDocument, ProjectSettings } from "../../../domain/types/graph.ts";
+import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import { renderHeadless } from "../../../tests/headless/render-harness.ts";
 
@@ -217,4 +218,51 @@ describe("substeps advance the simulation N times per displayed frame (T387, §V
     expect(redOf(once.frames[0]!.bytes)).toBe(35);
     expect([...again.frames[0]!.bytes]).toEqual([...once.frames[0]!.bytes]);
   }, 120_000);
+
+  it("the count is a LIVE value: changed mid-run through updateUniforms, no recompile (T425)", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    // A per-frame count that silently pinned to its first value would pass every static
+    // rung above; only a mid-run change can see it. 4 frames at 1 + 4 frames at 3 = 16
+    // iterations, on ONE compiled plan.
+    const { compileGraph } = await import("../../../compiler/index.ts");
+    const { createNodeRegistry } = await import("../../../nodes/registry/registry.ts");
+    const { allNodeDefinitions } = await import("../../../nodes/definitions/index.ts");
+    const plan = compileGraph({
+      graph: counterGraph(1),
+      settings,
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const loopBegin = plan.passes.find((pass) => pass.kind === "loop" && pass.edge === "begin");
+    expect(loopBegin).toBeDefined();
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      const renderFrame = (frameIndex: number): void =>
+        backend.render(compiled, {
+          frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 1 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [SIZE, SIZE],
+        });
+      for (let frame = 0; frame < 4; frame += 1) renderFrame(frame);
+      // The animator's exact spelling of the push: the loop-begin pass, a count value.
+      backend.updateUniforms({ passId: (loopBegin as { id: string }).id, values: { count: 3 } });
+      for (let frame = 4; frame < 8; frame += 1) renderFrame(frame);
+      const image = await backend.readOutput("target:kernel:out");
+      expect(redOf(image.bytes)).toBe(4 * 1 + 4 * 3);
+    } finally {
+      backend.dispose();
+    }
+  }, 120_000);
+
 });

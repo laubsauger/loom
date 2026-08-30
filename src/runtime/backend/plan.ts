@@ -882,7 +882,15 @@ function loopStructureDiagnostics(passes: ReadonlyArray<PassDescriptor>): Runtim
  * up once and encoded again. A plan with no loops returns its own array, so the common case
  * pays nothing.
  */
-export function expandLoops(passes: ReadonlyArray<PassDescriptor>): ReadonlyArray<PassDescriptor> {
+export function expandLoops(
+  passes: ReadonlyArray<PassDescriptor>,
+  /**
+   * T425: the LIVE iteration count for a loop, overriding the declared one — how an
+   * audio-driven substep value reaches the encoder without a recompile. Clamped to
+   * [1, MAX_SUBSTEPS] and rounded here, so no caller can encode an unbounded frame.
+   */
+  countOf?: (loopId: string, declared: number) => number,
+): ReadonlyArray<PassDescriptor> {
   if (!passes.some((pass) => pass.kind === "loop")) return passes;
   const out: PassDescriptor[] = [];
   for (let index = 0; index < passes.length; index += 1) {
@@ -899,7 +907,10 @@ export function expandLoops(passes: ReadonlyArray<PassDescriptor>): ReadonlyArra
       end += 1;
     }
     const body = passes.slice(index + 1, Math.min(end, passes.length));
-    for (let iteration = 0; iteration < (pass.count ?? 1); iteration += 1) out.push(...body);
+    const declared = pass.count ?? 1;
+    const live = countOf === undefined ? declared : countOf(pass.loopId, declared);
+    const count = Math.min(MAX_SUBSTEPS, Math.max(1, Math.round(live)));
+    for (let iteration = 0; iteration < count; iteration += 1) out.push(...body);
     index = end;
   }
   return out;
@@ -988,11 +999,18 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
   switch (pass.kind) {
       case "swap":
         return ["swap", pass.id, pass.resourceId];
-      // T387: the COUNT belongs in the structure key. It is not a uniform value — nothing
-      // writes it into a buffer — it is how many times the region is encoded, and a plan
-      // that runs its body 4 times is a different plan from one that runs it 40 times.
+      // T387 put the COUNT in the structure key, and its argument was sound at the time:
+      // the count is not a uniform value — nothing writes it into a buffer — it is how
+      // many times the region is encoded, and a plan that runs its body 4 times looked
+      // like a different plan from one that runs it 40 times. T425 moved it OUT, because
+      // the premise changed, not the logic: the encoder now re-expands the loop against
+      // a LIVE count each frame (`expandLoops(passes, countOf)`), so the count became
+      // exactly the thing the original argument said it was not — a value something
+      // writes per frame (an audio band driving substeps is the case that forced it).
+      // The loop REGION — that the markers exist, where they sit, what they enclose —
+      // stays structural.
       case "loop":
-        return ["loop", pass.id, pass.edge, pass.loopId, pass.count ?? null];
+        return ["loop", pass.id, pass.edge, pass.loopId];
       case "effect":
         return [
           "effect",

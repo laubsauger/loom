@@ -109,3 +109,36 @@ describe("the per-frame uniform push", () => {
     expect(writes).toHaveLength(2);
   });
 });
+
+describe("a driven substeps parameter animates like a uniform (T425)", () => {
+  const loopPlan = (count: number): CompiledGraph =>
+    ({
+      passes: [
+        { kind: "loop", id: "state#loop:begin", edge: "begin", loopId: "state", count },
+        { kind: "effect", id: "kernel", shader: "", target: "t", uniforms: { level: 1 } },
+        { kind: "loop", id: "state#loop:end", edge: "end", loopId: "state" },
+      ],
+      resources: [],
+      resourceSignatures: [{ id: "t", signature: "t@1" }],
+      // T425: the count is OUT of the structure key, so two counts share one signature.
+      passSignatures: [
+        { id: "state#loop:begin", signature: "loop-begin@1" },
+        { id: "kernel", signature: "kernel@1" },
+        { id: "state#loop:end", signature: "loop-end@1" },
+      ],
+      signature: "loop-plan@1",
+    }) as unknown as CompiledGraph;
+
+  it("pushes the loop count as a one-value block when it moves, and only then", () => {
+    const { backend, writes } = recordingBackend();
+    const animator = createUniformAnimator();
+    const base = loopPlan(1);
+
+    expect(animator.push(backend, base, loopPlan(1))).toBe(0);
+    expect(animator.push(backend, base, loopPlan(12))).toBe(1);
+    expect(writes).toEqual([{ passId: "state#loop:begin", values: { count: 12 } }]);
+    // Unchanged again: nothing rewritten.
+    expect(animator.push(backend, base, loopPlan(12))).toBe(0);
+  });
+});
+

@@ -118,6 +118,12 @@ interface Program {
    * Building resources from the expanded list would build the same pipeline fifty times.
    */
   readonly encodePasses: ReadonlyArray<PassDescriptor>;
+  /**
+   * T425: live per-loop iteration counts, keyed by loopId. Seeded from the plan's
+   * declared counts; `updateUniforms` on a loop-begin pass overwrites one, and the
+   * encoder re-expands against this map every frame — a substep count is a VALUE.
+   */
+  readonly loopCounts: Map<string, number>;
   readonly compiled: CompiledExecutionPlan;
   /** Latest uniform values per pass, including live updates. Survives a device rebuild. */
   readonly liveUniforms: Map<string, UniformValues>;
@@ -675,10 +681,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
   }
 
+  /** T425: this frame's expanded order — declared counts overridden by the live map. */
+  function expandedPasses(active: Program): ReadonlyArray<PassDescriptor> {
+    return expandLoops(active.passes, (loopId, declared) => active.loopCounts.get(loopId) ?? declared);
+  }
+
   function encode(
     f: Frame,
     active: Program,
-    passes: ReadonlyArray<PassDescriptor> = active.encodePasses,
+    passes: ReadonlyArray<PassDescriptor> = expandedPasses(active),
     withPresentations = true,
   ): void {
     guard.duringFrame(() => {
@@ -791,7 +802,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     let current: PassDescriptor[] = [];
     // T387: the EXPANDED order — the offline/export path runs the same number of substeps
     // the live path does, or the same project renders two different pictures (§V47).
-    for (const pass of active.encodePasses) {
+    for (const pass of expandedPasses(active)) {
       if (pass.kind === "dispatch") {
         if (current.length > 0) {
           segments.push({ kind: "frame", passes: current });
@@ -1450,6 +1461,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         resourceDescriptors: read.resources,
         passes: read.passes,
         encodePasses: expandLoops(read.passes),
+        loopCounts: new Map(
+          read.passes.flatMap((pass) =>
+            pass.kind === "loop" && pass.edge === "begin" ? [[pass.loopId, pass.count ?? 1] as const] : [],
+          ),
+        ),
         compiled: { id, logical: plan },
         liveUniforms: new Map(planUniformValues(read.passes)),
         resources,
@@ -1716,6 +1732,21 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             "updateUniforms() called before a plan was compiled.",
           ),
         );
+        return;
+      }
+      /*
+       * T425: a loop-begin pass carries no GPU uniform block — its one value is the
+       * iteration count the encoder reads. The animator pushes it through this same
+       * entry point so a driven substeps parameter animates like any uniform (§V5).
+       */
+      const loopBegin = program.passes.find(
+        (pass) => pass.id === update.passId && pass.kind === "loop" && pass.edge === "begin",
+      );
+      if (loopBegin !== undefined && loopBegin.kind === "loop") {
+        const requested = update.values["count"];
+        if (typeof requested === "number" && Number.isFinite(requested)) {
+          program.loopCounts.set(loopBegin.loopId, requested);
+        }
         return;
       }
       if (!program.resources.passUniforms.has(update.passId)) {

@@ -110,9 +110,16 @@ export const feedbackNode: NodeDefinition = {
      * The per-node timing row sums every iteration's span (T163, §V86), so raising this
      * shows up as the frame time it actually costs rather than as a mysterious stutter.
      *
-     * `compileTime` because the count is plan STRUCTURE (§V5) — a uniform write cannot
-     * express "encode this region 40 times". The feedback pair's own identity does not
-     * depend on it, so changing it does NOT wipe the history you are watching (T143).
+     * A per-frame VALUE since T425. T387 marked it compileTime with the argument that
+     * the count is plan STRUCTURE — "a uniform write cannot express 'encode this
+     * region 40 times'" — which was true of the encoder it shipped with: the expanded
+     * pass order was precomputed once per plan. T425 changed the premise, not the
+     * logic: the encoder re-expands the loop region against a live count every frame,
+     * so a per-frame write CAN now express it, and the count moved out of the
+     * structure key. That is what lets an audio band drive it (bass multiplying
+     * iterations, clamped to MAX_SUBSTEPS at expansion, so the pattern accelerates on
+     * the beat without an unbounded frame). The pair's identity never depended on it,
+     * so neither dragging the slider nor the drive wipes the history you are watching.
      */
     substeps: {
       type: "number",
@@ -121,7 +128,6 @@ export const feedbackNode: NodeDefinition = {
       min: 1,
       max: MAX_SUBSTEPS,
       step: 1,
-      compileTime: true,
       description:
         "Iterations of this loop per displayed frame. 1 is one step per frame; a reaction-diffusion wants 10-50. Costs that many times the loop's GPU work.",
     },

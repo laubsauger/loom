@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
-import { MAX_SUBSTEPS, expandLoops, readExecutionPlan } from "../runtime/backend/plan.ts";
+import { MAX_SUBSTEPS, expandLoops, passStructureKey, readExecutionPlan } from "../runtime/backend/plan.ts";
 import type { PassDescriptor } from "../runtime/backend/plan.ts";
 import { compileGraph } from "./compile.ts";
 import { CompilerDiagnosticCode } from "./diagnostics.ts";
@@ -94,13 +94,20 @@ function kinds(passes: ReadonlyArray<PassDescriptor>): string[] {
 }
 
 describe("substeps (T387)", () => {
-  it("emits no loop markers at all when every feedback runs one step per frame", () => {
+  it("emits the loop REGION even at one step per frame — the region is structure (T425)", () => {
+    // INVERTED from T387, which asserted no markers at count 1 — harmless while the
+    // count was structural. The count is a per-frame VALUE now, and a region that only
+    // exists above 1 would make "drive substeps from 1 to 3" a STRUCTURAL change the
+    // animator must refuse (§V5). At count 1 the markers cost nothing: the expansion
+    // is exactly the un-marked order.
     const plan = compile(loopGraph(1));
     expect(plan.ok, plan.diagnostics.map((d) => d.message).join("; ")).toBe(true);
-    expect(plan.passes.filter((pass) => pass.kind === "loop")).toEqual([]);
-    // The unchanged plan is the SAME ARRAY: a graph that asks for nothing pays nothing,
-    // including the repartition.
-    expect(expandLoops(plan.passes)).toBe(plan.passes);
+    const markers = plan.passes.filter((pass) => pass.kind === "loop");
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatchObject({ edge: "begin", count: 1 });
+    const expanded = expandLoops(plan.passes);
+    expect(expanded.filter((pass) => pass.kind === "loop")).toEqual([]);
+    expect(expanded).toHaveLength(plan.passes.length - 2);
   });
 
   it("wraps exactly the kernel, the feedback write and the swap — and nothing else", () => {
@@ -137,10 +144,15 @@ describe("substeps (T387)", () => {
     expect(expanded.filter((pass) => pass === kernel)).toHaveLength(12);
   });
 
-  it("keeps the substep count in the plan signature — it is structure, not a uniform value", () => {
+  it("keeps the substep count OUT of the plan signature — a value since T425", () => {
+    // INVERTED from T387, which asserted the opposite here with a then-sound argument:
+    // the count was how many times the region is encoded, and the expansion was
+    // precomputed once per plan. T425's encoder re-expands against a live count every
+    // frame, so a substeps edit — or an audio band driving it — is a VALUE change and
+    // must not rebuild anything (§V5).
     const four = compile(loopGraph(4));
     const forty = compile(loopGraph(40));
-    expect(four.signature).not.toEqual(forty.signature);
+    expect(forty.signature).toEqual(four.signature);
 
     // …and the PAIR is untouched, so raising Substeps does not wipe the state being
     // watched (T143, §V22).
@@ -157,7 +169,9 @@ describe("substeps (T387)", () => {
     const range = plan.diagnostics.find((d) => d.code === "parameter.range");
     expect(range?.message).toContain(`above its maximum ${MAX_SUBSTEPS}`);
     expect(range?.nodeId).toBe("state");
-    expect(plan.passes.filter((pass) => pass.kind === "loop")).toEqual([]);
+    // T425: the refused value falls back to the default ONE step — and the region still
+    // exists (see the inverted count-1 test above), carrying that single step.
+    expect(plan.passes.find((pass) => pass.kind === "loop" && pass.edge === "begin")).toMatchObject({ count: 1 });
 
     // At the ceiling exactly, it runs.
     const atMax = compile(loopGraph(MAX_SUBSTEPS));
@@ -226,5 +240,31 @@ describe("substeps (T387)", () => {
     });
     expect(nested.ok).toBe(false);
     expect(nested.diagnostics.map((d) => d.message).join(" ")).toContain("do not nest");
+  });
+});
+
+describe("the substep count is a VALUE, the loop region is structure (T425)", () => {
+  const loopBegin = (count: number): PassDescriptor =>
+    ({ kind: "loop", id: "l#loop:begin", edge: "begin", loopId: "l", count } as never);
+
+  it("two loop markers differing only in count share one structure key", () => {
+    // T387's argument put the count IN the key; T425's per-frame expansion moved it out.
+    // If this fails, a driven substeps parameter recompiles at frame rate (§V5).
+    expect(passStructureKey(loopBegin(3))).toBe(passStructureKey(loopBegin(40)));
+  });
+
+  it("expandLoops takes a LIVE count over the declared one, clamped and rounded", () => {
+    const body: PassDescriptor = { kind: "effect", id: "e", shader: "s", target: "t" } as never;
+    const passes: ReadonlyArray<PassDescriptor> = [
+      loopBegin(2),
+      body,
+      { kind: "loop", id: "l#loop:end", edge: "end", loopId: "l" } as never,
+    ];
+    expect(expandLoops(passes).length).toBe(2);
+    expect(expandLoops(passes, () => 5).length).toBe(5);
+    // The clamp is the audio cap: a hot signal cannot encode an unbounded frame.
+    expect(expandLoops(passes, () => 1e9).length).toBe(MAX_SUBSTEPS);
+    expect(expandLoops(passes, () => -3).length).toBe(1);
+    expect(expandLoops(passes, () => 2.6).length).toBe(3);
   });
 });
