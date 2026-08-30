@@ -173,9 +173,33 @@ describe("compositing nodes (T40)", () => {
      * premultiplied composite would not need it.
      */
     it("composite Over with straight alpha", () => {
+      // Over is now the Porter-Duff sum with weights (1, 1-a.a) rather than a hand-written
+      // formula (T282). Algebraically identical — `Ap*1 + Bp*(1-a.a)` over
+      // `a.a*1 + b.a*(1-a.a)` IS the classic source-over — so the claim is unchanged and
+      // the weights are what to pin: they are the thing that would be wrong if someone
+      // mistyped one.
       const shader = firstPass(overNode).shader;
-      expect(shader).toContain("front.a + (back.a * (1.0 - front.a))");
+      expect(shader).toContain("porterDuff(front, back, 1.0, 1.0 - front.a)");
       expect(shader).toContain("rgb / max(outAlpha, 1e-6)");
+    });
+
+    it("gives every Porter-Duff operator its own distinct weights (T282)", () => {
+      // The failure this catches is a copy-paste: six operators built from one function
+      // differ ONLY in two numbers, so a duplicated weight pair produces two operators that
+      // silently do the same thing. Distinctness is the whole assertion.
+      const shaders = ["over", "under", "inside", "outside", "atop", "xor"].map(
+        (operation) => firstPass(compositeNode, { operation }).shader,
+      );
+      expect(new Set(shaders).size).toBe(shaders.length);
+    });
+
+    it("keeps the Porter-Duff operators out of the node library", () => {
+      // Menu-only, deliberately: a named node earns its place by being recognisable at a
+      // glance, and "Xor" is not that. Someone reaching for it already knows they want a
+      // compositing algebra.
+      for (const operation of ["under", "inside", "outside", "atop", "xor"]) {
+        expect(compositeNodes.some((node) => node.type === operation)).toBe(false);
+      }
     });
 
     it("report which input is missing rather than emitting half a pass", () => {

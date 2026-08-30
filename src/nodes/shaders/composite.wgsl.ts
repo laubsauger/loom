@@ -44,21 +44,43 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }
 
 /**
- * Source-over with straight alpha.
+ * The Porter-Duff family, as ONE function and a pair of coverage weights (T282).
  *
- * The division is what "straight" costs: the weighted sum is premultiplied, so it has to
- * be divided back out by the resulting alpha. Guarded against a fully transparent result,
- * where the colour is arbitrary anyway.
+ * Every compositing operator in the algebra is the same weighted sum of premultiplied
+ * colour — `Ap*fa + Bp*fb` — and differs only in what `fa` and `fb` are. Writing six
+ * shaders would be writing the same three lines six times and inviting exactly the drift
+ * §V140 exists to prevent; writing the weights down instead makes the whole family a table.
+ *
+ *   over     fa = 1        fb = 1 - a.a     the default: A on top of B
+ *   under    fa = 1 - b.a  fb = 1           B on top of A (Porter-Duff "dst-over")
+ *   inside   fa = b.a      fb = 0           A, clipped to where B is opaque ("src-in")
+ *   outside  fa = 1 - b.a  fb = 0           A, only where B is NOT ("src-out")
+ *   atop     fa = b.a      fb = 1 - a.a     A over B but confined to B's shape
+ *   xor      fa = 1 - b.a  fb = 1 - a.a     each where the other is not
+ *
+ * The division at the end is what STRAIGHT alpha costs: the sum is premultiplied, so it
+ * has to be divided back out. Guarded against a fully transparent result, where the colour
+ * is arbitrary anyway.
  */
-export const OVER_BLEND_EXPR = `compositeOver(front, back)`;
-
-export const OVER_FRAGMENT_WGSL = `fn compositeOver(front: vec4f, back: vec4f) -> vec4f {
-  let outAlpha = front.a + (back.a * (1.0 - front.a));
-  let rgb = (front.rgb * front.a) + ((back.rgb * back.a) * (1.0 - front.a));
+const PORTER_DUFF_WGSL = `fn porterDuff(front: vec4f, back: vec4f, fa: f32, fb: f32) -> vec4f {
+  let outAlpha = (front.a * fa) + (back.a * fb);
+  let rgb = ((front.rgb * front.a) * fa) + ((back.rgb * back.a) * fb);
   return vec4f(rgb / max(outAlpha, 1e-6), outAlpha);
+}`;
+
+/** Builds one Porter-Duff operator from its coverage weights. */
+function porterDuffFragmentWgsl(fa: string, fb: string): string {
+  return `${PORTER_DUFF_WGSL}
+
+${blendFragmentWgsl(`porterDuff(front, back, ${fa}, ${fb})`)}`;
 }
 
-${blendFragmentWgsl(OVER_BLEND_EXPR)}`;
+export const OVER_FRAGMENT_WGSL = porterDuffFragmentWgsl("1.0", "1.0 - front.a");
+export const UNDER_FRAGMENT_WGSL = porterDuffFragmentWgsl("1.0 - back.a", "1.0");
+export const INSIDE_FRAGMENT_WGSL = porterDuffFragmentWgsl("back.a", "0.0");
+export const OUTSIDE_FRAGMENT_WGSL = porterDuffFragmentWgsl("1.0 - back.a", "0.0");
+export const ATOP_FRAGMENT_WGSL = porterDuffFragmentWgsl("back.a", "1.0 - front.a");
+export const XOR_FRAGMENT_WGSL = porterDuffFragmentWgsl("1.0 - back.a", "1.0 - front.a");
 
 /**
  * The arithmetic operators work per channel across RGBA, as TD's Composite TOP does —

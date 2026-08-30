@@ -5,7 +5,12 @@ import { missingCompileResource, readCompileInputs } from "./compile-context.ts"
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
   ADD_FRAGMENT_WGSL,
+  ATOP_FRAGMENT_WGSL,
   CROSS_FRAGMENT_WGSL,
+  INSIDE_FRAGMENT_WGSL,
+  OUTSIDE_FRAGMENT_WGSL,
+  UNDER_FRAGMENT_WGSL,
+  XOR_FRAGMENT_WGSL,
   DIFFERENCE_FRAGMENT_WGSL,
   MASK_FRAGMENT_WGSL,
   MULTIPLY_FRAGMENT_WGSL,
@@ -37,6 +42,11 @@ import {
 
 const BLEND_SHADERS = {
   over: OVER_FRAGMENT_WGSL,
+  under: UNDER_FRAGMENT_WGSL,
+  inside: INSIDE_FRAGMENT_WGSL,
+  outside: OUTSIDE_FRAGMENT_WGSL,
+  atop: ATOP_FRAGMENT_WGSL,
+  xor: XOR_FRAGMENT_WGSL,
   add: ADD_FRAGMENT_WGSL,
   multiply: MULTIPLY_FRAGMENT_WGSL,
   screen: SCREEN_FRAGMENT_WGSL,
@@ -52,11 +62,27 @@ type BlendType = keyof typeof BLEND_SHADERS;
  */
 const BLEND_OPTIONS = [
   { value: "over", label: "Over" },
+  { value: "under", label: "Under" },
+  { value: "inside", label: "Inside" },
+  { value: "outside", label: "Outside" },
+  { value: "atop", label: "Atop" },
+  { value: "xor", label: "Xor" },
   { value: "add", label: "Add" },
   { value: "multiply", label: "Multiply" },
   { value: "screen", label: "Screen" },
   { value: "difference", label: "Difference" },
 ] as const;
+
+/*
+ * The Porter-Duff operators (T282) are MENU-ONLY: no `under` node, no `atop` node.
+ *
+ * The named nodes exist because a graph reading `Multiply` says what it does at a glance,
+ * and that argument only holds for operations people recognise on sight. "Xor" and
+ * "Outside" are not in that category — someone reaching for them already knows they want a
+ * compositing algebra and is choosing deliberately, which is what the menu is for. Adding
+ * six more nodes to the library would cost every user browsing time to serve the few who
+ * want them.
+ */
 
 function readBlend(params: Record<string, unknown>, fallback: BlendType): BlendType {
   const value = params["operation"];
