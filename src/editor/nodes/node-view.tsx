@@ -98,6 +98,24 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   const producesTexture = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
   const producesValue = definition?.category === "value";
   /**
+   * B65 — a POINT producer shows its splat, and until T415 it showed nothing at all.
+   *
+   * T373 built the whole pointset preview path — the compiler synthesizes a splat target
+   * when a point output becomes a preview sink, `previewCandidates` makes every pointset
+   * output a candidate keyed on port kind, the sink gating keeps it free when off — and
+   * all of it fed a slot this component never created, because `hasPreview` enumerated
+   * three kinds of output and a pointset is a fourth. No div, so `PreviewSlotBounds` had
+   * nothing to publish; no bounds, so `useNodePreviews` registered no sink; no sink, so
+   * the compiler never materialized the target. The pipeline was complete and its last
+   * millimetre was missing.
+   *
+   * §V350: T373's own gate asserted the REQUEST side (is this node a preview candidate?)
+   * — true, and blind to the display side where the break was. Keyed on the port KIND
+   * like `previewCandidates` is, so a future point producer is covered by construction
+   * and not by a list of node types somebody has to remember to extend (§V316).
+   */
+  const producesPointset = (definition?.outputs ?? []).some((port) => port.type.kind === "pointset");
+  /**
    * A declared SINK shows its picture too, and it is the picture that matters most.
    *
    * An Output node publishes no port — it CONSUMES one — so `producesTexture` is false for
@@ -107,7 +125,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    * root fills it from the compiled output like any other tile.
    */
   const presentsTexture = definition?.sink === true;
-  const hasPreview = producesTexture || producesValue || presentsTexture;
+  const hasPreview = producesTexture || producesValue || producesPointset || presentsTexture;
   const agent = snapshot.agent;
 
   return (
