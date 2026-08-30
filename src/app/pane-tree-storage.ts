@@ -1,6 +1,7 @@
 import {
   DEFAULT_LAYOUT_ID,
   LAYOUT_PRESETS,
+  isPresetLayoutId,
   LAYOUT_STORAGE_KEY,
   LAYOUT_STORE_VERSION,
   defaultLayoutStorage,
@@ -163,4 +164,112 @@ export function writePaneTreeStore(
     // Quota or a blocked store: layout persistence is a convenience, never a
     // reason to break the session (writeLayoutStore's own contract).
   }
+}
+
+// ---- named layouts over the TREE store (T436's verbs, one version up) ---------------
+
+export function allNamedPaneTrees(store: PaneTreeStore): readonly NamedPaneTree[] {
+  return [...PANE_TREE_PRESETS, ...store.layouts];
+}
+
+export function findNamedPaneTree(store: PaneTreeStore, id: string): NamedPaneTree | undefined {
+  return allNamedPaneTrees(store).find((entry) => entry.id === id);
+}
+
+/** RESTORE: the named layout becomes the live one, and the selection follows it. */
+export function applyNamedPaneTree(store: PaneTreeStore, id: string): PaneTreeStore {
+  const found = findNamedPaneTree(store, id);
+  if (found === undefined) return store;
+  return { ...store, current: found.layout, currentId: found.id };
+}
+
+function slug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Deterministic — no clock, no randomness, so a test can name the entry it just made. */
+function mintPaneTreeId(store: PaneTreeStore, name: string): string {
+  const base = `user:${slug(name) || "layout"}`;
+  const taken = new Set(store.layouts.map((entry) => entry.id));
+  if (!taken.has(base)) return base;
+  let suffix = 2;
+  while (taken.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
+}
+
+/** SAVE AS: a NEW entry holding the live arrangement — the only verb that grows the list. */
+export function savePaneTreeAs(store: PaneTreeStore, name: string): PaneTreeStore {
+  const trimmed = name.trim();
+  if (trimmed === "") return store;
+  const id = mintPaneTreeId(store, trimmed);
+  return {
+    current: store.current,
+    currentId: id,
+    layouts: [...store.layouts, { id, name: trimmed, layout: store.current }],
+  };
+}
+
+/** UPDATE: overwrite an EXISTING user layout. Never appends; a preset is code. */
+export function updateNamedPaneTree(store: PaneTreeStore, id: string): PaneTreeStore {
+  if (isPresetLayoutId(id)) return store;
+  if (!store.layouts.some((entry) => entry.id === id)) return store;
+  return {
+    ...store,
+    currentId: id,
+    layouts: store.layouts.map((entry) =>
+      entry.id === id ? { ...entry, layout: store.current } : entry,
+    ),
+  };
+}
+
+export function renameNamedPaneTree(store: PaneTreeStore, id: string, name: string): PaneTreeStore {
+  const trimmed = name.trim();
+  if (trimmed === "" || isPresetLayoutId(id)) return store;
+  if (!store.layouts.some((entry) => entry.id === id)) return store;
+  return {
+    ...store,
+    layouts: store.layouts.map((entry) => (entry.id === id ? { ...entry, name: trimmed } : entry)),
+  };
+}
+
+/** DELETE a user layout. The screen does not change; only the selection is dropped. */
+export function deleteNamedPaneTree(store: PaneTreeStore, id: string): PaneTreeStore {
+  if (isPresetLayoutId(id)) return store;
+  if (!store.layouts.some((entry) => entry.id === id)) return store;
+  return {
+    current: store.current,
+    currentId: store.currentId === id ? null : store.currentId,
+    layouts: store.layouts.filter((entry) => entry.id !== id),
+  };
+}
+
+/** Ratio noise from a live drag must not read as "modified" — compare to half a percent. */
+function normalizeTreeNode(node: PaneTreeLayout["root"]): unknown {
+  if (node.kind === "leaf") return { kind: "leaf", id: node.id, tabs: node.tabs, active: node.active };
+  return {
+    kind: "split",
+    id: node.id,
+    direction: node.direction,
+    ratio: Math.round(node.ratio * 2) / 2,
+    first: normalizeTreeNode(node.first),
+    second: normalizeTreeNode(node.second),
+  };
+}
+
+function samePaneTree(a: PaneTreeLayout, b: PaneTreeLayout): boolean {
+  return (
+    JSON.stringify({ root: normalizeTreeNode(a.root), floating: a.floating }) ===
+    JSON.stringify({ root: normalizeTreeNode(b.root), floating: b.floating })
+  );
+}
+
+/** Has the live arrangement drifted from the layout it was restored from? */
+export function isPaneTreeModified(store: PaneTreeStore): boolean {
+  if (store.currentId === null) return true;
+  const selected = findNamedPaneTree(store, store.currentId);
+  if (selected === undefined) return true;
+  return !samePaneTree(selected.layout, store.current);
 }

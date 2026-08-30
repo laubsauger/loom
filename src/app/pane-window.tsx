@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PaneId } from "./layout-storage.ts";
+import type { PaneKey } from "./pane-tree.ts";
 import { adoptPaneHost, usePaneHosts } from "./pane-portal.tsx";
 import styles from "./pane-window.module.css";
 
@@ -95,17 +95,17 @@ function copyStyles(from: Document, to: Document): void {
 const windowOwners = new Map<string, symbol>();
 
 export interface FloatingPaneProps {
-  readonly paneId: PaneId;
+  readonly paneId: PaneKey;
   readonly title: string;
   /** Called when the window goes away — by its own close button or by a blocked popup. */
-  readonly onClose: (paneId: PaneId) => void;
+  readonly onClose: (paneId: PaneKey) => void;
   /**
    * The window could not be opened at all.
    *
    * Docking the pane back is the right recovery, and on its own it is indistinguishable
    * from the click having done nothing — so whoever mounts this says WHY on screen.
    */
-  readonly onBlocked?: (paneId: PaneId) => void;
+  readonly onBlocked?: (paneId: PaneKey) => void;
   readonly open?: OpenPaneWindow;
 }
 

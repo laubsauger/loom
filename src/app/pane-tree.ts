@@ -26,6 +26,8 @@ export type PaneKey = string;
 export interface PaneTab {
   readonly key: PaneKey;
   readonly role: PaneRole;
+  /** While FLOATING: the leaf it left, so closing the window puts it back (§V97). */
+  readonly home?: PaneKey;
 }
 
 export interface SplitNode {
@@ -229,23 +231,32 @@ export function selectTab(layout: PaneTreeLayout, leafId: PaneKey, key: PaneKey)
 export function floatTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
   const tab = findTab(layout, key);
   if (tab === undefined || layout.floating.some((floating) => floating.key === key)) return layout;
+  const from = leavesOf(layout.root).find((leaf) => leaf.tabs.some((t) => t.key === key));
   const removed = closeTab(layout, key);
-  return { ...removed, floating: [...removed.floating, tab] };
+  return {
+    ...removed,
+    floating: [...removed.floating, { ...tab, ...(from === undefined ? {} : { home: from.id }) }],
+  };
 }
 
-/** Docks a floating tab into the first leaf that holds its role, else the first leaf. */
+/** Docks a floating tab: back to the leaf it left while that leaf still exists, else
+ *  the first leaf holding its role, else the first leaf — never nowhere. */
 export function dockTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
   const tab = layout.floating.find((floating) => floating.key === key);
   if (tab === undefined) return layout;
   const leaves = leavesOf(layout.root);
-  const target = leaves.find((leaf) => leaf.tabs.some((t) => t.role === tab.role)) ?? leaves[0];
+  const target =
+    (tab.home === undefined ? undefined : leaves.find((leaf) => leaf.id === tab.home)) ??
+    leaves.find((leaf) => leaf.tabs.some((t) => t.role === tab.role)) ??
+    leaves[0];
   if (target === undefined) return layout;
+  const docked: PaneTab = { key: tab.key, role: tab.role };
   const without = { ...layout, floating: layout.floating.filter((floating) => floating.key !== key) };
   let placed = false;
   const root = mapNode(without.root, (node) => {
     if (node.kind !== "leaf" || node.id !== target.id || placed) return node;
     placed = true;
-    return { ...node, tabs: [...node.tabs, tab], active: key };
+    return { ...node, tabs: [...node.tabs, docked], active: key };
   });
   return { ...without, root };
 }

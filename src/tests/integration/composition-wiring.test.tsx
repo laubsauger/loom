@@ -1143,20 +1143,20 @@ describe("help, and the two libraries that had no host", () => {
 
   it("mounts the component library beside the node library, both additive (§V93)", async () => {
     await mountApp({ status: READY });
-    const left = document.querySelector('[data-dock-zone="left"]');
+    const left = document.querySelector('[data-pane-leaf="leaf-left"]');
     if (left === null) throw new Error("no left dock");
-    expect(left.querySelector('[data-pane-tab="library"]')).not.toBeNull();
-    expect(left.querySelector('[data-pane-tab="components"]')).not.toBeNull();
+    expect(left.querySelector('[data-pane-role="library"]')).not.toBeNull();
+    expect(left.querySelector('[data-pane-role="components"]')).not.toBeNull();
   });
 
   it("keeps the example library out of that pair — OPEN is the destructive verb (§V93)", async () => {
     await mountApp({ status: READY });
-    const left = document.querySelector('[data-dock-zone="left"]');
+    const left = document.querySelector('[data-pane-leaf="leaf-left"]');
     if (left === null) throw new Error("no left dock");
     // Mounted, and reachable…
-    expect(document.querySelector('[data-pane-tab="examples"]')).not.toBeNull();
+    expect(document.querySelector('[data-pane-role="examples"]')).not.toBeNull();
     // …but never a third tab one click from two harmless ones.
-    expect(left.querySelector('[data-pane-tab="examples"]')).toBeNull();
+    expect(left.querySelector('[data-pane-role="examples"]')).toBeNull();
   });
 });
 
@@ -1183,7 +1183,7 @@ describe("a floated pane is on the same bus as the dock (§V97, T192)", () => {
     if (element === null) throw new Error("expected the seeded node on the canvas");
     await select(element);
     // The inspector is showing that node, in the dock.
-    const inspector = document.querySelector<HTMLElement>('[data-pane-host="inspector"]');
+    const inspector = document.querySelector<HTMLElement>('[data-pane-host^="inspector-"]');
     if (inspector === null) throw new Error("no inspector pane");
     expect(inspector.textContent).toContain(nodeId);
 

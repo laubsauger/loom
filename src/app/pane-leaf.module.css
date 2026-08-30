@@ -1,0 +1,123 @@
+/* Leaf chrome (T404/T406) — dock-zone's clothes, re-keyed to identities (§V17). */
+
+.leaf {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* The tab strip doubles as the pane's drag handle, so it keeps a grab cursor. */
+.strip {
+  gap: 0;
+}
+
+.tab {
+  cursor: grab;
+}
+
+.tab:active {
+  cursor: grabbing;
+}
+
+.stripTrailing {
+  margin-left: auto;
+  margin-right: var(--space-2);
+  align-self: center;
+  display: flex;
+  gap: var(--space-1);
+}
+
+.menuTrigger {
+  align-self: center;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 180px;
+}
+
+.panels {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Inactive panes stay MOUNTED and are hidden with CSS (§V96). An unmount here would
+   cost the shader editor its undo history on every tab click. */
+.panelHidden {
+  display: none;
+}
+
+/* ---- the empty leaf's role picker (T406) ---------------------------------------- */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.pickerHint {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+
+.pickerRoles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  max-width: 32rem;
+}
+
+/* ---- the drop target, shown only while a tab is being dragged ------------------- */
+
+.dropTarget {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--hairline) dashed var(--line-hot);
+  background: color-mix(in srgb, var(--bg-raise) 70%, transparent);
+  color: var(--text-dim);
+  transition: background var(--dur-instant) var(--ease-out);
+}
+
+.dropTarget:hover {
+  background: color-mix(in srgb, var(--signal) 22%, var(--bg-raise));
+  color: var(--text);
+}
+
+.dropLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+}

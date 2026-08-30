@@ -1,7 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-import type { PaneId } from "./layout-storage.ts";
+import type { PaneKey } from "./pane-tree.ts";
 import styles from "./pane-portal.module.css";
 
 /**
@@ -50,7 +50,7 @@ import styles from "./pane-portal.module.css";
 
 export interface PaneHostRegistry {
   /** The pane's permanent portal target. Created on first ask, never replaced. */
-  container(paneId: PaneId): HTMLElement;
+  container(paneId: PaneKey): HTMLElement;
 }
 
 const PaneHostContext = createContext<PaneHostRegistry | null>(null);
@@ -64,7 +64,7 @@ export function usePaneHosts(): PaneHostRegistry {
 }
 
 export function PaneHostProvider({ children }: { children: ReactNode }) {
-  const containers = useRef(new Map<PaneId, HTMLElement>());
+  const containers = useRef(new Map<PaneKey, HTMLElement>());
   const registry = useMemo<PaneHostRegistry>(
     () => ({
       container(paneId) {
@@ -89,13 +89,13 @@ export function PaneHostProvider({ children }: { children: ReactNode }) {
  * arrangement says — that is the whole trick. `AppShell` maps over `PANE_IDS`, which is a
  * constant, so the list never reorders and no pane's fiber ever moves.
  */
-export function PaneContent({ paneId, children }: { paneId: PaneId; children: ReactNode }) {
+export function PaneContent({ paneId, children }: { paneId: PaneKey; children: ReactNode }) {
   const registry = usePaneHosts();
   return createPortal(children, registry.container(paneId), paneId);
 }
 
 /** Where a pane is currently shown. Mounting one moves the pane's DOM into it. */
-export function PaneOutlet({ paneId }: { paneId: PaneId }) {
+export function PaneOutlet({ paneId }: { paneId: PaneKey }) {
   const registry = usePaneHosts();
   const slotRef = useRef<HTMLDivElement | null>(null);
 

@@ -1,89 +1,83 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
-import type { ImperativePanelGroupHandle, ImperativePanelHandle } from "react-resizable-panels";
+import type { ReactNode } from "react";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Button } from "@ui/primitives/button.tsx";
 import { PopoverContent, PopoverHeader, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
 import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import { cx } from "@ui/cx.ts";
 import { AppRuntimeContext } from "./app-context.ts";
-import { DockZoneView, DropZoneOverlay } from "./dock-zone.tsx";
+import { PaneLeafView } from "./pane-leaf.tsx";
+import type { LeafTabDescriptor, LeafTarget } from "./pane-leaf.tsx";
 import { PaneEmpty } from "./pane.tsx";
 import { PaneContent, PaneHostProvider } from "./pane-portal.tsx";
 import { FloatingPane } from "./pane-window.tsx";
 import type { OpenPaneWindow } from "./pane-window.tsx";
 import { registerLayoutCommands } from "./layout-commands.ts";
 import { TopBar } from "./top-bar.tsx";
-import type {
-  DockZone,
-  LayoutStorage,
-  LayoutStore,
-  NamedLayout,
-  PaneDescriptor,
-  PaneId,
-  ShellLayout,
-} from "./layout-storage.ts";
+import type { LayoutStorage, PaneId } from "./layout-storage.ts";
+import { PANE_IDS, PANE_TITLES, clearLegacyLayout, isPresetLayoutId } from "./layout-storage.ts";
 import {
-  DEFAULT_LAYOUT_ID,
-  DEFAULT_SHELL_LAYOUT,
-  PANE_IDS,
-  PANE_TITLES,
-  allNamedLayouts,
-  applyNamedLayout,
-  clearLegacyLayout,
-  deleteNamedLayout,
-  dockPane,
-  floatPane,
-  isLayoutModified,
-  isPresetLayoutId,
-  movePane,
-  readLayoutStore,
-  renameNamedLayout,
-  saveLayoutAs,
-  selectPane,
-  updateNamedLayout,
-  writeLayoutStore,
-} from "./layout-storage.ts";
+  addTab,
+  allTabs,
+  closeLeaf,
+  closeTab,
+  dockTab,
+  findLeaf,
+  floatTab,
+  leavesOf,
+  moveTab,
+  selectTab,
+  setSplitRatio,
+  splitLeaf,
+  DEFAULT_PANE_TREE,
+} from "./pane-tree.ts";
+import type { LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
+import {
+  allNamedPaneTrees,
+  applyNamedPaneTree,
+  deleteNamedPaneTree,
+  isPaneTreeModified,
+  readPaneTreeStore,
+  renameNamedPaneTree,
+  savePaneTreeAs,
+  updateNamedPaneTree,
+  writePaneTreeStore,
+} from "./pane-tree-storage.ts";
+import type { NamedPaneTree, PaneTreeStore } from "./pane-tree-storage.ts";
+import { DEFAULT_LAYOUT_ID } from "./layout-storage.ts";
 import styles from "./app-shell.module.css";
-
-/** The four resizable groups the shell is built from (T426). */
-type GroupKey = "columns" | "mainColumns" | "rows" | "rightRows";
-
-/** Panels the shell drives imperatively: the collapsible docks. */
-type PanelKey = "left" | "bottom" | "right" | "rightTop" | "rightBottom";
 
 const HIT_AREA = { coarse: 12, fine: 6 } as const;
 
-/** The mutable half of the arrangement — what a move changes, and what re-renders. */
-type Arrangement = Pick<ShellLayout, "zones" | "active" | "floating">;
-
-function arrangementOf(layout: ShellLayout): Arrangement {
-  return { zones: layout.zones, active: layout.active, floating: layout.floating };
-}
-
-const ZONE_NAMES: Readonly<Record<DockZone, string>> = {
-  left: "Left dock",
-  center: "Centre dock",
-  right: "Right dock top",
-  rightBottom: "Right dock bottom",
-  bottom: "Bottom dock",
-};
-
 /**
- * A dock panel collapses to nothing when there is no pane to put in it. The right
- * sidebar's own panel goes with BOTH its sections: two collapsed siblings cannot both be
- * zero in one group, so the column itself has to be the thing that closes.
+ * The canonical leaves keep their human names; anything the user split is named by what
+ * it currently shows. The three ids the layout menu's dock toggles collapse are the
+ * migration skeleton's own — a rearranged shell simply has fewer toggles, not wrong ones.
  */
-const AUTO_COLLAPSE: Readonly<Record<PanelKey, (zones: Arrangement["zones"]) => boolean>> = {
-  // Parent first: expanding a section inside a collapsed column has to find it open.
-  right: (zones) => zones.right.length === 0 && zones.rightBottom.length === 0,
-  left: (zones) => zones.left.length === 0,
-  bottom: (zones) => zones.bottom.length === 0,
-  rightTop: (zones) => zones.right.length === 0,
-  rightBottom: (zones) => zones.rightBottom.length === 0,
+const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
+  "leaf-left": "Left dock",
+  "leaf-center": "Centre dock",
+  "leaf-right": "Right dock top",
+  "leaf-rightBottom": "Right dock bottom",
+  "leaf-bottom": "Bottom dock",
 };
 
-const PANEL_KEYS = Object.keys(AUTO_COLLAPSE) as readonly PanelKey[];
+/** Panel ids the layout menu can collapse, when the current tree still has them. */
+const TOGGLE_TARGETS: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
+  { id: "leaf-left", label: "Left dock" },
+  { id: "split-right", label: "Right dock" },
+  { id: "leaf-bottom", label: "Bottom dock" },
+];
+const COLLAPSIBLE_IDS = new Set(TOGGLE_TARGETS.map((target) => target.id));
+
+/** The canonical splits keep the divider names the flat shell taught (§V19). */
+const SPLIT_HANDLE_NAMES: Readonly<Record<string, string>> = {
+  "split-columns": "Resize right dock",
+  "split-rows": "Resize bottom dock",
+  "split-main": "Resize left dock",
+  "split-right": "Resize sidebar split",
+};
 
 export interface AppShellProps {
   /** Replaces the whole top bar. Defaults to the stock transport/metrics bar. */
@@ -95,7 +89,7 @@ export interface AppShellProps {
    */
   notices?: ReactNode;
   nodeLibrary?: ReactNode;
-  /** Component catalogue. Shares the left dock with the node library — both ADD (§V93). */
+  /** Component catalogue. Shares a leaf with the node library — both ADD (§V93). */
   componentLibrary?: ReactNode;
   graphCanvas?: ReactNode;
   inspector?: ReactNode;
@@ -116,47 +110,35 @@ export interface AppShellProps {
   /** Window opener for floated panes (§V97). Injectable so a test needs no popup. */
   openPaneWindow?: OpenPaneWindow;
   /** A float that the browser refused. The pane is docked again; say so on screen. */
-  onFloatBlocked?: (paneId: PaneId) => void;
+  onFloatBlocked?: (role: PaneId) => void;
 }
 
 /**
- * App shell (§I.ui, T4, T191, T192, T193, T426, T436).
+ * App shell (§I.ui, T4, T191, T192, T193, T426, T436 — re-founded on the TREE, T404).
  *
- * ## The shape of the window (T426)
+ * ## The arrangement is a TREE of splits whose leaves are tab groups (V340)
  *
- * The RIGHT SIDEBAR is a top-level column, so it runs the full height of the window
- * instead of stopping where the bottom dock begins, and it is split horizontally: the
- * viewer on top, the inspector under it. The bottom dock spans the left and centre
- * columns — that is the half of the window it belongs to, and keeping the shader editor
- * as wide as it was is why the left dock was left alone.
- *
- * Four resizable groups, each persisted under its own name: `columns` (work area |
- * sidebar), `mainColumns` (left | centre), `rows` (centre | bottom) and `rightRows`
- * (sidebar top | sidebar bottom).
- *
- * ## The arrangement is data
- *
- * §V95: no pane is nailed to a slot. Five dock zones each hold an ordered list of panes
- * read from `ShellLayout`, and a pane moves by rewriting that list: by dragging its tab
- * onto a drop band, or from its zone's move menu, which is the keyboard path (§V19).
- * Floating a pane (§V97) takes it out of every zone and into its own window; it is still
- * the same pane, in the same React tree, on the same bus.
+ * The five fixed zones became the DEFAULT arrangement rather than the only one: the
+ * layout is a binary tree of {direction, ratio} splits, each leaf an ordered tab group,
+ * and every tab is an IDENTITY (a minted key) wearing a ROLE (what it shows). Two
+ * viewers are now a layout, not a contradiction. The v3 flat layout migrates in losslessly
+ * and projects back OUT while the tree still fits it (`pane-tree-storage.ts`, V385).
  *
  * ## Moving never remounts
  *
- * §V96: every pane's content is rendered ONCE, here, in a fixed order over the constant
- * `PANE_IDS`, and portalled into a container that never changes for the life of the app
- * (`pane-portal.tsx`). A zone renders an OUTLET, and relocation moves the container's DOM
- * into it. React therefore never sees a pane change position: CodeMirror keeps its undo
- * history, a preview keeps its tile and its presentation handle, and a focused control
- * keeps focus.
+ * §V96 unchanged, re-keyed: every tab's content renders ONCE, keyed by its pane KEY,
+ * and is portalled into a container that never changes for the life of the tab
+ * (`pane-portal.tsx`). A leaf renders OUTLETS; relocation moves DOM. React never sees a
+ * pane change position — CodeMirror keeps its undo history, a viewer keeps its canvas
+ * and its presentation handle, focus survives.
  *
  * ## §V16 and §V18
  *
- * Panel sizes live in a ref and are written straight to storage — resizing must not
- * re-render the pane tree at pointer rate. The arrangement is React state because it
- * changes once per gesture. Both are persisted to `localStorage` and NEVER to the project
- * document (§V18).
+ * Split ratios are written straight to the store ref at drag rate and NEVER re-render
+ * the pane tree; structure (splits, tabs, floating) is React state because it changes
+ * once per gesture. Both persist to `localStorage` and never the project document.
+ * Restoring a named layout bumps a generation key so every group remounts at its
+ * stored ratios — the one moment sizes must flow imperatively.
  */
 export function AppShell({
   topBar,
@@ -176,126 +158,133 @@ export function AppShell({
   openPaneWindow,
   onFloatBlocked,
 }: AppShellProps) {
-  const initial = useMemo(() => readLayoutStore(storage), [storage]);
-  const storeRef = useRef<LayoutStore>(initial);
-  const [arrangement, setArrangement] = useState<Arrangement>(() =>
-    arrangementOf(initial.current),
-  );
-  const [dragging, setDragging] = useState<PaneId | null>(null);
+  const initial = useMemo(() => readPaneTreeStore(storage), [storage]);
+  const storeRef = useRef<PaneTreeStore>(initial);
+  const [tree, setTree] = useState<PaneTreeLayout>(initial.current);
+  /** Bumped when stored ratios must win over live panel sizes (restore, reset). */
+  const [generation, setGeneration] = useState(0);
+  const [dragging, setDragging] = useState<PaneKey | null>(null);
   /**
-   * What the layout menu renders. The live layout is deliberately NOT React state
-   * (§V16 — resizing must not re-render the pane tree at pointer rate), so the menu takes
-   * a SNAPSHOT: refreshed when it opens, and again whenever a named layout changes. That
-   * is exactly the moment its "modified" mark has to be true, and never in between.
+   * What the layout menu renders. The live layout is deliberately NOT refreshed at drag
+   * rate (§V16), so the menu takes a SNAPSHOT: refreshed when it opens, and whenever a
+   * named layout changes — exactly when its "modified" mark has to be honest.
    */
-  const [menuStore, setMenuStore] = useState<LayoutStore>(initial);
+  const [menuStore, setMenuStore] = useState<PaneTreeStore>(initial);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const groups: Record<GroupKey, RefObject<ImperativePanelGroupHandle | null>> = {
-    columns: useRef<ImperativePanelGroupHandle>(null),
-    mainColumns: useRef<ImperativePanelGroupHandle>(null),
-    rows: useRef<ImperativePanelGroupHandle>(null),
-    rightRows: useRef<ImperativePanelGroupHandle>(null),
-  };
-  const panels: Record<PanelKey, RefObject<ImperativePanelHandle | null>> = {
-    left: useRef<ImperativePanelHandle>(null),
-    bottom: useRef<ImperativePanelHandle>(null),
-    right: useRef<ImperativePanelHandle>(null),
-    rightTop: useRef<ImperativePanelHandle>(null),
-    rightBottom: useRef<ImperativePanelHandle>(null),
-  };
-  const [collapsed, setCollapsed] = useState({ left: false, right: false, bottom: false });
+  const panelRefs = useRef(new Map<string, ImperativePanelHandle | null>());
 
   // The layout the shell actually mounted with is the layout we store: a repaired,
-  // MIGRATED or defaulted entry is normalised back into the store immediately, so what is
-  // on screen and what is persisted never disagree (V18). v2's key goes at the same time
-  // — one key holds the layout, and a stale one would be read again on a downgrade.
+  // MIGRATED or defaulted entry is normalised back immediately — v4 written, the v3
+  // projection written or cleared (V385), v2's key dropped — so what is on screen and
+  // what is persisted never disagree (V18).
   useEffect(() => {
-    writeLayoutStore(storeRef.current, storage);
+    writePaneTreeStore(storeRef.current, storage);
     clearLegacyLayout(storage);
   }, [storage]);
 
   const persist = useCallback(
-    (next: LayoutStore) => {
+    (next: PaneTreeStore) => {
       storeRef.current = next;
-      writeLayoutStore(next, storage);
+      writePaneTreeStore(next, storage);
     },
     [storage],
   );
 
-  const persistGroup = useCallback(
-    (key: GroupKey, sizes: number[]) => {
-      persist({ ...storeRef.current, current: { ...storeRef.current.current, [key]: sizes } });
-    },
-    [persist],
-  );
-
-  /** The one write path for an arrangement change: ref, state and storage in step. */
-  const apply = useCallback(
-    (change: (layout: ShellLayout) => ShellLayout) => {
+  /** The one write path for a STRUCTURE change: ref, state and storage in step. */
+  const applyLayout = useCallback(
+    (change: (layout: PaneTreeLayout) => PaneTreeLayout) => {
       const next = change(storeRef.current.current);
       if (next === storeRef.current.current) return;
       persist({ ...storeRef.current, current: next });
-      setArrangement(arrangementOf(next));
+      setTree(next);
     },
     [persist],
   );
 
-  const onSelect = useCallback(
-    (zone: DockZone, paneId: PaneId) => apply((layout) => selectPane(layout, zone, paneId)),
-    [apply],
-  );
-  const onMove = useCallback(
-    (paneId: PaneId, zone: DockZone) => {
-      setDragging(null);
-      apply((layout) => movePane(layout, paneId, zone));
+  /** Ratio writes skip React entirely — a divider drag must not re-render panes (§V16). */
+  const onRatio = useCallback(
+    (splitId: PaneKey, sizes: number[]) => {
+      const first = sizes[0];
+      if (first === undefined) return;
+      persist({
+        ...storeRef.current,
+        current: setSplitRatio(storeRef.current.current, splitId, first),
+      });
     },
-    [apply],
+    [persist],
+  );
+
+  /** Double-click a divider → that split returns to its default (or even) ratio. */
+  const resetSplit = useCallback(
+    (splitId: PaneKey) => {
+      const fallback = ((): number => {
+        const walk = (node: LayoutNode): number | null => {
+          if (node.kind === "leaf") return null;
+          if (node.id === splitId) return node.ratio;
+          return walk(node.first) ?? walk(node.second);
+        };
+        return walk(DEFAULT_PANE_TREE.root) ?? 50;
+      })();
+      applyLayout((layout) => setSplitRatio(layout, splitId, fallback));
+      setGeneration((current) => current + 1);
+    },
+    [applyLayout],
+  );
+
+  const onSelect = useCallback(
+    (leafId: PaneKey, key: PaneKey) => applyLayout((layout) => selectTab(layout, leafId, key)),
+    [applyLayout],
+  );
+  const onMoveTab = useCallback(
+    (key: PaneKey, leafId: PaneKey) => {
+      setDragging(null);
+      applyLayout((layout) => moveTab(layout, key, leafId));
+    },
+    [applyLayout],
   );
   const onFloat = useCallback(
-    (paneId: PaneId) => {
+    (key: PaneKey) => {
       setDragging(null);
-      apply((layout) => floatPane(layout, paneId));
+      applyLayout((layout) => floatTab(layout, key));
     },
-    [apply],
+    [applyLayout],
   );
-  const onDock = useCallback((paneId: PaneId) => apply((layout) => dockPane(layout, paneId)), [apply]);
-
-  /** Pushes a stored split onto a live group. A group that has not registered its panels
-   *  yet (pre-layout-effect, server render) throws on setLayout, so it is skipped. */
-  const pushGroup = useCallback((key: GroupKey, sizes: readonly number[]) => {
-    const group = groups[key].current;
-    if (group && group.getLayout().length === sizes.length) group.setLayout([...sizes]);
-    // `groups` holds refs created on the first render and never replaced.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** Double-click a divider → that group returns to its default split. */
-  const resetGroup = useCallback(
-    (key: GroupKey) => {
-      pushGroup(key, DEFAULT_SHELL_LAYOUT[key]);
-      persistGroup(key, [...DEFAULT_SHELL_LAYOUT[key]]);
-    },
-    [persistGroup, pushGroup],
+  const onDock = useCallback((key: PaneKey) => applyLayout((layout) => dockTab(layout, key)), [applyLayout]);
+  const onCloseTab = useCallback(
+    (key: PaneKey) => applyLayout((layout) => closeTab(layout, key)),
+    [applyLayout],
+  );
+  const onSplit = useCallback(
+    (leafId: PaneKey, direction: "row" | "column") =>
+      applyLayout((layout) => splitLeaf(layout, leafId, direction)),
+    [applyLayout],
+  );
+  const onCloseLeaf = useCallback(
+    (leafId: PaneKey) => applyLayout((layout) => closeLeaf(layout, leafId)),
+    [applyLayout],
+  );
+  const onAssignEmpty = useCallback(
+    (leafId: PaneKey, role: PaneRole) => applyLayout((layout) => addTab(layout, leafId, role)),
+    [applyLayout],
   );
 
-  /** RESTORE a named layout: sizes onto the live groups, arrangement into React. */
+  /** RESTORE a named layout: the stored ratios must win, so the groups remount. */
   const restoreLayout = useCallback(
     (id: string) => {
-      const next = applyNamedLayout(storeRef.current, id);
+      const next = applyNamedPaneTree(storeRef.current, id);
       if (next === storeRef.current) return;
       persist(next);
-      for (const key of ["columns", "mainColumns", "rows", "rightRows"] as const) {
-        pushGroup(key, next.current[key]);
-      }
-      setArrangement(arrangementOf(next.current));
+      setTree(next.current);
+      setGeneration((current) => current + 1);
       setMenuStore(next);
     },
-    [persist, pushGroup],
+    [persist],
   );
 
   const mutateNamed = useCallback(
-    (change: (store: LayoutStore) => LayoutStore) => {
+    (change: (store: PaneTreeStore) => PaneTreeStore) => {
       const next = change(storeRef.current);
       if (next === storeRef.current) return;
       persist(next);
@@ -310,18 +299,15 @@ export function AppShell({
     setMenuOpen(next);
   }, []);
 
-  const togglePane = useCallback((key: PanelKey) => {
-    const panel = panels[key].current;
+  const togglePanel = useCallback((id: string) => {
+    const panel = panelRefs.current.get(id);
     if (!panel) return;
     if (panel.isCollapsed()) panel.expand();
     else panel.collapse();
-    // `panels` holds refs created on the first render and never replaced.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // §V307 — the layout menu is opened by a COMMAND, so it reaches the palette and the
-  // shortcut editor. The runtime is optional: the shell renders standalone in tests and
-  // in Storybook-style harnesses, where there is no bus to register against.
+  // shortcut editor. The runtime is optional: the shell renders standalone in tests.
   const runtime = useContext(AppRuntimeContext);
   const bus = runtime?.bus ?? null;
   const commandHandlers = useMemo(
@@ -337,25 +323,7 @@ export function AppShell({
     };
   }, [bus, commandHandlers]);
 
-  // A zone with nothing in it is 0 tall or 0 wide. Collapsing it on the way to empty and
-  // expanding it when a pane arrives is what makes dragging the last pane out of a zone
-  // give the space back instead of leaving a titled void.
-  const emptinessRef = useRef<Partial<Record<PanelKey, boolean>>>({});
-  useEffect(() => {
-    for (const key of PANEL_KEYS) {
-      const empty = AUTO_COLLAPSE[key](arrangement.zones);
-      if (emptinessRef.current[key] === empty) continue;
-      emptinessRef.current[key] = empty;
-      const panel = panels[key].current;
-      if (panel === null) continue;
-      if (empty) panel.collapse();
-      else panel.expand();
-    }
-    // `panels` holds refs created on the first render and never replaced.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrangement.zones]);
-
-  /** Pane id → what goes in it. The only place the shell's named slots are interpreted. */
+  /** Role → what goes in it. The only place the shell's named slots are interpreted. */
   const contents = useMemo<Record<PaneId, ReactNode>>(
     () => ({
       library: nodeLibrary ?? <PaneEmpty label="No library" />,
@@ -384,48 +352,141 @@ export function AppShell({
   );
 
   const describe = useCallback(
-    (paneId: PaneId): PaneDescriptor => ({
-      id: paneId,
-      title: PANE_TITLES[paneId],
-      ...(paneId === "problems" ? { badge: problemCount } : {}),
+    (tab: { key: PaneKey; role: PaneRole }): LeafTabDescriptor => ({
+      key: tab.key,
+      role: tab.role,
+      title: PANE_TITLES[tab.role],
+      ...(tab.role === "problems" ? { badge: problemCount } : {}),
     }),
     [problemCount],
   );
 
-  const zoneView = (zone: DockZone) => (
-    <DockZoneView
-      zone={zone}
-      label={ZONE_NAMES[zone]}
-      panes={arrangement.zones[zone].map(describe)}
-      active={arrangement.active[zone]}
-      onSelect={onSelect}
-      onMove={onMove}
-      onFloat={onFloat}
-      onDragPane={setDragging}
-    />
+  const roleOptions = useMemo(
+    () => PANE_IDS.map((role) => ({ role: role as PaneRole, title: PANE_TITLES[role] })),
+    [],
   );
+
+  const leaves = leavesOf(tree.root);
+  const leafLabels = new Map<PaneKey, string>(
+    leaves.map((leaf, index) => {
+      const canonical = CANONICAL_LEAF_NAMES[leaf.id];
+      if (canonical !== undefined) return [leaf.id, canonical];
+      const activeRole = leaf.tabs.find((tab) => tab.key === leaf.active)?.role ?? leaf.tabs[0]?.role;
+      return [leaf.id, activeRole !== undefined ? `${PANE_TITLES[activeRole]} area` : `Area ${index + 1}`];
+    }),
+  );
+
+  const leafView = (leaf: Extract<LayoutNode, { kind: "leaf" }>): ReactNode => {
+    const moveTargets: LeafTarget[] = leaves
+      .filter((candidate) => candidate.id !== leaf.id)
+      .map((candidate) => ({ id: candidate.id, label: leafLabels.get(candidate.id) ?? candidate.id }));
+    return (
+      <PaneLeafView
+        leafId={leaf.id}
+        label={leafLabels.get(leaf.id) ?? leaf.id}
+        tabs={leaf.tabs.map(describe)}
+        active={leaf.active}
+        moveTargets={moveTargets}
+        dragging={dragging}
+        roleOptions={roleOptions}
+        canCloseLeaf={leaves.length > 1}
+        onSelect={onSelect}
+        onMoveTab={onMoveTab}
+        onFloat={onFloat}
+        onCloseTab={onCloseTab}
+        onDragTab={setDragging}
+        onDropTab={onMoveTab}
+        onSplit={onSplit}
+        onCloseLeaf={onCloseLeaf}
+        onAssignEmpty={onAssignEmpty}
+      />
+    );
+  };
+
+  /**
+   * The tree, recursively: a split is a PanelGroup of two Panels around a handle, a
+   * leaf is a tab group. Group keys carry the GENERATION so a layout restore remounts
+   * them at their stored ratios; a live drag never re-renders anything (§V16 — the
+   * ratio callback writes to the ref and storage only).
+   */
+  const renderNode = (node: LayoutNode): ReactNode => {
+    if (node.kind === "leaf") return leafView(node);
+    // Every panel is collapsible so a stored zero-size section (Classic's closed
+    // sidebar row) mounts cleanly; only the canonical three get menu toggles.
+    const panelProps = (child: LayoutNode) => ({
+      collapsible: true,
+      collapsedSize: 0,
+      ...(COLLAPSIBLE_IDS.has(child.id)
+        ? {
+            ref: (handle: ImperativePanelHandle | null) => void panelRefs.current.set(child.id, handle),
+            onCollapse: () => setCollapsed((prev) => ({ ...prev, [child.id]: true })),
+            onExpand: () => setCollapsed((prev) => ({ ...prev, [child.id]: false })),
+          }
+        : {}),
+    });
+    return (
+      <PanelGroup
+        key={`${node.id}:${generation}`}
+        className={node.id === "split-columns" ? styles.body : undefined}
+        direction={node.direction === "row" ? "horizontal" : "vertical"}
+        id={`group-${node.id}`}
+        onLayout={(sizes) => onRatio(node.id, sizes)}
+      >
+        <Panel
+          id={`panel-${node.id}-a`}
+          order={1}
+          minSize={8}
+          defaultSize={node.ratio}
+          {...panelProps(node.first)}
+        >
+          {renderNode(node.first)}
+        </Panel>
+        <PanelResizeHandle
+          className={cx(styles.handle, node.direction === "row" ? styles.handleV : styles.handleH)}
+          hitAreaMargins={HIT_AREA}
+          aria-label={
+            SPLIT_HANDLE_NAMES[node.id] ??
+            `Resize ${leafLabels.get(node.first.kind === "leaf" ? node.first.id : node.second.kind === "leaf" ? node.second.id : node.id) ?? "split"}`
+          }
+          onDoubleClick={() => resetSplit(node.id)}
+        />
+        <Panel
+          id={`panel-${node.id}-b`}
+          order={2}
+          minSize={8}
+          defaultSize={100 - node.ratio}
+          {...panelProps(node.second)}
+        >
+          {renderNode(node.second)}
+        </Panel>
+      </PanelGroup>
+    );
+  };
+
+  const tabs = allTabs(tree);
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
       <PaneHostProvider>
         {/*
-          Every pane's content, rendered exactly once, in a constant order (§V96). These
-          are portals: where they APPEAR is decided by whichever outlet currently owns the
-          pane's container, and moving one is a DOM operation, never a remount.
+          Every tab's content, rendered exactly once and KEYED BY ITS PANE KEY (§V96,
+          V340). These are portals: where one APPEARS is decided by whichever outlet
+          currently owns its container, and moving it is a DOM operation, never a
+          remount. Two tabs of one role are two instances, each with its own key.
         */}
-        {PANE_IDS.map((paneId) => (
-          <PaneContent key={paneId} paneId={paneId}>
-            {contents[paneId]}
+        {tabs.map((tab) => (
+          <PaneContent key={tab.key} paneId={tab.key}>
+            {contents[tab.role]}
           </PaneContent>
         ))}
 
-        {arrangement.floating.map((paneId) => (
+        {tree.floating.map((tab) => (
           <FloatingPane
-            key={paneId}
-            paneId={paneId}
-            title={PANE_TITLES[paneId]}
+            key={tab.key}
+            paneId={tab.key}
+            title={PANE_TITLES[tab.role]}
             onClose={onDock}
-            {...(onFloatBlocked === undefined ? {} : { onBlocked: onFloatBlocked })}
+            {...(onFloatBlocked === undefined ? {} : { onBlocked: () => onFloatBlocked(tab.role) })}
             {...(openPaneWindow === undefined ? {} : { open: openPaneWindow })}
           />
         ))}
@@ -439,8 +500,13 @@ export function AppShell({
                 onOpenChange={onMenuOpenChange}
                 store={menuStore}
                 collapsed={collapsed}
-                floating={arrangement.floating}
-                onToggle={togglePane}
+                floating={tree.floating}
+                presentToggles={TOGGLE_TARGETS.filter((target) =>
+                  target.id.startsWith("leaf-")
+                    ? findLeaf(tree, target.id) !== undefined
+                    : hasSplit(tree.root, target.id),
+                )}
+                onToggle={togglePanel}
                 onDock={onDock}
                 onRestore={restoreLayout}
                 onMutate={mutateNamed}
@@ -453,143 +519,10 @@ export function AppShell({
           <div className={styles.notices}>{notices}</div>
 
           <div className={styles.bodyWrap}>
-            <PanelGroup
-              className={styles.body}
-              direction="horizontal"
-              id="shell-columns"
-              ref={groups.columns}
-              onLayout={(sizes) => persistGroup("columns", sizes)}
-            >
-              <Panel id="shell-work" order={1} minSize={30} defaultSize={initial.current.columns[0]}>
-                <PanelGroup
-                  direction="vertical"
-                  id="shell-rows"
-                  ref={groups.rows}
-                  onLayout={(sizes) => persistGroup("rows", sizes)}
-                >
-                  <Panel id="shell-main" order={1} minSize={30} defaultSize={initial.current.rows[0]}>
-                    <PanelGroup
-                      direction="horizontal"
-                      id="shell-main-columns"
-                      ref={groups.mainColumns}
-                      onLayout={(sizes) => persistGroup("mainColumns", sizes)}
-                    >
-                      <Panel
-                        id="shell-left"
-                        order={1}
-                        minSize={12}
-                        defaultSize={initial.current.mainColumns[0]}
-                        collapsible
-                        collapsedSize={0}
-                        ref={panels.left}
-                        onCollapse={() => setCollapsed((prev) => ({ ...prev, left: true }))}
-                        onExpand={() => setCollapsed((prev) => ({ ...prev, left: false }))}
-                      >
-                        {zoneView("left")}
-                      </Panel>
-
-                      <PanelResizeHandle
-                        className={cx(styles.handle, styles.handleV)}
-                        hitAreaMargins={HIT_AREA}
-                        aria-label="Resize left dock"
-                        onDoubleClick={() => resetGroup("mainColumns")}
-                      />
-
-                      <Panel
-                        id="shell-center"
-                        order={2}
-                        minSize={25}
-                        defaultSize={initial.current.mainColumns[1]}
-                      >
-                        {zoneView("center")}
-                      </Panel>
-                    </PanelGroup>
-                  </Panel>
-
-                  <PanelResizeHandle
-                    className={cx(styles.handle, styles.handleH)}
-                    hitAreaMargins={HIT_AREA}
-                    aria-label="Resize bottom dock"
-                    onDoubleClick={() => resetGroup("rows")}
-                  />
-
-                  <Panel
-                    id="shell-bottom"
-                    order={2}
-                    minSize={12}
-                    defaultSize={initial.current.rows[1]}
-                    collapsible
-                    collapsedSize={0}
-                    ref={panels.bottom}
-                    onCollapse={() => setCollapsed((prev) => ({ ...prev, bottom: true }))}
-                    onExpand={() => setCollapsed((prev) => ({ ...prev, bottom: false }))}
-                  >
-                    {zoneView("bottom")}
-                  </Panel>
-                </PanelGroup>
-              </Panel>
-
-              <PanelResizeHandle
-                className={cx(styles.handle, styles.handleV)}
-                hitAreaMargins={HIT_AREA}
-                aria-label="Resize right dock"
-                onDoubleClick={() => resetGroup("columns")}
-              />
-
-              {/* T426: a TOP-LEVEL column, which is what makes it full height. */}
-              <Panel
-                id="shell-right"
-                order={2}
-                minSize={14}
-                defaultSize={initial.current.columns[1]}
-                collapsible
-                collapsedSize={0}
-                ref={panels.right}
-                onCollapse={() => setCollapsed((prev) => ({ ...prev, right: true }))}
-                onExpand={() => setCollapsed((prev) => ({ ...prev, right: false }))}
-              >
-                <PanelGroup
-                  direction="vertical"
-                  id="shell-right-rows"
-                  ref={groups.rightRows}
-                  onLayout={(sizes) => persistGroup("rightRows", sizes)}
-                >
-                  <Panel
-                    id="shell-right-top"
-                    order={1}
-                    minSize={10}
-                    defaultSize={initial.current.rightRows[0]}
-                    collapsible
-                    collapsedSize={0}
-                    ref={panels.rightTop}
-                  >
-                    {zoneView("right")}
-                  </Panel>
-
-                  <PanelResizeHandle
-                    className={cx(styles.handle, styles.handleH)}
-                    hitAreaMargins={HIT_AREA}
-                    aria-label="Resize sidebar split"
-                    onDoubleClick={() => resetGroup("rightRows")}
-                  />
-
-                  <Panel
-                    id="shell-right-bottom"
-                    order={2}
-                    minSize={10}
-                    defaultSize={initial.current.rightRows[1]}
-                    collapsible
-                    collapsedSize={0}
-                    ref={panels.rightBottom}
-                  >
-                    {zoneView("rightBottom")}
-                  </Panel>
-                </PanelGroup>
-              </Panel>
-            </PanelGroup>
-
-            {dragging === null ? null : (
-              <DropZoneOverlay onDrop={(zone) => onMove(dragging, zone)} />
+            {tree.root.kind === "leaf" ? (
+              <div className={styles.body}>{leafView(tree.root)}</div>
+            ) : (
+              renderNode(tree.root)
             )}
           </div>
         </div>
@@ -598,34 +531,31 @@ export function AppShell({
   );
 }
 
+function hasSplit(node: LayoutNode, id: string): boolean {
+  if (node.kind === "leaf") return false;
+  if (node.id === id) return true;
+  return hasSplit(node.first, id) || hasSplit(node.second, id);
+}
+
 interface LayoutMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  store: LayoutStore;
-  collapsed: { left: boolean; right: boolean; bottom: boolean };
-  floating: readonly PaneId[];
-  onToggle: (key: PanelKey) => void;
-  onDock: (paneId: PaneId) => void;
+  store: PaneTreeStore;
+  collapsed: Record<string, boolean>;
+  floating: ReadonlyArray<{ readonly key: PaneKey; readonly role: PaneRole }>;
+  presentToggles: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+  onToggle: (id: string) => void;
+  onDock: (key: PaneKey) => void;
   onRestore: (id: string) => void;
-  onMutate: (change: (store: LayoutStore) => LayoutStore) => void;
+  onMutate: (change: (store: PaneTreeStore) => PaneTreeStore) => void;
 }
 
 type Draft = { readonly mode: "save" | "rename"; readonly value: string };
 
 /**
- * The layout menu (T436, §V90).
- *
- * Named layouts and the pane controls in ONE on-demand popover rather than a permanent
- * strip of buttons. The list names the layouts and nothing else; the four verbs are a
- * single row that acts on the SELECTED one, so the menu does not grow a control per
- * layout as the list grows.
- *
- * ## UPDATE is not SAVE AS, and the menu says so
- *
- * "Save as…" is the only control that ever adds an entry, and it always asks for a name.
- * "Update" overwrites the selected layout, is only enabled while the live arrangement has
- * actually drifted from it, and is disabled outright on a preset — which is what stops a
- * layout list from turning into forty near-duplicates nobody dares delete.
+ * The layout menu (T436, §V90) — unchanged in shape, re-founded on the tree store.
+ * "Save as…" is the only control that ever adds an entry; "Update" overwrites the
+ * selected user layout and only while the live arrangement has actually drifted.
  */
 function LayoutMenu({
   open,
@@ -633,24 +563,25 @@ function LayoutMenu({
   store,
   collapsed,
   floating,
+  presentToggles,
   onToggle,
   onDock,
   onRestore,
   onMutate,
 }: LayoutMenuProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
-  const entries: readonly NamedLayout[] = allNamedLayouts(store);
+  const entries: readonly NamedPaneTree[] = allNamedPaneTrees(store);
   const selected = entries.find((entry) => entry.id === store.currentId) ?? null;
   const editable = selected !== null && !isPresetLayoutId(selected.id);
-  const modified = isLayoutModified(store);
+  const modified = isPaneTreeModified(store);
 
   const closeDraft = () => setDraft(null);
   const submitDraft = () => {
     if (draft === null) return;
     const name = draft.value.trim();
     if (name === "") return;
-    if (draft.mode === "save") onMutate((current) => saveLayoutAs(current, name));
-    else if (selected !== null) onMutate((current) => renameNamedLayout(current, selected.id, name));
+    if (draft.mode === "save") onMutate((current) => savePaneTreeAs(current, name));
+    else if (selected !== null) onMutate((current) => renameNamedPaneTree(current, selected.id, name));
     setDraft(null);
   };
 
@@ -702,7 +633,7 @@ function LayoutMenu({
                 size="md"
                 disabled={!editable || !modified}
                 onClick={() => {
-                  if (selected !== null) onMutate((current) => updateNamedLayout(current, selected.id));
+                  if (selected !== null) onMutate((current) => updateNamedPaneTree(current, selected.id));
                 }}
               >
                 Update
@@ -720,7 +651,7 @@ function LayoutMenu({
                 size="md"
                 disabled={!editable}
                 onClick={() => {
-                  if (selected !== null) onMutate((current) => deleteNamedLayout(current, selected.id));
+                  if (selected !== null) onMutate((current) => deleteNamedPaneTree(current, selected.id));
                 }}
               >
                 Delete
@@ -755,23 +686,27 @@ function LayoutMenu({
           )}
 
           <PopoverHeader>panes</PopoverHeader>
-          {(["left", "right", "bottom"] as const).map((key) => (
-            <PaneToggle
-              key={key}
-              label={key === "right" ? "Right dock" : ZONE_NAMES[key]}
-              hidden={collapsed[key]}
-              onToggle={() => onToggle(key)}
-            />
+          {presentToggles.map((target) => (
+            <div key={target.id} className={styles.layoutRow}>
+              <span>{target.label}</span>
+              <Button
+                aria-label={target.label}
+                aria-pressed={collapsed[target.id] !== true}
+                onClick={() => onToggle(target.id)}
+              >
+                {collapsed[target.id] === true ? "hidden" : "shown"}
+              </Button>
+            </div>
           ))}
-          {floating.map((paneId) => (
-            <div key={paneId} className={styles.layoutRow}>
-              <span>{PANE_TITLES[paneId]} (window)</span>
-              <Button aria-label={`Dock ${PANE_TITLES[paneId]}`} onClick={() => onDock(paneId)}>
+          {floating.map((tab) => (
+            <div key={tab.key} className={styles.layoutRow}>
+              <span>{PANE_TITLES[tab.role]} (window)</span>
+              <Button aria-label={`Dock ${PANE_TITLES[tab.role]}`} onClick={() => onDock(tab.key)}>
                 dock
               </Button>
             </div>
           ))}
-          <p className={styles.layoutHint}>Drag a tab onto a dock, or use its move menu.</p>
+          <p className={styles.layoutHint}>Drag a tab onto another area, or use its move menu.</p>
           <p className={styles.layoutHint}>
             Drag a divider to resize, double-click it to reset. A focused divider resizes with the
             arrow keys and collapses with Enter.
@@ -779,24 +714,5 @@ function LayoutMenu({
         </div>
       </PopoverContent>
     </PopoverRoot>
-  );
-}
-
-function PaneToggle({
-  label,
-  hidden,
-  onToggle,
-}: {
-  label: string;
-  hidden: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className={styles.layoutRow}>
-      <span>{label}</span>
-      <Button aria-label={label} aria-pressed={!hidden} onClick={onToggle}>
-        {hidden ? "hidden" : "shown"}
-      </Button>
-    </div>
   );
 }
