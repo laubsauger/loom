@@ -117,7 +117,13 @@ describe("T308 fail-safe — a wrong `valuesOnly` costs a recompile, never a wro
 
     const view = renderHook(
       ({ plan, valuesOnly }: { plan: CompiledGraph; valuesOnly: boolean }) =>
-        useFrameLoop(bus(), backend, plan, DEFAULT_PROJECT_SETTINGS, null, null, valuesOnly),
+        useFrameLoop({
+          bus: bus(),
+          backend,
+          compiled: plan,
+          settings: DEFAULT_PROJECT_SETTINGS,
+          valuesOnly,
+        }),
       { initialProps: { plan: structural, valuesOnly: false } },
     );
     await act(async () => {});
@@ -144,7 +150,13 @@ describe("T308 fail-safe — a wrong `valuesOnly` costs a recompile, never a wro
 
     const view = renderHook(
       ({ plan, valuesOnly }: { plan: CompiledGraph; valuesOnly: boolean }) =>
-        useFrameLoop(bus(), backend, plan, DEFAULT_PROJECT_SETTINGS, null, null, valuesOnly),
+        useFrameLoop({
+          bus: bus(),
+          backend,
+          compiled: plan,
+          settings: DEFAULT_PROJECT_SETTINGS,
+          valuesOnly,
+        }),
       { initialProps: { plan: first, valuesOnly: false } },
     );
     await act(async () => {});

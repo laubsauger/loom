@@ -251,15 +251,15 @@ export function App({
     },
     [analyze, pulses],
   );
-  const frameLoop = useFrameLoop(
-    runtime.bus,
-    backend ?? null,
-    compile.compiled,
-    runtime.settings,
-    compile.animate,
-    observeFrame,
-    compile.valuesOnly,
-  );
+  const frameLoop = useFrameLoop({
+    bus: runtime.bus,
+    backend: backend ?? null,
+    compiled: compile.compiled,
+    settings: runtime.settings,
+    animate: compile.animate,
+    observe: observeFrame,
+    valuesOnly: compile.valuesOnly,
+  });
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
   // the button and the hotkey cannot drift into two different code paths for one action.

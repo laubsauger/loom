@@ -58,30 +58,56 @@ export interface FrameLoopResult {
  */
 export type AnimateFrame = (frame: FrameEvaluationInput) => CompiledGraph | null;
 
-export function useFrameLoop(
-  bus: ShaderloomBus,
-  backend: ShaderloomBackend | null | undefined,
-  compiled: CompiledGraph | null,
-  settings: ProjectSettings,
-  animate: AnimateFrame | null = null,
+/**
+ * Everything the frame loop is given (T319, §V221).
+ *
+ * An OBJECT, not positions, and the reason is recorded rather than stylistic. This grew to
+ * seven positional parameters — three optional, two callbacks and a boolean among them —
+ * and a parallel change inserted `valuesOnly` ahead of `observe`. `tsc` caught that one
+ * only because a boolean and a function are different types; a SECOND callback in the same
+ * position would have compiled and silently swapped the riders.
+ *
+ * "Silently" is the load-bearing word (§V222). Every rider here fails quiet: an animated
+ * push that stops pushing looks like a static graph, a pulse that never fires looks like a
+ * pulse nobody triggered, and a value chain that stops evaluating looks like a chain with
+ * nothing connected. None of them throws, none of them reports, and each is a rider the
+ * seam tests (`analyze-loop.test.tsx`) have to drive a real frame to observe at all.
+ *
+ * Named fields make the swap impossible instead of unlikely.
+ */
+export interface FrameLoopOptions {
+  readonly bus: ShaderloomBus;
+  readonly backend: ShaderloomBackend | null | undefined;
+  readonly compiled: CompiledGraph | null;
+  readonly settings: ProjectSettings;
+  /** Re-resolves the graph at a frame. Null when nothing animates (T259, §V163). */
+  readonly animate?: AnimateFrame | null | undefined;
   /**
    * Called with every rendered frame, after the plan has been encoded (T214, §V125).
    *
-   * The expression-fired pulse watcher rides here. It is a separate seam from `animate`
-   * on purpose: `animate` answers "what are this frame's uniform values", and a pulse
-   * produces no value — it produces an EVENT, once, on a rising edge. Folding the two
-   * together would have made a pulse look like a parameter that happens to fire, which
-   * is precisely the confusion §V124 exists to prevent.
+   * The expression-fired pulse watcher rides here, and so does the Analyze readback
+   * (T305). It is a separate seam from `animate` on purpose: `animate` answers "what are
+   * this frame's uniform values", and a pulse produces no value — it produces an EVENT,
+   * once, on a rising edge. Folding the two together would have made a pulse look like a
+   * parameter that happens to fire, which is precisely the confusion §V124 exists to
+   * prevent.
    */
-  observe: ((frame: FrameEvaluationInput) => void) | null = null,
+  readonly observe?: ((frame: FrameEvaluationInput) => void) | null | undefined;
   /**
    * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
    *
    * A SUGGESTION, never an instruction — the compile effect below verifies it against the
    * real plans before acting on it, and falls back to a full compile when they disagree.
    */
-  valuesOnly = false,
-): FrameLoopResult {
+  readonly valuesOnly?: boolean | undefined;
+}
+
+export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
+  const { bus, backend, compiled, settings } = options;
+  const animate = options.animate ?? null;
+  const observe = options.observe ?? null;
+  const valuesOnly = options.valuesOnly ?? false;
+
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
   const driverRef = useRef<FrameDriver | null>(null);
