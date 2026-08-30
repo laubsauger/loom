@@ -95,14 +95,17 @@ describe("preview system", () => {
     expect(new Set(destinations).size).toBe(30);
   });
 
-  it("does not rebuild the program while the graph zooms (§V142)", () => {
-    // B13: the tile used to be sized from the on-screen rect, so a zoom gesture crossed
-    // ladder steps and reinstalled the program — and the host rebuilds every tile when it
-    // does, which is why all the previews went black together. `area` is the node's own
-    // preview area and does not change with the camera, so neither does the program.
+  it("zoom rebuilds are QUANTISED to ladder steps with hysteresis, never per tick (§V142, T490)", () => {
+    // B13's rule, as T490 amended it: zoom MAY buy a bigger tile now (the owner zooms in
+    // to inspect), but only when the ask crosses a ladder step — and a granted step is
+    // KEPT until the ask falls a full rung below it, so boundary jitter costs nothing.
+    // The host still rebuilds every tile when one changes, which is why this counts
+    // programs across a whole sweep instead of forbidding change outright.
     const host = fakeHost();
-    const system = createPreviewSystem({ host, capacity: 8 });
-    for (const zoom of [0.25, 0.4, 0.75, 1, 1.5, 2.5]) {
+    // 16 tiles of budget: enough pool for one preview to reach the top rung — the
+    // production node-preview capacity is 48; 8 would stop the sweep at 864.
+    const system = createPreviewSystem({ host, capacity: 16 });
+    const at = (zoom: number) =>
       system.update({
         requests: [
           request("a", {
@@ -115,8 +118,16 @@ describe("preview system", () => {
         previewFps: 15,
         previewLongEdge: 192,
       });
-    }
+    // Zoomed OUT: the node-area floor rules and nothing reallocates, exactly as before.
+    for (const zoom of [0.25, 0.4, 0.75, 1]) at(zoom);
     expect(host.programs).toHaveLength(1);
+    // Zooming IN crosses three ladder steps (576, 864, 1152) across the whole sweep:
+    // three rebuilds, not one per tick — six updates, four programs total.
+    for (const zoom of [1.5, 1.6, 2.5, 2.4, 2.5, 2.45]) at(zoom);
+    expect(host.programs).toHaveLength(4);
+    // Hysteresis on the way back: easing off within a rung keeps the granted step.
+    for (const zoom of [2.2, 2.0, 2.2]) at(zoom);
+    expect(host.programs).toHaveLength(4);
   });
 
   it("keeps a tile allocated for a preview that scrolled off screen (§V142)", () => {

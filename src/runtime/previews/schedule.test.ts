@@ -210,21 +210,51 @@ describe("tile sizing", () => {
     expect(at2.active[0]?.tileSize[0]).toBe(384);
   });
 
-  it("caps the tile however large the node's preview area is", () => {
+  it("a huge preview area sharpens WITHIN the budget, never past the boost cap (T490)", () => {
+    // The old contract capped everyone at 2× previewLongEdge; the owner resizes nodes to
+    // inspect. A lone huge preview may now take what the pixel pool affords — here a
+    // 4-tile pool grants 576, one rung up — and a pool large enough grants up to the
+    // stated boost ceiling, never beyond it.
     const scheduler = createPreviewScheduler({ capacity: 4 });
     const schedule = scheduler.select(
       [request("a", { area: { width: 480, height: 270 } })],
       input(0, { devicePixelRatio: 2 }),
     );
-    expect(schedule.active[0]?.tileSize[0]).toBe(384);
+    expect(schedule.active[0]?.tileSize[0]).toBe(576);
+    const wide = createPreviewScheduler({ capacity: 48 });
+    const roomy = wide.select(
+      [request("a", { area: { width: 2000, height: 1100 } })],
+      input(0, { devicePixelRatio: 2 }),
+    );
+    // 2000 CSS × dpr2 asks 4000; the honest ceiling is 6 × previewLongEdge = 1152 (V328).
+    expect(roomy.active[0]?.tileSize[0]).toBe(1152);
   });
 
-  it("sizes from the node's preview area, so the camera cannot resize a tile (§V142)", () => {
-    // B13: tiles sized from the on-screen rect are reallocated as the user zooms, and a
-    // reallocation blanks every preview at once. `rect` moves and scales with the viewport
-    // here; `area` — the slot inside the node's own box — does not, and neither may the tile.
-    const scheduler = createPreviewScheduler({ capacity: 4 });
-    const sizes = [0.4, 0.75, 1, 1.6, 2.5].map((zoom) => {
+  it("forty on screen: everyone gets the guaranteed base, nobody is suspended for sharpness (T490)", () => {
+    const scheduler = createPreviewScheduler({ capacity: 48 });
+    const zoomedIn = Array.from({ length: 40 }, (_unused, index) =>
+      request(`node-${index}`, {
+        rect: { x: (index % 8) * 60, y: Math.floor(index / 8) * 60, width: 480, height: 270 },
+      }),
+    );
+    const schedule = scheduler.select(zoomedIn, input(0, { devicePixelRatio: 2 }));
+    expect(schedule.active).toHaveLength(40);
+    // The pool cannot give forty previews 960-px asks; each falls back a rung at a time
+    // and the tail lands on the base — but every one keeps a tile.
+    const sizes = schedule.active.map((entry) => entry.tileSize[0]);
+    expect(Math.min(...sizes)).toBe(384);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(1152);
+    // The pool holds absolutely: bases are reserved, boosts spend only the headroom.
+    const spent = sizes.reduce((sum, size) => sum + size * size, 0);
+    expect(spent).toBeLessThanOrEqual(48 * 384 * 384);
+  });
+
+  it("zoomed OUT the camera cannot resize a tile; zoomed IN it may, quantised (§V142, T490)", () => {
+    // B13's rule survives where it mattered: at or below 1:1 the node-area floor rules and
+    // the camera reallocates nothing. Above it, T490's budget lets the on-screen ask buy a
+    // LADDER STEP — the amendment the owner requested, still never a per-tick size.
+    const scheduler = createPreviewScheduler({ capacity: 16 });
+    const at = (zoom: number) => {
       scheduler.reset();
       const schedule = scheduler.select(
         [
@@ -234,9 +264,12 @@ describe("tile sizing", () => {
         ],
         input(0, { devicePixelRatio: 2 }),
       );
-      return schedule.active[0]?.tileSize.join("x");
-    });
-    expect(new Set(sizes).size).toBe(1);
+      return schedule.active[0]?.tileSize.join("x") ?? "";
+    };
+    expect(new Set([0.25, 0.4, 0.75, 1].map(at)).size).toBe(1);
+    const zoomedIn = [1.6, 2.5].map(at);
+    expect(new Set(zoomedIn).size).toBe(2);
+    for (const size of zoomedIn) expect(Number(size.split("x")[0])).toBeGreaterThan(384);
   });
 
   it("keeps the source aspect ratio", () => {

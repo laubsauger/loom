@@ -1,7 +1,9 @@
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import {
+  MAX_TILE_BOOST_SCALE,
   MAX_TILE_SCALE,
   MIN_ONSCREEN_LONG_EDGE_CSS,
+  ladderSnap,
   rectArea,
   rectLongEdge,
   rectsIntersect,
@@ -103,20 +105,41 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
   const capacity = Math.max(0, Math.floor(options.capacity));
   /** Last time each preview's tile content was rendered, in transport seconds. */
   const lastRefresh = new Map<string, number>();
+  /**
+   * T490: the ladder step each kept preview was last GRANTED, in device px.
+   *
+   * The hysteresis state (V310): a tile-size change is structural — the host rebuilds the
+   * preview program and every tile blanks for a frame (B13/§V142) — so a zoom gesture must
+   * cross ladder steps deliberately, never jitter across a boundary. A granted step is kept
+   * while it still covers what the screen asks (growing is immediate, snap-up semantics) and
+   * shrinks only after the ask has fallen a FULL rung below it.
+   */
+  const grantedStep = new Map<string, number>();
 
   return {
     capacity,
 
     select(requests: ReadonlyArray<PreviewRequest>, input: ScheduleInput): PreviewSchedule {
-      const maxLongEdge = Math.max(1, input.previewLongEdge) * MAX_TILE_SCALE;
-      // Sized from the node's preview area, so it is the same number whether the preview is
-      // drawing this frame or only holding its tile — and the same number at any zoom (§V142).
-      const tileFor = (request: PreviewRequest): readonly [number, number] =>
+      const baseCap = Math.max(1, input.previewLongEdge) * MAX_TILE_SCALE;
+      const boostCap = Math.max(1, input.previewLongEdge) * MAX_TILE_BOOST_SCALE;
+      const dpr = Math.max(input.devicePixelRatio, 1);
+      /**
+       * T490's budget: the pixel pool the base cap always implied — capacity tiles at the
+       * base size — now ALLOCATED instead of divided evenly. Fewer previews on screen (the
+       * zoomed-in case, since offscreen ones are suspended above) means each may take a
+       * bigger tile; forty on screen means everyone gets the guaranteed base. Accounted in
+       * long-edge squares, which over-counts non-square tiles — conservative on purpose.
+       */
+      const pixelBudget = capacity * baseCap * baseCap;
+
+      // The sizing FLOOR: the node's own preview area, same at any zoom (§V142's rule for
+      // everything outside the budgeted path).
+      const baseTileFor = (request: PreviewRequest): readonly [number, number] =>
         tileSizeFor({
           sourceSize: request.source.size,
           areaLongEdge: Math.max(request.area.width, request.area.height),
           devicePixelRatio: input.devicePixelRatio,
-          maxLongEdge,
+          maxLongEdge: baseCap,
         });
 
       const suspended: SuspendedPreview[] = [];
@@ -125,7 +148,7 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
       for (const request of requests) {
         const reason = suspensionReason(request, input);
         if (reason === null) eligible.push(request);
-        else suspended.push({ ref: request.ref, request, tileSize: tileFor(request), reason });
+        else suspended.push({ ref: request.ref, request, tileSize: baseTileFor(request), reason });
       }
 
       eligible.sort(budgetOrder);
@@ -134,10 +157,67 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         suspended.push({
           ref: overflow.ref,
           request: overflow,
-          tileSize: tileFor(overflow),
+          tileSize: baseTileFor(overflow),
           reason: "budget",
         });
       }
+
+      // ---- T490: allocate the pixel budget over the kept set, in the SAME priority order —
+      // the atlas keeps the head of the list, so the head gets first claim on sharpness too.
+      const stepFor = (request: PreviewRequest): number => {
+        const key = previewKey(request.ref);
+        const areaAsk = Math.max(request.area.width, request.area.height) * dpr;
+        // What the SCREEN asks: the on-screen rect carries the zoom. Never above the stated
+        // boost ceiling, never below the area floor.
+        const ask = Math.min(Math.max(areaAsk, rectLongEdge(request.rect) * dpr), boostCap);
+        const snapped = ladderSnap(Math.min(ask, boostCap));
+        const previous = grantedStep.get(key);
+        // Hysteresis: keep a bigger granted step until the ask falls a full rung below it.
+        if (previous !== undefined && previous > snapped && previous <= snapped * 1.55) return previous;
+        return snapped;
+      };
+
+      // Every kept preview's BASE is reserved first — that is the guarantee, and it is
+      // what the pool was sized for (capacity tiles at the base size, so a full graph
+      // spends exactly the pool and boosts nothing). Boosts then spend the HEADROOM the
+      // absent previews left behind, in priority order, degrading a rung at a time; a
+      // preview is never suspended for wanting to be sharp.
+      const baseByKey = new Map<string, number>();
+      let spent = 0;
+      for (const request of kept) {
+        const base = ladderSnap(Math.min(Math.max(request.area.width, request.area.height) * dpr, baseCap));
+        baseByKey.set(previewKey(request.ref), base);
+        spent += base * base;
+      }
+      const grantedByKey = new Map<string, number>();
+      for (const request of kept) {
+        const key = previewKey(request.ref);
+        const base = baseByKey.get(key) ?? baseCap;
+        const desired = stepFor(request);
+        let granted = Math.max(desired, base);
+        while (granted > base && spent - base * base + granted * granted > pixelBudget) {
+          granted = ladderSnap(granted / 1.55);
+        }
+        granted = Math.max(granted, base);
+        spent += granted * granted - base * base;
+        grantedByKey.set(key, granted);
+      }
+      for (const key of [...grantedStep.keys()]) {
+        if (!grantedByKey.has(key)) grantedStep.delete(key);
+      }
+      for (const [key, step] of grantedByKey) grantedStep.set(key, step);
+
+      const boostedTileFor = (request: PreviewRequest): readonly [number, number] => {
+        const granted = grantedByKey.get(previewKey(request.ref));
+        if (granted === undefined) return baseTileFor(request);
+        return tileSizeFor({
+          sourceSize: request.source.size,
+          // The granted step IS the long edge: already dpr-scaled and ladder-quantised.
+          areaLongEdge: granted,
+          devicePixelRatio: 1,
+          maxLongEdge: granted,
+        });
+      };
 
       // A suspended preview surrenders its tile AND its refresh clock. Keeping the clock would
       // mean a preview that comes back after a long scroll waits out a stale interval before
@@ -161,7 +241,7 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         const due =
           last === undefined || time < last || time - last >= interval - REFRESH_EPSILON_SECONDS;
         if (due) lastRefresh.set(key, time);
-        return { ref: request.ref, request, tileSize: tileFor(request), due };
+        return { ref: request.ref, request, tileSize: boostedTileFor(request), due };
       });
 
       return { active, suspended };
@@ -169,6 +249,7 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
 
     reset(): void {
       lastRefresh.clear();
+      grantedStep.clear();
     },
   };
 }

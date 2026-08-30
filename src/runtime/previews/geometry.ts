@@ -18,20 +18,31 @@ import type { PreviewRect } from "./types.ts";
  * handful of them, and the worst-case sharpness error inside a step is invisible at
  * thumbnail scale. Zoom is not in that input at all — see `TileSizeInput.areaLongEdge`.
  */
-export const TILE_SIZE_LADDER: ReadonlyArray<number> = [64, 96, 128, 192, 256, 384];
+export const TILE_SIZE_LADDER: ReadonlyArray<number> = [64, 96, 128, 192, 256, 384, 576, 864, 1152];
 
 /** Below this on-screen size a preview shows nothing a person can read (§V28 `too-small`). */
 export const MIN_ONSCREEN_LONG_EDGE_CSS = 24;
 
 /**
- * Cap, as a multiple of `ProjectSettings.previewLongEdge`.
+ * BASE cap, as a multiple of `ProjectSettings.previewLongEdge`.
  *
  * The headroom is for device pixel ratio: dpr 2 on a `previewLongEdge` of 192 asks for 384,
- * and a preview that ignored dpr would be visibly soft on every retina display. Past the cap
- * a large node preview goes deliberately soft; the honest answer to "let me see this
- * properly" is the large viewer pane (T36), which renders at its own size.
+ * and a preview that ignored dpr would be visibly soft on every retina display. This is what
+ * every preview is guaranteed when the graph is busy — the sizing floor of the T490 budget.
  */
 export const MAX_TILE_SCALE = 2;
+
+/**
+ * BOOST cap, as a multiple of `previewLongEdge` — the honest ceiling of the T490 budget.
+ *
+ * "Past the cap it goes soft; the honest answer is the viewer pane" was sound while
+ * previews were badges and the zoom stopped at 2.5×. The owner zooms in TO INSPECT and the
+ * range now reaches 8×, so an on-screen preview may take a bigger tile — but only while
+ * the shared pixel budget has room (`createPreviewScheduler`), and never past this. At the
+ * default 192 that is 1152 device px; beyond it the viewer pane remains the answer, and
+ * saying so beats implying unlimited (V328).
+ */
+export const MAX_TILE_BOOST_SCALE = 6;
 
 /**
  * First ladder step at or above `value`.
@@ -56,10 +67,11 @@ export interface TileSizeInput {
    * box, which the viewport transform never touches (§V117: a resized node buys a bigger
    * tile). For the viewer pane it is the pane's own size.
    *
-   * Deliberately NOT the on-screen size. That carries the graph zoom, so a tile sized from it
-   * is reallocated as the camera moves — and because the host rebuilds a changed preview
-   * program in one go, one reallocation blanks EVERY preview for a frame (B13, §V142). Zoom
-   * scales a tile with CSS, never with a new allocation.
+   * T490 amended B13's rule rather than repealing it: zoom MAY buy a bigger tile now, but
+   * only through the scheduler's budgeted, ladder-quantised, hysteresis-guarded path — never
+   * by feeding a raw on-screen size here. A tile sized straight from the screen rect is
+   * reallocated as the camera moves, and one reallocation blanks EVERY preview for a frame
+   * (B13, §V142). Within a ladder step, zoom still scales with CSS alone.
    */
   readonly areaLongEdge: number;
   readonly devicePixelRatio: number;
