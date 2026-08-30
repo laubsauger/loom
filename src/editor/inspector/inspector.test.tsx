@@ -166,6 +166,25 @@ describe("T38 — manifest-driven inspector", () => {
  * which is the gate the owner's "any other parameter that is this kind of stuff" asks
  * for (§V437).
  */
+/**
+ * T498 — the tab already says Parameters; the default group draws no second heading.
+ * The same word twice, stacked, was the owner's unnameable oddity. Named groups keep
+ * their headings, because those carry information the tab does not.
+ */
+describe("T498 — no doubled Parameters heading", () => {
+  it("draws headings for named groups only", async () => {
+    await setup();
+    const headings = [...document.querySelectorAll('[class*="sectionHeader"]')].map(
+      (node) => node.textContent?.trim(),
+    );
+    expect(headings).toContain("Shape");
+    expect(headings).toContain("Colour");
+    expect(headings).not.toContain("Parameters");
+    // The ungrouped section still exists and is addressable — only its ink is gone.
+    expect(document.querySelector('section[aria-label="Parameters"]')).not.toBeNull();
+  });
+});
+
 describe("T492 — code parameters get the code editor", () => {
   it("mounts CodeMirror for a code-kind parameter, not a plain text field", async () => {
     await setup();

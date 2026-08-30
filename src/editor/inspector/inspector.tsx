@@ -13,7 +13,7 @@ import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { AudioSection } from "./audio-section.tsx";
-import { groupParameters } from "./parameter-groups.ts";
+import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import { resolveParameters } from "./parameter-resolver.ts";
@@ -256,10 +256,16 @@ export function Inspector({
     ) : (
       groups.map((group) => (
         <section className={styles.section} key={group.name} aria-label={group.name}>
-          <div className={styles.sectionHeader}>
-            <span>{group.name}</span>
-            <span className={styles.sectionRule} aria-hidden />
-          </div>
+          {/* T498: the DEFAULT group draws no heading — the tab above it already says
+              Parameters, and the same word twice, stacked, was the owner's "odd" spot.
+              Named groups (Shape, Colour) keep theirs; the aria-label keeps the section
+              addressable either way. */}
+          {group.name === DEFAULT_GROUP ? null : (
+            <div className={styles.sectionHeader}>
+              <span>{group.name}</span>
+              <span className={styles.sectionRule} aria-hidden />
+            </div>
+          )}
           {group.entries.map((entry) => (
             // data-parameter-key lets the context menu resolve which parameter was
             // right-clicked (§V78). The control kit itself stays menu-agnostic.

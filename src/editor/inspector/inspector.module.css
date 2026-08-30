@@ -15,13 +15,13 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
-  padding-bottom: var(--space-1);
+  padding-bottom: var(--chrome-half-beat);
 }
 
 .title {
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: var(--fs-ui);
+  font-size: var(--chrome-title);
   font-weight: var(--weight-header);
   font-stretch: var(--width-header);
   letter-spacing: var(--tracking-display);
@@ -33,14 +33,14 @@
 .type {
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: var(--chrome-meta);
 }
 
 .identity {
   margin-left: auto;
   color: var(--line-hot);
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: var(--chrome-meta);
 }
 
 /*
@@ -54,11 +54,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: 0 0 var(--space-4);
+  padding: 0 0 var(--chrome-beat);
 }
 
 .section + .section {
-  padding-top: var(--space-5);
+  padding-top: calc(2 * var(--chrome-beat));
 }
 
 .section:last-child {
@@ -77,12 +77,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
-  padding: var(--space-1) 0;
+  margin-bottom: var(--chrome-half-beat);
+  padding: var(--chrome-half-beat) 0;
   background: var(--bg-panel);
   color: var(--text-dim);
   font-family: var(--font-ui);
-  font-size: var(--fs-micro);
+  font-size: var(--chrome-meta);
   font-weight: var(--weight-header);
   font-stretch: var(--width-header);
   letter-spacing: var(--tracking-display);
@@ -231,7 +231,7 @@
   z-index: 2;
   height: auto;
   margin: 0 calc(-1 * var(--space-4));
-  padding: 0 var(--space-2);
+  padding: var(--chrome-half-beat) var(--space-2);
 }
 
 /* ---- header readout, compact (T269) ---------------------------------- */
@@ -245,11 +245,11 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding-bottom: var(--space-3);
+  padding: var(--chrome-half-beat) 0 var(--chrome-beat);
   border-bottom: var(--border-hairline);
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: var(--chrome-meta);
   cursor: help;
 }
 

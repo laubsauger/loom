@@ -91,6 +91,16 @@
   --hairline: 1px;
   --border-hairline: var(--hairline) solid var(--line);
 
+  /* T498: the CHROME RHYTHM — panel furniture reads on ONE vertical beat and TWO type
+     steps. Title, subtitle, tab row and section header breathe by --chrome-beat (halved
+     inside a block), sized by --chrome-title / --chrome-meta and nothing else. A panel
+     picking its own margins per element is how "squeezed and not even in terms of
+     rhythm" happens; the next panel adopts these four instead of re-tuning by hand. */
+  --chrome-title: var(--fs-body);
+  --chrome-meta: var(--fs-meta);
+  --chrome-beat: 8px;
+  --chrome-half-beat: 4px;
+
   --space-1: 2px;
   --space-2: 4px;
   --space-3: 6px;
