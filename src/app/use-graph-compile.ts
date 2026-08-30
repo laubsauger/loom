@@ -331,12 +331,29 @@ export function useGraphCompile(
   /**
    * §V163's gate. `hasAnimatedParameters` is a scan of stored parameter modes — cheap,
    * and run once per document revision rather than once per frame.
+   *
+   * B95 — the SAME sinks as the structural compile, never the fallback. This call used
+   * to omit the sink argument, so `compileSafely` fell back to every-visible-node while
+   * the base plan below compiles against the preview SCHEDULER's kept set. The two
+   * agreed on a fresh load, so animation worked — until the scheduler suspended one
+   * offscreen preview, the base plan lost a pass, and every per-frame plan from here
+   * was no longer a values-only variation of it: `push` returned null, one
+   * `animation/structuralDrift` warning fired, and every driven parameter in the
+   * project sat at its last value for the rest of the session. Measured live (E28: the
+   * orbiting caster froze the moment a pane covered part of the graph). The sink set is
+   * DERIVED from the one store both compiles read, so they cannot disagree again.
    */
   const animate = useMemo(() => {
     if (capabilities === null || !hasAnimatedParameters(graph)) return null;
     return (frame: FrameEvaluationInput): CompiledGraph | null =>
-      compileSafely(graph, runtime, capabilities, { frame, channels }).compiled;
-  }, [capabilities, channels, graph, runtime]);
+      compileSafely(
+        graph,
+        runtime,
+        capabilities,
+        { frame, channels },
+        previewSinks === undefined ? undefined : scheduledPreviews,
+      ).compiled;
+  }, [capabilities, channels, graph, runtime, previewSinks, scheduledPreviews]);
 
   /**
    * The inputs of the LAST compile, for classifying the next one (T308).
