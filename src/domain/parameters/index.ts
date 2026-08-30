@@ -29,6 +29,8 @@ export {
 
 export { bindCycleDiagnostics } from "./bind-cycles.ts";
 
+export { storedValues } from "./stored-values.ts";
+
 export { parameterReference, parseParameterReference } from "./reference.ts";
 export type { ParsedParameterReference } from "./reference.ts";
 

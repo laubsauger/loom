@@ -10,6 +10,7 @@ import type { ParentScopeDriver } from "@domain/components/parent-scope.ts";
 import { resolveComponentPath } from "@domain/components/navigation.ts";
 import type { ResolvedComponentPath } from "@domain/components/navigation.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
+import { storedValues } from "@domain/parameters/stored-values.ts";
 import { resolveParameters } from "@editor/inspector/parameter-resolver.ts";
 import type { ParameterDriver, ResolvedParameters } from "@editor/inspector/parameter-resolver.ts";
 
@@ -91,19 +92,15 @@ export function resolveComponentParameters(
  * reaches the shader as 0.0376, less than a fifth of the light the user asked for.
  *
  * B8's lesson is why this had to be a test and not an eyeball: a colour that is merely
- * too dark reads as an art-direction choice, so nobody files it. `storedSpaceValues` in
- * `src/compiler/flatten.ts` is the same decision on the compile path, for the same
- * reason — both re-resolve, so both must be handed the encoded number.
+ * too dark reads as an art-direction choice, so nobody files it. The compile path makes
+ * the same call for the same reason, which is why the projection itself now lives in
+ * `src/domain/parameters/stored-values.ts` and not in two places (T307).
  */
 export function resolveInstanceValues(
   node: GraphNode,
   definition: NodeDefinition,
 ): Readonly<Record<string, ParameterValue>> {
-  const values: Record<string, ParameterValue> = {};
-  for (const entry of resolveParameters(node, definition).entries) {
-    values[entry.key] = entry.value;
-  }
-  return values;
+  return storedValues(resolveParameters(node, definition));
 }
 
 export interface ComponentNavigationInput {
