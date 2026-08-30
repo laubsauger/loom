@@ -5,6 +5,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
+import { fitInsideRegion } from "@editor/nodes/index.ts";
 import type { PreviewSlotBoundsStore } from "@editor/viewer/index.ts";
 import { DEFAULT_PREVIEW_VIEW, createPreviewSystem, slotScreenRect } from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
@@ -145,20 +146,28 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           continue;
         }
         const node = current.graph.nodes[nodeId];
+        // §V118 — LETTERBOX inside the node's preview area, never stretch to fill it.
+        // The area is whatever the user dragged the node to (§V116); the texture's aspect
+        // is whatever the graph resolved (§V21), and the two are unrelated. Since T208
+        // made the area arbitrary this is no longer a corner case: a stretched preview
+        // misrepresents the image on precisely the node someone enlarged to look at it.
+        const fitted = fitInsideRegion(offset, output.size);
         const box = {
-          x: position.x + offset.x,
-          y: position.y + offset.y,
-          width: offset.width,
-          height: offset.height,
+          x: position.x + offset.x + fitted.x,
+          y: position.y + offset.y + fitted.y,
+          width: fitted.width,
+          height: fitted.height,
         };
         requests.push({
           ref: { nodeId, portId: output.portId },
           source: { resourceId: output.resourceId, size: output.size, format: output.format },
           rect: slotScreenRect(box, viewport),
           // §V142 — where the tile is DRAWN carries the camera; how big the tile is
-          // ALLOCATED must not. `offset` is the slot measured inside the node's own box,
-          // so this is the node's preview area at any zoom (§V117).
-          area: { width: offset.width, height: offset.height },
+          // ALLOCATED must not. This is the fitted region measured inside the node's own
+          // box, so it is the node's preview area at any zoom (§V117) — and, because it
+          // is the LETTERBOXED region, the tile carries the pixels actually shown rather
+          // than paying for bars nobody renders.
+          area: { width: fitted.width, height: fitted.height },
           visible: true,
           pinned: node?.ui?.preview === true,
           collapsed: false,
