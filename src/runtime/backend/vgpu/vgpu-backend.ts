@@ -465,13 +465,17 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     // T215: an id filter clears ONLY those pairs — the pulse-based Feedback reset
     // (§V126) and `runtime.resetFeedback` need one node's history gone, not every
     // simulation's. No filter = every pair, the device-loss/whole-project semantics.
-    const pingPongs = program.resources.pingPongs;
+    const activeProgram = program;
+    const pingPongs = activeProgram.resources.pingPongs;
     const selected =
       resourceIds === undefined
         ? [...pingPongs.values()]
         : resourceIds.flatMap((id) => {
             const pair = pingPongs.get(id);
             if (pair !== undefined) return [pair];
+            // T237: a ring id is a legitimate reset target too, handled below — warning
+            // "no feedback pair" for one would be reporting a fault where there is none.
+            if (activeProgram.resources.rings.has(id)) return [];
             hub.report(
               backendDiagnostic(
                 "warning",
@@ -487,13 +491,26 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             );
             return [];
           });
+    // T237: a ring is history in exactly the sense §V22 means, so a reset clears it with
+    // the pairs. Selected the same way — all of them, or the ids asked for.
+    const rings = activeProgram.resources.rings;
+    const selectedRings =
+      resourceIds === undefined
+        ? [...rings.values()]
+        : resourceIds.flatMap((id) => {
+            const ring = rings.get(id);
+            return ring === undefined ? [] : [ring];
+          });
     temporalResets += 1;
-    if (selected.length > 0) {
+    if (selected.length > 0 || selectedRings.length > 0) {
       guard.assertOutsideFrame("temporal history clear");
       frame(gpu, (f) => {
         for (const pair of selected) {
           f.pass({ target: pair.read, clear: true }, () => {});
           f.pass({ target: pair.write, clear: true }, () => {});
+        }
+        for (const ring of selectedRings) {
+          for (const slice of ring.slices) f.pass({ target: slice, clear: true }, () => {});
         }
       });
     }
@@ -583,6 +600,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         if (pass.kind === "swap") {
           active.resources.pingPongs.get(pass.resourceId)?.swap();
           active.resources.bufferPairs.get(pass.resourceId)?.swap();
+          // T237/§V226: a ring rotates on the same pass kind, because a swap IS a
+          // rotation of a two-slot ring. One placement rule, one pass kind, one thing
+          // the compiler has to get right.
+          active.resources.rings.get(pass.resourceId)?.rotate();
           continue;
         }
         if (pass.kind === "dispatch") {
@@ -697,6 +718,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       for (const binding of bindings) {
         const pair = active.resources.pingPongs.get(binding.resourceId);
         if (pair) values[binding.binding] = pair.read.color;
+        // T237: the tap moves under the binding on every rotation, so it is re-pointed
+        // here for the same reason a ping-pong read half is. `set()` allocates nothing.
+        const ring = active.resources.rings.get(binding.resourceId);
+        if (ring) values[binding.binding] = ring.tap(binding.tap ?? 1).color;
       }
       drawable.set(values);
     }
@@ -877,6 +902,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   function releasePreviewSet(previous: ResourceSet, keepShared: boolean): void {
     releaseResourcesExcept(previous, {
       targets: new Map(),
+      rings: new Map(),
       pingPongs: new Map(),
       samplers: new Map(),
       externalTextures: new Map(),
@@ -1132,7 +1158,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         const oversized = read.resources
           .filter(
             (resource): resource is ResourceDescriptor & { size: readonly [number, number] } =>
-              resource.kind === "target" || resource.kind === "pingPong",
+              resource.kind === "target" || resource.kind === "pingPong" || resource.kind === "ring",
           )
           .filter((resource) => resource.size[0] > maxDimension || resource.size[1] > maxDimension);
         if (oversized.length > 0) {
@@ -1859,6 +1885,7 @@ function computeCarryOver(
   }
 
   const targets = new Map<string, NonNullable<ReturnType<ResourceSet["targets"]["get"]>>>();
+  const rings = new Map<string, NonNullable<ReturnType<ResourceSet["rings"]["get"]>>>();
   const pingPongs = new Map<string, NonNullable<ReturnType<ResourceSet["pingPongs"]["get"]>>>();
   const samplers = new Map<string, GPUSampler>();
   const externalTextures = new Map<string, NonNullable<ReturnType<ResourceSet["externalTextures"]["get"]>>>();
@@ -1869,6 +1896,9 @@ function computeCarryOver(
     if (target) targets.set(id, target);
     const pair = previous.resources.pingPongs.get(id);
     if (pair) pingPongs.set(id, pair);
+    // T237: a carried ring keeps its history, like a carried pair keeps its feedback.
+    const ring = previous.resources.rings.get(id);
+    if (ring) rings.set(id, ring);
     const sampler = previous.resources.samplers.get(id);
     if (sampler) samplers.set(id, sampler);
     const external = previous.resources.externalTextures.get(id);
@@ -1916,6 +1946,7 @@ function computeCarryOver(
 
   return {
     targets,
+    rings,
     pingPongs,
     samplers,
     externalTextures,
@@ -1960,6 +1991,14 @@ function releaseResourcesExcept(previous: ResourceSet, next?: ResourceSet): void
     if (next?.pingPongs.get(id) !== pair) {
       destroy(pair.read);
       destroy(pair.write);
+    }
+  }
+  // T237: a ring that was not carried takes every one of its slices with it. Missing this
+  // leaks `frames` full-size textures per rebuild — the one place where being N-slots-wide
+  // instead of two turns a small leak into a visible one.
+  for (const [id, ring] of previous.rings) {
+    if (next?.rings.get(id) !== ring) {
+      for (const slice of ring.slices) destroy(slice);
     }
   }
   for (const [id, entry] of previous.externalTextures) {

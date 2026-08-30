@@ -63,6 +63,7 @@ describe("core catalogue (T70, T40)", () => {
       "difference",
       "mask",
       "feedback",
+      "cache",
       "pointKernel",
       "textureToAttribute",
       "renderPoints",

@@ -62,7 +62,18 @@ export function useRuntimeCommands(inputs: {
         const scoped = input.nodeIds !== undefined;
         const wanted = new Set(input.nodeIds ?? []);
         const pairs = scoped ? feedback.filter((pair) => wanted.has(pair.nodeId)) : [...feedback];
-        if (scoped && pairs.length === 0) {
+        // T237: a Cache's history lives in a `ring` resource, which is not a feedback
+        // PAIR and so is not in that table. Resolved from the plan's resources instead,
+        // by the scratch id's own `scratch:<nodeId>:<key>` shape — without this the
+        // node's reset pulse would be a button that lies (§V123), which is exactly the
+        // reason the other stateful nodes are listed as gaps rather than given one.
+        const rings = (compiledRef.current?.resources ?? []).filter(
+          (resource): resource is typeof resource & { kind: "ring" } => resource.kind === "ring",
+        );
+        const ringIds = rings
+          .filter((resource) => !scoped || wanted.has(resource.id.split(":")[1] ?? ""))
+          .map((resource) => resource.id);
+        if (scoped && pairs.length === 0 && ringIds.length === 0) {
           return {
             status: "rejected",
             output: { cleared: 0 },
@@ -70,13 +81,19 @@ export function useRuntimeCommands(inputs: {
               {
                 severity: "error",
                 code: "runtime.noFeedback",
-                message: `None of ${[...wanted].sort().join(", ")} holds a feedback pair in the current plan.`,
+                message: `None of ${[...wanted].sort().join(", ")} holds temporal history in the current plan.`,
               },
             ],
           };
         }
-        backend.resetTemporalHistory(scoped ? pairs.map((pair) => pair.resourceId) : undefined);
-        return { status: "applied", output: { cleared: pairs.length }, diagnostics: [] };
+        backend.resetTemporalHistory(
+          scoped ? [...pairs.map((pair) => pair.resourceId), ...ringIds] : undefined,
+        );
+        return {
+          status: "applied",
+          output: { cleared: pairs.length + (scoped ? ringIds.length : rings.length) },
+          diagnostics: [],
+        };
       },
     });
   }, [inputs.bus]);

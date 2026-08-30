@@ -96,13 +96,43 @@ export interface ExternalTextureResourceDescriptor {
   readonly label?: string;
 }
 
+/**
+ * A RING of N textures, one written per frame, older ones readable by tap (T237).
+ *
+ * §V226: this is `pingPong` generalised from 2 slots to N, not a new concept. The swap
+ * pass rotates it, a binding reads a slice `tap` frames back, and everything a ping-pong
+ * already settled — carry-over keeping contents (§V62b), reset semantics (§V22), no
+ * allocation in the frame loop (§V8), resize invalidating the whole thing — applies
+ * unchanged because it IS the same mechanism with a bigger modulus.
+ *
+ * §V227, the question this answers before it is asked: the alternative is N targets and a
+ * chain of copies to shift them along, which costs N FULL-FRAME COPIES PER FRAME —
+ * roughly a gigabyte per frame of write bandwidth at 60 slices of 1080p. Rotating an
+ * index costs an integer. That difference is the reason the kind exists.
+ *
+ * §V228: the memory is `size × bytesPerPixel × frames` and it is the user's to spend —
+ * 15.8 MiB per frame at 1080p rgba16float, so 60 frames is 949 MiB, 93% of the default
+ * project budget. `estimateResourceBytes` counts it and the compiler's budget warning
+ * reports it like any other resource.
+ */
+export interface RingResourceDescriptor {
+  readonly kind: "ring";
+  readonly id: string;
+  readonly size: readonly [number, number];
+  readonly format: TextureFormat;
+  /** Slice count, >= 2. The deepest readable tap is `frames - 1`. */
+  readonly frames: number;
+  readonly label?: string;
+}
+
 export type ResourceDescriptor =
   | TargetResourceDescriptor
   | PingPongResourceDescriptor
   | SamplerResourceDescriptor
   | BufferResourceDescriptor
   | BufferPairResourceDescriptor
-  | ExternalTextureResourceDescriptor;
+  | ExternalTextureResourceDescriptor
+  | RingResourceDescriptor;
 
 export interface TextureBindingDescriptor {
   /** WGSL binding name in the pass shader. */
@@ -118,6 +148,17 @@ export interface TextureBindingDescriptor {
    * Part of the pass structure key: a change here changes the pipeline (§V5, T143).
    */
   readonly sampled?: "filtered" | "unfiltered";
+  /**
+   * How many frames BACK to read, on a `ring` resource (T237). 1 is the previous frame —
+   * exactly what a ping-pong read half gives — and `frames - 1` is the deepest slice the
+   * ring holds. Absent everywhere else.
+   *
+   * There is no tap 0. Slice 0 is the one this frame is being written into, so binding it
+   * would be a read of the texture a pass upstream is still filling — the hazard the
+   * ping-pong read/write split exists to prevent. The floor is a rule the plan reader
+   * enforces rather than a convention each node is trusted to remember.
+   */
+  readonly tap?: number;
 }
 
 export interface SamplerBindingDescriptor {
@@ -303,10 +344,18 @@ function readBindings(value: unknown): ReadonlyArray<TextureBindingDescriptor> |
   const out: TextureBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId, sampled } = entry;
+    const { binding, resourceId, sampled, tap } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
     if (sampled !== undefined && sampled !== "filtered" && sampled !== "unfiltered") return undefined;
-    out.push(sampled === undefined ? { binding, resourceId } : { binding, resourceId, sampled });
+    // T237: a tap is a whole number of frames back, and there is no tap 0 — slice 0 is
+    // the one being written this frame.
+    if (tap !== undefined && (!Number.isInteger(tap) || (tap as number) < 1)) return undefined;
+    out.push({
+      binding,
+      resourceId,
+      ...(sampled === undefined ? {} : { sampled }),
+      ...(tap === undefined ? {} : { tap: tap as number }),
+    });
   }
   return out;
 }
@@ -339,6 +388,23 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
       size: value["size"],
       format: value["format"],
       sourceId,
+      ...(typeof label === "string" ? { label } : {}),
+    };
+  }
+
+  if (kind === "ring") {
+    const frames = value["frames"];
+    if (!isSize(value["size"]) || !isFormat(value["format"])) return undefined;
+    // Two slices is the floor, because a one-slice ring is a target and would make
+    // "the previous frame" mean "the one being written".
+    if (!Number.isInteger(frames) || (frames as number) < 2) return undefined;
+    const label = value["label"];
+    return {
+      kind: "ring",
+      id,
+      size: value["size"],
+      format: value["format"],
+      frames: frames as number,
       ...(typeof label === "string" ? { label } : {}),
     };
   }
@@ -697,6 +763,11 @@ export function resourceStructureKey(resource: ResourceDescriptor): string {
       // sourceId is structural: rebinding a texture to a different media source is a new
       // resource (fresh contents), not a carried one.
       return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format, resource.sourceId]);
+    case "ring":
+      // `frames` is structural like size and format are: a deeper ring is a different
+      // allocation, so it cannot be carried and its history starts again (§V62b) — the
+      // same rule a resized ping-pong already lives under, at a bigger scale.
+      return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format, resource.frames]);
   }
 }
 
@@ -795,9 +866,19 @@ export function estimateResourceBytes(resources: ReadonlyArray<ResourceDescripto
       total += resource.stride * resource.capacity * 2;
       continue;
     }
-    if (resource.kind !== "target" && resource.kind !== "pingPong" && resource.kind !== "externalTexture") continue;
+    if (
+      resource.kind !== "target" &&
+      resource.kind !== "pingPong" &&
+      resource.kind !== "externalTexture" &&
+      resource.kind !== "ring"
+    ) {
+      continue;
+    }
     const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
-    total += resource.size[0] * resource.size[1] * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
+    // A ring is `frames` slices, a ping-pong is 2 — the same multiplication, which is
+    // what "generalised from 2 to N" means at the level of what it costs (§V226).
+    const slices = resource.kind === "pingPong" ? 2 : resource.kind === "ring" ? resource.frames : 1;
+    total += resource.size[0] * resource.size[1] * bytesPerPixel * slices;
     if (resource.kind === "target" && resource.depth === true) {
       total += resource.size[0] * resource.size[1] * 4; // depth24plus
     }

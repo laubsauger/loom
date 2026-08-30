@@ -35,9 +35,77 @@ export interface ExternalTextureEntry {
   lastFrameId: number | undefined;
 }
 
+/**
+ * N textures, one written per frame, older ones readable by tap (T237, §V226).
+ *
+ * `pingPong` with a bigger modulus: `head` is the slice this frame writes, `rotate()`
+ * advances it, and `tap(n)` is the slice written n frames ago. Nothing is copied — the
+ * rotation is an integer, which is the entire argument for the kind existing (§V227).
+ *
+ * `written` is what makes §V229 work: before the ring has filled, a tap deeper than the
+ * history clamps to the OLDEST slice rather than reading a never-written texture. Black
+ * there would flash on every reset and would differ between a live session and a headless
+ * render that started at frame 0 — the class of bug that only shows up in parity runs.
+ */
+export interface RingTargets {
+  readonly frames: number;
+  /** The slice this frame renders into. */
+  current(): Target;
+  /** The slice written `n` frames ago, clamped to the oldest one written (§V229). */
+  tap(n: number): Target;
+  /** Advances the write slice. Called by the plan's swap pass, after every reader. */
+  rotate(): void;
+  /** Every slice, for a history clear. */
+  readonly slices: readonly Target[];
+}
+
+/**
+ * Allocates a ring: N ordinary targets plus the integer that says which one is now.
+ *
+ * Deliberately built from `target()` rather than a texture array, because taps bind as
+ * ordinary `texture_2d` — no WGSL change, no `maxTextureArrayLayers` question, and every
+ * existing binding path works untouched. Per-pixel time displacement (T321) is what would
+ * need the array, and it is not this task.
+ */
+function createRing(
+  gpu: Gpu,
+  size: readonly [number, number],
+  format: GPUTextureFormat,
+  frames: number,
+  label: string,
+): RingTargets {
+  const count = Math.max(2, Math.floor(frames));
+  const slices = Array.from({ length: count }, (_, index) =>
+    target(gpu, { size, format, label: `${label} [${index}]` }),
+  );
+  let head = 0;
+  /** How many slices hold a frame. Caps at count; only ever grows (§V229). */
+  let written = 0;
+  return {
+    frames: count,
+    slices,
+    current() {
+      return slices[head] as Target;
+    },
+    tap(n) {
+      // §V229: before the ring has filled, the deepest available slice stands in for a
+      // deeper tap. Never a texture nobody has written — that reads black, flashes on
+      // every reset, and differs between a live session and a headless render.
+      const back = Math.min(Math.max(1, Math.floor(n)), Math.max(written, 1));
+      return slices[(head - back + count * 2) % count] as Target;
+    },
+    rotate() {
+      written = Math.min(written + 1, count);
+      head = (head + 1) % count;
+    },
+  };
+}
+
 export interface ResourceSet {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
+  /** Frame history rings (T237), keyed by resource id. */
+  readonly rings: ReadonlyMap<string, RingTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
   /** CPU-fed sampleable textures, keyed by resource id (T229). */
   readonly externalTextures: ReadonlyMap<string, ExternalTextureEntry>;
@@ -71,6 +139,8 @@ export interface ResourceSet {
  */
 export interface CarryOver {
   readonly targets: ReadonlyMap<string, Target>;
+  /** A carried ring keeps its CONTENTS and its position, exactly as a pair does (§V62b). */
+  readonly rings: ReadonlyMap<string, RingTargets>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
   /** A carried external texture keeps its contents AND its upload cursor (§V136). */
@@ -87,6 +157,7 @@ export interface CarryOver {
 
 export const emptyCarryOver: CarryOver = {
   targets: new Map(),
+  rings: new Map(),
   pingPongs: new Map(),
   samplers: new Map(),
   externalTextures: new Map(),
@@ -163,6 +234,7 @@ export function buildResources(
 
   const targets = new Map<string, Target>();
   const pingPongs = new Map<string, PingPongTargets>();
+  const rings = new Map<string, RingTargets>();
   const samplers = new Map<string, GPUSampler>();
   const externalTextures = new Map<string, ExternalTextureEntry>();
   const buffers = new Map<string, StorageBuffer>();
@@ -218,6 +290,22 @@ export function buildResources(
             format: resource.format as GPUTextureFormat,
             label: resource.label ?? resource.id,
           }),
+        );
+        note("resourcesCreated");
+      } else if (resource.kind === "ring") {
+        // Carried like a pair, and for the same reason: adding an unrelated node must not
+        // throw away seconds of history someone is reading from (§V22, §V62b). `frames` is
+        // in the structure key, so a deeper ring is a new allocation rather than a carried
+        // one with the wrong length.
+        const carried = carry.rings.get(resource.id);
+        if (carried) {
+          rings.set(resource.id, carried);
+          note("resourcesReused");
+          continue;
+        }
+        rings.set(
+          resource.id,
+          createRing(gpu, resource.size, resource.format as GPUTextureFormat, resource.frames, resource.label ?? resource.id),
         );
         note("resourcesCreated");
       } else if (resource.kind === "externalTexture") {
@@ -311,7 +399,19 @@ export function buildResources(
     }
   }
 
-  const readTexture = (resourceId: string): unknown => {
+  /**
+   * The slice a binding reads (T237). A tap is resolved per FRAME, not once: the ring
+   * rotates under it, which is why ring bindings join the dynamic set below.
+   */
+  const readRingSlice = (resourceId: string, tap: number | undefined): unknown => {
+    const ring = rings.get(resourceId);
+    if (ring === undefined) return undefined;
+    return ring.tap(Math.max(1, tap ?? 1)).color;
+  };
+
+  const readTexture = (resourceId: string, tap?: number): unknown => {
+    const slice = readRingSlice(resourceId, tap);
+    if (slice !== undefined) return slice;
     // T94: bind the Target itself, never its .color texture. vgpu wires
     // onTexturesRecreated only for Target values, and Target.resize() destroys and
     // recreates its textures — a bound .color would keep pointing at the destroyed
@@ -366,7 +466,7 @@ export function buildResources(
       bag[binding.binding] = value;
     }
     for (const binding of textureBindings) {
-      const value = readTexture(binding.resourceId);
+      const value = readTexture(binding.resourceId, binding.tap);
       if (value === undefined) {
         diagnostics.push(
           backendDiagnostic(
@@ -394,7 +494,12 @@ export function buildResources(
     textureBindings: ReadonlyArray<TextureBindingDescriptor>,
   ): void => {
     const dynamicTex = textureBindings.filter(
-      (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+      (binding) =>
+        pingPongs.has(binding.resourceId) ||
+        externals.pingPongs.has(binding.resourceId) ||
+        // T237: a tap points at a different slice after every rotation, so it is
+        // re-pointed each frame exactly as a ping-pong read half is.
+        rings.has(binding.resourceId),
     );
     if (dynamicTex.length > 0) dynamicTextures.set(passId, dynamicTex);
     const dynamicBuf = bufferBindings.filter((binding) => bufferPairs.has(binding.resourceId));
@@ -496,7 +601,8 @@ export function buildResources(
 
     const plainTarget = targets.get(pass.target);
     const pair = pingPongs.get(pass.target);
-    if (!plainTarget && !pair) {
+    const ring = rings.get(pass.target);
+    if (!plainTarget && !pair && !ring) {
       diagnostics.push(
         backendDiagnostic(
           "error",
@@ -507,7 +613,13 @@ export function buildResources(
       );
       continue;
     }
-    const resolveTarget: () => Target = plainTarget ? () => plainTarget : () => pair!.write;
+    // A ring renders into the slice this frame owns, resolved per frame like a pair's
+    // write half — the resolver is called at encode time, never cached (T237).
+    const resolveTarget: () => Target = plainTarget
+      ? () => plainTarget
+      : ring
+        ? () => ring.current()
+        : () => pair!.write;
 
     // A carried effect's set bag already points at the carried resource objects — the
     // caller only offers it when the pass key and everything it binds survived.
@@ -518,7 +630,10 @@ export function buildResources(
       const carriedUniforms = carry.passUniforms.get(pass.id);
       if (carriedUniforms) passUniforms.set(pass.id, carriedUniforms);
       const dynamic = (pass.textures ?? []).filter(
-        (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+        (binding) =>
+          pingPongs.has(binding.resourceId) ||
+          externals.pingPongs.has(binding.resourceId) ||
+          rings.has(binding.resourceId),
       );
       if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);
       note("effectsReused");
@@ -540,7 +655,10 @@ export function buildResources(
       note("effectsBuilt");
 
       const dynamic = (pass.textures ?? []).filter(
-        (binding) => pingPongs.has(binding.resourceId) || externals.pingPongs.has(binding.resourceId),
+        (binding) =>
+          pingPongs.has(binding.resourceId) ||
+          externals.pingPongs.has(binding.resourceId) ||
+          rings.has(binding.resourceId),
       );
       if (dynamic.length > 0) dynamicTextures.set(pass.id, dynamic);
     } catch (error) {
@@ -562,6 +680,7 @@ export function buildResources(
 
   return {
     targets,
+    rings,
     pingPongs,
     samplers,
     externalTextures,

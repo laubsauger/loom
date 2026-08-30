@@ -313,6 +313,60 @@ describe("the catalogue compiles through the real compiler", () => {
     ]);
   });
 
+  /**
+   * T237/§V22: the ring rotates AFTER everything that reads it, this frame.
+   *
+   * The same hazard a ping-pong swap has, and the geometry track's answer to it (T297):
+   * find the consumers by WHO BINDS THE ID, never by graph reachability. Rotate one pass
+   * too early and every tap points one slice off — for one frame, then it corrects itself,
+   * which is precisely the kind of wrongness that survives a casual look. Only the real
+   * compiler places the pass, so only a real compile can check it.
+   */
+  it("rotates a cache's ring after the last pass that touches it", () => {
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        src: node("src", "checker"),
+        cache: node("cache", "cache", { frames: 4, index: 2, scale: 1 }),
+        // A SECOND reader downstream of the cache, so "after the writer" is not enough on
+        // its own — the rotation has to come after this one too.
+        grade: node("grade", "level", { brightness: 2 }),
+        out: node("out", "output"),
+      },
+      edges: {
+        e1: edge("e1", ["src", "out"], ["cache", "input"]),
+        e2: edge("e2", ["cache", "out"], ["grade", "input"]),
+        e3: edge("e3", ["grade", "out"], ["out", "input"]),
+      },
+      groups: {},
+    };
+
+    const plan = compile(graph);
+    expect(errorsOf(plan.diagnostics)).toEqual([]);
+
+    const ringId = plan.resources.find((resource) => resource.kind === "ring")?.id;
+    expect(ringId).toBeDefined();
+
+    const ids = plan.passes.map((pass) => pass.id);
+    const rotateAt = plan.passes.findIndex(
+      (pass) => pass.kind === "swap" && pass.resourceId === ringId,
+    );
+    expect(rotateAt, `no rotation for the ring in ${ids.join(", ")}`).toBeGreaterThan(-1);
+
+    // Every pass that names the ring — as a render target or as a texture binding — runs
+    // before the rotation.
+    plan.passes.forEach((pass, index) => {
+      if (pass.kind === "swap") return;
+      const target = "target" in pass ? pass.target : undefined;
+      const bound = ("textures" in pass ? (pass.textures ?? []) : []).some(
+        (texture) => texture.resourceId === ringId,
+      );
+      if (target === ringId || bound) {
+        expect(index, `${pass.id} touches the ring after it rotates`).toBeLessThan(rotateAt);
+      }
+    });
+  });
+
   /** §V21: a filter's resolved size is its input's, all the way down a chain. */
   it("propagates resolution and format through a filter chain", () => {
     const graph: GraphDocument = {

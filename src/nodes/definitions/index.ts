@@ -9,6 +9,7 @@ import { colorNodes } from "./color.ts";
 import { filterNodes } from "./filters.ts";
 import { compositeNodes } from "./composite.ts";
 import { temporalNodes } from "./feedback.ts";
+import { cacheNode } from "./cache.ts";
 import { pointNodeDefinitions } from "./points.ts";
 import { nullNode } from "./null-node.ts";
 import { switchNode } from "./switch.ts";
@@ -115,6 +116,7 @@ export {
   compositeNodes,
 } from "./composite.ts";
 export { feedbackNode, temporalNodes } from "./feedback.ts";
+export { cacheNode, CACHE_RING_KEY } from "./cache.ts";
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
@@ -141,6 +143,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...filterNodes,
   ...compositeNodes,
   ...temporalNodes,
+  cacheNode,
   ...pointNodeDefinitions,
   nullNode,
   switchNode,
