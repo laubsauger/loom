@@ -74,6 +74,11 @@ const APP_REGISTERED = [
   // that whole time in `PLANNED_COMMANDS` — a built command the menus called a promise —
   // because "is it live" asked here can only mean "is it on THIS bus".
   "component.publishParameter",
+  // T415: registered by the mounted graph canvas (`src/editor/nodes/rename-session.ts`),
+  // for the same reason as `ui.showNodeInfo` — WHICH node title is an input box is not
+  // document state, so the domain bus does not own it. Live, not planned: the menu row
+  // that names it opens a real editor.
+  "ui.beginRename",
 ];
 
 describe("what the menus promise but nobody has built", () => {

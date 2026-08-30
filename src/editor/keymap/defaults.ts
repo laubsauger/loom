@@ -140,7 +140,12 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     id: "node.rename",
     keys: "n",
     context: "graph",
-    command: "node.rename",
+    // B60/T415: this named `node.rename` — the DOCUMENT command, which needs a `label`
+    // nothing on this route could supply, so pressing `n` fired a rename with no name and
+    // did nothing. It names the OPENING now; the editor it opens runs `node.rename` with
+    // what the user typed (§V342). The binding id is unchanged so a user's override of it
+    // survives (§V54).
+    command: "ui.beginRename",
     when: "hasSingleSelection",
     inputFrom: { from: "selection", as: "nodeIds" },
     label: "Name",

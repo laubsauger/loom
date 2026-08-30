@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { Position, ReactFlowProvider } from "@xyflow/react";
 import type { EdgeProps, NodeProps } from "@xyflow/react";
 import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
+import { createRenameSessionStore } from "@editor/nodes/rename-session.ts";
+import type { CommandResult } from "@domain/types/commands.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE } from "./derive.ts";
@@ -133,6 +135,31 @@ export function setReducedMotion(reduce: boolean): void {
   });
 }
 
+/**
+ * What `fixtureContext` answers a rename with when the test wired none. A refusal rather
+ * than a silent success: a fixture that pretends to rename lets a test assert a commit
+ * path nothing actually performed, which is the shape of §V220 this whole file exists in
+ * the neighbourhood of.
+ */
+const FIXTURE_RENAME_REFUSAL: CommandResult<"node.rename"> = {
+  status: "rejected",
+  revision: 0,
+  diagnostics: [
+    {
+      severity: "error",
+      code: "fixture.noRename",
+      message: "fixture: no renameNode wired",
+    },
+  ],
+  output: {
+    status: "rejected",
+    revision: 0,
+    appliedOperations: 0,
+    diagnostics: [],
+    createdIds: {},
+  },
+};
+
 export interface CanvasFixtureProps {
   value: GraphCanvasContextValue;
   children: ReactNode;
@@ -154,6 +181,9 @@ export interface FixtureContextOptions {
   dispatch?: GraphDispatch;
   selection?: GraphCanvasContextValue["selection"];
   toggleUi?: GraphCanvasContextValue["toggleUi"];
+  renameSession?: GraphCanvasContextValue["renameSession"];
+  beginRename?: GraphCanvasContextValue["beginRename"];
+  renameNode?: GraphCanvasContextValue["renameNode"];
   renderPreview?: GraphCanvasContextValue["renderPreview"];
   renderControls?: GraphCanvasContextValue["renderControls"];
 }
@@ -174,6 +204,11 @@ export function fixtureContext(options: FixtureContextOptions): {
       dispatch: options.dispatch ?? (() => {}),
       selection: options.selection ?? [],
       toggleUi: options.toggleUi ?? (() => {}),
+      renameSession: options.renameSession ?? createRenameSessionStore(),
+      beginRename: options.beginRename ?? (() => {}),
+      // Deliberately a REFUSAL rather than a no-op: a fixture that silently "succeeds" at
+      // renaming would let a test assert a commit path nothing performed (§V220).
+      renameNode: options.renameNode ?? (() => Promise.resolve(FIXTURE_RENAME_REFUSAL)),
       renderPreview: options.renderPreview,
       renderControls: options.renderControls,
     },

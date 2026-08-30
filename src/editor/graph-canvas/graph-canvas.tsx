@@ -31,6 +31,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
+import { registerRenameSessionCommand } from "@editor/nodes/rename-session.ts";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
 import {
   EDGE_HIT_TOLERANCE_PX,
@@ -452,6 +453,27 @@ export function GraphCanvas({
     [bus, invocation],
   );
 
+  /**
+   * T415/B60 — the inline name editor's two halves.
+   *
+   * Registering the command here is what makes `n` and the context menu's "Rename…" reach
+   * a surface at all; before this, both fired `node.rename` with no label and nothing
+   * happened (§V342). `renameNode` is the commit, and it runs the SAME `node.rename`
+   * command rather than a `setNodeLabel` patch of its own — the node header supplies the
+   * argument, it does not own a second rename (§V29, §V61).
+   */
+  const renameSession = useMemo(() => registerRenameSessionCommand(bus), [bus]);
+  const beginRename = useCallback(
+    (nodeId: NodeId) => {
+      void bus.execute("ui.beginRename", { nodeIds: [nodeId] }, invocation);
+    },
+    [bus, invocation],
+  );
+  const renameNode = useCallback(
+    (nodeId: NodeId, label: string) => bus.execute("node.rename", { nodeId, label }, invocation),
+    [bus, invocation],
+  );
+
   const reportEnter = useCallback(
     (_event: unknown, node: LoomNode) => onHoveredNodeChange?.(node.id),
     [onHoveredNodeChange],
@@ -468,6 +490,9 @@ export function GraphCanvas({
       dispatch,
       selection: selectedIds,
       toggleUi,
+      renameSession,
+      beginRename,
+      renameNode,
       renderPreview,
       renderControls,
     }),
@@ -479,6 +504,9 @@ export function GraphCanvas({
       dispatch,
       selectedIds,
       toggleUi,
+      renameSession,
+      beginRename,
+      renameNode,
       renderPreview,
       renderControls,
     ],

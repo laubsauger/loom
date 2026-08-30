@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import type { CommandResult } from "@domain/types/commands.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { GraphStoreView } from "@domain/graph/store.ts";
 import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
+import type { RenameSessionStore } from "@editor/nodes/rename-session.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { NodeRuntimeSnapshot, NodeRuntimeSource } from "./node-runtime.ts";
 
@@ -43,6 +45,25 @@ export interface GraphCanvasContextValue {
    * badge, the hotkey and the menu item are one implementation, not three.
    */
   toggleUi: (command: NodeToggleCommand, nodeIds: readonly NodeId[]) => void;
+  /**
+   * Which node's title is currently an input box (T415). Not document state — it produces
+   * no patch and reaches no file — so it rides the context beside `selection` rather than
+   * the store (§V16).
+   */
+  renameSession: RenameSessionStore;
+  /**
+   * Opens the inline editor by running `ui.beginRename` — the same command `n` and the
+   * context menu's "Rename…" name. Exactly why `toggleUi` exists beside it: a double-click
+   * on the title, the hotkey and the menu row are one implementation, not three (§V78).
+   */
+  beginRename: (nodeId: NodeId) => void;
+  /**
+   * Commits an inline rename through the SAME `node.rename` command the bus, the menu and
+   * an agent use (§V29, §V61). The node header supplies the argument nothing supplied
+   * before (B60); it does not own a second rename, so §V128's reference rewrite and the
+   * §V325 collision refusal happen in the one place they already happen.
+   */
+  renameNode: (nodeId: NodeId, label: string) => Promise<CommandResult<"node.rename">>;
   /** Preview slot. Track J (T34) fills it; until then the region stays empty. */
   renderPreview?: ((nodeId: NodeId) => ReactNode) | undefined;
   /**

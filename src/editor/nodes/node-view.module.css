@@ -141,6 +141,87 @@
   letter-spacing: var(--tracking-display);
 }
 
+/*
+  T416 — the node's TYPE, beside its name and behind it in every way that reads.
+  Dimmed, smaller, unbolded, lowercase: the name is the heading and this is the caption.
+
+  It gives up its space FIRST (`flex: 0 1 auto` with `min-width: 0` while the name keeps
+  `flex: 1 1 auto`), so on a narrow node the type ellipsises before the name loses a
+  character. The full word stays reachable on hover (§V90).
+*/
+.typeLabel {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  font-weight: normal;
+  text-transform: lowercase;
+}
+
+/* ---- inline rename (T415) --------------------------------------------- */
+
+/*
+  The editor takes the NAME's slot and nothing else — same row, same width, no reflow of
+  the toggles beside it, so the title does not jump when the field opens.
+*/
+.nameEdit {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.nameInput {
+  width: 100%;
+  min-width: 0;
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line-hot);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  /* The field reads as the name it is replacing: same family, weight and tracking. */
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  line-height: inherit;
+}
+
+.nameInput:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.nameInput[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+/*
+  The refusal (§V288/§V325). Absolutely positioned so a name that is already taken cannot
+  resize the node it is refused on, and only ever on screen while an edit is in flight —
+  §V90 bars AMBIENT text in the chrome, not the answer to what the user just did.
+*/
+.nameError {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 1;
+  min-width: 100%;
+  max-width: 220px;
+  padding: var(--space-1) var(--space-2);
+  border: var(--hairline) solid var(--error);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  box-shadow: var(--shadow-raise);
+  color: var(--error);
+  font-size: var(--fs-micro);
+  font-weight: normal;
+  letter-spacing: normal;
+}
+
 .timing {
   flex: 0 0 auto;
   font-family: var(--font-mono);

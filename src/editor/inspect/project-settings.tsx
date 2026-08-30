@@ -1,7 +1,9 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import { DEFAULT_PROJECT_FPS, projectFps } from "@domain/types/graph.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
+import { nodeTypeLabelStore } from "@editor/nodes/node-type-labels.ts";
+import { BooleanField } from "@ui/controls/boolean-field.tsx";
 import { DialogContent, DialogRoot, DialogTitle } from "@ui/primitives/dialog.tsx";
 import styles from "./project-settings.module.css";
 
@@ -148,7 +150,10 @@ export function ProjectSettingsDialog({
   onOpenChange,
 }: ProjectSettingsProps) {
   const formatId = useId();
+  const typeLabelsId = useId();
   const { width, height } = settings.outputResolution;
+  const typeLabels = nodeTypeLabelStore();
+  const showTypeLabels = useSyncExternalStore(typeLabels.subscribe, typeLabels.get);
 
   // Which fields are mid-edit. A ref, not state: it is read inside an event handler and
   // changing it must not re-render the dialog under the user's cursor (§V16's spirit).
@@ -241,6 +246,41 @@ export function ProjectSettingsDialog({
             onCommit={(next) => onChange({ previewFps: next }, "Set preview rate")}
             onDirtyChange={onDirtyChange}
           />
+        </section>
+
+        {/*
+          T416 — the one GRAPH setting, and the reason it is here rather than in
+          `ProjectSettings`.
+
+          What it controls is per-person chrome: whether a node's TYPE is drawn beside its
+          name, so renaming a node does not cost the identification the auto-name was
+          giving. That is the same category as pane layout (§V18) and keymap overrides
+          (§V54) — it must not ride inside a `.loom.json`, where one reader's preference
+          would arrive as a fact about someone else's document, and it must not bump the
+          revision, because a look at the graph on the undo stack means ⌘Z after a glance
+          undoes the glance. So it persists to `localStorage` and does NOT go through
+          `project.setSettings`; this dialog is simply the only settings surface the app
+          has, and inventing a second one to hold a single switch would be the drift T356
+          deleted a duplicate surface to prevent.
+
+          §T390 (the inputs above not matching the app's own controls) is a separate open
+          bug and is deliberately NOT fixed here — but this row does not COPY the divergent
+          styling either: it uses `BooleanField`, the shared primitive, which is where those
+          fields are supposed to end up.
+        */}
+        <section className={styles.group} aria-label="Graph">
+          <h3 className={styles.groupTitle}>graph</h3>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor={typeLabelsId}>
+              node type label
+            </label>
+            <BooleanField
+              id={typeLabelsId}
+              label="Show each node's type beside its name"
+              value={showTypeLabels}
+              onChange={(next) => typeLabels.set(next)}
+            />
+          </div>
         </section>
 
         <section className={styles.group} aria-label="Determinism">

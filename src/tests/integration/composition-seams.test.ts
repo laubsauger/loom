@@ -112,6 +112,16 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `referenceLinesStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (the floated graph pane, \u00a7V97) agree about what they are drawing (T248). The product path is `registerReferenceLinesCommand` in `graph-canvas.tsx`; `graph-canvas/reference-lines.test.tsx` toggles it through the bus command and asserts the lines leave the DOM.",
   },
   {
+    name: "createRenameSessionStore",
+    reason:
+      "Composed by `renameSessionStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (§V97) do not open two editors on one node title (T415). The product path is `registerRenameSessionCommand` in `graph-canvas.tsx`; `tests/integration/node-rename.test.tsx` opens the editor through the composed app and types a name into the document.",
+  },
+  {
+    name: "createNodeTypeLabelStore",
+    reason:
+      "Composed by `nodeTypeLabelStore()` in the SAME module — deliberately a single per-PERSON store rather than a bus-keyed one, since the settings dialog that writes it is nowhere near the canvas that reads it (T416). The product path is `nodeTypeLabelStore` in `node-view.tsx` and `project-settings.tsx`; `tests/integration/node-rename.test.tsx` flips it from the composed settings dialog and asserts the chip leaves the node.",
+  },
+  {
     name: "createRng",
     reason:
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",

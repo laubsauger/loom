@@ -48,6 +48,15 @@ const nodeIds: InputBuilder = (_item, target, context) => {
   return { ok: true, input: { nodeIds: ids } };
 };
 
+/**
+ * The clicked node alone, as a one-element `nodeIds` — for a command that speaks the
+ * keymap's selection shape but acts on exactly one node.
+ */
+const clickedNodeIds: InputBuilder = (_item, target) =>
+  target.nodeId === undefined
+    ? { ok: false, reason: "No node under the cursor." }
+    : { ok: true, input: { nodeIds: [target.nodeId] } };
+
 const nodeRef: InputBuilder = (_item, target) =>
   target.nodeId === undefined
     ? { ok: false, reason: "No node under the cursor." }
@@ -121,7 +130,10 @@ const BUILDERS: Record<string, InputBuilder> = {
   "node.togglePin": nodeIds,
   "node.toggleRender": nodeIds,
 
-  "node.rename": nodeRef,
+  // Rename is single-target by nature, so it takes the node under the CURSOR rather than
+  // the whole selection: "rename these nine nodes" has no one answer, and picking one of
+  // them silently would be a guess the user cannot see (T415).
+  "ui.beginRename": clickedNodeIds,
   "node.openColorPalette": nodeRef,
   "graph.diveIn": nodeRef,
 

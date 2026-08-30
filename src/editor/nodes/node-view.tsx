@@ -1,11 +1,16 @@
-import { memo, useCallback } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { Handle, NodeResizer, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { useStore } from "zustand";
 import { cx } from "@ui/cx.ts";
 import { portFamilyColor } from "@ui/ports.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
+import { nameBaseFor } from "@domain/graph/names.ts";
+import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
@@ -15,6 +20,7 @@ import type { LoomNode } from "@editor/graph-canvas/derive.ts";
 import type { NodeRunStatus } from "@editor/graph-canvas/node-runtime.ts";
 import { formatGpuMs } from "@editor/edges/flow.ts";
 import { ShaderStatusBadge } from "@editor/shader-editor/shader-status-badge.tsx";
+import { nodeTypeLabelStore } from "./node-type-labels.ts";
 import { AGENT_LABEL, AGENT_TOKEN, STATUS_LABEL, STATUS_TOKEN } from "./status.ts";
 import styles from "./node-view.module.css";
 
@@ -39,11 +45,35 @@ import styles from "./node-view.module.css";
  * number ticks.
  */
 export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomNode>) {
-  const { store, registry, runtime, selection, toggleUi, renderPreview, renderControls } =
-    useGraphCanvas();
+  const {
+    store,
+    registry,
+    runtime,
+    selection,
+    toggleUi,
+    renameSession,
+    beginRename,
+    renameNode,
+    renderPreview,
+    renderControls,
+  } = useGraphCanvas();
   // Own slice only (§V16): another node's edit does not re-render this one.
   const node = useStore(store, (state) => state.graph.nodes[id]);
   const snapshot = useNodeRuntime(runtime, id);
+
+  /**
+   * Is THIS node's title in edit mode (T415)?
+   *
+   * The snapshot is a boolean about this node rather than the session's node id, so
+   * opening an editor anywhere re-renders exactly two nodes — the one leaving edit mode
+   * and the one entering it — instead of every node on the canvas (§V16).
+   */
+  const isEditingName = useSyncExternalStore(
+    renameSession.subscribe,
+    useCallback(() => renameSession.get() === id, [renameSession, id]),
+  );
+  const typeLabels = nodeTypeLabelStore();
+  const showTypeLabel = useSyncExternalStore(typeLabels.subscribe, typeLabels.get);
 
   /**
    * §V101 — a badge press acts on the whole selection when this node is IN it, and on
@@ -128,6 +158,31 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   const hasPreview = producesTexture || producesValue || producesPointset || presentsTexture;
   const agent = snapshot.agent;
 
+  /**
+   * A user-given label wins over the definition title; absence means "follow the
+   * definition", so an unrenamed node tracks a retitled definition (§V29 rename).
+   */
+  const displayName = node.label ?? definition?.title ?? node.type;
+
+  /**
+   * T416 — the TYPE beside the name, and only when the name stopped carrying it.
+   *
+   * The owner's reason is the whole design: an unrenamed node is auto-named from its type
+   * (`blur1`, `over2`, §V129), so its name already IS the identification. Renaming to
+   * `Bloom pass` is what spends it. So the chip appears exactly when it adds something —
+   * on a node whose name is no longer its type's auto-name — and stays away otherwise,
+   * because "blur1  Blur" is the same word twice in the most crowded row in the app, which
+   * is precisely what §V90 forbids.
+   *
+   * The test is derived from `nameBaseFor`, the same function that MINTS those names, so
+   * it cannot drift from the naming rule (§V316). It is a display decision only: nothing
+   * here reads back into the document.
+   */
+  const nameCarriesType =
+    definition === undefined ||
+    new RegExp(`^${nameBaseFor(node.type)}\\d+$`, "i").test(displayName);
+  const typeLabel = showTypeLabel && !nameCarriesType ? (definition?.title ?? null) : null;
+
   return (
     <>
       {/*
@@ -173,9 +228,39 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             A user-given label wins over the definition title; absence means "follow the
             definition", so an unrenamed node tracks a retitled definition (§V29 rename).
           */}
-          <span className={styles.name} title={node.label ?? definition?.title ?? node.type}>
-            {node.label ?? definition?.title ?? node.type}
-          </span>
+          {isEditingName ? (
+            <NameEditor
+              nodeId={id}
+              initial={displayName}
+              onCommit={renameNode}
+              onClose={() => renameSession.end(id)}
+            />
+          ) : (
+            <>
+              <span
+                className={styles.name}
+                data-testid={`node-name-${id}`}
+                title={displayName}
+                // T415: TouchDesigner's own gesture, and the one the owner asked for —
+                // "edit name directly in the header bar". Routed through the command so
+                // the double-click, `n` and the menu's "Rename…" are one implementation
+                // (§V78); React Flow's own double-click zoom is off (`zoomOnDoubleClick`),
+                // so this cannot fight the canvas for the gesture.
+                onDoubleClick={() => beginRename(id)}
+              >
+                {displayName}
+              </span>
+              {typeLabel === null ? null : (
+                <span
+                  className={styles.typeLabel}
+                  data-testid={`node-type-${id}`}
+                  title={`${definition?.title ?? node.type} — this node's type`}
+                >
+                  {typeLabel}
+                </span>
+              )}
+            </>
+          )}
           {/* Compile/diagnostic badge is track H's component (§V27) — it renders nothing
               at all when the node is clean, which is what keeps the chrome quiet.
 
@@ -268,6 +353,142 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     </>
   );
 });
+
+interface NameEditorProps {
+  nodeId: string;
+  /** The name as shown, which is what the field opens holding. */
+  initial: string;
+  onCommit: (nodeId: string, label: string) => Promise<CommandResult<"node.rename">>;
+  onClose: () => void;
+}
+
+/**
+ * The node name, in place (T415, B60).
+ *
+ * ## Why an input on the title and not a dialog
+ *
+ * The owner asked to "edit name directly in the header bar", and the gesture is right:
+ * the name is one short word, the node is on screen, and a modal to type one word puts a
+ * scrim over the graph you are naming a node IN.
+ *
+ * ## Keys
+ *
+ * Enter commits, Escape cancels and restores, blur commits — the same three the number
+ * fields in project settings already have, so a control does not behave differently from
+ * its neighbour for reasons only its author knows.
+ *
+ * Typing here cannot reach a graph binding, and §V53 is what makes that structural rather
+ * than a promise: the keymap derives the `text` context from the EVENT TARGET, so a focused
+ * `<input>` swallows every printable key and the editing keys before any `graph` binding is
+ * matched. Pressing `b` in this field types a b; it does not bypass the node. Escape and
+ * Enter are NOT swallowed by that rule — they fall through to the broader contexts on
+ * purpose — so this handler stops them itself, and `preventDefault` is what actually does
+ * it: the keymap's window listener skips an event that is already `defaultPrevented`.
+ * (T360's chord capture needed `onEscapeKeyDown` on top of this because Radix listens in
+ * the CAPTURE phase, §V302. Nothing here is inside a Radix surface, so it does not apply —
+ * and a node title is not a dialog whose dismissal Escape has to be shared with.)
+ *
+ * ## A refused rename keeps the text
+ *
+ * §V325: a name that collides is REFUSED, never suffixed, because the references the user
+ * has written point at the exact word they typed. So the field stays open holding what
+ * they typed, says which name is taken, and takes focus back — silently reverting their
+ * typing, or silently accepting a name they did not choose, are the two worse answers.
+ */
+function NameEditor({ nodeId, initial, onCommit, onClose }: NameEditorProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [draft, setDraft] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  // Enter commits and then blurs, which would commit again. One settle per session.
+  const settling = useRef(false);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input === null) return;
+    input.focus();
+    // Selected, not just focused: renaming usually REPLACES the auto-name rather than
+    // editing it, and this is the only chance to say so without the user pressing ⌘A.
+    input.select();
+  }, []);
+
+  const commit = useCallback(async () => {
+    if (settling.current) return;
+    const next = draft.trim();
+    if (next === initial) {
+      // Nothing to say: closing without a command means no revision and no undo entry
+      // for an edit that did not happen (§V33).
+      onClose();
+      return;
+    }
+    settling.current = true;
+    const result = await onCommit(nodeId, next);
+    if (result.status === "applied") {
+      onClose();
+      return;
+    }
+    // §V288 — the refusal NAMES the problem, on the node, where the attempt was made.
+    settling.current = false;
+    const diagnostic = result.diagnostics.find((entry) => entry.severity !== "info");
+    setError(
+      [diagnostic?.message, diagnostic?.suggestion].filter((part) => part !== undefined).join(" ") ||
+        "That name was refused.",
+    );
+    const input = inputRef.current;
+    if (input !== null) {
+      input.focus();
+      input.select();
+    }
+  }, [draft, initial, nodeId, onClose, onCommit]);
+
+  const onKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        void commit();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        settling.current = true;
+        onClose();
+      }
+    },
+    [commit, onClose],
+  );
+
+  return (
+    <span className={cx(styles.nameEdit, "nodrag", "nopan")}>
+      <input
+        ref={inputRef}
+        className={styles.nameInput}
+        data-testid={`node-name-input-${nodeId}`}
+        type="text"
+        aria-label="Node name"
+        aria-invalid={error !== null}
+        value={draft}
+        maxLength={120}
+        // §V20 — the press belongs to the field, not to the node under it: without this,
+        // dragging to select the text drags the node across the canvas.
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => {
+          void commit();
+        }}
+      />
+      {error === null ? null : (
+        <span className={styles.nameError} role="alert" data-testid={`node-name-error-${nodeId}`}>
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
 
 interface NodeToggleProps {
   label: string;

@@ -1056,13 +1056,33 @@ describe("graph.applyPatch — names as identifiers (T221/T222, §V128/§V129)",
     expect(b?.label).toBe("solid2");
   });
 
-  it("suffixes a colliding rename instead of rejecting, and says so", async () => {
+  /**
+   * §V325 — an EXPLICIT name is REFUSED on collision, never suffixed.
+   *
+   * This asserted the opposite until T415. Suffixing looked kind and was not: the caller
+   * that typed `solid1` has its `op('solid1')` / driven channel / feedback `source`
+   * written against that exact word, so being handed `solid12` leaves every one of those
+   * references pointing at the OTHER node, silently. Refusing keeps the document the way
+   * the user last saw it and says which name is taken.
+   */
+  it("REFUSES a colliding rename, names the collision, and suggests a free name", async () => {
     const created = await apply([addSolid("$a"), addSolid("$b", 100)]);
     const bId = created.output.createdIds["$b"] as string;
     const result = await apply([{ op: "setNodeLabel", nodeId: bId, label: "solid1" }]);
+    expect(result.status).toBe("rejected");
+    // The node keeps the name it had: a refused rename changes nothing.
+    expect(graph().nodes[bId]?.label).toBe("solid2");
+    const taken = result.diagnostics.find((d) => d.code === "node.nameTaken");
+    expect(taken?.message).toContain("solid1");
+    expect(taken?.suggestion).toContain("solid12");
+  });
+
+  it("renaming a node to the name it already has is not a collision with itself", async () => {
+    const created = await apply([addSolid("$a")]);
+    const aId = created.output.createdIds["$a"] as string;
+    const result = await apply([{ op: "setNodeLabel", nodeId: aId, label: "solid1" }]);
     expect(result.status).toBe("applied");
-    expect(graph().nodes[bId]?.label).toBe("solid12");
-    expect(result.diagnostics.some((d) => d.code === "node.name.suffixed")).toBe(true);
+    expect(graph().nodes[aId]?.label).toBe("solid1");
   });
 
   it("a rename rewrites every expression reference in the SAME patch (§V128)", async () => {

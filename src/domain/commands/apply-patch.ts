@@ -790,21 +790,30 @@ function executeOperation(
           nodeId: node.id,
         });
       }
-      // §V129: a collision auto-suffixes rather than rejects — the word is the user's
-      // intent, the number is bookkeeping. §V128: the rename rewrites every stored
-      // reference to the old name IN THIS SAME PATCH, so a rename never silently breaks
-      // an expression; both adjustments are reported, never silent.
+      // §V325: a collision on an EXPLICIT name REFUSES; it is never suffixed.
+      //
+      // This used to mint `over1_2` and report it as info, which is the dangle §V324
+      // exists to kill wearing a diagnostic: a caller carrying a label — the user typing
+      // in the node header, an agent replaying a patch — has `op('over1_2')`, a driven
+      // channel or a feedback `source` written against EXACTLY the name it asked for, so
+      // a name it did not choose hands it a node nothing points at. `addNode`'s explicit
+      // `label` already refuses (T371); this was the other half of the same rule and was
+      // still suffixing. `resolveRename` stays: it names the free neighbour, which is the
+      // fix the refusal can suggest rather than perform (§V288).
+      //
+      // §V128: the rename rewrites every stored reference to the old name IN THIS SAME
+      // PATCH, so a rename never silently breaks a bind; that is reported, never silent.
       const previous = node.label;
-      const resolved = resolveRename(draft, label, node.id);
-      node.label = resolved;
-      if (resolved !== label) {
-        run.diagnostics.push({
-          severity: "info",
-          code: "node.name.suffixed",
-          message: `"${label}" is taken; the node is named "${resolved}".`,
+      const holder = nodeNames(draft).get(label);
+      if (holder !== undefined && holder !== node.id) {
+        fail("node.nameTaken", `the name "${label}" is already in use.`, {
           nodeId: node.id,
+          suggestion: `"${resolveRename(draft, label, node.id)}" is free.`,
         });
+        return;
       }
+      const resolved = label;
+      node.label = resolved;
       if (previous !== undefined && previous !== resolved) {
         const rewritten = rewriteNodeNameReferences(draft, previous, resolved);
         if (rewritten > 0) {

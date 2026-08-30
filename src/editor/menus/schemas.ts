@@ -9,6 +9,9 @@ import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 // `@editor/inspect` barrel: the barrel exports React surfaces, and `@editor/inspect`
 // imports this module's `resolveMenuTarget`.
 import { SHOW_NODE_INFO_COMMAND } from "@editor/inspect/command.ts";
+// Same reason, same shape: the constant rather than a literal, and from the module
+// itself rather than the `@editor/nodes` barrel, which exports React surfaces.
+import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
 import type { MenuGuardName } from "./guards.ts";
 
 /**
@@ -103,9 +106,11 @@ export const NODE_MENU: MenuSchema = {
     // you can reach without knowing it exists.
     { command: "node.togglePin", label: "Pin preview" },
     { separator: true },
-    // Not `planned()` since `node.rename` became a real command: routing a live name
-    // through the planned cast would be a promise about something already built.
-    { command: "node.rename", label: "Rename…" },
+    // The ellipsis is a promise, and until T415 it was a lie: this named `node.rename`,
+    // which needs a `label` no menu route could ever supply, so the item dispatched a
+    // rename with no name (B60, §V342). It names the command that OPENS the inline editor
+    // on the node's title; that editor is what runs `node.rename`.
+    { command: BEGIN_RENAME_COMMAND, label: "Rename…" },
     { command: planned("node.openColorPalette"), label: "Set colour…" },
     { command: planned("graph.diveIn"), label: "Dive in" },
     { separator: true },
