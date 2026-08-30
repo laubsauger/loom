@@ -1,6 +1,8 @@
 import type { GraphPatchOperation, TempId } from "@domain/types/patch.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
-import type { Revision } from "@domain/types/ids.ts";
+import type { NodeId, Revision } from "@domain/types/ids.ts";
+import type { GraphDocument } from "@domain/types/graph.ts";
+import { layoutGraph, placeRelative } from "@domain/graph/layout.ts";
 
 import {
   addNodeInput,
@@ -13,6 +15,7 @@ import {
   setOutputInput,
   setParametersInput,
   setShaderSourceInput,
+  layoutGraphInput,
 } from "../schemas.ts";
 import type {
   AddNodeInput,
@@ -25,6 +28,7 @@ import type {
   SetOutputInput,
   SetParametersInput,
   SetShaderSourceInput,
+  LayoutGraphInput,
 } from "../schemas.ts";
 import { dispatchOperations, dispatchPatchCommand, result, type PatchToolData } from "../tool-support.ts";
 import type { AgentTool, ToolStatus } from "../types.ts";
@@ -92,33 +96,79 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
   name: "add_node",
   title: "Add node",
   description:
-    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node.",
+    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node. Pass placement {relativeTo, direction} to sit next to an existing node instead of inventing coordinates.",
   kind: "mutate",
   inputSchema: addNodeInput,
   requires: { commands: ["graph.applyPatch"] },
   capabilities: [],
   mutates: true,
-  preview: (input) => [operationsForAdd(input)],
-  run: (input, runtime) =>
-    dispatchOperations("add_node", runtime, [operationsForAdd(input)], {
+  preview: (input) => [operationsForAdd(input, input.position ?? { x: 0, y: 0 })],
+  async run(input, runtime) {
+    // T280: placement resolves against the CURRENT document, so an agent building a
+    // chain never computes a coordinate — "right of the blur" is the whole statement.
+    let at = input.position;
+    if (at === undefined && input.placement !== undefined) {
+      const graph = await runtime.query<GraphDocument>("graph.get", {});
+      at = placeRelative(graph, input.placement.relativeTo, input.placement.direction ?? "right");
+    }
+    return dispatchOperations("add_node", runtime, [operationsForAdd(input, at ?? { x: 0, y: 0 })], {
       label: "Add node",
       baseRevision: input.baseRevision,
-    }),
+    });
+  },
 };
 
-function operationsForAdd(input: {
-  type: string;
-  position?: { x: number; y: number } | undefined;
-  parameters?: Record<string, ParameterValue> | undefined;
-}): GraphPatchOperation {
+function operationsForAdd(
+  input: {
+    type: string;
+    parameters?: Record<string, ParameterValue> | undefined;
+  },
+  position: { x: number; y: number },
+): GraphPatchOperation {
   return {
     op: "addNode",
     ref: tempRef("node"),
     type: input.type,
-    position: input.position ?? { x: 0, y: 0 },
+    position,
     ...(input.parameters === undefined ? {} : { parameters: input.parameters }),
   };
 }
+
+/**
+ * `layout_graph` (T279, §V78): the deterministic tidy, shared verbatim with the canvas
+ * menu and the `L` key — an agent-built graph and a human-tidied one converge on the
+ * same picture. One `moveNodes` operation, one undo group.
+ */
+export const layoutGraphTool: AgentTool<LayoutGraphInput, PatchToolData> = {
+  name: "layout_graph",
+  title: "Layout graph",
+  description:
+    "Auto-arrange nodes in reading order: data flows left to right, ranks by depth, crossings minimized, deterministic. Restrict with nodeIds; one undo step.",
+  kind: "mutate",
+  inputSchema: layoutGraphInput,
+  requires: { commands: ["graph.applyPatch"] },
+  capabilities: [],
+  mutates: true,
+  async run(input, runtime) {
+    const graph = await runtime.query<GraphDocument>("graph.get", {});
+    const only = input.nodeIds === undefined ? undefined : new Set(input.nodeIds as NodeId[]);
+    const positions = layoutGraph(graph, only === undefined ? {} : { only });
+    if (Object.keys(positions).length === 0) {
+      // An empty document tidies to nothing; saying so beats an empty patch round-trip.
+      return result<PatchToolData>("layout_graph", "ok", {
+        status: "applied",
+        revision: input.baseRevision as Revision,
+        appliedOperations: 0,
+        createdIds: {},
+        undoGroupId: null,
+      });
+    }
+    return dispatchOperations("layout_graph", runtime, [{ op: "moveNodes", positions }], {
+      label: "Layout graph",
+      baseRevision: input.baseRevision,
+    });
+  },
+};
 
 export const removeNodes: AgentTool<RemoveNodesInput, PatchToolData> = {
   name: "remove_nodes",
@@ -301,6 +351,7 @@ export const redo = historyTool(
 export const mutationTools: readonly AgentTool[] = [
   applyGraphPatch,
   addNode,
+  layoutGraphTool,
   removeNodes,
   connectPorts,
   disconnectPorts,

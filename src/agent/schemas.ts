@@ -132,7 +132,28 @@ export const addNodeInput = z
   .object({
     type: z.string().min(1),
     position: position.optional(),
+    /**
+     * T280: place next to an existing node instead of inventing coordinates — the
+     * agent-ergonomic default for building a chain left to right. Ignored when an
+     * explicit position is given.
+     */
+    placement: z
+      .object({
+        relativeTo: z.string().min(1),
+        direction: z.enum(["right", "below", "left", "above"]).optional(),
+      })
+      .strict()
+      .optional(),
     parameters: parameters.optional(),
+    baseRevision,
+    dryRun,
+  })
+  .strict();
+
+export const layoutGraphInput = z
+  .object({
+    /** Restrict the tidy to these nodes; absent = the whole document. */
+    nodeIds: z.array(z.string().min(1)).optional(),
     baseRevision,
     dryRun,
   })
@@ -196,6 +217,7 @@ export type ListNodeDefinitionsInput = z.infer<typeof listNodeDefinitionsInput>;
 export type GetNodeDefinitionInput = z.infer<typeof getNodeDefinitionInput>;
 export type GetDiagnosticsInput = z.infer<typeof getDiagnosticsInput>;
 export type AddNodeInput = z.infer<typeof addNodeInput>;
+export type LayoutGraphInput = z.infer<typeof layoutGraphInput>;
 export type RemoveNodesInput = z.infer<typeof removeNodesInput>;
 export type ConnectPortsInput = z.infer<typeof connectPortsInput>;
 export type DisconnectPortsInput = z.infer<typeof disconnectPortsInput>;
