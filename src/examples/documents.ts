@@ -186,7 +186,7 @@ export const feedbackEchoDocument = document(
         extend: "zero",
         aspectcorrect: true,
       }),
-      node("soften", "blur", [-360, 220], { size: 2.5, filter: "gaussian", extend: "zero" }),
+      node("soften", "blur", [-360, 240], { size: 2.5, filter: "gaussian", extend: "zero" }),
       node("decay", "level", [-360, 60], { blacklevel: 0.015, whitelevel: 1, opacity: 1 }),
       node("out", "output", [260, -60]),
     ],
@@ -383,7 +383,7 @@ export const reactionDiffusionDocument = document(
           { position: 1, color: [1, 0.97, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
-      node("cycle", "lfo", [140, 520], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+      node("cycle", "lfo", [140, 560], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
         label: "lfo1",
       }),
       node("tint", "lookup", [400, 380], { channel: "green", row: 0.5, scale: 2.4 }, {
@@ -1343,13 +1343,13 @@ const prismDocument = document(
       node(
         "pulse",
         "lfo",
-        [-1180, 580],
+        [-1180, 600],
         // 0.14 either side of 0.32: the lens breathes between radius 0.18 and 0.46, both
         // well inside the manifest's range, so nothing is ever clamped on the way through.
         { shape: "square", frequency: 0.22, amplitude: 0.14, offset: 0.32, phase: 0 },
         { label: "pulse1" },
       ),
-      node("ease", "valueLag", [-940, 580], { lag: 0.45 }, { label: "ease1" }),
+      node("ease", "valueLag", [-940, 600], { lag: 0.45 }, { label: "ease1" }),
 
       // ---- the light -------------------------------------------------------------
       node(
@@ -1710,14 +1710,14 @@ const audioRdDocument = document(
       node("scap", "valueLimit", [-500, 340], { minimum: 1, maximum: 34 }, { label: "steps1" }),
       // Chemistry: lowMid nudges the white point 0.64..0.80, hard-fenced to the band
       // where the pattern SURVIVES (the tutorial's "so the pattern doesn't disappear").
-      node("wgain", "valueMath", [-980, 500], { operation: "multiply", operand: 0.16 }, { label: "wgain1" }),
-      node("wbase", "valueMath", [-740, 500], { operation: "add", operand: 0.64 }, { label: "wbase1" }),
-      node("wcap", "valueLimit", [-500, 500], { minimum: 0.62, maximum: 0.8 }, { label: "wlevel1" }),
+      node("wgain", "valueMath", [-980, 540], { operation: "multiply", operand: 0.16 }, { label: "wgain1" }),
+      node("wbase", "valueMath", [-740, 540], { operation: "add", operand: 0.64 }, { label: "wbase1" }),
+      node("wcap", "valueLimit", [-500, 540], { minimum: 0.62, maximum: 0.8 }, { label: "wlevel1" }),
       // Kick: onset EVENTS through Trigger, then Lag makes each pulse a decaying bump.
-      node("trig", "valueTrigger", [-1220, 580], { threshold: 0.5 }, { label: "trig1" }),
-      node("kick", "valueLag", [-980, 660], { lag: 0.35 }, { label: "kick1" }),
-      node("kgain", "valueMath", [-740, 660], { operation: "multiply", operand: 0.9 }, { label: "kgain1" }),
-      node("kscale", "valueMath", [-500, 660], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
+      node("trig", "valueTrigger", [-1220, 600], { threshold: 0.5 }, { label: "trig1" }),
+      node("kick", "valueLag", [-980, 740], { lag: 0.35 }, { label: "kick1" }),
+      node("kgain", "valueMath", [-740, 740], { operation: "multiply", operand: 0.9 }, { label: "kgain1" }),
+      node("kscale", "valueMath", [-500, 740], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
 
       // ---- the chemistry map (E2's, verbatim in spirit) -------------------------
       node("broad", "noise", [-1460, -140], {
@@ -1767,7 +1767,7 @@ const audioRdDocument = document(
           { position: 1, color: [1, 0.95, 0.85, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
-      node("cycle", "lfo", [-200, 540], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+      node("cycle", "lfo", [-200, 560], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
         label: "lfo1",
       }),
       node("tint", "lookup", [60, 380], { channel: "green", row: 0.5 }, {
@@ -1782,8 +1782,8 @@ const audioRdDocument = document(
       // The RGB delay: three taps into time, one per channel. Full scale — this ring
       // is read for its colour, not just its motion.
       node("tapR", "cache", [320, 300], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
-      node("tapG", "cache", [320, 440], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
-      node("tapB", "cache", [320, 580], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
+      node("tapG", "cache", [320, 480], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
+      node("tapB", "cache", [320, 660], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
       // Reorder is two-input, so the three taps braid in two steps: red-with-green
       // first, then the blue tap joins.
       node("fringeRG", "reorder", [580, 370], {
@@ -1926,11 +1926,11 @@ const gooeyballDocument = document(
        * LFOs in quadrature), and because a light is VALUES, the orbit never rebuilds
        * anything (§V5).
        */
-      node("key", "light", [340, -520], {
+      node("key", "light", [340, -580], {
         kind: "directional", color: [1, 0.9, 0.75, 1], intensity: 0.9, direction: [-0.5, -0.7, -0.5],
       }, { label: "key1" }),
-      node("orbitx", "lfo", [340, -640], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0 }, { label: "orbitx1" }),
-      node("orbitz", "lfo", [340, -760], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0.25 }, { label: "orbitz1" }),
+      node("orbitx", "lfo", [340, -760], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0 }, { label: "orbitx1" }),
+      node("orbitz", "lfo", [340, -940], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0.25 }, { label: "orbitz1" }),
       node("fill", "light", [340, -400], {
         kind: "point", color: [0.35, 0.65, 1, 1], intensity: 1.6,
       }, {
@@ -2055,14 +2055,14 @@ const stageDocument = document(
     [
       // ---- scene A: the performance ---------------------------------------------
       node("ringA", "pointTorus", [-1460, -200], { cols: 36, rows: 18, radius: 0.7, radius2: 0.28 }, { label: "ringa1" }),
-      node("matA", "materialPhong", [-1460, -380], {
+      node("matA", "materialPhong", [-1460, -400], {
         color: [1, 0.25, 0.55, 1], specular: [1, 1, 1, 1], shininess: 80, roughness: 0.25,
       }, { label: "mata1" }),
       node("geoA", "geometry", [-1180, -200], {
         mode: "instances", shape: "octahedron", scale: 0.075, material: "mata1",
       }, { label: "geoa1" }),
-      node("orbAx", "lfo", [-1180, -520], { shape: "sine", frequency: 0.07, amplitude: 2.4, offset: 0, phase: 0 }, { label: "orbax1" }),
-      node("orbAz", "lfo", [-1180, -640], { shape: "sine", frequency: 0.07, amplitude: 2.4, offset: 0, phase: 0.25 }, { label: "orbaz1" }),
+      node("orbAx", "lfo", [-1180, -560], { shape: "sine", frequency: 0.07, amplitude: 2.4, offset: 0, phase: 0 }, { label: "orbax1" }),
+      node("orbAz", "lfo", [-1180, -740], { shape: "sine", frequency: 0.07, amplitude: 2.4, offset: 0, phase: 0.25 }, { label: "orbaz1" }),
       node("camA", "camera", [-1180, -380], { lookAt: [0, 0, 0], fov: 50 }, {
         label: "cama1",
         parameters: {
@@ -2071,7 +2071,7 @@ const stageDocument = document(
           "eye.z": drivenSlot("orbaz1", 0),
         },
       }),
-      node("keyA", "light", [-1180, -760], {
+      node("keyA", "light", [-1180, -920], {
         kind: "directional", color: [1, 0.85, 0.95, 1], intensity: 1.1, direction: [-0.3, -0.8, -0.5],
       }, { label: "keya1" }),
       node("shotA", "render", [-880, -200], {
@@ -2086,20 +2086,20 @@ const stageDocument = document(
       // ---- scene B: the stage ----------------------------------------------------
       node("screenGrid", "pointGrid", [-580, 40], { cols: 48, rows: 27, count: 1296, sizeX: 3.2, sizeY: 1.8 }, { label: "screengrid1" }),
       node("screen", "geometry", [-280, 40], { mode: "surface", material: "screenmat1" }, { label: "screen1" }),
-      node("floorPts", "pointGrid", [-580, 240], { cols: 12, rows: 12, count: 144, sizeX: 4, sizeY: 3 }, { label: "floorpts1" }),
-      node("floorKernel", "pointKernel", [-430, 240], {
+      node("floorPts", "pointGrid", [-620, 240], { cols: 12, rows: 12, count: 144, sizeX: 4, sizeY: 3 }, { label: "floorpts1" }),
+      node("floorKernel", "pointKernel", [-410, 240], {
         capacity: 144,
         attributes: '[{"name":"position","type":"vec3f","semantic":"position","default":[0,0,0]}]',
         kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the xy plane lies down: y becomes depth, the floor sits under the screen */\n  q.position = vec3f(p.position.x, -1.15, p.position.y - 0.6);\n  return q;\n}",
       }, { label: "floorkernel1" }),
-      node("matFloor", "materialPhong", [-430, 420], {
+      node("matFloor", "materialPhong", [-410, 420], {
         color: [0.25, 0.28, 0.38, 1], specular: [0.6, 0.7, 1, 1], shininess: 24, roughness: 0.7,
       }, { label: "matfloor1" }),
-      node("floor", "geometry", [-280, 240], {
+      node("floor", "geometry", [-200, 240], {
         mode: "instances", shape: "box", scale: 0.09, material: "matfloor1",
       }, { label: "floor1" }),
       node("orbBx", "lfo", [0, -160], { shape: "sine", frequency: 0.045, amplitude: 1.4, offset: 0, phase: 0 }, { label: "orbbx1" }),
-      node("breathe", "lfo", [0, -280], { shape: "sine", frequency: 0.2, amplitude: 0.5, offset: 1.1, phase: 0 }, { label: "breathe1" }),
+      node("breathe", "lfo", [0, -340], { shape: "sine", frequency: 0.2, amplitude: 0.5, offset: 1.1, phase: 0 }, { label: "breathe1" }),
       node("camB", "camera", [0, 40], { lookAt: [0, -0.1, 0], fov: 55 }, {
         label: "camb1",
         parameters: {

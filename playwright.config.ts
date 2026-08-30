@@ -7,6 +7,13 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./src/tests/e2e",
+  /**
+   * T460: a spec may import APP source to compare a model against the rendered DOM, and
+   * `src/**` uses the `@domain`/`@editor` aliases throughout. The root `tsconfig.json` is
+   * a solution file with no `compilerOptions`, so without this Playwright resolves none
+   * of them and such a spec cannot load at all.
+   */
+  tsconfig: "./tsconfig.app.json",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

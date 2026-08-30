@@ -85,7 +85,7 @@
         },
         "position": {
           "x": 0,
-          "y": -280
+          "y": -340
         },
         "type": "lfo"
       },
@@ -178,7 +178,7 @@
           "shape": "box"
         },
         "position": {
-          "x": -280,
+          "x": -200,
           "y": 240
         },
         "type": "geometry"
@@ -193,7 +193,7 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the xy plane lies down: y becomes depth, the floor sits under the screen */\n  q.position = vec3f(p.position.x, -1.15, p.position.y - 0.6);\n  return q;\n}"
         },
         "position": {
-          "x": -430,
+          "x": -410,
           "y": 240
         },
         "type": "pointKernel"
@@ -210,7 +210,7 @@
           "sizeY": 3
         },
         "position": {
-          "x": -580,
+          "x": -620,
           "y": 240
         },
         "type": "pointGrid"
@@ -252,7 +252,7 @@
         },
         "position": {
           "x": -1180,
-          "y": -760
+          "y": -920
         },
         "type": "light"
       },
@@ -315,7 +315,7 @@
         },
         "position": {
           "x": -1460,
-          "y": -380
+          "y": -400
         },
         "type": "materialPhong"
       },
@@ -340,7 +340,7 @@
           ]
         },
         "position": {
-          "x": -430,
+          "x": -410,
           "y": 420
         },
         "type": "materialPhong"
@@ -358,7 +358,7 @@
         },
         "position": {
           "x": -1180,
-          "y": -520
+          "y": -560
         },
         "type": "lfo"
       },
@@ -375,7 +375,7 @@
         },
         "position": {
           "x": -1180,
-          "y": -640
+          "y": -740
         },
         "type": "lfo"
       },

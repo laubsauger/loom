@@ -353,7 +353,7 @@
         },
         "position": {
           "x": -200,
-          "y": 540
+          "y": 560
         },
         "type": "lfo"
       },
@@ -439,7 +439,7 @@
         },
         "position": {
           "x": -740,
-          "y": 660
+          "y": 740
         },
         "type": "valueMath"
       },
@@ -452,7 +452,7 @@
         },
         "position": {
           "x": -980,
-          "y": 660
+          "y": 740
         },
         "type": "valueLag"
       },
@@ -466,7 +466,7 @@
         },
         "position": {
           "x": -500,
-          "y": 660
+          "y": 740
         },
         "type": "valueMath"
       },
@@ -709,7 +709,7 @@
         },
         "position": {
           "x": 320,
-          "y": 580
+          "y": 660
         },
         "type": "cache"
       },
@@ -724,7 +724,7 @@
         },
         "position": {
           "x": 320,
-          "y": 440
+          "y": 480
         },
         "type": "cache"
       },
@@ -792,7 +792,7 @@
         },
         "position": {
           "x": -1220,
-          "y": 580
+          "y": 600
         },
         "type": "valueTrigger"
       },
@@ -829,7 +829,7 @@
         },
         "position": {
           "x": -740,
-          "y": 500
+          "y": 540
         },
         "type": "valueMath"
       },
@@ -843,7 +843,7 @@
         },
         "position": {
           "x": -500,
-          "y": 500
+          "y": 540
         },
         "type": "valueLimit"
       },
@@ -857,7 +857,7 @@
         },
         "position": {
           "x": -980,
-          "y": 500
+          "y": 540
         },
         "type": "valueMath"
       },
