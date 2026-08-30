@@ -115,8 +115,31 @@ export function StopsField({
         The gradient strip is the readout: it is the one place the list's ORDER and its
         positions become a single legible fact, and it costs no extra row because it
         replaces the "N stops" caption a list would otherwise need.
+
+        T499: the strip draws the ACTUAL gradient, not ticks on a dark ground — you could
+        see where the stops were but not what the ramp looked like. CSS's own color-stop
+        rule matches the shader's exactly: list order wins, and a position behind its
+        predecessor clamps into a hard edge, which is precisely what the compiler says a
+        backwards segment renders as. Ticks stay on top, because position and order are
+        still the editable facts.
       */}
-      <div className={styles.stopsBar} aria-hidden>
+      <div
+        className={styles.stopsBar}
+        aria-hidden
+        style={{
+          // v17-allow-dynamic-color: the gradient IS the user's palette; no token can
+          // supply it. A single stop paints flat, which is what a one-stop ramp is.
+          background:
+            stops.length === 0
+              ? undefined
+              : `linear-gradient(90deg, ${(stops.length === 1 ? [stops[0] as ColorStop, stops[0] as ColorStop] : stops)
+                  .map(
+                    (stop) =>
+                      `${cssColorFor(stop.color, space)} ${Math.max(0, Math.min(1, stop.position)) * 100}%`,
+                  )
+                  .join(", ")})`,
+        }}
+      >
         {stops.map((stop, index) => (
           <span
             key={index}

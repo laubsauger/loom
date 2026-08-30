@@ -92,6 +92,29 @@ const click = async (name: string | RegExp): Promise<void> => {
   await settle();
 };
 
+/**
+ * T499 — the strip draws the ACTUAL gradient. Ticks on a dark ground said where the
+ * stops were but not what the ramp looked like; the owner called it "only showing the
+ * stops on black background". The bar's background is now the interpolated ramp, via
+ * CSS's own color-stop rule — which matches the shader's exactly, hard edge on a
+ * backwards segment included. Generality is free: StopsField is the ONE control every
+ * stops-typed parameter renders, so a palette on any node draws its colours.
+ */
+describe("the strip draws the gradient (T499)", () => {
+  it("paints the interpolated ramp behind the ticks, positions included", async () => {
+    await setup();
+    const bar = document.querySelector<HTMLElement>('[class*="stopsBar"]');
+    expect(bar).not.toBeNull();
+    const background = bar?.style.background ?? "";
+    expect(background).toContain("linear-gradient(90deg");
+    // Both authored stops appear, at their authored positions.
+    expect(background).toContain("0%");
+    expect(background).toContain("100%");
+    // And the value is a COLOUR ramp, not tick markup: at least two colour entries.
+    expect(background.match(/rgba?\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe("the stop editor (T270)", () => {
   it("adds a stop between the two it sits between, in ONE patch (§V114)", async () => {
     const { bus, stops } = await setup();
