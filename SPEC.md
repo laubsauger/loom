@@ -1054,7 +1054,7 @@ T254|.|per-node cook gate ∈ `encode()` + dirty set on `Program` + pure clock-f
 T255|.|**fix `renderedThisFrame`** — `noteFrame()` bumps EVERY node ∀ frame ∴ popup always reads true (B17)|V85
 T256|.|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, better than TD's)|V85
 T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
-T247|.|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
+T247|x|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
 T245|x|param applicability predicates + inactive rendering ∈ ∀ controls (B14). noise `speed` on 2D types is case 0|V146,V90
 T244|x|lint rule for V145 — ⊥ implicit global-named type|V145
