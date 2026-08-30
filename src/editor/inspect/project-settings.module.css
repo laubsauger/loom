@@ -1,10 +1,17 @@
-/* Project settings dialog (T266). Every colour is a token (§V17). */
+/*
+ * Project settings dialog (T266, T390). Every colour is a token (§V17).
+ *
+ * There are no input styles in this file any more, and that is the point of T390: the
+ * rows, the numbers, the select and the switch are `ui/controls` — the same components the
+ * inspector's parameter rows are made of, so a number field here behaves and reads like a
+ * number field everywhere else. What is left is only the page's own grouping.
+ */
 
 .group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
+  gap: var(--space-1);
+  padding-top: var(--space-4);
   border-top: var(--border-hairline);
 }
 
@@ -13,9 +20,15 @@
   border-top: none;
 }
 
+/*
+ * The headings used to be the same size, colour and letterform as the labels under them,
+ * so four groups read as one flat list of nine rows. They are the level ABOVE the labels
+ * now — brighter and tracked out, against dimmed labels — which is the only thing that
+ * makes "output / timing / graph / determinism" scan as structure.
+ */
 .groupTitle {
-  margin: 0;
-  color: var(--text-dim);
+  margin: 0 0 var(--space-1);
+  color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
   font-weight: var(--weight-header);
@@ -24,56 +37,24 @@
   text-transform: uppercase;
 }
 
-.row {
-  display: flex;
-  gap: var(--space-4);
-}
-
-.field {
-  display: flex;
-  align-items: center;
+/*
+ * Two fields that are ONE value — width × height. Equal columns, so the pair reads as a
+ * pair and neither half is arbitrarily wider than the other.
+ */
+.pair {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: var(--space-2);
-  min-width: 0;
-}
-
-.label {
-  flex: 0 0 auto;
-  min-width: var(--space-24);
-  color: var(--text-dim);
-  font-family: var(--font-ui);
-  font-size: var(--fs-micro);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-display);
-}
-
-.input,
-.select {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: var(--space-1) var(--space-2);
-  border: var(--border-hairline);
-  border-radius: var(--radius);
-  background: var(--bg-raise);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: var(--tracking-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.input:focus-visible,
-.select:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 1px;
 }
 
 /*
- * The unit sits inside the control row, which §V90 allows: label, value, unit and a state
- * badge are the four things a control row may carry inline.
+ * A LONE small integer — a rate, a seed. Sized by its content class rather than by
+ * whatever the row column happened to be: a two-digit rate in a 300px box was half the
+ * complaint. Every field of this class is the same width as every other, so the rows still
+ * line up; it is the pair above and this that differ, and they differ because a resolution
+ * and a frame rate are not the same kind of number.
  */
-.unit {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  font-family: var(--font-ui);
-  font-size: var(--fs-micro);
+.scalar {
+  max-width: calc(var(--space-48) * 3);
 }
