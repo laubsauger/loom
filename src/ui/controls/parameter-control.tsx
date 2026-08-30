@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ResolvedComponent } from "@domain/parameters/resolve.ts";
 import { componentKey } from "@domain/parameters/slots.ts";
+import { numericRangeOf } from "@domain/parameters/expression-range.ts";
 import { isContainerParameter } from "@domain/types/parameters.ts";
 import type {
   ColorStop,
@@ -195,6 +196,9 @@ export function ParameterControl({
         disabled={disabled}
         autoFocus={focusExpression}
         diagnostic={diagnostic}
+        // T368: the manifest's own bounds, so an expression that will clamp says so while
+        // it is being written. The panel cannot know them; only the definition does.
+        range={numericRangeOf(definition)}
         onChange={(next) => writeSlot(parameterKey, next)}
       />
       {components === undefined ? null : (
@@ -208,6 +212,8 @@ export function ParameterControl({
                 value={component.value}
                 disabled={disabled}
                 diagnostic={component.diagnostic}
+                // A channel of a compound is bounded by the compound's own declaration.
+                range={numericRangeOf(definition)}
                 onChange={(next) => writeSlot(componentKey(parameterKey, component.name), next)}
               />
             </div>

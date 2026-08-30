@@ -1,4 +1,4 @@
-import { acceptedFunctions, frameVariableNames } from "@domain/expressions/reference.ts";
+import { acceptedFunctionCalls, frameVariableNames } from "@domain/expressions/reference.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 
 /**
@@ -87,10 +87,13 @@ export function completionAt(
           }));
   const candidates: CompletionCandidate[] = [
     ...variables,
-    ...acceptedFunctions().map((name) => ({
-      text: name,
+    // The CALL SHAPE, not a bare `()`: the whole cost of a function is knowing how many
+    // arguments it takes and in what order, and `clamp(x, low, high)` answers that where
+    // `clamp()` sends the user to the help panel to find out (T370, §V150).
+    ...acceptedFunctionCalls().map((fn) => ({
+      text: fn.name,
       kind: "function" as const,
-      detail: "()",
+      detail: fn.signature,
     })),
   ];
   return finish(prefix, clamped - prefix.length, clamped, candidates);

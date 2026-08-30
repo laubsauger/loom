@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { FrameEvaluationInput } from "../types/frame.ts";
-import { evaluateAst, evaluateExpression, parseExpression, scopeFromFrame } from "./evaluate.ts";
+import {
+  evaluateAst,
+  evaluateExpression,
+  functionNames,
+  functionSignature,
+  parseExpression,
+  scopeFromFrame,
+} from "./evaluate.ts";
 
 /**
  * T108, §V71: the single expression engine — deterministic, sandboxed by construction,
@@ -67,10 +74,100 @@ describe("parse once, evaluate per frame", () => {
   });
 });
 
-describe("the grammar has no function calls yet", () => {
-  it("recognises call syntax and rejects it with a clear reason", () => {
-    const result = parseExpression("sin(1)");
+/**
+ * T370 — the function whitelist, and the boundary around it.
+ *
+ * The set is closed and argued in `FUNCTIONS`: a name is in it because arithmetic cannot
+ * say it, or because the arithmetic form is subtly wrong. These tests assert the value a
+ * user would see, not merely that a call parses.
+ */
+describe("the function whitelist", () => {
+  const value = (source: string, scope = {}): number => {
+    const result = evaluateExpression(source, scope);
+    if (!result.ok) throw new Error(`expected "${source}" to evaluate: ${result.reason}`);
+    return result.value;
+  };
+
+  it("oscillates, which no amount of arithmetic can do", () => {
+    expect(value("sin(0)")).toBe(0);
+    expect(value("cos(0)")).toBe(1);
+    // The reason the set exists: a bounded parameter can now be driven forever without
+    // leaving its range, from the parameter itself.
+    expect(value("sin(time * 2) * 0.3 + 0.5", { time: 0 })).toBeCloseTo(0.5, 12);
+  });
+
+  it("wraps with mod where % would go negative — the difference is the point", () => {
+    expect(value("mod(370, 360)")).toBe(10);
+    // `%` is a REMAINDER: this is the case that makes `mod` a different function and not
+    // a synonym, and it is exactly the case a rewinding timeline produces.
+    expect(value("-10 % 360")).toBe(-10);
+    expect(value("mod(-10, 360)")).toBe(350);
+    expect(value("fract(-0.25)")).toBe(0.75);
+  });
+
+  it("clamps explicitly, saying out loud what a bounded parameter does silently", () => {
+    expect(value("clamp(5, 0, 1)")).toBe(1);
+    expect(value("clamp(-5, 0, 1)")).toBe(0);
+    expect(value("clamp(0.5, 0, 1)")).toBe(0.5);
+  });
+
+  it("quantises and takes extremes and directions", () => {
+    expect(value("floor(2.7)")).toBe(2);
+    expect(value("ceil(2.1)")).toBe(3);
+    expect(value("round(2.5)")).toBe(3);
+    expect(value("abs(-3)")).toBe(3);
+    expect(value("min(2, 5)")).toBe(2);
+    expect(value("max(2, 5)")).toBe(5);
+    expect(value("sign(-4)")).toBe(-1);
+  });
+
+  it("composes with the rest of the grammar, including op() and variables", () => {
+    expect(value("clamp(time * 7, -360, 360)", { time: 100 })).toBe(360);
+    expect(value("floor(time) + fract(time)", { time: 2.25 })).toBeCloseTo(2.25, 12);
+  });
+
+  it("names the whole whitelist when a function is not in it (§V288)", () => {
+    // The teaching moment. `smoothstep` is a reasonable thing to try, and the answer has
+    // to be more useful than "no" — it has to say what the grammar IS.
+    const result = parseExpression("smoothstep(0, 1, time)");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toContain("functions are not available yet");
+    if (result.ok) return;
+    expect(result.reason).toContain('"smoothstep"');
+    for (const name of ["abs", "clamp", "cos", "fract", "mod", "sin"]) {
+      expect(result.reason).toContain(name);
+    }
+  });
+
+  it("refuses the wrong number of arguments at PARSE time, with the call shape", () => {
+    const result = parseExpression("clamp(time)");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("clamp() takes 3 arguments, got 1");
+    expect(result.reason).toContain("clamp(x, low, high)");
+  });
+
+  it("refuses a hand-built call with the wrong arity rather than reading a missing argument as 0", () => {
+    // `evaluateAst` is exported: an AST can arrive from somewhere the parser never saw.
+    const result = evaluateAst({ kind: "call", name: "clamp", args: [{ kind: "number", value: 5 }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("clamp()");
+  });
+
+  it("refuses the degenerate arguments instead of inventing a value", () => {
+    expect(evaluateExpression("mod(1, 0)").ok).toBe(false);
+    const inverted = evaluateExpression("clamp(1, 5, 0)");
+    expect(inverted.ok).toBe(false);
+    if (!inverted.ok) expect(inverted.reason).toContain("clamp()");
+  });
+
+  it("still has no path to the host environment through a call", () => {
+    for (const bad of ["Math.max(1, 2)", "alert(1)", "constructor(1)", "eval(1)"]) {
+      expect(evaluateExpression(bad).ok, bad).toBe(false);
+    }
+  });
+
+  it("reports the signature of every name it accepts, and nothing else", () => {
+    for (const name of functionNames()) expect(functionSignature(name)).toContain(`${name}(`);
+    expect(functionSignature("smoothstep")).toBeNull();
   });
 });

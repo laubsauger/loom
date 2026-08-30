@@ -17,8 +17,8 @@ import type { FrameEvaluationInput } from "../types/frame.ts";
  * caller passes (FrameEvaluationInput plus node context), never from ambient state, so
  * the same AST and scope always produce the same value (§V44, §V45).
  *
- * v1 grammar: numbers, `+ - * / % ^`, unary sign, parentheses, scope variables.
- * Function calls are recognised and rejected — the grammar grows by whitelist later.
+ * Grammar: numbers, `+ - * / % ^`, unary sign, parentheses, scope variables, `op()`
+ * references, and the closed function whitelist in `FUNCTIONS` below (T370).
  */
 
 export type ExpressionAst =
@@ -31,6 +31,8 @@ export type ExpressionAst =
    * parameter resolver turns into the §V108 fallback rather than an error wall.
    */
   | { kind: "opRef"; name: string; path: readonly string[] }
+  /** A whitelisted function call (T370). Arity is checked at PARSE time; see `FUNCTIONS`. */
+  | { kind: "call"; name: string; args: readonly ExpressionAst[] }
   | { kind: "unary"; operator: "-" | "+"; operand: ExpressionAst }
   | { kind: "binary"; operator: "+" | "-" | "*" | "/" | "%" | "^"; left: ExpressionAst; right: ExpressionAst };
 
@@ -56,6 +58,95 @@ export type NodeReferenceReader = (
   name: string,
   path: readonly string[],
 ) => NodeReferenceResult;
+
+/**
+ * The function whitelist (T370) — closed, small, and argued name by name.
+ *
+ * ## What the grammar is FOR
+ *
+ * An expression is a value written WHERE IT IS READ: no node, no wire, no channel. That
+ * is locality, and locality was already worth having with arithmetic alone. What
+ * arithmetic alone could not do was say anything PERIODIC or BOUNDED, which is most of
+ * what a parameter on a moving image wants to say — so `time * 7` on a ±360 rotate was
+ * the only ramp available, and it hits the manifest's limit and stops (T368). Every name
+ * below earns its place by one of two tests:
+ *
+ *  - the arithmetic grammar CANNOT express it (`sin`, `cos`, `min`, `max`, `floor`,
+ *    `ceil`, `round`, `sign` — there are no comparisons and no series here); or
+ *  - it is the CORRECT form of something the arithmetic form gets subtly wrong
+ *    (`clamp` is what a bounded parameter does to you silently, said out loud; `mod` is a
+ *    true modulo where `%` is a remainder that goes negative below zero; `fract` is the
+ *    0..1 phase `x % 1` only appears to be).
+ *
+ * Names that fail both tests stay out, and the rejection message lists what is in, so
+ * typing one teaches the boundary instead of just failing. `sqrt` is `x ^ 0.5`; `mix` is
+ * `a + (b - a) * t`; `hypot` and `pow` are the same story. `tan`, `log`, `asin` and
+ * friends are excluded for a second reason as well: each has inputs where it returns a
+ * non-finite number, and this evaluator's contract is a finite one.
+ *
+ * ## Cost
+ *
+ * This runs on the CPU for every expression-mode parameter, every frame (§V163). A call
+ * costs one `Map`-free object lookup plus the `Math` builtin; ARITY is checked when the
+ * source is PARSED, so the per-frame path never re-validates a shape that cannot have
+ * changed. Parse once, evaluate per frame, exactly as before.
+ */
+interface FunctionSpec {
+  /** Argument names, in order. Length IS the arity, and the call shape shown in help. */
+  readonly params: readonly string[];
+  readonly apply: (args: readonly number[]) => number;
+}
+
+/** Fails loud rather than defaulting: `undefined` here would mean the arity check missed. */
+function nth(args: readonly number[], index: number): number {
+  const value = args[index];
+  if (value === undefined) fail(`argument ${index + 1} is missing`);
+  return value;
+}
+
+const FUNCTIONS: Readonly<Record<string, FunctionSpec>> = {
+  abs: { params: ["x"], apply: (a) => Math.abs(nth(a, 0)) },
+  ceil: { params: ["x"], apply: (a) => Math.ceil(nth(a, 0)) },
+  clamp: {
+    params: ["x", "low", "high"],
+    apply: (a) => {
+      const [x, low, high] = [nth(a, 0), nth(a, 1), nth(a, 2)];
+      // An inverted range is a typo, not a value: silently returning `high` would pin the
+      // parameter at a number the author never asked for and never sees a reason for.
+      if (low > high) fail(`clamp(): the low bound ${low} is above the high bound ${high}`);
+      return Math.min(Math.max(x, low), high);
+    },
+  },
+  cos: { params: ["x"], apply: (a) => Math.cos(nth(a, 0)) },
+  floor: { params: ["x"], apply: (a) => Math.floor(nth(a, 0)) },
+  /** The 0..1 phase. `x % 1` is negative for negative x; this never is. */
+  fract: { params: ["x"], apply: (a) => nth(a, 0) - Math.floor(nth(a, 0)) },
+  max: { params: ["a", "b"], apply: (a) => Math.max(nth(a, 0), nth(a, 1)) },
+  min: { params: ["a", "b"], apply: (a) => Math.min(nth(a, 0), nth(a, 1)) },
+  /** TRUE modulo: `mod(-10, 360)` is 350, where `-10 % 360` is -10. */
+  mod: {
+    params: ["x", "period"],
+    apply: (a) => {
+      const period = nth(a, 1);
+      if (period === 0) fail("mod(): the period is zero");
+      return nth(a, 0) - Math.floor(nth(a, 0) / period) * period;
+    },
+  },
+  round: { params: ["x"], apply: (a) => Math.round(nth(a, 0)) },
+  sign: { params: ["x"], apply: (a) => Math.sign(nth(a, 0)) },
+  sin: { params: ["x"], apply: (a) => Math.sin(nth(a, 0)) },
+};
+
+/** Every function name the grammar accepts, sorted. The evaluator's own statement (§V150). */
+export function functionNames(): readonly string[] {
+  return Object.keys(FUNCTIONS).sort();
+}
+
+/** `clamp(x, low, high)` — the call shape, for help and completion. Null if unknown. */
+export function functionSignature(name: string): string | null {
+  const spec = FUNCTIONS[name];
+  return spec === undefined ? null : `${name}(${spec.params.join(", ")})`;
+}
 
 export type ParseResult = { ok: true; ast: ExpressionAst } | { ok: false; reason: string };
 export type EvaluateResult = { ok: true; value: number } | { ok: false; reason: string };
@@ -83,6 +174,7 @@ type Token =
   | { kind: "identifier"; value: string }
   | { kind: "string"; value: string }
   | { kind: "dot" }
+  | { kind: "comma" }
   | { kind: "op"; value: "+" | "-" | "*" | "/" | "%" | "^" }
   | { kind: "paren"; value: "(" | ")" };
 
@@ -106,6 +198,12 @@ function tokenize(input: string): Token[] | string {
 
     if (char === "(" || char === ")") {
       tokens.push({ kind: "paren", value: char });
+      index += 1;
+      continue;
+    }
+
+    if (char === ",") {
+      tokens.push({ kind: "comma" });
       index += 1;
       continue;
     }
@@ -236,7 +334,7 @@ function parsePrimary(cursor: Cursor): ExpressionAst {
     const next = peek(cursor);
     if (next !== undefined && next.kind === "paren" && next.value === "(") {
       if (token.value === "op") return parseOpReference(cursor);
-      fail(`functions are not available yet ("${token.value}")`);
+      return parseCall(cursor, token.value);
     }
     return { kind: "variable", name: token.value };
   }
@@ -254,7 +352,56 @@ function parsePrimary(cursor: Cursor): ExpressionAst {
 }
 
 const describeToken = (token: Token): string =>
-  token.kind === "dot" ? "." : token.kind === "string" ? `'${token.value}'` : String(token.value);
+  token.kind === "dot"
+    ? "."
+    : token.kind === "comma"
+      ? ","
+      : token.kind === "string"
+        ? `'${token.value}'`
+        : String(token.value);
+
+/**
+ * A whitelisted call — the cursor stands ON the opening paren (T370).
+ *
+ * Both refusals here NAME the problem and what would fix it (§V288). An unknown name
+ * lists the whole whitelist rather than saying "not available": `sin(time)` is the first
+ * thing anyone types into an expression field, and a user who types `smoothstep` deserves
+ * to learn where the boundary is from the tool rather than from trial and error. Arity is
+ * checked HERE, once per parse, so the per-frame evaluation never re-validates it.
+ */
+function parseCall(cursor: Cursor, name: string): ExpressionAst {
+  const spec = FUNCTIONS[name];
+  if (spec === undefined) {
+    fail(`unknown function "${name}" (available: ${functionNames().join(", ")})`);
+  }
+  cursor.index += 1; // consume "("
+  const args: ExpressionAst[] = [];
+  const empty = peek(cursor);
+  if (empty !== undefined && empty.kind === "paren" && empty.value === ")") {
+    cursor.index += 1;
+  } else {
+    for (;;) {
+      args.push(parseAdditive(cursor));
+      const next = peek(cursor);
+      if (next !== undefined && next.kind === "comma") {
+        cursor.index += 1;
+        continue;
+      }
+      if (next !== undefined && next.kind === "paren" && next.value === ")") {
+        cursor.index += 1;
+        break;
+      }
+      fail(`missing closing parenthesis in ${functionSignature(name) ?? name}`);
+    }
+  }
+  if (args.length !== spec.params.length) {
+    fail(
+      `${name}() takes ${spec.params.length} argument${spec.params.length === 1 ? "" : "s"}` +
+        `, got ${args.length}: ${functionSignature(name) ?? name}`,
+    );
+  }
+  return { kind: "call", name, args };
+}
 
 /**
  * `op('name').par.gain` — the cursor stands ON the opening paren (§V127, T221).
@@ -360,6 +507,17 @@ function evaluateNode(
       const read = readNode(ast.name, ast.path);
       if (!read.ok) fail(read.reason);
       return read.value;
+    }
+    case "call": {
+      const spec = FUNCTIONS[ast.name];
+      // Unreachable through `parseExpression`, which refuses both cases. Reachable
+      // through a hand-built AST, and a wrong-arity call must fail loud rather than read
+      // a missing argument as zero.
+      if (spec === undefined) fail(`unknown function "${ast.name}"`);
+      if (ast.args.length !== spec.params.length) {
+        fail(`${ast.name}() takes ${spec.params.length} arguments, got ${ast.args.length}`);
+      }
+      return spec.apply(ast.args.map((arg) => evaluateNode(arg, scope, readNode)));
     }
     case "unary": {
       const operand = evaluateNode(ast.operand, scope, readNode);

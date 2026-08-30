@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import {
-  expressionFunctions,
+  expressionFunctionCalls,
   expressionOperators,
   expressionSuggestions,
   expressionVariables,
@@ -50,7 +50,7 @@ export function ExpressionHelp({ source, scope, onInsert }: ExpressionHelpProps)
   const suggestions = useMemo(() => expressionSuggestions(scope), [scope]);
   // Probes against the evaluator; the grammar does not change between renders.
   const operators = useMemo(() => expressionOperators(), []);
-  const functions = useMemo(() => expressionFunctions(), []);
+  const functions = useMemo(() => expressionFunctionCalls(), []);
 
   const insert = (text: string): void => onInsert?.(text);
 
@@ -122,15 +122,17 @@ export function ExpressionHelp({ source, scope, onInsert }: ExpressionHelpProps)
           <p className={styles.none}>none</p>
         ) : (
           <div className={styles.chips}>
-            {functions.map((name) => (
+            {functions.map((fn) => (
               <button
-                key={name}
+                key={fn.name}
                 type="button"
                 className={styles.chip}
                 disabled={onInsert === undefined}
-                onClick={() => insert(`${name}(`)}
+                onClick={() => insert(`${fn.name}(`)}
               >
-                <span className={styles.chipName}>{name}</span>
+                {/* The call SHAPE: a name alone leaves "how many arguments, in what
+                    order" unanswered, which is the only hard part of using one. */}
+                <span className={styles.chipName}>{fn.signature}</span>
               </button>
             ))}
           </div>

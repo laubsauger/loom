@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateExpression } from "@domain/expressions/index.ts";
 import { applyCompletion, completionAt } from "./expression-completion.ts";
 
 /** Expression completion (T247, §V150). */
@@ -38,14 +39,27 @@ describe("completionAt", () => {
     expect(state?.candidates.every((c) => c.kind === "node")).toBe(true);
   });
 
-  it("only offers functions the evaluator actually accepts (§V150)", () => {
-    // The grammar rejects calls today, so there are no function candidates — and that
-    // emptiness is the correct answer. If this ever fails it means the whitelist landed,
-    // and the menu will have grown on its own without anyone editing a list.
-    const functions = completionAt("", 0, SCOPE)?.candidates.filter((c) => c.kind === "function");
-    for (const candidate of functions ?? []) {
-      expect(typeof candidate.text).toBe("string");
+  it("only offers functions the evaluator actually accepts, with their call shape (§V150)", () => {
+    const functions = completionAt("", 0, SCOPE)?.candidates.filter((c) => c.kind === "function") ?? [];
+    // T370 landed the whitelist and the menu grew on its own — nobody edited a list here.
+    expect(functions.map((c) => c.text)).toContain("sin");
+    for (const candidate of functions) {
+      // The detail is the SHAPE, and the shape has to be one the evaluator honours: a
+      // menu that offers `clamp(x, low, high)` for a two-argument function teaches a
+      // wrong API with the tool's own authority.
+      const signature = candidate.detail ?? "";
+      expect(signature.startsWith(`${candidate.text}(`), signature).toBe(true);
+      const arity = signature === `${candidate.text}()` ? 0 : signature.split(",").length;
+      const call = `${candidate.text}(${Array.from({ length: arity }, () => "1").join(", ")})`;
+      expect(evaluateExpression(call).ok, call).toBe(true);
     }
+  });
+
+  it("narrows to a function as it is typed, so `si` reaches `sin` (T370)", () => {
+    // The teaching path for the thing everyone types first. Before the whitelist landed
+    // this prefix matched nothing at all and the field simply refused what it offered.
+    const state = completionAt("si", 2, SCOPE);
+    expect(state?.candidates.map((c) => c.text)).toEqual(["sign", "sin"]);
   });
 
   it("completes against the identifier under the caret, not the whole source", () => {

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { alice, contextFor } from "@domain/commands/test-support.ts";
-import { scopeFromFrame } from "@domain/expressions/index.ts";
+import { evaluateExpression, scopeFromFrame } from "@domain/expressions/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
@@ -299,12 +299,22 @@ describe("ExpressionHelp (T201)", () => {
     expect(inserted).toEqual(["time * 0.25"]);
   });
 
-  it("says functions are none rather than listing ones the evaluator rejects", () => {
+  it("lists functions with their CALL SHAPE, and only ones the evaluator accepts", () => {
     render(<ExpressionHelp source="" scope={scope} />);
     const functions = screen.getByRole("region", { name: "Functions" });
-    // Whatever the evaluator accepts today; never a name it does not.
     const listed = within(functions).queryAllByRole("button");
-    for (const button of listed) expect(button.textContent).not.toBe("");
+    // T370: the shape is the useful half. `clamp` alone does not tell you it takes three
+    // arguments, which is the only thing about it anyone gets wrong.
+    expect(listed.map((button) => button.textContent)).toContain("clamp(x, low, high)");
+    // §V150: nothing here may be a name the grammar rejects. Every chip is run.
+    for (const button of listed) {
+      const signature = button.textContent ?? "";
+      const name = signature.slice(0, signature.indexOf("("));
+      expect(name).not.toBe("");
+      const arity = signature === `${name}()` ? 0 : signature.split(",").length;
+      const call = `${name}(${Array.from({ length: arity }, () => "1").join(", ")})`;
+      expect(evaluateExpression(call).ok, call).toBe(true);
+    }
   });
 
   it("is read-only when no field is listening", () => {

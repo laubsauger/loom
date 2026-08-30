@@ -384,3 +384,118 @@ describe("manifest-driven dispatch covers every ParameterDefinition variant", ()
     expect(onChange).toHaveBeenCalledWith([1, 0, 0, 1], "commit");
   });
 });
+
+/**
+ * T368 — the clamp, forecast where the expression is WRITTEN.
+ *
+ * The E13 case: `transform.r` is ±360, and `time * 7` is correct at t=0 and a stopped
+ * rotation from t≈51. The runtime warning arrives at frame 3100 and the live editor
+ * discards per-frame diagnostics, so the moment that matters is this one — the panel is
+ * open and the expression is being typed.
+ *
+ * Rendered through `ParameterControl`, deliberately: the range comes from the manifest
+ * and only the control has it. A test that handed `range` to the panel itself would pass
+ * with the wiring absent, which is §V220's whole failure mode.
+ */
+describe("expression clamp forecast (T368)", () => {
+  const ROTATE: ParameterDefinition = { type: "number", label: "Rotate", default: 0, min: -360, max: 360 };
+
+  const openModes = (source: string) => {
+    render(
+      <ParameterControl
+        parameterKey="r"
+        definition={ROTATE}
+        value={0}
+        slot={{ mode: "expression", bindings: { expression: { kind: "expression", source } } }}
+        onStoredChange={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+  };
+
+  it("says WHEN a monotone expression will stop moving, and what to write instead", () => {
+    openModes("time * 7");
+    const status = screen.getByRole("status");
+    // The moment, not just the fact: 360 / 7 = 51.4s.
+    expect(status.textContent).toContain("51");
+    expect(status.textContent).toContain("360");
+    // The remedy is expression text, in this parameter's numbers, ready to be typed.
+    expect(status.textContent).toContain("mod(time * 7, 360)");
+    expect(status.textContent).toContain("clamp(time * 7, -360, 360)");
+  });
+
+  it("says nothing once the expression wraps — the message is the diagnosis, not decoration", () => {
+    openModes("mod(time * 7, 360)");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("says nothing for a parameter the manifest does not bound", () => {
+    // `renderInstances.rotate` and `eye` are unbounded: nothing to forecast, and a
+    // permanent line under every expression field is exactly what §V90 forbids.
+    render(
+      <ParameterControl
+        parameterKey="rotate"
+        definition={{ type: "number", label: "Rotate", default: 0 }}
+        value={0}
+        slot={{ mode: "expression", bindings: { expression: { kind: "expression", source: "time * 7" } } }}
+        onStoredChange={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+/**
+ * T370 — what the grammar is FOR, taught where it is refused.
+ *
+ * `sin(time)` is the first thing anyone types into an expression field. It works now; the
+ * teaching case is the next name out — and the answer has to be the boundary, not "no".
+ */
+describe("expression grammar refusals teach the boundary (T370)", () => {
+  it("names every function the grammar does have when it refuses one it does not", () => {
+    render(
+      <ParameterControl
+        parameterKey="r"
+        definition={{ type: "number", label: "Rotate", default: 0, min: -360, max: 360 }}
+        value={0}
+        slot={{ mode: "expression", bindings: { expression: { kind: "expression", source: "time" } } }}
+        onStoredChange={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    const field = screen.getByRole("textbox", { name: /rotate expression/i });
+    fireEvent.change(field, { target: { value: "smoothstep(0, 1, time)" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("smoothstep");
+    for (const name of ["clamp", "mod", "sin"]) expect(status.textContent).toContain(name);
+  });
+
+  it("accepts the oscillation everyone reaches for first", () => {
+    const onStoredChange = vi.fn();
+    render(
+      <ParameterControl
+        parameterKey="r"
+        definition={{ type: "number", label: "Rotate", default: 0, min: -360, max: 360 }}
+        value={0}
+        slot={{ mode: "expression", bindings: { expression: { kind: "expression", source: "time" } } }}
+        onStoredChange={onStoredChange}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    const field = screen.getByRole("textbox", { name: /rotate expression/i });
+    fireEvent.change(field, { target: { value: "sin(time) * 180" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(onStoredChange).toHaveBeenCalledWith(
+      { r: { mode: "expression", bindings: { expression: { kind: "expression", source: "sin(time) * 180" } } } },
+      "commit",
+    );
+  });
+});

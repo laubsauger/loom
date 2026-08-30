@@ -251,6 +251,41 @@ describe("parameter modes (T203, §V107)", () => {
     expect(resolved.get("gain")?.value).toBe(64);
   });
 
+  /**
+   * T368 — the clamp used to be MUTE.
+   *
+   * Measured before this landed: `transform.r` (±360) resolving `time * 7` at t=100
+   * produced 360 and zero diagnostics. Correct at t=0, a stopped rotation from t≈51, and
+   * nothing anywhere said so — §V240's shape exactly. The value in effect is still the
+   * limit; what changed is that it is now reported, by name, with the remedy in this
+   * parameter's own numbers (§V288).
+   */
+  it("SAYS SO when an expression is clamped, naming the parameter and the remedy (T368)", () => {
+    const resolved = resolveParameters(nodeWith({ gain: expr("time * 100") }), solidLike, { frame });
+    const entry = resolved.get("gain");
+    expect(entry?.value).toBe(64); // pinned, as before — the value behaviour is unchanged
+    expect(entry?.diagnostic?.code).toBe("parameter.expression.clamped");
+    expect(entry?.diagnostic?.severity).toBe("warning");
+    expect(entry?.diagnostic?.message).toContain('"gain"');
+    expect(entry?.diagnostic?.message).toContain("time * 100");
+    expect(entry?.diagnostic?.message).toContain("200"); // what it actually produced
+    expect(entry?.diagnostic?.message).toContain("64"); // and the limit it was pinned to
+    // The declared bounds, so the reader can check the claim without opening the manifest.
+    expect(entry?.diagnostic?.message).toContain("0…64");
+    // The remedy is expression text for THIS parameter, not a sentence about ranges.
+    expect(entry?.diagnostic?.suggestion).toContain("clamp(time * 100, 0, 64)");
+    expect(entry?.diagnostic?.suggestion).toContain("mod(time * 100, 64)");
+    // And it travels: a diagnostic that never leaves the entry reaches no panel.
+    expect(resolved.diagnostics.map((d) => d.code)).toContain("parameter.expression.clamped");
+  });
+
+  it("stays quiet while the expression is inside the range — the warning is not ambient", () => {
+    // The other half of the claim. A warning that fires on every expression is a warning
+    // people learn to scroll past, and this one has to still mean something at t=3100.
+    const resolved = resolveParameters(nodeWith({ gain: expr("time * 3") }), solidLike, { frame });
+    expect(resolved.diagnostics).toEqual([]);
+  });
+
   it("falls back to the RETAINED static value when the expression breaks (§V108)", () => {
     const resolved = resolveParameters(nodeWith({ gain: expr("nope + 1", 12) }), solidLike, { frame });
     const entry = resolved.get("gain");

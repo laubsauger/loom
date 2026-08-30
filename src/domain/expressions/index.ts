@@ -1,6 +1,8 @@
 export {
   evaluateAst,
   evaluateExpression,
+  functionNames,
+  functionSignature,
   parseExpression,
   scopeFromFrame,
   type EvaluateResult,

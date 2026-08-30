@@ -1,4 +1,4 @@
-import { acceptedFunctions } from "../../domain/expressions/reference.ts";
+import { acceptedFunctionCalls, acceptedFunctions } from "../../domain/expressions/reference.ts";
 import { evaluateExpression, scopeFromFrame } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -88,6 +88,15 @@ export function expressionFunctions(): readonly string[] {
 }
 
 /**
+ * The accepted functions WITH their call shape (T370). Same probe, same source of truth
+ * as the completion menu at the parameter — `clamp` is only useful once you know it takes
+ * three arguments and which order they go in.
+ */
+export function expressionFunctionCalls(): ReadonlyArray<{ name: string; signature: string }> {
+  return acceptedFunctionCalls();
+}
+
+/**
  * Starter expressions for the variables that are actually in scope (T201).
  *
  * The owner's question — "how do I drive a noise translate from time?" — is answered by
@@ -99,6 +108,12 @@ const SUGGESTIONS: ReadonlyArray<{ variable: string; source: string }> = [
   { variable: "time", source: "time * 0.25" },
   { variable: "time", source: "(time % 4) / 4" },
   { variable: "time", source: "time * 2 - 1" },
+  // T368/T370: the two starters that answer "why did my parameter stop moving?". A
+  // parameter has a range, a monotone expression runs into it, and these are the two
+  // shapes that never do — a wrap and an oscillation. Each is evaluated before it is
+  // shown, like every other starter, so what is offered is what runs.
+  { variable: "time", source: "mod(time * 90, 360)" },
+  { variable: "time", source: "sin(time) * 0.5 + 0.5" },
   { variable: "frame", source: "frame * 0.01" },
   { variable: "delta", source: "delta * 60" },
 ];

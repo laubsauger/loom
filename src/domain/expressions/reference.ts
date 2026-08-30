@@ -1,4 +1,4 @@
-import { evaluateExpression, scopeFromFrame } from "./evaluate.ts";
+import { evaluateExpression, functionSignature, scopeFromFrame } from "./evaluate.ts";
 
 /**
  * What the expression grammar ACCEPTS, discovered by asking it (§V150, §V105).
@@ -58,6 +58,21 @@ export function acceptedFunctions(): readonly string[] {
     if (calls.some((call) => evaluateExpression(call).ok)) accepted.push(name);
   }
   return accepted;
+}
+
+/**
+ * Accepted names WITH their call shape — `clamp(x, low, high)` (T370).
+ *
+ * Acceptance still comes from the probe above, so a name can only appear here if a real
+ * call of it evaluated. The shape comes from the evaluator's own argument list rather
+ * than a second table beside it: a menu that offers `clamp(x, low, high)` while the
+ * evaluator wants two arguments is the §V150 failure with better typography.
+ */
+export function acceptedFunctionCalls(): ReadonlyArray<{ name: string; signature: string }> {
+  return acceptedFunctions().map((name) => ({
+    name,
+    signature: functionSignature(name) ?? `${name}()`,
+  }));
 }
 
 /**

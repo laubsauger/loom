@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseExpression } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
+import { describeForecast, forecastClamp } from "@domain/parameters/expression-range.ts";
+import type { NumericRange } from "@domain/parameters/expression-range.ts";
 import { applyCompletion, completionAt } from "./expression-completion.ts";
 import type { ParameterBinding, ParameterMode, ParameterSlot, ParameterValue } from "@domain/types/parameters.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -67,6 +69,12 @@ export interface ParameterModePanelProps {
   scope?: ExpressionScope;
   /** Node names, for completing inside `op('…')`. */
   nodeNames?: readonly string[];
+  /**
+   * The parameter's declared bounds, when it has any (T368). Supplying it turns on the
+   * clamp FORECAST: an expression that leaves the range later says so now, while it is
+   * being typed, instead of at the frame where the picture quietly stops moving.
+   */
+  range?: NumericRange | null;
   onChange: (slot: ParameterSlot) => void;
 }
 
@@ -101,6 +109,7 @@ export function ParameterModePanel({
   diagnostic = null,
   scope,
   nodeNames,
+  range = null,
   onChange,
 }: ParameterModePanelProps) {
   const payloadRef = useRef<HTMLInputElement>(null);
@@ -178,7 +187,21 @@ export function ParameterModePanel({
     setPendingMode(null);
   };
 
-  const message = problem ?? diagnostic?.message ?? null;
+  /**
+   * T368 — the clamp, forecast while the expression is being typed.
+   *
+   * It sits behind the two facts rather than in front of them: a parse error and a live
+   * resolver diagnostic are about NOW, and this is about later. §V90 keeps it here and
+   * not beside the value: the panel only exists once the parameter's name is clicked, so
+   * this is help on demand, and it disappears the moment the expression is fixed.
+   */
+  const forecast = useMemo(() => {
+    if (active !== "expression" || range === null || text.trim() === "") return null;
+    const found = forecastClamp(text, range);
+    return found === null ? null : describeForecast(found);
+  }, [active, range, text]);
+
+  const message = problem ?? diagnostic?.message ?? forecast;
 
   return (
     <div className={styles.modePanel}>

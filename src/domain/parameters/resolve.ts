@@ -25,6 +25,7 @@ import {
   staticBindingValue,
 } from "./slots.ts";
 import { defaultParameterValue, validateParameterValue } from "./validate.ts";
+import { numericRangeOf, rangeRemedy } from "./expression-range.ts";
 
 /**
  * THE parameter read path (doc §8.2, §V61, §V109).
@@ -291,7 +292,28 @@ function expressionScope(options: ResolveParametersOptions): ExpressionScope {
   return options.frame === undefined ? ZERO_FRAME_SCOPE : scopeFromFrame(options.frame);
 }
 
-type Coerced = { ok: true; value: ParameterValue } | { ok: false; message: string };
+type Coerced =
+  | {
+      ok: true;
+      value: ParameterValue;
+      /**
+       * T368: the expression overshot the declared range and the value in effect is the
+       * LIMIT, not the number the expression produced. Null when nothing was pinned.
+       */
+      clamped: { produced: number; limit: number } | null;
+    }
+  | { ok: false; message: string };
+
+/** Pins into the declared range, reporting whether it had to (T368). */
+function clampToDeclared(
+  result: number,
+  min: number | undefined,
+  max: number | undefined,
+): { value: number; clamped: { produced: number; limit: number } | null } {
+  if (min !== undefined && result < min) return { value: min, clamped: { produced: result, limit: min } };
+  if (max !== undefined && result > max) return { value: max, clamped: { produced: result, limit: max } };
+  return { value: result, clamped: null };
+}
 
 /**
  * An expression evaluates to a NUMBER (§V71); this is the documented bridge to every
@@ -307,34 +329,34 @@ function coerceExpressionResult(definition: ParameterDefinition, result: number)
   if (!Number.isFinite(result)) return { ok: false, message: "the expression is not finite" };
   switch (definition.type) {
     case "number": {
-      let value = result;
-      if (definition.min !== undefined) value = Math.max(definition.min, value);
-      if (definition.max !== undefined) value = Math.min(definition.max, value);
-      return { ok: true, value };
+      const pinned = clampToDeclared(result, definition.min, definition.max);
+      return { ok: true, value: pinned.value, clamped: pinned.clamped };
     }
     case "boolean":
-      return { ok: true, value: result !== 0 };
+      return { ok: true, value: result !== 0, clamped: null };
     // §V125: a pulse driven by an expression is ARMED while the expression is non-zero.
     // The rising EDGE is what fires it (`createPulseWatcher`); a level here would make
     // `time > 4` reset the buffer on every frame after the fourth.
     case "pulse":
-      return { ok: true, value: result !== 0 };
+      return { ok: true, value: result !== 0, clamped: null };
     case "enum": {
       const index = Math.min(definition.options.length - 1, Math.max(0, Math.floor(result)));
       const option = definition.options[index];
       if (option === undefined) return { ok: false, message: "the enum has no options" };
-      return { ok: true, value: option.value };
+      return { ok: true, value: option.value, clamped: null };
     }
     case "string":
-      return { ok: true, value: String(result) };
+      return { ok: true, value: String(result), clamped: null };
     case "vector": {
-      let value = result;
-      if (definition.min !== undefined) value = Math.max(definition.min, value);
-      if (definition.max !== undefined) value = Math.min(definition.max, value);
-      return { ok: true, value: Array.from({ length: definition.size }, () => value) };
+      const pinned = clampToDeclared(result, definition.min, definition.max);
+      return {
+        ok: true,
+        value: Array.from({ length: definition.size }, () => pinned.value),
+        clamped: pinned.clamped,
+      };
     }
     case "color":
-      return { ok: true, value: [result, result, result, 1] };
+      return { ok: true, value: [result, result, result, 1], clamped: null };
     default:
       return {
         ok: false,
@@ -350,6 +372,17 @@ interface StoredResolution {
   source: ParameterSource;
   driven: boolean;
   diagnostic: RuntimeDiagnostic | null;
+}
+
+/** Enough digits to recognise the number, few enough to read in one line. */
+const round4 = (value: number): number => Math.round(value * 1e4) / 1e4;
+
+/** The bounds as the manifest declares them — a range named is a range a user can check. */
+function describeBounds(definition: ParameterDefinition): string {
+  const range = numericRangeOf(definition);
+  if (range === null) return "";
+  if (range.min !== null && range.max !== null) return `${range.min}…${range.max}`;
+  return range.max !== null ? `up to ${range.max}` : `from ${range.min}`;
 }
 
 function diag(
@@ -498,7 +531,30 @@ function resolveStored(
       }
       const checked = checkAgainstManifest(key, definition, coerced.value, node);
       if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
-      return { value: checked.value, mode: "expression", source: "driven", driven: true, diagnostic: null };
+      return {
+        value: checked.value,
+        mode: "expression",
+        source: "driven",
+        driven: true,
+        /**
+         * T368 — the clamp is no longer mute. The value in effect IS the limit (pinning
+         * beats snapping to a default for an expression grazing a bound), and that is
+         * precisely why it needs saying: `time * 7` on a ±360 rotate is right at t=0 and
+         * a stopped rotation from t≈51, and before this it produced no diagnostic at all.
+         * The remedy is named, in this parameter's own numbers (§V288).
+         */
+        diagnostic:
+          coerced.clamped === null
+            ? null
+            : diag(
+                "warning",
+                "parameter.expression.clamped",
+                `Parameter "${key}" expression "${binding.source}" produced ${round4(coerced.clamped.produced)}, outside its range ${describeBounds(definition)}; the value in effect is clamped to ${coerced.clamped.limit}.`,
+                node.id,
+                rangeRemedy(binding.source, numericRangeOf(definition) ?? { min: null, max: null }) ??
+                  undefined,
+              ),
+      };
     }
 
     case "bind": {
