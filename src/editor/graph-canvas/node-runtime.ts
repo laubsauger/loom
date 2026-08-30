@@ -44,7 +44,9 @@ export interface AgentActivity {
 export type NodePreviewRuntimeState =
   | { readonly kind: "live" }
   | { readonly kind: "suspended"; readonly reason: SuspendReason }
-  | { readonly kind: "idle" };
+  | { readonly kind: "idle" }
+  /** Switched off by the user (T353, §V297) — a choice, not a scheduler decision. */
+  | { readonly kind: "off" };
 
 export interface NodePreviewRuntime {
   readonly output: PreviewOutputRef;
@@ -65,8 +67,17 @@ export interface NodeRuntimeSnapshot {
   /** Diagnostic counts behind the node badge (§V27). */
   errorCount: number;
   warningCount: number;
-  /** The displayed output came from the last valid plan, not the current edit (§V9). */
-  stale: boolean;
+  /*
+   * There is no per-node `stale` here, and its absence is the decision (B36, §V269,
+   * §V267).
+   *
+   * §V9's staleness is `program !== undefined` — the WHOLE retained program — so it is
+   * true for every node at once and is not expressible per node. The field existed, no
+   * publisher ever set it, and the node badge rendered a state it could never be in,
+   * exactly as `renderedThisFrame` did (B17). Removing it makes the wrong program fail to
+   * compile rather than quietly draw nothing; the program-level fact is stated where it is
+   * asked for, in the node info popup, sourced live from backend status.
+   */
   /** §V42. `null` when no agent is touching this node. */
   agent: AgentActivity | null;
   /** §V28b. `null` when this node has no preview slot at all (no texture output). */
@@ -83,7 +94,6 @@ export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   message: null,
   errorCount: 0,
   warningCount: 0,
-  stale: false,
   agent: null,
   preview: null,
 });
@@ -119,7 +129,6 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.message === b.message &&
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&
-    a.stale === b.stale &&
     a.agent === b.agent &&
     a.preview === b.preview
   );
@@ -137,7 +146,6 @@ function isStructural(previous: NodeRuntimeSnapshot, next: NodeRuntimeSnapshot):
     previous.message !== next.message ||
     previous.errorCount !== next.errorCount ||
     previous.warningCount !== next.warningCount ||
-    previous.stale !== next.stale ||
     previous.agent !== next.agent
   );
 }

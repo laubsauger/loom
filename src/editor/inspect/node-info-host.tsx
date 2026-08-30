@@ -57,6 +57,14 @@ export interface NodeInfoHostProps {
   /** The canvas's per-node runtime channel. */
   readonly runtime?: NodeRuntimeSource | null | undefined;
   /**
+   * `BackendStatus.stale` — the output is running the last program that compiled (§V9).
+   *
+   * A PROGRAM-level fact passed from the composition root, because the per-node runtime
+   * channel cannot carry it honestly: the flag flips in the frame loop while that channel
+   * is published at compile (B36).
+   */
+  readonly outputStale?: boolean | undefined;
+  /**
    * What a bare `ui.showNodeInfo` with no `nodeId` should describe: the selected node.
    * The middle-click route never needs this — it resolves from the click.
    */
@@ -88,6 +96,7 @@ export function NodeInfoHost({
   compiled,
   telemetry,
   runtime,
+  outputStale = false,
   fallbackNodeId,
   children,
 }: NodeInfoHostProps) {
@@ -152,6 +161,7 @@ export function NodeInfoHost({
           compiled={compiled}
           telemetry={telemetry ?? null}
           runtime={runtime ?? null}
+          outputStale={outputStale}
           onClose={close}
           restoreFocusTo={restoreFocusTo}
         />
@@ -167,6 +177,7 @@ interface NodeInfoPopoverProps {
   readonly compiled: CompiledGraph | null;
   readonly telemetry: TelemetrySource | null;
   readonly runtime: NodeRuntimeSource | null;
+  readonly outputStale: boolean;
   readonly onClose: () => void;
   readonly restoreFocusTo: { current: HTMLElement | null };
 }
@@ -182,6 +193,7 @@ function NodeInfoPopover({
   compiled,
   telemetry,
   runtime,
+  outputStale,
   onClose,
   restoreFocusTo,
 }: NodeInfoPopoverProps) {
@@ -245,11 +257,12 @@ function NodeInfoPopover({
         compiled,
         runtime: runtimeSnapshot,
         telemetry,
+        outputStale,
       }),
     // `telemetryVersion` is the snapshot identity the hub hands out; it changes once per
     // metric tick and is what makes this recompute at <= 10 Hz rather than per frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nodeId, graph, registry, compiled, runtimeSnapshot, telemetry, telemetryVersion],
+    [nodeId, graph, registry, compiled, runtimeSnapshot, telemetry, telemetryVersion, outputStale],
   );
 
   return (

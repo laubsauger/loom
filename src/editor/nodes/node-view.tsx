@@ -151,11 +151,17 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             {node.label ?? definition?.title ?? node.type}
           </span>
           {/* Compile/diagnostic badge is track H's component (§V27) — it renders nothing
-              at all when the node is clean, which is what keeps the chrome quiet. */}
+              at all when the node is clean, which is what keeps the chrome quiet.
+
+              No `stale` (B36, §V269): §V9's staleness is the whole retained PROGRAM, so
+              it is true for every node at once. One program fact on N badges is the same
+              sentence N times (§V90), and the node at fault is already named by its error
+              count. The statement lives in the node info popup, which is per-node and on
+              demand. The badge's own `stale` prop stays — it derives from a real field the
+              compile pipeline sets, and unwired is not the same as vacuous. */}
           <ShaderStatusBadge
             errorCount={snapshot.errorCount}
             warningCount={snapshot.warningCount}
-            stale={snapshot.stale}
             compiling={status === "compiling"}
           />
           <span

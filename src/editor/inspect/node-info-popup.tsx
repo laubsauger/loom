@@ -219,7 +219,10 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
         {info.bypassed ? <Badge tone="warn">bypassed</Badge> : null}
         {info.muted ? <Badge tone="warn">muted</Badge> : null}
         {info.pruned ? <Badge tone="warn">pruned</Badge> : null}
-        {info.stale ? <Badge tone="warn">stale</Badge> : null}
+        {/* Worded as the PROGRAM-level fact it is (B36, §V269): "output stale" says the
+            picture is from the last program that compiled, where a bare "stale" reads as
+            a claim about THIS node. */}
+        {info.outputStale ? <Badge tone="warn">output stale</Badge> : null}
         {info.errorCount > 0 ? <Badge tone="error">{info.errorCount} error</Badge> : null}
         {info.warningCount > 0 ? <Badge tone="warn">{info.warningCount} warning</Badge> : null}
         <Badge>{info.status}</Badge>

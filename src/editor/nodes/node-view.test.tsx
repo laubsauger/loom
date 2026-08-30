@@ -204,10 +204,18 @@ describe("node status states are distinct (doc §17.2)", () => {
     ).toBe("true");
   });
 
-  it("flags a stale output (§V9)", async () => {
-    const { runtime, nodeId } = mountNode("test.blur", { graph: graphWith("test.blur") });
-    await publish(runtime, nodeId, { stale: true });
-    expect(screen.getByText("stale")).toBeDefined();
+  /**
+   * B36/§V269 — the node badge no longer claims staleness, and that is the assertion.
+   *
+   * This test used to publish `stale: true` and check the badge lit. Nothing in the
+   * product ever published that field, so the only thing setting it was this line: the
+   * test supplied the wiring it was testing, which is why the dead field survived as long
+   * as it did (§V220). §V9's staleness is the whole retained PROGRAM, true for every node
+   * at once, so it belongs in the popup — per-node, on demand — and not on N badges.
+   */
+  it("does not claim staleness on the badge; the program-level fact is the popup's", () => {
+    const { container } = mountNode("test.blur", { graph: graphWith("test.blur") });
+    expect(container.textContent).not.toContain("stale");
   });
 
   it("carries the shader diagnostic badge, and shows nothing while clean (§V27)", async () => {

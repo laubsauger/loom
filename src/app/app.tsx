@@ -701,6 +701,10 @@ export function App({
             // handled inside the host; the `?` binding and the node menu's Info item
             // both execute `ui.showNodeInfo`, so all three routes are the same surface.
             <NodeInfoHost
+              // §V9/B36: the program-level fact, live from the backend rather than from
+              // the per-node channel, which is published at compile while this flips in
+              // the frame loop.
+              outputStale={backend?.status.stale ?? false}
               bus={runtime.bus}
               registry={runtime.registry}
               compiled={compile.compiled}

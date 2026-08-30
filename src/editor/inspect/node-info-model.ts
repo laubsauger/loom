@@ -92,8 +92,15 @@ export interface NodeInfo {
   readonly message: string | null;
   readonly errorCount: number;
   readonly warningCount: number;
-  /** §V9 — what is on screen came from the last plan that compiled, not from this graph. */
-  readonly stale: boolean;
+  /**
+   * §V9 — the OUTPUT is running the last program that compiled, not this graph (B36).
+   *
+   * A PROGRAM-level fact, and named as one. It is true for every node at once, because
+   * the backend retains a whole program; it is reported here because the popup is where
+   * someone asks "is what I am looking at current?", and answering per node is the only
+   * place that question gets asked.
+   */
+  readonly outputStale: boolean;
   readonly bypassed: boolean;
   readonly muted: boolean;
   /** §V25 — no active sink reaches this node, so it does no work at all. */
@@ -113,6 +120,16 @@ export interface NodeInfoRequest {
   readonly runtime?: NodeRuntimeSnapshot | undefined;
   /** The telemetry hub's read side. Null renders every timing field as unavailable. */
   readonly telemetry?: TelemetrySource | null | undefined;
+  /**
+   * `BackendStatus.stale` — the backend retained an earlier program because the latest
+   * compile failed (§V9, B36).
+   *
+   * Read LIVE from the backend rather than from the per-node runtime channel. That channel
+   * had a `stale` field and nothing published it, because the flag flips in the FRAME LOOP
+   * while `publishNodeStatus` runs at COMPILE — wiring it there would have reported last
+   * compile's answer forever, which is stale about stale.
+   */
+  readonly outputStale?: boolean | undefined;
 }
 
 const HUMAN_FORMAT: Readonly<Record<TextureFormat, string>> = {
@@ -317,7 +334,7 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     message: runtime.message,
     errorCount: runtime.errorCount,
     warningCount: runtime.warningCount,
-    stale: runtime.stale,
+    outputStale: request.outputStale === true,
     bypassed: node?.ui?.bypassed === true,
     muted: node?.ui?.muted === true,
     pruned: compiled !== null && compiled.pruned.includes(nodeId),

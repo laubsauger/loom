@@ -94,7 +94,7 @@ describe("the TD field set (§I.info)", () => {
     expect(info.label).toBe("Blur");
   });
 
-  it("reports bypass, mute, prune and stale", () => {
+  it("reports bypass, mute and prune from the document and the plan", () => {
     const plan = compiledOf({ pruned: ["blur"] });
     const info = buildNodeInfo({
       nodeId: "blur",
@@ -107,7 +107,6 @@ describe("the TD field set (§I.info)", () => {
         message: "shader compile failed; showing the last valid plan",
         errorCount: 0,
         warningCount: 2,
-        stale: true,
         agent: null,
         preview: null,
       },
@@ -117,9 +116,28 @@ describe("the TD field set (§I.info)", () => {
     expect(info.bypassed).toBe(true);
     expect(info.muted).toBe(true);
     expect(info.pruned).toBe(true);
-    expect(info.stale).toBe(true);
     expect(info.warningCount).toBe(2);
     expect(info.message).toContain("last valid plan");
+  });
+
+  /**
+   * B36/§V269 — `outputStale` is a PROGRAM-level fact, supplied by the caller.
+   *
+   * It used to come from a per-node runtime field that nothing ever published, so the
+   * popup rendered a state it could never be in. The field is gone; this is what replaced
+   * it, and the assertion is that the answer tracks the BACKEND rather than the node.
+   */
+  it("reports the output as stale only when the backend says the program is retained", () => {
+    const request = {
+      nodeId: "blur",
+      graph: graphOf([node("blur", "test.blur")]),
+      registry,
+      compiled: compiledOf({}),
+      telemetry: null,
+    } as const;
+
+    expect(buildNodeInfo({ ...request }).outputStale).toBe(false);
+    expect(buildNodeInfo({ ...request, outputStale: true }).outputStale).toBe(true);
   });
 
   it("names a flattened node by its source path, not its namespaced id (§V82)", () => {
