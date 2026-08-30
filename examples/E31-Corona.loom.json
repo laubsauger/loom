@@ -1,0 +1,1308 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-base-null": {
+        "id": "e-base-null",
+        "source": {
+          "nodeId": "drawBase",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "base",
+          "portId": "in"
+        }
+      },
+      "e-beat-source": {
+        "id": "e-beat-source",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in1"
+        }
+      },
+      "e-burn-coat": {
+        "id": "e-burn-coat",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "source"
+        }
+      },
+      "e-coat-liftheat": {
+        "id": "e-coat-liftheat",
+        "source": {
+          "nodeId": "coat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftHeat",
+          "portId": "in1"
+        }
+      },
+      "e-damp-dotg": {
+        "id": "e-damp-dotg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dotG",
+          "portId": "a"
+        }
+      },
+      "e-damp-glowg": {
+        "id": "e-damp-glowg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glowG",
+          "portId": "a"
+        }
+      },
+      "e-damp-gradeg": {
+        "id": "e-damp-gradeg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gradeG",
+          "portId": "a"
+        }
+      },
+      "e-damp-heatg": {
+        "id": "e-damp-heatg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heatG",
+          "portId": "a"
+        }
+      },
+      "e-damp-sparkg": {
+        "id": "e-damp-sparkg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sparkG",
+          "portId": "a"
+        }
+      },
+      "e-damp-swellg": {
+        "id": "e-damp-swellg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "swellG",
+          "portId": "a"
+        }
+      },
+      "e-damp-tipg": {
+        "id": "e-damp-tipg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tipG",
+          "portId": "a"
+        }
+      },
+      "e-damp-trailg": {
+        "id": "e-damp-trailg",
+        "source": {
+          "nodeId": "damp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trailG",
+          "portId": "a"
+        }
+      },
+      "e-dotg-dot": {
+        "id": "e-dotg-dot",
+        "source": {
+          "nodeId": "dotG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dot",
+          "portId": "a"
+        }
+      },
+      "e-gen-shape": {
+        "id": "e-gen-shape",
+        "source": {
+          "nodeId": "gen",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "in"
+        }
+      },
+      "e-glowg-glow": {
+        "id": "e-glowg-glow",
+        "source": {
+          "nodeId": "glowG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "a"
+        }
+      },
+      "e-gradeg-grade": {
+        "id": "e-gradeg-grade",
+        "source": {
+          "nodeId": "gradeG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grade",
+          "portId": "a"
+        }
+      },
+      "e-halo-halolvl": {
+        "id": "e-halo-halolvl",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haloLvl",
+          "portId": "input"
+        }
+      },
+      "e-halolvl-burn": {
+        "id": "e-halolvl-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "haloLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-heatg-heat": {
+        "id": "e-heatg-heat",
+        "source": {
+          "nodeId": "heatG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heat",
+          "portId": "a"
+        }
+      },
+      "e-heatlvl-liftheat": {
+        "id": "e-heatlvl-liftheat",
+        "order": 0,
+        "source": {
+          "nodeId": "heatLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftHeat",
+          "portId": "in2"
+        }
+      },
+      "e-hue-tail": {
+        "id": "e-hue-tail",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tail",
+          "portId": "in"
+        }
+      },
+      "e-liftheat-liftspark": {
+        "id": "e-liftheat-liftspark",
+        "source": {
+          "nodeId": "liftHeat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftSpark",
+          "portId": "in1"
+        }
+      },
+      "e-liftspark-mixtrail": {
+        "id": "e-liftspark-mixtrail",
+        "source": {
+          "nodeId": "liftSpark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mixTrail",
+          "portId": "in1"
+        }
+      },
+      "e-loop-mixtrail": {
+        "id": "e-loop-mixtrail",
+        "order": 0,
+        "source": {
+          "nodeId": "loop",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mixTrail",
+          "portId": "in2"
+        }
+      },
+      "e-mid-heatlvl": {
+        "id": "e-mid-heatlvl",
+        "source": {
+          "nodeId": "drawMid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heatLvl",
+          "portId": "input"
+        }
+      },
+      "e-mixtrail-hue": {
+        "id": "e-mixtrail-hue",
+        "source": {
+          "nodeId": "mixTrail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-null-burn": {
+        "id": "e-null-burn",
+        "source": {
+          "nodeId": "base",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-null-halo": {
+        "id": "e-null-halo",
+        "source": {
+          "nodeId": "base",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-palette-coat": {
+        "id": "e-palette-coat",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "lookup"
+        }
+      },
+      "e-shape-base": {
+        "id": "e-shape-base",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "drawBase",
+          "portId": "points"
+        }
+      },
+      "e-shape-mid": {
+        "id": "e-shape-mid",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "drawMid",
+          "portId": "points"
+        }
+      },
+      "e-shape-tip": {
+        "id": "e-shape-tip",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "drawTip",
+          "portId": "points"
+        }
+      },
+      "e-source-damp": {
+        "id": "e-source-damp",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "damp",
+          "portId": "in"
+        }
+      },
+      "e-sparkadd-spark": {
+        "id": "e-sparkadd-spark",
+        "source": {
+          "nodeId": "sparkAdd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spark",
+          "portId": "in"
+        }
+      },
+      "e-sparkg-sparkadd": {
+        "id": "e-sparkg-sparkadd",
+        "source": {
+          "nodeId": "sparkG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sparkAdd",
+          "portId": "a"
+        }
+      },
+      "e-sparklvl-liftspark": {
+        "id": "e-sparklvl-liftspark",
+        "order": 0,
+        "source": {
+          "nodeId": "sparkLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftSpark",
+          "portId": "in2"
+        }
+      },
+      "e-swellg-swell": {
+        "id": "e-swellg-swell",
+        "source": {
+          "nodeId": "swellG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "swell",
+          "portId": "a"
+        }
+      },
+      "e-tail-out": {
+        "id": "e-tail-out",
+        "source": {
+          "nodeId": "tail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-tip-sparklvl": {
+        "id": "e-tip-sparklvl",
+        "source": {
+          "nodeId": "drawTip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sparkLvl",
+          "portId": "input"
+        }
+      },
+      "e-tipg-tip": {
+        "id": "e-tipg-tip",
+        "source": {
+          "nodeId": "tipG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tip",
+          "portId": "a"
+        }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in2"
+        }
+      },
+      "e-trailg-trail": {
+        "id": "e-trailg-trail",
+        "source": {
+          "nodeId": "trailG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trail",
+          "portId": "a"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "base": {
+        "definitionVersion": 1,
+        "id": "base",
+        "label": "base1",
+        "parameters": {},
+        "position": {
+          "x": -440,
+          "y": -240
+        },
+        "type": "null"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 124
+        },
+        "position": {
+          "x": -1800,
+          "y": 700
+        },
+        "type": "audioPattern"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 340,
+          "y": -240
+        },
+        "type": "add"
+      },
+      "coat": {
+        "definitionVersion": 1,
+        "id": "coat",
+        "label": "coat1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": {
+            "bindings": {
+              "driven": {
+                "channel": "grade1:highMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.6
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 600,
+          "y": -240
+        },
+        "type": "lookup"
+      },
+      "damp": {
+        "definitionVersion": 1,
+        "id": "damp",
+        "label": "damp1",
+        "parameters": {
+          "lag": 0.09
+        },
+        "position": {
+          "x": -1240,
+          "y": 840
+        },
+        "type": "valueLag"
+      },
+      "dot": {
+        "definitionVersion": 1,
+        "id": "dot",
+        "label": "dot1",
+        "parameters": {
+          "operand": 1.2,
+          "operation": "add"
+        },
+        "position": {
+          "x": -700,
+          "y": 1040
+        },
+        "type": "valueMath"
+      },
+      "dotG": {
+        "definitionVersion": 1,
+        "id": "dotG",
+        "label": "dotg1",
+        "parameters": {
+          "operand": 2.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -960,
+          "y": 1040
+        },
+        "type": "valueMath"
+      },
+      "drawBase": {
+        "definitionVersion": 1,
+        "id": "drawBase",
+        "label": "drawbase1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.17,
+            0.27,
+            0.54,
+            1
+          ],
+          "count": 65536,
+          "group": "",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "dot1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.4
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -700,
+          "y": -240
+        },
+        "type": "renderPoints"
+      },
+      "drawMid": {
+        "definitionVersion": 1,
+        "id": "drawMid",
+        "label": "drawmid1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            1,
+            0.42,
+            0.1,
+            1
+          ],
+          "count": 65536,
+          "group": "p.velocity.y > 0.04",
+          "sizePixels": 1.3
+        },
+        "position": {
+          "x": -700,
+          "y": 20
+        },
+        "type": "renderPoints"
+      },
+      "drawTip": {
+        "definitionVersion": 1,
+        "id": "drawTip",
+        "label": "drawtip1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.1,
+            0.85,
+            1,
+            1
+          ],
+          "count": 65536,
+          "group": "p.velocity.y > 0.17",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "tip1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.4
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -700,
+          "y": 280
+        },
+        "type": "renderPoints"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 0.35,
+          "frequency": 0.035,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 1380,
+          "y": 60
+        },
+        "type": "lfo"
+      },
+      "gen": {
+        "definitionVersion": 1,
+        "id": "gen",
+        "label": "gen1",
+        "parameters": {
+          "cols": 256,
+          "count": 65536,
+          "radius": {
+            "bindings": {
+              "driven": {
+                "channel": "swell1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.2
+              }
+            },
+            "mode": "driven"
+          },
+          "radius2": 0.25,
+          "rows": 256,
+          "shape": "sphere",
+          "sizeX": 2,
+          "sizeY": 2,
+          "sizeZ": 2
+        },
+        "position": {
+          "x": -1240,
+          "y": 0
+        },
+        "type": "pointGenerator"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "operand": 0.85,
+          "operation": "add"
+        },
+        "position": {
+          "x": -700,
+          "y": 780
+        },
+        "type": "valueMath"
+      },
+      "glowG": {
+        "definitionVersion": 1,
+        "id": "glowG",
+        "label": "glowg1",
+        "parameters": {
+          "operand": 1.5,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -960,
+          "y": 780
+        },
+        "type": "valueMath"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "grade1",
+        "parameters": {
+          "operand": 1.4,
+          "operation": "add"
+        },
+        "position": {
+          "x": -180,
+          "y": 780
+        },
+        "type": "valueMath"
+      },
+      "gradeG": {
+        "definitionVersion": 1,
+        "id": "gradeG",
+        "label": "gradeg1",
+        "parameters": {
+          "operand": 2.1,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -440,
+          "y": 780
+        },
+        "type": "valueMath"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 34
+        },
+        "position": {
+          "x": -180,
+          "y": -480
+        },
+        "type": "blur"
+      },
+      "haloLvl": {
+        "definitionVersion": 1,
+        "id": "haloLvl",
+        "label": "halolvl1",
+        "parameters": {
+          "blacklevel": 0.01,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "glow1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.1
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 80,
+          "y": -480
+        },
+        "type": "level"
+      },
+      "heat": {
+        "definitionVersion": 1,
+        "id": "heat",
+        "label": "heat1",
+        "parameters": {
+          "operand": 0.25,
+          "operation": "add"
+        },
+        "position": {
+          "x": -700,
+          "y": 1300
+        },
+        "type": "valueMath"
+      },
+      "heatG": {
+        "definitionVersion": 1,
+        "id": "heatG",
+        "label": "heatg1",
+        "parameters": {
+          "operand": 2.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -960,
+          "y": 1300
+        },
+        "type": "valueMath"
+      },
+      "heatLvl": {
+        "definitionVersion": 1,
+        "id": "heatLvl",
+        "label": "heatlvl1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "heat1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.8
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -440,
+          "y": 20
+        },
+        "type": "level"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.12,
+          "value": 1
+        },
+        "position": {
+          "x": 1640,
+          "y": -240
+        },
+        "type": "hsv"
+      },
+      "liftHeat": {
+        "definitionVersion": 1,
+        "id": "liftHeat",
+        "label": "liftheat1",
+        "parameters": {},
+        "position": {
+          "x": 860,
+          "y": -240
+        },
+        "type": "screen"
+      },
+      "liftSpark": {
+        "definitionVersion": 1,
+        "id": "liftSpark",
+        "label": "liftspark1",
+        "parameters": {},
+        "position": {
+          "x": 1120,
+          "y": -240
+        },
+        "type": "screen"
+      },
+      "loop": {
+        "definitionVersion": 1,
+        "id": "loop",
+        "label": "loop1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": {
+            "bindings": {
+              "driven": {
+                "channel": "trail1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.9
+              }
+            },
+            "mode": "driven"
+          },
+          "reset": false,
+          "source": "tail1",
+          "substeps": 1
+        },
+        "position": {
+          "x": 1120,
+          "y": 60
+        },
+        "type": "feedback"
+      },
+      "mixTrail": {
+        "definitionVersion": 1,
+        "id": "mixTrail",
+        "label": "mixtrail1",
+        "parameters": {},
+        "position": {
+          "x": 1380,
+          "y": -240
+        },
+        "type": "screen"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 2160,
+          "y": -240
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.01,
+                0.02,
+                0.07,
+                1
+              ],
+              "position": 0.1
+            },
+            {
+              "color": [
+                0.06,
+                0.13,
+                0.42,
+                1
+              ],
+              "position": 0.3
+            },
+            {
+              "color": [
+                0.48,
+                0.09,
+                0.64,
+                1
+              ],
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.98,
+                0.26,
+                0.22,
+                1
+              ],
+              "position": 0.72
+            },
+            {
+              "color": [
+                1,
+                0.74,
+                0.3,
+                1
+              ],
+              "position": 0.89
+            },
+            {
+              "color": [
+                1,
+                0.98,
+                0.93,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": 340,
+          "y": 20
+        },
+        "type": "ramp"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "label": "shape1",
+        "parameters": {
+          "attributes": "",
+          "capacity": 65536,
+          "group": "",
+          "kernel": "\nfn lm_hash(p: vec3f) -> f32 {\n  var q = fract(p * 0.1031);\n  q = q + vec3f(dot(q, q.zyx + 31.32));\n  return fract((q.x + q.y) * q.z);\n}\n\nfn lm_noise(x: vec3f) -> f32 {\n  let i = floor(x);\n  let f = fract(x);\n  let u = f * f * (3.0 - 2.0 * f);\n  let a = mix(lm_hash(i + vec3f(0.0, 0.0, 0.0)), lm_hash(i + vec3f(1.0, 0.0, 0.0)), u.x);\n  let b = mix(lm_hash(i + vec3f(0.0, 1.0, 0.0)), lm_hash(i + vec3f(1.0, 1.0, 0.0)), u.x);\n  let c = mix(lm_hash(i + vec3f(0.0, 0.0, 1.0)), lm_hash(i + vec3f(1.0, 0.0, 1.0)), u.x);\n  let d = mix(lm_hash(i + vec3f(0.0, 1.0, 1.0)), lm_hash(i + vec3f(1.0, 1.0, 1.0)), u.x);\n  return mix(mix(a, b, u.y), mix(c, d, u.y), u.z) * 2.0 - 1.0;\n}\n\nfn lm_fbm(x: vec3f, oct: i32) -> f32 {\n  var v = 0.0; var a = 0.5; var q = x;\n  for (var k: i32 = 0; k < oct; k = k + 1) {\n    v = v + a * lm_noise(q);\n    q = q * 2.03 + vec3f(17.3, 9.1, 4.7);\n    a = a * 0.55;\n  }\n  return v;\n}\n\n// Ridged: 1-|n| squared per octave. Creases and filaments instead of blobs.\nfn lm_ridged(x: vec3f, oct: i32) -> f32 {\n  var v = 0.0; var a = 0.5; var q = x;\n  for (var k: i32 = 0; k < oct; k = k + 1) {\n    let n = 1.0 - abs(lm_noise(q));\n    v = v + a * n * n;\n    q = q * 2.07 + vec3f(11.1, 3.3, 7.7);\n    a = a * 0.52;\n  }\n  return v - 0.62;\n}\n\nfn lm_rotY(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x * c - v.z * s, v.y, v.x * s + v.z * c);\n}\nfn lm_rotX(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x, v.y * c - v.z * s, v.y * s + v.z * c);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let t = ctx.absTime;\n\n  // ---- THE SMOOTH PIPE -------------------------------------------------\n  // pointgenerator1.radius is the only drivable number that reaches this\n  // kernel. Map a band energy onto radius 1.0 -> 1.6 and it arrives here\n  // as a continuous 0..1 control. Length is divided straight back out, so\n  // the audio never merely scales the blob - it changes its character.\n  let pin = p.position;\n  let inR = max(1.0e-4, length(pin));\n  let fromAudio = clamp((inR - 1.0) / 0.6, 0.0, 1.0);\n  let drift = 0.30 + 0.28 * sin(t * 0.093);\n  let drive = clamp(fromAudio + drift, 0.0, 1.35);\n\n  var s = normalize(pin);\n\n  s = lm_rotY(s, t * 0.13);\n  s = lm_rotX(s, t * 0.081);\n\n  // taffy twist: shear grows with drive, very readable on the silhouette\n  s = lm_rotY(s, (0.8 + 2.4 * drive) * s.y + t * 0.05);\n\n  let wf = 1.25 + 0.85 * drive;\n  let w = vec3f(\n    lm_fbm(s * wf + vec3f(0.0, 0.0, t * 0.13), 4),\n    lm_fbm(s * wf + vec3f(5.2, 1.3, t * 0.11), 4),\n    lm_fbm(s * wf + vec3f(9.1, 7.7, t * 0.15), 4)\n  );\n\n  // two fields, crossfaded by drive: soft lobes -> sharp filaments\n  let lobes = lm_fbm(s * 1.9 + w * 1.5 + vec3f(0.0, t * 0.20, 0.0), 5);\n  let creases = lm_ridged(s * (2.4 + 2.6 * drive) + w * 1.1 - vec3f(t * 0.17, 0.0, 0.0), 5);\n  let field = mix(lobes, creases * 1.15, clamp(drive, 0.0, 1.0));\n\n  let ripple = sin(s.y * 6.0 - t * 1.05);\n  let breath = 0.05 * sin(t * 0.60) + 0.03 * sin(t * 1.03 + 1.3);\n  let amp = 0.24 + 0.32 * drive;\n\n  let rad = 1.0 + breath + amp * field + 0.055 * ripple * (0.25 + drive);\n  let p3 = s * rad * 0.90;\n\n  let dcam = 4.5;\n  let zc = max(0.05, dcam - p3.z);\n  let ff = 3.17;\n  let aspect = 16.0 / 9.0;\n\n  q.position = vec3f((p3.x * ff / zc) / aspect, p3.y * ff / zc, 0.5);\n  q.velocity = vec3f(field, creases, drive);\n  return q;\n}\n",
+          "seed": 7,
+          "value1": 0,
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -960,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1520,
+          "y": 840
+        },
+        "type": "valueSwitch"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "maximum": 6,
+          "minimum": 0.1
+        },
+        "position": {
+          "x": 80,
+          "y": 520
+        },
+        "type": "valueLimit"
+      },
+      "sparkAdd": {
+        "definitionVersion": 1,
+        "id": "sparkAdd",
+        "label": "sparkadd1",
+        "parameters": {
+          "operand": 0.1,
+          "operation": "add"
+        },
+        "position": {
+          "x": -180,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "sparkG": {
+        "definitionVersion": 1,
+        "id": "sparkG",
+        "label": "sparkg1",
+        "parameters": {
+          "operand": 20,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -440,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "sparkLvl": {
+        "definitionVersion": 1,
+        "id": "sparkLvl",
+        "label": "sparklvl1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "spark1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.6
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -440,
+          "y": 280
+        },
+        "type": "level"
+      },
+      "swell": {
+        "definitionVersion": 1,
+        "id": "swell",
+        "label": "swell1",
+        "parameters": {
+          "operand": 1,
+          "operation": "add"
+        },
+        "position": {
+          "x": -700,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "swellG": {
+        "definitionVersion": 1,
+        "id": "swellG",
+        "label": "swellg1",
+        "parameters": {
+          "operand": 0.95,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -960,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "tail": {
+        "definitionVersion": 1,
+        "id": "tail",
+        "label": "tail1",
+        "parameters": {},
+        "position": {
+          "x": 1900,
+          "y": -240
+        },
+        "type": "null"
+      },
+      "tip": {
+        "definitionVersion": 1,
+        "id": "tip",
+        "label": "tip1",
+        "parameters": {
+          "operand": 1,
+          "operation": "add"
+        },
+        "position": {
+          "x": -180,
+          "y": 1300
+        },
+        "type": "valueMath"
+      },
+      "tipG": {
+        "definitionVersion": 1,
+        "id": "tipG",
+        "label": "tipg1",
+        "parameters": {
+          "operand": 9,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -440,
+          "y": 1300
+        },
+        "type": "valueMath"
+      },
+      "track": {
+        "definitionVersion": 1,
+        "id": "track",
+        "label": "track1",
+        "parameters": {
+          "monitor": true
+        },
+        "position": {
+          "x": -1800,
+          "y": 980
+        },
+        "type": "audioFileIn"
+      },
+      "trail": {
+        "definitionVersion": 1,
+        "id": "trail",
+        "label": "trail1",
+        "parameters": {
+          "operand": 0.62,
+          "operation": "add"
+        },
+        "position": {
+          "x": -180,
+          "y": 1040
+        },
+        "type": "valueMath"
+      },
+      "trailG": {
+        "definitionVersion": 1,
+        "id": "trailG",
+        "label": "trailg1",
+        "parameters": {
+          "operand": 0.3,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -440,
+          "y": 1040
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E31 Corona",
+  "projectId": "example-e31-corona",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 20,
+    "previewLongEdge": 192,
+    "randomSeed": 1,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

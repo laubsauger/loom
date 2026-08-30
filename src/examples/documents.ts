@@ -152,6 +152,7 @@ function document(
 /**
  * E1 — Feedback Echo (T153).
  *
+ *   lfo ×2 ─► circle.center                                THE PEN (T518)
  *   circle ─────────────────────────► over.in1 ─► over ─┬─► output
  *                                                       │
  *            feedback ─► transform ─► blur ─► level ────┘ (over.in2)
@@ -163,10 +164,19 @@ function document(
  * The compiler splits that edge, backs the output with a ping-pong pair and appends the
  * swap after every current-frame consumer (§V22).
  *
- * The fade lives on the Feedback node itself (`persistence` 0.94, `clearColor` transparent
+ * The fade lives on the Feedback node itself (`persistence` 0.997, `clearColor` transparent
  * black) rather than in an extra Level: that is what `persistence` is for. Level is still
  * in the loop doing real work — `blacklevel` crushes the dimmest survivors to zero so a
  * trail actually terminates instead of asymptoting toward a permanent smear.
+ *
+ * ## T518 — a feedback loop is only as alive as what it is fed
+ *
+ * The source used to be a circle at a fixed centre, and a fixed source through a fixed
+ * loop reaches a STEADY STATE: measured on Dawn, the shipped file was byte-identical from
+ * frame 90 onward while 90% of its pixels sat at pure black. Nothing was broken and there
+ * was nothing to watch. Two free-running LFOs on `center` turn the disc into a pen and the
+ * loop into the thing that draws its path — which is what a feedback echo is FOR, and it
+ * costs two nodes and no new mechanism.
  */
 export const feedbackEchoDocument = document(
   "feedback-echo",
@@ -174,32 +184,84 @@ export const feedbackEchoDocument = document(
   settings(),
   graph(
     [
-      node("source", "circle", [-360, -120], {
-        mode: "fill",
-        center: [0.5, 0.32],
-        radius: [0.045, 0.045],
-        softness: 0.02,
-        fillcolor: [1, 0.72, 0.28, 1],
-        bgcolor: [0, 0, 0, 0],
-      }),
+      node(
+        "source",
+        "circle",
+        [-360, -120],
+        {
+          mode: "fill",
+          center: [0.5, 0.5],
+          radius: [0.055, 0.055],
+          softness: 0.02,
+          fillcolor: [1, 0.72, 0.28, 1],
+          bgcolor: [0, 0, 0, 0],
+        },
+        {
+          /**
+           * T518 — THE SOURCE MOVES, and that is what makes this a piece rather than a
+           * node demo. A feedback loop fed by a STATIC disc reaches a steady state and
+           * then never changes again: measured on Dawn, the shipped file was byte-stable
+           * from frame 90 onward (mean |Δ| between frames 90 and 240 was exactly 0.00)
+           * while 90% of the frame sat at pure black. Every assertion in the file passed.
+           *
+           * Two LFOs on the centre turn the disc into a pen. The frequencies are
+           * INCOMMENSURATE (0.31 against 0.23) so the Lissajous never closes and the
+           * ribbon is different every lap; two equal — or simply related — rates would
+           * retrace one closed curve and the piece would repeat.
+           */
+          parameters: {
+            "center.x": drivenSlot("pathx1", 0.5),
+            "center.y": drivenSlot("pathy1", 0.5),
+          },
+        },
+      ),
+      /**
+       * FREE-RUNNING, so the path is continuous across a timeline lap (§V453, B98). The
+       * LFO reads the absolute clock by design; nothing here declares otherwise.
+       */
+      node(
+        "pathx",
+        "lfo",
+        [-620, -160],
+        { shape: "sine", frequency: 0.31, amplitude: 0.3, offset: 0.5, phase: 0 },
+        { label: "pathx1" },
+      ),
+      node(
+        "pathy",
+        "lfo",
+        [-620, 40],
+        { shape: "sine", frequency: 0.23, amplitude: 0.24, offset: 0.5, phase: 0.25 },
+        { label: "pathy1" },
+      ),
       node("over", "over", [40, -60], { opacity: 1 }, { label: "over1" }),
       node("echo", "feedback", [40, 140], {
         // T350 (§V285): the loop is a NAME — no wired back-edge, edges stay a DAG.
         source: "over1",
-        persistence: 0.94,
+        /**
+         * 0.997 is a MEASUREMENT, not a taste: the trail decays to 1/e in 1/(1-p) = 333
+         * frames = 5.5 s at 60fps, and the disc's slower LFO has a 4.3 s period. So the
+         * ribbon is just long enough to hold a whole figure and no longer. At the old
+         * 0.94 the trail lived 17 frames — during which the disc moved about one percent
+         * of the frame, which is why it read as a smudge rather than a path.
+         */
+        persistence: 0.997,
         clearColor: [0, 0, 0, 0],
       }),
       node("drift", "transform", [-160, 220], {
-        t: [0, -0.006],
-        r: 3.5,
-        s: [0.985, 0.985],
+        // Gentle now that the SOURCE supplies the motion: over 333 surviving frames this
+        // is 83 degrees of roll and a 28% shrink, which curls the old ribbon inward
+        // instead of shredding it. At the old 3.5 deg/frame the tail spun a full turn in
+        // a second and a half and the loop was the only thing you could see.
+        t: [0, -0.0008],
+        r: 0.25,
+        s: [0.999, 0.999],
         p: [0, 0],
         xord: "srt",
         extend: "zero",
         aspectcorrect: true,
       }),
-      node("soften", "blur", [-360, 240], { size: 2.5, filter: "gaussian", extend: "zero" }),
-      node("decay", "level", [-360, 60], { blacklevel: 0.015, whitelevel: 1, opacity: 1 }),
+      node("soften", "blur", [-360, 240], { size: 1.4, filter: "gaussian", extend: "zero" }),
+      node("decay", "level", [-360, 60], { blacklevel: 0.0015, whitelevel: 1, opacity: 1 }),
       node("out", "output", [260, -60]),
     ],
     [
@@ -483,18 +545,36 @@ export const animatedNoiseFieldDocument = document(
 /**
  * E4 — Bloom (T156).
  *
- *   noise ─► level(hot) ─┬─► threshold ─► blur ─► add.in1 ─► add ─► output
- *                        └──────────────────────► add.in2
+ *   noise(4D) ─► level(hot) ─► limit(floor) ─┬─► threshold ─► blur ─► lookup ─► add.in1
+ *                                              └────────────────────────────────► add.in2
+ *                                        ramp(palette) ─► lookup.lookup     add ─► output
  *
  * The project working format is rgba8unorm — deliberately, because that is what makes the
- * per-node override mean something (§V51). `level` pushes highlights past 1.0 and the four
- * nodes from there to the composite carry `format: { mode: "fixed", format: "rgba16float" }`,
- * so the over-range values survive the threshold and the blur instead of being clipped at
- * the first target. Delete those four overrides and the bloom flattens: that is the
- * example's whole point, and it is a one-line experiment.
+ * per-node override mean something (§V51). `level` pushes highlights past 1.0 and every
+ * node from there to the composite carries
+ * `format: { mode: "fixed", format: "rgba16float" }`, so the over-range values survive the
+ * threshold and the blur instead of being clipped at the first target. Delete those
+ * overrides and the bloom does not dim, it DISAPPEARS: the threshold sits at 1.1, and a
+ * value clipped to 1.0 cannot clear it.
  *
- * Two branches converging on one Add, with `hot` fanning out to both, is also the §V6 case
- * again — the expensive half of the chain is computed once.
+ * Two branches converging on one Add, with `floor` fanning out to both, is also the §V6
+ * case again — the expensive half of the chain is computed once.
+ *
+ * ## T518 — what was wrong, measured rather than judged
+ *
+ * The owner's report was "bloom is really not doing anything for me and is also not
+ * animated", and there were three separate faults behind it.
+ *
+ * 1. The source was `perlin2d`. `speed` advances a noise field's FOURTH dimension, so a 2D
+ *    type has no time axis at all and no parameter in the product could have animated it.
+ * 2. `exp: 2.2` on a field whose |n| is below 1 CRUSHES it toward the midpoint — the whole
+ *    image lived between 0.468 and 0.552 in linear — so a threshold at 0.9 passed almost
+ *    nothing and the bloom had nothing to bloom.
+ * 3. Once the level's window was tightened enough to make real over-range cores, the
+ *    composite went DARKER than its own inputs, because a Level's black point turns
+ *    everything below it into a large negative number and rgba16float keeps what rgba8unorm
+ *    would have clamped. See `floor` below; it is the least obvious node in the file and
+ *    the one without which there is no picture.
  */
 export const bloomDocument = document(
   "bloom",
@@ -502,51 +582,165 @@ export const bloomDocument = document(
   settings({ workingFormat: "rgba8unorm" }),
   graph(
     [
-      node("source", "noise", [-520, 0], {
-        type: "perlin2d",
+      /**
+       * T518 — THE SOURCE HAD TO CHANGE, not gain a speed.
+       *
+       * This was `perlin2d`, and a 2D noise has NO TIME AXIS: `speed` advances the field's
+       * fourth dimension, so on a 2D type there is no number anywhere in the product that
+       * could have made this example move. That is why it measured mean |Δ| = 0.00 between
+       * every pair of frames while every assertion in the file stayed green.
+       *
+       * `t4d: 0.37` rather than 0, and it is not decoration. Zero puts the field on a
+       * LATTICE PLANE of the 4D noise, where the gradient contributions from the w
+       * neighbours cancel and the amplitude collapses; the first candidate for this file
+       * measured mean 24 at frame 0 against 54 at frame 300 for that reason alone, and the
+       * level window below was very nearly tuned against an unrepresentative frame 0. Off
+       * the plane the distribution is stationary (mean ~22 at every capture) — which also
+       * matters because a gallery thumbnail is usually frame 0.
+       */
+      node("source", "noise", [-760, 0], {
+        type: "perlin4d",
         seed: 11,
-        period: 0.16,
+        // Small features: bloom is legible when a SMALL bright thing wears a LARGE halo,
+        // and at the old 0.16 the cores came out the same size as their own glow.
+        period: 0.12,
         harmon: 4,
-        exp: 2.2,
+        spread: 2,
+        gain: 0.5,
+        rough: 0.5,
+        // 1, not 2.2. `shaped = sign(n) * |n|^exp` and |n| < 1, so an exponent above one
+        // CRUSHES the field toward its midpoint: at 2.2 the whole image lived between
+        // 0.468 and 0.552 in linear, which is the real reason a threshold at 0.9 passed
+        // almost nothing. Measured, not reasoned: at exp 1 the field spans 0.34 to 0.70.
+        exp: 1,
         amp: 1,
+        offset: 0,
         mono: true,
+        aspectcorrect: true,
+        t4d: 0.37,
+        s4d: 1,
+        speed: 0.12,
       }),
+      /**
+       * THE HDR CURVE, and every number in it is read off the field's own distribution.
+       *
+       * The measured percentiles of `source` are p50 0.503, p90 0.584, p99 0.651, p999
+       * 0.694. A black point of 0.605 therefore keeps roughly the top two percent, and a
+       * white point of 0.65 gives them a gain of 22 — so the survivors land between 1.0
+       * and about 2.0, which is exactly the over-range this example exists to protect.
+       * The old pair (0.35 / 0.72) was a gain of 2.7 applied to a field that only spanned
+       * 0.09, and it produced a flat mid-grey cloud with nothing to bloom.
+       */
       node(
         "hot",
         "level",
-        [-280, 0],
-        { blacklevel: 0.35, whitelevel: 0.72, contrast: 1.2 },
+        [-500, 0],
+        { blacklevel: 0.605, whitelevel: 0.65, contrast: 1 },
         { format: { mode: "fixed", format: "rgba16float" } },
       ),
+      /**
+       * THE CLAMP, and it is the node this example was missing. It looks like plumbing and
+       * it is the whole difference between a bloom and nothing.
+       *
+       * A Level's black point is a SUBTRACTION: everything below it maps to a NEGATIVE
+       * number. In an 8-bit target those clamp to zero for free, which is why the old file
+       * never met this. The moment you override to rgba16float to protect the HIGHLIGHTS
+       * you inherit the LOWS as well, and here the floor of the field lands at
+       * (0.34 - 0.605) / 0.045 = -5.9. `add` is `front + back`, so composing the glow over
+       * a field of -5.9 SUBTRACTS the glow into oblivion — measured on Dawn, the composite
+       * came out DARKER than either of its inputs (p90 0.004 against the glow's own 0.771)
+       * and the bloom was invisible except as a hairline rim.
+       *
+       * §V51's format override has a second consequence, and this node is it.
+       */
+      node(
+        "floor",
+        "limit",
+        [-500, 260],
+        { mode: "clamp", low: 0, high: 4, steps: 4 },
+        { format: { mode: "fixed", format: "rgba16float" } },
+      ),
+      /**
+       * THE THRESHOLD SITS WHERE THE 8-BIT TARGET WOULD HAVE CLIPPED — 1.1, with the
+       * softness reaching down to 0.975. That is the sentence the old 0.9 could not say.
+       * What passes here is precisely what an rgba8unorm target could not have
+       * represented, so deleting the format overrides does not merely dim the bloom, it
+       * deletes it: a clipped 1.0 does not clear 1.1.
+       */
       node(
         "bright",
         "threshold",
-        [-40, -120],
-        { threshold: 0.9, softness: 0.12, channel: "luminance", compare: "greater" },
+        [-240, -160],
+        { threshold: 1.1, softness: 0.22, channel: "luminance", compare: "greater" },
         { format: { mode: "fixed", format: "rgba16float" } },
       ),
       node(
         "glow",
         "blur",
-        [200, -120],
-        { size: 36, filter: "gaussian", extend: "hold" },
+        [20, -160],
+        // 40 is near the Gaussian's fully-sampled limit of 42; past that the kernel is
+        // undersampled and the halo picks up rings.
+        { size: 40, filter: "gaussian", extend: "hold" },
+        { format: { mode: "fixed", format: "rgba16float" } },
+      ),
+      /**
+       * BLOOM COLOUR — the halo's chromatic falloff, which is the thing that makes a bloom
+       * look like light rather than like a blurred copy.
+       *
+       * The stops are crowded into the BOTTOM of the range on purpose. A blurred mask peaks
+       * around 0.23 and spends most of its area far below that, so a palette spread evenly
+       * over 0..1 would map the entire visible halo into its first, near-black segment.
+       * Positions 0.02 / 0.06 / 0.12 / 0.22 / 0.4 put violet, red, orange and amber where
+       * the pixels actually are.
+       */
+      node(
+        "palette",
+        "ramp",
+        [20, 120],
+        {
+          type: "horizontal",
+          interp: "smooth",
+          phase: 0,
+          period: 1,
+          stops: [
+            { position: 0, color: [0, 0, 0, 1] },
+            { position: 0.02, color: [0.3, 0.04, 0.36, 1] },
+            { position: 0.06, color: [0.9, 0.16, 0.26, 1] },
+            { position: 0.12, color: [1, 0.5, 0.14, 1] },
+            { position: 0.22, color: [1, 0.88, 0.55, 1] },
+            { position: 0.4, color: [1, 1, 0.96, 1] },
+          ],
+        },
+        { definitionVersion: 2 },
+      ),
+      node(
+        "tint",
+        "lookup",
+        [280, -160],
+        { channel: "luminance", row: 0.5, offset: 0, scale: 1 },
+        // The halo is a wide, gentle gradient and 8 bits band it visibly. This node holds
+        // no over-range values; it is overridden for RESOLUTION of tone, not for headroom,
+        // and that is a different reason from `hot`'s.
         { format: { mode: "fixed", format: "rgba16float" } },
       ),
       node(
         "combine",
         "add",
-        [440, 0],
-        { opacity: 0.85 },
+        [540, 0],
+        { opacity: 1 },
         { format: { mode: "fixed", format: "rgba16float" } },
       ),
-      node("out", "output", [680, 0]),
+      node("out", "output", [800, 0]),
     ],
     [
       edge("e-source-hot", ["source", "out"], ["hot", "input"]),
-      edge("e-hot-bright", ["hot", "out"], ["bright", "input"]),
+      edge("e-hot-floor", ["hot", "out"], ["floor", "input"]),
+      edge("e-floor-bright", ["floor", "out"], ["bright", "input"]),
       edge("e-bright-glow", ["bright", "out"], ["glow", "input"]),
-      edge("e-glow-combine", ["glow", "out"], ["combine", "in1"]),
-      edge("e-hot-combine", ["hot", "out"], ["combine", "in2"]),
+      edge("e-glow-tint", ["glow", "out"], ["tint", "source"]),
+      edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
+      edge("e-tint-combine", ["tint", "out"], ["combine", "in1"]),
+      edge("e-floor-combine", ["floor", "out"], ["combine", "in2"]),
       edge("e-combine-out", ["combine", "out"], ["out", "input"]),
     ],
   ),
@@ -555,17 +749,38 @@ export const bloomDocument = document(
 /**
  * E5 — Kaleidoscope (T156).
  *
- *   circle ─► transform(mirror) ─► tile(mirror x+y) ─► transform(repeat) ─► output
+ *   ramp(circular) ─► transform(mirror) ─► tile(mirror x+y) ─► transform(repeat) ─► output
+ *          phase ← abstime          r ← abstime        offset ← lfo ×2      r ← abstime
  *
  * Three extend modes in one chain — `mirror` on the fold, the Tile node's own mirroring,
  * `repeat` on the spin — which is what makes a kaleidoscope a kaleidoscope rather than a
  * rotated image with black corners. Getting `extend` wrong is invisible in the middle of
  * the frame and obvious at the edges, so the edges ARE the test.
  *
+ * ## T518 — it was static, and it was also invisible
+ *
+ * Every transform parameter used to be a literal, so nothing in the file moved; the owner
+ * asked for "translate rotation or something" and that instinct is right, because a
+ * kaleidoscope's whole appeal is the slow drift of a source through fixed mirror lines.
+ * Both rotations and the tile offset now move, on the ABSOLUTE clock (§V453) and at rates
+ * that do not divide into each other.
+ *
+ * The second fault was worse and had gone unreported: the source was a `circle` in
+ * `distance` mode, which publishes the signed distance in RED and leaves green and blue at
+ * zero. `fillcolor` and `bgcolor` were never reaching the picture. The shipped frame was a
+ * single-hue red field whose brightest pixel measured 43 out of 255 — and the paired `.md`
+ * described "warm on deep blue", which the file had never rendered.
+ *
  * The source carries a fixed 2048x2048 resolution override (§V50) and every node after it
  * inherits, so the whole chain runs at 2048x2048 while the project is set to 1280x720. A
  * chain of pure-sampling nodes is cheap enough to run above the project resolution, and
  * doing so is what keeps the mirrored seams from aliasing.
+ *
+ * The tile count is EVEN (2x2, not the old 3x3) and that is a correctness fix rather than
+ * a taste one: a mirrored tiling alternates flipped and unflipped cells, so it is periodic
+ * across the frame boundary only at even counts. At 3x3 the `repeat` extend on `spin`
+ * wrapped an unmirrored edge onto a mirrored one and drew a hard diagonal seam that swept
+ * across the frame — present in every rotated capture, absent from every unrotated one.
  *
  * Note where the override stops: it does not, currently. The Output node declares no
  * `resolutionPolicy`, so its target falls back to its input's size and the presented target
@@ -579,46 +794,132 @@ export const kaleidoscopeDocument = document(
   settings(),
   graph(
     [
+      /**
+       * T518 — THE SOURCE IS A COLOUR WHEEL, and the old one could not have been.
+       *
+       * This was a `circle` in `distance` mode, and `distance` publishes the signed
+       * distance in RED and leaves green and blue at zero. So `fillcolor` and `bgcolor`
+       * were never reaching the picture at all: the shipped frame was a single-hue red
+       * field whose brightest pixel measured 43/255, and the paired `.md` described it as
+       * "warm on deep blue", which it had never been.
+       *
+       * A `circular` ramp is the right source for a kaleidoscope for a reason that is not
+       * taste: its coordinate is the ANGLE about the centre, so it is periodic, and with
+       * `period` 0.5 the palette wraps twice around the circle — the pattern arrives with
+       * rotational symmetry already in it, before the fold and the tile add theirs.
+       *
+       * The stops are CYCLIC — the last colour equals the first — because `phase` scrolls
+       * a ramp by `fract((coord + phase) / period)`. With any other last stop the scroll
+       * would jump every time it wrapped.
+       */
       node(
         "source",
-        "circle",
-        [-520, 0],
+        "ramp",
+        [-760, 0],
         {
-          mode: "distance",
-          center: [0.32, 0.42],
-          radius: [0.18, 0.11],
-          softness: 0.05,
-          fillcolor: [0.95, 0.4, 0.15, 1],
-          bgcolor: [0.03, 0.05, 0.12, 1],
+          type: "circular",
+          interp: "smooth",
+          period: 0.5,
+          phase: 0,
+          stops: [
+            { position: 0, color: [0.02, 0.02, 0.09, 1] },
+            { position: 0.2, color: [0.22, 0.06, 0.42, 1] },
+            { position: 0.4, color: [0.85, 0.18, 0.32, 1] },
+            { position: 0.6, color: [1, 0.63, 0.22, 1] },
+            { position: 0.8, color: [0.32, 0.78, 0.72, 1] },
+            { position: 1, color: [0.02, 0.02, 0.09, 1] },
+          ],
+        },
+        {
+          definitionVersion: 2,
+          resolution: { mode: "fixed", width: 2048, height: 2048 },
+          // ABSOLUTE clock (§V453, T497): `abstime` keeps counting across a timeline lap,
+          // so the wheel turns through the loop point instead of snapping back to phase 0.
+          // `% 1` because the ramp's own period is 1 and the stops are cyclic.
+          parameters: { phase: expressionSlot("abstime * 0.06 % 1", 0) },
+        },
+      ),
+      node(
+        "fold",
+        "transform",
+        [-500, 0],
+        {
+          t: [0.12, 0],
+          r: 30,
+          s: [0.5, 0.5],
+          p: [0, 0],
+          xord: "srt",
+          extend: "mirror",
           aspectcorrect: true,
         },
-        { resolution: { mode: "fixed", width: 2048, height: 2048 } },
+        // The translate is what makes this rotation VISIBLE: a circular ramp centred on
+        // the frame is rotationally symmetric, so spinning it about its own centre would
+        // be a no-op that every structural test would pass (§V361). Off-centre, it turns.
+        { parameters: { r: expressionSlot("abstime * 5 % 360", 30) } },
       ),
-      node("fold", "transform", [-260, 0], {
-        t: [0.12, 0],
-        r: 30,
-        s: [0.5, 0.5],
-        p: [0, 0],
-        xord: "srt",
-        extend: "mirror",
-        aspectcorrect: true,
-      }),
-      node("facets", "tile", [0, 0], {
-        repeat: [3, 3],
-        offset: [0.15, 0.05],
-        mirrorx: true,
-        mirrory: true,
-      }),
-      node("spin", "transform", [260, 0], {
-        t: [0, 0],
-        r: -15,
-        s: [1, 1],
-        p: [0, 0],
-        xord: "rst",
-        extend: "repeat",
-        aspectcorrect: true,
-      }),
-      node("out", "output", [520, 0]),
+      /**
+       * TWO, NOT THREE, and the reason is measurable rather than aesthetic.
+       *
+       * A mirrored tiling alternates flipped and unflipped cells, so the tiled image is
+       * periodic across the frame boundary only when the count is EVEN. At 3x3 the right
+       * edge met the left edge unmirrored, and `spin`'s `repeat` extend then showed that
+       * discontinuity as a hard diagonal seam sweeping across the frame — visible in every
+       * rotated capture and in none of the unrotated ones, which is exactly the kind of
+       * thing an edge-mode example must not ship.
+       */
+      node(
+        "facets",
+        "tile",
+        [-240, 0],
+        {
+          repeat: [2, 2],
+          offset: [0.15, 0.05],
+          mirrorx: true,
+          mirrory: true,
+        },
+        {
+          parameters: {
+            "offset.x": drivenSlot("driftx1", 0.15),
+            "offset.y": drivenSlot("drifty1", 0.05),
+          },
+        },
+      ),
+      // Free-running (§V453). 0.023 against 0.031 does not close, so the grid never
+      // returns to an arrangement it has already shown.
+      node(
+        "driftx",
+        "lfo",
+        [-240, 260],
+        { shape: "sine", frequency: 0.023, amplitude: 0.25, offset: 0.15, phase: 0 },
+        { label: "driftx1" },
+      ),
+      node(
+        "drifty",
+        "lfo",
+        [-240, 420],
+        { shape: "sine", frequency: 0.031, amplitude: 0.25, offset: 0.05, phase: 0.25 },
+        { label: "drifty1" },
+      ),
+      node(
+        "spin",
+        "transform",
+        [20, 0],
+        {
+          t: [0, 0],
+          r: -15,
+          s: [1, 1],
+          p: [0, 0],
+          xord: "rst",
+          extend: "repeat",
+          aspectcorrect: true,
+        },
+        // Counter-rotating, and slower than the fold: two rotations at the same rate are
+        // one rotation, and the beat between 5 and 2.5 degrees a second is the drift the
+        // owner asked for. Written as `360 - x % 360` rather than with a unary minus so
+        // the value stays inside the parameter's own range at every instant.
+        { parameters: { r: expressionSlot("360 - abstime * 2.5 % 360", -15) } },
+      ),
+      node("out", "output", [280, 0]),
     ],
     [
       edge("e-source-fold", ["source", "out"], ["fold", "input"]),
@@ -668,32 +969,63 @@ export const displacementStackDocument = document(
         color1: [0.04, 0.06, 0.1, 1],
         color2: [0.85, 0.87, 0.95, 1],
       }),
+      /**
+       * T518 — `simplex2d` had no time axis, so this file could not move at all: measured
+       * mean |Δ| of exactly 0.00 between frames 90 and 240 on Dawn. `perlin4d` at the same
+       * period and harmonic count keeps the field's character and gives it a fourth
+       * dimension for `speed` to advance. `t4d: 0.37` starts it off the 4D lattice plane,
+       * where the amplitude would otherwise collapse for the first frames (see E4).
+       */
       node("field", "noise", [-520, 120], {
-        type: "simplex2d",
+        type: "perlin4d",
         seed: 5,
         period: 0.3,
         harmon: 2,
+        spread: 2,
         gain: 0.55,
+        rough: 0.5,
+        exp: 1,
+        amp: 1,
+        offset: 0,
         mono: true,
         aspectcorrect: true,
+        t4d: 0.37,
+        s4d: 1,
+        speed: 0.1,
       }),
+      /**
+       * The window narrowed from 0.2..0.8 to 0.33..0.67 because a 4D perlin's usable range
+       * is narrower than a 2D simplex's — at the old numbers the same `weight` produced a
+       * visibly weaker warp than the file used to ship. The MIDPOINT is unchanged at 0.5,
+       * which is the part that matters: `warp.offset` below is 0.5 and means "no
+       * displacement", and that contract survives only while the shaping stays centred.
+       */
       node("shape", "level", [-260, 120], {
-        blacklevel: 0.2,
-        whitelevel: 0.8,
+        blacklevel: 0.33,
+        whitelevel: 0.67,
         gamma1: 1.2,
         contrast: 1.1,
       }),
-      node("place", "transform", [0, 120], {
-        t: [0.05, -0.03],
-        r: 12,
-        s: [1.4, 1.4],
-        p: [0, 0],
-        xord: "srt",
-        extend: "mirror",
-        aspectcorrect: true,
-      }),
+      node(
+        "place",
+        "transform",
+        [0, 120],
+        {
+          t: [0.05, -0.03],
+          r: 12,
+          s: [1.4, 1.4],
+          p: [0, 0],
+          xord: "srt",
+          extend: "mirror",
+          aspectcorrect: true,
+        },
+        // The field EVOLVES (noise speed) and is also PLACED differently over time, and
+        // those are two different motions doing two different jobs — which is the whole
+        // reason `shape` and `place` are separate nodes. ABSOLUTE clock (§V453).
+        { parameters: { r: expressionSlot("abstime * 4 % 360", 12) } },
+      ),
       node("warp", "displace", [260, -60], {
-        weight: [0.08, 0.05],
+        weight: [0.18, 0.13],
         offset: [0.5, 0.5],
         sourcex: "red",
         sourcey: "green",
@@ -799,38 +1131,82 @@ const slitScanDocument = document(
   settings({ randomSeed: 21 }),
   graph(
     [
+      /**
+       * T518 — A SLIT SCAN NEEDS A SUBJECT WITH IDENTITY, and noise has none.
+       *
+       * The source here was a `perlin4d` field, and §V427 is exactly why that could never
+       * read: a slit scan SMEARS an image through time, and noise is smooth at every
+       * scale, so smearing it produces more smoothness. Measured, the shipped frame lived
+       * entirely between 0.35 and 0.61 in linear — a pastel wash with no edge anywhere in
+       * it — and the owner's report was that you could not see what the node did.
+       *
+       * A disc on a path has identity. Every ROW of the output is a different moment, so
+       * the disc's history is drawn as a ribbon whose shape IS its path, and the per-row
+       * time quantisation shows up as visible stair-steps along the ribbon's edge. That
+       * staircase is the node's mechanism made literal, and it is the thing that was
+       * missing.
+       *
+       * The frequencies are chosen against the ring's DEPTH, not by feel: 48 frames at 60
+       * fps is 0.8 s of history, and 0.62 Hz puts about half a swing inside that window,
+       * which is the longest ribbon that still reads as one gesture.
+       */
       node(
-        "field",
-        "noise",
-        [-640, -120],
+        "body",
+        "circle",
+        [-900, -120],
         {
-          type: "perlin4d",
-          period: 0.5,
-          harmon: 3,
-          spread: 2,
-          gain: 0.5,
-          rough: 0.5,
-          exp: 1,
-          amp: 1,
-          offset: 0,
-          mono: false,
+          mode: "fill",
+          center: [0.5, 0.5],
+          radius: [0.15, 0.15],
+          softness: 0.1,
+          fillcolor: [1, 0.8, 0.42, 1],
+          bgcolor: [0.05, 0.045, 0.14, 1],
           aspectcorrect: true,
-          seed: 9,
-          s4d: 1,
-          t4d: 0,
-          // Fast enough that 48 frames of history span a visible evolution.
-          speed: 0.8,
         },
-        { label: "noise1" },
+        {
+          label: "body1",
+          parameters: {
+            "center.x": drivenSlot("swingx1", 0.5),
+            "center.y": drivenSlot("swingy1", 0.5),
+          },
+        },
       ),
-      node("gradient", "ramp", [-640, 140], { type: "vertical" }, { label: "ramp1", definitionVersion: 2 }),
-      node("scan", "slitScan", [-260, 0], { frames: 48, depth: 1 }, { label: "slitscan1" }),
-      node("out", "output", [120, 0], {}, { label: "out1" }),
+      // Free-running (§V453), and incommensurate so the path never repeats exactly.
+      node(
+        "swingx",
+        "lfo",
+        [-1160, -240],
+        { shape: "sine", frequency: 0.62, amplitude: 0.36, offset: 0.5, phase: 0 },
+        { label: "swingx1" },
+      ),
+      node(
+        "swingy",
+        "lfo",
+        [-1160, -20],
+        { shape: "sine", frequency: 0.4, amplitude: 0.3, offset: 0.5, phase: 0.25 },
+        { label: "swingy1" },
+      ),
+      node("gradient", "ramp", [-900, 160], { type: "vertical" }, { label: "ramp1", definitionVersion: 2 }),
+      node("scan", "slitScan", [-560, 0], { frames: 48, depth: 1 }, { label: "slitscan1" }),
+      /**
+       * THE PRESENT, ON TOP OF ITS OWN PAST — and it also fixes a real first-impression
+       * defect. At frame 0 the ring holds nothing: §V229's clamp holds the OLDEST RECORDED
+       * frame, and before the first archive there is no recorded frame to hold, so the
+       * shipped file opened on a completely black picture. A gallery thumbnail is usually
+       * frame 0. Adding the live source back over the scan means the disc is there from
+       * the first frame, and the composition gains the thing that makes a slit scan
+       * legible at a glance: you can see the subject AND the trail it is leaving.
+       */
+      node("now", "add", [-260, -60], { opacity: 0.55 }, { label: "add1" }),
+      node("out", "output", [40, -60], {}, { label: "out1" }),
     ],
     [
-      edge("e-field-scan", ["field", "out"], ["scan", "input"]),
+      edge("e-body-scan", ["body", "out"], ["scan", "input"]),
       edge("e-gradient-scan", ["gradient", "out"], ["scan", "map"]),
-      edge("e-scan-out", ["scan", "out"], ["out", "input"]),
+      // ONE generator, TWO consumers (§V6): the disc is rendered once per frame.
+      edge("e-body-now", ["body", "out"], ["now", "in1"]),
+      edge("e-scan-now", ["scan", "out"], ["now", "in2"]),
+      edge("e-now-out", ["now", "out"], ["out", "input"]),
     ],
   ),
 );
@@ -1048,9 +1424,13 @@ const gradientRemapDocument = document(
         "noise",
         [-640, -120],
         {
-          type: "perlin2d",
+          // T518: `perlin2d` with `speed: 0` — two independent reasons this file could not
+          // move, and it measured mean |Δ| of exactly 0.00 across every pair of frames.
+          // `perlin4d` gives `speed` a dimension to advance; `t4d: 0.37` starts the field
+          // off the 4D lattice plane where its amplitude would otherwise be suppressed.
+          type: "perlin4d",
           // Large, soft features: the palette needs broad areas to show a hue in, and a
-          // fine field would dither five colours into visual mud.
+          // fine field would dither the stops into visual mud.
           period: 0.9,
           harmon: 4,
           spread: 2,
@@ -1063,8 +1443,10 @@ const gradientRemapDocument = document(
           aspectcorrect: true,
           seed: 3,
           s4d: 1,
-          t4d: 0,
-          speed: 0,
+          t4d: 0.37,
+          // Slow. The palette scroll below is the fast motion; if the field drifted at the
+          // same rate the two would beat against each other and read as noise.
+          speed: 0.08,
         },
         { label: "noise1" },
       ),
@@ -1078,20 +1460,49 @@ const gradientRemapDocument = document(
           phase: 0,
           period: 1,
           /**
-           * Five stops with real hue movement — indigo to magenta to red to amber to a
-           * pale highlight. Stored in DISPLAY space (§V56), which is what a colour picker
-           * hands over, and decoded per entry on the way to the shader (§V196).
+           * Six stops with real hue movement — near-black indigo to violet to magenta to
+           * amber to teal and back to indigo. Stored in DISPLAY space (§V56), which is
+           * what a colour picker hands over, and decoded per entry on the way to the
+           * shader (§V196).
+           *
+           * The last colour EQUALS the first, and that is structural rather than a
+           * preference: `phase` scrolls the ramp by `fract((coord + phase) / period)`, so
+           * a palette whose ends disagree jumps every time the scroll wraps. Cyclic, it
+           * runs forever.
            */
           stops: [
-            { position: 0, color: [0.04, 0.03, 0.18, 1] },
-            { position: 0.3, color: [0.45, 0.09, 0.52, 1] },
-            { position: 0.55, color: [0.86, 0.24, 0.29, 1] },
-            { position: 0.8, color: [0.98, 0.62, 0.16, 1] },
-            { position: 1, color: [1, 0.95, 0.78, 1] },
+            { position: 0, color: [0.02, 0.02, 0.09, 1] },
+            { position: 0.2, color: [0.22, 0.06, 0.42, 1] },
+            { position: 0.4, color: [0.85, 0.18, 0.32, 1] },
+            { position: 0.6, color: [1, 0.63, 0.22, 1] },
+            { position: 0.8, color: [0.32, 0.78, 0.72, 1] },
+            { position: 1, color: [0.02, 0.02, 0.09, 1] },
           ],
         },
-        { label: "ramp1", definitionVersion: 2 },
+        {
+          label: "ramp1",
+          definitionVersion: 2,
+          // ABSOLUTE clock (§V453): the palette walks past the field instead of the field
+          // walking past the palette, so every stop visits every part of the picture. It
+          // is also the proof that all six decoded — you watch each one arrive.
+          parameters: { phase: expressionSlot("abstime * 0.04 % 1", 0) },
+        },
       ),
+      /**
+       * T523 — `offset` AND `scale` ARE THE FIX FOR A PALETTE YOU CANNOT SEE.
+       *
+       * At the shipped 0 and 1 the index was the field's raw luminance, and a fractal
+       * noise does not span 0..1: measured, this field runs from about 0.34 to 0.70 with
+       * its median at 0.50. So the lookup only ever read the MIDDLE THIRD of the gradient
+       * — the deep indigo end and the pale end never appeared at all, and an example whose
+       * entire subject is a multi-stop palette was showing two of its stops and hiding the
+       * rest.
+       *
+       * `index = luminance * scale + offset`. Solving that line through (0.34 -> 0.03) and
+       * (0.70 -> 0.97) gives a slope of 2.6 and an intercept of -0.86, and those are the
+       * two numbers below. The tails clamp, which is what the ramp's hold-outside-range
+       * behaviour is for.
+       */
       node(
         "remap",
         "lookup",
@@ -1099,7 +1510,7 @@ const gradientRemapDocument = document(
         // Luminance is the index: a mono field's brightness IS its position along the
         // palette. `row` picks the middle of the gradient image, which is the whole of it
         // for a horizontal ramp.
-        { channel: "luminance", row: 0.5, offset: 0, scale: 1 },
+        { channel: "luminance", row: 0.5, offset: -0.86, scale: 2.6 },
         { label: "lookup1" },
       ),
       node("out", "output", [120, 0], {}, { label: "out1" }),
@@ -3373,6 +3784,386 @@ const naveDocument = document(
   ),
 );
 
+const CORONA_POINTS = 65_536;
+
+const CORONA_KERNEL = `
+fn lm_hash(p: vec3f) -> f32 {
+  var q = fract(p * 0.1031);
+  q = q + vec3f(dot(q, q.zyx + 31.32));
+  return fract((q.x + q.y) * q.z);
+}
+
+fn lm_noise(x: vec3f) -> f32 {
+  let i = floor(x);
+  let f = fract(x);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = mix(lm_hash(i + vec3f(0.0, 0.0, 0.0)), lm_hash(i + vec3f(1.0, 0.0, 0.0)), u.x);
+  let b = mix(lm_hash(i + vec3f(0.0, 1.0, 0.0)), lm_hash(i + vec3f(1.0, 1.0, 0.0)), u.x);
+  let c = mix(lm_hash(i + vec3f(0.0, 0.0, 1.0)), lm_hash(i + vec3f(1.0, 0.0, 1.0)), u.x);
+  let d = mix(lm_hash(i + vec3f(0.0, 1.0, 1.0)), lm_hash(i + vec3f(1.0, 1.0, 1.0)), u.x);
+  return mix(mix(a, b, u.y), mix(c, d, u.y), u.z) * 2.0 - 1.0;
+}
+
+fn lm_fbm(x: vec3f, oct: i32) -> f32 {
+  var v = 0.0; var a = 0.5; var q = x;
+  for (var k: i32 = 0; k < oct; k = k + 1) {
+    v = v + a * lm_noise(q);
+    q = q * 2.03 + vec3f(17.3, 9.1, 4.7);
+    a = a * 0.55;
+  }
+  return v;
+}
+
+// Ridged: 1-|n| squared per octave. Creases and filaments instead of blobs.
+fn lm_ridged(x: vec3f, oct: i32) -> f32 {
+  var v = 0.0; var a = 0.5; var q = x;
+  for (var k: i32 = 0; k < oct; k = k + 1) {
+    let n = 1.0 - abs(lm_noise(q));
+    v = v + a * n * n;
+    q = q * 2.07 + vec3f(11.1, 3.3, 7.7);
+    a = a * 0.52;
+  }
+  return v - 0.62;
+}
+
+fn lm_rotY(v: vec3f, a: f32) -> vec3f {
+  let c = cos(a); let s = sin(a);
+  return vec3f(v.x * c - v.z * s, v.y, v.x * s + v.z * c);
+}
+fn lm_rotX(v: vec3f, a: f32) -> vec3f {
+  let c = cos(a); let s = sin(a);
+  return vec3f(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let t = ctx.absTime;
+
+  // ---- THE SMOOTH PIPE -------------------------------------------------
+  // pointgenerator1.radius is the only drivable number that reaches this
+  // kernel. Map a band energy onto radius 1.0 -> 1.6 and it arrives here
+  // as a continuous 0..1 control. Length is divided straight back out, so
+  // the audio never merely scales the blob - it changes its character.
+  let pin = p.position;
+  let inR = max(1.0e-4, length(pin));
+  let fromAudio = clamp((inR - 1.0) / 0.6, 0.0, 1.0);
+  let drift = 0.30 + 0.28 * sin(t * 0.093);
+  let drive = clamp(fromAudio + drift, 0.0, 1.35);
+
+  var s = normalize(pin);
+
+  s = lm_rotY(s, t * 0.13);
+  s = lm_rotX(s, t * 0.081);
+
+  // taffy twist: shear grows with drive, very readable on the silhouette
+  s = lm_rotY(s, (0.8 + 2.4 * drive) * s.y + t * 0.05);
+
+  let wf = 1.25 + 0.85 * drive;
+  let w = vec3f(
+    lm_fbm(s * wf + vec3f(0.0, 0.0, t * 0.13), 4),
+    lm_fbm(s * wf + vec3f(5.2, 1.3, t * 0.11), 4),
+    lm_fbm(s * wf + vec3f(9.1, 7.7, t * 0.15), 4)
+  );
+
+  // two fields, crossfaded by drive: soft lobes -> sharp filaments
+  let lobes = lm_fbm(s * 1.9 + w * 1.5 + vec3f(0.0, t * 0.20, 0.0), 5);
+  let creases = lm_ridged(s * (2.4 + 2.6 * drive) + w * 1.1 - vec3f(t * 0.17, 0.0, 0.0), 5);
+  let field = mix(lobes, creases * 1.15, clamp(drive, 0.0, 1.0));
+
+  let ripple = sin(s.y * 6.0 - t * 1.05);
+  let breath = 0.05 * sin(t * 0.60) + 0.03 * sin(t * 1.03 + 1.3);
+  let amp = 0.24 + 0.32 * drive;
+
+  let rad = 1.0 + breath + amp * field + 0.055 * ripple * (0.25 + drive);
+  let p3 = s * rad * 0.90;
+
+  let dcam = 4.5;
+  let zc = max(0.05, dcam - p3.z);
+  let ff = 3.17;
+  let aspect = 16.0 / 9.0;
+
+  q.position = vec3f((p3.x * ff / zc) / aspect, p3.y * ff / zc, 0.5);
+  q.velocity = vec3f(field, creases, drive);
+  return q;
+}
+`;
+
+/**
+ * E31 — Corona (T538, §V471). **The owner's own working file**, adopted as an example and
+ * as the definition of the bar.
+ *
+ * A luminous organism turning in the dark: sixty-five thousand additive points on a sphere
+ * that the audio pulls between two entirely different characters. Quiet, it is soft lobes
+ * breathing — a slow deep-blue mass. Loud, the same points snap into RIDGED FILAMENTS, the
+ * silhouette twists like taffy, orange crests light along the fastest creases and a cyan
+ * frost picks out only the sharpest. Bloom, a seven-stop grade, trails and a 29-second hue
+ * drift sit on top. Nothing about it is subtle and nothing about it is arbitrary.
+ *
+ * **Read this file before writing another example.** Eight ideas do the work, and none of
+ * them is "add more nodes":
+ *
+ * ## 1. ONE SOURCE, THREE READINGS — and this is the transferable one
+ *
+ * `drawbase1`, `drawmid1` and `drawtip1` are three `renderPoints` over the SAME point
+ * cloud. They differ only in a GROUP PREDICATE, a colour and a size:
+ *
+ * | | predicate | colour | reads as |
+ * | --- | --- | --- | --- |
+ * | `drawbase1` | (none — all 65,536) | deep blue | the body |
+ * | `drawmid1` | `p.velocity.y > 0.04` | orange | the lit crests |
+ * | `drawtip1` | `p.velocity.y > 0.17` | cyan | the sharpest tips only |
+ *
+ * Structure comes from SELECTION, not from adding elements. Three draws over one
+ * simulation give a picture with three depths in it and cost one more node each — where
+ * three separate systems would cost three of everything and still not be registered with
+ * each other. This is the answer to "more interesting without overloading".
+ *
+ * ## 2. THE KERNEL WRITES DATA FOR THE SELECTION TO SLICE
+ *
+ * `q.velocity = vec3f(field, creases, drive)`. Velocity is not velocity here — it is an
+ * ATTRIBUTE CARRIER, and `creases` is the ridged-noise field. So `p.velocity.y > 0.17`
+ * means "only where the surface is sharply creased". The kernel and the compositing were
+ * designed together; the predicates are not a filter bolted on afterwards, they are
+ * reading a channel the kernel wrote for them.
+ *
+ * ## 3. GAIN AND BIAS PER BAND, NOT ONE REACTIVITY KNOB
+ *
+ * Eight `valueMath` multiply→add pairs, each mapping ONE band to ONE property with its own
+ * scale and offset — `high` × 20 + 0.1 into the cyan band's gain is a completely different
+ * curve from `level` × 0.95 + 0.62 into the trail persistence, and it has to be. A single
+ * master gain makes everything move together, which reads as one thing pumping. One
+ * `valueLag` at 0.09 s sits between the audio and all eight, so nothing jitters.
+ *
+ * ## 4. LAYERED POST, EACH STAGE DOING ONE JOB
+ *
+ * bloom (blur 34 → level → add), grade (lookup ← a seven-stop ramp), two highlight
+ * screens, feedback trails, hue drift. Five stages, each legible alone, none of them
+ * doing two things.
+ *
+ * ## 5. THE FEEDBACK CLOSES ON THE FINAL OUTPUT
+ *
+ * `loop1.source` is `tail1` — the very last node — not the raw render. So the trails carry
+ * the GRADED, hue-drifted colour, and a trail looks like it belongs to the image rather
+ * than like a ghost of an earlier stage.
+ *
+ * ## 6. A RAMP THAT GOES SOMEWHERE
+ *
+ * Seven stops: black → near-black navy → blue → purple → red → gold → white. Every shipped
+ * example before this used four or five and most of them travelled less far. The grade is
+ * why the same three colours read as a hundred.
+ *
+ * ## 7. THE GRADE ITSELF BREATHES
+ *
+ * `coat1.scale` is driven by `highMid`, so the whole image slides along the ramp with the
+ * music instead of the ramp being a fixed decision.
+ *
+ * ## 8. THE SLOWEST THING IS SLOWER THAN YOUR ATTENTION SPAN
+ *
+ * `hue1`'s LFO runs at 0.035 Hz — a 29-second cycle. That single number is most of why it
+ * does not get boring: at any moment something is changing that you did not notice start.
+ *
+ * ## What T538 changed, and it is one thing
+ *
+ * The owner's file bound their own track. Assets are session-only (§V363), so the shipped
+ * version puts the deterministic Beat pattern and an empty `audioFileIn` BOTH into a
+ * `valueSwitch` (T508) — index 0 plays on open with no asset, index 1 is your file. Same
+ * treatment as E24, and for the same reason: two value sources on one port would merge and
+ * one of them would silently vanish (§V457).
+ *
+ * Already clean and deliberately left alone: the kernel reads `ctx.absTime`, so the
+ * rotation survives a timeline lap, and the LFO is free-running (§V436, B98).
+ */
+const coronaDocument = document(
+  "e31-corona",
+  "E31 Corona",
+  settings({ outputResolution: { width: 1280, height: 720 }, randomSeed: 1, previewFps: 20 }),
+  graph(
+    [
+      // ---- the sound: pattern or your track, exclusively (T504's shape) ------------
+      node("beat", "audioPattern", [-1800, 700], { bpm: 124, amount: 1 }, { label: "beat1" }),
+      node("track", "audioFileIn", [-1800, 980], { monitor: true }, { label: "track1" }),
+      node("source", "valueSwitch", [-1520, 840], { index: 0 }, { label: "source1" }),
+      /* ONE Lag for all eight mappings. The bands are already noisy; smoothing once at the
+         source means every driven property agrees about what "now" is. */
+      node("damp", "valueLag", [-1240, 840], { lag: 0.09 }, { label: "damp1" }),
+
+      /* EIGHT multiply -> add PAIRS, one band to one property, each with its own gain and
+         bias. This is §V471's third idea and it is the difference between a reactive image
+         and an image that pumps: a single master gain moves everything together. */
+      node("swellG", "valueMath", [-960, 520], { operation: "multiply", operand: 0.95 }, { label: "swellg1" }),
+      node("swell", "valueMath", [-700, 520], { operation: "add", operand: 1 }, { label: "swell1" }),
+      node("glowG", "valueMath", [-960, 780], { operation: "multiply", operand: 1.5 }, { label: "glowg1" }),
+      node("glow", "valueMath", [-700, 780], { operation: "add", operand: 0.85 }, { label: "glow1" }),
+      node("dotG", "valueMath", [-960, 1040], { operation: "multiply", operand: 2.2 }, { label: "dotg1" }),
+      node("dot", "valueMath", [-700, 1040], { operation: "add", operand: 1.2 }, { label: "dot1" }),
+      node("heatG", "valueMath", [-960, 1300], { operation: "multiply", operand: 2.2 }, { label: "heatg1" }),
+      node("heat", "valueMath", [-700, 1300], { operation: "add", operand: 0.25 }, { label: "heat1" }),
+      node("sparkG", "valueMath", [-440, 520], { operation: "multiply", operand: 20 }, { label: "sparkg1" }),
+      node("sparkAdd", "valueMath", [-180, 520], { operation: "add", operand: 0.1 }, { label: "sparkadd1" }),
+      /* THE THIRD FENCE, and the pair above is why it has to exist. A gain of 20 is the
+         right sensitivity — `high` is a small channel and the cyan tips are the faintest
+         thing in the frame, so a quiet passage still has to light them — but ×20 + 0.1 over
+         a 0..1 band spans 0.1..20.1 against a Brightness declared 0..8. §V471's third idea
+         (gain and bias per band) is right and INCOMPLETE: the pair has to be range-checked
+         against its TARGET, or the idiom ships a clamp. Two fences, E24's shape: the Limit
+         holds the value in the graph where you can see it, and T368's clamp is the backstop
+         rather than the mechanism. */
+      node("spark", "valueLimit", [80, 520], { minimum: 0.1, maximum: 6 }, { label: "spark1" }),
+      node("gradeG", "valueMath", [-440, 780], { operation: "multiply", operand: 2.1 }, { label: "gradeg1" }),
+      node("grade", "valueMath", [-180, 780], { operation: "add", operand: 1.4 }, { label: "grade1" }),
+      /* T538 FOLLOW-UP: this gain was 0.95 in the owner's file, which put persistence at
+         0.62..1.57 against a range of 0..1 — so it raised a `parameter.range` problem on any
+         moderately loud passage, and T368's clamp was the only thing standing between the
+         piece and PERSISTENCE 1.0, which is perfect accumulation: an image that never
+         decays. Retuning to 0.30 is a better LOOK, not a compromise for a warning: it keeps
+         "louder means longer trails" and tops out at 0.92, where a trail still ends. */
+      node("trailG", "valueMath", [-440, 1040], { operation: "multiply", operand: 0.3 }, { label: "trailg1" }),
+      node("trail", "valueMath", [-180, 1040], { operation: "add", operand: 0.62 }, { label: "trail1" }),
+      node("tipG", "valueMath", [-440, 1300], { operation: "multiply", operand: 9 }, { label: "tipg1" }),
+      node("tip", "valueMath", [-180, 1300], { operation: "add", operand: 1 }, { label: "tip1" }),
+
+      // ---- the body ----------------------------------------------------------------
+      /* `radius` is the ONLY drivable number that reaches a point kernel, so the owner used
+         it as the audio's way in: lowMid maps to radius 1.0..1.95, the kernel divides the
+         length straight back out, and what survives is a 0..1 CONTROL rather than a scale.
+         The audio therefore changes the creature's CHARACTER, not its size. */
+      node("gen", "pointGenerator", [-1240, 0], {
+        shape: "sphere", cols: 256, rows: 256, count: CORONA_POINTS,
+        radius2: 0.25, sizeX: 2, sizeY: 2, sizeZ: 2,
+      }, {
+        label: "gen1",
+        parameters: { radius: drivenSlot("swell1:lowMid", 1.2) },
+      }),
+      node("shape", "pointKernel", [-960, 0], {
+        capacity: CORONA_POINTS, seed: 7, attributes: "", group: "",
+        kernel: CORONA_KERNEL,
+        value1: 0, value2: 0, value3: 0, value4: 0,
+      }, { label: "shape1" }),
+
+      // ---- ONE cloud, THREE readings (§V471.1) --------------------------------------
+      node("drawBase", "renderPoints", [-700, -240], {
+        count: CORONA_POINTS, blend: "additive", accumulate: false,
+        color: [0.17, 0.27, 0.54, 1], group: "",
+      }, {
+        label: "drawbase1",
+        parameters: { sizePixels: drivenSlot("dot1:level", 1.4) },
+      }),
+      node("drawMid", "renderPoints", [-700, 20], {
+        count: CORONA_POINTS, blend: "additive", accumulate: false,
+        color: [1, 0.42, 0.1, 1], sizePixels: 1.3,
+        /* The kernel wrote `creases` into velocity.y (§V471.2), so this predicate reads
+           "only where the surface is creased" — a selection on SHAPE, not on position. */
+        group: "p.velocity.y > 0.04",
+      }, { label: "drawmid1" }),
+      node("drawTip", "renderPoints", [-700, 280], {
+        count: CORONA_POINTS, blend: "additive", accumulate: false,
+        color: [0.1, 0.85, 1, 1], group: "p.velocity.y > 0.17",
+      }, {
+        label: "drawtip1",
+        parameters: { sizePixels: drivenSlot("tip1:high", 1.4) },
+      }),
+
+      node("base", "null", [-440, -240], {}, { label: "base1" }),
+      node("heatLvl", "level", [-440, 20], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "heatlvl1", parameters: { brightness: drivenSlot("heat1:low", 0.8) } }),
+      node("sparkLvl", "level", [-440, 280], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "sparklvl1", parameters: { brightness: drivenSlot("spark1:high", 0.6) } }),
+
+      // ---- the post, one job per stage (§V471.4) -------------------------------------
+      node("halo", "blur", [-180, -480], { size: 34, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("haloLvl", "level", [80, -480], {
+        blacklevel: 0.01, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "halolvl1", parameters: { brightness: drivenSlot("glow1:low", 1.1) } }),
+      node("burn", "add", [340, -240], {}, { label: "burn1" }),
+      node("palette", "ramp", [340, 20], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        /* SEVEN stops, and they travel (§V471.6): black, a near-black navy, blue, purple,
+           red, gold, white. The grade is why three colours read as a hundred. */
+        stops: [
+          { position: 0, color: [0, 0, 0, 1] },
+          { position: 0.1, color: [0.01, 0.02, 0.07, 1] },
+          { position: 0.3, color: [0.06, 0.13, 0.42, 1] },
+          { position: 0.52, color: [0.48, 0.09, 0.64, 1] },
+          { position: 0.72, color: [0.98, 0.26, 0.22, 1] },
+          { position: 0.89, color: [1, 0.74, 0.3, 1] },
+          { position: 1, color: [1, 0.98, 0.93, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+      node("coat", "lookup", [600, -240], {
+        channel: "luminance", row: 0.5, offset: 0,
+      }, { label: "coat1", parameters: { scale: drivenSlot("grade1:highMid", 1.6) } }),
+      node("liftHeat", "screen", [860, -240], {}, { label: "liftheat1" }),
+      node("liftSpark", "screen", [1120, -240], {}, { label: "liftspark1" }),
+      /* THE TRAILS CLOSE ON THE FINAL OUTPUT (§V471.5), not on the raw render: `tail1` is
+         the last node, so what smears is the GRADED, hue-drifted picture. A trail taken
+         from an earlier stage looks like a ghost of something else. */
+      node("loop", "feedback", [1120, 60], {
+        source: "tail1", clearColor: [0, 0, 0, 1], reset: false, substeps: 1,
+      }, { label: "loop1", parameters: { persistence: drivenSlot("trail1:level", 0.9) } }),
+      node("mixTrail", "screen", [1380, -240], {}, { label: "mixtrail1" }),
+      /* 0.035 Hz — a 29-SECOND cycle (§V471.8). The slowest thing in the piece is slower
+         than the viewer's attention span, which is most of why an hour of it is watchable.
+         Free-running (§V436, B98), so a timeline lap does not restart the drift. */
+      node("drift", "lfo", [1380, 60], { shape: "sine", frequency: 0.035, amplitude: 0.35, offset: 0, phase: 0 }, { label: "drift1" }),
+      node("hue", "hsv", [1640, -240], { saturation: 1.12, value: 1 }, {
+        label: "hue1",
+        parameters: { hueoffset: drivenSlot("drift1", 0) },
+      }),
+      node("tail", "null", [1900, -240], {}, { label: "tail1" }),
+      node("out", "output", [2160, -240], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-beat-source", ["beat", "out"], ["source", "in1"]),
+      edge("e-track-source", ["track", "out"], ["source", "in2"]),
+      edge("e-source-damp", ["source", "out"], ["damp", "in"]),
+      edge("e-damp-swellg", ["damp", "out"], ["swellG", "a"]),
+      edge("e-swellg-swell", ["swellG", "out"], ["swell", "a"]),
+      edge("e-damp-glowg", ["damp", "out"], ["glowG", "a"]),
+      edge("e-glowg-glow", ["glowG", "out"], ["glow", "a"]),
+      edge("e-damp-dotg", ["damp", "out"], ["dotG", "a"]),
+      edge("e-dotg-dot", ["dotG", "out"], ["dot", "a"]),
+      edge("e-damp-heatg", ["damp", "out"], ["heatG", "a"]),
+      edge("e-heatg-heat", ["heatG", "out"], ["heat", "a"]),
+      edge("e-damp-sparkg", ["damp", "out"], ["sparkG", "a"]),
+      edge("e-sparkg-sparkadd", ["sparkG", "out"], ["sparkAdd", "a"]),
+      edge("e-sparkadd-spark", ["sparkAdd", "out"], ["spark", "in"]),
+      edge("e-damp-gradeg", ["damp", "out"], ["gradeG", "a"]),
+      edge("e-gradeg-grade", ["gradeG", "out"], ["grade", "a"]),
+      edge("e-damp-trailg", ["damp", "out"], ["trailG", "a"]),
+      edge("e-trailg-trail", ["trailG", "out"], ["trail", "a"]),
+      edge("e-damp-tipg", ["damp", "out"], ["tipG", "a"]),
+      edge("e-tipg-tip", ["tipG", "out"], ["tip", "a"]),
+
+      edge("e-gen-shape", ["gen", "out"], ["shape", "in"]),
+      edge("e-shape-base", ["shape", "out"], ["drawBase", "points"]),
+      edge("e-shape-mid", ["shape", "out"], ["drawMid", "points"]),
+      edge("e-shape-tip", ["shape", "out"], ["drawTip", "points"]),
+
+      edge("e-base-null", ["drawBase", "out"], ["base", "in"]),
+      edge("e-mid-heatlvl", ["drawMid", "out"], ["heatLvl", "input"]),
+      edge("e-tip-sparklvl", ["drawTip", "out"], ["sparkLvl", "input"]),
+
+      edge("e-null-halo", ["base", "out"], ["halo", "input"]),
+      edge("e-halo-halolvl", ["halo", "out"], ["haloLvl", "input"]),
+      edge("e-null-burn", ["base", "out"], ["burn", "in1"]),
+      edge("e-halolvl-burn", ["haloLvl", "out"], ["burn", "in2"], 0),
+      edge("e-burn-coat", ["burn", "out"], ["coat", "source"]),
+      edge("e-palette-coat", ["palette", "out"], ["coat", "lookup"]),
+      edge("e-coat-liftheat", ["coat", "out"], ["liftHeat", "in1"]),
+      edge("e-heatlvl-liftheat", ["heatLvl", "out"], ["liftHeat", "in2"], 0),
+      edge("e-liftheat-liftspark", ["liftHeat", "out"], ["liftSpark", "in1"]),
+      edge("e-sparklvl-liftspark", ["sparkLvl", "out"], ["liftSpark", "in2"], 0),
+      edge("e-liftspark-mixtrail", ["liftSpark", "out"], ["mixTrail", "in1"]),
+      edge("e-loop-mixtrail", ["loop", "out"], ["mixTrail", "in2"], 0),
+      edge("e-mixtrail-hue", ["mixTrail", "out"], ["hue", "input"]),
+      edge("e-hue-tail", ["hue", "out"], ["tail", "in"]),
+      edge("e-tail-out", ["tail", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
   reactionDiffusionDocument,
@@ -3396,4 +4187,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   sundialDocument,
   descentDocument,
   naveDocument,
+  coronaDocument,
 ];

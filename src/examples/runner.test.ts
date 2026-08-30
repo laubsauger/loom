@@ -56,6 +56,7 @@ describe("examples: the gate", () => {
       "E29-Descent.loom.json",
       "E3-Animated-Noise-Field.loom.json",
       "E30-Nave.loom.json",
+      "E31-Corona.loom.json",
       "E4-Bloom.loom.json",
       "E5-Kaleidoscope.loom.json",
       "E6-Displacement-Stack.loom.json",
@@ -124,13 +125,23 @@ describe.each(examples)("example $fileName", (file) => {
     const expectedOrder = Object.keys(document.graph.nodes)
       .filter((id) => {
         const node = document.graph.nodes[id];
+        if (node === undefined) return true;
+        const definition = registry.get(node.type);
         // `isValueSourceDefinition`, not a local `valueChannel === undefined` test. The
         // narrower spelling was right while the LFO/Constant/Timer trio were the only
         // value nodes in any example, and it silently became wrong the moment one shipped
         // a Mouse or a Lag: those declare `valueEvaluate` and no `valueChannel`, so this
         // filter kept them and demanded the compiler put a portless CPU node into the GPU
         // plan's order. §V173 already names the whole class — one spelling, one answer.
-        return node === undefined || !isValueSourceDefinition(registry.get(node.type));
+        if (isValueSourceDefinition(definition)) return false;
+        // T538, and §V316's shape exactly: "not every LIVE node is a PLAN node" had one
+        // member and quietly narrowed to it. A `passthrough` node — `null` is the only one
+        // today — is SPLICED OUT by the compiler by design: no pass, no resource, zero
+        // render-time cost, and therefore never in `plan.order`. It is still live, still
+        // unpruned, still previewable through the §V130 alias. Without this clause the gate
+        // made `null` unexampleable, which is a strange thing for the gate on examples to
+        // do to a shipped node — and it is why `null` sat in the class-(c) unexampled list.
+        return definition?.passthrough === undefined;
       })
       .sort();
     expect([...plan.order].sort()).toEqual(expectedOrder);

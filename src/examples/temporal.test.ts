@@ -112,6 +112,9 @@ describe("examples with a temporal loop", () => {
       // corridor cannot snap at a timeline lap. That is the loop's third use in the set,
       // after a smear (E1) and a simulation (E2/E12/E24): a ZOOM.
       "E29-Descent.loom.json",
+      // T538: the owner's own file. Its loop closes on the FINAL output (§V471.5), so the
+      // trails carry the graded colour rather than a ghost of the raw render.
+      "E31-Corona.loom.json",
     ]);
   });
 });

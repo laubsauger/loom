@@ -36,6 +36,7 @@ happened:
 | [E28 Sundial](./E28-Sundial.md) | a hard shadow travelling across a floor: one orbiting caster under a fixed raking key with `shadows` on, three standing stones, and a dusk sky worn as the render's environment — seen only in the specular sheen (T481, T482, T484) |
 | [E29 Descent](./E29-Descent.md) | a neon square tunnel you fall into, born on the beat: scale ABOVE ONE inside a feedback loop, hue rotating per pass so depth reads as colour, and NO clock read in the picture path at all (T503) |
 | [E30 Nave](./E30-Nave.md) | a fluted cathedral bore scrolling toward you and breathing on the kick — the audio-and-3D corner nothing else in the set filled, written on the ABSOLUTE clock so a timeline lap cannot touch it (T503, T489) |
+| [E31 Corona](./E31-Corona.md) | the owner's own file, adopted as the BAR (§V471): one point cloud read THREE ways by group predicate — body, crests, tips — eight per-band gain/bias pairs, and a 29-second hue cycle. Read this one before writing an example (T538) |
 
 ## Running them
 
