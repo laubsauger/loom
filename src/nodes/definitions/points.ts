@@ -239,6 +239,15 @@ export const pointKernelNode: NodeDefinition = {
         stride: resource.stride,
         capacity: resource.capacity,
       })),
+      // T296: the resolved edge payload. The kernel WRITES every declared attribute,
+      // so every pair in the map is its own (§V197's "if you write it, you own it").
+      pointsets: {
+        out: {
+          pairs: Object.fromEntries(attributes.map((attribute) => [attribute.name, pointPairId(nodeId, attribute.name)])),
+          capacity,
+          topology: "points",
+        },
+      },
     };
   },
 };
@@ -329,11 +338,24 @@ export const renderPointsNode: NodeDefinition = {
       shader: SPRITE_RENDER_WGSL,
       target,
       topology: "triangle-list",
-      instances: Math.max(1, Math.round(readNumber(parameters, "count", 4096))),
+      // T296: instances = the EDGE's capacity, clamped by the count param — the user
+      // no longer keeps two numbers in sync by hand.
+      instances: Math.max(
+        1,
+        Math.min(
+          Math.round(readNumber(parameters, "count", 4096)),
+          points.pointset?.capacity ?? Math.round(readNumber(parameters, "count", 4096)),
+        ),
+      ),
       vertexCount: 6,
       buffers: [
-        // The producer's position pair, read half: last completed frame's positions.
-        { binding: "positions", resourceId: pointPairId(points.source.nodeId, "position"), half: "read" },
+        // The producer's position pair via the edge map, WRITE half: THIS frame's
+        // positions (§V168) — whoever owns the pair (§V197, by-reference reads).
+        {
+          binding: "positions",
+          resourceId: points.pointset?.pairs["position"] ?? pointPairId(points.source.nodeId, "position"),
+          half: "write",
+        },
       ],
       uniforms: {
         color: readColor(parameters, "color", [1, 1, 1, 1]),
@@ -410,7 +432,7 @@ export const textureToAttributeNode: NodeDefinition = {
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, parameters } = readCompileInputs(context);
+    const { nodeId, inputs } = readCompileInputs(context);
     const points = inputs["points"];
     const texture = inputs["texture"];
     if (points === undefined || texture === undefined) {
@@ -431,7 +453,25 @@ export const textureToAttributeNode: NodeDefinition = {
       };
     }
 
-    const count = Math.max(1, Math.round(readNumber(parameters, "count", 4096)));
+    // T296/§V197: capacity comes off the EDGE, and position passes BY REFERENCE — this
+    // node writes only `sample`, so `sample` is the only pair it owns. The old
+    // copy-everything shape existed purely for the id-derivation convention the edge
+    // map replaces; its per-frame memcpy is simply gone.
+    const upstream = points.pointset;
+    if (upstream === undefined || upstream.pairs["position"] === undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.edge",
+            message: `Node "${nodeId}": the points edge carries no resolved position pair (producer predates T296?).`,
+            nodeId,
+          },
+        ],
+      };
+    }
+    const count = upstream.capacity;
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:bridge`,
@@ -439,8 +479,8 @@ export const textureToAttributeNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: pointPairId(points.source.nodeId, "position"), half: "read" },
-        { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
+        // The producer's pair, WRITE half: this frame's positions, in plan order (§V168).
+        { binding: "in_position", resourceId: upstream.pairs["position"], half: "write" },
         { binding: "out_sample", resourceId: pointPairId(nodeId, "sample"), half: "write" },
       ],
       textures: [{ binding: "sourceTexture", resourceId: texture.resource, sampled: "unfiltered" }],
@@ -452,9 +492,15 @@ export const textureToAttributeNode: NodeDefinition = {
     return {
       passes: [pass],
       scratch: [
-        { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
         { key: "sample", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity: count },
       ],
+      pointsets: {
+        out: {
+          pairs: { ...upstream.pairs, sample: pointPairId(nodeId, "sample") },
+          capacity: count,
+          ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
+        },
+      },
     };
   },
 };

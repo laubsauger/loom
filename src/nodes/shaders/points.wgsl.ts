@@ -79,9 +79,8 @@ export const TEXTURE_TO_ATTRIBUTE_WGSL = `struct BridgeFrame {
 
 @group(0) @binding(0) var<uniform> bridgeFrame: BridgeFrame;
 @group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
-@group(0) @binding(2) var<storage, read_write> out_position: array<vec3f>;
-@group(0) @binding(3) var<storage, read_write> out_sample: array<vec4f>;
-@group(0) @binding(4) var sourceTexture: texture_2d<f32>;
+@group(0) @binding(2) var<storage, read_write> out_sample: array<vec4f>;
+@group(0) @binding(3) var sourceTexture: texture_2d<f32>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -89,11 +88,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (index >= bridgeFrame.count) {
     return;
   }
+  /* T296/§V197: position passes downstream BY REFERENCE through the edge map — this
+     kernel writes only what it owns (sample). The old position copy existed for an
+     id-derivation convention, not a physical need. */
   let position = in_position[index];
   /* Clip space [-1,1] -> uv [0,1] -> texel. Clamped so off-screen points still sample. */
   let dims = vec2f(textureDimensions(sourceTexture, 0));
   let uv = clamp(position.xy * 0.5 + vec2f(0.5), vec2f(0.0), vec2f(1.0));
   let texel = vec2i(uv * (dims - vec2f(1.0)));
   out_sample[index] = textureLoad(sourceTexture, texel, 0);
-  out_position[index] = position;
 }`;

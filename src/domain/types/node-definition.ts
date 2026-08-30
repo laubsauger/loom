@@ -129,6 +129,15 @@ export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;
   /** Scratch resources this node's passes use between each other. */
   scratch?: ReadonlyArray<ScratchRequest>;
+  /**
+   * T296 (§V197): what each pointset OUTPUT port resolved to — the attribute→pair map
+   * (pairs another node may own, for by-reference attributes), capacity and topology.
+   * The compiler forwards it along pointset edges; consumers bind these ids instead of
+   * deriving them from a naming convention.
+   */
+  pointsets?: Readonly<
+    Record<string, { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string }>
+  >;
   diagnostics?: RuntimeDiagnostic[];
 }
 

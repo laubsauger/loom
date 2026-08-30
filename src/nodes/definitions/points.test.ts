@@ -99,7 +99,8 @@ describe("renderPoints — manifest and emission (T122)", () => {
     };
     expect(pass.kind).toBe("draw");
     expect(pass.buffers[0]?.resourceId).toBe(pointPairId("sim", "position"));
-    expect(pass.buffers[0]?.half).toBe("read");
+    // T296/§V168: consumers read the WRITE half — THIS frame's positions, in plan order.
+    expect(pass.buffers[0]?.half).toBe("write");
     expect(pass.blend).toBe("alpha");
     // accumulate = the T180 trails pattern: no clear between frames.
     expect(pass.clear).toBe(false);
@@ -167,13 +168,30 @@ describe("pointKernel → renderPoints → output through the REAL compiler (T17
     const drawPass = plan.passes.find((pass) => pass.kind === "draw");
     expect(drawPass?.buffers?.[0]?.resourceId).toBe(pointPairId("sim", "position"));
 
-    // §V22: every pair swap comes after every non-swap pass.
-    const lastRealPass = plan.passes.map((pass) => pass.kind).filter((kind) => kind !== "swap").length;
-    const swapIndices = plan.passes
-      .map((pass, index) => (pass.kind === "swap" ? index : -1))
-      .filter((index) => index >= 0);
-    expect(swapIndices).toHaveLength(DEFAULT_POINT_ATTRIBUTES.length);
-    for (const index of swapIndices) expect(index).toBeGreaterThanOrEqual(lastRealPass);
+    // T297 (§V197/§V22): each pair's swap comes after the LAST pass that BINDS it —
+    // ownership by binder, not by reachability. Position is read by the draw, so its
+    // swap must follow the draw; the attributes only the kernel touches swap right
+    // after the kernel. Every swap still precedes nothing that binds its pair.
+    const swaps = plan.passes
+      .map((pass, index) => ({ pass, index }))
+      .filter((entry) => entry.pass.kind === "swap");
+    expect(swaps).toHaveLength(DEFAULT_POINT_ATTRIBUTES.length);
+    for (const { pass, index } of swaps) {
+      const pairId = (pass as { resourceId: string }).resourceId;
+      const lastBinder = plan.passes
+        .map((candidate, candidateIndex) =>
+          (candidate as { buffers?: Array<{ resourceId: string }> }).buffers?.some((b) => b.resourceId === pairId) === true
+            ? candidateIndex
+            : -1,
+        )
+        .reduce((a, b) => Math.max(a, b), -1);
+      expect(index, `swap for ${pairId}`).toBeGreaterThan(lastBinder);
+    }
+    const drawIndex = plan.passes.findIndex((pass) => pass.kind === "draw");
+    const positionSwapIndex = plan.passes.findIndex(
+      (pass) => pass.kind === "swap" && (pass as { resourceId: string }).resourceId === pointPairId("sim", "position"),
+    );
+    expect(positionSwapIndex).toBeGreaterThan(drawIndex); // the by-binding claim, explicitly
 
     // The whole plan reads cleanly through the backend's own validation.
     expect(readExecutionPlan(plan).ok).toBe(true);

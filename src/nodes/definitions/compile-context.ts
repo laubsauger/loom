@@ -36,6 +36,16 @@ export interface NodeCompileInputs {
          * carries a FAMILY of buffers, not one resource.
          */
         readonly source?: { readonly nodeId: string; readonly portId: PortId };
+        /**
+         * T296: the pointset edge payload — resolved attribute→pair map, capacity,
+         * topology. Consumers bind THESE pair ids (which another node may own, §V197)
+         * instead of deriving ids from a naming convention.
+         */
+        readonly pointset?: {
+          readonly pairs: Readonly<Record<string, string>>;
+          readonly capacity: number;
+          readonly topology?: string;
+        };
       }
     >
   >;
@@ -65,7 +75,13 @@ interface CompilerContextShape {
   readonly inputs?: Readonly<
     Record<
       PortId,
-      ReadonlyArray<{ resourceId: string; sampler: string; sourceNodeId?: string; sourcePortId?: string }>
+      ReadonlyArray<{
+        resourceId: string;
+        sampler: string;
+        sourceNodeId?: string;
+        sourcePortId?: string;
+        pointset?: { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string };
+      }>
     >
   >;
   readonly outputs?: Readonly<Record<PortId, { resourceId: string }>>;
@@ -91,6 +107,7 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
       ...(first.sourceNodeId === undefined
         ? {}
         : { source: { nodeId: first.sourceNodeId, portId: first.sourcePortId ?? "out" } }),
+      ...(first.pointset === undefined ? {} : { pointset: first.pointset }),
     };
   }
 

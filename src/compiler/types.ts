@@ -179,6 +179,22 @@ export interface CompileEdge {
 }
 
 /** What a node's `compile()` sees on one of its inputs. */
+/**
+ * What a pointset EDGE carries (T296, §V197): the RESOLVED attribute→pair map, the
+ * capacity and the topology. One change, four payoffs — consumers stop deriving pair
+ * ids from a naming convention, capacity stops being a parameter the user must keep in
+ * sync, topology reaches the renderer, and the map IS the copy-on-write mechanism: a
+ * transform that writes only `sample` publishes upstream's pairs for everything else,
+ * so an unmodified attribute passes downstream BY REFERENCE (no per-node copy of the
+ * whole schema — V197's 28.8 GB/s of memcpy at a million points simply never happens).
+ */
+export interface PointsetEdgeInfo {
+  /** attribute name → bufferPair resource id. The pair another NODE may own. */
+  readonly pairs: Readonly<Record<string, string>>;
+  readonly capacity: number;
+  readonly topology?: string;
+}
+
 export interface CompiledInputBinding {
   readonly portId: PortId;
   readonly resourceId: string;
@@ -192,6 +208,8 @@ export interface CompiledInputBinding {
   readonly space: ColorSpace;
   /** A temporal binding reads the pair's previous-frame half (§V22). */
   readonly temporal: boolean;
+  /** Present iff the upstream output is a pointset (T296). */
+  readonly pointset?: PointsetEdgeInfo;
 }
 
 export interface CompiledOutputBinding {

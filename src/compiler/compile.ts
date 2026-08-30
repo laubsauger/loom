@@ -40,6 +40,7 @@ import type {
   CompileRequest,
   CompiledGraph,
   CompiledInputBinding,
+  PointsetEdgeInfo,
   CompiledOutputBinding,
   CompilerNodeContext,
   FeedbackPair,
@@ -667,6 +668,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const passes: Array<Record<string, unknown>> = [];
   /** BufferPair scratch ids emitted this compile; each gets a swap after all consumers (§V22). */
   const scratchPairIds: string[] = [];
+  /** T296: what each pointset OUTPUT resolved to, published by the producing node's compile. */
+  const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -677,6 +680,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     for (const edge of incoming.get(nodeId) ?? []) {
       const upstream = propagated.outputs.get(outputKey(edge.source.nodeId, edge.source.portId));
       if (upstream === undefined) continue;
+      const pointsetInfo = pointsetInfoByOutput.get(outputKey(edge.source.nodeId, edge.source.portId));
       inputs[edge.target.portId]?.push({
         portId: edge.target.portId,
         resourceId: upstream.resourceId,
@@ -687,6 +691,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         format: upstream.format,
         space: upstream.space,
         temporal: edge.temporal,
+        ...(pointsetInfo === undefined ? {} : { pointset: pointsetInfo }),
       });
     }
 
@@ -753,6 +758,27 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     // the node's resolved output (scale-relative, §V21 — never per frame), formatted
     // like it unless the entry says otherwise, and materialized as ordinary targets, so
     // T143 carry-over and the memory estimate cover them for free.
+    // T296: the node's pointset OUTPUT map, published for downstream edges. Read
+    // structurally like scratch, so the frozen contract needs no change to carry it.
+    const pointsetsRaw = (description as { pointsets?: unknown }).pointsets;
+    if (isRecord(pointsetsRaw)) {
+      for (const [portId, rawInfo] of Object.entries(pointsetsRaw)) {
+        if (!isRecord(rawInfo) || !isRecord(rawInfo["pairs"])) continue;
+        const capacity = rawInfo["capacity"];
+        if (!(Number.isInteger(capacity) && (capacity as number) >= 1)) continue;
+        const pairs: Record<string, string> = {};
+        for (const [attribute, pairId] of Object.entries(rawInfo["pairs"])) {
+          if (typeof pairId === "string" && pairId.length > 0) pairs[attribute] = pairId;
+        }
+        const topology = rawInfo["topology"];
+        pointsetInfoByOutput.set(outputKey(nodeId, portId), {
+          pairs,
+          capacity: capacity as number,
+          ...(typeof topology === "string" ? { topology } : {}),
+        });
+      }
+    }
+
     const scratchRaw = (description as { scratch?: unknown }).scratch;
     if (scratchRaw !== undefined) {
       const baseSize = resolution ?? [settings.outputResolution.width, settings.outputResolution.height];
@@ -934,11 +960,33 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   for (const output of feedbackOutputs) {
     passes.push({ kind: "swap", id: swapPassId(output.resourceId), resourceId: output.resourceId });
   }
-  // Point-pair swaps ride the SAME placement rule as texture feedback: after every
-  // pass, so no per-pair last-consumer bookkeeping has to be right for all pairs at
-  // once (§V22). This frame's kernel writes become next frame's reads.
+  // T297 (§V197, §V22): swap OWNERSHIP under copy-on-write. With by-reference reads, a
+  // pair's consumers are found by WHO BINDS ITS ID — scanning every pass's buffer
+  // bindings — never by graph reachability: a downstream node reading upstream's pair
+  // by reference is invisible to reachability-from-the-owner, and swapping before it
+  // would hand it next frame's half mid-frame, silently corrupting simulation state.
+  // Each pair's swap is placed immediately after the LAST pass that binds it.
+  const lastBinder = new Map<string, number>();
+  passes.forEach((pass, index) => {
+    const bindings = (pass as { buffers?: ReadonlyArray<{ resourceId?: unknown }> }).buffers ?? [];
+    for (const binding of bindings) {
+      if (typeof binding.resourceId === "string") lastBinder.set(binding.resourceId, index);
+    }
+  });
+  const swapsAt = new Map<number, string[]>();
   for (const pairId of scratchPairIds) {
-    passes.push({ kind: "swap", id: swapPassId(pairId), resourceId: pairId });
+    const at = lastBinder.get(pairId) ?? passes.length - 1;
+    const list = swapsAt.get(at) ?? [];
+    list.push(pairId);
+    swapsAt.set(at, list);
+  }
+  for (const index of [...swapsAt.keys()].sort((a, b) => b - a)) {
+    const swaps = (swapsAt.get(index) ?? []).sort();
+    passes.splice(
+      index + 1,
+      0,
+      ...swaps.map((pairId) => ({ kind: "swap", id: swapPassId(pairId), resourceId: pairId })),
+    );
   }
 
   // One shared sampler for the plan. Emitted whenever anything renders: deciding per-plan
