@@ -23,7 +23,18 @@ export const AUDIO_BAND_EDGES_HZ = {
 export interface AudioAnalysisState {
   /** Previous frame's frequency bytes, for spectral flux. Null on the first frame. */
   previousSpectrum: Uint8Array | null;
+  /** Previous onset value, for the rising-edge event count (T437). */
+  previousOnset: number;
 }
+
+/**
+ * T437: an onset EVENT is a rising crossing of this flux level. The constant is part
+ * of the recorded contract (§V352's corollary — changing it is a versioning event for
+ * every recorded feature track), pinned by exact-value test. 0.02 mean positive flux
+ * is ~5 byte-levels of broadband rise: real transients clear it easily, breathing
+ * noise does not.
+ */
+export const ONSET_EVENT_THRESHOLD = 0.02;
 
 export interface AudioAnalysisInput {
   /** `analyser.getByteFrequencyData` output: frequencyBinCount bytes, 0..255. */
@@ -79,6 +90,15 @@ export function computeAudioFeatures(input: AudioAnalysisInput): AudioFeatures {
     state.previousSpectrum = new Uint8Array(frequency);
   }
 
+  /*
+   * T437, at per-frame fidelity: one analysis per interval means the max IS the
+   * reading, and the count is a single rising edge. A faster analysis hop later
+   * raises fidelity — several hops per interval, a true max and a real count —
+   * without changing either field's meaning.
+   */
+  const onsetCount = onset > ONSET_EVENT_THRESHOLD && state.previousOnset <= ONSET_EVENT_THRESHOLD ? 1 : 0;
+  state.previousOnset = onset;
+
   return {
     level,
     low: bandAverage(frequency, binHz, ...AUDIO_BAND_EDGES_HZ.low),
@@ -86,5 +106,7 @@ export function computeAudioFeatures(input: AudioAnalysisInput): AudioFeatures {
     highMid: bandAverage(frequency, binHz, ...AUDIO_BAND_EDGES_HZ.highMid),
     high: bandAverage(frequency, binHz, ...AUDIO_BAND_EDGES_HZ.high),
     onset,
+    onsetCount,
+    onsetMax: onset,
   };
 }

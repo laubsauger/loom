@@ -14,7 +14,7 @@ import type { AudioAnalysisState } from "./audio-features.ts";
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 2048; // bin width 23.4375 Hz, 1024 bins
 
-const freshState = (): AudioAnalysisState => ({ previousSpectrum: null });
+const freshState = (): AudioAnalysisState => ({ previousSpectrum: null, previousOnset: 0 });
 
 function spectrum(fill: (bin: number) => number): Uint8Array {
   const bins = new Uint8Array(FFT_SIZE / 2);
@@ -88,4 +88,25 @@ describe("computeAudioFeatures (T414, §V147)", () => {
     const partial = computeAudioFeatures({ ...base, frequency: spectrum((bin) => (bin % 2 === 0 ? 100 : 0)) });
     expect(partial.onset).toBe((512 * 100) / 1024 / 255);
   });
+
+  it("onsetCount is a RISING edge of the pinned threshold; onsetMax equals onset at per-frame fidelity (T437)", () => {
+    const state = freshState();
+    const base = { timeDomain: silence(), sampleRate: SAMPLE_RATE, fftSize: FFT_SIZE, state };
+    computeAudioFeatures({ ...base, frequency: spectrum(() => 0) }); // prime previous spectrum
+    const hit = computeAudioFeatures({ ...base, frequency: spectrum(() => 255) });
+    expect(hit.onset).toBe(1);
+    expect(hit.onsetCount).toBe(1); // rose through the threshold
+    expect(hit.onsetMax).toBe(hit.onset);
+    // Sustained energy is ONE event, not one per frame: the envelope must fall below
+    // the threshold before a new rising edge counts.
+    const sustainedRise = computeAudioFeatures({ ...base, frequency: spectrum(() => 255) });
+    // (spectrum unchanged -> zero flux -> below threshold; a genuinely sustained
+    // ABOVE-threshold flux needs ever-rising bins, so drive one:)
+    expect(sustainedRise.onsetCount).toBe(0);
+    const decay = computeAudioFeatures({ ...base, frequency: spectrum(() => 0) });
+    expect(decay.onsetCount).toBe(0);
+    const second = computeAudioFeatures({ ...base, frequency: spectrum(() => 200) });
+    expect(second.onsetCount).toBe(1); // a fresh rise after a fall is a second event
+  });
+
 });

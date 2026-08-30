@@ -53,7 +53,7 @@ export const audioInNode: NodeDefinition = {
 };
 
 /** Both audio nodes publish the SAME channels: the session has one feature record. */
-function projectFeatures(audio: { level: number; low: number; lowMid: number; highMid: number; high: number; onset: number } | undefined) {
+function projectFeatures(audio: { level: number; low: number; lowMid: number; highMid: number; high: number; onset: number; onsetCount: number; onsetMax: number } | undefined) {
   return {
     level: audio?.level ?? 0,
     low: audio?.low ?? 0,
@@ -61,6 +61,11 @@ function projectFeatures(audio: { level: number; low: number; lowMid: number; hi
     highMid: audio?.highMid ?? 0,
     high: audio?.high ?? 0,
     onset: audio?.onset ?? 0,
+    // T437: interval-shaped onset events — count of rising threshold crossings and the
+    // interval's peak. Per-frame analysis makes these 0|1 and == onset; a faster hop
+    // later refines fidelity, never meaning.
+    onsetCount: audio?.onsetCount ?? 0,
+    onsetMax: audio?.onsetMax ?? 0,
   };
 }
 

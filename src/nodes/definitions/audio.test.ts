@@ -32,6 +32,8 @@ const FEATURES: AudioFeatures = {
   highMid: 0.2,
   high: 0.05,
   onset: 0.75,
+  onsetCount: 1,
+  onsetMax: 0.8,
 };
 
 function audioGraph(extra: GraphDocument["nodes"] = {}, edges: GraphDocument["edges"] = {}): GraphDocument {
@@ -64,6 +66,8 @@ describe("audioIn (T414)", () => {
       highMid: 0.2,
       high: 0.05,
       onset: 0.75,
+      onsetCount: 1,
+      onsetMax: 0.8,
     });
   });
 
@@ -79,6 +83,8 @@ describe("audioIn (T414)", () => {
       highMid: 0,
       high: 0,
       onset: 0,
+      onsetCount: 0,
+      onsetMax: 0,
     });
   });
 
@@ -164,6 +170,8 @@ describe("audioFileIn (T434)", () => {
       highMid: 0.2,
       high: 0.05,
       onset: 0.75,
+      onsetCount: 1,
+      onsetMax: 0.8,
     });
     // The movieFileIn analogy is the CONTRACT: one asset parameter, kind "audio".
     const file = definition?.parameters["file"];

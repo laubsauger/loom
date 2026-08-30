@@ -102,7 +102,7 @@ interface LiveCapture {
 export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
   const captureRef = useRef<LiveCapture | null>(null);
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
-  const stateRef = useRef<AudioAnalysisState>({ previousSpectrum: null });
+  const stateRef = useRef<AudioAnalysisState>({ previousSpectrum: null, previousOnset: 0 });
   const configKeyRef = useRef<string>("");
   const frequencyRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const timeDomainRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
@@ -116,6 +116,7 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
       captureRef.current?.dispose();
       captureRef.current = null;
       stateRef.current.previousSpectrum = null;
+      stateRef.current.previousOnset = 0;
       statusRef.current = { kind: "idle" };
     };
 

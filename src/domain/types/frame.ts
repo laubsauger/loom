@@ -80,6 +80,17 @@ export interface AudioFeatures {
    * yourself (`valueTrigger`) for the transients you mean.
    */
   readonly onset: number;
+  /**
+   * T437: onset EVENTS within the frame interval — rising crossings of the pinned
+   * event threshold (see `ONSET_EVENT_THRESHOLD`). Semantics are interval-shaped on
+   * purpose: with per-frame analysis this is 0 or 1; a faster analysis hop later can
+   * report 2 or 3 for a frame containing several transients WITHOUT changing what the
+   * field means — only its fidelity. That is what lets the field land before any
+   * recorded track exists (§V352's corollary: semantics are the recorded contract).
+   */
+  readonly onsetCount: number;
+  /** T437: the largest onset value observed within the frame interval (≥ `onset` once analysis outpaces the frame rate; equal to it today). */
+  readonly onsetMax: number;
 }
 
 /** Wall time, falling back to the timeline when the transport supplied none (§V172). */
