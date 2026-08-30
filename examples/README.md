@@ -31,6 +31,7 @@ happened:
 | [E20 Gooeyball](./E20-Gooeyball.md) | the 2D→3D crossing: animated noise → per-point attribute → displacement along the normal → a closed surface whose seam is a topology claim (T417, T301/T302) |
 | [E24 Audio Reaction-Diffusion](./E24-Audio-Reaction-Diffusion.md) | the capstone: audio-driven substeps (the beat makes the chemistry FASTER), safe-bounded feed/kill, a genuinely temporal RGB delay off three cache taps, wind inside the loop (T425, T414, T437) |
 | [E25 Stage](./E25-Stage.md) | the multi-stage render: scene A filmed by an orbiting camera becomes a MATERIAL MAP on scene B's screen, filmed again to the output — a virtual screen inside a scene, everything driven (T444, T377, T428) |
+| [E26 Interference](./E26-Interference.md) | one ring field read TWICE and subtracted from itself: nine nodes, no WGSL, no state, and a moiré whose structure is in neither input (§V6, T475) |
 
 ## Running them
 

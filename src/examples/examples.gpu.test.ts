@@ -9,6 +9,7 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
 import { listExamples } from "./catalogue.ts";
 import { TIER_B_CAPABILITIES, exampleRegistry, frameSequence, requireExample } from "./runner.ts";
+import { renderHeadless } from "../tests/headless/render-harness.ts";
 
 /**
  * EVERY SHIPPED EXAMPLE, BUILT ON A REAL DEVICE (T362/T363, §V89, §V280).
@@ -331,6 +332,102 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
     const [varied] = await simulate((graph) => graph, [300]);
     expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(low as Float32Array));
     expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(high as Float32Array));
+  }, 300_000);
+});
+
+/**
+ * E26 MOVES, AND THE PICTURE IS THE BEAT (T475, T402, §V147, §V383).
+ *
+ * Two claims, both about pixels, both of which E26 fails silently without.
+ *
+ * MOTION. Every structural assertion in `concepts.test.ts` — the fan-out, the driven
+ * slots, the two LFO rates — is equally true of a graph whose drift never reaches the
+ * Transform's uniform. §V147 says a claim about the picture is tested on the picture, so
+ * this renders through the real value graph (`animate`) and counts pixels that CHANGED
+ * between two frames four seconds apart. Measured on Dawn while writing this: 889,405 of
+ * 921,600 — 96.5% of the frame. A still image scores approximately zero.
+ *
+ * THE CONTROL, and it is the stronger half. Neutralise the Transform — scale to 1, drift
+ * to 0 — and the two branches of the difference become the SAME image, so `beat` outputs
+ * zero everywhere and the Lookup returns one colour. Measured: the rgb-sum spread across
+ * the whole frame is 0.00000. That is what makes this an interference example rather than
+ * a picture of rings: with the offset removed there is nothing left, so every visible
+ * structure in the shipped frame is the beat between two readings of one field and
+ * belongs to neither of them.
+ */
+describe("E26 is interference, and it moves", () => {
+  async function capture(
+    mutate: (graph: GraphDocument) => GraphDocument,
+    frames: ReadonlyArray<number>,
+  ) {
+    const file = listExamples().find((entry) => entry.fileName === "E26-Interference.loom.json");
+    if (file === undefined) throw new Error("E26 is not shipped");
+    const { document } = requireExample(file);
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: mutate(document.graph),
+      settings: document.settings,
+      frames: Math.max(...frames) + 1,
+      capture: [...frames],
+      outputNodeId: "out",
+      fps: 60,
+      // The drift is a VALUE, so without the value graph this renders a static frame and
+      // the motion assertion below would be measuring nothing.
+      animate: true,
+    });
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    return result.frames;
+  }
+
+  const channels = (frame: { bytes: Uint8Array; width: number }, index: number): [number, number, number] => {
+    const view = new DataView(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength);
+    const offset = index * 8;
+    return [
+      halfFloat(view.getUint16(offset, true)),
+      halfFloat(view.getUint16(offset + 2, true)),
+      halfFloat(view.getUint16(offset + 4, true)),
+    ];
+  };
+
+  it("changes almost the whole frame over four seconds, and is one flat colour without the offset", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const [early, late] = await capture((graph) => graph, [60, 300]);
+    if (early === undefined || late === undefined) throw new Error("no frames");
+    const pixels = early.width * early.height;
+    let moved = 0;
+    for (let index = 0; index < pixels; index += 1) {
+      const a = channels(early, index);
+      const b = channels(late, index);
+      const delta = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+      if (delta > 0.02) moved += 1;
+    }
+    // Measured 0.9651. Half the frame is an enormous margin and still fails outright the
+    // moment the drift stops reaching the Transform.
+    expect(moved / pixels).toBeGreaterThan(0.5);
+
+    // THE CONTROL: no offset, no scale difference, no picture.
+    const [flat] = await capture((graph) => {
+      const warp = graph.nodes["warp"];
+      if (warp === undefined) throw new Error("E26 has no warp node");
+      return {
+        ...graph,
+        nodes: {
+          ...graph.nodes,
+          warp: { ...warp, parameters: { ...warp.parameters, s: [1, 1], "t.x": 0, "t.y": 0 } },
+        },
+      };
+    }, [300]);
+    if (flat === undefined) throw new Error("no control frame");
+    let low = Infinity;
+    let high = -Infinity;
+    for (let index = 0; index < flat.width * flat.height; index += 1) {
+      const [r, g, b] = channels(flat, index);
+      const sum = r + g + b;
+      if (sum < low) low = sum;
+      if (sum > high) high = sum;
+    }
+    expect(high - low).toBeLessThan(0.01);
   }, 300_000);
 });
 

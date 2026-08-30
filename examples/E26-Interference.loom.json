@@ -1,0 +1,379 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beat-tint": {
+        "id": "e-beat-tint",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "source"
+        }
+      },
+      "e-gain-wrap": {
+        "id": "e-gain-wrap",
+        "source": {
+          "nodeId": "gain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wrap",
+          "portId": "input"
+        }
+      },
+      "e-palette-tint": {
+        "id": "e-palette-tint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "lookup"
+        }
+      },
+      "e-rings-gain": {
+        "id": "e-rings-gain",
+        "source": {
+          "nodeId": "rings",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gain",
+          "portId": "input"
+        }
+      },
+      "e-tint-out": {
+        "id": "e-tint-out",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-warp-beat": {
+        "id": "e-warp-beat",
+        "source": {
+          "nodeId": "warp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "beat",
+          "portId": "in2"
+        }
+      },
+      "e-wrap-beat": {
+        "id": "e-wrap-beat",
+        "source": {
+          "nodeId": "wrap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "beat",
+          "portId": "in1"
+        }
+      },
+      "e-wrap-warp": {
+        "id": "e-wrap-warp",
+        "source": {
+          "nodeId": "wrap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {},
+        "position": {
+          "x": -120,
+          "y": 0
+        },
+        "type": "difference"
+      },
+      "driftx": {
+        "definitionVersion": 1,
+        "id": "driftx",
+        "label": "driftx1",
+        "parameters": {
+          "amplitude": 0.05,
+          "frequency": 0.05,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -640,
+          "y": 240
+        },
+        "type": "lfo"
+      },
+      "drifty": {
+        "definitionVersion": 1,
+        "id": "drifty",
+        "label": "drifty1",
+        "parameters": {
+          "amplitude": 0.05,
+          "frequency": 0.031,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -380,
+          "y": 240
+        },
+        "type": "lfo"
+      },
+      "gain": {
+        "definitionVersion": 1,
+        "id": "gain",
+        "label": "gain1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 0.007
+        },
+        "position": {
+          "x": -900,
+          "y": 0
+        },
+        "type": "level"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 400,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.02,
+                0.02,
+                0.07,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.06,
+                0.14,
+                0.44,
+                1
+              ],
+              "position": 0.3
+            },
+            {
+              "color": [
+                0.12,
+                0.56,
+                0.7,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                0.92,
+                0.5,
+                0.26,
+                1
+              ],
+              "position": 0.82
+            },
+            {
+              "color": [
+                1,
+                0.96,
+                0.84,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -120,
+          "y": 240
+        },
+        "type": "ramp"
+      },
+      "rings": {
+        "definitionVersion": 1,
+        "id": "rings",
+        "label": "rings1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "distance",
+          "radius": [
+            0.5,
+            0.5
+          ],
+          "softness": 0.005
+        },
+        "position": {
+          "x": -1160,
+          "y": 0
+        },
+        "type": "circle"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "channel": "red",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": 140,
+          "y": 0
+        },
+        "type": "lookup"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "label": "warp1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "mirror",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0,
+          "s": [
+            1.16,
+            1.16
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "t.x": {
+            "bindings": {
+              "driven": {
+                "channel": "driftx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "t.y": {
+            "bindings": {
+              "driven": {
+                "channel": "drifty1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "xord": "srt"
+        },
+        "position": {
+          "x": -380,
+          "y": 0
+        },
+        "type": "transform"
+      },
+      "wrap": {
+        "definitionVersion": 1,
+        "id": "wrap",
+        "label": "wrap1",
+        "parameters": {
+          "high": 1,
+          "low": 0,
+          "mode": "zigzag",
+          "steps": 4
+        },
+        "position": {
+          "x": -640,
+          "y": 0
+        },
+        "type": "limit"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E26 Interference",
+  "projectId": "example-e26-interference",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 26,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
