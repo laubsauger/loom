@@ -396,9 +396,12 @@ describe("preview slot (§V28b) — visible texture-producing node previews by d
     // that MOVES as the half nobody could see: an LFO, a Lag and a Mouse all rendered an
     // empty box and all looked inert. A value node's channel is its output in exactly the
     // sense a texture is, so it gets the same slot and the composition root decides what
-    // goes in it.
-    const { container } = mountNode("test.scalarF32", {
-      graph: graphWith("test.scalarF32"),
+    // goes in it. T438: the slot keys on the DECLARED channel (`publishesValueChannels`),
+    // so the real LFO is mounted — a fixture whose only claim was its category string is
+    // exactly the shape T438 retired.
+    const { container } = mountNode("lfo", {
+      graph: graphWith("lfo"),
+      registry: createNodeRegistry(allNodeDefinitions).view(),
       renderPreview: () => <div>plot</div>,
     });
     expect(container.querySelector("[data-testid^='node-preview-']")).not.toBeNull();

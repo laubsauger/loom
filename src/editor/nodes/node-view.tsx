@@ -13,6 +13,7 @@ import { nameBaseFor } from "@domain/graph/names.ts";
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
+import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
 import type { NodeToggleCommand } from "@editor/graph-canvas/canvas-context.ts";
@@ -119,15 +120,16 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    *
    * A value node produces a signal rather than pixels, and it is content in exactly the
    * same sense: TD draws a CHOP's channel in the node, and that is why a TD network reads
-   * at a glance. `category === "value"` is the manifest's own answer to "does this node
-   * publish a channel", so the gate is declarative rather than a list of node types
-   * somebody has to remember to extend.
+   * at a glance. T438: the gate is `publishesValueChannels` — the DECLARED channel, not
+   * the category string. `category === "value"` was the previous key, and the day the
+   * scene nodes moved onto that shelf every camera and material was offered a plot it
+   * could not fill ("no signal yet") — a category is a library shelf, not a capability.
    *
    * `renderPreview` is the same seam for both; the composition root decides which surface
    * comes back, exactly as it already did for textures (T185).
    */
   const producesTexture = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
-  const producesValue = definition?.category === "value";
+  const producesValue = publishesValueChannels(definition);
   /**
    * B65 — a POINT producer shows its splat, and until T415 it showed nothing at all.
    *

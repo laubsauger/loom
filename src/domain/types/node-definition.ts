@@ -301,6 +301,13 @@ export interface NodeDefinition {
     frame: FrameEvaluationInput,
   ): number;
   /**
+   * T438: this node publishes a MEASURED channel — a per-frame number produced by
+   * machinery outside the value graph (analyze's GPU readback), addressed by the
+   * node's name exactly like a value source's. Declared so `publishesValueChannels`
+   * counts it without a type list; the measuring machinery itself stays where it is.
+   */
+  measuredChannel?: boolean;
+  /**
    * The full value-graph hook (T273/T274, §V179): evaluated per frame, CPU-side,
    * BEFORE the render, in topological order over value edges. Returns the node's
    * channel bag — named numbers (`{ x, y }` for a Mouse, `{ value }` for a scalar) —
@@ -314,6 +321,60 @@ export interface NodeDefinition {
    * out, no clock, no ambient reads.
    */
   valueEvaluate?(context: ValueEvaluateContext): ValueChannels;
+  /**
+   * How long one cycle of this node's output lasts, in seconds, for the parameter values
+   * given — or null when the output has no period (a Timer's ramp, a Constant).
+   *
+   * Declared by the NODE rather than sniffed by the plot (T459, §V316). A plot that
+   * looked for a parameter called `frequency` would be an invariant stated over a
+   * category and implemented over one member: it would work for the LFO and silently
+   * miss the next periodic source, or misread a `cutoff` in Hz as a period. Declaring it
+   * means kind #N+1 has to say so itself.
+   *
+   * Only consulted for a PURE source (see `isPureValueSource`), because drawing a cycle
+   * ahead of time requires evaluating frames the app has not reached.
+   */
+  plotPeriod?(values: Readonly<Record<string, ParameterValue>>): number | null;
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
+}
+
+/**
+ * Does this node's value come from a PURE function of the frame (T459, §V143)?
+ *
+ * The distinction the plot turns on, and it is NOT the one `isValueSourceDefinition`
+ * makes. That predicate is the UNION — "is this a value node at all" — and answers true
+ * for a Lag as readily as for an LFO. Reading its implementation rather than its name is
+ * §V316's instruction, and it says: it does not split pure from stateful.
+ *
+ * The split is here instead, beside the two hooks it discriminates, and it has to account
+ * for something the union does not: `valueEvaluate` SUPERSEDES `valueChannel` when a
+ * definition declares both. So "pure" is not "declares valueChannel" — it is "declares
+ * valueChannel and nothing overrides it". No shipped node declares both today; the
+ * contract permits it, and a definition that grew a `valueEvaluate` later would otherwise
+ * keep a function plot that no longer described what it produces.
+ */
+export function isPureValueSource(definition: NodeDefinition | undefined): boolean {
+  return definition?.valueChannel !== undefined && definition.valueEvaluate === undefined;
+}
+
+/**
+ * T438 (§V316): does this node PUBLISH VALUE CHANNELS — the one fact the plot gate,
+ * the preview slot and the history sampler all need.
+ *
+ * Keyed on the DECLARATIONS, never the category string: `category` groups the library
+ * shelf, and the day the scene nodes moved onto the "value" shelf every camera and
+ * material was silently offered a value plot it could not fill ("no signal yet"). A
+ * channel publisher is one of exactly three declared shapes — a value OUTPUT port (the
+ * wireable channel), a value hook (the evaluable channel), or `measuredChannel` (a
+ * channel produced by machinery outside the value graph — analyze's GPU readback).
+ */
+export function publishesValueChannels(definition: NodeDefinition | undefined): boolean {
+  if (definition === undefined) return false;
+  return (
+    definition.outputs.some((port) => port.type.kind === "value") ||
+    definition.valueChannel !== undefined ||
+    definition.valueEvaluate !== undefined ||
+    definition.measuredChannel === true
+  );
 }

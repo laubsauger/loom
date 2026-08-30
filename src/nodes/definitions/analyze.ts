@@ -71,6 +71,9 @@ export const analyzeNode: NodeDefinition = {
   // An active SINK (§V25): nothing downstream consumes a texture from this node, but it
   // has a real side effect — it publishes a channel — so it must keep its upstream alive.
   sink: true,
+  // T438: the channel is MEASURED (GPU readback), not a value-graph hook and not a
+  // port — this is how the plot gate knows without a type list (§V316).
+  measuredChannel: true,
   parameters: {
     channel: {
       type: "enum",
