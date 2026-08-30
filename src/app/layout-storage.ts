@@ -632,8 +632,15 @@ export function migrateLegacyLayout(raw: unknown): LayoutStore | null {
 
   const id = "user:saved-layout";
   return {
-    current: layout,
-    currentId: id,
+    /*
+     * Their arrangement is KEPT as a row but NOT selected — the owner reported twice that
+     * they never saw T426's default. Selecting the migrated layout preserved everyone's
+     * shell (the caution V311 asks for) and had the side effect that the new arrangement
+     * was unreachable without knowing to look for it: a default nobody is shown is not a
+     * default. Nothing is lost — "Saved layout" is one click away in the layout menu.
+     */
+    current: DEFAULT_SHELL_LAYOUT,
+    currentId: DEFAULT_LAYOUT_ID,
     layouts: [{ id, name: "Saved layout", layout }],
   };
 }
@@ -651,7 +658,7 @@ export function defaultLayoutStorage(): LayoutStorage | null {
   }
 }
 
-function readJson(storage: LayoutStorage, key: string): unknown {
+export function readJson(storage: LayoutStorage, key: string): unknown {
   let raw: string | null;
   try {
     raw = storage.getItem(key);
@@ -758,3 +765,4 @@ export function clearLayout(storage: LayoutStorage | null = defaultLayoutStorage
     /* see writeLayoutStore */
   }
 }
+

@@ -344,7 +344,7 @@ const STOCK_V2 = {
  * of everyone who did move something. Both directions are asserted here.
  */
 describe("V311 — v2 migrates in both directions", () => {
-  it("keeps a CUSTOMISED v2 layout as a named layout, selected, so nothing is lost", () => {
+  it("keeps a CUSTOMISED v2 layout as a named layout, UNSELECTED, so nothing is lost", () => {
     const storage = createMemoryStorage({
       [LEGACY_LAYOUT_STORAGE_KEY]: JSON.stringify(CUSTOM_V2),
     });
@@ -352,11 +352,18 @@ describe("V311 — v2 migrates in both directions", () => {
     const store = readLayoutStore(storage);
     expect(store.layouts).toHaveLength(1);
     expect(store.layouts[0]?.name).toBe("Saved layout");
-    expect(store.currentId).toBe(store.layouts[0]?.id);
-    // Their furniture, not the new default: the examples pane is still where they put it.
-    expect(store.current.zones.left).toEqual(["library", "components", "examples"]);
-    expect(store.current.zones.right).toEqual(["inspector", "viewer"]);
-    expect(store.current.rows).toEqual([50, 50]);
+    // SELECTED IS THE NEW DEFAULT. The owner reported twice that they never saw T426,
+    // because selecting the migrated layout made the new arrangement unreachable without
+    // knowing to look for it — a default nobody is shown is not a default.
+    expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
+    expect(store.current.zones.rightBottom).toEqual(["inspector"]);
+
+    // NOTHING IS LOST is still the property this test carries: their furniture survives
+    // intact in the saved row, one click away in the layout menu.
+    const saved = store.layouts[0]?.layout;
+    expect(saved?.zones.left).toEqual(["library", "components", "examples"]);
+    expect(saved?.zones.right).toEqual(["inspector", "viewer"]);
+    expect(saved?.rows).toEqual([50, 50]);
   });
 
   it("preserves the three column widths through the reshape, rather than resetting them", () => {
@@ -364,22 +371,25 @@ describe("V311 — v2 migrates in both directions", () => {
       [LEGACY_LAYOUT_STORAGE_KEY]: JSON.stringify(CUSTOM_V2),
     });
 
-    const { current } = readLayoutStore(storage);
+    // In the SAVED row — the migrated arrangement is preserved, not selected.
+    const saved = readLayoutStore(storage).layouts[0]?.layout;
     // 20 / 50 / 30 becomes a 70-wide work area beside a 30-wide sidebar, and the work
     // area is split 20:50 — the same pixels, expressed in the new geometry.
-    expect(current.columns).toEqual([70, 30]);
-    expect(current.mainColumns[0]).toBeCloseTo((20 / 70) * 100, 6);
-    expect(current.mainColumns[1]).toBeCloseTo((50 / 70) * 100, 6);
+    expect(saved?.columns).toEqual([70, 30]);
+    expect(saved?.mainColumns[0]).toBeCloseTo((20 / 70) * 100, 6);
+    expect(saved?.mainColumns[1]).toBeCloseTo((50 / 70) * 100, 6);
   });
 
-  it("leaves the sidebar's lower section CLOSED, so a migrated shell looks unchanged", () => {
+  it("leaves the SAVED layout's lower section CLOSED, so restoring it looks unchanged", () => {
     const storage = createMemoryStorage({
       [LEGACY_LAYOUT_STORAGE_KEY]: JSON.stringify(CUSTOM_V2),
     });
 
-    const { current } = readLayoutStore(storage);
-    expect(current.zones.rightBottom).toEqual([]);
-    expect(current.rightRows).toEqual([100, 0]);
+    // On the saved row, not the selection: restoring their arrangement must give back the
+    // undivided sidebar they had, while the app opens on the new default.
+    const saved = readLayoutStore(storage).layouts[0]?.layout;
+    expect(saved?.zones.rightBottom).toEqual([]);
+    expect(saved?.rightRows).toEqual([100, 0]);
   });
 
   it("does NOT invent a saved layout for a user who only ever opened the app", () => {
