@@ -248,3 +248,28 @@
   font-size: var(--fs-micro);
   line-height: var(--lh-prose);
 }
+
+/*
+ * The category filter is on demand (§V90). The trigger shows the ACTIVE category, so the
+ * toolbar carries one control instead of a chip wall that grows with the catalogue.
+ */
+.filterTrigger {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filterTrigger::after {
+  content: " \25BE";
+  opacity: 0.6;
+}
+
+.filterMenu {
+  max-width: 18rem;
+}
+
+.filterMenu .categories {
+  margin: 0;
+}

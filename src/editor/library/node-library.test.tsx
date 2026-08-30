@@ -38,8 +38,17 @@ describe("T39 — node library pane", () => {
 
   it("filters by category chip, and toggles the chip off again", () => {
     render(<NodeLibrary definitions={testNodeDefinitions} />);
+    // T427: the chips live behind an on-demand trigger, so the category set cannot grow
+    // into a permanent chip wall. Reaching them is one click, and the trigger names the
+    // ACTIVE filter — asserted below, because a trigger that always reads "all" would
+    // leave the user unable to tell what they are looking at.
+    const openFilters = () =>
+      fireEvent.click(screen.getByRole("button", { name: /^(Filter by category|Category: )/ }));
+    openFilters();
     fireEvent.click(screen.getByRole("button", { name: "generator" }));
     expect(screen.queryByText("Blur")).toBeNull();
+    expect(screen.getByRole("button", { name: "Category: generator" })).toBeDefined();
+    openFilters();
     fireEvent.click(screen.getByRole("button", { name: "generator" }));
     expect(screen.getByText("Blur")).toBeDefined();
   });

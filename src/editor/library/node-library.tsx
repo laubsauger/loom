@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { Button } from "@ui/primitives/button.tsx";
+import { PopoverContent, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
 import { cx } from "@ui/cx.ts";
 import { portTypeColor } from "@ui/ports.ts";
 import { writeNodeDragPayload } from "./drag-payload.ts";
@@ -46,6 +47,7 @@ export function NodeLibrary({
 }: NodeLibraryProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const drag = portDrag ?? null;
 
@@ -130,27 +132,53 @@ export function NodeLibrary({
           </div>
         )}
 
-        <div className={styles.categories}>
-          <button
-            type="button"
-            className={styles.chip}
-            aria-pressed={category === null}
-            onClick={() => setCategory(null)}
-          >
-            all
-          </button>
-          {categories.map((name) => (
+        {/*
+          §V90: the category set GROWS with the catalogue, so rendering it as a permanent
+          chip wall means a control that will eventually not fit — it was already three
+          rows deep. On demand: the trigger shows the ACTIVE filter (the answer to "what
+          am I looking at"), and the full set is one click away.
+        */}
+        <PopoverRoot open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <PopoverTrigger asChild>
             <button
-              key={name}
               type="button"
-              className={styles.chip}
-              aria-pressed={category === name}
-              onClick={() => setCategory(category === name ? null : name)}
+              className={cx(styles.chip, styles.filterTrigger)}
+              aria-expanded={filtersOpen}
+              aria-label={category === null ? "Filter by category" : `Category: ${category}`}
             >
-              {name}
+              {category ?? "all categories"}
             </button>
-          ))}
-        </div>
+          </PopoverTrigger>
+          <PopoverContent className={styles.filterMenu} align="start" sideOffset={4}>
+            <div className={styles.categories}>
+              <button
+                type="button"
+                className={styles.chip}
+                aria-pressed={category === null}
+                onClick={() => {
+                  setCategory(null);
+                  setFiltersOpen(false);
+                }}
+              >
+                all
+              </button>
+              {categories.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={styles.chip}
+                  aria-pressed={category === name}
+                  onClick={() => {
+                    setCategory(category === name ? null : name);
+                    setFiltersOpen(false);
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </PopoverRoot>
       </div>
 
       <div className={styles.list}>
