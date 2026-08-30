@@ -211,7 +211,20 @@ export type ParameterBinding =
   | { kind: "static"; value: ParameterValue }
   | { kind: "expression"; source: string }
   | { kind: "bind"; ref: string }
-  | { kind: "driven"; channel: string };
+  | { kind: "driven"; channel: string }
+  /**
+   * T286 (§V195 as amended): a PER-POINT attribute supplies the value — the POP Map
+   * page. Unlike its four siblings this has no CPU value at all: it changes what the
+   * CONSUMER compiles (the shader reads `attribute[index]` instead of a uniform), so
+   * the resolver hands evaluation the retained static (§V108) and reports the mapping
+   * as DATA beside it. Because a map returns a TYPED per-point value rather than a
+   * number, it may address a compound HEAD under type-match (vec4f attribute → color)
+   * — the leaf-only rule stays for the scalar-returning kinds, whose rationale it is.
+   * `channel` picks one component of a vector attribute for a scalar leaf; `port`
+   * names the pointset input when a node declares more than one (§V306: optional
+   * here, REQUIRED by validation the moment it is ambiguous).
+   */
+  | { kind: "map"; attribute: string; channel?: string; port?: string };
 
 export type ParameterMode = ParameterBinding["kind"];
 

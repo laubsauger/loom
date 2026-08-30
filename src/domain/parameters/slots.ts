@@ -28,7 +28,7 @@ import type {
  * STORAGE and BINDING concern and never appear in `ResolvedParameters.values`.
  */
 
-export const PARAMETER_MODES = ["static", "expression", "bind", "driven"] as const;
+export const PARAMETER_MODES = ["static", "expression", "bind", "driven", "map"] as const;
 
 const MODE_SET: ReadonlySet<string> = new Set(PARAMETER_MODES);
 
@@ -165,6 +165,11 @@ export function payloadText(binding: ParameterBinding | undefined): string {
       return binding.ref;
     case "driven":
       return binding.channel;
+    case "map":
+      // The text form an editor edits: "size", "velocity:x", "points2/velocity:x".
+      return `${binding.port === undefined ? "" : `${binding.port}/`}${binding.attribute}${
+        binding.channel === undefined ? "" : `:${binding.channel}`
+      }`;
     case "static":
       return "";
   }
@@ -209,6 +214,7 @@ export function seedBinding(mode: ParameterMode, value: ParameterValue): Paramet
       return { kind: "expression", source: numericLiteralFor(value) };
     case "bind":
     case "driven":
+    case "map":
       return null;
   }
 }
@@ -228,6 +234,19 @@ export function bindingFromText(
       return { kind: "bind", ref: text };
     case "driven":
       return { kind: "driven", channel: text };
+    case "map": {
+      // Inverse of payloadText: optional "port/" prefix, optional ":channel" suffix.
+      const [head, channel] = text.split(":");
+      const slash = (head ?? "").indexOf("/");
+      const port = slash > 0 ? (head as string).slice(0, slash) : undefined;
+      const attribute = slash > 0 ? (head as string).slice(slash + 1) : (head ?? "");
+      return {
+        kind: "map",
+        attribute,
+        ...(channel === undefined || channel === "" ? {} : { channel }),
+        ...(port === undefined ? {} : { port }),
+      };
+    }
   }
 }
 

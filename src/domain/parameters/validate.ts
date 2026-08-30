@@ -275,6 +275,14 @@ export function validateStoredParameter(
         }
         break;
       }
+      case "map": {
+        // T286/§V288: STORAGE is legal on any parameter — a consumer that cannot
+        // honour it fails loudly at compile. Only a malformed payload is refused here.
+        if (binding.attribute.trim().length === 0) {
+          return error("parameter.map.empty", `Parameter "${key}" maps an empty attribute name.`, nodeId);
+        }
+        break;
+      }
       default: {
         const never: never = binding;
         void never;

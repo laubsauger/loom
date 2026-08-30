@@ -24,16 +24,34 @@ export const DEFAULT_POINT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Poin
   return q;
 }`;
 
-export const SPRITE_RENDER_WGSL = `${SHARED_UNIFORMS_WGSL}
+/**
+ * T286: ONE sprite shader, two spellings. Unmapped, `sizePixels` is a uniform —
+ * byte-identical to what shipped before the Map page existed, so the feature's
+ * existence changes no pass signatures (T300's property, kept deliberately). Mapped,
+ * the size is a PER-POINT attribute read straight off the SoA pair, swizzled by the
+ * attribute's declared type — the pscale that turns copies into a medium.
+ */
+export function spriteRenderWgsl(sizeMap?: { type: string; channel?: string }): string {
+  const sizeField = sizeMap === undefined ? "  sizePixels: f32,\n" : "";
+  const sizeBinding =
+    sizeMap === undefined
+      ? ""
+      : `@group(0) @binding(3) var<storage, read> mapSizes: array<${sizeMap.type}>;\n`;
+  const sizeExpr =
+    sizeMap === undefined
+      ? "params.sizePixels"
+      : sizeMap.channel === undefined
+        ? "mapSizes[instance]"
+        : `mapSizes[instance].${sizeMap.channel}`;
+  return `${SHARED_UNIFORMS_WGSL}
 struct SpriteParams {
   color: vec4f,
-  sizePixels: f32,
-};
+${sizeField}};
 
 @group(0) @binding(0) var<uniform> frameU: SharedFrame;
 @group(0) @binding(1) var<uniform> params: SpriteParams;
 @group(0) @binding(2) var<storage, read> positions: array<vec3f>;
-
+${sizeBinding}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) corner: vec2f,
@@ -48,7 +66,8 @@ fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32
   );
   let corner = corners[vertex];
   let center = positions[instance];
-  let sizeClip = vec2f(params.sizePixels, params.sizePixels) / frameU.resolution * 2.0;
+  let size = ${sizeExpr};
+  let sizeClip = vec2f(size, size) / frameU.resolution * 2.0;
   var out: VertexOut;
   out.position = vec4f(center.xy + corner * sizeClip * 0.5, 0.0, 1.0);
   out.corner = corner;
@@ -65,6 +84,10 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
   let falloff = 1.0 - distance * distance;
   return vec4f(params.color.rgb, params.color.a * falloff);
 }`;
+}
+
+/** The unmapped spelling, kept as the constant its consumers always imported. */
+export const SPRITE_RENDER_WGSL = spriteRenderWgsl();
 
 /**
  * TextureToAttribute (T124): the TOP→POP bridge. One thread per point: read the

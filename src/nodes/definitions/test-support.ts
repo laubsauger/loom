@@ -33,7 +33,7 @@ export interface ContextOptions {
     Record<
       PortId,
       {
-        pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>;
+        pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>;
         capacity: number;
         topology?: string;
         count?: { buffer: string };
@@ -43,6 +43,8 @@ export interface ContextOptions {
   /** Output port ids to materialize. Defaults to `["out"]`. */
   readonly outputs?: ReadonlyArray<PortId>;
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
+  /** T286: map-mode bindings, as the resolver would have collected them. */
+  readonly parameterMaps?: Readonly<Record<string, { attribute: string; channel?: string; port?: string }>>;
   readonly resolution?: readonly [number, number];
   /**
    * Scratch keys the node declares (T147). The compiler materializes one target per key at
@@ -83,7 +85,7 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
       sourceNodeId?: string;
       sourcePortId?: string;
       pointset?: {
-        pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>;
+        pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>;
         capacity: number;
         topology?: string;
         count?: { buffer: string };
@@ -113,6 +115,7 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
   return {
     nodeId: options.nodeId ?? "n1",
     parameters: options.parameters ?? {},
+    parameterMaps: options.parameterMaps ?? {},
     resolution: options.resolution ?? [640, 480],
     inputs,
     outputs,

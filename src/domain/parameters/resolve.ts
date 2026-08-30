@@ -172,6 +172,12 @@ export interface ResolvedParameters {
   entries: readonly ResolvedParameter[];
   get: (key: string) => ResolvedParameter | undefined;
   /**
+   * T286 (§V287): parameters whose ACTIVE mode is `map`, keyed exactly like `values`
+   * (compound-component keys included). `values` still carries the retained static
+   * for each — this record is the side channel a POINT consumer compiles from.
+   */
+  maps: Readonly<Record<string, ParameterMapBinding>>;
+  /**
    * Effective values only — the shape evaluation wants, compound-keyed. Unlike
    * `entries[].value`, a `color` parameter here is decoded to linear when its manifest
    * says `space: "display"` (T148, §V56): this is the read path evaluation is meant to
@@ -382,10 +388,19 @@ function fallback(
 }
 
 /** Per-resolution state: the visited set is the runtime bind-cycle backstop (§V110). */
+/** One mapped parameter, as data (T286/§V287): the consumer's compile reads this. */
+export interface ParameterMapBinding {
+  readonly attribute: string;
+  readonly channel?: string;
+  readonly port?: string;
+}
+
 interface ResolveContext {
   node: GraphNode;
   options: ResolveParametersOptions;
   visited: Set<string>;
+  /** Collector for map-mode bindings; absent on nested bind-ref resolution. */
+  maps?: Map<string, ParameterMapBinding>;
 }
 
 function resolveStored(
@@ -547,6 +562,23 @@ function resolveStored(
       const checked = checkAgainstManifest(key, definition, supplied, node);
       if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
       return { value: checked.value, mode: "driven", source: "driven", driven: true, diagnostic: null };
+    }
+
+    case "map": {
+      // T286 (§V287): a map has NO CPU value — it changes what the CONSUMER compiles.
+      // Evaluation gets the retained static (§V108's corner-square, so the inspector,
+      // the zero-frame compile and every non-point consumer keep working), the mapping
+      // travels as DATA in `ResolvedParameters.maps`, and there is NO diagnostic here:
+      // a mapped parameter is a normal state, and the consumer that cannot honour it
+      // is the one that says so, by name, at compile (§V288).
+      const retained = staticBindingValue(slot) ?? defaultParameterValue(definition);
+      const checked = checkAgainstManifest(key, definition, retained, node);
+      context.maps?.set(key, {
+        attribute: binding.attribute,
+        ...(binding.channel === undefined ? {} : { channel: binding.channel }),
+        ...(binding.port === undefined ? {} : { port: binding.port }),
+      });
+      return { value: checked.value, mode: "map", source: "static", driven: false, diagnostic: null };
     }
 
     default: {
@@ -713,6 +745,8 @@ export function resolveParameter(
   key: string,
   definition: ParameterDefinition,
   options: ResolveParametersOptions = {},
+  /** T286: shared collector for map-mode bindings, threaded by resolveParameterSchema. */
+  maps?: Map<string, ParameterMapBinding>,
 ): ResolvedParameter {
   const stored = node.parameters[key];
   const driver = options.drivers?.[key];
@@ -742,7 +776,7 @@ export function resolveParameter(
     }
   }
 
-  const context: ResolveContext = { node, options, visited: new Set([key]) };
+  const context: ResolveContext = { node, options, visited: new Set([key]), ...(maps === undefined ? {} : { maps }) };
   const names = componentNamesFor(definition);
 
   if (names === null) {
@@ -790,11 +824,12 @@ export function resolveParameterSchema(
   const entries: ResolvedParameter[] = [];
   const values: Record<string, ParameterValue> = {};
   const diagnostics: RuntimeDiagnostic[] = [];
+  const maps = new Map<string, ParameterMapBinding>();
   const withSchema: ResolveParametersOptions =
     options.schema === undefined ? { ...options, schema } : options;
 
   for (const [key, parameter] of Object.entries(schema)) {
-    const resolved = resolveParameter(node, key, parameter, withSchema);
+    const resolved = resolveParameter(node, key, parameter, withSchema, maps);
     entries.push(resolved);
     values[key] = evaluationValue(parameter, resolved.value);
     if (resolved.diagnostic !== null) diagnostics.push(resolved.diagnostic);
@@ -808,6 +843,7 @@ export function resolveParameterSchema(
     entries,
     get: (key: string) => byKey.get(key),
     values,
+    maps: Object.fromEntries(maps),
     diagnostics,
   };
 }

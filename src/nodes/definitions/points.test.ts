@@ -336,3 +336,72 @@ describe("bypass on a converter is muted, not spliced (T356)", () => {
     expect(referencesMarker).toBe(false);
   });
 });
+
+describe("sizePixels in map mode — pscale (T286)", () => {
+  const edge = {
+    points: {
+      pairs: {
+        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
+        size: { pair: "scratch:sim:size", half: "write" as const, type: "f32" },
+        velocity: { pair: "scratch:sim:velocity", half: "write" as const, type: "vec3f" },
+      },
+      capacity: 128,
+      topology: "points",
+    },
+  };
+  const mapped = (map: { attribute: string; channel?: string; port?: string }) =>
+    renderPointsNode.compile(
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "sim" },
+        pointsets: edge,
+        parameters: { count: 128 },
+        parameterMaps: { sizePixels: map },
+      }),
+    );
+
+  it("compiles the mapped shader interface: attribute bound, uniform GONE", () => {
+    const result = mapped({ attribute: "size" });
+    expect(result.diagnostics ?? []).toEqual([]);
+    const pass = result.passes[0] as {
+      shader: string;
+      buffers: Array<{ binding: string; resourceId: string; half?: string }>;
+      uniforms: Record<string, unknown>;
+    };
+    expect(pass.shader).toContain("mapSizes: array<f32>");
+    expect(pass.shader).not.toContain("sizePixels");
+    expect(pass.uniforms).toEqual({ color: [1, 1, 1, 1] });
+    expect(pass.buffers).toContainEqual({ binding: "mapSizes", resourceId: "scratch:sim:size", half: "write" });
+  });
+
+  it("swizzles a vector attribute through its declared type, never a guess", () => {
+    const result = mapped({ attribute: "velocity", channel: "y" });
+    const pass = result.passes[0] as { shader: string };
+    expect(pass.shader).toContain("mapSizes: array<vec3f>");
+    expect(pass.shader).toContain("mapSizes[instance].y");
+  });
+
+  it("fails BY NAME when the attribute is absent, listing what the pointset provides", () => {
+    const result = mapped({ attribute: "pscale" });
+    expect(result.passes).toEqual([]);
+    expect(result.diagnostics?.[0]?.code).toBe("node.parameter.map");
+    expect(result.diagnostics?.[0]?.suggestion).toContain("position, size, velocity");
+  });
+
+  it("fails when a vector map names no channel, and when the port is not this node's", () => {
+    const missingChannel = mapped({ attribute: "velocity" });
+    expect(missingChannel.diagnostics?.[0]?.message).toContain("needs a channel (x/y/z)");
+    const wrongPort = mapped({ attribute: "size", port: "points2" });
+    expect(wrongPort.diagnostics?.[0]?.message).toContain('only pointset input is "points"');
+  });
+
+  it("unmapped stays byte-identical to what always shipped (T300's property)", () => {
+    const result = renderPointsNode.compile(
+      compileContext({ nodeId: "draw", inputs: ["points"], sources: { points: "sim" }, pointsets: edge, parameters: { count: 128 } }),
+    );
+    const pass = result.passes[0] as { shader: string; uniforms: Record<string, unknown> };
+    expect(pass.shader).toContain("sizePixels: f32");
+    expect(pass.uniforms["sizePixels"]).toBe(4);
+  });
+});

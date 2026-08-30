@@ -7,7 +7,7 @@ import {
 } from "../../points/attributes.ts";
 import { POINT_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
-import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL } from "../shaders/points.wgsl.ts";
+import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
@@ -258,8 +258,9 @@ export const pointKernelNode: NodeDefinition = {
             attributes.map((attribute) => [
               attribute.name,
               // §V168 through §V231: the kernel writes every pair this frame, so the
-              // payload names each write half.
-              { pair: pointPairId(nodeId, attribute.name), half: "write" as const },
+              // payload names each write half. `type` rides along for mapped
+              // parameters (T286) — a consumer swizzles from it, never from a guess.
+              { pair: pointPairId(nodeId, attribute.name), half: "write" as const, type: attribute.type },
             ]),
           ),
           capacity,
@@ -370,7 +371,7 @@ export const renderPointsNode: NodeDefinition = {
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
-    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const { nodeId, outputs, inputs, parameters, parameterMaps } = readCompileInputs(context);
     const target = outputs["out"];
     const points = inputs["points"];
     if (target === undefined || points === undefined) {
@@ -392,6 +393,68 @@ export const renderPointsNode: NodeDefinition = {
     }
 
     const blend = parameters["blend"] === "alpha" ? ("alpha" as const) : ("additive" as const);
+
+    // T286 (§V288): sizePixels in map mode — pscale. The mapping either resolves
+    // against the EDGE (attribute present, type coherent) or fails by name, saying
+    // what the pointset does provide; it never silently falls back to the static.
+    const sizeMap = parameterMaps["sizePixels"];
+    let mappedSize: { entry: { pair: string; half: "read" | "write" }; type: string; channel?: string } | undefined;
+    if (sizeMap !== undefined) {
+      const refuse = (message: string, suggestion?: string): CompiledNodeDescription => ({
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.parameter.map",
+            message: `Node "${nodeId}": ${message}`,
+            nodeId,
+            ...(suggestion === undefined ? {} : { suggestion }),
+          },
+        ],
+      });
+      // §V306: `port` names the pointset input when there are several; this node has
+      // exactly one, so a port that is not it is a mistake said out loud.
+      if (sizeMap.port !== undefined && sizeMap.port !== "points") {
+        return refuse(`sizePixels maps port "${sizeMap.port}", but the only pointset input is "points".`);
+      }
+      const available = Object.keys(points.pointset?.pairs ?? {}).sort();
+      const entry = points.pointset?.pairs[sizeMap.attribute];
+      if (entry === undefined) {
+        return refuse(
+          `sizePixels maps attribute "${sizeMap.attribute}", which the incoming pointset does not carry.`,
+          available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
+        );
+      }
+      const attributeType = entry.type;
+      if (attributeType === undefined) {
+        return refuse(
+          `sizePixels maps "${sizeMap.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
+        );
+      }
+      const vectorChannels: Record<string, readonly string[]> = {
+        vec2f: ["x", "y"],
+        vec3f: ["x", "y", "z"],
+        vec4f: ["x", "y", "z", "w"],
+      };
+      if (attributeType === "f32") {
+        if (sizeMap.channel !== undefined) {
+          return refuse(`sizePixels maps f32 attribute "${sizeMap.attribute}" with a channel; an f32 has none.`);
+        }
+        mappedSize = { entry, type: attributeType };
+      } else if (vectorChannels[attributeType] !== undefined) {
+        const channels = vectorChannels[attributeType] as readonly string[];
+        if (sizeMap.channel === undefined || !channels.includes(sizeMap.channel)) {
+          return refuse(
+            `sizePixels maps ${attributeType} attribute "${sizeMap.attribute}" and needs a channel (${channels.join("/")}).`,
+          );
+        }
+        mappedSize = { entry, type: attributeType, channel: sizeMap.channel };
+      } else {
+        return refuse(
+          `sizePixels cannot map "${sizeMap.attribute}" of type "${attributeType}"; a size needs f32 or a float vector channel.`,
+        );
+      }
+    }
     // T322: a counted edge draws INDIRECTLY — the live count is GPU-resident, so a
     // tiny pass converts it to draw arguments and the draw reads them. A static edge
     // keeps the literal count (edge capacity clamped by the param).
@@ -402,7 +465,10 @@ export const renderPointsNode: NodeDefinition = {
     const pass: DrawPassDescriptor = {
       kind: "draw",
       id: `${nodeId}:sprites`,
-      shader: SPRITE_RENDER_WGSL,
+      shader:
+        mappedSize === undefined
+          ? SPRITE_RENDER_WGSL
+          : spriteRenderWgsl({ type: mappedSize.type, ...(mappedSize.channel === undefined ? {} : { channel: mappedSize.channel }) }),
       target,
       topology: "triangle-list",
       // T296: instances = the EDGE's capacity, clamped by the count param — the user
@@ -425,10 +491,15 @@ export const renderPointsNode: NodeDefinition = {
           resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
           half: points.pointset?.pairs["position"]?.half ?? "write",
         },
+        ...(mappedSize === undefined
+          ? []
+          : [{ binding: "mapSizes", resourceId: mappedSize.entry.pair, half: mappedSize.entry.half }]),
       ],
       uniforms: {
         color: readColor(parameters, "color", [1, 1, 1, 1]),
-        sizePixels: readNumber(parameters, "sizePixels", 4),
+        // Mapped, the size LEAVES the uniform block entirely — the struct and the
+        // record must keep matching exactly (the catalogue sweep pins that).
+        ...(mappedSize === undefined ? { sizePixels: readNumber(parameters, "sizePixels", 4) } : {}),
       },
       uniformBinding: "params",
       sharedBinding: "frameU",
@@ -568,7 +639,7 @@ export const textureToAttributeNode: NodeDefinition = {
       ],
       pointsets: {
         out: {
-          pairs: { ...upstream.pairs, sample: { pair: pointPairId(nodeId, "sample"), half: "write" as const } },
+          pairs: { ...upstream.pairs, sample: { pair: pointPairId(nodeId, "sample"), half: "write" as const, type: "vec4f" } },
           capacity: count,
           ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
         },

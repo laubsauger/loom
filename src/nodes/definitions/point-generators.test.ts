@@ -66,7 +66,7 @@ describe("point generator family (T298)", () => {
     );
     expect(sphere.pointsets).toEqual({
       out: {
-        pairs: { position: { pair: pointPairId("gen", "position"), half: "write" } },
+        pairs: { position: { pair: pointPairId("gen", "position"), half: "write", type: "vec3f" } },
         capacity: 500,
         topology: "points",
       },

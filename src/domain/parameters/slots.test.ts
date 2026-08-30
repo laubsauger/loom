@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ParameterDefinition } from "../types/parameters.ts";
 import {
+  bindingFromText,
   componentDefinition,
   componentKey,
   componentNamesFor,
   isComponentKeyOf,
   isParameterSlot,
   parseComponentKey,
+  payloadText,
+  seedBinding,
   slotFromValue,
   storedStaticValue,
 } from "./slots.ts";
@@ -78,5 +81,23 @@ describe("component addressing (§V113)", () => {
     expect(cr.min).toBeUndefined(); // HDR colours are real; no 0..1 clamp
     expect(cr.default).toBe(1);
     expect(() => componentDefinition(gain, "x", 0)).toThrow(/no components/);
+  });
+});
+
+describe("the map mode's payload text (T286)", () => {
+  it("round-trips attribute, channel and port through the editor's text form", () => {
+    for (const [text, expected] of [
+      ["size", { kind: "map", attribute: "size" }],
+      ["velocity:x", { kind: "map", attribute: "velocity", channel: "x" }],
+      ["points2/velocity:x", { kind: "map", attribute: "velocity", channel: "x", port: "points2" }],
+    ] as const) {
+      const binding = bindingFromText("map", text, 0);
+      expect(binding).toEqual(expected);
+      expect(payloadText(binding)).toBe(text);
+    }
+  });
+
+  it("seeds nothing — like bind and driven, an empty map is not a payload", () => {
+    expect(seedBinding("map", 4)).toBeNull();
   });
 });

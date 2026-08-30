@@ -205,7 +205,17 @@ export interface PointsetEdgeInfo {
    * names its read half (scatter lands there), and a consumer binds what the payload
    * says without knowing which kind fed it.
    */
-  readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write" }>>;
+  readonly pairs: Readonly<
+    Record<
+      string,
+      {
+        readonly pair: string;
+        readonly half: "read" | "write";
+        /** T286: the attribute's WGSL type, so a mapped parameter can bind and swizzle it. */
+        readonly type?: string;
+      }
+    >
+  >;
   readonly capacity: number;
   readonly topology?: string;
   /**
@@ -257,6 +267,13 @@ export type CompilerNodeContext = {
   readonly nodeType: string;
   /** Declared parameters, defaults filled in, values already validated against the schema. */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
+  /**
+   * T286 (§V287): parameters whose active mode is `map` — attribute-per-point. The
+   * VALUE in `parameters` is the retained static; a POINT consumer that honours the
+   * map compiles a different shader interface from this record, and one that cannot
+   * reports it by name (§V288).
+   */
+  readonly parameterMaps: Readonly<Record<string, { attribute: string; channel?: string; port?: string }>>;
   /** Resolved size for this node's outputs (§V21, §V50). */
   readonly resolution: readonly [number, number];
   /** Resolved pixel format for this node's outputs (§V21, §V51). */

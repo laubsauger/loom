@@ -178,3 +178,112 @@ describe("TextureToAttribute bridge on Dawn (T124)", () => {
     }
   });
 });
+
+describe("sizePixels mapped to a per-point attribute on Dawn (T286)", () => {
+  it("pscale by VALUE: a zero-size point vanishes, its sibling draws", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const kernel = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  if (ctx.frameIndex == 0u) {
+    q.id = ctx.index;
+  }
+  /* id 0 sits in the LEFT half at size zero; id 1 in the RIGHT at 14px. */
+  q.position = vec3f(select(-0.5, 0.5, q.id == 1u), 0.0, 0.0);
+  q.size = select(0.0, 14.0, q.id == 1u);
+  return q;
+}`;
+    const attributes = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      { name: "size", type: "f32", default: [0] },
+      { name: "id", type: "u32", semantic: "id", default: [0] },
+    ]);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: {
+        revision: 1,
+        nodes: {
+          sim: { id: "sim", type: "pointKernel", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { capacity: 2, seed: 7, kernel, attributes } },
+          draw: {
+            id: "draw",
+            type: "renderPoints",
+            definitionVersion: 1,
+            position: { x: 0, y: 0 },
+            parameters: {
+              count: 2,
+              // THE DOCUMENT SHAPE: sizePixels in map mode, retained static beside it.
+              sizePixels: {
+                mode: "map",
+                bindings: {
+                  static: { kind: "static", value: 4 },
+                  map: { kind: "map", attribute: "size" },
+                },
+              },
+            },
+          },
+          out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        },
+        edges: {
+          e1: { id: "e1", source: { nodeId: "sim", portId: "out" }, target: { nodeId: "draw", portId: "points" } },
+          e2: { id: "e2", source: { nodeId: "draw", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+        },
+        groups: {},
+      },
+      settings: {
+        outputResolution: { width: 64, height: 64 },
+        workingFormat: "rgba8unorm",
+        randomSeed: 7,
+        previewLongEdge: 192,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      },
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      },
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const errors: string[] = [];
+    backend.onDiagnostic((d) => {
+      if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
+    });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      expect(errors).toEqual([]);
+
+      const renderTarget = plan.outputs.find((output) => output.nodeId === "draw");
+      const image = await backend.readOutput(renderTarget?.resourceId ?? "");
+      let leftLit = 0;
+      let rightLit = 0;
+      for (let y = 0; y < 64; y += 1) {
+        for (let x = 0; x < 64; x += 1) {
+          if ((image.bytes[(y * 64 + x) * 4] ?? 0) > 0) {
+            if (x < 32) leftLit += 1;
+            else rightLit += 1;
+          }
+        }
+      }
+      // EXACT (§V147): size zero is a zero-area quad — the left half draws NOTHING.
+      // A build that fell back to the retained static (4px) would light both halves,
+      // which is precisely the silent failure §V288 exists to prevent.
+      expect(leftLit).toBe(0);
+      expect(rightLit).toBeGreaterThan(0);
+    } finally {
+      backend.dispose();
+    }
+  });
+});

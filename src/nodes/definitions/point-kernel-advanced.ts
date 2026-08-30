@@ -386,7 +386,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
               .filter((attribute) => attribute.name !== FLAGS)
               .map((attribute) => [
                 attribute.name,
-                { pair: pointPairId(nodeId, attribute.name), half: "read" as const },
+                { pair: pointPairId(nodeId, attribute.name), half: "read" as const, type: attribute.type },
               ]),
           ),
           capacity,

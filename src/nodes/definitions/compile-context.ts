@@ -46,7 +46,7 @@ export interface NodeCompileInputs {
          */
         readonly pointset?: {
           /** §V231/T322: each pair names the HALF holding this frame's data. */
-          readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write" }>>;
+          readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write"; readonly type?: string }>>;
           readonly capacity: number;
           readonly topology?: string;
           /** T322: GPU-resident live count, when the producer kills points. */
@@ -64,6 +64,11 @@ export interface NodeCompileInputs {
   readonly inputEdges: Readonly<Record<PortId, ReadonlyArray<NodeCompileInputs["inputs"][PortId]>>>;
   /** This node's current parameter values, already validated against its own schema. */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
+  /**
+   * T286 (§V287): parameters whose active mode is `map`. The value in `parameters` is
+   * the retained static; a point consumer compiles its shader interface from this.
+   */
+  readonly parameterMaps: Readonly<Record<string, { attribute: string; channel?: string; port?: string }>>;
   /** Resource id this node's passes render into. Undefined when nothing is materialized. */
   readonly target?: string;
   /**
@@ -82,6 +87,7 @@ export interface NodeCompileInputs {
 interface CompilerContextShape {
   readonly nodeId: string;
   readonly parameters: Readonly<Record<string, ParameterValue>>;
+  readonly parameterMaps?: Readonly<Record<string, { attribute: string; channel?: string; port?: string }>>;
   readonly target?: string | undefined;
   readonly sampler?: string;
   readonly resolution?: readonly [number, number];
@@ -93,7 +99,7 @@ interface CompilerContextShape {
         sampler: string;
         sourceNodeId?: string;
         sourcePortId?: string;
-        pointset?: { pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>; capacity: number; topology?: string; count?: { buffer: string } };
+        pointset?: { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>; capacity: number; topology?: string; count?: { buffer: string } };
       }>
     >
   >;
@@ -137,6 +143,7 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
     inputs,
     inputEdges,
     parameters: raw.parameters,
+    parameterMaps: raw.parameterMaps ?? {},
     resolution,
     ...(raw.target === undefined ? {} : { target: raw.target }),
   };

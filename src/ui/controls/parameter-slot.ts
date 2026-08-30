@@ -25,6 +25,7 @@ export const MODE_LABELS: Readonly<Record<ParameterMode, string>> = {
   expression: "Expression",
   bind: "Bind",
   driven: "Driven",
+  map: "Map",
 };
 
 /** Single-glyph face of each button — the row is four ~18px squares. */
@@ -33,6 +34,7 @@ export const MODE_GLYPHS: Readonly<Record<ParameterMode, string>> = {
   expression: "E",
   bind: "B",
   driven: "D",
+  map: "M",
 };
 
 /** What the active mode's payload is called in its editor's label. */
@@ -41,6 +43,7 @@ export const MODE_PAYLOAD_LABELS: Readonly<Record<ParameterMode, string>> = {
   expression: "Expression",
   bind: "Bound to",
   driven: "Channel",
+  map: "Attribute",
 };
 
 /** The slot a stored parameter already is, or the one a bare value means. */

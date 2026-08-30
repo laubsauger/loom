@@ -5,7 +5,7 @@ import type { NodeDefinition } from "../domain/types/node-definition.ts";
 import type { ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
-import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
+import { resolveParameterSchema, type ParameterMapBinding } from "../domain/parameters/resolve.ts";
 import { createNodeReferenceReader } from "../domain/parameters/node-references.ts";
 import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
@@ -45,6 +45,8 @@ export interface ResolvedNode {
    * no longer has an opinion of its own about what a parameter is worth.
    */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
+  /** T286 (§V287): parameters whose active mode is `map` — the consumer compiles from this. */
+  readonly parameterMaps: Readonly<Record<string, ParameterMapBinding>>;
 }
 
 export interface ValidatedGraph {
@@ -216,16 +218,18 @@ export function validateGraph(
         ),
       );
     }
+    const resolvedParameters = resolveNodeParameters(
+      node,
+      definition.parameters,
+      definition.type,
+      diagnostics,
+      resolution,
+    );
     nodes.set(nodeId, {
       node,
       definition,
-      parameters: resolveParameterValues(
-        node,
-        definition.parameters,
-        definition.type,
-        diagnostics,
-        resolution,
-      ),
+      parameters: { ...resolvedParameters.values },
+      parameterMaps: resolvedParameters.maps,
     });
   }
 

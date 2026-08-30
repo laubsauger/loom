@@ -4,7 +4,7 @@ import type { ParentScope } from "../types/components.ts";
 import type { GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
-import { resolveParameter, resolveParameters, srgbToLinear } from "./resolve.ts";
+import { resolveParameter, resolveParameterSchema, resolveParameters, srgbToLinear } from "./resolve.ts";
 
 /**
  * The promoted §V61 resolver (T168, closing B8).
@@ -430,5 +430,64 @@ describe("compound components (T207, §V113)", () => {
       solidLike,
     );
     expect(resolved.get("gain")?.value).toBe(0.25);
+  });
+});
+
+describe("the map mode resolves as data, not a value (T286/§V287)", () => {
+  const definition = { type: "number", label: "Size", default: 4 } as const;
+
+  it("hands evaluation the retained static and reports the mapping beside it", () => {
+    const node = {
+      id: "n1",
+      type: "renderPoints",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: {
+        sizePixels: {
+          mode: "map",
+          bindings: {
+            static: { kind: "static", value: 7 },
+            map: { kind: "map", attribute: "size" },
+          },
+        },
+      },
+    } as never;
+    const resolved = resolveParameterSchema(node, { sizePixels: definition });
+    // §V108's corner-square: the inspector and the zero-frame compile see 7.
+    expect(resolved.values["sizePixels"]).toBe(7);
+    // §V287: the mapping is DATA the consumer compiles from.
+    expect(resolved.maps).toEqual({ sizePixels: { attribute: "size" } });
+    // A mapped parameter is a NORMAL state — no diagnostic (§V288: the consumer that
+    // cannot honour it is the one that speaks).
+    expect(resolved.diagnostics).toEqual([]);
+    expect(resolved.get("sizePixels")?.mode).toBe("map");
+  });
+
+  it("falls to the manifest default when no static was ever retained", () => {
+    const node = {
+      id: "n1",
+      type: "renderPoints",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: {
+        sizePixels: { mode: "map", bindings: { map: { kind: "map", attribute: "size", channel: "x" } } },
+      },
+    } as never;
+    const resolved = resolveParameterSchema(node, { sizePixels: definition });
+    expect(resolved.values["sizePixels"]).toBe(4);
+    expect(resolved.maps["sizePixels"]).toEqual({ attribute: "size", channel: "x" });
+  });
+
+  it("an unmapped document resolves with an empty maps record", () => {
+    const node = {
+      id: "n1",
+      type: "renderPoints",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: { sizePixels: 9 },
+    } as never;
+    const resolved = resolveParameterSchema(node, { sizePixels: definition });
+    expect(resolved.maps).toEqual({});
+    expect(resolved.values["sizePixels"]).toBe(9);
   });
 });

@@ -85,6 +85,8 @@ function payloadProblem(binding: ParameterBinding): string | null {
       return binding.ref.trim() === "" ? "Name a parameter or parent value to read." : null;
     case "driven":
       return binding.channel.trim() === "" ? "Name a channel." : null;
+    case "map":
+      return binding.attribute.trim() === "" ? "Name a point attribute." : null;
     case "static":
       return null;
   }
@@ -323,6 +325,8 @@ function placeholderFor(mode: ParameterMode): string {
       return "radius | parent.blur";
     case "driven":
       return "audio.level";
+    case "map":
+      return "size | velocity:x";
     case "static":
       return "";
   }

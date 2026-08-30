@@ -760,6 +760,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       nodeId,
       nodeType: node.type,
       parameters: resolved.parameters,
+      parameterMaps: resolved.parameterMaps,
       resolution: resolution ?? [settings.outputResolution.width, settings.outputResolution.height],
       format: format ?? settings.workingFormat,
       space: space ?? colorSpaceForFormat(format ?? settings.workingFormat),
@@ -804,14 +805,19 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         const capacity = rawInfo["capacity"];
         if (!(Number.isInteger(capacity) && (capacity as number) >= 1)) continue;
         // T322 (§V231): each pair names the half holding this frame's data.
-        const pairs: Record<string, { pair: string; half: "read" | "write" }> = {};
+        const pairs: Record<string, { pair: string; half: "read" | "write"; type?: string }> = {};
         for (const [attribute, entry] of Object.entries(rawInfo["pairs"])) {
           if (!isRecord(entry)) continue;
           const pair = entry["pair"];
           const half = entry["half"];
+          const attributeType = entry["type"];
           if (typeof pair !== "string" || pair.length === 0) continue;
           if (half !== "read" && half !== "write") continue;
-          pairs[attribute] = { pair, half };
+          pairs[attribute] = {
+            pair,
+            half,
+            ...(typeof attributeType === "string" ? { type: attributeType } : {}),
+          };
         }
         const topology = rawInfo["topology"];
         const countRaw = rawInfo["count"];
