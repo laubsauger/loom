@@ -69,7 +69,24 @@ export type ContextMenuSubContentProps = ComponentProps<typeof ContextMenuPrimit
 export function ContextMenuSubContent({ className, ...rest }: ContextMenuSubContentProps) {
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.SubContent className={cx(styles.content, className)} {...rest} />
+      <ContextMenuPrimitive.SubContent
+        className={cx(styles.content, className)}
+        /**
+         * T524/B107 — pressing an item inside a NESTED submenu closed the whole branch
+         * before the release could select it. Radix's SubContent closes itself on
+         * "focus outside", detected by a flag that React's own focus-capture is
+         * supposed to set as focus moves through the PORTALLED sub tree — and under
+         * React 19.2 the pointerdown-driven focus lands before that flag does, so the
+         * parent sub reads its child's item as OUTSIDE, closes (data-state="closed"
+         * mid-press), and the pointerup finds nothing to select. Keyboard selection
+         * always worked; only the pointer path died, which is why every jsdom test
+         * stayed green. Focus never leaves the menu system while it is open (the root
+         * traps it), so vetoing focus-outside here disables nothing real: Escape,
+         * outside POINTER clicks and selection all still dismiss.
+         */
+        onFocusOutside={(event) => event.preventDefault()}
+        {...rest}
+      />
     </ContextMenuPrimitive.Portal>
   );
 }

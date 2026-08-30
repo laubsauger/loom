@@ -146,6 +146,82 @@ describe("running an item (§V29)", () => {
   });
 });
 
+/**
+ * T524/B107 — the WHOLE add-node path, depth 2 included, through to a node IN THE
+ * GRAPH at the click position. The break the owner hit lived below every existing
+ * test: depth-1 rows dispatched fine, and no test ever walked Add node → category →
+ * leaf and then looked at the DOCUMENT. Per §V461 the assertion is one only success
+ * can satisfy: a node of the CHOSEN type at the CLICKED position — never "the graph
+ * is non-empty".
+ */
+/**
+ * T524/B107, the CAUSE pinned: a submenu must SURVIVE focus moving to something the
+ * DOM does not contain. Radix's SubContent closes on "focus outside", detected via a
+ * React-capture flag — and under React 19.2's focus ordering, a pointerdown on an item
+ * inside a NESTED sub set focus before the flag, so the parent sub read its own child
+ * as outside and closed mid-press; pointerup then found nothing to select. Keyboard
+ * always worked, which is why 21 green tests missed it. Our wrapper vetoes
+ * focus-outside on SubContent (the root still traps focus and still dismisses on
+ * Escape and outside pointerdown, both covered elsewhere in this file).
+ *
+ * HONESTY (V461's spirit): jsdom cannot replay the exact React-19.2 pointer ordering —
+ * the composed depth-2 test above passed while the browser failed. What jsdom CAN do
+ * is fire a real focusin from a node outside the React tree, which drives the same
+ * dismissable-layer path the regression came through; red without the veto.
+ */
+describe("a submenu survives stray focus (T524/B107)", () => {
+  it("keeps the submenu open when focus lands outside the React tree", async () => {
+    setup();
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    try {
+      openOn("pane");
+      await act(async () => {
+        fireEvent.pointerMove(itemNamed("Add node"));
+        fireEvent.click(itemNamed("Add node"));
+      });
+      expect(itemNamed("filter")).toBeDefined();
+
+      await act(async () => {
+        outside.focus();
+        fireEvent.focusIn(outside);
+      });
+      // The sub level is still there to click — before the veto this focus closed it.
+      expect(itemNamed("filter")).toBeDefined();
+    } finally {
+      outside.remove();
+    }
+  });
+});
+
+describe("Add node, all the way to the graph (T524)", () => {
+  it("clicking a leaf two levels deep lands a node of that type at the click position", async () => {
+    setup();
+    openOn("pane");
+    await act(async () => {
+      fireEvent.pointerMove(itemNamed("Add node"));
+      fireEvent.click(itemNamed("Add node"));
+    });
+    await act(async () => {
+      fireEvent.pointerMove(itemNamed("filter"));
+      fireEvent.click(itemNamed("filter"));
+    });
+    await act(async () => {
+      fireEvent.click(itemNamed("Blur"));
+    });
+
+    const nodes = Object.values(fixture.bus.store.getGraph().nodes).filter(
+      (node) => node.type === "test.blur",
+    );
+    // One MORE than the fixture's own blur — the one this click created.
+    expect(nodes.length).toBeGreaterThanOrEqual(2);
+    const added = nodes.find((node) => node.id !== fixture.blur);
+    expect(added).toBeDefined();
+    // The CLICK position, projected — never (0,0), which is where a lost target lands.
+    expect(added?.position.x).not.toBe(0);
+  });
+});
+
 describe("commands nobody has registered yet", () => {
   it("renders them disabled and says why, instead of hiding them", () => {
     setup();

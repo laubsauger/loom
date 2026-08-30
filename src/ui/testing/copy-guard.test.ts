@@ -86,6 +86,11 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     text: "JSON is checked when the graph compiles; a schema that does not parse refuses by name.",
   },
   {
+    file: "src/app/dock-panes.tsx",
+    // T505: the expression subjects' member of the same trio.
+    text: "Expressions are checked as you commit; an unparseable one refuses with its reason.",
+  },
+  {
     file: "src/editor/component/component-inspector.tsx",
     text: "This component is not installed. Its values are preserved and will work again once the package that defines it is available.",
   },
