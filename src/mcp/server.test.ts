@@ -156,7 +156,7 @@ describe("WebMCP reports what it found (T397, §V338)", () => {
     expect(row(registry).state).toBe("unavailable");
     // §V288: the refusal names the problem. A bare "unavailable" is the state this
     // whole mechanism exists to stop being indistinguishable from a broken build.
-    expect(row(registry).detail).toContain("navigator.modelContext");
+    expect(row(registry).detail).toContain("document.modelContext");
     expect(row(registry).toolNames).toEqual([]);
     expect(row(registry).disconnect).toBeNull();
   });

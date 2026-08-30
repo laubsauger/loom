@@ -27,10 +27,22 @@ interface ModelContextLike {
   readonly registerTool?: (tool: WebMcpToolDescriptor) => void;
 }
 
-/** The host's model-context surface, if this browser has one. */
+/**
+ * The host's model-context surface, if this browser has one.
+ *
+ * BOTH namespaces, `document` FIRST. The W3C group moved the API from
+ * `navigator.modelContext` to `document.modelContext` — tools belong to a PAGE, not to
+ * the whole browser — and Chrome/Edge removed the navigator spelling around v150. We
+ * detected only `navigator`, so on a browser where the API is present and working we
+ * reported "Unavailable" and published nothing. `navigator` is kept as the fallback
+ * because Chrome 146-149 and the polyfills still answer there.
+ */
 export function detectModelContext(host: unknown = globalThis): ModelContextLike | null {
-  const navigatorLike = (host as { navigator?: { modelContext?: unknown } }).navigator;
-  const context = navigatorLike?.modelContext;
+  const scope = host as {
+    document?: { modelContext?: unknown };
+    navigator?: { modelContext?: unknown };
+  };
+  const context = scope.document?.modelContext ?? scope.navigator?.modelContext;
   if (typeof context !== "object" || context === null) return null;
   const shaped = context as ModelContextLike;
   return typeof shaped.provideContext === "function" || typeof shaped.registerTool === "function"
@@ -70,7 +82,7 @@ export function registerWebMcp(
       label: TRANSPORT_LABEL.webmcp,
       state: "unavailable",
       detail:
-        "This browser exposes no navigator.modelContext, so there is no in-page model to publish tools to.",
+        "No document.modelContext or navigator.modelContext here. Chrome 146+ and Edge 147+ have it behind chrome://flags/#enable-webmcp-testing.",
       toolNames: [],
       lastInvocation: null,
       connect: null,
