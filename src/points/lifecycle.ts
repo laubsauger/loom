@@ -261,5 +261,61 @@ export function scratchBytes(capacity: number): { scanned: number; blockSums: nu
   };
 }
 
+
+/**
+ * T322 glue kernel: zeroes STALE alive flags in the tail the guarded kernel never
+ * touched. After compaction the kernel processes only [0, liveCount) — slots beyond
+ * hold a previous frame's flags in the write half, and the scan would resurrect them.
+ * Frame zero exempts itself (the kernel processed the full capacity).
+ */
+export function clearDeadTailWgsl(): string {
+  return `struct TailParams {
+  timeSeconds: f32,
+  deltaSeconds: f32,
+  frameIndex: u32,
+  capacity: u32,
+};
+@group(0) @binding(0) var<uniform> params: TailParams;
+@group(0) @binding(1) var<storage, read> liveCount: array<u32>;
+@group(0) @binding(2) var<storage, read_write> aliveFlags: array<u32>;
+
+@compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.capacity) {
+    return;
+  }
+  let live = select(min(liveCount[0], params.capacity), params.capacity, params.frameIndex == 0u);
+  if (index >= live) {
+    aliveFlags[index] = 0u;
+  }
+}`;
+}
+
+/**
+ * T322 glue kernel: live count → indirect DRAW arguments. One workgroup, one thread;
+ * the consumer bakes its per-instance vertex count in and clamps by its own max.
+ */
+export function drawArgsWgsl(): string {
+  return `struct ArgsParams {
+  vertexCount: u32,
+  maxInstances: u32,
+};
+@group(0) @binding(0) var<uniform> params: ArgsParams;
+@group(0) @binding(1) var<storage, read> liveCount: array<u32>;
+@group(0) @binding(2) var<storage, read_write> drawArgs: array<u32>;
+
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  if (gid.x != 0u) {
+    return;
+  }
+  drawArgs[0] = params.vertexCount;
+  drawArgs[1] = min(liveCount[0], params.maxInstances);
+  drawArgs[2] = 0u;
+  drawArgs[3] = 0u;
+}`;
+}
+
 /** Re-export so lifecycle consumers size attribute buffers without a second import. */
 export { ATTRIBUTE_STRIDES };

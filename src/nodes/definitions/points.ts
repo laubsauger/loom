@@ -6,6 +6,7 @@ import {
   type PointAttributeSchema,
 } from "../../points/attributes.ts";
 import { POINT_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
+import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
@@ -77,7 +78,7 @@ export const DEFAULT_POINT_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
   { name: "id", type: "u32", semantic: "id", default: [0] },
 ];
 
-function parseAttributes(raw: unknown): { attributes?: ReadonlyArray<PointAttributeSchema>; error?: string } {
+export function parseAttributes(raw: unknown): { attributes?: ReadonlyArray<PointAttributeSchema>; error?: string } {
   if (typeof raw !== "string" || raw.trim() === "") return { attributes: DEFAULT_POINT_ATTRIBUTES };
   let parsed: unknown;
   try {
@@ -259,6 +260,48 @@ export const pointKernelNode: NodeDefinition = {
   },
 };
 
+
+/**
+ * T322: everything a renderer needs to draw a COUNTED edge (a producer whose live
+ * count is GPU-resident): one tiny dispatch converting the count into indirect draw
+ * arguments with the renderer's own per-instance vertex count baked in, the argument
+ * buffer, and the `instances: { indirect }` value. Undefined for a static edge — the
+ * caller keeps its literal count and this feature costs nothing.
+ */
+export function countedDrawSupport(
+  nodeId: string,
+  pointset: { count?: { buffer: string } } | undefined,
+  options: { vertexCount: number; maxInstances: number },
+):
+  | {
+      instances: { indirect: string };
+      argsPass: DispatchPassDescriptor;
+      scratch: { kind: "buffer"; key: string; stride: number; capacity: number; usage: "indirect" };
+    }
+  | undefined {
+  const count = pointset?.count;
+  if (count === undefined) return undefined;
+  const argsId = pointPairId(nodeId, "drawArgs");
+  return {
+    instances: { indirect: argsId },
+    argsPass: {
+      kind: "dispatch",
+      id: `${nodeId}:drawArgs`,
+      shader: drawArgsWgsl(),
+      entryPoint: "main",
+      workgroups: [1, 1, 1],
+      buffers: [
+        { binding: "liveCount", resourceId: count.buffer },
+        { binding: "drawArgs", resourceId: argsId },
+      ],
+      uniforms: { vertexCount: options.vertexCount, maxInstances: options.maxInstances },
+      uniformBinding: "params",
+      nodeId,
+    },
+    scratch: { kind: "buffer", key: "drawArgs", stride: 4, capacity: 4, usage: "indirect" },
+  };
+}
+
 export const renderPointsNode: NodeDefinition = {
   type: "renderPoints",
   version: 1,
@@ -339,6 +382,13 @@ export const renderPointsNode: NodeDefinition = {
     }
 
     const blend = parameters["blend"] === "alpha" ? ("alpha" as const) : ("additive" as const);
+    // T322: a counted edge draws INDIRECTLY — the live count is GPU-resident, so a
+    // tiny pass converts it to draw arguments and the draw reads them. A static edge
+    // keeps the literal count (edge capacity clamped by the param).
+    const counted = countedDrawSupport(nodeId, points.pointset, {
+      vertexCount: 6,
+      maxInstances: Math.max(1, Math.round(readNumber(parameters, "count", 4096))),
+    });
     const pass: DrawPassDescriptor = {
       kind: "draw",
       id: `${nodeId}:sprites`,
@@ -347,13 +397,15 @@ export const renderPointsNode: NodeDefinition = {
       topology: "triangle-list",
       // T296: instances = the EDGE's capacity, clamped by the count param — the user
       // no longer keeps two numbers in sync by hand.
-      instances: Math.max(
-        1,
-        Math.min(
-          Math.round(readNumber(parameters, "count", 4096)),
-          points.pointset?.capacity ?? Math.round(readNumber(parameters, "count", 4096)),
+      instances:
+        counted?.instances ??
+        Math.max(
+          1,
+          Math.min(
+            Math.round(readNumber(parameters, "count", 4096)),
+            points.pointset?.capacity ?? Math.round(readNumber(parameters, "count", 4096)),
+          ),
         ),
-      ),
       vertexCount: 6,
       buffers: [
         // The producer's position pair via the edge map, WRITE half: THIS frame's
@@ -374,7 +426,9 @@ export const renderPointsNode: NodeDefinition = {
       clear: parameters["accumulate"] !== true,
       nodeId,
     };
-    return { passes: [pass] };
+    return counted === undefined
+      ? { passes: [pass] }
+      : { passes: [counted.argsPass, pass], scratch: [counted.scratch] };
   },
 };
 

@@ -93,6 +93,7 @@ describe("core catalogue (T70, T40)", () => {
       "renderInstances",
       "renderSurface",
       "pointTopology",
+      "pointKernelAdvanced",
     ]);
   });
 
@@ -156,6 +157,7 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
     // in `bufferPair` resources, which never appear in that table, so there is nothing
     // for a scoped reset to name.
     pointKernel: "point bufferPairs are not in the compiled feedback table",
+    pointKernelAdvanced: "point bufferPairs are not in the compiled feedback table",
     // The value graph's per-node state lives in `createValueGraphSession`, which has no
     // caller outside its own tests — there is no running session to reset.
     // (T318: the §V194 rename landed — `valueTrigger`/`valueLag` match their siblings.)

@@ -5,7 +5,7 @@ import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL } from "../shaders/render-
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { countedDrawSupport, pointPairId } from "./points.ts";
 
 /**
  * RenderInstances (T299): a procedural primitive on every point — Houdini's copy-to-
@@ -115,19 +115,26 @@ export const renderInstancesNode: NodeDefinition = {
       far: readNumber(parameters, "far", 100),
     });
 
+    // T322: a counted edge draws indirectly off the GPU-resident live count.
+    const counted = countedDrawSupport(nodeId, points.pointset, {
+      vertexCount: INSTANCE_VERTEX_COUNT,
+      maxInstances: Math.max(1, Math.round(readNumber(parameters, "count", 4096))),
+    });
     const pass: DrawPassDescriptor = {
       kind: "draw",
       id: `${nodeId}:instances`,
       shader: RENDER_INSTANCES_WGSL,
       target,
       topology: "triangle-list",
-      instances: Math.max(
-        1,
-        Math.min(
-          Math.round(readNumber(parameters, "count", 4096)),
-          points.pointset?.capacity ?? Math.round(readNumber(parameters, "count", 4096)),
+      instances:
+        counted?.instances ??
+        Math.max(
+          1,
+          Math.min(
+            Math.round(readNumber(parameters, "count", 4096)),
+            points.pointset?.capacity ?? Math.round(readNumber(parameters, "count", 4096)),
+          ),
         ),
-      ),
       vertexCount: INSTANCE_VERTEX_COUNT,
       buffers: [
         // The producer's position pair via the edge map, WRITE half: THIS frame's
@@ -148,6 +155,8 @@ export const renderInstancesNode: NodeDefinition = {
       uniformBinding: "params",
       nodeId,
     };
-    return { passes: [pass] };
+    return counted === undefined
+      ? { passes: [pass] }
+      : { passes: [counted.argsPass, pass], scratch: [counted.scratch] };
   },
 };

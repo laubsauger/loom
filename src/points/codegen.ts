@@ -29,6 +29,14 @@ import {
 /** Bumped when the generated Point/PointCtx/process signature changes shape (§V77). */
 export const POINT_KERNEL_CONTRACT_VERSION = 1;
 
+/**
+ * Contract for the LIFECYCLE variant (T322): same `process` signature, but the module
+ * additionally reads a GPU-resident live count (dispatch is guarded by it, not by the
+ * static capacity), and the alive attribute is forced to 1 on frame zero so a
+ * zero-initialised pair does not start universally dead.
+ */
+export const ADVANCED_KERNEL_CONTRACT_VERSION = 2;
+
 export const DEFAULT_WORKGROUP_SIZE = 64;
 
 export interface PointBufferBinding {
@@ -38,8 +46,8 @@ export interface PointBufferBinding {
   readonly variable: string;
   readonly binding: number;
   readonly access: "read" | "read_write";
-  /** Written attributes bind an in/out pair; this tells the two apart. */
-  readonly role: "in" | "out";
+  /** Written attributes bind an in/out pair; `live` is the lifecycle count buffer (T322). */
+  readonly role: "in" | "out" | "live";
 }
 
 export interface KernelModuleRequest {
@@ -51,6 +59,13 @@ export interface KernelModuleRequest {
   /** WGSL text containing `fn process(p: Point, ctx: PointCtx) -> Point`. */
   readonly kernel: string;
   readonly workgroupSize?: number;
+  /**
+   * T322: generate the lifecycle variant. The named attribute (u32, in the schema) is
+   * the alive flag; the module gains a `liveCount` read binding, guards the dispatch
+   * by it (frame zero uses the static count — the buffer is zero-initialised), and
+   * loads the flag as 1 (alive by construction inside the guard — no read binding).
+   */
+  readonly lifecycle?: { readonly aliveAttribute: string };
 }
 
 export interface KernelModule {
@@ -106,6 +121,17 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   if (!PROCESS_SIGNATURE.test(kernel)) {
     errors.push("kernel must define `fn process(p: Point, ctx: PointCtx) -> Point` (§V77 contract v1)");
   }
+  const lifecycle = request.lifecycle;
+  if (lifecycle !== undefined) {
+    const alive = byName.get(lifecycle.aliveAttribute);
+    if (alive === undefined) {
+      errors.push(`lifecycle names alive attribute "${lifecycle.aliveAttribute}", which the schema does not declare`);
+    } else if (alive.type !== "u32") {
+      errors.push(`alive attribute "${lifecycle.aliveAttribute}" must be u32, not ${alive.type}`);
+    } else if (!writes.includes(lifecycle.aliveAttribute)) {
+      errors.push(`alive attribute "${lifecycle.aliveAttribute}" must be written, or nothing can die`);
+    }
+  }
 
   const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
   if (!Number.isInteger(workgroupSize) || workgroupSize < 1 || workgroupSize > 256) {
@@ -125,6 +151,11 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   const bindings: PointBufferBinding[] = [];
   let nextBinding = 1; // binding 0 is the uniforms block
   for (const attribute of touched) {
+    // T322: the alive flag is WRITE-ONLY. Inside the guarded range a slot is alive BY
+    // CONSTRUCTION (compaction packed survivors below the live count), so reading the
+    // flag back is redundant — and the saved binding is what keeps the default schema
+    // inside the baseline 8-storage-buffers-per-stage budget (§V24).
+    if (attribute.name === lifecycle?.aliveAttribute) continue;
     bindings.push({
       attribute: attribute.name,
       variable: `in_${attribute.name}`,
@@ -144,6 +175,16 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
     });
     nextBinding += 1;
   }
+  if (lifecycle !== undefined) {
+    bindings.push({
+      attribute: lifecycle.aliveAttribute,
+      variable: "liveCount",
+      binding: nextBinding,
+      access: "read",
+      role: "live",
+    });
+    nextBinding += 1;
+  }
 
   const structFields = touched
     .map((attribute) => `  ${attribute.name}: ${attribute.type},`)
@@ -152,17 +193,41 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   const bufferDeclarations = bindings
     .map(
       (binding) =>
-        `@group(0) @binding(${binding.binding}) var<storage, ${binding.access}> ${binding.variable}: array<${byName.get(binding.attribute)?.type}>;`,
+        `@group(0) @binding(${binding.binding}) var<storage, ${binding.access}> ${binding.variable}: array<${
+          binding.role === "live" ? "u32" : byName.get(binding.attribute)?.type
+        }>;`,
     )
     .join("\n");
 
   const loads = touched
-    .map((attribute) => `  p.${attribute.name} = in_${attribute.name}[index];`)
+    .map((attribute) =>
+      attribute.name === lifecycle?.aliveAttribute
+        ? `  p.${attribute.name} = 1u; /* alive by construction inside the guard (T322) */`
+        : `  p.${attribute.name} = in_${attribute.name}[index];`,
+    )
     .join("\n");
 
   const stores = written
     .map((attribute) => `  out_${attribute.name}[index] = q.${attribute.name};`)
     .join("\n");
+
+  /* T322: the lifecycle module is guarded by the LIVE count — frame zero uses the
+     static count because the buffer is zero-initialised and nothing has counted yet —
+     and forces the alive flag on frame zero for the same reason. */
+  const liveExpression =
+    lifecycle === undefined
+      ? "kernelFrame.count"
+      : "select(min(liveCount[0], kernelFrame.count), kernelFrame.count, kernelFrame.frameIndex == 0u)";
+  const guard =
+    lifecycle === undefined
+      ? `  if (index >= kernelFrame.count) {
+    return;
+  }`
+      : `  let live = ${liveExpression};
+  if (index >= live) {
+    return;
+  }`;
+
 
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
@@ -197,12 +262,10 @@ ${kernel}
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let index = gid.x;
-  if (index >= kernelFrame.count) {
-    return;
-  }
+${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, kernelFrame.count, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
   let q = process(p, ctx);
 ${stores}
 }
@@ -212,7 +275,7 @@ ${stores}
     ok: true,
     wgsl,
     buffers: bindings,
-    contractVersion: POINT_KERNEL_CONTRACT_VERSION,
+    contractVersion: lifecycle === undefined ? POINT_KERNEL_CONTRACT_VERSION : ADVANCED_KERNEL_CONTRACT_VERSION,
     workgroupSize,
   };
 }
