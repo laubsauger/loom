@@ -827,6 +827,8 @@ V219: a per-shape `vertexCount` would make SHAPE structural. all shapes draw the
 2. ⊥ frame-level COMPUTE PASS hook — `compute.dispatch()` submits immediately (B19/V168).
 3. ⊥ compute `timestampWrites` (T181) — compute passes are unmeasurable.
 
+V251: an ABSENT capability limit falls back to the WebGPU BASELINE FLOOR, & that is ⊥ a V12 violation. what needs DISCOVERING is HEADROOM: every conforming device meets the baseline, so treating it as known is knowledge, while exceeding it w/o being told you may is the unsafe act. skipping the check on an unreported key would disable it exactly ∈ headless & CI — the runs w/ ⊥ GPU to complain later.
+V252: a PRODUCT budget & a DEVICE capability are 2 different questions w/ 2 different messages, & neither replaces the other. Composite's `MAX_TEXTURE_INPUTS = 8` is HALF the hardware budget by CHOICE (headroom for the frame block; past 8 inputs a graph reads better as 2 nodes). that is ⊥ V213's "2 answers to 1 question" — it is 1 answer each to 2 questions.
 V248: **spawn identity uses the GPU COUNTER, ⊥ a hash.** RULING: the hash is stateless & seek-proof by construction, & it COLLIDES — @ 32 bits (WGSL has ⊥ u64) the birthday bound puts 50% collision near ~77k ids, which a particle system reaches ∈ seconds. that is ⊥ "documented odds", it is "will happen", & a collision breaks the ONE guarantee ids exist to give (V73: identity is never a slot). a colliding id is an identity bug you CANNOT SEE. the counter is state that resets w/ the pairs & replays correctly because a seek replays from frame zero (V170).
 V249: **alive + spawnCount PACK into one u32 flags attribute** (bit 0 alive, upper bits count). RULING: the alternative — dropping velocity from the default schema to fit the budget — makes the DEFAULT ⊥ the common case & pushes the cost onto every user. packing costs 1 masked read per scan & is invisible outside generated code; `q.alive`/`q.spawnCount` stay SEPARATE fields ∈ the Point struct, codegen packs @ store. coherent because BOTH are write-only (T322's finding). CONDITION: a test ! read BOTH fields back independently after a frame where both are non-trivial (alive=1, spawnCount=5) — a shift|mask error produces PLAUSIBLE output (slightly wrong birth counts), ⊥ a crash, which is this project's worst failure class.
 V250: a DROPPED birth is COUNTABLE ∈ v1, even if the diagnostic surface comes later. births past capacity are dropped deterministically from the tail — & a saturating emitter that drops silently looks EXACTLY like a working one that spawns fewer. the count is the cheap half; the surface can follow.
@@ -1216,7 +1218,7 @@ T332|.|`op('x').par.color.r` — component paths ∈ cross-node references. the 
 T329|.|**decide which `ViewerPane` the app mounts** (B34) — the mounted one owns the canvas; the unmounted one has channel masks, tonemap, pixel readout & the keyboard probe. likely: fold T36's features into the mounted one. a PRODUCT decision|V242,V36
 T330|.|widen the seam enumeration to PANES — a `*-pane` module nothing renders, checked against the pane registry (V241). ⊥ "every exported component", which drowns|V241,V193
 T327|x|backend ERROR SCOPE around pipeline creation / first dispatch → hub (B33a). today a limit breach is silent|V240,V9
-T328|.|plan validator counts STORAGE BINDINGS per pass against `capabilities.limits` & refuses @ compile (B33b) — catches it before a GPU exists|V240,V12
+T328|x|plan validator counts STORAGE BINDINGS per pass against `capabilities.limits` & refuses @ compile (B33b) — catches it before a GPU exists|V240,V12
 T324|x|**publish the pointer** (B30) — `PointerSource.set` has ⊥ caller ∴ `FrameEvaluationInput.pointer` is always `{0,0,0}` & EVERY shader reading the shared block's pointer gets zero. normalise per V236, 1 publisher|V236,V182,V220
 T325|x|**output ports on LFO/Constant/Timer** (B31) — the trio declare ⊥ ports ∴ ⊥ value chain can be wired from a moving source|V237,V180
 T326|.|wire `setCookPolicy` (B32) — T254's static-plan gate is unreachable today & `cookPolicy` stays `"always"`|V157,V220
@@ -1334,6 +1336,11 @@ cross-track need → raise, ⊥ patch other track path.
 `git add` ADDS to an index other sessions are also staging into; `git commit` then commits
 the WHOLE index. staging explicitly protects nothing — the sweep happens on the COMMITTER's
 side & takes whatever anyone else left staged.
+**READ THE INDEX BEFORE COMMITTING: `git diff --cached --stat`.** ⊥ after — printing it ∈ the
+same command as the commit shows you the contamination ∈ the output of the thing that already
+happened. that is how HEAD got a dangling export: another track's STAGED DELETIONS rode a commit
+whose author had named 4 explicit paths of their own.
+
 **PATH SCOPING IS FILE-LEVEL.** `commit -- <paths>` protects against the INDEX; it ⊥ split
 co-resident HUNKS inside a file 2 tracks are both editing. the 4th "sweep" was ⊥ a rule breach
 — the committer used the correct form & the file was legitimately theirs to commit while ALSO
