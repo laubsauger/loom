@@ -89,10 +89,6 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     text: "This command is not available yet — no track has registered it.",
   },
   {
-    file: "src/editor/shader-editor/shader-editor-panel.tsx",
-    text: "Select a node with a WGSL source parameter to edit its shader.",
-  },
-  {
     file: "src/app/app-shell.tsx",
     text: "Drag a divider to resize, double-click it to reset. A focused divider resizes with the arrow keys and collapses with Enter.",
   },

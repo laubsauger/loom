@@ -374,11 +374,6 @@ const NOT_RENDERED: ReadonlyArray<{ name: string; reason: string }> = [
     reason:
       "A chrome PRIMITIVE (title + actions + scroll box), not a shell slot — the naming convention catches it and the registry does not contain it. Its module is live: `PaneEmpty` beside it is what `app-shell` and `dock-zone` render. The component itself has no caller and is a candidate for deletion, not a slot to fill.",
   },
-  {
-    name: "ShaderEditorPanel",
-    reason:
-      "FOUND BY THIS GUARD, the same day it was built, and the same shape as B34: a second shader pane that nothing renders. The app fills the shell's `shaderEditor` slot with `ShaderPane` (dock-panes.tsx, wrapping `ShaderEditor`) and `problems` with `ProblemsPanel` — while `editor/shader-editor/index.ts` states in its own docblock that the app fills both slots with `ShaderEditorPanel`. Which pane the app should mount is a product decision (§V242), so this is reported rather than folded. The line comes out when it is rendered or removed.",
-  },
 ];
 
 /** Where `name` is really defined, following `export { name } from "..."` through barrels. */

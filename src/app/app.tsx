@@ -659,6 +659,7 @@ export function App({
               nodeId={selectedNodeId}
               graph={compile.graph}
               diagnostics={compile.diagnostics}
+              stale={backend?.status.stale ?? false}
             />
           }
           problems={<ProblemsPanel diagnostics={problems} />}

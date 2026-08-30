@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
-import { ShaderEditorPanel } from "./shader-editor-panel.tsx";
 import { ProblemsPanel } from "./problems-panel.tsx";
 import { ShaderStatusBadge } from "./shader-status-badge.tsx";
 import { shaderStatusBadgeProps } from "./shader-status.ts";
@@ -29,8 +28,6 @@ beforeAll(() => {
   installCodeMirrorStubs();
 });
 afterEach(cleanup);
-
-const SHADER = "@fragment\nfn fs() -> @location(0) vec4f {\n  return vec4f(1.0);\n}";
 
 function stateWith(overrides: Partial<ShaderCompileState> = {}): ShaderCompileState {
   return {
@@ -66,91 +63,13 @@ function diagnostic(
   };
 }
 
-describe("shader editor panel", () => {
-  it("renders the shader text in a CodeMirror surface", () => {
-    render(
-      <ShaderEditorPanel
-        nodeId="node-1"
-        nodeTitle="Custom WGSL"
-        source={SHADER}
-        state={stateWith()}
-        onSourceChange={() => {}}
-      />,
-    );
-    const surface = screen.getByTestId("shader-editor-surface");
-    expect(surface.querySelector(".cm-editor")).not.toBeNull();
-    expect(surface.textContent).toContain("@fragment");
-  });
-
-  it("declares itself a `text` key context so mod+z undoes text, not the graph (§V53)", () => {
-    // The keymap engine (track Q) resolves the narrowest context from this attribute.
-    // Without it, undo inside the editor would reach the graph's undo command.
-    render(
-      <ShaderEditorPanel
-        nodeId="node-1"
-        source={SHADER}
-        state={stateWith()}
-        onSourceChange={() => {}}
-      />,
-    );
-    // Must match the keymap engine's KEYMAP_CONTEXT_ATTRIBUTE exactly. These were two
-    // different spellings for a while and V53 held only by accident, via the
-    // contenteditable fallback — mod+z would have reached graph undo if that changed.
-    expect(screen.getByTestId("shader-editor-surface").getAttribute("data-keymap-context")).toBe("text");
-  });
-
-  it("says the output is stale, and says why, when a compile failed (§V9)", () => {
-    // The render did not stop and did not go black. If the UI stayed silent, the user
-    // would read a working output as proof their broken edit compiled.
-    render(
-      <ShaderEditorPanel
-        nodeId="node-1"
-        source={SHADER}
-        state={stateWith({ stale: true, errors: [diagnostic("error", "expected '}'", 3)] })}
-        onSourceChange={() => {}}
-      />,
-    );
-    const status = screen.getByRole("status");
-    expect(status.textContent).toContain("stale");
-    expect(status.textContent).toContain("last valid shader");
-  });
-
-  it("shows no stale notice while everything compiles", () => {
-    render(
-      <ShaderEditorPanel
-        nodeId="node-1"
-        source={SHADER}
-        state={stateWith()}
-        onSourceChange={() => {}}
-      />,
-    );
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it("counts errors and warnings separately in the status strip (§V27)", () => {
-    render(
-      <ShaderEditorPanel
-        nodeId="node-1"
-        source={SHADER}
-        state={stateWith({
-          errors: [diagnostic("error", "e1", 1), diagnostic("error", "e2", 2)],
-          warnings: [diagnostic("warning", "w1", 4)],
-        })}
-        onSourceChange={() => {}}
-      />,
-    );
-    expect(screen.getByLabelText("2 errors")).toBeDefined();
-    expect(screen.getByLabelText("1 warnings")).toBeDefined();
-  });
-
-  it("explains itself when no shader-authorable node is selected", () => {
-    render(
-      <ShaderEditorPanel nodeId={null} source="" state={stateWith()} onSourceChange={() => {}} />,
-    );
-    expect(screen.getByText("No shader selected")).toBeDefined();
-    expect(screen.queryByTestId("shader-editor-surface")).toBeNull();
-  });
-});
+/**
+ * The panel that used to be tested here is gone (T337, B35): `ShaderEditorPanel` was
+ * rendered by nothing while the app filled the slot with `ShaderPane`. Its §V9 stale line
+ * and §V27 counts were folded into that pane, and the assertions moved with them — see
+ * `app/dock-panes.test.tsx`. Deleting the pane without moving its tests would have thrown
+ * away the only checks that either behaviour exists.
+ */
 
 describe("problems panel (§V27)", () => {
   const DIAGNOSTICS = [

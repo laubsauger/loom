@@ -6,8 +6,17 @@
  *    which is plain logic and carries every invariant (§V9, §V27);
  *  - a CodeMirror 6 surface and three dock components that render it.
  *
- * The app fills the shell's `shaderEditor` and `problems` slots with `ShaderEditorPanel`
- * and `ProblemsPanel`, and the graph canvas places `ShaderStatusBadge` on the node.
+ * The app fills the shell's `shaderEditor` slot with `ShaderPane` (`app/dock-panes.tsx`),
+ * which wraps the `ShaderEditor` surface below; it fills `problems` with `ProblemsPanel`,
+ * and the graph canvas places `ShaderStatusBadge` on the node.
+ *
+ * There is no `ShaderEditorPanel` here any more, and the sentence that used to name one is
+ * why this needed a task (B35, T337). It stated that the app mounted this module's pane
+ * while nothing did — a docblock asserting its own liveness is how the next person stops
+ * checking, and it is what made this a fourteenth instance rather than a first discovery.
+ * Its §V9 stale line and its §V27 counts were folded into `ShaderPane`, which owns the
+ * commit buffer and the keymap context and was already the one the app renders (§V242:
+ * fold, do not switch).
  */
 
 export { wgsl, wgslLanguage, wgslStreamParser, WGSL_TOKEN_TABLE } from "./wgsl-language.ts";
@@ -73,8 +82,6 @@ export { useShaderCompileState } from "./use-shader-compile.ts";
 
 export { ShaderEditor } from "./shader-editor.tsx";
 export type { ShaderEditorProps } from "./shader-editor.tsx";
-export { ShaderEditorPanel } from "./shader-editor-panel.tsx";
-export type { ShaderEditorPanelProps } from "./shader-editor-panel.tsx";
 export { ProblemsPanel } from "./problems-panel.tsx";
 export type { ProblemsPanelProps } from "./problems-panel.tsx";
 export { ShaderStatusBadge } from "./shader-status-badge.tsx";

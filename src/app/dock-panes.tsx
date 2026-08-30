@@ -18,6 +18,15 @@ export interface ShaderPaneProps {
   nodeId: NodeId | null;
   graph: GraphDocument;
   diagnostics: readonly RuntimeDiagnostic[];
+  /**
+   * The output is running the last program that COMPILED, not this edit (§V9, T337).
+   *
+   * `BackendStatus.stale` — a program-level fact, which is what §V9 is about: the backend
+   * retained an earlier program because the latest compile failed. Read from the backend
+   * rather than from the per-node runtime channel because nothing publishes it there, so
+   * that field is always false and a pane reading it would show a state it can never be in.
+   */
+  stale?: boolean;
 }
 
 /**
@@ -41,7 +50,7 @@ export interface ShaderPaneProps {
  * clobbered by the reset that follows it in the same pass — so leaving a node, by any
  * route, never discards what was typed for it.
  */
-export function ShaderPane({ nodeId, graph, diagnostics }: ShaderPaneProps) {
+export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: ShaderPaneProps) {
   const { bus, invocation, registry } = useAppRuntime();
 
   const node = nodeId === null ? undefined : graph.nodes[nodeId];
@@ -110,6 +119,14 @@ export function ShaderPane({ nodeId, graph, diagnostics }: ShaderPaneProps) {
     () => diagnostics.filter((diagnostic) => diagnostic.nodeId === nodeId),
     [diagnostics, nodeId],
   );
+  /**
+   * The counts, folded in from the pane the app never mounted (T337, §V27).
+   *
+   * From the SAME diagnostics the gutter markers come from, so the summary and the marks
+   * cannot disagree — a strip saying "0 err" over a red squiggle is worse than no strip.
+   */
+  const errorCount = nodeDiagnostics.filter((entry) => entry.severity === "error").length;
+  const warningCount = nodeDiagnostics.filter((entry) => entry.severity === "warning").length;
   const markers = useMemo(
     () => diagnosticsToMarkers(draft, nodeDiagnostics),
     [draft, nodeDiagnostics],
@@ -136,6 +153,32 @@ export function ShaderPane({ nodeId, graph, diagnostics }: ShaderPaneProps) {
         </span>
         <span className={styles.note}>
           {draft === committed ? "saved" : "unsaved — commits when focus leaves"}
+        </span>
+        {/*
+          §V9, the loud part — folded in from the unmounted pane, whose own docblock called
+          it non-negotiable and which nothing rendered. When a compile fails the render did
+          not stop and did not go black: it is still running the last shader that compiled.
+          Without this the user reads a working output as proof their broken edit was fine.
+        */}
+        {stale ? (
+          <span className={styles.shaderStale} role="status">
+            <span className={styles.shaderStaleDot} aria-hidden="true" />
+            output stale — last valid shader still rendering
+          </span>
+        ) : null}
+        <span className={styles.shaderCounts}>
+          <span
+            className={errorCount > 0 ? styles.countError : styles.countOk}
+            aria-label={`${errorCount} errors`}
+          >
+            {errorCount} err
+          </span>
+          <span
+            className={warningCount > 0 ? styles.countWarning : undefined}
+            aria-label={`${warningCount} warnings`}
+          >
+            {warningCount} warn
+          </span>
         </span>
         <span className={styles.note}>
           WGSL is checked when the graph compiles on a device; there is no standalone
