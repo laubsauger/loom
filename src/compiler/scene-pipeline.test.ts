@@ -465,9 +465,6 @@ describe("per-point colour and counted sets reach the SCENE (T478)", () => {
 });
 
 describe("shadows are opt-in per light, priced in the open (T481, §V309)", () => {
-  const shadowGraph = (lightParams: Record<string, unknown>): GraphDocument =>
-    sceneGraph({ extraNodes: [], renderParams: {} }) as GraphDocument;
-
   it("a casting directional light adds named shadow passes BEFORE the lit draws", () => {
     const graph = sceneGraph();
     ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = true;
