@@ -13,7 +13,7 @@ import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
-import { NodePreviewSlot, createPreviewSlotBounds } from "@editor/viewer/index.ts";
+import { NodePreviewSlot, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
@@ -106,6 +106,10 @@ function GraphPaneInner({
   // One store per mounted pane: `NodePreviewSlot` writes each node's measured slot
   // rect, the preview tick below reads it every frame (T185, design note §3).
   const previewBounds = useMemo(() => createPreviewSlotBounds(), []);
+  // T336: the preview LENS. Registers `preview.setView`/`preview.resetView` and keeps their
+  // default target on the selection while this pane is mounted — the pane that shows previews
+  // is the one that can honestly offer a command for changing how they look (§V90).
+  const previewViews = usePreviewViews(bus, selection);
   const getViewport = useCallback(() => flow.getViewport(), [flow]);
   // §V112 — React Flow's OWN live node array, never `GraphNode.position`: a drag stays
   // uncommitted in the document for its whole duration, and this is exactly the window
@@ -121,6 +125,7 @@ function GraphPaneInner({
     registry,
     compiledOutputs,
     nodeRuntime,
+    views: previewViews,
     getViewport,
     getNodePosition,
     previewFps,
@@ -129,9 +134,14 @@ function GraphPaneInner({
 
   const renderPreview = useCallback(
     (nodeId: NodeId) => (
-      <NodePreviewSlot nodeId={nodeId} runtime={nodeRuntime} bounds={previewBounds} />
+      <NodePreviewSlot
+        nodeId={nodeId}
+        runtime={nodeRuntime}
+        bounds={previewBounds}
+        views={previewViews}
+      />
     ),
-    [nodeRuntime, previewBounds],
+    [nodeRuntime, previewBounds, previewViews],
   );
 
   const dispatch = useCallback(

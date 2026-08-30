@@ -6,9 +6,17 @@ import {
   previewUniforms,
   resolvePreviewView,
   viewForChannelMask,
+  viewForLens,
 } from "./debug-effects.ts";
-import { ALL_CHANNELS, DEFAULT_PREVIEW_VIEW, PREVIEW_MODES } from "./types.ts";
-import type { ChannelMask } from "./types.ts";
+import {
+  ALL_CHANNELS,
+  DEFAULT_PREVIEW_LENS,
+  DEFAULT_PREVIEW_VIEW,
+  PREVIEW_LENSES,
+  PREVIEW_MODES,
+  isDefaultLens,
+} from "./types.ts";
+import type { ChannelMask, PreviewLens } from "./types.ts";
 
 function mask(partial: Partial<ChannelMask>): ChannelMask {
   return { r: false, g: false, b: false, a: false, ...partial };
@@ -49,6 +57,15 @@ describe("T35 — each debug effect emits the WGSL its mode means", () => {
     const shader = previewShader("channel");
     expect(shader).toContain("pickChannel(source, params.channel)");
     expect(shader).toContain("vec3f(value)");
+  });
+
+  it("luminance weights the graded colour, not the raw one", () => {
+    // Order matters and is the whole reason this is asserted: luminance answers "how bright
+    // is what I am looking at", so exposure and the tonemap come FIRST. Weighting the raw
+    // sample would report the brightness of a picture nobody is being shown.
+    const shader = previewShader("luminance");
+    expect(shader).toContain("maybeTonemap(exposed(source.rgb))");
+    expect(shader).toContain("dot(graded, vec3f(0.2126, 0.7152, 0.0722))");
   });
 
   it("alpha composites over a checkerboard using the source alpha", () => {
@@ -146,5 +163,74 @@ describe("channel toggles resolve to a view (T36)", () => {
     const view = resolvePreviewView("signed", mask({ g: true }));
     expect(view.mode).toBe("signed");
     expect(view.channel).toBe("g");
+  });
+});
+
+/**
+ * T336 — the LENS, the vocabulary the editor actually sets.
+ *
+ * These assert the widening, because the widening is where a second opinion about "what does
+ * isolate green mean" would grow: the popup, a keybinding and an agent all go through
+ * `viewForLens`, so if it disagreed with `viewForChannelMask` the same word would mean two
+ * things depending on which control the user touched.
+ */
+describe("preview lens resolves to a view (T336)", () => {
+  const lens = (patch: Partial<PreviewLens> = {}): PreviewLens => ({
+    ...DEFAULT_PREVIEW_LENS,
+    ...patch,
+  });
+
+  it("the default lens is the default view — an untouched preview is unchanged", () => {
+    expect(viewForLens(DEFAULT_PREVIEW_LENS)).toEqual(DEFAULT_PREVIEW_VIEW);
+    expect(isDefaultLens(DEFAULT_PREVIEW_LENS)).toBe(true);
+  });
+
+  it("every declared lens produces a mode that HAS a shader", () => {
+    // The union is closed at both ends: a lens nobody wrote a shader for would render the
+    // colour pass and look like it worked.
+    for (const kind of PREVIEW_LENSES) {
+      const view = viewForLens(lens({ lens: kind }));
+      expect(PREVIEW_MODES).toContain(view.mode);
+      expect(previewShader(view.mode)).toBeTruthy();
+    }
+  });
+
+  it("isolating a colour channel agrees with the channel-mask rules, it does not restate them", () => {
+    const view = viewForLens(lens({ lens: "g" }));
+    expect(view).toMatchObject(viewForChannelMask({ r: false, g: true, b: false, a: false }));
+    expect(view.mode).toBe("channel");
+    expect(view.channel).toBe("g");
+  });
+
+  it("alpha alone gets the checkerboard, exactly as the toggles do", () => {
+    expect(viewForLens(lens({ lens: "a" })).mode).toBe("alpha");
+  });
+
+  it("luminance is a mode, not a mask — every channel still reaches the shader", () => {
+    const view = viewForLens(lens({ lens: "luminance" }));
+    expect(view.mode).toBe("luminance");
+    expect(view.channels).toEqual(ALL_CHANNELS);
+  });
+
+  it("exposure and tonemap ride every lens, including an isolated channel", () => {
+    const view = viewForLens(lens({ lens: "b", exposureStops: 2, tonemap: true }));
+    expect(view.mode).toBe("channel");
+    expect(view.channel).toBe("b");
+    expect(previewUniforms(view).exposure).toBe(4);
+    expect(previewUniforms(view).tonemap).toBe(1);
+  });
+
+  it("changing a lens never changes the uniform BLOCK, so it cannot rebuild a pipeline (§V5)", () => {
+    const shape = Object.keys(previewUniforms(DEFAULT_PREVIEW_VIEW)).sort();
+    for (const kind of PREVIEW_LENSES) {
+      const view = viewForLens(lens({ lens: kind, exposureStops: -3, tonemap: true }));
+      expect(Object.keys(previewUniforms(view)).sort()).toEqual(shape);
+    }
+  });
+
+  it("knows when a lens is doing nothing, which is what suppresses the marker", () => {
+    expect(isDefaultLens(lens({ lens: "r" }))).toBe(false);
+    expect(isDefaultLens(lens({ exposureStops: 1 }))).toBe(false);
+    expect(isDefaultLens(lens({ tonemap: true }))).toBe(false);
   });
 });

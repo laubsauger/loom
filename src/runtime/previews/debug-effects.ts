@@ -4,11 +4,18 @@ import {
   PREVIEW_CHANNEL_WGSL,
   PREVIEW_COLOR_WGSL,
   PREVIEW_EXPOSURE_WGSL,
+  PREVIEW_LUMINANCE_WGSL,
   PREVIEW_NAN_WGSL,
   PREVIEW_SIGNED_WGSL,
 } from "./debug-effects.wgsl.ts";
 import { ALL_CHANNELS, DEFAULT_PREVIEW_VIEW, PREVIEW_CHANNELS } from "./types.ts";
-import type { ChannelMask, PreviewChannel, PreviewModeKind, PreviewView } from "./types.ts";
+import type {
+  ChannelMask,
+  PreviewChannel,
+  PreviewLens,
+  PreviewModeKind,
+  PreviewView,
+} from "./types.ts";
 
 /**
  * The debug preview effect catalogue (T35).
@@ -19,6 +26,7 @@ import type { ChannelMask, PreviewChannel, PreviewModeKind, PreviewView } from "
 export const PREVIEW_SHADERS: Readonly<Record<PreviewModeKind, string>> = {
   color: PREVIEW_COLOR_WGSL,
   channel: PREVIEW_CHANNEL_WGSL,
+  luminance: PREVIEW_LUMINANCE_WGSL,
   alpha: PREVIEW_ALPHA_WGSL,
   exposure: PREVIEW_EXPOSURE_WGSL,
   nan: PREVIEW_NAN_WGSL,
@@ -91,6 +99,41 @@ export function viewForChannelMask(
   if (only === "a") return { ...base, mode: "alpha", channel: "a", channels: mask };
   return { ...base, mode: "channel", channel: only, channels: mask };
 }
+
+/**
+ * The editor's LENS, resolved to a view (T336).
+ *
+ * The one widening from the small vocabulary a person sets to the full uniform set the pass
+ * takes, so there is no second opinion anywhere about what "isolate green" means. It reuses
+ * `viewForChannelMask` for the isolating lenses rather than restating its two rules — alpha
+ * gets the checkerboard, a single colour channel goes grayscale — and adds only what the mask
+ * cannot express: luminance, which is a mode rather than a mask.
+ *
+ * Note what this does NOT touch: nothing here reaches the present blit. §V70a keeps that a raw
+ * copy, and §V255 is the ruling that these belong to the preview path alone — a display
+ * transform on the presented canvas hides which node is wrong and double-encodes once the
+ * Output node does its job.
+ */
+export function viewForLens(
+  lens: PreviewLens,
+  base: PreviewView = DEFAULT_PREVIEW_VIEW,
+): PreviewView {
+  const graded: PreviewView = {
+    ...base,
+    exposureStops: lens.exposureStops,
+    tonemap: lens.tonemap,
+  };
+  switch (lens.lens) {
+    case "rgb":
+      return { ...graded, mode: "color", channels: ALL_CHANNELS };
+    case "luminance":
+      return { ...graded, mode: "luminance", channels: ALL_CHANNELS };
+    default:
+      return viewForChannelMask({ ...NO_CHANNELS, [lens.lens]: true }, graded);
+  }
+}
+
+const NO_CHANNELS: ChannelMask = Object.freeze({ r: false, g: false, b: false, a: false });
 
 /**
  * The viewer's display selection, resolved to a view.

@@ -24,3 +24,23 @@
   font-size: var(--fs-micro);
   text-align: center;
 }
+
+/*
+ * Lens marker (T336). Present ONLY while a preview is being shown through something other
+ * than the plain picture, so the quiet case stays quiet (§V90) and an altered one cannot be
+ * mistaken for the node's real output (§V70a's reason, one level in).
+ */
+.lensMarker {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  line-height: 1.4;
+  pointer-events: none;
+}

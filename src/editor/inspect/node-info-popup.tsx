@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
+import { DEFAULT_PREVIEW_LENS, PREVIEW_LENSES, isDefaultLens } from "@runtime/previews/index.ts";
+import type { PreviewLens, PreviewLensKind } from "@runtime/previews/index.ts";
 import type { TimingBucket } from "@runtime/telemetry/index.ts";
+import { MAX_EXPOSURE_STOPS } from "@editor/viewer/index.ts";
 import { formatAspect, formatBytes, formatMs } from "./format.ts";
 import type { NodeInfo } from "./node-info-model.ts";
 import { formatLabel, spaceLabel } from "./node-info-model.ts";
@@ -19,6 +22,152 @@ import styles from "./inspect.module.css";
 
 export interface NodeInfoPopupProps {
   readonly info: NodeInfo;
+  /**
+   * The preview LENS for this node, and the way to change it (T336).
+   *
+   * Handed in rather than read: §V85 keeps this file a pure function of its props, so the
+   * lens controls dispatch through a callback the host turns into a bus command, exactly as
+   * every fact above arrives already-computed. Omit `onLens` and the section does not render
+   * at all — a popup with no way to apply a lens must not show one (§V90).
+   */
+  readonly lens?: PreviewLens | undefined;
+  readonly onLens?: ((patch: Partial<PreviewLens>) => void) | undefined;
+  readonly onLensReset?: (() => void) | undefined;
+}
+
+const LENS_LABEL: Readonly<Record<PreviewLensKind, string>> = {
+  rgb: "RGB",
+  r: "R",
+  g: "G",
+  b: "B",
+  a: "A",
+  luminance: "LUM",
+};
+
+const LENS_TITLE: Readonly<Record<PreviewLensKind, string>> = {
+  rgb: "Colour — the picture as this node renders it",
+  r: "Isolate red, as grayscale",
+  g: "Isolate green, as grayscale",
+  b: "Isolate blue, as grayscale",
+  a: "Alpha coverage over a checkerboard",
+  luminance: "Luminance (Rec.709), as grayscale",
+};
+
+function formatStops(stops: number): string {
+  return `${stops > 0 ? "+" : ""}${stops} EV`;
+}
+
+/**
+ * The preview lens controls (T336, §V255).
+ *
+ * ## Why they live in this popup
+ *
+ * Because it is the surface that is already transient, already scoped to one node, and
+ * already opened by one command from three routes — middle click, the `?` binding, the node
+ * menu's Info item. The alternative the owner has pushed back on repeatedly (§V90/§V91/§V92)
+ * is a row of channel buttons living permanently on every node body; this puts the same
+ * controls behind a gesture and costs zero pixels of chrome when nobody is inspecting.
+ *
+ * It also happens to be the only placement where you can WATCH the thing you are changing:
+ * the popup anchors under the node, so the node's own preview stays visible above it, and a
+ * context menu — the other candidate — closes on every click, so changing three things would
+ * mean opening it three times.
+ *
+ * ## What it deliberately does not offer
+ *
+ * The `nan` and `signed` diagnostic modes, the checkerboard size and the signed scale. They
+ * are real capabilities of `PreviewView`, and putting all seven fields here would rebuild the
+ * cluttered panel this placement exists to avoid. The lens vocabulary is the small set with a
+ * question behind each entry.
+ */
+function PreviewLensControls({
+  lens,
+  onLens,
+  onLensReset,
+}: {
+  lens: PreviewLens;
+  onLens: (patch: Partial<PreviewLens>) => void;
+  onLensReset: (() => void) | undefined;
+}) {
+  const dirty = !isDefaultLens(lens);
+  const step = (delta: number): void => {
+    const next = Math.max(-MAX_EXPOSURE_STOPS, Math.min(MAX_EXPOSURE_STOPS, lens.exposureStops + delta));
+    onLens({ exposureStops: next });
+  };
+
+  return (
+    <section className={styles.section} aria-label="Preview lens">
+      <h4
+        className={styles.sectionTitle}
+        // §V90 — the explanation hangs off the label, it does not sit under it as a sentence.
+        title="Preview only — the node still renders what it renders."
+      >
+        preview lens
+      </h4>
+
+      <div className={styles.lensRow} role="group" aria-label="Channel">
+        {PREVIEW_LENSES.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className={styles.lensButton}
+            aria-pressed={lens.lens === kind}
+            data-active={lens.lens === kind}
+            title={LENS_TITLE[kind]}
+            onClick={() => onLens({ lens: kind })}
+          >
+            {LENS_LABEL[kind]}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.lensRow}>
+        <span className={styles.lensLabel}>exposure</span>
+        <button
+          type="button"
+          className={styles.lensButton}
+          aria-label="Exposure down one stop"
+          disabled={lens.exposureStops <= -MAX_EXPOSURE_STOPS}
+          onClick={() => step(-1)}
+        >
+          −
+        </button>
+        <span className={styles.lensValue} data-testid="lens-exposure">
+          {formatStops(lens.exposureStops)}
+        </span>
+        <button
+          type="button"
+          className={styles.lensButton}
+          aria-label="Exposure up one stop"
+          disabled={lens.exposureStops >= MAX_EXPOSURE_STOPS}
+          onClick={() => step(1)}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className={styles.lensButton}
+          aria-pressed={lens.tonemap}
+          data-active={lens.tonemap}
+          title="Filmic tonemap after exposure; off shows clipping"
+          onClick={() => onLens({ tonemap: !lens.tonemap })}
+        >
+          tonemap
+        </button>
+        {/* Only offered when there is something to undo — §V90's "nothing that does nothing". */}
+        {dirty && onLensReset !== undefined ? (
+          <button
+            type="button"
+            className={styles.lensButton}
+            title="Back to the plain picture"
+            onClick={onLensReset}
+          >
+            reset
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 function Value({ children, absent }: { children: ReactNode; absent?: boolean }) {
@@ -43,7 +192,7 @@ function Badge({ tone, children }: { tone?: "warn" | "error" | "signal"; childre
   );
 }
 
-export function NodeInfoPopup({ info }: NodeInfoPopupProps) {
+export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopupProps) {
   const { timing, output } = info;
   const severity = info.errorCount > 0 ? "error" : info.warningCount > 0 ? "warning" : "info";
 
@@ -152,6 +301,15 @@ export function NodeInfoPopup({ info }: NodeInfoPopupProps) {
           </dl>
         )}
       </section>
+
+      {/* No materialized texture means no preview to look through, so no controls (§V90). */}
+      {output === null || onLens === undefined ? null : (
+        <PreviewLensControls
+          lens={lens ?? DEFAULT_PREVIEW_LENS}
+          onLens={onLens}
+          onLensReset={onLensReset}
+        />
+      )}
 
       <section className={styles.section} aria-label="Decided by">
         <h4 className={styles.sectionTitle}>decided by</h4>

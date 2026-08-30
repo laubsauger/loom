@@ -120,6 +120,25 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /**
+ * Luminance.
+ *
+ * Rec.709 luma weights — the same ones the NaN mode dims with, deliberately, so "how bright is
+ * this" has one definition in this file. Applied to the MASKED colour after exposure, so
+ * luminance answers the question about the picture actually on screen rather than about a
+ * different one. This is the mode a compositor reaches for to judge contrast without hue
+ * pulling the eye around, and it is why channel isolation elsewhere renders grayscale too.
+ */
+export const PREVIEW_LUMINANCE_WGSL = `${PRELUDE}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0) * params.mask;
+  let graded = maybeTonemap(exposed(source.rgb));
+  let luma = dot(graded, vec3f(0.2126, 0.7152, 0.0722));
+  return vec4f(encodeDisplay(vec3f(luma)), 1.0);
+}`;
+
+/**
  * Alpha over a checkerboard.
  *
  * Straight (non-premultiplied) alpha, matching the compositor's own Over. A premultiplied

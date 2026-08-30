@@ -12,7 +12,7 @@
  * `usePixelReadout` stays because it is a hook, not a pane, and the mounted viewer uses it.
  */
 
-export { NodePreview } from "./node-preview.tsx";
+export { NodePreview, lensMarker } from "./node-preview.tsx";
 export type { NodePreviewFacts, NodePreviewProps, NodePreviewState } from "./node-preview.tsx";
 
 export { NodePreviewSlot } from "./node-preview-slot.tsx";
@@ -20,6 +20,24 @@ export type { NodePreviewSlotProps } from "./node-preview-slot.tsx";
 
 export { createPreviewSlotBounds } from "./preview-slot-bounds.ts";
 export type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
+
+/**
+ * The preview LENS (T336) — channel isolation, exposure and the tonemap, on the preview path
+ * only (§V255, §V70a). The store is transient session state, never document state; the reason
+ * is written down in `preview-view-store.ts` and it is a deliberate call, not an omission.
+ */
+export { createPreviewViewStore, previewViewStoreFor } from "./preview-view-store.ts";
+export type { PreviewViewSource, PreviewViewStore } from "./preview-view-store.ts";
+
+export {
+  MAX_EXPOSURE_STOPS,
+  RESET_PREVIEW_VIEW_COMMAND,
+  SET_PREVIEW_VIEW_COMMAND,
+  previewViewTargetFor,
+  registerPreviewViewCommands,
+  usePreviewViews,
+} from "./preview-view-command.ts";
+export type { PreviewViewTargetHolder } from "./preview-view-command.ts";
 
 export { READOUT_INTERVAL_MS, usePixelReadout } from "./use-pixel-readout.ts";
 export type { PixelReadout, PixelReadoutOptions } from "./use-pixel-readout.ts";

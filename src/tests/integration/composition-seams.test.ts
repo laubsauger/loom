@@ -94,6 +94,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
     reason: "The other half of `createComponentSystem`. Same reason.",
   },
   {
+    name: "createPreviewViewStore",
+    reason:
+      "Composed by `previewViewStoreFor` in the SAME module — the bus-keyed accessor the graph pane, the node info popup and the preview slot all resolve, so all three share one lens store (T336). The product path is `usePreviewViews` in `graph-pane.tsx`; `use-node-previews.test.ts` asserts a lens set on this store reaches the preview pass's uniforms.",
+  },
+  {
     name: "createRng",
     reason:
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",

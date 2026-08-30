@@ -6,7 +6,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { fitInsideRegion } from "@editor/nodes/index.ts";
-import type { PreviewSlotBoundsStore } from "@editor/viewer/index.ts";
+import type { PreviewSlotBoundsStore, PreviewViewSource } from "@editor/viewer/index.ts";
 import { DEFAULT_PREVIEW_VIEW, createPreviewSystem, slotScreenRect } from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
@@ -45,6 +45,13 @@ export interface NodePreviewInputs {
   readonly backend: ShaderloomBackend | null | undefined;
   readonly canvasRef: RefObject<HTMLCanvasElement | null>;
   readonly bounds: PreviewSlotBoundsStore;
+  /**
+   * T336: per-node preview LENS. `PreviewRequest.view` has been on this request since T34 and
+   * every caller passed the default, so channel isolation, exposure and the tonemap were live
+   * in the shader and unreachable from the product (§V220, §V255). Absent = the default view,
+   * which is what a caller with no lens store means.
+   */
+  readonly views?: PreviewViewSource | undefined;
   readonly graph: GraphDocument;
   readonly registry: NodeRegistryView;
   readonly compiledOutputs: ReadonlyArray<ResolvedOutput>;
@@ -172,7 +179,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           pinned: node?.ui?.preview === true,
           collapsed: false,
           occluded: false,
-          view: DEFAULT_PREVIEW_VIEW,
+          // §V255/§V70a — the lens lives HERE, on the preview path, and nowhere near the
+          // present blit, which stays a raw copy.
+          view: current.views?.viewFor(nodeId) ?? DEFAULT_PREVIEW_VIEW,
           fps: current.previewFps,
         });
       }

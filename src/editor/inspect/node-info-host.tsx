@@ -6,7 +6,14 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { TelemetrySource } from "@runtime/telemetry/index.ts";
 import type { NodeRuntimeSource } from "@editor/graph-canvas/index.ts";
+import { useOptionalKeymap } from "@editor/keymap/index.ts";
 import { resolveMenuTarget } from "@editor/menus/index.ts";
+import {
+  RESET_PREVIEW_VIEW_COMMAND,
+  SET_PREVIEW_VIEW_COMMAND,
+  previewViewStoreFor,
+} from "@editor/viewer/index.ts";
+import type { PreviewLens } from "@runtime/previews/index.ts";
 import { PopoverAnchor, PopoverContent, PopoverRoot } from "@ui/index.ts";
 import { registerNodeInfoCommand } from "./command.ts";
 import type { NodeInfoAnchor } from "./command.ts";
@@ -199,6 +206,35 @@ function NodeInfoPopover({
     useCallback(() => runtime?.get(nodeId), [runtime, nodeId]),
   );
 
+  /**
+   * The preview lens (T336) — read from the bus-scoped store, written by executing a command.
+   *
+   * The dispatch is `bus.execute` with the keymap's invocation context, which is exactly what
+   * `useRunCommand` does; it is inlined rather than called because that hook throws outside a
+   * `<KeymapProvider>` and this popup is renderable from a fixture with no provider at all
+   * (§V85's whole point). With no provider and no registered command, `onLens` stays
+   * undefined and the section does not render — a control that cannot act is not shown (§V90).
+   */
+  const lensStore = previewViewStoreFor(bus);
+  const lens = useSyncExternalStore(
+    useCallback((listener: () => void) => lensStore.subscribe(nodeId, listener), [lensStore, nodeId]),
+    useCallback(() => lensStore.get(nodeId), [lensStore, nodeId]),
+    useCallback(() => lensStore.get(nodeId), [lensStore, nodeId]),
+  );
+  const invocation = useOptionalKeymap()?.invocationContext ?? null;
+  const lensAvailable = invocation !== null && bus.hasCommand(SET_PREVIEW_VIEW_COMMAND);
+  const onLens = useCallback(
+    (patch: Partial<PreviewLens>) => {
+      if (invocation === null) return;
+      void bus.execute(SET_PREVIEW_VIEW_COMMAND, { nodeId, ...patch }, invocation);
+    },
+    [bus, invocation, nodeId],
+  );
+  const onLensReset = useCallback(() => {
+    if (invocation === null) return;
+    void bus.execute(RESET_PREVIEW_VIEW_COMMAND, { nodeId }, invocation);
+  }, [bus, invocation, nodeId]);
+
   const graph = bus.store.getGraph();
   const info = useMemo(
     () =>
@@ -241,7 +277,11 @@ function NodeInfoPopover({
           restoreFocusTo.current?.focus();
         }}
       >
-        <NodeInfoPopup info={info} />
+        <NodeInfoPopup
+          info={info}
+          lens={lens}
+          {...(lensAvailable ? { onLens, onLensReset } : {})}
+        />
       </PopoverContent>
     </PopoverRoot>
   );

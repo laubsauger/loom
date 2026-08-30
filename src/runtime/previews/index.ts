@@ -8,15 +8,20 @@
 export {
   ALL_CHANNELS,
   DEFAULT_OUTPUT_PORT,
+  DEFAULT_PREVIEW_LENS,
   DEFAULT_PREVIEW_VIEW,
   PREVIEW_CHANNELS,
+  PREVIEW_LENSES,
   PREVIEW_MODES,
   SUSPEND_REASONS,
+  isDefaultLens,
   previewKey,
 } from "./types.ts";
 export type {
   ChannelMask,
   PreviewChannel,
+  PreviewLens,
+  PreviewLensKind,
   AllocatedPreview,
   PreviewCompositeTile,
   PreviewFrameCommand,
@@ -56,6 +61,7 @@ export {
   previewUniforms,
   resolvePreviewView,
   viewForChannelMask,
+  viewForLens,
 } from "./debug-effects.ts";
 
 export { TILE_FORMAT, createTileAtlas } from "./tile-atlas.ts";

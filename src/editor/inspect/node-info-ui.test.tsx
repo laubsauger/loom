@@ -10,6 +10,8 @@ import type { ResolvedOutput } from "@compiler/index.ts";
 import { EMPTY_READBACK_BUDGET } from "@runtime/telemetry/index.ts";
 import type { TelemetrySnapshot } from "@runtime/telemetry/index.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
+import { KeymapProvider } from "@editor/keymap/index.ts";
+import { registerPreviewViewCommands } from "@editor/viewer/index.ts";
 import { SHOW_NODE_INFO_COMMAND } from "./command.ts";
 import { buildNodeInfo } from "./node-info-model.ts";
 import { NodeInfoHost } from "./node-info-host.tsx";
@@ -651,3 +653,216 @@ function middleClick(element: Element): void {
   dispatch(element, "pointerdown", 1, 20, 20);
   dispatch(element, "pointerup", 1, 20, 20);
 }
+
+/**
+ * T336 — the preview LENS controls.
+ *
+ * Placement is the decision under test as much as behaviour. §V90/§V91/§V92 rule out a row of
+ * channel buttons living permanently on every node body, so these live inside the popup: one
+ * gesture away, scoped to one node, and gone the moment it closes. The first two tests pin the
+ * two ways the section must NOT appear, because a control that cannot act is the thing the
+ * owner has objected to twice.
+ */
+describe("the preview lens (T336)", () => {
+  const lensInfo = (overrides: Parameters<typeof buildNodeInfo>[0] | null = null) =>
+    buildNodeInfo(
+      overrides ?? {
+        nodeId: "blur",
+        graph: graphOf([node("blur", "test.blur")]),
+        registry,
+        compiled: blurPlan(),
+      },
+    );
+
+  it("is absent when the caller offers no way to apply one", () => {
+    render(<NodeInfoPopup info={lensInfo()} />);
+    expect(screen.queryByLabelText("Preview lens")).toBeNull();
+  });
+
+  it("is absent on a node that materializes no texture — there is no preview to filter", () => {
+    const info = buildNodeInfo({
+      nodeId: "blur",
+      graph: graphOf([node("blur", "test.blur")]),
+      registry,
+      compiled: compiledOf(),
+    });
+    render(<NodeInfoPopup info={info} onLens={() => {}} />);
+    expect(screen.queryByLabelText("Preview lens")).toBeNull();
+  });
+
+  it("offers every lens, and says which one is on (§V19)", () => {
+    render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "g", exposureStops: 0, tonemap: false }}
+        onLens={() => {}}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Channel" });
+    expect([...group.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "RGB",
+      "R",
+      "G",
+      "B",
+      "A",
+      "LUM",
+    ]);
+    expect(screen.getByRole("button", { name: "G" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "RGB" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("reports one field at a time, so picking a channel does not clear the exposure", async () => {
+    const calls: unknown[] = [];
+    render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "rgb", exposureStops: 2, tonemap: false }}
+        onLens={(patch) => calls.push(patch)}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "A" }));
+    expect(calls).toEqual([{ lens: "a" }]);
+  });
+
+  it("steps exposure in stops, from whatever it currently is", async () => {
+    const calls: unknown[] = [];
+    render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "rgb", exposureStops: -1, tonemap: false }}
+        onLens={(patch) => calls.push(patch)}
+      />,
+    );
+    expect(screen.getByTestId("lens-exposure").textContent).toBe("-1 EV");
+    await userEvent.click(screen.getByRole("button", { name: "Exposure up one stop" }));
+    expect(calls).toEqual([{ exposureStops: 0 }]);
+  });
+
+  it("toggles the tonemap rather than setting it", async () => {
+    const calls: unknown[] = [];
+    render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "rgb", exposureStops: 0, tonemap: true }}
+        onLens={(patch) => calls.push(patch)}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "tonemap" }));
+    expect(calls).toEqual([{ tonemap: false }]);
+  });
+
+  it("offers reset only once there is something to reset (§V90)", async () => {
+    const { unmount } = render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "rgb", exposureStops: 0, tonemap: false }}
+        onLens={() => {}}
+        onLensReset={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "reset" })).toBeNull();
+    unmount();
+
+    let reset = 0;
+    render(
+      <NodeInfoPopup
+        info={lensInfo()}
+        lens={{ lens: "b", exposureStops: 0, tonemap: false }}
+        onLens={() => {}}
+        onLensReset={() => {
+          reset += 1;
+        }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "reset" }));
+    expect(reset).toBe(1);
+  });
+});
+
+/**
+ * T336 — the popup's buttons reach the bus, and the bus reaches the store.
+ *
+ * The §V220 half. Every test above renders `NodeInfoPopup` with a callback and would stay
+ * green if the host never wired one — which is precisely the shape that has failed fourteen
+ * times here. So this drives the mounted host through the same command a keybinding or an
+ * agent would name (§V78) and asserts the lens the preview tick will read.
+ */
+describe("the lens controls are wired to the command (T336)", () => {
+  it("a click in the popup sets the lens the preview system reads", async () => {
+    const { bus } = createHarness();
+    const store = registerPreviewViewCommands(bus);
+
+    const added = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "seed",
+        operations: [{ op: "addNode", ref: "$blur", type: "test.blur", position: { x: 0, y: 0 } }],
+      },
+      contextFor(alice),
+    );
+    const nodeId = added.output.createdIds["$blur"];
+    if (nodeId === undefined) throw new Error("fixture patch was rejected");
+
+    const plan = compiledOf({
+      passes: [effect(`${nodeId}:p0`, nodeId, `${nodeId}:out`)],
+      resources: [target(`${nodeId}:out`)],
+      order: [nodeId],
+      outputs: [resolved(nodeId, `${nodeId}:out`)],
+    });
+
+    render(
+      <KeymapProvider bus={bus} invocationContext={contextFor(alice)}>
+        <NodeInfoHost bus={bus} registry={registry} compiled={plan} fallbackNodeId={nodeId}>
+          <div className="react-flow__node" data-id={nodeId} />
+        </NodeInfoHost>
+      </KeymapProvider>,
+    );
+
+    await bus.execute(SHOW_NODE_INFO_COMMAND, { nodeId }, contextFor(alice));
+    await waitFor(() => expect(screen.getByLabelText("Preview lens")).toBeTruthy());
+
+    await userEvent.click(screen.getByRole("button", { name: "G" }));
+    await waitFor(() => expect(store.get(nodeId).lens).toBe("g"));
+    // The lens is a look, not an edit: it went through the bus and left no patch behind.
+    expect(bus.store.getRevision()).toBe(added.revision);
+
+    await userEvent.click(screen.getByRole("button", { name: "reset" }));
+    await waitFor(() => expect(store.isDefault(nodeId)).toBe(true));
+  });
+
+  it("shows no lens controls when no command is registered to serve them (§V90)", async () => {
+    // A different bus, deliberately: nothing registered `preview.setView` on it, so the
+    // section must not render rather than render buttons that do nothing.
+    const { bus } = createHarness("unregistered");
+    const added = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "seed",
+        operations: [{ op: "addNode", ref: "$blur", type: "test.blur", position: { x: 0, y: 0 } }],
+      },
+      contextFor(alice),
+    );
+    const nodeId = added.output.createdIds["$blur"];
+    if (nodeId === undefined) throw new Error("fixture patch was rejected");
+    const plan = compiledOf({
+      passes: [effect(`${nodeId}:p0`, nodeId, `${nodeId}:out`)],
+      resources: [target(`${nodeId}:out`)],
+      order: [nodeId],
+      outputs: [resolved(nodeId, `${nodeId}:out`)],
+    });
+
+    render(
+      <KeymapProvider bus={bus} invocationContext={contextFor(alice)}>
+        <NodeInfoHost bus={bus} registry={registry} compiled={plan} fallbackNodeId={nodeId}>
+          <div className="react-flow__node" data-id={nodeId} />
+        </NodeInfoHost>
+      </KeymapProvider>,
+    );
+
+    await bus.execute(SHOW_NODE_INFO_COMMAND, { nodeId }, contextFor(alice));
+    await waitFor(() => expect(screen.getByTestId("node-info")).toBeTruthy());
+    expect(screen.queryByLabelText("Preview lens")).toBeNull();
+  });
+});

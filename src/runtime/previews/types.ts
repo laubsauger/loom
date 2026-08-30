@@ -44,7 +44,15 @@ export interface PreviewRect {
  * "which effect is this preview showing" visible in the plan, and a mode switch is a cheap
  * pass rebuild rather than a permanently-branchy shader on every preview pixel.
  */
-export const PREVIEW_MODES = ["color", "channel", "alpha", "exposure", "nan", "signed"] as const;
+export const PREVIEW_MODES = [
+  "color",
+  "channel",
+  "luminance",
+  "alpha",
+  "exposure",
+  "nan",
+  "signed",
+] as const;
 
 export type PreviewModeKind = (typeof PREVIEW_MODES)[number];
 
@@ -87,6 +95,44 @@ export const DEFAULT_PREVIEW_VIEW: PreviewView = Object.freeze({
   checkerSize: 8,
   signedScale: 1,
 });
+
+/**
+ * The LENS — the subset of a `PreviewView` a person can set from the editor (T336).
+ *
+ * Deliberately smaller than `PreviewView`. The view carries seven fields, three of which
+ * (`checkerSize`, `signedScale`, and the `nan`/`signed` diagnostic modes) answer questions a
+ * user does not yet have a reason to ask from a node's own preview; exposing all of them
+ * would put a seven-control panel behind a surface that has to stay quiet (§V90, §V92).
+ * `viewForLens` is the one place the small vocabulary widens into the full view, so the two
+ * cannot drift.
+ */
+export const PREVIEW_LENSES = ["rgb", "r", "g", "b", "a", "luminance"] as const;
+
+export type PreviewLensKind = (typeof PREVIEW_LENSES)[number];
+
+export interface PreviewLens {
+  /** Which channel reaches the eye. `rgb` is "no isolation", the ordinary picture. */
+  readonly lens: PreviewLensKind;
+  /** Exposure in stops, applied before the optional tonemap. 0 = unchanged. */
+  readonly exposureStops: number;
+  /** Filmic tonemap. Off means "show me the clipping" — which is the useful default. */
+  readonly tonemap: boolean;
+}
+
+export const DEFAULT_PREVIEW_LENS: PreviewLens = Object.freeze({
+  lens: "rgb",
+  exposureStops: 0,
+  tonemap: false,
+});
+
+/** True when nothing is being done to the picture — the state that needs no indicator. */
+export function isDefaultLens(lens: PreviewLens): boolean {
+  return (
+    lens.lens === DEFAULT_PREVIEW_LENS.lens &&
+    lens.exposureStops === DEFAULT_PREVIEW_LENS.exposureStops &&
+    lens.tonemap === DEFAULT_PREVIEW_LENS.tonemap
+  );
+}
 
 /**
  * One request for a live preview, as the editor sees it.

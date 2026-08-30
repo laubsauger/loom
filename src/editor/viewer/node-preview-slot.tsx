@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { NodeId } from "@domain/types/ids.ts";
 import { useNodeRuntime } from "@editor/graph-canvas/index.ts";
 import type { NodeRuntimeSource } from "@editor/graph-canvas/index.ts";
+import { DEFAULT_PREVIEW_LENS } from "@runtime/previews/index.ts";
 import { NodePreview } from "./node-preview.tsx";
 import type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
+import type { PreviewViewSource } from "./preview-view-store.ts";
 
 /**
  * The composition root's `renderPreview` implementation for one node (T185).
@@ -29,9 +31,14 @@ export interface NodePreviewSlotProps {
   nodeId: NodeId;
   runtime: NodeRuntimeSource;
   bounds: PreviewSlotBoundsStore;
+  /**
+   * The lens store (T336). Optional so a caller that wants a plain slot — a test, an
+   * embedding — is not forced to wire one; absent means every preview is the plain picture.
+   */
+  views?: PreviewViewSource | undefined;
 }
 
-export function NodePreviewSlot({ nodeId, runtime, bounds }: NodePreviewSlotProps) {
+export function NodePreviewSlot({ nodeId, runtime, bounds, views }: NodePreviewSlotProps) {
   const flow = useReactFlow();
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -69,10 +76,30 @@ export function NodePreviewSlot({ nodeId, runtime, bounds }: NodePreviewSlotProp
   const snapshot = useNodeRuntime(runtime, nodeId);
   const preview = snapshot.preview;
 
+  // Its own slice, like the runtime channel above: setting a lens on one node repaints that
+  // node's slot and nothing else, and the store only notifies when a lens actually changed.
+  const readLens = useCallback(
+    () => (views === undefined ? DEFAULT_PREVIEW_LENS : views.get(nodeId)),
+    [views, nodeId],
+  );
+  const lens = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => views?.subscribe(nodeId, listener) ?? (() => {}),
+      [views, nodeId],
+    ),
+    readLens,
+    readLens,
+  );
+
   return (
     <div ref={ref} style={{ width: "100%", height: "100%" }}>
       {preview === null ? null : (
-        <NodePreview output={preview.output} state={preview.state} facts={preview.facts} />
+        <NodePreview
+          output={preview.output}
+          state={preview.state}
+          facts={preview.facts}
+          lens={lens}
+        />
       )}
     </div>
   );
