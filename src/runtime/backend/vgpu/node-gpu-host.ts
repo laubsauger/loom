@@ -1,4 +1,5 @@
 import { init } from "vgpu/node";
+import { DESIRED_LIMITS } from "./gpu-host.ts";
 import type { DeviceLossInfo, GpuHost, GpuSession } from "./gpu-host.ts";
 
 /**
@@ -49,12 +50,55 @@ export function probeDawn(): Promise<DawnProbe> {
   return probed;
 }
 
+/**
+ * T338: the node entry exposes no adapter before device creation, so the ask is a
+ * descending LADDER instead of a clamp: try the desired limit, halve on rejection
+ * (over-requesting fails device creation outright, per spec), and give the baseline
+ * defaults the last word. The successful rung is remembered per process — device
+ * creation happens at init and device-loss recovery, so re-laddering would only
+ * re-pay rejections we have already learned about.
+ */
+let provenStorageLimit: number | undefined | null = null; // null = not yet probed
+
+/** Dawn's rejection names the offer: "Required limit (64) is greater than the supported limit (10)." */
+const SUPPORTED_LIMIT = /supported limit \((\d+)\)/;
+
+async function initWithLimitLadder(base: Parameters<typeof init>[0]): Promise<Awaited<ReturnType<typeof init>>> {
+  const desired = DESIRED_LIMITS["maxStorageBuffersPerShaderStage"] ?? 64;
+  const rungs = provenStorageLimit === null ? [desired] : provenStorageLimit === undefined ? [] : [provenStorageLimit];
+  for (const rung of rungs) {
+    try {
+      const gpu = await init({ ...base, requiredLimits: { maxStorageBuffersPerShaderStage: rung } });
+      provenStorageLimit = rung;
+      return gpu;
+    } catch (error) {
+      // The verdict NAMES the adapter's actual offer — retry with exactly that, once.
+      // No blind halving ladder: one rejection teaches the true ceiling.
+      const supported = Number(SUPPORTED_LIMIT.exec(String(error))?.[1]);
+      if (Number.isFinite(supported) && supported > 0 && supported < rung) {
+        try {
+          const gpu = await init({
+            ...base,
+            requiredLimits: { maxStorageBuffersPerShaderStage: supported },
+          });
+          provenStorageLimit = supported;
+          return gpu;
+        } catch {
+          // The named offer ALSO failed (driver oddity): baseline gets the last word.
+        }
+      }
+    }
+  }
+  provenStorageLimit = undefined;
+  return init(base);
+}
+
 /** `GpuHost` backed by Dawn, for headless render and parity testing (§V47, T67, T69). */
 export function nodeGpuHost(): GpuHost {
   return {
     label: "dawn",
     async create(options): Promise<GpuSession> {
-      const gpu = await init({
+      const gpu = await initWithLimitLadder({
         label: "shaderloom-headless",
         ...(options.powerPreference === undefined
           ? {}
