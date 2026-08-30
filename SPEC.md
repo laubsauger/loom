@@ -820,6 +820,7 @@ V189: auto-layout is DETERMINISTIC — same graph → same positions, ∀ time. 
 V190: layout is a POSITION edit ∴ `nodePosition` classification — editor-only, ⊥ recompile, ⊥ resource rebuild (V1). laying out a 200-node graph ! cost 0 GPU work.
 V191: ONE layout implementation, reached by both the keymap (`L`) & the bus command the agent calls (V78). a "layout for agents" that differs from the button is 2 products.
 V192: MCP|WebMCP adapters are TRANSPORT + SCHEMA ONLY (V39). they live OUTSIDE `src/agent/**` ∴ the surface stays transport-free & headlessly testable — a server drags node|network deps, WebMCP drags DOM, & neither belongs ∈ the thing they both wrap.
+V186b: retracting a wrong citation means finding EVERY copy of it. the invented "Premultiply TOP" claim lived ∈ 2 files; the 1st correction fixed 1 & left the other reading as researched fact for another 3 hours. `grep` the claim, ⊥ the file you happened to open.
 V186: a comment citing an EXTERNAL fact is a claim. if nobody checked it, ⊥ write it — the next person treats it as researched. 2 invented TD citations shipped ∈ this catalogue before a survey caught them.
 V187: `index.test.ts`'s type list catches a node registered w/ the wrong name. it ⊥ catch WRITTEN BUT NEVER REGISTERED — a shader + definition can sit unreferenced & every gate stays green. the catalogue-chain sweep is what must own that claim.
 V188: POP survey vs §V104 — TD passes UNMODIFIED attributes downstream BY REFERENCE (copy-on-write); V104 mandates fresh pairs for ∀ a node outputs. V104's REASON is sound (aliased sim state across nodes). its COST is ~80 buffers where TD allocates 12. re-read before P3a allocates — ⊥ inherit the number by accident.
@@ -1077,12 +1078,12 @@ T288|x|deterministic auto-layout as a BUS COMMAND — layered/topological, rank 
 T289|x|`add_node` placement ergonomics: optional `{relativeTo, direction}` ∴ an agent building left-to-right ⊥ invent coordinates. still 1 undo group|V189,V34
 T290|x|MCP server + WebMCP adapters ∈ `src/mcp/**` — transport + schema only. + revision/diagnostic NOTIFICATIONS ∴ an observing agent sees the graph move w/o polling (quasi-realtime, ⊥ command-response)|V192,V39
 T291|x|agent output inspection economics: encoded thumbnails (PNG, bounded long edge) + `describe_output` returning STATS ⊥ pixels (the T236 reduction generalizes). both throttled like `read_points`|V16,V144
-T279|.|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
-T280|.|**Reorder** (2-input channel shuffle). we have ⊥ way to move a value between channels @ all — capability gap, ⊥ convenience|V56,V57
-T281|.|premultiply/unpremultiply as Math modes. we took TD's straight-alpha default w/o its escape hatch ∴ blurring a cutout halos & nothing can fix it|V56
+T279|x|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
+T280|x|**Reorder** (2-input channel shuffle). we have ⊥ way to move a value between channels @ all — capability gap, ⊥ convenience|V56,V57
+T281|x|premultiply/unpremultiply as Math modes. we took TD's straight-alpha default w/o its escape hatch ∴ blurring a cutout halos & nothing can fix it|V56
 T282|x|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 cost — `operation` already `compileTime` & V140 forces 1 blend module|V140,V141
 T283|x|**Limit** — quantize. value → posterize, position → pixelate. 1 neighbourless shader, 2 recognisable looks|-
-T284|.|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
+T284|x|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
 T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampler ∴ the existing `scale: 1/4` preview path aliases. ⊥ hypothetical|V60
 T295|.|**camera matrix + depth attachment** — camera is free (a uniform array, ⊥ IR change); depth is a small real change. EVERYTHING geometric is invisible w/o them ∴ first|V199
 T296|.|pointset EDGE carries a resolved attribute→pair map + capacity + topology. 1 change, 4 payoffs — & it IS the copy-on-write mechanism V197 needs|V197,V19
@@ -1228,6 +1229,8 @@ T62|~|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compile
 wave = barrier. tracks ∈ wave run concurrent. track owns disjoint paths → ⊥ write collision.
 rule: track ⊥ edit file outside owned paths. shared contract frozen @ wave 0.
 cross-track need → raise, ⊥ patch other track path.
+**⊥ `git add -A` | `git add .` while tracks live.** explicit paths ONLY. a track swept 7 files of another session's uncommitted work into its commit; repaired w/ `git restore --staged` (index only, ⊥ worktree) & disclosed. `-A` is ⊥ a convenience here, it is a cross-session data hazard — the sweeping track cannot know what it took.
+
 **GATES THAT LIE — ! know which command actually checks:**
 - bare `tsc --noEmit` @ root checks NOTHING & exits 0 (references-only tsconfig, `files: []`). ! `pnpm typecheck`.
 - `vitest` ⊥ typecheck. a suite is green while the types are red.
