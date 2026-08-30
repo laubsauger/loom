@@ -26,6 +26,17 @@ export type GraphPatchOperation =
   | { op: "removeNodes"; nodeIds: NodeId[] }
   | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId } }
   | { op: "disconnect"; edgeIds: EdgeId[] }
+  /**
+   * The new order of the edges landing on one VARIADIC input port (T225, §V131).
+   *
+   * `edgeIds` is the COMPLETE resulting order, not a move instruction: one drag is one
+   * operation, one patch and one undo entry (§V132, §V15), and the caller never has to do
+   * arithmetic on its siblings. A list that is not exactly the port's current edge set is
+   * REJECTED rather than reconciled — a caller holding a stale list is describing a graph
+   * that no longer exists, and quietly filling in the edges it forgot would produce an
+   * order nobody asked for.
+   */
+  | { op: "reorderEdges"; nodeId: NodeRef; portId: PortId; edgeIds: EdgeId[] }
   | { op: "setParameters"; nodeId: NodeRef; parameters: Record<string, StoredParameter> }
   | { op: "setShaderSource"; nodeId: NodeRef; source: string }
   | { op: "moveNodes"; positions: Record<NodeId, { x: number; y: number }> }

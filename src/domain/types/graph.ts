@@ -97,6 +97,19 @@ export interface GraphEdge {
   id: EdgeId;
   source: { nodeId: NodeId; portId: PortId };
   target: { nodeId: NodeId; portId: PortId };
+  /**
+   * Position among the edges landing on a VARIADIC input port (T225, §V131): 0-based,
+   * dense, and maintained by the patch layer — connect appends, disconnect compacts,
+   * `reorderEdges` permutes.
+   *
+   * Explicit rather than derived from creation order, because for Over and Composite the
+   * layer order IS the operation: an order that follows whichever edge was drawn first
+   * changes what the graph MEANS when someone rewires it, and cannot be corrected without
+   * deleting and redrawing. Absent on an edge into an ordinary port, where "which one is
+   * first" is not a question — and absent on every edge in a document written before this
+   * field existed, which is why an absent order sorts last (§V68, `compareEdgeOrder`).
+   */
+  order?: number;
 }
 
 export interface GraphGroup {

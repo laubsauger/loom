@@ -1,4 +1,5 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
+import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
@@ -616,8 +617,11 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   if (topology.cycles.length > 0) return emptyPlan(stamp(diagnostics), pruned, sourceRows);
 
   const incoming = new Map<NodeId, CompileEdge[]>();
-  for (const edge of [...topology.currentFrameEdges, ...topology.temporalEdges].sort((a, b) =>
-    a.id.localeCompare(b.id),
+  // §V131: a variadic port's inputs arrive in the order the DOCUMENT declares, not in the
+  // order their ids happen to sort — for Over, layer order is the operation. One
+  // comparator, shared with the patch layer that writes the order (T225).
+  for (const edge of [...topology.currentFrameEdges, ...topology.temporalEdges].sort(
+    compareEdgeOrder,
   )) {
     const list = incoming.get(edge.target.nodeId);
     if (list === undefined) incoming.set(edge.target.nodeId, [edge]);

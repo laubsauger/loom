@@ -31,6 +31,13 @@ export function describeOperation(operation: GraphPatchOperation): OperationRow 
       };
     case "disconnect":
       return { kind: operation.op, targets: operation.edgeIds, detail: null };
+    case "reorderEdges":
+      return {
+        kind: operation.op,
+        targets: [`${operation.nodeId}:${operation.portId}`],
+        // The resulting order, which is the whole content of the operation (T225).
+        detail: operation.edgeIds.join(" > "),
+      };
     case "setParameters":
       return {
         kind: operation.op,

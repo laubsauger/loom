@@ -14,6 +14,7 @@ import type {
 } from "../types/patch.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { arePortsCompatible, describePortType } from "../graph/port-compat.ts";
+import { compareEdgeOrder } from "../graph/edge-order.ts";
 import {
   countNodeNameReferences,
   nameBaseFor,
@@ -385,13 +386,20 @@ function executeOperation(
       const doomed = new Set(targets);
       // §V40: incident edges go with the node, in sorted id order, so every actor
       // computes exactly the same resulting document.
+      const orphanedPorts: Array<{ nodeId: NodeId; portId: PortId }> = [];
       for (const edgeId of Object.keys(draft.edges).sort()) {
         const edge = draft.edges[edgeId];
         if (edge === undefined) continue;
         if (doomed.has(edge.source.nodeId) || doomed.has(edge.target.nodeId)) {
+          // The target survives when only the SOURCE died, and its variadic port is now
+          // missing a position (T225). Collected before the delete, compacted after.
+          if (!doomed.has(edge.target.nodeId) && edge.order !== undefined) {
+            orphanedPorts.push({ nodeId: edge.target.nodeId, portId: edge.target.portId });
+          }
           delete draft.edges[edgeId];
         }
       }
+      for (const port of orphanedPorts) compactPortOrder(draft, port.nodeId, port.portId);
       for (const groupId of Object.keys(draft.groups).sort()) {
         const group = draft.groups[groupId];
         if (group === undefined) continue;
@@ -477,17 +485,85 @@ function executeOperation(
         id: edgeId,
         source: { nodeId: sourceNode.id, portId: operation.source.portId },
         target: { nodeId: targetNode.id, portId: operation.target.portId },
+        // §V131: a new layer goes on the END of a variadic port, which is the only
+        // placement that does not reinterpret the layers already there. An ordinary port
+        // has no position to carry, and giving it one would put a number in every
+        // document that means nothing (T225).
+        ...(targetPort.variadic === true ? { order: incoming.length } : {}),
       };
       return;
     }
 
     case "disconnect": {
+      const emptiedPorts: Array<{ nodeId: NodeId; portId: PortId }> = [];
       for (const edgeId of [...new Set(operation.edgeIds)].sort()) {
-        if (draft.edges[edgeId] === undefined) {
+        const edge = draft.edges[edgeId];
+        if (edge === undefined) {
           fail("edge.missing", `edge "${edgeId}" does not exist.`);
+          continue;
+        }
+        if (edge.order !== undefined) {
+          emptiedPorts.push({ nodeId: edge.target.nodeId, portId: edge.target.portId });
         }
         delete draft.edges[edgeId];
       }
+      // Orders stay DENSE (T225): a gap would show in the UI as a missing input index and
+      // would make the next `connect` — which appends at `count` — collide with a
+      // position that is still in use.
+      for (const port of emptiedPorts) compactPortOrder(draft, port.nodeId, port.portId);
+      return;
+    }
+
+    case "reorderEdges": {
+      const node = requireNode(operation.nodeId);
+      const port = registry.port(node.type, operation.portId, "input");
+      if (port === undefined) {
+        fail("port.missing", `"${node.type}" has no input port "${operation.portId}".`, {
+          nodeId: node.id,
+          portId: operation.portId,
+        });
+        return;
+      }
+      if (port.variadic !== true) {
+        fail(
+          "port.notVariadic",
+          `input "${operation.portId}" on "${node.id}" takes one edge, so its inputs have no order.`,
+          {
+            nodeId: node.id,
+            portId: operation.portId,
+            suggestion: "Only a variadic port carries an input order (§V131).",
+          },
+        );
+        return;
+      }
+
+      // The operation states the port's COMPLETE resulting order, so anything other than a
+      // permutation of what is actually there is a caller working from a stale reading —
+      // refused rather than reconciled, because filling in the edges it forgot would
+      // produce an order nobody asked for.
+      const present = incomingEdges(draft, node.id, operation.portId).map((edge) => edge.id);
+      const requested = operation.edgeIds;
+      const sameSet =
+        requested.length === present.length &&
+        new Set(requested).size === requested.length &&
+        requested.every((edgeId) => present.includes(edgeId));
+      if (!sameSet) {
+        fail(
+          "edge.orderMismatch",
+          `reorder must list exactly the ${present.length} edge(s) on "${node.id}:${operation.portId}".`,
+          {
+            nodeId: node.id,
+            portId: operation.portId,
+            suggestion: "Re-read the port's edges and send the full order (§V131).",
+          },
+        );
+        return;
+      }
+
+      requested.forEach((edgeId, position) => {
+        const edge = draft.edges[edgeId];
+        if (edge !== undefined) edge.order = position;
+      });
       return;
     }
 
@@ -797,6 +873,13 @@ function resolveMembers(
   return [...resolved].sort();
 }
 
+/**
+ * Every edge on one input port, in the order the consuming node sees them (T225).
+ *
+ * Sorted by `compareEdgeOrder` rather than by id: the document layer and the compiler
+ * answer "which layer is first" with the same function, so a reorder cannot mean one
+ * thing in the inspector and another on the GPU.
+ */
 function incomingEdges(draft: GraphDocument, nodeId: NodeId, portId: PortId): GraphEdge[] {
   const edges: GraphEdge[] = [];
   for (const edgeId of Object.keys(draft.edges).sort()) {
@@ -804,5 +887,12 @@ function incomingEdges(draft: GraphDocument, nodeId: NodeId, portId: PortId): Gr
     if (edge === undefined) continue;
     if (edge.target.nodeId === nodeId && edge.target.portId === portId) edges.push(edge);
   }
-  return edges;
+  return edges.sort(compareEdgeOrder);
+}
+
+/** Renumbers a variadic port's surviving edges to 0..n-1, preserving their relative order. */
+function compactPortOrder(draft: GraphDocument, nodeId: NodeId, portId: PortId): void {
+  incomingEdges(draft, nodeId, portId).forEach((edge, position) => {
+    if (edge.order !== position) edge.order = position;
+  });
 }

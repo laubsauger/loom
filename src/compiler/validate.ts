@@ -281,6 +281,9 @@ export function validateGraph(
       source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
       target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
       temporal: isTemporalOutput(source.definition, edge.source.portId),
+      // T225/§V131: the variadic input order rides along, or the compiler would fold a
+      // Composite's layers in whatever order their ids happened to sort in.
+      ...(edge.order === undefined ? {} : { order: edge.order }),
     });
   }
 

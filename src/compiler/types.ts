@@ -176,6 +176,13 @@ export interface CompileEdge {
   readonly target: { readonly nodeId: NodeId; readonly portId: PortId };
   /** True when the source output is declared temporal: it carries the PREVIOUS frame. */
   readonly temporal: boolean;
+  /**
+   * The edge's position on a VARIADIC target port (T225, §V131), carried through from the
+   * document. Absent on an ordinary port, and on documents written before the field
+   * existed — `compareEdgeOrder` puts those last, which is exactly the id order the
+   * compiler used before.
+   */
+  readonly order?: number;
 }
 
 /** What a node's `compile()` sees on one of its inputs. */

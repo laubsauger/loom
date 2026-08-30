@@ -1,4 +1,6 @@
 export { arePortsCompatible, describePortType } from "./port-compat.ts";
+export { compareEdgeOrder, edgeOrderKey, incomingEdgesInOrder } from "./edge-order.ts";
+export type { OrderableEdge } from "./edge-order.ts";
 export { createIdFactory, createSequentialIdFactory } from "./ids.ts";
 export type { IdFactory } from "./ids.ts";
 export { actorKeyOf, createGraphStore, emptyGraph } from "./store.ts";

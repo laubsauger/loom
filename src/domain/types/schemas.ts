@@ -144,6 +144,12 @@ export const graphEdgeSchema = z.object({
   id: z.string().min(1),
   source: endpoint,
   target: endpoint,
+  /**
+   * Position on a variadic input port (T225, §V131). Optional so a document written
+   * before the field existed still validates (§V68); non-negative integers only, because
+   * the value is an index the UI shows and a node reads as "input 1, input 2".
+   */
+  order: z.number().int().nonnegative().optional(),
 });
 
 export const graphGroupSchema = z.object({
@@ -279,6 +285,16 @@ export const graphPatchOperationSchema = z.discriminatedUnion("op", [
     })
     .strict(),
   z.object({ op: z.literal("disconnect"), edgeIds: z.array(z.string().min(1)) }).strict(),
+  z
+    .object({
+      op: z.literal("reorderEdges"),
+      nodeId: refString,
+      portId: z.string().min(1),
+      // The complete resulting order (§V131). Emptiness is legal at the schema layer and
+      // refused at apply time, where the port's actual edge set is known.
+      edgeIds: z.array(z.string().min(1)),
+    })
+    .strict(),
   z.object({ op: z.literal("setParameters"), nodeId: refString, parameters: patchParameters }).strict(),
   z.object({ op: z.literal("setShaderSource"), nodeId: refString, source: z.string() }).strict(),
   z.object({ op: z.literal("moveNodes"), positions: z.record(patchPoint) }).strict(),

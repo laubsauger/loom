@@ -58,6 +58,12 @@ export function operationClass(operation: GraphPatchOperation): PatchOperationCl
     case "addGroup":
     case "removeGroups":
       return "structural";
+    // `reorderEdges` is STRUCTURAL although it creates and destroys nothing: it is a
+    // statement about the exact set of edges on a port, so a concurrent connect or
+    // disconnect there invalidates it (T225, §V131). Classifying it as a value edit would
+    // let a reorder computed against three layers land on four.
+    case "reorderEdges":
+      return "structural";
     // `setNodeSize` is here for the same reason `moveNodes` is (T208, §V190): a size is
     // layout. It changes what the canvas draws and nothing the compiler reads, so it
     // contends with an edit to the same node and with nobody's structural work.
@@ -150,6 +156,23 @@ export function touchedEntities(
 
     case "disconnect": {
       for (const edgeId of operation.edgeIds) into.add(`${EDGE_ENTITY_PREFIX}${edgeId}`);
+      return into;
+    }
+
+    case "reorderEdges": {
+      node(operation.nodeId);
+      // Every edge on the port, not only the ones named: the operation asserts what the
+      // port's full contents are, so an edge someone else just added or removed there is
+      // an overlap even though this patch never mentions it (the same reason `connect`
+      // reaches for the port's occupants).
+      for (const edgeId of operation.edgeIds) into.add(`${EDGE_ENTITY_PREFIX}${edgeId}`);
+      if (!isTemp(operation.nodeId)) {
+        for (const edge of Object.values(graph.edges)) {
+          if (edge.target.nodeId === operation.nodeId && edge.target.portId === operation.portId) {
+            into.add(`${EDGE_ENTITY_PREFIX}${edge.id}`);
+          }
+        }
+      }
       return into;
     }
 
