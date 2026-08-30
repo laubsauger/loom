@@ -200,7 +200,16 @@
 }
 
 .saveRow .search {
+  /* The input yields; the button keeps its label. `min-width: 0` is what lets a
+     flex item shrink below its content — without it the input holds its intrinsic
+     width and pushes the button off the edge. */
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+.saveRow > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .row {
@@ -211,8 +220,15 @@
 }
 
 .row .item {
+  /*
+   * Same priority rule as `.item` above, which this overrides: the NAME wins.
+   * It was `1fr auto auto`, so both meta columns took their full content width
+   * and the name collapsed to a single character. The version is tiny and fixed;
+   * the port/param summary is what gives way.
+   */
   flex: 1 1 auto;
-  grid-template-columns: 1fr auto auto;
+  min-width: 0;
+  grid-template-columns: minmax(6rem, 1fr) auto minmax(0, auto);
   cursor: default;
 }
 
