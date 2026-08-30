@@ -23,16 +23,15 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@domain/*": ["src/domain/*"],
-      "@compiler/*": ["src/compiler/*"],
-      "@runtime/*": ["src/runtime/*"],
-      "@editor/*": ["src/editor/*"],
-      "@nodes/*": ["src/nodes/*"],
-      "@ui/*": ["src/ui/*"],
-      "@agent/*": ["src/agent/*"]
+      "@/*": ["./src/*"],
+      "@domain/*": ["./src/domain/*"],
+      "@compiler/*": ["./src/compiler/*"],
+      "@runtime/*": ["./src/runtime/*"],
+      "@editor/*": ["./src/editor/*"],
+      "@nodes/*": ["./src/nodes/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@agent/*": ["./src/agent/*"]
     }
   },
   "include": ["src"]
