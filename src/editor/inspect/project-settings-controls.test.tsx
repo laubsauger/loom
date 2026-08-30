@@ -41,7 +41,12 @@ const SETTINGS: ProjectSettings = {
   previewLongEdge: 192,
   previewFps: 20,
   fps: 60,
-  limits: { maxResolution: 8192, maxDispatch: 65535 },
+  limits: {
+    maxResolution: 8192,
+    maxDispatch: 65_535,
+    maxBufferBytes: 268_435_456,
+    memoryBudgetBytes: 1_073_741_824,
+  },
 };
 
 const read = (relative: string): string =>
