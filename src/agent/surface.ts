@@ -106,6 +106,16 @@ const ALL_TOOLS: readonly AgentTool[] = [
 /** Tool kind → the presence state the UI shows while it runs (§V42). */
 const ACTIVITY = { read: "planning", mutate: "editing", workflow: "compiling" } as const;
 
+/**
+ * The zod input schema of one tool, for adapters that must SPEAK schema — an MCP
+ * server's `tools/list` publishes JSON Schema derived from exactly this (T290, §V39).
+ * The surface itself stays transport-free (§V192); this is a read of what already
+ * exists, not a new declaration.
+ */
+export function toolInputSchema(name: string): z.ZodType<unknown> | null {
+  return ALL_TOOLS.find((tool) => tool.name === name)?.inputSchema ?? null;
+}
+
 export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolSurface {
   const { bus, actor, projectId } = options;
   const ports: AgentPorts = options.ports ?? {};

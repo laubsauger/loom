@@ -5,6 +5,7 @@ import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { registerWebMcp } from "../mcp/webmcp.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -77,7 +78,7 @@ export function useAgentSurface(runtime: AppRuntime, state: AgentSurfaceState): 
     });
   }, [runtime]);
 
-  return useMemo(
+  const surface = useMemo(
     () =>
       createAgentToolSurface({
         bus: runtime.bus,
@@ -90,4 +91,14 @@ export function useAgentSurface(runtime: AppRuntime, state: AgentSurfaceState): 
       }),
     [runtime],
   );
+
+  // T290 (§V192): publish the SAME surface to the browser's model-context API, so an
+  // in-tab agent drives the live canvas. Feature-detected; a browser without WebMCP
+  // registers nothing and nothing changes. Mounted here, in the same seam that builds
+  // the surface, because "built, tested, never wired" is B12's exact shape.
+  useEffect(() => {
+    registerWebMcp(surface);
+  }, [surface]);
+
+  return surface;
 }
