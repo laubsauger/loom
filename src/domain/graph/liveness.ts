@@ -3,8 +3,7 @@ import type { NodeId } from "../types/ids.ts";
 import type { StoredParameter } from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
-import { parseExpression, type ExpressionAst } from "../expressions/index.ts";
-import { isParameterSlot } from "../parameters/slots.ts";
+import { bindingTargets, channelTargetName, opReferenceNames } from "./parameter-dependencies.ts";
 
 /**
  * THE liveness answer (T268, §V173b).
@@ -48,48 +47,22 @@ export interface LivenessResult {
   readonly dead: ReadonlyArray<NodeId>;
 }
 
-/** `op('name')` targets in one expression source. Parse-based; regex fallback for legacy text. */
-export function opReferenceNames(source: string): string[] {
-  const parsed = parseExpression(source);
-  if (parsed.ok) {
-    const names: string[] = [];
-    const walk = (ast: ExpressionAst): void => {
-      switch (ast.kind) {
-        case "opRef":
-          names.push(ast.name);
-          return;
-        case "unary":
-          walk(ast.operand);
-          return;
-        case "binary":
-          walk(ast.left);
-          walk(ast.right);
-          return;
-        default:
-          return;
-      }
-    };
-    walk(parsed.ast);
-    return names;
-  }
-  // A stored source the current grammar refuses (older document): the reference is
-  // still a dependency, so a syntactic scan beats pretending it is not there.
-  return [...source.matchAll(/op\(\s*(['"])(.+?)\1\s*\)/g)].map((match) => match[2] ?? "");
-}
-
-/** Names this node's ACTIVE bindings depend on: driven channels + op() references. */
+/**
+ * Names this node's ACTIVE bindings depend on: driven channels + op() references.
+ *
+ * Active bindings only, matching §V110's convention: a retained payload is data, not a
+ * dependency, and activating it is an edit that re-runs this.
+ *
+ * The driven half goes through `channelTargetName` (T248) and used not to. A channel is
+ * addressed `name` or `name:channel`, and matching the WHOLE address against node names
+ * meant a Mouse driving a parameter through `mouse1:x` conferred no liveness at all — the
+ * node read DEAD while it was visibly moving the picture. The rule was implemented in the
+ * value-graph resolver and nowhere else; it now has one spelling that both reach.
+ */
 function referencedNames(node: LivenessNode): string[] {
-  const names: string[] = [];
-  for (const stored of Object.values(node.parameters)) {
-    if (!isParameterSlot(stored)) continue;
-    const binding = stored.bindings[stored.mode];
-    if (binding === undefined) continue;
-    // Active bindings only, matching §V110's convention: a retained payload is data,
-    // not a dependency, and activating it is an edit that re-runs this.
-    if (binding.kind === "driven") names.push(binding.channel);
-    if (binding.kind === "expression") names.push(...opReferenceNames(binding.source));
-  }
-  return names;
+  return bindingTargets(node.parameters).map(({ kind, address }) =>
+    kind === "driven" ? channelTargetName(address) : address,
+  );
 }
 
 export function computeLiveness(
@@ -147,3 +120,10 @@ export function documentLiveness(graph: GraphDocument, registry: NodeRegistryVie
   }
   return computeLiveness(nodes, producers);
 }
+
+/**
+ * Re-exported where it has always been imported from. It MOVED to
+ * `parameter-dependencies.ts` (T248) because that module owns the binding walk and
+ * importing it back the other way would make the two files a cycle.
+ */
+export { opReferenceNames };

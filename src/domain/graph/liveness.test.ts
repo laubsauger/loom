@@ -97,6 +97,22 @@ describe("documentLiveness (T268, §V173b)", () => {
     expect(alive.has("mod" as NodeId)).toBe(false);
   });
 
+  it("a driven slot naming an explicit CHANNEL keeps its value node alive (T248)", () => {
+    // `mouse1:x` addresses one channel of a multi-channel source. Matching the WHOLE
+    // address against node names found nothing, so a Mouse visibly moving the picture
+    // read as DEAD — §V154's bug in the other binding mode.
+    const graph = graphOf(
+      [
+        node("gen", "blur", { parameters: { size: drivenBy("mouse1:x") } as GraphNode["parameters"] }),
+        node("sink", "output"),
+        { ...node("pointer", "mouse"), label: "mouse1" },
+      ],
+      [["gen", "out", "sink", "input"]],
+    );
+    const { alive } = documentLiveness(graph, registry);
+    expect(alive.has("pointer" as NodeId)).toBe(true);
+  });
+
   it("chains: driven -> value source whose own slot references another value source", () => {
     const graph = graphOf(
       [

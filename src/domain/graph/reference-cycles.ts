@@ -1,9 +1,8 @@
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { GraphDocument, GraphNode } from "../types/graph.ts";
+import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
-import { isParameterSlot } from "../parameters/slots.ts";
-import { opReferenceNames } from "./liveness.ts";
-import { nodeNames } from "./names.ts";
+import { dependenciesFrom, parameterDependencies } from "./parameter-dependencies.ts";
+import type { ParameterDependency } from "./parameter-dependencies.ts";
 
 /**
  * Authoring-time `op()` reference cycles (T331, §V152, §V244).
@@ -41,55 +40,23 @@ import { nodeNames } from "./names.ts";
  * from how people build a network.
  */
 
-/** One reference: the parameter that carries it, and the node it reaches. */
-interface ReferenceEdge {
-  readonly from: NodeId;
-  readonly parameterKey: string;
-  readonly to: NodeId;
-}
-
 /**
- * One node's ACTIVE `op()` references, as edges leaving it.
+ * The cycle graph is the REFERENCE half of `parameterDependencies` (T248).
  *
- * Active bindings only, matching §V110's convention and `liveness.ts`: a retained
- * expression on a parameter sitting in Constant is data, not a dependency (§V108), and
- * activating it is itself a patch which re-runs this check. Component slots (`color.r`,
- * §V113) are ordinary carriers of an expression and are walked like any other key.
+ * `driven` edges are excluded on purpose, and this is the one place the two relationships
+ * are ruled on differently. An `op()` chain resolves through `resolveParameters` and can
+ * recurse forever, which is the whole reason this gate exists; a `driven` channel resolves
+ * through the value graph, which has its own topological order and its own cycle rejection
+ * (§V179). Refusing a driven loop here would refuse documents that layer handles.
  */
-function outgoingFrom(
-  node: GraphNode,
-  nodeId: NodeId,
-  byName: ReadonlyMap<string, NodeId>,
-): ReferenceEdge[] {
-  const outgoing: ReferenceEdge[] = [];
-  for (const key of Object.keys(node.parameters).sort()) {
-    const stored = node.parameters[key];
-    if (stored === undefined || !isParameterSlot(stored)) continue;
-    const binding = stored.bindings[stored.mode];
-    if (binding?.kind !== "expression") continue;
-    for (const name of opReferenceNames(binding.source)) {
-      const target = byName.get(name);
-      // A reference to a name nothing carries is a dangling reference, reported at
-      // resolution. It cannot close a loop, so it is not this function's business.
-      if (target === undefined) continue;
-      outgoing.push({ from: nodeId, parameterKey: key, to: target });
-    }
+const isReference = (dependency: ParameterDependency): boolean => dependency.kind === "reference";
+
+function referenceEdges(graph: GraphDocument): Map<NodeId, ParameterDependency[]> {
+  const edges = new Map<NodeId, ParameterDependency[]>();
+  for (const [nodeId, outgoing] of parameterDependencies(graph)) {
+    const references = outgoing.filter(isReference);
+    if (references.length > 0) edges.set(nodeId, references);
   }
-  return outgoing;
-}
-
-/** Every such reference in the document, keyed by the node that carries it. */
-function referenceEdges(graph: GraphDocument): Map<NodeId, ReferenceEdge[]> {
-  const byName = nodeNames(graph);
-  const edges = new Map<NodeId, ReferenceEdge[]>();
-
-  for (const nodeId of Object.keys(graph.nodes).sort()) {
-    const node = graph.nodes[nodeId];
-    if (node === undefined) continue;
-    const outgoing = outgoingFrom(node, nodeId, byName);
-    if (outgoing.length > 0) edges.set(nodeId, outgoing);
-  }
-
   return edges;
 }
 
@@ -106,13 +73,13 @@ const displayName = (graph: GraphDocument, nodeId: NodeId): string =>
  * what §V152 asks the refusal to carry.
  */
 function loopThrough(
-  edges: ReadonlyMap<NodeId, ReferenceEdge[]>,
+  edges: ReadonlyMap<NodeId, ParameterDependency[]>,
   root: NodeId,
-): ReferenceEdge[] | null {
+): ParameterDependency[] | null {
   const explored = new Set<NodeId>([root]);
-  const stack: ReferenceEdge[] = [];
+  const stack: ParameterDependency[] = [];
 
-  const walk = (from: NodeId): ReferenceEdge[] | null => {
+  const walk = (from: NodeId): ParameterDependency[] | null => {
     for (const edge of edges.get(from) ?? []) {
       stack.push(edge);
       if (edge.to === root) return [...stack];
@@ -130,14 +97,14 @@ function loopThrough(
 }
 
 /** `b.gain → a.gain → b` — the path §V152 wants the refusal to name. */
-function pathText(graph: GraphDocument, loop: readonly ReferenceEdge[], root: NodeId): string {
+function pathText(graph: GraphDocument, loop: readonly ParameterDependency[], root: NodeId): string {
   const hops = loop.map((edge) => `${displayName(graph, edge.from)}.${edge.parameterKey}`);
   return [...hops, displayName(graph, root)].join(" → ");
 }
 
 function cycleDiagnostic(
   graph: GraphDocument,
-  loop: readonly ReferenceEdge[],
+  loop: readonly ParameterDependency[],
   root: NodeId,
 ): RuntimeDiagnostic {
   return {
@@ -202,8 +169,7 @@ export function referenceCyclesThrough(graph: GraphDocument, nodeId: NodeId): Ru
    * short-circuit that common gesture would parse every expression in the document once
    * per node created.
    */
-  const byName = nodeNames(graph);
-  if (outgoingFrom(node, nodeId, byName).length === 0) return [];
+  if (!dependenciesFrom(graph, node, nodeId).some(isReference)) return [];
 
   const loop = loopThrough(referenceEdges(graph), nodeId);
   return loop === null ? [] : [cycleDiagnostic(graph, loop, nodeId)];

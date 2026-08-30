@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+
+import type { GraphDocument, GraphNode } from "../types/graph.ts";
+import { channelTargetName, parameterDependencies } from "./parameter-dependencies.ts";
+
+/**
+ * The ONE traversal behind the cycle gate, liveness, and the reference lines (T248).
+ *
+ * What is asserted here is mostly about AGREEMENT: the same walk answers "is this a
+ * cycle", "is this node dead" and "is there a line between these two", so a case that
+ * one consumer sees and another does not is the class of bug this module exists to make
+ * impossible.
+ */
+
+const expression = (source: string) => ({
+  mode: "expression" as const,
+  bindings: { expression: { kind: "expression" as const, source } },
+});
+const driven = (channel: string) => ({
+  mode: "driven" as const,
+  bindings: { driven: { kind: "driven" as const, channel } },
+});
+
+function node(id: string, label: string, parameters: GraphNode["parameters"] = {}): GraphNode {
+  return { id, type: "test.node", definitionVersion: 1, position: { x: 0, y: 0 }, label, parameters };
+}
+
+function graphOf(...nodes: GraphNode[]): GraphDocument {
+  return {
+    revision: 1,
+    nodes: Object.fromEntries(nodes.map((entry) => [entry.id, entry])),
+    edges: {},
+    groups: {},
+  };
+}
+
+describe("channelTargetName", () => {
+  it("takes the node name out of a channel address", () => {
+    expect(channelTargetName("mouse1")).toBe("mouse1");
+    expect(channelTargetName("mouse1:x")).toBe("mouse1");
+    // Everything after the FIRST colon is the channel, whatever it contains.
+    expect(channelTargetName("lfo1:a:b")).toBe("lfo1");
+  });
+});
+
+describe("parameterDependencies (§V154)", () => {
+  it("finds an op() reference and labels it", () => {
+    const src = node("n1", "src");
+    const subject = node("n2", "a", { gain: expression("op('src').par.gain * 2") });
+    const found = parameterDependencies(graphOf(src, subject)).get("n2");
+    expect(found).toEqual([
+      { from: "n2", parameterKey: "gain", kind: "reference", address: "src", to: "n1" },
+    ]);
+  });
+
+  it("finds a driven channel and labels it differently", () => {
+    // Both are "this parameter reads that node" for the PICTURE; only one of them is a
+    // cycle the reference gate rules on, which is what `kind` is carrying.
+    const lfo = node("n1", "lfo1");
+    const subject = node("n2", "a", { gain: driven("lfo1") });
+    const found = parameterDependencies(graphOf(lfo, subject)).get("n2");
+    expect(found?.[0]).toMatchObject({ kind: "driven", address: "lfo1", to: "n1" });
+  });
+
+  it("resolves a driven channel addressed with an explicit channel", () => {
+    const mouse = node("n1", "mouse1");
+    const subject = node("n2", "a", { gain: driven("mouse1:x") });
+    const found = parameterDependencies(graphOf(mouse, subject)).get("n2");
+    // The dependency is on the NODE; the address keeps the channel, because a line's
+    // tooltip and a diagnostic both want to say which channel was named.
+    expect(found?.[0]).toMatchObject({ address: "mouse1:x", to: "n1" });
+  });
+
+  it("walks COMPONENT slots, so a channel-driven colour is a dependency (§V113)", () => {
+    const lfo = node("n1", "lfo1");
+    const subject = node("n2", "a", { "color.g": driven("lfo1") });
+    const found = parameterDependencies(graphOf(lfo, subject)).get("n2");
+    expect(found?.[0]).toMatchObject({ parameterKey: "color.g", to: "n1" });
+  });
+
+  it("ignores a RETAINED binding on a parameter in another mode (§V108)", () => {
+    const src = node("n1", "src");
+    const subject = node("n2", "a", {
+      gain: {
+        mode: "static",
+        bindings: {
+          static: { kind: "static", value: 1 },
+          expression: { kind: "expression", source: "op('src').par.gain" },
+        },
+      },
+    });
+    expect(parameterDependencies(graphOf(src, subject)).get("n2")).toBeUndefined();
+  });
+
+  it("drops a dependency whose name resolves to nothing", () => {
+    // Reported on the parameter, at resolution. It cannot close a cycle and there is
+    // nowhere to draw a line TO.
+    const subject = node("n1", "a", { gain: expression("op('ghost').par.gain") });
+    expect(parameterDependencies(graphOf(subject)).get("n1")).toBeUndefined();
+  });
+
+  it("keeps both relationships from one node, in parameter order", () => {
+    const src = node("n1", "src");
+    const lfo = node("n2", "lfo1");
+    const subject = node("n3", "a", {
+      amount: driven("lfo1"),
+      gain: expression("op('src').par.gain"),
+    });
+    const found = parameterDependencies(graphOf(src, lfo, subject)).get("n3");
+    expect(found?.map((entry) => entry.parameterKey)).toEqual(["amount", "gain"]);
+    expect(found?.map((entry) => entry.kind)).toEqual(["driven", "reference"]);
+  });
+});
