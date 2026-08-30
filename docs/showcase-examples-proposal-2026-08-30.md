@@ -314,6 +314,36 @@ that the kernel is the piece.
 
 ---
 
+### D1 — **Living Skin** (T418 / E21) — **BUILT AND ABANDONED, 2026-08-30**
+
+> **Outcome: does not land. Do not rebuild from this pitch without the unblock below.**
+>
+> Nine tuning passes on a real device. Every one traded one artifact for another, because
+> the cause is structural rather than aesthetic: **`textureToAttribute` reads with
+> `textureLoad` — nearest, unfiltered — and a reaction-diffusion is a near-binary field.**
+> A displaced SURFACE is then trapped between two failures with no setting in between.
+> Mesh coarser than the field: a front narrower than the vertex spacing falls between two
+> vertices and renders as a spike (the first build was a sea urchin). Mesh finer: every
+> vertex inside one texel shares a height, so the surface steps, and no upstream blur can
+> remove it because the quantisation happens at the READ. The only stable point is one
+> vertex per texel, which forces a rectangular sheet — and then the field's feature size
+> IS the frame's feature size, so the result is a bas-relief of a 2D picture rather than
+> the crossing the pitch promised. A blur wide enough to fix the undersampling is a blur
+> wide enough to delete the chemistry.
+>
+> E20 survives the same bridge only because **noise is smooth at every scale**; a
+> simulation is not. The pitch was wrong to assume the two were interchangeable.
+>
+> The unblock is one of: a FILTERED read mode on `textureToAttribute` (its `textureLoad`
+> is deliberate, for r32float data fields — so this wants to be a mode, not a change), or
+> a normal-mapped shading path so relief does not have to come from displaced vertices at
+> all. Neither is small enough to have done inside this task.
+>
+> What survived: E27 Relief was built on the same bridge and works, because POINTS have no
+> shared edge to tear or facet. That is the finding worth keeping.
+
+The pitch as originally written follows.
+
 ### D1 — **Living Skin** (T418 / E21, re-read against today)
 
 **What you see.** A lit, shaded organic form — somewhere between a coral and a lung —
