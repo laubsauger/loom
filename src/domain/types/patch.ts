@@ -22,7 +22,7 @@ export type GroupRef = GroupId | TempId;
  * boundary designed to carry them. A bare value stays legal: it IS a `StoredParameter`.
  */
 export type GraphPatchOperation =
-  | { op: "addNode"; ref: NodeRef; type: string; position: { x: number; y: number }; parameters?: Record<string, StoredParameter> }
+  | { op: "addNode"; ref: NodeRef; type: string; position: { x: number; y: number }; parameters?: Record<string, StoredParameter>; label?: string }
   | { op: "removeNodes"; nodeIds: NodeId[] }
   | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId } }
   | { op: "disconnect"; edgeIds: EdgeId[] }

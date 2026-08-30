@@ -4,6 +4,7 @@ import type { StoredParameter } from "../types/parameters.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
+import { nodeNames, rewriteNodeNameReferences } from "../graph/names.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
 
 /**
@@ -79,6 +80,8 @@ export interface ClipboardCommandOutput {
 interface ClipboardNode {
   readonly sourceId: NodeId;
   readonly type: string;
+  /** The NAME (§V129) — the copy keeps it when free, renames from it when taken (B44). */
+  readonly label: string | undefined;
   readonly position: { x: number; y: number };
   /** Stored form: a copied node keeps its mode envelopes (T202), not just flat values. */
   readonly parameters: Record<string, StoredParameter>;
@@ -151,6 +154,7 @@ function snapshot(graph: GraphDocument, nodeIds: readonly NodeId[]): Clipboard {
   const nodes = existing(graph, nodeIds).map<ClipboardNode>((node) => ({
     sourceId: node.id,
     type: node.type,
+    label: node.label,
     position: { ...node.position },
     parameters: { ...node.parameters },
     ui: node.ui === undefined ? undefined : { ...node.ui },
@@ -161,21 +165,99 @@ function snapshot(graph: GraphDocument, nodeIds: readonly NodeId[]): Clipboard {
 }
 
 /**
+ * The copies' names and reference rewrites, decided BEFORE the patch is built (B44/T371).
+ *
+ * The clipboard's parameters are copied verbatim, so a pasted node's op()/driven/source
+ * reference still names the SOURCE node — the copy would silently drive the original, or
+ * dangle if the original is gone. Every copied label is kept when free and renamed from
+ * its base when taken, and references BETWEEN clipboard members follow the rename via the
+ * clause-complete rewrite (§V128); a reference to a node outside the clipboard stays,
+ * deliberately — half a chain pasted next to its driver should still be driven by it.
+ */
+function mintCopies(
+  clipboard: Clipboard,
+  graph: GraphDocument,
+): Map<NodeId, { label: string | undefined; parameters: Record<string, StoredParameter> }> {
+  const taken = new Set(nodeNames(graph).keys());
+  const clipboardLabels = new Set<string>();
+  for (const node of clipboard.nodes) {
+    if (node.label !== undefined) clipboardLabels.add(node.label);
+  }
+
+  const finals = new Map<NodeId, string | undefined>();
+  const renames: Array<{ oldName: string; newName: string }> = [];
+  for (const node of clipboard.nodes) {
+    if (node.label === undefined) {
+      finals.set(node.sourceId, undefined);
+      continue;
+    }
+    if (!taken.has(node.label)) {
+      finals.set(node.sourceId, node.label);
+      taken.add(node.label);
+      continue;
+    }
+    const stripped = node.label.replace(/[0-9]+$/, "");
+    const base = stripped.length > 0 ? stripped : node.label;
+    let candidate = node.label;
+    for (let ordinal = 1; ; ordinal += 1) {
+      candidate = `${base}${ordinal}`;
+      if (!taken.has(candidate) && !clipboardLabels.has(candidate)) break;
+    }
+    finals.set(node.sourceId, candidate);
+    taken.add(candidate);
+    renames.push({ oldName: node.label, newName: candidate });
+  }
+
+  // Fresh parameter records per call: the clipboard outlives this paste, and the rewrite
+  // below must not edit what the NEXT paste will copy from.
+  const standIns: Record<string, GraphNode> = {};
+  for (const node of clipboard.nodes) {
+    standIns[node.sourceId] = {
+      id: node.sourceId,
+      type: node.type,
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: { ...node.parameters },
+    };
+  }
+  const scope: GraphDocument = { revision: 0 as GraphDocument["revision"], nodes: standIns, edges: {}, groups: {} };
+  for (const rename of renames) rewriteNodeNameReferences(scope, rename.oldName, rename.newName);
+
+  const copies = new Map<NodeId, { label: string | undefined; parameters: Record<string, StoredParameter> }>();
+  for (const node of clipboard.nodes) {
+    copies.set(node.sourceId, {
+      label: finals.get(node.sourceId),
+      parameters: standIns[node.sourceId]?.parameters ?? { ...node.parameters },
+    });
+  }
+  return copies;
+}
+
+/**
  * Turns a clipboard into one patch: add every node under a temp id, restore the
  * instance state `addNode` cannot carry, then reconnect the copied edges by temp id
- * (§V35). One patch, so it is one undo group (§V34).
+ * (§V35). One patch, so it is one undo group (§V34). The label rides the `addNode` op
+ * explicitly (§V324): minted here against `graph`, so replaying the patch recreates the
+ * same names instead of reclaiming whatever is free at apply time.
  */
-function recreateOperations(clipboard: Clipboard, offset: { x: number; y: number }): GraphPatchOperation[] {
+function recreateOperations(
+  clipboard: Clipboard,
+  offset: { x: number; y: number },
+  graph: GraphDocument,
+): GraphPatchOperation[] {
   const ref = (sourceId: NodeId): `$${string}` => `$copy:${sourceId}`;
   const operations: GraphPatchOperation[] = [];
+  const copies = mintCopies(clipboard, graph);
 
   for (const node of clipboard.nodes) {
+    const copy = copies.get(node.sourceId);
     operations.push({
       op: "addNode",
       ref: ref(node.sourceId),
       type: node.type,
       position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
-      parameters: { ...node.parameters },
+      parameters: copy?.parameters ?? { ...node.parameters },
+      ...(copy?.label === undefined ? {} : { label: copy.label }),
     });
     // `addNode` carries type, position and parameters only. Everything else the user
     // set on the instance is restored explicitly, or duplicating a node would silently
@@ -339,7 +421,7 @@ export function registerEditorCommands(bus: ShaderloomBus): void {
       }
       const step = pasteCount + 1;
       const offset = input.offset ?? { x: CASCADE.x * step, y: CASCADE.y * step };
-      const outcome = patchThrough(context, "Paste", recreateOperations(clipboard, offset));
+      const outcome = patchThrough(context, "Paste", recreateOperations(clipboard, offset, context.graph));
       if (outcome.status === "applied" && !context.dryRun && input.offset === undefined) {
         pasteCount = step;
       }
@@ -357,7 +439,7 @@ export function registerEditorCommands(bus: ShaderloomBus): void {
         return rejected(context.store.getRevision(), "Nothing selected to duplicate.", "selection.empty");
       }
       const offset = input.offset ?? { x: CASCADE.x, y: CASCADE.y };
-      return patchThrough(context, "Duplicate", recreateOperations(copied, offset));
+      return patchThrough(context, "Duplicate", recreateOperations(copied, offset, context.graph));
     },
     rejectionOutput: rejection,
   });

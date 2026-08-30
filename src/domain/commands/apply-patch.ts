@@ -19,6 +19,7 @@ import { compareEdgeOrder } from "../graph/edge-order.ts";
 import {
   countNodeNameReferences,
   nameBaseFor,
+  nodeNames,
   resolveRename,
   rewriteNodeNameReferences,
   uniqueNodeName,
@@ -402,6 +403,21 @@ function executeOperation(
         throw new PatchAbort();
       }
 
+      // §V324 (T371): an explicit label makes the op replayable — the auto-name below is
+      // minted from mutable graph state (it RECLAIMS names deleted nodes held), so a
+      // replayed paste could mint different labels and dangle every reference written
+      // against the first set. Refused, not suffixed, on a collision: a caller that
+      // carries a name has references written against exactly that name.
+      const requested = operation.label?.trim();
+      if (operation.label !== undefined && (requested === undefined || requested.length === 0)) {
+        fail("node.emptyLabel", `an explicit label may not be empty.`, { nodeId });
+        return;
+      }
+      if (requested !== undefined && nodeNames(draft).has(requested)) {
+        fail("node.nameTaken", `the name "${requested}" is already in use.`, { nodeId });
+        return;
+      }
+
       draft.nodes[nodeId] = {
         id: nodeId,
         type: definition.type,
@@ -410,7 +426,7 @@ function executeOperation(
         parameters: { ...defaultParameters(definition.parameters), ...provided },
         // §V129: the label is the NAME — unique per graph, auto-numbered at creation
         // (`noise1`, `noise2`), which is what makes `op('name')` references resolvable.
-        label: uniqueNodeName(draft, nameBaseFor(definition.type)),
+        label: requested ?? uniqueNodeName(draft, nameBaseFor(definition.type)),
       };
       // The new node arrives with a name and, optionally, expressions of its own — both
       // halves a loop needs. The name is the surprising half: numbering reuses a name a

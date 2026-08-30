@@ -143,6 +143,87 @@ describe("copy / cut / paste", () => {
   });
 });
 
+describe("paste rewrites the copies' references to the COPIES (B44/T371, §V320)", () => {
+  /**
+   * The inverted member of B41's class: paste DROPPED labels and copied parameters
+   * verbatim, so a pasted node's op()/driven/source reference still named the SOURCE —
+   * the copy silently drove the original. The gate is §V321-shaped: duplicate a
+   * two-node selection with a reference between them and assert the copy drives the COPY.
+   */
+  async function referenceHarness() {
+    const { createGraphStore } = await import("../../domain/graph/store.ts");
+    const { createDomainBus } = await import("../../domain/commands/index.ts");
+    const { createNodeRegistry } = await import("../../nodes/registry/registry.ts");
+    const { allNodeDefinitions } = await import("../../nodes/definitions/index.ts");
+    const store = createGraphStore();
+    const { bus } = createDomainBus({
+      store,
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+    });
+    // `over` auto-names to `over1` (§V129); the feedback records it by that name (§V285).
+    const seeded = await bus.execute(
+      "graph.applyPatch",
+      patch(bus.store.getRevision(), [
+        { op: "addNode", ref: "$over", type: "over", position: { x: 0, y: 0 } },
+        {
+          op: "addNode",
+          ref: "$echo",
+          type: "feedback",
+          position: { x: 0, y: 100 },
+          parameters: { source: "over1" },
+        },
+      ], "seed"),
+      invocation,
+    );
+    expect(seeded.status).toBe("applied");
+    return {
+      bus,
+      over: seeded.output.createdIds["$over"] as string,
+      echo: seeded.output.createdIds["$echo"] as string,
+    };
+  }
+
+  it("a pasted pair's source reference drives the COPY, not the original", async () => {
+    const { bus, over, echo } = await referenceHarness();
+    await bus.execute("graph.copySelection", { nodeIds: [over, echo] }, invocation);
+    const pasted = await bus.execute("graph.paste", {}, invocation);
+    expect(pasted.status).toBe("applied");
+
+    const overCopy = pasted.output.createdIds[`$copy:${over}`] as string;
+    const echoCopy = pasted.output.createdIds[`$copy:${echo}`] as string;
+    const nodes = bus.store.getGraph().nodes;
+    // The copy renamed away from the original, and its reference followed the rename.
+    expect(nodes[overCopy]?.label).toBe("over2");
+    expect(nodes[echoCopy]?.parameters.source).toBe("over2");
+    // The original loop is untouched.
+    expect(nodes[over]?.label).toBe("over1");
+    expect(nodes[echo]?.parameters.source).toBe("over1");
+  });
+
+  it("a reference to a node OUTSIDE the selection stays on the original, deliberately", async () => {
+    const { bus, echo } = await referenceHarness();
+    await bus.execute("graph.copySelection", { nodeIds: [echo] }, invocation);
+    const pasted = await bus.execute("graph.paste", {}, invocation);
+
+    const echoCopy = pasted.output.createdIds[`$copy:${echo}`] as string;
+    // `over1` was not copied: the pasted feedback still records the original.
+    expect(bus.store.getGraph().nodes[echoCopy]?.parameters.source).toBe("over1");
+  });
+
+  it("cut then paste keeps the names — a free label is kept, not renumbered", async () => {
+    const { bus, over, echo } = await referenceHarness();
+    await bus.execute("graph.cutSelection", { nodeIds: [over, echo] }, invocation);
+    const pasted = await bus.execute("graph.paste", {}, invocation);
+    expect(pasted.status).toBe("applied");
+
+    const nodes = bus.store.getGraph().nodes;
+    const overCopy = pasted.output.createdIds[`$copy:${over}`] as string;
+    const echoCopy = pasted.output.createdIds[`$copy:${echo}`] as string;
+    expect(nodes[overCopy]?.label).toBe("over1");
+    expect(nodes[echoCopy]?.parameters.source).toBe("over1");
+  });
+});
+
 describe("graph.duplicateSelection", () => {
   it("duplicates the selection, offset, edges included", async () => {
     const { bus, solid, blur } = await harnessWithPair();

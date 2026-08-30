@@ -106,6 +106,48 @@ describe("graph.applyPatch — temp ids and undo grouping (§V34, §V35)", () =>
   });
 });
 
+describe("graph.applyPatch — addNode carries its name (§V324, T371)", () => {
+  it("an explicit label is the node's name, verbatim", async () => {
+    const result = await apply([{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 }, label: "hero" }]);
+    expect(result.status).toBe("applied");
+    const nodeId = result.output.createdIds["$a"] as string;
+    expect(graph().nodes[nodeId]?.label).toBe("hero");
+  });
+
+  it("a taken name is refused, not suffixed — the caller wrote references against it", async () => {
+    await apply([{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 }, label: "hero" }]);
+    const result = await apply([{ op: "addNode", ref: "$b", type: "test.solid", position: { x: 100, y: 0 }, label: "hero" }]);
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.map((d) => d.code)).toContain("node.nameTaken");
+    expect(nodeCount()).toBe(1);
+  });
+
+  it("two labelled adds in ONE patch see each other", async () => {
+    const result = await apply([
+      { op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 }, label: "hero" },
+      { op: "addNode", ref: "$b", type: "test.solid", position: { x: 100, y: 0 }, label: "hero" },
+    ]);
+    expect(result.status).toBe("rejected");
+    expect(nodeCount()).toBe(0);
+  });
+
+  it("an empty label is a caller mistake, not a request for the auto-name", async () => {
+    const result = await apply([{ op: "addNode", ref: "$a", type: "test.solid", position: { x: 0, y: 0 }, label: "  " }]);
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.map((d) => d.code)).toContain("node.emptyLabel");
+  });
+
+  it("omitting the label keeps the auto-numbered name, reclaim behaviour included (§V129)", async () => {
+    const first = await apply([addSolid("$a")]);
+    const firstId = first.output.createdIds["$a"] as string;
+    expect(graph().nodes[firstId]?.label).toBe("solid1");
+    await apply([{ op: "removeNodes", nodeIds: [firstId] }]);
+    const second = await apply([addSolid("$b")]);
+    const secondId = second.output.createdIds["$b"] as string;
+    expect(graph().nodes[secondId]?.label).toBe("solid1");
+  });
+});
+
 describe("graph.applyPatch — atomicity (§V32)", () => {
   it("leaves the document completely untouched when the third operation is invalid", async () => {
     const before = graph();

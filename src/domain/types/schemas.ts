@@ -282,6 +282,9 @@ export const graphPatchOperationSchema = z.discriminatedUnion("op", [
       type: z.string().min(1),
       position: patchPoint,
       parameters: patchParameters.optional(),
+      // §V324: an op that creates a named thing may carry the name, so replaying it
+      // (undo→redo, paste) mints the same identity instead of reclaiming a freed one.
+      label: z.string().min(1).optional(),
     })
     .strict(),
   z.object({ op: z.literal("removeNodes"), nodeIds: z.array(z.string().min(1)) }).strict(),
