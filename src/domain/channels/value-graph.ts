@@ -142,10 +142,34 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
         if (member === undefined || node === undefined) continue;
 
         const inputs: Record<PortId, ValueChannels> = {};
+        /** T509: who currently supplies each channel of each port, for the shadow report. */
+        const providers = new Map<string, NodeId>();
         for (const entry of incoming.get(nodeId) ?? []) {
           // Merged over sorted edge ids: later channels win on a name clash, which is
-          // deterministic and lets a multi-wire input compose bags.
-          inputs[entry.port] = { ...(inputs[entry.port] ?? {}), ...(byId.get(entry.source) ?? {}) };
+          // deterministic and lets a multi-wire input compose bags (V457 — the merge
+          // itself is deliberate and stays).
+          const arriving = byId.get(entry.source) ?? {};
+          const existing = inputs[entry.port] ?? {};
+          for (const name of Object.keys(arriving)) {
+            const holder = providers.get(`${entry.port}:${name}`);
+            if (holder !== undefined && holder !== entry.source && name in existing) {
+              // T509: the loser VANISHES with no other symptom — a user wiring two
+              // audio bags into one port watches half their channels disappear. The
+              // behaviour is pinned; the silence was the bug, so this is a diagnostic
+              // and deliberately NOT a behaviour change.
+              const winner = graph.nodes[entry.source]?.label ?? entry.source;
+              const shadowed = graph.nodes[holder]?.label ?? holder;
+              diagnostics.push({
+                severity: "warning",
+                code: "valueGraph.channelShadowed",
+                message: `Value node "${node.label ?? nodeId}" port "${entry.port}": channel "${name}" arrives from both "${shadowed}" and "${winner}"; "${winner}" wins (last edge in id order) and "${shadowed}"'s value is ignored.`,
+                nodeId,
+                suggestion: "Rename one channel upstream, or drop one of the wires — a merged port keeps only one value per name.",
+              });
+            }
+            providers.set(`${entry.port}:${name}`, entry.source);
+          }
+          inputs[entry.port] = { ...existing, ...arriving };
         }
 
         // Frame-scoped, channel-free parameter resolution (see the module note).

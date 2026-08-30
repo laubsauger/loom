@@ -98,6 +98,52 @@ describe("value graph evaluation (T273/T274)", () => {
   });
 });
 
+/**
+ * T509 — the merge stays (V457: last-wins over sorted edge ids, deliberately); the
+ * SILENCE was the bug. Two LFOs both publish `value`; wiring both into one port made
+ * one vanish with no symptom anywhere. The diagnostic names the port, both sources
+ * and the winner — and a clash-free merge stays clean, so the warning cannot become
+ * noise on every composed bag.
+ */
+describe("a shadowed channel says so (T509)", () => {
+  it("two sources supplying one channel name on one port warn, naming winner and loser", () => {
+    const session = createValueGraphSession(registry);
+    const graph = graphOf(
+      [
+        node("lfoA", "lfo"),
+        node("lfoB", "lfo"),
+        node("lag1", "valueLag"),
+      ],
+      [
+        ["lfoA", "out", "lag1", "in"],
+        ["lfoB", "out", "lag1", "in"],
+      ],
+    );
+    const result = session.evaluate(graph, frameAt(0));
+    const shadowed = result.diagnostics.filter((d) => d.code === "valueGraph.channelShadowed");
+    expect(shadowed).toHaveLength(1);
+    expect(shadowed[0]?.severity).toBe("warning");
+    // Sorted edge ids: e1 (lfoB) arrives after e0 (lfoA), so lfoB wins and lfoA is named
+    // as ignored — the exact fact the user needs to pick a wire to cut.
+    expect(shadowed[0]?.message).toContain('"lfoB" wins');
+    expect(shadowed[0]?.message).toContain('"lfoA"');
+    expect(shadowed[0]?.message).toContain('"value"');
+    // And the merge behaviour itself is UNCHANGED: the winner's value flows.
+    expect(shadowed[0]?.nodeId).toBe("lag1");
+  });
+
+  it("a clash-free composition stays silent — the warning is for losses, not for merges", () => {
+    const session = createValueGraphSession(registry);
+    // One source: nothing shadowed, nothing to say.
+    const graph = graphOf(
+      [node("lfoA", "lfo"), node("lag1", "valueLag")],
+      [["lfoA", "out", "lag1", "in"]],
+    );
+    const result = session.evaluate(graph, frameAt(0));
+    expect(result.diagnostics.filter((d) => d.code === "valueGraph.channelShadowed")).toEqual([]);
+  });
+});
+
 describe("stateful stages (T276/T277, §V181)", () => {
   it("lag eases toward the input across frames, and reset() clears the trajectory", () => {
     const graph = graphOf(
