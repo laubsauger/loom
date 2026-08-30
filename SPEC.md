@@ -1059,7 +1059,7 @@ T291|x|agent output inspection economics: encoded thumbnails (PNG, bounded long 
 T279|.|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
 T280|.|**Reorder** (2-input channel shuffle). we have ⊥ way to move a value between channels @ all — capability gap, ⊥ convenience|V56,V57
 T281|.|premultiply/unpremultiply as Math modes. we took TD's straight-alpha default w/o its escape hatch ∴ blurring a cutout halos & nothing can fix it|V56
-T282|.|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 cost — `operation` already `compileTime` & V140 forces 1 blend module|V140,V141
+T282|x|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 cost — `operation` already `compileTime` & V140 forces 1 blend module|V140,V141
 T283|.|**Limit** — quantize. value → posterize, position → pixelate. 1 neighbourless shader, 2 recognisable looks|-
 T284|.|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
 T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampler ∴ the existing `scale: 1/4` preview path aliases. ⊥ hypothetical|V60
