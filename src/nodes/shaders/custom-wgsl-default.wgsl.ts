@@ -40,7 +40,8 @@ struct Params {
 @group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 // Filled by the runtime from FrameEvaluationInput every frame: time, deltaTime,
-// frameIndex, randomSeed, resolution, pointer. There is no other clock here.
+// frameIndex, randomSeed, wallTime, wallDelta, absTime, absFrame, resolution, pointer.
+// time laps with the timeline; absTime keeps growing (T461/T468). No other clock here.
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 // This node's own parameters, updated when you change them on the node.
 @group(0) @binding(3) var<uniform> params: Params;
