@@ -255,3 +255,37 @@ describe("materials (T428) — referenced by name, mapped by wire", () => {
   });
 });
 
+describe("instances mode (T428b)", () => {
+  it("draws a primitive per point with the material shading, capacity instances", () => {
+    const graph = sceneGraph();
+    ((graph.nodes["grid"] as GraphNode).parameters as Record<string, unknown>)["count"] = 64;
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["mode"] = "instances";
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["shape"] = "octahedron";
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["scale"] = 0.1;
+    const compiled = compile(graph);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    expect(draw.instances).toBe(64); // the 8x8 grid's capacity
+    expect(draw.vertexCount).toBe(36);
+    expect(draw.uniforms?.["instance"]).toEqual([0.1, 2, 0, 0]);
+    expect(draw.shader).toContain("shapeVertex");
+  });
+
+  it("maps on instances refuse BY NAME — no uv means no silent no-op (V368)", () => {
+    const graph = sceneGraph({
+      extraNodes: [
+        node("plate", "checker", {}, "plate1"),
+        node("skin", "materialUnlit", {}, "skin1"),
+      ],
+      extraEdges: {
+        m1: { id: "m1", source: { nodeId: "plate", portId: "out" }, target: { nodeId: "skin", portId: "albedo" } },
+      },
+    });
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["mode"] = "instances";
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["material"] = "skin1";
+    const compiled = compile(graph);
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.scene.maps");
+    expect(refusal?.message).toContain("no uv");
+  });
+});
+

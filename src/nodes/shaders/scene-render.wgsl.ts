@@ -169,3 +169,159 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = roughness;\n`}${shading}
 }`;
 }
+
+/**
+ * T428(b): the INSTANCES variant — the T299 primitive mesh (quad/box/octahedron from
+ * the vertex index, per-instance translate from the SoA position buffer, analytic
+ * shape normals) shaded through the same generated material/light block the surface
+ * uses. The legacy renderInstances shader stays byte-identical; this serves the scene
+ * Render only. Maps are refused upstream for instances (no uv yet), so this generator
+ * takes no map options.
+ */
+export function sceneInstancesWgsl(options: { model: "unlit" | "lambert" | "phong"; lightCount: number }): string {
+  const lightCount = Math.max(0, Math.floor(options.lightCount));
+  const lightField = Array.from({ length: lightCount }, (_, index) =>
+    `  light${index}Meta: vec4f,\n  light${index}Color: vec4f,\n  light${index}Vector: vec4f,\n`,
+  ).join("");
+  const lightBlock = (index: number): string => `  {
+    let lightMeta = params.light${index}Meta;
+    let lightColor = params.light${index}Color;
+    let lightVector = params.light${index}Vector;
+    var toLight: vec3f;
+    var attenuation = 1.0;
+    if (lightMeta.x < 0.5) {
+      toLight = normalize(-lightVector.xyz);
+    } else {
+      let offset = lightVector.xyz - input.world;
+      let distance = max(length(offset), 1e-4);
+      toLight = offset / distance;
+      attenuation = 1.0 / (1.0 + distance * distance);
+    }
+    let lambert = abs(dot(normal, toLight));
+    let radiance = lightColor.rgb * lightMeta.y * attenuation;
+    lit += albedo.rgb * radiance * lambert;
+${
+  options.model === "phong"
+    ? `    let halfway = normalize(toLight + viewDir);
+    let gloss = max(2.0, params.specular.w * (1.0 - params.material.y));
+    let highlight = pow(abs(dot(normal, halfway)), gloss);
+    lit += params.specular.rgb * radiance * highlight;
+`
+    : ""
+}  }
+`;
+  const shading =
+    options.model === "unlit"
+      ? `  return vec4f(albedo.rgb, albedo.a);`
+      : `  let ambient = params.ambientColor.rgb * params.ambientColor.a;
+  var lit = albedo.rgb * ambient;
+${
+  lightCount === 0
+    ? ""
+    : `  let viewDir = normalize(params.eye.xyz - input.world);
+${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
+}  return vec4f(lit, albedo.a);`;
+
+  return `struct SceneParams {
+  viewProjection: mat4x4f,
+  eye: vec4f,
+  ambientColor: vec4f,
+  baseColor: vec4f,
+  specular: vec4f,
+  material: vec4f,
+  instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
+${lightField}};
+
+@group(0) @binding(0) var<uniform> params: SceneParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) normal: vec3f,
+  @location(1) world: vec3f,
+};
+
+fn quadCorner(v: u32) -> vec2f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return corners[v];
+}
+
+fn shapeVertexCount(shape: u32) -> u32 {
+  if (shape == 0u) { return 6u; }
+  if (shape == 2u) { return 24u; }
+  return 36u;
+}
+
+fn boxVertex(v: u32) -> vec3f {
+  let face = v / 6u;
+  let corner = quadCorner(v % 6u);
+  let flip = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
+  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
+  return vec3f(corner.x * flip, corner.y, flip);
+}
+
+fn boxNormal(v: u32) -> vec3f {
+  let face = v / 6u;
+  let flip = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(flip, 0.0, 0.0); }
+  if (axis == 1u) { return vec3f(0.0, flip, 0.0); }
+  return vec3f(0.0, 0.0, flip);
+}
+
+fn octaVertex(v: u32) -> vec3f {
+  let face = v / 3u;
+  let sx = f32(face & 1u) * 2.0 - 1.0;
+  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+  let corner = v % 3u;
+  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
+  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
+  return vec3f(0.0, 0.0, sz);
+}
+
+fn shapeVertex(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
+  if (shape == 2u) { return octaVertex(v); }
+  return boxVertex(v);
+}
+
+fn shapeNormal(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(0.0, 0.0, 1.0); }
+  if (shape == 2u) {
+    let face = v / 3u;
+    let sx = f32(face & 1u) * 2.0 - 1.0;
+    let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+    let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+    return normalize(vec3f(sx, sy, sz));
+  }
+  return boxNormal(v);
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
+  let shape = u32(params.instance.y);
+  let count = shapeVertexCount(shape);
+  let v = min(vertex, count - 1u);
+  let local = shapeVertex(shape, v) * params.instance.x;
+  let world = local + positions[instance];
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  out.normal = shapeNormal(shape, v);
+  out.world = world;
+  return out;
+}
+
+@fragment
+fn fs(input: VertexOut) -> @location(0) vec4f {
+  let normal = normalize(input.normal);
+  let albedo = params.baseColor;
+${shading}
+}`;
+}
+

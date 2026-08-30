@@ -7,7 +7,7 @@ import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topo
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { sceneSurfaceWgsl } from "../shaders/scene-render.wgsl.ts";
+import { sceneInstancesWgsl, sceneSurfaceWgsl } from "../shaders/scene-render.wgsl.ts";
 
 /**
  * The 3D pipeline (T376/T377/T447): camera, light and geometry are THINGS, and a
@@ -175,6 +175,25 @@ export const geometryNode: NodeDefinition = {
         { value: "points", label: "Points" },
       ],
     },
+    shape: {
+      type: "enum",
+      label: "Shape",
+      default: "box",
+      compileTime: true,
+      options: [
+        { value: "quad", label: "Quad" },
+        { value: "box", label: "Box" },
+        { value: "octahedron", label: "Octahedron" },
+      ],
+      inactiveWhen: (values) => (values["mode"] === "instances" ? null : "Only instances wear a primitive."),
+    },
+    scale: {
+      type: "number",
+      label: "Scale",
+      default: 0.05,
+      min: 0,
+      inactiveWhen: (values) => (values["mode"] === "instances" ? null : "Only instances wear a primitive."),
+    },
     tint: {
       type: "color",
       label: "Tint",
@@ -230,12 +249,34 @@ export const geometryNode: NodeDefinition = {
       ],
     };
     const mode = parameters["mode"] === "instances" ? "instances" : parameters["mode"] === "points" ? "points" : "surface";
+    if (pointset.count !== undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.scene.geometry",
+            message: `Node "${nodeId}": the point set carries a GPU live count; scene geometry draws a fixed capacity. Draw counted sets through renderPoints/renderInstances for now.`,
+            nodeId,
+          },
+        ],
+      };
+    }
+    const shapeParameter = parameters["shape"];
     const payload: GeometryPayload = {
       kind: "geometry",
       pairs: pointset.pairs,
       capacity: pointset.capacity,
       ...(pointset.topology === undefined ? {} : { topology: pointset.topology }),
       mode,
+      ...(mode === "instances"
+        ? {
+            instance: {
+              shape: shapeParameter === "quad" ? "quad" : shapeParameter === "octahedron" ? "octahedron" : "box",
+              scale: readNumber(parameters, "scale", 0.05),
+            },
+          }
+        : {}),
       material,
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
@@ -363,12 +404,85 @@ export const renderNode: NodeDefinition = {
     const diagnostics: NonNullable<CompiledNodeDescription["diagnostics"]> = [];
     const passes: DrawPassDescriptor[] = [];
     geometries.forEach(({ payload, source }, index) => {
-      if (payload.mode !== "surface") {
+      if (payload.mode === "points") {
         diagnostics.push({
           severity: "error",
           code: "node.scene.mode",
-          message: `Node "${nodeId}": geometry "${source}" uses mode "${payload.mode}", which lands with T428 — surface is the mode this build renders.`,
+          message: `Node "${nodeId}": geometry "${source}" uses mode "points", which is renderPoints' job for now — surface and instances are the scene modes this build renders.`,
           nodeId,
+        });
+        return;
+      }
+      if (payload.mode === "instances") {
+        const position = payload.pairs["position"];
+        if (position === undefined) {
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.geometry",
+            message: `Node "${nodeId}": geometry "${source}" carries no position pair.`,
+            nodeId,
+          });
+          return;
+        }
+        const material = payload.material;
+        if (material.maps.albedo !== undefined || material.maps.roughness !== undefined) {
+          // §V288/V368: instances have no uv yet — a map that silently did nothing
+          // would teach that maps are broken. Refuse by name until instance uvs exist.
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.maps",
+            message: `Node "${nodeId}": geometry "${source}" wears a material with texture maps, but instances have no uv to sample by yet — maps work on surface geometry.`,
+            nodeId,
+          });
+          return;
+        }
+        if (material.model !== "unlit" && lights.length === 0) {
+          diagnostics.push({
+            severity: "warning",
+            code: "node.scene.unlit",
+            message: `Node "${nodeId}": geometry "${source}" wears a lit material but no lights are named — ambient floor only.`,
+            nodeId,
+          });
+        }
+        const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+        const specularColor =
+          material.model === "pbr"
+            ? ([
+                1 + (material.baseColor[0] - 1) * material.metallic,
+                1 + (material.baseColor[1] - 1) * material.metallic,
+                1 + (material.baseColor[2] - 1) * material.metallic,
+              ] as const)
+            : material.specularColor;
+        const shininess = material.model === "pbr" ? 96 : material.shininess;
+        const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:scene:${index}`,
+          nodeId,
+          shader: sceneInstancesWgsl({ model, lightCount: lights.length }),
+          target,
+          topology: "triangle-list",
+          instances: payload.capacity,
+          vertexCount: 36,
+          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          uniforms: {
+            viewProjection: Array.from(viewProjectionMatrix),
+            eye: [camera.eye[0], camera.eye[1], camera.eye[2], 0],
+            ambientColor: [ambient[0] ?? 1, ambient[1] ?? 1, ambient[2] ?? 1, ambientIntensity],
+            baseColor: [...material.baseColor],
+            specular: [...specularColor, shininess],
+            material: [material.metallic, material.roughness, 0, 0],
+            instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+            ...Object.fromEntries(
+              lights.flatMap((light, lightIndex) => [
+                [`light${lightIndex}Meta`, [light.type === "point" ? 1 : 0, light.intensity, 0, 0]],
+                [`light${lightIndex}Color`, [...light.color, 0]],
+                [`light${lightIndex}Vector`, [...(light.type === "point" ? light.position : light.direction), 0]],
+              ]),
+            ),
+          },
+          uniformBinding: "params",
+          clear: index === 0,
         });
         return;
       }

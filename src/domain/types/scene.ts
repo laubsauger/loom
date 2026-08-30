@@ -50,8 +50,10 @@ export interface GeometryPayload {
   readonly pairs: Readonly<Record<string, ScenePairRef>>;
   readonly capacity: number;
   readonly topology?: PointTopology | string;
-  /** How this object renders. Instancing lands with T428's instances mode. */
+  /** How this object renders. */
   readonly mode: "surface" | "instances" | "points";
+  /** Instances mode: the primitive worn per point (T428b). */
+  readonly instance?: { readonly shape: "quad" | "box" | "octahedron"; readonly scale: number };
   /**
    * The resolved material, EMBEDDED: the geometry node composes its referenced
    * material with its own per-object overrides (T449), so the render sees one
