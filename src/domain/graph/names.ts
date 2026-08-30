@@ -166,6 +166,23 @@ function rewriteSourceReference(node: GraphNode, oldName: string, newName: strin
   return 1;
 }
 
+/**
+ * A free name derived from a TAKEN one (B41/B44): trailing digits strip to the word,
+ * and the next free number appends — `over1` renames to `over2`, not to `over12`.
+ *
+ * One helper because the collision loop existed in three copies (flatten, the detached
+ * component copy, paste) with identical semantics — the V320 class shape arriving in
+ * the FIX. `taken` is a predicate so each caller folds its own reserved sets in.
+ */
+export function renumberedName(label: string, taken: (candidate: string) => boolean): string {
+  const stripped = label.replace(/[0-9]+$/, "");
+  const base = stripped.length > 0 ? stripped : label;
+  for (let ordinal = 1; ; ordinal += 1) {
+    const candidate = `${base}${ordinal}`;
+    if (!taken(candidate)) return candidate;
+  }
+}
+
 /** How many stored references name `name` — what a CLEAR of the label would strand. */
 export function countNodeNameReferences(graph: GraphDocument, name: string): number {
   let count = 0;

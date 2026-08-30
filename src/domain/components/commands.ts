@@ -10,7 +10,7 @@ import type { ParameterDefinition, ParameterValue } from "../types/parameters.ts
 import type { GraphPatchResult } from "../types/patch.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "../commands/bus.ts";
 import { applyGraphPatch } from "../commands/apply-patch.ts";
-import { rewriteNodeNameReferences } from "../graph/names.ts";
+import { renumberedName, rewriteNodeNameReferences } from "../graph/names.ts";
 import { componentNodeType } from "./component-type.ts";
 import { readComponentInstance, PARENT_BINDINGS_STATE_KEY } from "./instance.ts";
 import { parseParentReference } from "./parent-scope.ts";
@@ -316,13 +316,7 @@ function copyInternalGraph(
       taken.add(label);
       continue;
     }
-    const stripped = label.replace(/[0-9]+$/, "");
-    const base = stripped.length > 0 ? stripped : label;
-    let candidate = label;
-    for (let ordinal = 1; ; ordinal += 1) {
-      candidate = `${base}${ordinal}`;
-      if (!taken.has(candidate) && !copyLabels.has(candidate)) break;
-    }
+    const candidate = renumberedName(label, (name) => taken.has(name) || copyLabels.has(name));
     renames.push({ id, oldName: label, newName: candidate });
     taken.add(candidate);
     copyLabels.add(candidate);

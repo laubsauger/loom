@@ -8,7 +8,7 @@ import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../domain/types/graph.ts";
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { ParameterSchema, ParameterValue, StoredParameter } from "../domain/types/parameters.ts";
-import { rewriteNodeNameReferences } from "../domain/graph/names.ts";
+import { renumberedName, rewriteNodeNameReferences } from "../domain/graph/names.ts";
 import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.ts";
 import { storedValues } from "../domain/parameters/stored-values.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -238,13 +238,7 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
     for (const nodeId of Object.keys(level.nodes).sort()) {
       const label = level.nodes[nodeId]?.label;
       if (label === undefined || !usedNames.has(label)) continue;
-      const stripped = label.replace(/[0-9]+$/, "");
-      const base = stripped.length > 0 ? stripped : label;
-      let candidate = label;
-      for (let ordinal = 1; ; ordinal += 1) {
-        candidate = `${base}${ordinal}`;
-        if (!usedNames.has(candidate) && !levelLabels.has(candidate)) break;
-      }
+      const candidate = renumberedName(label, (name) => usedNames.has(name) || levelLabels.has(name));
       // Reserving the new name here keeps two renames at one level from colliding, and
       // keeps a new name from shadowing a sibling's still-pending old one.
       levelLabels.add(candidate);

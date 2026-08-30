@@ -4,7 +4,7 @@ import type { StoredParameter } from "../types/parameters.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
-import { nodeNames, rewriteNodeNameReferences } from "../graph/names.ts";
+import { nodeNames, renumberedName, rewriteNodeNameReferences } from "../graph/names.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
 
 /**
@@ -196,13 +196,7 @@ function mintCopies(
       taken.add(node.label);
       continue;
     }
-    const stripped = node.label.replace(/[0-9]+$/, "");
-    const base = stripped.length > 0 ? stripped : node.label;
-    let candidate = node.label;
-    for (let ordinal = 1; ; ordinal += 1) {
-      candidate = `${base}${ordinal}`;
-      if (!taken.has(candidate) && !clipboardLabels.has(candidate)) break;
-    }
+    const candidate = renumberedName(node.label, (name) => taken.has(name) || clipboardLabels.has(name));
     finals.set(node.sourceId, candidate);
     taken.add(candidate);
     renames.push({ oldName: node.label, newName: candidate });
