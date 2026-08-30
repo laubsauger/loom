@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import { SHOW_NODE_INFO_COMMAND } from "@editor/inspect/index.ts";
+import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/index.ts";
 import { menuSchemaFor } from "@editor/menus/index.ts";
 import { serializeProjectDocument } from "@domain/project/index.ts";
 import type { SnapshotMeta, SnapshotRecord, SnapshotStore } from "@domain/project/index.ts";
@@ -1313,5 +1314,52 @@ describe("the parameter context menu is reachable (T246, §V78, §V193)", () => 
     // No `fallbackSurface`: a menu for a parameter nobody clicked would act on whatever
     // the previous target happened to be.
     expect(screen.queryByLabelText("parameter menu")).toBeNull();
+  });
+});
+
+/**
+ * B68/§V356 — the reference-lines toggle has a DOOR.
+ *
+ * §V153 calls the toggle a real control, and there was none: no binding, no menu row, no
+ * button. The command was registered — `registerReferenceLinesCommand` is called by the
+ * canvas — but called for its STORE, so §V318's "an exported function of the registrar
+ * must be referenced" was satisfied while nothing could invoke what it registered. The
+ * static half of this is the §V356 gate in `composition-seams.test.ts`; this is the half
+ * that asks the composed app.
+ *
+ * The lines leaving the DOM is `graph-canvas/reference-lines.test.tsx`'s assertion and is
+ * not repeated. What was missing, and is asserted here, is that a route to the command
+ * exists at all and reaches a live command on the mounted app's bus.
+ */
+describe("B68 — the reference-lines toggle is reachable from the canvas menu (§V153)", () => {
+  it("offers a row that names the command, and the command is live on the mounted bus", async () => {
+    const { runtime } = await mountWithNode();
+
+    const entries = menuSchemaFor("canvas", runtime.registry).entries;
+    const row = entries.find(
+      (entry) => "command" in entry && entry.command === TOGGLE_REFERENCE_LINES_COMMAND,
+    );
+    expect(
+      row,
+      "the canvas menu offers no row naming `ui.toggleReferenceLines` — §V153's control does not exist",
+    ).toBeDefined();
+
+    expect(
+      runtime.bus.hasCommand(TOGGLE_REFERENCE_LINES_COMMAND),
+      "the menu names a command the mounted app has not registered",
+    ).toBe(true);
+
+    // Executing exactly what the row names flips the state, and reports the new one — so
+    // a menu click and an agent call cannot mean different things (§V78).
+    const off = await act(async () =>
+      runtime.bus.execute(TOGGLE_REFERENCE_LINES_COMMAND, {}, runtime.invocation),
+    );
+    expect(off.status).toBe("applied");
+    expect(off.output.shown).toBe(false);
+
+    const on = await act(async () =>
+      runtime.bus.execute(TOGGLE_REFERENCE_LINES_COMMAND, { show: true }, runtime.invocation),
+    );
+    expect(on.output.shown).toBe(true);
   });
 });

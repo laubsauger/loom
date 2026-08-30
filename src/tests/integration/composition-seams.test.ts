@@ -916,3 +916,213 @@ describe("§V307/T365 — a binding names a command that exists, or one somebody
     expect(orphaned, "planned but named by no menu and no binding — delete these").toEqual([]);
   });
 });
+
+/**
+ * §V356/B68 — WHAT INVOKES THIS COMMAND?
+ *
+ * ## The hole the section above cannot see
+ *
+ * §V307's gate asks whether a command's REGISTRAR is reached and called, and §V318
+ * sharpened that to "an exported FUNCTION of the registrar must be referenced". Both were
+ * satisfied by `ui.toggleReferenceLines` for the whole of its life, and the command was
+ * invokable by nobody: `registerReferenceLinesCommand` returns the reference-lines STORE,
+ * the canvas calls it for `get`/`subscribe`, and the command that came along for the ride
+ * was named by no binding, no menu row and no control. §V153 calls that toggle a real
+ * control. There wasn't one.
+ *
+ * That is the fifth distinct layer of this failure in two days — B48 registration inside a
+ * GPU-gated effect, B60 no surface supplies the argument, B66 the context is not
+ * enterable, B48-again the refusal is never surfaced, and now a registrar called for its
+ * side effect. §V350's rule applied to itself: stop asking whether the module is reached
+ * and ask what the user presses.
+ *
+ * ## What counts as an invoker
+ *
+ * A keybinding, a menu row, or a NAMED reference from some other reachable product
+ * module — `bus.execute("x.y", …)` or the command's exported constant. Three exclusions,
+ * each earning its place:
+ *
+ *  - the module that DECLARES the command, because a registrar naming itself is the exact
+ *    thing this gate exists to stop counting;
+ *  - a pure re-export barrel, for §V318's reason in the invocation direction: re-exporting
+ *    a name says nothing about invoking it;
+ *  - test files, for B23's reason.
+ *
+ * The command PALETTE deliberately needs no exclusion, and that is a result rather than an
+ * oversight. It enumerates `bus.listCommands()` and runs `run(entry.command)` — a
+ * variable, never a name — so generic enumeration contributes nothing here and cannot make
+ * this gate vacuous. Measured: adding and removing a palette exclusion changes the failing
+ * set by nothing at all. A command reachable ONLY from the palette is exactly the state
+ * B68 was in, and this is what says so.
+ *
+ * ## What it cannot see, stated rather than papered over
+ *
+ * A control that reaches the behaviour WITHOUT naming the command. `graph.revertTransaction`
+ * has a real revert button, and it calls an agent-surface method that replays `graph.undo`;
+ * the command itself is invoked by no one. A name-based gate cannot tell that from a dead
+ * command, so it is written down below instead of silently passing.
+ */
+
+/** Modules whose statements are only imports and exports: re-export says nothing (§V318). */
+function isBarrelModule(path: string): boolean {
+  const statements = sourceFile(path).statements;
+  return (
+    statements.length > 0 &&
+    statements.every((node) => ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+  );
+}
+
+/** `export const OPEN_HELP_COMMAND = "ui.openHelp"` — referencing the const IS naming it. */
+const commandConstants = (() => {
+  const constants = new Map<string, string>();
+  for (const path of sources) {
+    if (isTestFile(path)) continue;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer !== undefined &&
+        ts.isStringLiteral(node.initializer) &&
+        declaredCommands.has(node.initializer.text)
+      ) {
+        constants.set(node.name.text, node.initializer.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile(path));
+  }
+  return constants;
+})();
+
+/** Every command each product module NAMES — by literal, or through a command constant. */
+const namedByModule = (() => {
+  const named = new Map<string, Set<string>>();
+  for (const path of sources) {
+    if (isTestFile(path) || isBarrelModule(path)) continue;
+    const literals = new Set<string>();
+    const identifiers = new Set<string>();
+    const visit = (node: ts.Node): void => {
+      // IMPORTS DO NOT COUNT. Measured the hard way: with the import statement walked,
+      // deleting the menu row that names `ui.toggleReferenceLines` left this gate GREEN,
+      // because `schemas.ts` still imported the constant. That is §V318's own warning —
+      // importing a name says nothing about using it — reappearing in the invocation
+      // direction, in a gate whose docstring cited §V318.
+      if (ts.isImportDeclaration(node)) return;
+      if (ts.isStringLiteral(node)) literals.add(node.text);
+      if (ts.isIdentifier(node)) identifiers.add(node.text);
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile(path));
+    const commands = new Set<string>();
+    for (const command of declaredCommands.keys()) {
+      if (declaredCommands.get(command) === path) continue;
+      if (literals.has(command)) {
+        commands.add(command);
+        continue;
+      }
+      for (const [constant, value] of commandConstants) {
+        if (value === command && identifiers.has(constant)) {
+          commands.add(command);
+          break;
+        }
+      }
+    }
+    named.set(path, commands);
+  }
+  return named;
+})();
+
+function invokersOf(command: string): string[] {
+  const invokers: string[] = [];
+  if (boundCommands.includes(command)) invokers.push("keybinding");
+  if (menuCommands.includes(command)) invokers.push("menu");
+  for (const [path, commands] of namedByModule) {
+    if (commands.has(command)) invokers.push(relative(ROOT, path));
+  }
+  return invokers;
+}
+
+/**
+ * Commands with no key, no menu row and no named caller — each with the reason.
+ *
+ * Both directions, like every other allowlist in this file: an entry that GAINS an invoker
+ * fails just as loudly as a command that lost one, so a line here cannot rot into a
+ * permanent excuse.
+ */
+const COMMANDS_WITH_NO_INVOKER: ReadonlyArray<{ name: string; reason: string }> = [
+  {
+    name: "component.exposePort",
+    reason:
+      "T423 — the component EDITOR does not exist. The domain half shipped (T129-T136); nothing in the canvas exposes a port yet, so there is no control to name it.",
+  },
+  { name: "component.setParentBinding", reason: "T423, same — parent-binding authoring has no surface." },
+  { name: "component.setPublishedParameter", reason: "T423, same — the published-parameter page editor has no surface." },
+  { name: "component.unexposePort", reason: "T423, same." },
+  { name: "component.unpublishParameter", reason: "T423, same." },
+  {
+    name: "graph.revertTransaction",
+    reason:
+      "HAS a control and does not name it. The agent pane's revert button calls the agent SURFACE method, which reverts by replaying `graph.undo` — so the behaviour is reachable and this command is not. A name-based gate cannot tell that apart from a dead command; the agent track owns the choice of which one is the real path.",
+  },
+  {
+    name: "ui.closeCommandPalette",
+    reason:
+      "The palette closes itself through its own holder, so the command exists for a caller that is NOT the palette — an agent, or a future surface that must dismiss it. Nothing on screen should name it.",
+  },
+  {
+    name: "layout.reset",
+    reason:
+      "KNOWN GAP, T436's to close, not this gate's to fix. The layout menu's restore-default path calls `restoreLayout(DEFAULT_LAYOUT_ID)` directly rather than the command.",
+  },
+  {
+    name: "ui.openLayouts",
+    reason:
+      "KNOWN GAP, T436's. `app-shell.tsx` calls `registerLayoutCommands` for its HOLDER and the `layout` button is a Radix PopoverTrigger flipping local `menuOpen` state — B68's shape exactly, and V307's original sin (the settings dialog opening from a useState toggle) repeating. Found BY this gate.",
+  },
+];
+
+describe("§V356/B68 — every command has something that invokes it", () => {
+  it("is reading real modules and real names, or it is measuring nothing", () => {
+    // The scan finds the command constants the app really uses (OPEN_HELP_COMMAND,
+    // SHOW_NODE_INFO_COMMAND, BEGIN_RENAME_COMMAND…). Zero would mean the walk broke and
+    // every const-invoked command would look dead.
+    expect(commandConstants.size).toBeGreaterThan(8);
+    // And it is not matching everything: most modules name no command at all.
+    const naming = [...namedByModule.values()].filter((set) => set.size > 0).length;
+    expect(naming).toBeGreaterThan(10);
+    expect(naming).toBeLessThan(namedByModule.size / 2);
+    // A command with a key AND a menu row AND a caller really does resolve three ways,
+    // so "invokersOf" is not a constant.
+    expect(invokersOf("graph.selectAll").length).toBeGreaterThan(2);
+  });
+
+  it("has no command that nothing invokes, or says in writing why", () => {
+    const excused = new Map(COMMANDS_WITH_NO_INVOKER.map((entry) => [entry.name, entry.reason]));
+    const dead = [...declaredCommands.keys()]
+      .filter((command) => invokersOf(command).length === 0)
+      .filter((command) => !excused.has(command))
+      .sort();
+    if (dead.length > 0) {
+      throw new Error(
+        `${dead.length} registered command${dead.length === 1 ? " is" : "s are"} invoked by NOTHING — no ` +
+          `keybinding, no menu row, no caller that names ${dead.length === 1 ? "it" : "them"} (§V356, B68). ` +
+          `The registrar being reached proves only that the module runs; it does not give the user a door. ` +
+          `Add a binding, a menu row or a control, or write the reason into COMMANDS_WITH_NO_INVOKER:\n` +
+          dead.map((command) => `  ${command}`).join("\n"),
+      );
+    }
+    expect(dead).toEqual([]);
+  });
+
+  it("has no stale excuse — a command that got an invoker must leave the list", () => {
+    const wired = COMMANDS_WITH_NO_INVOKER.filter((entry) => invokersOf(entry.name).length > 0).map(
+      (entry) => `${entry.name} (invoked by ${invokersOf(entry.name).join(", ")})`,
+    );
+    expect(wired, "these now have an invoker — delete them from COMMANDS_WITH_NO_INVOKER").toEqual([]);
+  });
+
+  it("excuses only commands that exist", () => {
+    const ghosts = COMMANDS_WITH_NO_INVOKER.filter((entry) => !declaredCommands.has(entry.name));
+    expect(ghosts.map((entry) => entry.name), "not declared in any CommandMap — delete these").toEqual([]);
+  });
+});

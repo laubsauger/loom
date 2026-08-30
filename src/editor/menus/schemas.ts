@@ -12,6 +12,9 @@ import { SHOW_NODE_INFO_COMMAND } from "@editor/inspect/command.ts";
 // Same reason, same shape: the constant rather than a literal, and from the module
 // itself rather than the `@editor/nodes` barrel, which exports React surfaces.
 import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
+// Same reason again (B68, §V356): the constant, from the module rather than the
+// `@editor/edges` barrel.
+import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-command.ts";
 import type { MenuGuardName } from "./guards.ts";
 
 /**
@@ -84,6 +87,12 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       { separator: true },
       { command: planned("graph.layoutAll"), label: "Layout" },
       { command: planned("view.frameAll"), label: "Frame all" },
+      // B68/§V153: the toggle the invariant calls a real control, which until now had no
+      // door at all — `registerReferenceLinesCommand` is called for its STORE, so the
+      // seam gate saw a reached registrar while the command it registers was named by no
+      // binding, no menu row and no button. A plain row, like `node.toggleBypass`: the
+      // command flips when `show` is omitted, which is what a menu item means.
+      { command: TOGGLE_REFERENCE_LINES_COMMAND, label: "Reference lines" },
     ],
   };
 }

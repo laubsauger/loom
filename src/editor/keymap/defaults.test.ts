@@ -78,6 +78,11 @@ describe("verified TouchDesigner network-editor bindings", () => {
   });
 
   it("binds the verified table", () => {
+    // `graph.find` (`mod+f`) is DELIBERATELY absent (T443, §V354). TouchDesigner has it and
+    // this table is otherwise TD-verified, so its absence is the kind of thing a future
+    // reader would "restore" — it is unbound because no find surface exists, and a key
+    // that does nothing while the graph is visibly right there reads as broken rather than
+    // unbuilt. The assertion below that nothing binds it is what keeps that a decision.
     const expected: Record<string, string> = {
       "graph.addOperator": "tab",
       "node.toggleBypass": "b",
@@ -93,7 +98,6 @@ describe("verified TouchDesigner network-editor bindings", () => {
       "node.editExpose": "e",
       "graph.delete": "delete",
       "graph.selectAll": "mod+a",
-      "graph.find": "mod+f",
       "graph.copy": "mod+c",
       "graph.cut": "mod+x",
       "graph.paste": "mod+v",
@@ -101,6 +105,13 @@ describe("verified TouchDesigner network-editor bindings", () => {
     for (const [id, keys] of Object.entries(expected)) {
       expect(normalizeKeys(find(id).keys), id).toBe(normalizeKeys(keys));
     }
+
+    // T443: unbound until the surface ships, and rebinding it without a surface has to be
+    // a visible edit to this line rather than a quiet re-add to the table.
+    expect(
+      DEFAULT_BINDINGS.filter((binding) => binding.command === "ui.findInGraph"),
+      "`mod+f` is unbound until a find surface exists (T443, §V354)",
+    ).toEqual([]);
   });
 
   it("does not ship the shortcuts that turned out not to be TouchDesigner's", () => {
@@ -130,6 +141,13 @@ describe("our app-level bindings", () => {
     for (const [id, keys] of Object.entries(expected)) {
       expect(normalizeKeys(find(id).keys), id).toBe(normalizeKeys(keys));
     }
+
+    // T443: unbound until the surface ships, and rebinding it without a surface has to be
+    // a visible edit to this line rather than a quiet re-add to the table.
+    expect(
+      DEFAULT_BINDINGS.filter((binding) => binding.command === "ui.findInGraph"),
+      "`mod+f` is unbound until a find surface exists (T443, §V354)",
+    ).toEqual([]);
   });
 
   it("passes static input where the command needs it", () => {

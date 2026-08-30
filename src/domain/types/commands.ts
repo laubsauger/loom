@@ -114,7 +114,6 @@ export type PlannedCommandName =
   | "graph.rerouteEdge"
   | "node.openColorPalette"
   | "ui.cancel"
-  | "ui.findInGraph"
   | "ui.openNodeSearch"
   | "ui.openShaderEditor"
   | "view.frameAll"
@@ -132,7 +131,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.rerouteEdge",
   "node.openColorPalette",
   "ui.cancel",
-  "ui.findInGraph",
   "ui.openNodeSearch",
   "ui.openShaderEditor",
   "view.frameAll",

@@ -79,6 +79,12 @@ const APP_REGISTERED = [
   // document state, so the domain bus does not own it. Live, not planned: the menu row
   // that names it opens a real editor.
   "ui.beginRename",
+  // B68/T441: registered by the mounted graph canvas too — `registerReferenceLinesCommand`
+  // returns the store the canvas subscribes to, and the command comes with it. Whether a
+  // line is DRAWN is a property of a look at the graph, not of the graph, so the domain
+  // bus does not own it. Live, not planned: this row is the FIRST door the command has
+  // ever had (§V153, §V356).
+  "ui.toggleReferenceLines",
 ];
 
 describe("what the menus promise but nobody has built", () => {

@@ -18,6 +18,21 @@ import type { KeyBinding } from "./types.ts";
  * unregistered one as unavailable, and the engine reports `unresolved` instead of
  * throwing. Nothing here is stubbed onto the bus.
  *
+ * NOT IN THIS TABLE — and deliberately so (T443, §V354): `mod+f` / `ui.findInGraph`. A
+ * planned command is honestly absent while the feature is unbuilt, and stops being
+ * honest once the SURFACE it names is on screen: the graph is right there, so a `mod+f`
+ * that does nothing reads as a broken app rather than a missing one. Finding existing
+ * nodes and jumping to one is a surface that does not exist — `mod+k` searches COMMANDS
+ * and `tab` adds an OPERATOR, neither of which is this — so the key is unbound until it
+ * ships rather than left promising something no key press can deliver. It leaves
+ * `PLANNED_COMMANDS` with the binding, because that list's own rule is that a planned
+ * command must be NAMED by a binding or a menu — a promise nothing shows is a promise to
+ * nobody. The task keeps the promise (T443); re-adding the binding is what puts it back.
+ *
+ * `e` (`ui.openShaderEditor`) stays BOUND by the same rule read the other way: the shader
+ * pane already follows the selection and T436's dock-reveal seam has landed, so it is
+ * imminent rather than hypothetical.
+ *
  * NOT IN THIS TABLE: pan/zoom mouse gestures (middle-drag / space-drag pan, scroll
  * zoom, alt+drag zoom). Those are pointer gestures on the canvas and belong to the
  * graph-canvas track, not to a key binding table. They are still unconfirmed vs a real
@@ -215,13 +230,6 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     context: "graph",
     command: "graph.selectAll",
     label: "Select all",
-  },
-  {
-    id: "graph.find",
-    keys: "mod+f",
-    context: "graph",
-    command: "ui.findInGraph",
-    label: "Find in graph",
   },
   {
     id: "graph.copy",
