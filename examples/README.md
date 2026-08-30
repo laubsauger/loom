@@ -34,6 +34,8 @@ happened:
 | [E26 Interference](./E26-Interference.md) | one ring field read TWICE and subtracted from itself: nine nodes, no WGSL, no state, and a moiré whose structure is in neither input (§V6, T475) |
 | [E27 Relief](./E27-Relief.md) | a picture LIFTED into geometry: 96,000 unlit points at 3D heights with per-point colour in the scene pipeline, and the UNDERSTUDY pattern — a synthetic performer plays on open while `webcam` stays in the plan and gets compiled (§V411, §V363, T478) |
 | [E28 Sundial](./E28-Sundial.md) | a hard shadow travelling across a floor: one orbiting caster under a fixed raking key with `shadows` on, three standing stones, and a dusk sky worn as the render's environment — seen only in the specular sheen (T481, T482, T484) |
+| [E29 Descent](./E29-Descent.md) | a neon square tunnel you fall into, born on the beat: scale ABOVE ONE inside a feedback loop, hue rotating per pass so depth reads as colour, and NO clock read in the picture path at all (T503) |
+| [E30 Nave](./E30-Nave.md) | a fluted cathedral bore scrolling toward you and breathing on the kick — the audio-and-3D corner nothing else in the set filled, written on the ABSOLUTE clock so a timeline lap cannot touch it (T503, T489) |
 
 ## Running them
 

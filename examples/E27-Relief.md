@@ -1,11 +1,11 @@
 # E27 — Relief
 
-A moving picture stands up off the screen. Ninety-six thousand glowing points lie on a
-sheet in space, each pushed toward you in proportion to the brightness under it, and a
-drifting camera films the result: a magenta and deep-blue plain with a luminous mountain
-rising out of it, the whole thing built out of separate points that the bloom fuses into
-one surface. Rutt–Etra — the analog video-synth look — with a live graph where the scan
-converter used to be.
+A moving picture stands up off the screen. A hundred and five thousand glowing points lie
+on a landscape in space, each lifted in proportion to the brightness under it, and a
+drifting camera films it low and from the side: teal valleys, a magenta ridge line, a white
+crest, and a luminous mountain that wanders across the plain. The bloom fuses thousands of
+separate points into one surface. Rutt–Etra — the analog video-synth look — with a live
+graph where the scan converter used to be.
 
 **It opens playing its own performer, and your camera is one number away.**
 
@@ -19,8 +19,11 @@ swell1(circle, centre ┄ driftx1/drifty1) ──► sum1.in1
 cam1(webcam) ─────────────────────────────────┘        order 1        │
                                                                       ▼
 palette1(ramp) ─────────────────────────► coat1(lookup) ◄──────────────┘
+                                              │              ┌─ pick1 (raw, for HEIGHT)
+palette1 ─► coat1(lookup) ─────────────► braid1(reorder) ◄─────┘
+                              rgb = colour, alpha = source luminance
                                               │
-grid1(pointGrid 480×200) ─► bridge1(textureToAttribute) ─► lift1(pointKernel)
+grid1(pointGrid 480×220) ─► bridge1(textureToAttribute) ─► lift1(pointKernel)
                                               │
                     phosphor1(materialUnlit) ─┴─► body1(geometry: instances, tint ← sample)
                     eye1(camera, eye.x ┄ sway1)
@@ -63,9 +66,57 @@ steps. Points have neither failure. There is no shared edge between them to tear
 a point that samples a texel simply sits where that texel says.
 
 That is what makes a *relief* the honest thing to build on this bridge, and it is why the
-grid here (480×200) can be a completely different shape from the field (1280×720) with
+grid here (480×220) can be a completely different shape from the field (1280×720) with
 nothing going wrong. It is also why the rows are sparser than the columns — that is where
 the scan lines come from.
+
+## T503 — the three things that were wrong, and they were three different bugs
+
+The owner's verdict on the first build was **"weak, inverted and hard to see"**. All three
+were true, none of them was tuning, and they had nothing to do with each other.
+
+### It was literally upside down, and the bug was not in this file
+
+The bridge mapped `position.y = -1` to `uv.y = 0`, and `uv.y = 0` is **texel row 0** — the
+row an output node shows at the *top* of the frame. World +y is up, so `position.y = -1`
+draws at the *bottom*. Every texture-to-points bridge therefore handed the picture back
+mirrored across the horizon. Nothing caught it because the understudy — noise plus a
+centred dome — has no top and no bottom; flip `pick1` to the webcam and it was your own
+face, upside down.
+
+The one-node probe that settled it is worth copying: a `circle` at `center.y = 0.2`
+rendered straight to an output, and read back to see which row it landed on. **A fixture
+has to be able to tell apart the thing its test asserts** — every earlier probe image had
+been symmetric, and a symmetric image is structurally blind to a vertical flip. Fixed at
+source in `src/points/codegen.ts` (B105/T512), not compensated for here.
+
+### The height came out of the palette, which is why it was "weak"
+
+`lift1` took luminance off the **coated** colour. That palette's luminance runs 0.02, 0.14,
+0.28, 0.49, 0.95 across its stops — monotone, but wildly non-linear. Four fifths of the
+source got squashed into the bottom half of the height range and the last fifth exploded,
+so the shipped picture was a flat plate with a single needle spike in it.
+
+`braid1` is the fix, and it generalises. **The bridge is four channels wide and a
+displacement only needs one**: a Reorder puts the paletted colour in rgb and the *raw*
+source luminance in alpha, so one texture crosses one bridge carrying two different fields.
+`lift1` reads `sample.a` for shape and `sample.rgb` for colour, and the palette is free to
+be chosen for how it looks instead of doubling as a height transfer function.
+
+### The camera looked down the height axis
+
+The old eye looked along (-0.32, 0.40, -0.86) at a sheet whose relief was entirely in +z —
+**86% of the view direction was parallel to the displacement**, so the thing the example is
+about barely projected. The doc claimed the opposite ("face-on, a height field is just the
+picture again"), which is how it survived review.
+
+Two changes. The sheet is laid into **xz** with the height on +y, so the world's up axis
+*is* the height axis and an ordinary landscape camera frames it — with the sheet in xy and
+the height in +z, world up lies flat inside the picture and every camera that shows the
+relief has to roll, which is how the first attempt at a fix came out running diagonally off
+the edge of the frame. Then the eye goes low and to one side: about 19% of the view along
+the height axis, so the hills have silhouettes and a rising slope bunches its scan lines
+the way a contour map does.
 
 ## What else it proves
 
@@ -94,6 +145,9 @@ wide, one line, and the only place the aspect appears.
 - **`swell1.fillcolor` stays under 1.0** because `bed1` is added on top of it. A dome
   already at full brightness clips flat where the two meet, and the mountain comes out with
   a scooped, level summit.
+- **`lift1` returns `sample.a` to 1 before the draw.** `body1` maps that same attribute onto
+  the material tint, and a tint whose alpha still carried the height would have made the low
+  ground transparent as well as dark.
 - **`swell1.softness` is larger than its radius**, which is E13's finding: past the radius a
   Circle is a *dome* rather than a disc, and a disc lifts as a cylinder with a cliff edge.
 
@@ -110,8 +164,12 @@ an add inside the working range, not a highlight rolloff.
   an edge lost its `order` and the id tiebreak took over.
 - **One flat glowing sheet, no scan lines** → `body1.scale` grew past half the point
   spacing and the quads closed the gaps.
-- **The picture is there but lies flat** → the sample stopped reaching `position.z` in
+- **The picture is there but lies flat** → the sample stopped reaching `position.y` in
   `lift1`. This is the failure the GPU control catches; nothing structural can see it.
+- **The terrain is a flat plate with one spike in it** → `lift1` went back to reading
+  luminance off `coat1` instead of `braid1`'s alpha, and the palette is acting as the height
+  curve again.
+- **The picture is mirrored top-to-bottom** → the bridge's uv mapping regressed (B105).
 - **The panel darkens toward its edges** → the material became lit, or a light list
   appeared on `shot1`.
 - **The mountain has a level, scooped summit** → `swell1.fillcolor` went to 1.0 and the add
@@ -120,19 +178,19 @@ an add inside the working range, not a highlight rolloff.
 
 ## Look pass
 
-Rendered on Dawn at 1280×720 and inspected at frames 120, 400 and 700 (§V383).
+Rendered on Dawn at 1280×720 and inspected at frames 1, 90 and 240, before and after
+(§V383). The before-and-after is the point: the first build's frame is what "weak" looks
+like.
 
-**Correctness.** The understudy plays from the first frame — a rolling sea with a bright
-dome crossing it — and the sway carries the camera through a wide arc, so the relief is seen
-from several angles. The panel's rectangular edge is visible and reads as a screen rather
-than as an unfinished mesh, which is the right reading for this look.
+**Correctness.** The understudy plays from the first frame, the sway carries the camera
+through a wide arc, and the mountain crosses the plain on two incommensurate drifts so no
+two laps look alike.
 
-**Beauty (§V420).** This one passes, and I would share the frame. Deep blue troughs, a
-magenta mid-ground, a hot white crest, and the point structure legible everywhere without
-the image reading as a grid. Three passes got there: the first rendered a single flat slab
-(quads twice the point spacing); the second was correct but shallow, with the swell barely
-lifting; the third deepened the relief, pulled the camera back and stopped the summit
-clipping. Verdict: **ships.**
+**Beauty (§V420).** The rebuild passes and the original did not. Before: mean frame
+luminance 0.076, everything in one mid-blue band, a flat plate with a needle in it, and
+nothing legible at thumbnail size. After: teal valleys, a magenta ridge, a white crest, a
+clear silhouette against the far ground, and it still reads at 220px wide — which is where
+people actually meet it. Verdict: **ships.**
 
 **What it is not.** The pitch promised a source with *meaning* in it — a face, a word, a
 video. The understudy here is procedural, because `text` renders through a canvas that does

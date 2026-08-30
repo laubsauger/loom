@@ -208,7 +208,7 @@
           ],
           "intensity": 1.4,
           "kind": "directional",
-          "shadowExtent": 5,
+          "shadowExtent": 3.6,
           "shadows": true
         },
         "position": {
@@ -366,6 +366,11 @@
         "position": {
           "x": 0,
           "y": 40
+        },
+        "resolution": {
+          "height": 864,
+          "mode": "fixed",
+          "width": 1536
         },
         "type": "render"
       },

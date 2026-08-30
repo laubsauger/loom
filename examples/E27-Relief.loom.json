@@ -14,6 +14,17 @@
           "portId": "in2"
         }
       },
+      "e-braid-bridge": {
+        "id": "e-braid-bridge",
+        "source": {
+          "nodeId": "braid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "texture"
+        }
+      },
       "e-bridge-lift": {
         "id": "e-bridge-lift",
         "source": {
@@ -48,15 +59,15 @@
           "portId": "inputs"
         }
       },
-      "e-coat-bridge": {
-        "id": "e-coat-bridge",
+      "e-coat-braid": {
+        "id": "e-coat-braid",
         "source": {
           "nodeId": "coat",
           "portId": "out"
         },
         "target": {
-          "nodeId": "bridge",
-          "portId": "texture"
+          "nodeId": "braid",
+          "portId": "in1"
         }
       },
       "e-halo-burn": {
@@ -90,6 +101,17 @@
         "target": {
           "nodeId": "coat",
           "portId": "lookup"
+        }
+      },
+      "e-pick-braid": {
+        "id": "e-pick-braid",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "braid",
+          "portId": "in2"
         }
       },
       "e-pick-coat": {
@@ -178,12 +200,12 @@
         "id": "bed",
         "label": "bed1",
         "parameters": {
-          "blacklevel": 0.42,
+          "blacklevel": 0.12,
           "brightness": 1,
-          "contrast": 1,
-          "gamma1": 1,
+          "contrast": 1.25,
+          "gamma1": 0.85,
           "opacity": 1,
-          "whitelevel": 1.05
+          "whitelevel": 0.86
         },
         "position": {
           "x": -1380,
@@ -225,12 +247,28 @@
         },
         "type": "geometry"
       },
+      "braid": {
+        "definitionVersion": 1,
+        "id": "braid",
+        "label": "braid1",
+        "parameters": {
+          "outa": "in2lum",
+          "outb": "in1b",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": -480,
+          "y": -20
+        },
+        "type": "reorder"
+      },
       "bridge": {
         "definitionVersion": 1,
         "id": "bridge",
         "label": "bridge1",
         "parameters": {
-          "count": 96000
+          "count": 105600
         },
         "position": {
           "x": -180,
@@ -316,9 +354,9 @@
         "label": "eye1",
         "parameters": {
           "eye": [
-            1.2,
-            -1.5,
-            3.45
+            0.5,
+            1.62,
+            3.05
           ],
           "eye.x": {
             "bindings": {
@@ -328,7 +366,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 1.2
+                "value": 0.5
               }
             },
             "mode": "driven"
@@ -337,8 +375,8 @@
           "fov": 40,
           "lookAt": [
             0,
-            0,
-            0.2
+            0.02,
+            -0.12
           ],
           "near": 0.1,
           "ortho": false
@@ -356,7 +394,7 @@
         "parameters": {
           "extend": "hold",
           "filter": "gaussian",
-          "size": 14
+          "size": 18
         },
         "position": {
           "x": 1020,
@@ -370,8 +408,8 @@
         "label": "lift1",
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
-          "capacity": 96000,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401): the PALETTED source at this\n     point's own xy. Luminance is the height, and the colour rides along to the draw. */\n  let height = dot(p.sample.rgb, vec3f(0.2126, 0.7152, 0.0722));\n  /* Sampled on a square (the bridge's mapping demands it), drawn at 16:9. */\n  q.position = vec3f(p.position.x * 1.7778, p.position.y, height * 1.05);\n  q.sample = p.sample;\n  return q;\n}",
+          "capacity": 105600,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:\n     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes\n     off alpha so the palette never doubles as a height curve — see the note above. */\n  let height = p.sample.a;\n  /* THE SHEET LIES DOWN, and that is what makes the frame framable. The grid arrives in\n     the xy plane, so a height in +z puts the world's UP axis flat IN the picture — every\n     camera that shows the relief then has to roll, which is how the first build ended up\n     with the terrain running diagonally out of frame. Mapping xy -> xz and the height to\n     +y makes the height axis the WORLD's up axis, and an ordinary landscape camera works.\n     The z sign is the orientation fix: the bridge maps y = -1 to TEXEL ROW 0, the row an\n     output shows at the TOP, so row 0 belongs at the FAR edge — z negative, away from a\n     camera on +z. Sampled on a square (the mapping demands it), drawn 16:9. */\n  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, p.position.y * 1.15);\n  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same\n     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT\n     would have made the low ground transparent as well as dark. */\n  q.sample = vec4f(p.sample.rgb, 1.0);\n  return q;\n}",
           "seed": 41
         },
         "position": {
@@ -402,45 +440,54 @@
           "stops": [
             {
               "color": [
+                0.004,
                 0.01,
-                0.02,
-                0.06,
+                0.035,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.05,
-                0.14,
-                0.42,
+                0.02,
+                0.13,
+                0.3,
                 1
               ],
-              "position": 0.3
+              "position": 0.34
             },
             {
               "color": [
-                0.55,
-                0.16,
+                0.08,
+                0.5,
                 0.62,
                 1
               ],
-              "position": 0.58
+              "position": 0.56
             },
             {
               "color": [
-                1,
-                0.34,
-                0.45,
+                0.86,
+                0.2,
+                0.6,
                 1
               ],
-              "position": 0.8
+              "position": 0.76
             },
             {
               "color": [
                 1,
-                0.95,
-                0.85,
+                0.46,
+                0.32,
+                1
+              ],
+              "position": 0.9
+            },
+            {
+              "color": [
+                1,
+                0.97,
+                0.9,
                 1
               ],
               "position": 1
@@ -493,8 +540,8 @@
           "amp": 1,
           "aspectcorrect": true,
           "exp": 1,
-          "gain": 0.55,
-          "harmon": 3,
+          "gain": 0.58,
+          "harmon": 4,
           "mono": true,
           "offset": 0,
           "period": 0.32,
@@ -502,7 +549,7 @@
           "s4d": 1,
           "seed": 41,
           "speed": 0.16,
-          "spread": 2,
+          "spread": 2.1,
           "t4d": 0,
           "type": "perlin4d"
         },
@@ -518,8 +565,8 @@
         "label": "grid1",
         "parameters": {
           "cols": 480,
-          "count": 96000,
-          "rows": 200
+          "count": 105600,
+          "rows": 220
         },
         "position": {
           "x": -480,
@@ -571,7 +618,7 @@
         "id": "sway",
         "label": "sway1",
         "parameters": {
-          "amplitude": 1.3,
+          "amplitude": 1.15,
           "frequency": 0.024,
           "offset": 0,
           "phase": 0,
@@ -626,17 +673,17 @@
             "mode": "driven"
           },
           "fillcolor": [
-            0.94,
-            0.9,
-            0.84,
+            0.72,
+            0.7,
+            0.66,
             1
           ],
           "mode": "fill",
           "radius": [
-            0.34,
-            0.34
+            0.3,
+            0.3
           ],
-          "softness": 0.7
+          "softness": 0.62
         },
         "position": {
           "x": -1680,

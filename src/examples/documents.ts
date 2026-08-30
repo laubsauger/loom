@@ -2440,18 +2440,65 @@ const interferenceDocument = document(
  * x,y in [-1,1] — a square. The source is 16:9. So `lift1` samples on the square and then
  * stretches x by 16/9 on its way out: the picture is read square and DRAWN wide, which is
  * one line of kernel and the only place the aspect appears.
+ *
+ * ## T503 — THE THREE THINGS THAT WERE WRONG, and they were different bugs
+ *
+ * The owner's verdict on the first build was "weak, inverted and hard to see". All three
+ * were true and none of them was tuning.
+ *
+ * **1. IT WAS LITERALLY UPSIDE DOWN, by construction.** The bridge maps `position.y = -1`
+ * to `uv.y = 0`, and `uv.y = 0` is TEXEL ROW 0 — the row an output node shows at the TOP
+ * of the frame. But world +y is UP, so `position.y = -1` renders at the BOTTOM. Every
+ * texture-to-points bridge therefore hands the picture back mirrored across the horizon,
+ * and nothing in the understudy was asymmetric enough to make that visible. Flip the
+ * Switch to the webcam and it is your own face, upside down. The fix is `-p.position.y`
+ * in the kernel: the bridge already sampled at the grid's own xy, so negating y at DRAW
+ * time reseats the image without touching what was read.
+ *
+ * **2. THE HEIGHT CAME OUT OF THE PALETTE, so the terrain was a caricature of the
+ * picture.** `lift1` took luminance off the COATED colour, and this palette's luminance
+ * runs 0.02 / 0.14 / 0.28 / 0.49 / 0.95 across its five stops — monotone, yes, but wildly
+ * non-linear. Four fifths of the source was squashed into the bottom half of the height
+ * range and the last fifth exploded, which renders as a flat plate with one needle spike
+ * in it. That is the whole of "weak".
+ *
+ * The fix is the reason `braid1` exists: a Reorder carries the COLOUR in rgb and the
+ * SOURCE's own luminance in alpha, so one RGBA texture crosses the one bridge carrying two
+ * different fields. The kernel then reads `sample.a` for shape and `sample.rgb` for colour,
+ * and the palette is free to be chosen for how it LOOKS instead of doubling as a height
+ * transfer function. Generalisable: the bridge is four channels wide and a displacement
+ * only needs one.
+ *
+ * **3. THE CAMERA WAS ALMOST DOWN THE HEIGHT AXIS.** The old eye looked along (-0.32,
+ * 0.40, -0.86) at a sheet whose relief is entirely in z — 86% of the view direction was
+ * parallel to the displacement, so the thing the example is about barely projected. The
+ * doc claimed the opposite ("face-on, a height field is just the picture again"), which is
+ * how it survived review. `eye1` now sits low and off to one side, a landscape view: the
+ * height axis is across the frame, the hills have silhouettes, and the scan lines bunch on
+ * a rising slope the way a contour map's do.
  */
 const RELIEF_COLS = 480;
-const RELIEF_ROWS = 200;
+const RELIEF_ROWS = 220;
 
 const RELIEF_LIFT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* p.sample is the bridge's pair, bound from UPSTREAM (T401): the PALETTED source at this
-     point's own xy. Luminance is the height, and the colour rides along to the draw. */
-  let height = dot(p.sample.rgb, vec3f(0.2126, 0.7152, 0.0722));
-  /* Sampled on a square (the bridge's mapping demands it), drawn at 16:9. */
-  q.position = vec3f(p.position.x * 1.7778, p.position.y, height * 1.05);
-  q.sample = p.sample;
+  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:
+     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes
+     off alpha so the palette never doubles as a height curve — see the note above. */
+  let height = p.sample.a;
+  /* THE SHEET LIES DOWN, and that is what makes the frame framable. The grid arrives in
+     the xy plane, so a height in +z puts the world's UP axis flat IN the picture — every
+     camera that shows the relief then has to roll, which is how the first build ended up
+     with the terrain running diagonally out of frame. Mapping xy -> xz and the height to
+     +y makes the height axis the WORLD's up axis, and an ordinary landscape camera works.
+     The z sign is the orientation fix: the bridge maps y = -1 to TEXEL ROW 0, the row an
+     output shows at the TOP, so row 0 belongs at the FAR edge — z negative, away from a
+     camera on +z. Sampled on a square (the mapping demands it), drawn 16:9. */
+  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, p.position.y * 1.15);
+  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same
+     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT
+     would have made the low ground transparent as well as dark. */
+  q.sample = vec4f(p.sample.rgb, 1.0);
   return q;
 }`;
 
@@ -2461,32 +2508,35 @@ const reliefDocument = document(
   settings({ randomSeed: 41 }),
   graph(
     [
-      /* THE UNDERSTUDY. A word travelling across a living bed of noise: something with
+      /* THE UNDERSTUDY. A hill travelling across a living bed of noise: something with
          SHAPE in it, so the relief is a picture rather than a texture, and something that
          moves everywhere, so no part of the frame is still (T402). */
       node("ripple", "noise", [-1680, 300], {
-        type: "perlin4d", seed: 41, period: 0.32, harmon: 3, spread: 2, gain: 0.55,
+        type: "perlin4d", seed: 41, period: 0.32, harmon: 4, spread: 2.1, gain: 0.58,
         rough: 0.55, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
         t4d: 0, s4d: 1, speed: 0.16,
       }, { label: "ripple1" }),
       node("bed", "level", [-1380, 300], {
-        /* Crushed to a low, rolling swell: the bed is the sea the word rides on, and at
-           full contrast it would compete with the word for the eye. */
-        blacklevel: 0.42, whitelevel: 1.05, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+        /* T503: the bed used to be crushed to a 0.42..1.05 sliver — a sixth of the height
+           range for the entire terrain, which is most of why nothing read. It now uses its
+           whole range, and `gamma1` under 1 lifts the mid-slopes so the valleys stay dark
+           and the ridges separate. The DOME is still the subject; contrast is what makes
+           the ground it stands on a landscape rather than a haze. */
+        blacklevel: 0.12, whitelevel: 0.86, contrast: 1.25, brightness: 1, gamma1: 0.85, opacity: 1,
       }, { label: "bed1" }),
       /* THE SWELL. A soft dome, wide and low-contrast, wandering across the sea on two
          incommensurate drifts. It is the SHAPE in the picture: without it the relief is a
          texture, and a texture in relief is E20 with extra steps. */
       node("swell", "circle", [-1680, 0], {
-        mode: "fill", center: [0.5, 0.5], radius: [0.34, 0.34],
+        mode: "fill", center: [0.5, 0.5], radius: [0.3, 0.3],
         /* Softness far past the radius makes this a DOME rather than a disc (E13's
            finding): a hard disc lifts as a cylinder with a cliff edge, and a cliff is
            where a point relief looks like a bug. */
-        softness: 0.7,
+        softness: 0.62,
         /* Under 1.0 on purpose: the bed is ADDED on top, and a dome already at full
            brightness clips flat where the two meet — which renders as a scooped, level
            summit instead of a peak. */
-        fillcolor: [0.94, 0.9, 0.84, 1], bgcolor: [0, 0, 0, 0], aspectcorrect: true,
+        fillcolor: [0.72, 0.7, 0.66, 1], bgcolor: [0, 0, 0, 0], aspectcorrect: true,
       }, {
         label: "swell1",
         parameters: {
@@ -2508,21 +2558,31 @@ const reliefDocument = document(
 
       node("palette", "ramp", [-1080, -180], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
-        /* A scan-line palette: near-black in the flats, through a cold blue and a hot
-           magenta, to a white crest. Monotone in luminance because that same luminance is
-           the HEIGHT — the brightest points are the ones standing closest to you, which is
-           what a phosphor relief does. */
+        /* A scan-line palette: near-black in the valleys, through a cold teal and a hot
+           magenta, to a white crest. T503 freed it from a second job — `braid1` carries the
+           height separately now — so these stops are chosen for CONTRAST and nothing else:
+           a long dark foot so the low ground goes properly black at thumbnail size, then a
+           short, violent climb through the top third so a ridge line ignites. */
         stops: [
-          { position: 0, color: [0.01, 0.02, 0.06, 1] },
-          { position: 0.3, color: [0.05, 0.14, 0.42, 1] },
-          { position: 0.58, color: [0.55, 0.16, 0.62, 1] },
-          { position: 0.8, color: [1, 0.34, 0.45, 1] },
-          { position: 1, color: [1, 0.95, 0.85, 1] },
+          { position: 0, color: [0.004, 0.01, 0.035, 1] },
+          { position: 0.34, color: [0.02, 0.13, 0.3, 1] },
+          { position: 0.56, color: [0.08, 0.5, 0.62, 1] },
+          { position: 0.76, color: [0.86, 0.2, 0.6, 1] },
+          { position: 0.9, color: [1, 0.46, 0.32, 1] },
+          { position: 1, color: [1, 0.97, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
       node("coat", "lookup", [-780, -20], {
         channel: "luminance", row: 0.5, scale: 1, offset: 0,
       }, { label: "coat1" }),
+      /* T503 — TWO FIELDS, ONE BRIDGE. rgb is the paletted colour; ALPHA is the source's
+         own luminance, straight off `pick1` before the palette touched it. There is exactly
+         one texture-to-points bridge in the catalogue and it carries four channels, so the
+         shape and the colour do not have to be the same number — which is what stopped the
+         relief from being a caricature of the palette's transfer curve. */
+      node("braid", "reorder", [-480, -20], {
+        outr: "in1r", outg: "in1g", outb: "in1b", outa: "in2lum",
+      }, { label: "braid1" }),
 
       node("sheet", "pointGrid", [-480, 280], {
         count: RELIEF_COLS * RELIEF_ROWS, cols: RELIEF_COLS, rows: RELIEF_ROWS,
@@ -2559,16 +2619,19 @@ const reliefDocument = document(
         parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } },
       }),
       node("eye", "camera", [420, -180], {
-        /* Off to one side and above the sheet's plane. Face-on, a height field is just the
-           picture again and the whole crossing is invisible; this is the angle at which the
-           scan lines separate and the word reads as an OBJECT. */
-        eye: [1.2, -1.5, 3.45], lookAt: [0, 0, 0.2], fov: 40, near: 0.1, far: 100, ortho: false,
+        /* T503 — A LANDSCAPE VIEW, and the number that matters is how much of the view
+           direction runs PARALLEL to the height axis. The old eye looked 86% down it, so
+           the displacement barely projected and the shot was the source picture with a
+           shimmer on it. From here it is ~19%: the hills have SILHOUETTES against the far
+           ground, and a rising slope bunches its scan lines the way a contour map does.
+           Low, because a Rutt-Etra image is a horizon, not a plan view. */
+        eye: [0.5, 1.62, 3.05], lookAt: [0, 0.02, -0.12], fov: 40, near: 0.1, far: 100, ortho: false,
       }, {
         label: "eye1",
-        parameters: { "eye.x": drivenSlot("sway1", 1.2) },
+        parameters: { "eye.x": drivenSlot("sway1", 0.5) },
       }),
       node("sway", "lfo", [120, -420], {
-        shape: "sine", frequency: 0.024, amplitude: 1.3, offset: 0, phase: 0,
+        shape: "sine", frequency: 0.024, amplitude: 1.15, offset: 0, phase: 0,
       }, { label: "sway1" }),
       node("shot", "render", [720, 140], {
         scenes: "body1", camera: "eye1", lights: "",
@@ -2578,7 +2641,7 @@ const reliefDocument = document(
 
       /* BLOOM, and on an unlit phosphor it is not decoration: it is what makes thousands of
          separate quads read as one glowing surface instead of as a dotted grid. */
-      node("halo", "blur", [1020, 300], { size: 14, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("halo", "blur", [1020, 300], { size: 18, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
       node("burn", "add", [1320, 140], {}, { label: "burn1" }),
       node("out", "output", [1620, 140], {}, { label: "out1" }),
     ],
@@ -2594,8 +2657,11 @@ const reliefDocument = document(
       edge("e-cam-pick", ["cam", "out"], ["pick", "inputs"], 1),
       edge("e-pick-coat", ["pick", "out"], ["coat", "source"]),
       edge("e-palette-coat", ["palette", "out"], ["coat", "lookup"]),
+      // THE BRAID: colour in from the palette, SHAPE in from the un-coated source.
+      edge("e-coat-braid", ["coat", "out"], ["braid", "in1"]),
+      edge("e-pick-braid", ["pick", "out"], ["braid", "in2"]),
       edge("e-sheet-bridge", ["sheet", "out"], ["bridge", "points"]),
-      edge("e-coat-bridge", ["coat", "out"], ["bridge", "texture"]),
+      edge("e-braid-bridge", ["braid", "out"], ["bridge", "texture"]),
       edge("e-bridge-lift", ["bridge", "out"], ["lift", "in"]),
       edge("e-lift-body", ["lift", "out"], ["body", "points"]),
       edge("e-shot-halo", ["shot", "out"], ["halo", "input"]),
@@ -2632,6 +2698,32 @@ const reliefDocument = document(
  *   SURFACE — grid topology survives a kernel, so central-difference normals give the
  *   floor its even lambert falloff. The stones are one instanced geometry: a box's
  *   vertices are ±1 × scale, so `scale: 0.4` cubes SIT on the floor at y = 0.4 exactly.
+ *
+ * ## T503 — THE ANTIALIASING, and why it is SUPERSAMPLING rather than analytic coverage
+ *
+ * Say the tempting thing first and then rule it out: analytic coverage from a distance
+ * field — `smoothstep` over `fwidth(d)` — is nearly always the better answer, because it
+ * costs one extra instruction and gives an exact 1-pixel filter width instead of a
+ * quantised approximation. **It does not apply here, because there is no distance field in
+ * this graph.** Every edge in this frame comes from a RASTERISER: triangle silhouettes of
+ * an octahedron and three boxes, and the depth comparison against a shadow map. A fragment
+ * shader cannot recover an analytic coverage term for a triangle edge it was never told
+ * about, and the shadow test is a discrete comparison — there is no `d` to take `fwidth`
+ * of. Reaching for `fwidth` here would have been the right tool on the wrong image.
+ *
+ * So this renders at 2× and lets the present resample it: `shot1` carries a per-node
+ * resolution override (§V50) of 1536×864 over a 768×432 project, and the output's blit
+ * downsamples it. At exactly 2:1 each destination pixel's sample lands on the corner
+ * between four source texels, so a bilinear read returns their exact mean — a true 4×
+ * box-filtered SSAA rather than a blur that happens to soften.
+ *
+ * THE COST, STATED, because 4× fragment work is not free: this frame is four boxes' worth
+ * of triangles over a 768-point floor at 1.3 megapixels, which is nothing. The reason it
+ * is worth paying twice over is that the SHADOW MAP scales with the render (`scratch`
+ * entries are `scale: 2` of the node's own size), so the same one change takes the map
+ * from 1536×864 to 3072×1728 — and the blocky staircase along the shadow's leading edge
+ * was always the worse of the two aliases. Both go away for one parameter. 3072 stays
+ * under `maxResolution` (4096) with room, which is the reason it is 2× and not 3×.
  */
 const sundialDocument = document(
   "e28-sundial",
@@ -2714,14 +2806,21 @@ const sundialDocument = document(
         kind: "directional", color: [1, 0.88, 0.72, 1], intensity: 1.4,
         /* low and from the west: the raking angle IS the long shadow */
         direction: [-1, -0.45, 0.25],
-        shadows: true, shadowExtent: 5,
+        shadows: true, shadowExtent: 3.6,
       }, { label: "key1" }),
       node("shot", "render", [0, 40], {
         scenes: "ground1 stones1 sun1", camera: "cam1", lights: "key1",
         ambientColor: [0.4, 0.5, 0.95, 1], ambientIntensity: 0.3,
         background: [0.05, 0.06, 0.12, 1],
         environmentIntensity: 1,
-      }, { label: "shot1" }),
+      }, {
+        label: "shot1",
+        /* T503 — the whole antialiasing fix, and it is one field. EXACTLY 2× the project's
+           768×432 (§V50): at any other ratio the downsample is an interpolation with
+           unequal weights, and at this one it is a box filter. See the note above for why
+           analytic coverage is not available on a rasterised silhouette. */
+        resolution: { mode: "fixed", width: 1536, height: 864 },
+      }),
       node("out", "output", [280, 40], {}, { label: "out1" }),
     ],
     [
@@ -2734,6 +2833,438 @@ const sundialDocument = document(
       // THE SKY WIRE (T482, V372): pixels are data — a Ramp worn as the environment.
       edge("e-sky-shot", ["sky", "out"], ["shot", "environment"]),
       edge("e-shot-out", ["shot", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
+/**
+ * E29 — Descent (T503). A VJ piece first: an endless tunnel you fall into.
+ *
+ * A ring of light is born in the middle of the frame, then rushes outward past you,
+ * turning as it goes and sliding around the hue wheel — and behind it the next ring, and
+ * the next, so the frame reads as a corridor receding to a point that never arrives. On
+ * every kick the fall LURCHES: the zoom per frame jumps, the whole corridor surges, and it
+ * settles back over the following beat.
+ *
+ * ## Why this is not E1 with more knobs
+ *
+ * E1 Feedback Echo is a SMEAR — a trail that transforms slightly and fades. The two
+ * differences here are the whole picture and neither is a matter of degree:
+ *
+ *  1. **The scale inside the loop is greater than one.** E1's loop shrinks and drifts;
+ *     this one MAGNIFIES by 5.5% per pass about the frame's centre. Content therefore
+ *     leaves through the edges rather than piling up, which is what a corridor is, and it
+ *     is also what keeps the loop stable without a hard fade — an expanding image spreads
+ *     its energy over more pixels every pass, so the gain can sit essentially at unity and
+ *     the picture still terminates.
+ *  2. **The hue rotates inside the loop.** Each pass is a few degrees further round, so
+ *     depth reads as COLOUR: the ring nearest you is a different hue from the one behind
+ *     it, and you can count the corridor's rings by their colour even where their edges
+ *     have blurred into each other.
+ *
+ * ## The clock, and why this one cannot snap at a lap
+ *
+ * There is no clock read in the picture path at all — not `time`, not `absTime`. The
+ * motion is the feedback loop's own iteration, one pass per frame, and the state carries
+ * across a timeline lap like any other frame boundary (T489). An example whose animation
+ * comes from state rather than from a clock position is loop-proof BY CONSTRUCTION, which
+ * for a piece meant to run for an hour behind a set is worth more than it sounds. The one
+ * clock reader is `beat1`, which is timeline-anchored ON PURPOSE (§V436): it stands in for
+ * a track, so bar one lands on the in point.
+ *
+ * ## The sound, and what happens when you drop your own in
+ *
+ * `beat1` is the deterministic Audio Pattern, so the file OPENS PLAYING with no asset
+ * bound (§V363, B74) and an offline render of it reproduces (§V45). The kick drives two
+ * things at different time constants — the zoom, through a fast Lag so the surge is felt
+ * as an impact, and the ring's own brightness, through a slower one so the corridor stays
+ * lit between beats. Swap `beat1` for an `audioFileIn` and keep its label and every
+ * mapping downstream follows.
+ */
+const descentDocument = document(
+  "e29-descent",
+  "E29 Descent",
+  settings({ outputResolution: { width: 1280, height: 720 }, randomSeed: 29 }),
+  graph(
+    [
+      // ---- the sound -------------------------------------------------------------
+      node("beat", "audioPattern", [-1560, 600], { bpm: 124, amount: 1 }, { label: "beat1" }),
+      /* Two envelopes off one source, and the difference between them is the feel — but
+         also, for the ring, the difference between a stable loop and a white frame. The
+         slow one (0.28 s) reaches the ZOOM, where a smooth surge is what you want. The fast
+         one (30 ms) reaches the ring's brightness, and it has to be fast: anything the ring
+         adds is added EVERY FRAME into a loop whose gain is 0.985, so a DC term of `x`
+         settles at `x / 0.015` — sixty-odd times itself. A ring lit by an ENVELOPE is a DC
+         term. A ring lit by a STRIKE is not, and that is why this one is nearly zero
+         between beats rather than merely dimmer. */
+      node("punch", "valueLag", [-1300, 480], { lag: 0.28 }, { label: "punch1" }),
+      /* THE RING IS BORN BY A TRIGGER, not by an envelope, and this is the load-bearing
+         line in the graph. Whatever the ring adds is added into a loop whose gain is 0.985,
+         so the loop integrates roughly 67 frames of it: a DC term of `x` settles at
+         `x / 0.015`. An envelope — even a fast one — is a DC term, and three builds of this
+         example went to solid white before that was the diagnosis rather than the fade
+         being "not strong enough". A Trigger emits 1 for the ONE frame the kick crosses its
+         threshold and 0 for the other twenty-eight, so the mean input is a twenty-ninth of
+         the peak and the steady state lands under one by arithmetic instead of by luck. */
+      node("hit", "valueTrigger", [-1300, 740], { threshold: 0.5 }, { label: "hit1" }),
+      node("zgain", "valueMath", [-1040, 480], { operation: "multiply", operand: 0.032 }, { label: "zgain1" }),
+      node("zbase", "valueMath", [-780, 480], { operation: "add", operand: 1.019 }, { label: "zbase1" }),
+      /* Two fences, like E24's: above ~1.13 per frame the corridor outruns the eye and
+         reads as a flash, and at or below 1.0 the loop stops expanding and piles up into
+         white. The clamp is not tuning, it is what keeps a loud passage recoverable. */
+      node("zcap", "valueLimit", [-520, 480], { minimum: 1.006, maximum: 1.048 }, { label: "zoom1" }),
+      node("strike", "valueMath", [-1040, 740], { operation: "multiply", operand: 0.85 }, { label: "strike1" }),
+      node("bcap", "valueLimit", [-780, 740], { minimum: 0, maximum: 0.85 }, { label: "lamp1" }),
+
+      // ---- the ring that is born every frame --------------------------------------
+      /* THE FRAME, as two rounded squares and a Difference.
+         WHY A SQUARE AND NOT A CIRCLE, and it is the difference between a tunnel and a
+         dartboard: the loop ROTATES, and a rotation of a rotationally symmetric shape is
+         invisible. The first build seeded circles, and the 0.26° per pass — thirty degrees
+         between one ring and the next — did nothing at all to the picture. A square turns
+         visibly, so the corridor reads as a twisting shaft rather than a bullseye, and the
+         twist per ring is something you can literally count off the corners.
+         AND WHY TWO SHAPES AND NOT ONE NODE: `rectangle`'s `distance` mode gives a SIGNED
+         field, and a Level cannot cut a band out of a signed field because it has no
+         absolute value — every setting that brightens the edge also brightens the whole
+         interior, which renders as a soft blob (measured, on the build before that one).
+         |a − b| over two coverage masks is exact, and the frame's WIDTH is then the
+         difference of two sizes, which is a number you can reason about. */
+      node("bore", "rectangle", [-1560, -80], {
+        mode: "fill", center: [0.5, 0.5], size: [0.124, 0.124], roundness: 0.028, softness: 0.004,
+        fillcolor: [1, 1, 1, 1], bgcolor: [0, 0, 0, 1], aspectcorrect: true,
+      }, { label: "bore1" }),
+      node("core", "rectangle", [-1560, 180], {
+        mode: "fill", center: [0.5, 0.5], size: [0.113, 0.113], roundness: 0.028, softness: 0.004,
+        fillcolor: [1, 1, 1, 1], bgcolor: [0, 0, 0, 1], aspectcorrect: true,
+      }, { label: "core1" }),
+      node("ring", "difference", [-1300, 50], {}, { label: "ring1" }),
+      /* The kick lands HERE — AFTER the palette, and that ordering is the whole of it. Put
+         the same gain BEFORE the lookup and a quiet moment does not dim the ring, it moves
+         it to the DARK END OF THE RAMP: the ring turns black-purple instead of faint, and
+         between beats the frame goes to nothing. Measured on the first build. A brightness
+         that means brightness has to act on colour, not on a lookup coordinate. */
+      node("lamp", "level", [-780, -80], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+      }, {
+        label: "lampl1",
+        parameters: { brightness: drivenSlot("lamp1:low", 1) },
+      }),
+      /* The frame's colour, and the crest is SATURATED rather than white — which is not a
+         taste call, it is what makes the hue rotation inside the loop do anything at all.
+         Rotating the hue of a neutral is a no-op: the first coloured build ended on
+         (1, 0.98, 0.92), every ring came out white, and thirty degrees per ring changed
+         nothing. Ending on a saturated teal gives `shift1` something to turn, so depth
+         reads as colour down the whole corridor. */
+      node("hue", "ramp", [-1300, -280], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0, color: [0, 0, 0, 1] },
+          { position: 0.4, color: [0.03, 0.06, 0.22, 1] },
+          { position: 0.72, color: [0.05, 0.42, 0.6, 1] },
+          { position: 1, color: [0.1, 0.95, 0.88, 1] },
+        ],
+      }, { label: "hue1", definitionVersion: 2 }),
+      node("paint", "lookup", [-1040, -80], { channel: "luminance", row: 0.5, scale: 1, offset: 0 }, { label: "paint1" }),
+
+      // ---- the loop: magnify, turn, shift hue, add the new ring ---------------------
+      /* THE TEMPORAL BOUNDARY (§V4/§V22). `source` names the node whose output is captured,
+         so last frame's finished picture re-enters here and the three stages below run on
+         it before the new ring is added on top. */
+      node("loop", "feedback", [-780, 230], {
+        /* PERSISTENCE IS THE ENERGY SINK, and the first build got this wrong in a way worth
+           recording: I assumed an expanding loop dims itself, because the same light lands
+           on more pixels. It does not. `s > 1` DIVIDES the sampling coordinates, so the
+           pass magnifies the centre and DUPLICATES its pixels — nothing leaves the frame
+           and nothing is diluted. With a near-unity gain the corridor went to white in
+           under four seconds. Every bit of the decay here is deliberate. */
+        source: "born1", persistence: 0.985, clearColor: [0, 0, 0, 1],
+      }, { label: "loop1" }),
+      node("fall", "transform", [-520, 230], {
+        /* Scale ABOVE ONE about the centre: the corridor's whole geometry, in one number.
+           `extend: "zero"` matters — with `hold`, the edge pixels of an expanding image
+           streak outward forever and the corners fill with smeared colour. */
+        t: [0, 0], r: 0.55, s: [1.019, 1.019], p: [0, 0], xord: "srt", extend: "zero", aspectcorrect: true,
+      }, {
+        label: "fall1",
+        parameters: {
+          "s.x": drivenSlot("zoom1:low", 1.019),
+          "s.y": drivenSlot("zoom1:low", 1.019),
+        },
+      }),
+      node("fade", "level", [-260, 230], {
+        /* Two jobs, neither of them the fade (that is `loop1`'s persistence). `blacklevel`
+           above zero gives the corridor an END — without it the far rings asymptote toward
+           a permanent grey haze instead of going out. GAMMA above one fights the other
+           thing the loop does to a picture: every pass resamples bilinearly, so an edge
+           that has gone round fifty times is a gradient, and pulling the midtones down
+           steepens it again.
+           GAMMA AND NOT CONTRAST, and the difference is stability rather than taste. A
+           Contrast above one expands about a mid-grey pivot, so for anything brighter than
+           the pivot it is a GAIN — inside a loop that is positive feedback, and the first
+           build went to white in seven seconds with contrast 1.05 and persistence 0.989.
+           `pow(v, 1.12)` is below `v` everywhere in [0,1), so it sharpens and contracts at
+           the same time. Every stage inside a feedback loop has to be checked for that. */
+        blacklevel: 0.006, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1.12, opacity: 1,
+      }, { label: "fade1" }),
+      node("shift", "hsv", [0, 230], {
+        /* Three degrees per pass. Each frame of the corridor has been round the loop one
+           more time than the one inside it, so ~90° separates one square from the next and
+           DEPTH READS AS COLOUR — you can count the shaft by hue where the edges have
+           already blurred into each other. Small numbers do not work here: at 1.6° the
+           corridor was one colour with a fringe. */
+        hueoffset: 3.1, saturation: 1.004, value: 1,
+      }, { label: "shift1" }),
+      /* ADD, not Screen. Screen is `1 − (1 − a)(1 − b)`: it saturates toward white by
+         construction, which is fine once but is a ratchet inside a loop — the first build
+         used it and the corridor was solid white within four seconds, whatever the fade
+         was set to. Add is linear, so the steady state is the ring's height over one minus
+         the loop gain, which is a number you can choose. */
+      node("born", "add", [260, 60], {}, { label: "born1" }),
+
+      // ---- the look ---------------------------------------------------------------
+      node("halo", "blur", [520, 340], { size: 26, filter: "gaussian", extend: "zero" }, { label: "halo1" }),
+      node("haze", "level", [780, 340], {
+        /* The bloom's own gain. A blur normalises, so adding it back at unity doubles the
+           picture's total light; at 0.55 it reads as glow around the rings rather than as
+           a second, softer copy of them. */
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 0.5, gamma1: 1, opacity: 1,
+      }, { label: "haze1" }),
+      node("burn", "add", [1040, 60], {}, { label: "burn1" }),
+      node("trim", "level", [1300, 60], {
+        /* W5, stated: there is no tone map yet, so an additive bloom over an additive loop
+           clips at the encode. This is the hand gain that keeps the crest inside the range,
+           and it should come OUT the day an output transform lands. */
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+      }, { label: "trim1" }),
+      node("out", "output", [1560, 60], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-beat-punch", ["beat", "out"], ["punch", "in"]),
+      edge("e-beat-hit", ["beat", "out"], ["hit", "in"]),
+      edge("e-punch-zgain", ["punch", "out"], ["zgain", "a"]),
+      edge("e-zgain-zbase", ["zgain", "out"], ["zbase", "a"]),
+      edge("e-zbase-zcap", ["zbase", "out"], ["zcap", "in"]),
+      edge("e-hit-strike", ["hit", "out"], ["strike", "a"]),
+      edge("e-strike-bcap", ["strike", "out"], ["bcap", "in"]),
+
+      edge("e-bore-ring", ["bore", "out"], ["ring", "in1"]),
+      edge("e-core-ring", ["core", "out"], ["ring", "in2"]),
+      edge("e-ring-paint", ["ring", "out"], ["paint", "source"]),
+      edge("e-paint-lamp", ["paint", "out"], ["lamp", "input"]),
+      edge("e-hue-paint", ["hue", "out"], ["paint", "lookup"]),
+
+      edge("e-loop-fall", ["loop", "out"], ["fall", "input"]),
+      edge("e-fall-fade", ["fall", "out"], ["fade", "input"]),
+      edge("e-fade-shift", ["fade", "out"], ["shift", "input"]),
+      // in1 is the corridor, in2 is the new ring: Screen is commutative, but the order is
+      // still the reading order of the picture and it costs nothing to state it.
+      edge("e-shift-born", ["shift", "out"], ["born", "in1"]),
+      edge("e-lamp-born", ["lamp", "out"], ["born", "in2"]),
+
+      edge("e-born-halo", ["born", "out"], ["halo", "input"]),
+      edge("e-born-burn", ["born", "out"], ["burn", "in1"]),
+      edge("e-halo-haze", ["halo", "out"], ["haze", "input"]),
+      edge("e-haze-burn", ["haze", "out"], ["burn", "in2"]),
+      edge("e-burn-trim", ["burn", "out"], ["trim", "input"]),
+      edge("e-trim-out", ["trim", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
+const NAVE_RIBS = 60;
+const NAVE_ROUND = 176;
+
+const NAVE_KERNEL = `const TAU: f32 = 6.28318530717958647692;
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* The grid's two axes become the tunnel's two axes: x goes AROUND the bore, y indexes
+     which rib you are on. Nothing else in the kernel knows it started life as a plane. */
+  let around = (p.position.x * 0.5 + 0.5) * TAU;
+  let rib = p.position.y * 0.5 + 0.5;
+
+  /* ctx.absTime, and this is the whole reason it exists (T489, §V437). The tunnel's motion
+     is a POSITION read off a clock — the one shape that snaps at a timeline lap if it reads
+     the wrapping one. On the absolute clock the fract() below is continuous forever: the
+     ribs keep coming, a lap does nothing, and an hour behind a set is an hour of tunnel.
+     Deterministic too: absTime is frames-since-transport-start, zeroed at render (T467). */
+  let depth = fract(rib + ctx.absTime * 0.052);
+
+  /* ctx.value1 is the bass (T479): a value write per frame, never a rebuild (§V5). The bore
+     BREATHES on the kick — the whole tunnel widens and settles — which reads at the size a
+     projection is watched from, where a colour change does not. */
+  let flute = 0.19 * sin(around * 8.0 + ctx.absTime * 0.42);
+  let radius = 1.05 + flute + ctx.value1 * 0.62;
+
+  /* Depth 0 sits BEHIND the camera on purpose. A scrolling tunnel has to recycle its ribs
+     somewhere, and the recycle is a teleport; putting it behind the eye means the pop
+     happens where nobody is looking, instead of as a flash in the middle of the frame. */
+  let z = 2.9 - depth * 34.0;
+  q.position = vec3f(cos(around) * radius, sin(around) * radius, z);
+
+  /* p.sample is the palette, read off the ramp by the bridge at this point's own grid
+     position — so the COLOUR is a gradient in the graph, not a formula in this text. All
+     the kernel does is fade it, which is the one thing the ramp cannot know.
+     TWO FADES, and the near one is not optional. A quad has a fixed WORLD size, so a rib
+     three units from the eye draws as a fistful of blocks; the first build looked like the
+     tunnel was made of postage stamps. Fading a rib out as it passes the eye hides the
+     recycle AND the blockiness in one term, and it is also just what depth of field and
+     atmosphere do to a real corridor. */
+  let far = smoothstep(1.0, 0.7, depth);
+  let near = smoothstep(2.0, -2.4, z);
+  q.sample = vec4f(p.sample.rgb * far * near * (0.7 + ctx.value2 * 1.1), 1.0);
+  return q;
+}`;
+
+/**
+ * E30 — Nave (T503). The audio-and-3D corner, which nothing in the set filled.
+ *
+ * You are inside a cathedral of light moving toward you: ninety-six fluted ribs of glowing
+ * points, receding to a vanishing point, sliding past forever. On the kick the whole bore
+ * OPENS — the tunnel widens by half a radius and settles over the beat — and the ribs
+ * brighten with it. It is the shot every VJ set has and none of our examples had: E24 is
+ * audio and 2D, E25 is 3D and silent, and this is the crossing.
+ *
+ * ## Everything in this file is a decision about which clock
+ *
+ * The rib motion is a POSITION read off a clock — `fract(rib + t · 0.052)` — which is
+ * exactly the shape that breaks at a loop boundary. On `ctx.time` the whole tunnel would
+ * jump back a third of a rib every lap, forever, in the one setting these examples are
+ * for. It reads `ctx.absTime` instead (T489/B97), so the scroll is continuous across a lap
+ * and an offline render still reproduces, because absolute time is frames-since-transport-
+ * start and T467 zeroes it at render (§V44, §V45).
+ *
+ * Its neighbours own different clocks, and that is §V436 working rather than an
+ * inconsistency: `sway1`/`rise1` are LFOs and free-running, so the camera drift also
+ * survives a lap; `beat1` is the Audio Pattern and TIMELINE-ANCHORED by design, so bar one
+ * lands on the in point and a scrub finds the same beat.
+ *
+ * ## Where the colour lives, and why it is not in the kernel
+ *
+ * The obvious way to colour four thousand points is six lines of cosine palette in WGSL,
+ * and it would look the same. It is in a Ramp instead, read through `textureToAttribute` at
+ * each point's own grid position, because a gradient you can drag stops around in is worth
+ * more in a node tool than a gradient you have to recompile — and because the entire reason
+ * this example exists is to be OPENED and messed with. The kernel only does the one thing
+ * the ramp cannot: fade a rib by how far away it ended up.
+ *
+ * ## Unlit, and that is not laziness
+ *
+ * `materialUnlit` with a per-point tint (T478), no lights, and a wide bloom. Points ARE
+ * the light here — a lambert response on four thousand tiny quads would just make them
+ * grey where they face away, and the shot is a light source rather than a lit object.
+ */
+const naveDocument = document(
+  "e30-nave",
+  "E30 Nave",
+  settings({ outputResolution: { width: 1280, height: 720 }, randomSeed: 30 }),
+  graph(
+    [
+      // ---- the sound ---------------------------------------------------------------
+      node("beat", "audioPattern", [-1740, 700], { bpm: 120, amount: 1 }, { label: "beat1" }),
+      node("swellEnv", "valueLag", [-1480, 700], { lag: 0.11 }, { label: "swell1" }),
+      node("bgain", "valueMath", [-1740, 960], { operation: "multiply", operand: 0.55 }, { label: "bgain1" }),
+      node("bcap", "valueLimit", [-1480, 960], { minimum: 0, maximum: 0.5 }, { label: "bore1" }),
+      node("lgain", "valueMath", [-1220, 960], { operation: "multiply", operand: 0.8 }, { label: "lgain1" }),
+      node("lcap", "valueLimit", [-960, 960], { minimum: 0.05, maximum: 0.85 }, { label: "lum1" }),
+
+      // ---- the palette, as a gradient rather than as a formula -----------------------
+      node("palette", "ramp", [-1740, 40], {
+        type: "vertical", interp: "smooth", phase: 0, period: 1,
+        /* Read along the RIB index, and since depth is `fract(rib + t)` that is the same
+           thing as reading along DEPTH, rotating slowly. One pass of the gradient down the
+           shaft, not several: `period: 4` was tried and is worse, because the ramp node
+           compresses the gradient into the first quarter rather than tiling it, so the
+           whole tunnel came out one blue. Deep indigo through a cold cyan to a hot coral,
+           with a near-black notch at 0.86 — the notch is what gives the shaft visible
+           SEGMENTS instead of one continuous wash. */
+        stops: [
+          { position: 0, color: [0.05, 0.03, 0.24, 1] },
+          { position: 0.26, color: [0.08, 0.45, 0.85, 1] },
+          { position: 0.5, color: [0.25, 0.95, 0.85, 1] },
+          { position: 0.7, color: [1, 0.72, 0.3, 1] },
+          { position: 0.86, color: [0.02, 0.01, 0.06, 1] },
+          { position: 1, color: [0.55, 0.12, 0.7, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+
+      // ---- the tunnel ----------------------------------------------------------------
+      node("sheet", "pointGrid", [-1480, 340], {
+        count: NAVE_RIBS * NAVE_ROUND, cols: NAVE_ROUND, rows: NAVE_RIBS,
+      }, { label: "grid1" }),
+      node("bridge", "textureToAttribute", [-1220, 160], {
+        count: NAVE_RIBS * NAVE_ROUND,
+      }, { label: "bridge1" }),
+      node("roll", "pointKernel", [-960, 160], {
+        capacity: NAVE_RIBS * NAVE_ROUND,
+        seed: 30,
+        attributes: JSON.stringify([
+          { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+          { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
+        ]),
+        kernel: NAVE_KERNEL,
+      }, {
+        label: "roll1",
+        parameters: {
+          value1: drivenSlot("bore1:low", 0.16),
+          value2: drivenSlot("lum1:level", 0.28),
+        },
+      }),
+
+      node("glass", "materialUnlit", [-700, -140], { color: [1, 1, 1, 1] }, { label: "glass1" }),
+      node("ribs", "geometry", [-700, 160], {
+        mode: "instances", shape: "quad", scale: 0.0092, material: "glass1", tint: [1, 1, 1, 1],
+      }, {
+        label: "ribs1",
+        parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } },
+      }),
+
+      // ---- the shot ------------------------------------------------------------------
+      node("sway", "lfo", [-960, 440], { shape: "sine", frequency: 0.031, amplitude: 0.34, offset: 0, phase: 0 }, { label: "sway1" }),
+      node("rise", "lfo", [-960, 700], { shape: "sine", frequency: 0.023, amplitude: 0.3, offset: 0, phase: 0.25 }, { label: "rise1" }),
+      node("eye", "camera", [-440, 160], {
+        /* Inside the bore, off the axis by a hair and drifting. Dead centre on the axis is
+           a perfectly symmetric frame, and a perfectly symmetric frame has no parallax —
+           the tunnel stops reading as a space and starts reading as a target. */
+        eye: [0, 0, 2], lookAt: [0, 0, -12], fov: 50, near: 0.05, far: 120, ortho: false,
+      }, {
+        label: "eye1",
+        parameters: {
+          "eye.x": drivenSlot("sway1", 0),
+          "eye.y": drivenSlot("rise1", 0),
+        },
+      }),
+      node("shot", "render", [-180, 160], {
+        scenes: "ribs1", camera: "eye1", lights: "",
+        ambientColor: [1, 1, 1, 1], ambientIntensity: 0,
+        background: [0.004, 0.005, 0.014, 1],
+      }, { label: "shot1" }),
+
+      node("halo", "blur", [80, 420], { size: 20, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("haze", "level", [340, 420], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 0.7, gamma1: 1, opacity: 1,
+      }, { label: "haze1" }),
+      node("burn", "add", [600, 160], {}, { label: "burn1" }),
+      node("out", "output", [860, 160], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-beat-swell", ["beat", "out"], ["swellEnv", "in"]),
+      edge("e-swell-bgain", ["swellEnv", "out"], ["bgain", "a"]),
+      edge("e-bgain-bcap", ["bgain", "out"], ["bcap", "in"]),
+      edge("e-swell-lgain", ["swellEnv", "out"], ["lgain", "a"]),
+      edge("e-lgain-lcap", ["lgain", "out"], ["lcap", "in"]),
+
+      edge("e-grid-bridge", ["sheet", "out"], ["bridge", "points"]),
+      edge("e-palette-bridge", ["palette", "out"], ["bridge", "texture"]),
+      edge("e-bridge-roll", ["bridge", "out"], ["roll", "in"]),
+      edge("e-roll-ribs", ["roll", "out"], ["ribs", "points"]),
+
+      edge("e-shot-halo", ["shot", "out"], ["halo", "input"]),
+      edge("e-halo-haze", ["halo", "out"], ["haze", "input"]),
+      edge("e-shot-burn", ["shot", "out"], ["burn", "in1"]),
+      edge("e-haze-burn", ["haze", "out"], ["burn", "in2"]),
+      edge("e-burn-out", ["burn", "out"], ["out", "input"]),
     ],
   ),
 );
@@ -2759,4 +3290,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   interferenceDocument,
   reliefDocument,
   sundialDocument,
+  descentDocument,
+  naveDocument,
 ];

@@ -51,6 +51,12 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
     reason: "the file half of the same generalisation.",
   },
   {
+    doc: "E29-Descent.md",
+    type: "audioFileIn",
+    reason:
+      "an INSTRUCTION to the reader, the same one E24 carries: the example ships the deterministic audioPattern (§V363) so it plays with no asset, and the doc says which node to swap in to drive it from a real track.",
+  },
+  {
     doc: "E13-Prism.md",
     type: "renderInstances",
     reason:

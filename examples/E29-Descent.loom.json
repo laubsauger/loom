@@ -1,0 +1,769 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beat-hit": {
+        "id": "e-beat-hit",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hit",
+          "portId": "in"
+        }
+      },
+      "e-beat-punch": {
+        "id": "e-beat-punch",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "punch",
+          "portId": "in"
+        }
+      },
+      "e-bore-ring": {
+        "id": "e-bore-ring",
+        "source": {
+          "nodeId": "bore",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in1"
+        }
+      },
+      "e-born-burn": {
+        "id": "e-born-burn",
+        "source": {
+          "nodeId": "born",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-born-halo": {
+        "id": "e-born-halo",
+        "source": {
+          "nodeId": "born",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-burn-trim": {
+        "id": "e-burn-trim",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trim",
+          "portId": "input"
+        }
+      },
+      "e-core-ring": {
+        "id": "e-core-ring",
+        "source": {
+          "nodeId": "core",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in2"
+        }
+      },
+      "e-fade-shift": {
+        "id": "e-fade-shift",
+        "source": {
+          "nodeId": "fade",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shift",
+          "portId": "input"
+        }
+      },
+      "e-fall-fade": {
+        "id": "e-fall-fade",
+        "source": {
+          "nodeId": "fall",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fade",
+          "portId": "input"
+        }
+      },
+      "e-halo-haze": {
+        "id": "e-halo-haze",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haze",
+          "portId": "input"
+        }
+      },
+      "e-haze-burn": {
+        "id": "e-haze-burn",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-hit-strike": {
+        "id": "e-hit-strike",
+        "source": {
+          "nodeId": "hit",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "strike",
+          "portId": "a"
+        }
+      },
+      "e-hue-paint": {
+        "id": "e-hue-paint",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "lookup"
+        }
+      },
+      "e-lamp-born": {
+        "id": "e-lamp-born",
+        "source": {
+          "nodeId": "lamp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "born",
+          "portId": "in2"
+        }
+      },
+      "e-loop-fall": {
+        "id": "e-loop-fall",
+        "source": {
+          "nodeId": "loop",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fall",
+          "portId": "input"
+        }
+      },
+      "e-paint-lamp": {
+        "id": "e-paint-lamp",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lamp",
+          "portId": "input"
+        }
+      },
+      "e-punch-zgain": {
+        "id": "e-punch-zgain",
+        "source": {
+          "nodeId": "punch",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "zgain",
+          "portId": "a"
+        }
+      },
+      "e-ring-paint": {
+        "id": "e-ring-paint",
+        "source": {
+          "nodeId": "ring",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "source"
+        }
+      },
+      "e-shift-born": {
+        "id": "e-shift-born",
+        "source": {
+          "nodeId": "shift",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "born",
+          "portId": "in1"
+        }
+      },
+      "e-strike-bcap": {
+        "id": "e-strike-bcap",
+        "source": {
+          "nodeId": "strike",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bcap",
+          "portId": "in"
+        }
+      },
+      "e-trim-out": {
+        "id": "e-trim-out",
+        "source": {
+          "nodeId": "trim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-zbase-zcap": {
+        "id": "e-zbase-zcap",
+        "source": {
+          "nodeId": "zbase",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "zcap",
+          "portId": "in"
+        }
+      },
+      "e-zgain-zbase": {
+        "id": "e-zgain-zbase",
+        "source": {
+          "nodeId": "zgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "zbase",
+          "portId": "a"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bcap": {
+        "definitionVersion": 1,
+        "id": "bcap",
+        "label": "lamp1",
+        "parameters": {
+          "maximum": 0.85,
+          "minimum": 0
+        },
+        "position": {
+          "x": -780,
+          "y": 740
+        },
+        "type": "valueLimit"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 124
+        },
+        "position": {
+          "x": -1560,
+          "y": 600
+        },
+        "type": "audioPattern"
+      },
+      "bore": {
+        "definitionVersion": 1,
+        "id": "bore",
+        "label": "bore1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "roundness": 0.028,
+          "size": [
+            0.124,
+            0.124
+          ],
+          "softness": 0.004
+        },
+        "position": {
+          "x": -1560,
+          "y": -80
+        },
+        "type": "rectangle"
+      },
+      "born": {
+        "definitionVersion": 1,
+        "id": "born",
+        "label": "born1",
+        "parameters": {},
+        "position": {
+          "x": 260,
+          "y": 60
+        },
+        "type": "add"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 1040,
+          "y": 60
+        },
+        "type": "add"
+      },
+      "core": {
+        "definitionVersion": 1,
+        "id": "core",
+        "label": "core1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "roundness": 0.028,
+          "size": [
+            0.113,
+            0.113
+          ],
+          "softness": 0.004
+        },
+        "position": {
+          "x": -1560,
+          "y": 180
+        },
+        "type": "rectangle"
+      },
+      "fade": {
+        "definitionVersion": 1,
+        "id": "fade",
+        "label": "fade1",
+        "parameters": {
+          "blacklevel": 0.006,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1.12,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -260,
+          "y": 230
+        },
+        "type": "level"
+      },
+      "fall": {
+        "definitionVersion": 1,
+        "id": "fall",
+        "label": "fall1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0.55,
+          "s": [
+            1.019,
+            1.019
+          ],
+          "s.x": {
+            "bindings": {
+              "driven": {
+                "channel": "zoom1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.019
+              }
+            },
+            "mode": "driven"
+          },
+          "s.y": {
+            "bindings": {
+              "driven": {
+                "channel": "zoom1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.019
+              }
+            },
+            "mode": "driven"
+          },
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -520,
+          "y": 230
+        },
+        "type": "transform"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "zero",
+          "filter": "gaussian",
+          "size": 26
+        },
+        "position": {
+          "x": 520,
+          "y": 340
+        },
+        "type": "blur"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 0.5,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 780,
+          "y": 340
+        },
+        "type": "level"
+      },
+      "hit": {
+        "definitionVersion": 1,
+        "id": "hit",
+        "label": "hit1",
+        "parameters": {
+          "threshold": 0.5
+        },
+        "position": {
+          "x": -1300,
+          "y": 740
+        },
+        "type": "valueTrigger"
+      },
+      "hue": {
+        "definitionVersion": 2,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.03,
+                0.06,
+                0.22,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0.05,
+                0.42,
+                0.6,
+                1
+              ],
+              "position": 0.72
+            },
+            {
+              "color": [
+                0.1,
+                0.95,
+                0.88,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1300,
+          "y": -280
+        },
+        "type": "ramp"
+      },
+      "lamp": {
+        "definitionVersion": 1,
+        "id": "lamp",
+        "label": "lampl1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "lamp1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -780,
+          "y": -80
+        },
+        "type": "level"
+      },
+      "loop": {
+        "definitionVersion": 1,
+        "id": "loop",
+        "label": "loop1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": 0.985,
+          "source": "born1"
+        },
+        "position": {
+          "x": -780,
+          "y": 230
+        },
+        "type": "feedback"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1560,
+          "y": 60
+        },
+        "type": "output"
+      },
+      "paint": {
+        "definitionVersion": 1,
+        "id": "paint",
+        "label": "paint1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": -1040,
+          "y": -80
+        },
+        "type": "lookup"
+      },
+      "punch": {
+        "definitionVersion": 1,
+        "id": "punch",
+        "label": "punch1",
+        "parameters": {
+          "lag": 0.28
+        },
+        "position": {
+          "x": -1300,
+          "y": 480
+        },
+        "type": "valueLag"
+      },
+      "ring": {
+        "definitionVersion": 1,
+        "id": "ring",
+        "label": "ring1",
+        "parameters": {},
+        "position": {
+          "x": -1300,
+          "y": 50
+        },
+        "type": "difference"
+      },
+      "shift": {
+        "definitionVersion": 1,
+        "id": "shift",
+        "label": "shift1",
+        "parameters": {
+          "hueoffset": 3.1,
+          "saturation": 1.004,
+          "value": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 230
+        },
+        "type": "hsv"
+      },
+      "strike": {
+        "definitionVersion": 1,
+        "id": "strike",
+        "label": "strike1",
+        "parameters": {
+          "operand": 0.85,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1040,
+          "y": 740
+        },
+        "type": "valueMath"
+      },
+      "trim": {
+        "definitionVersion": 1,
+        "id": "trim",
+        "label": "trim1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 1300,
+          "y": 60
+        },
+        "type": "level"
+      },
+      "zbase": {
+        "definitionVersion": 1,
+        "id": "zbase",
+        "label": "zbase1",
+        "parameters": {
+          "operand": 1.019,
+          "operation": "add"
+        },
+        "position": {
+          "x": -780,
+          "y": 480
+        },
+        "type": "valueMath"
+      },
+      "zcap": {
+        "definitionVersion": 1,
+        "id": "zcap",
+        "label": "zoom1",
+        "parameters": {
+          "maximum": 1.048,
+          "minimum": 1.006
+        },
+        "position": {
+          "x": -520,
+          "y": 480
+        },
+        "type": "valueLimit"
+      },
+      "zgain": {
+        "definitionVersion": 1,
+        "id": "zgain",
+        "label": "zgain1",
+        "parameters": {
+          "operand": 0.032,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1040,
+          "y": 480
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E29 Descent",
+  "projectId": "example-e29-descent",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 29,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

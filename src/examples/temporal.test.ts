@@ -108,6 +108,10 @@ describe("examples with a temporal loop", () => {
       "E12-Fluid.loom.json",
       "E2-Reaction-Diffusion.loom.json",
       "E24-Audio-Reaction-Diffusion.loom.json",
+      // T503: E29's whole picture IS its loop — nothing in it reads a clock, so the
+      // corridor cannot snap at a timeline lap. That is the loop's third use in the set,
+      // after a smear (E1) and a simulation (E2/E12/E24): a ZOOM.
+      "E29-Descent.loom.json",
     ]);
   });
 });

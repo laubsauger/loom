@@ -66,12 +66,15 @@ function switchGraph(index: number, wired: readonly string[]): GraphDocument {
   return { revision: 1, groups: {}, nodes, edges } as unknown as GraphDocument;
 }
 
-function pickedBag(index: number, wired: readonly string[]): Record<string, number> {
+function evaluated(index: number, wired: readonly string[]) {
   const session = createValueGraphSession(registry);
-  const graph = switchGraph(index, wired);
-  const evaluated = session.evaluate(graph, frameAt(0));
-  expect(evaluated.diagnostics).toEqual([]);
-  return { ...(evaluated.byName.get("pick1") ?? {}) };
+  return session.evaluate(switchGraph(index, wired), frameAt(0));
+}
+
+function pickedBag(index: number, wired: readonly string[]): Record<string, number> {
+  const result = evaluated(index, wired);
+  expect(result.diagnostics).toEqual([]);
+  return { ...(result.byName.get("pick1") ?? {}) };
 }
 
 describe("valueSwitch — one source, exactly (T508, §V457)", () => {
@@ -88,8 +91,13 @@ describe("valueSwitch — one source, exactly (T508, §V457)", () => {
   it("wiring two sources to ONE port still clobbers — which is why the node exists", () => {
     // §V457 pinned, from the consumer's side. If someone later "fixes" the merge into a
     // blend or an error, this reddens and the fixer meets the reasoning before the change
-    // ships. It is also the honest statement of what a user gets today (T509).
-    expect(pickedBag(0, ["in1", "in1"])).toEqual({ value: 22 });
+    // ships. Since T509 the clobber is REPORTED rather than silent, so both halves are
+    // asserted here: the value that survives, and the warning that says the other one did
+    // not. A test that only checked the number would go green if the diagnostic vanished.
+    const result = evaluated(0, ["in1", "in1"]);
+    expect({ ...(result.byName.get("pick1") ?? {}) }).toEqual({ value: 22 });
+    expect(result.diagnostics.map((entry) => entry.code)).toEqual(["valueGraph.channelShadowed"]);
+    expect(result.diagnostics[0]?.severity).toBe("warning");
   });
 
   it("the index counts CONNECTED inputs and wraps, so -1 is the last", () => {

@@ -1,0 +1,632 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beat-swell": {
+        "id": "e-beat-swell",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "swellEnv",
+          "portId": "in"
+        }
+      },
+      "e-bgain-bcap": {
+        "id": "e-bgain-bcap",
+        "source": {
+          "nodeId": "bgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bcap",
+          "portId": "in"
+        }
+      },
+      "e-bridge-roll": {
+        "id": "e-bridge-roll",
+        "source": {
+          "nodeId": "bridge",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "roll",
+          "portId": "in"
+        }
+      },
+      "e-burn-out": {
+        "id": "e-burn-out",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-grid-bridge": {
+        "id": "e-grid-bridge",
+        "source": {
+          "nodeId": "sheet",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "points"
+        }
+      },
+      "e-halo-haze": {
+        "id": "e-halo-haze",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haze",
+          "portId": "input"
+        }
+      },
+      "e-haze-burn": {
+        "id": "e-haze-burn",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-lgain-lcap": {
+        "id": "e-lgain-lcap",
+        "source": {
+          "nodeId": "lgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lcap",
+          "portId": "in"
+        }
+      },
+      "e-palette-bridge": {
+        "id": "e-palette-bridge",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "texture"
+        }
+      },
+      "e-roll-ribs": {
+        "id": "e-roll-ribs",
+        "source": {
+          "nodeId": "roll",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ribs",
+          "portId": "points"
+        }
+      },
+      "e-shot-burn": {
+        "id": "e-shot-burn",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-shot-halo": {
+        "id": "e-shot-halo",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-swell-bgain": {
+        "id": "e-swell-bgain",
+        "source": {
+          "nodeId": "swellEnv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bgain",
+          "portId": "a"
+        }
+      },
+      "e-swell-lgain": {
+        "id": "e-swell-lgain",
+        "source": {
+          "nodeId": "swellEnv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lgain",
+          "portId": "a"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bcap": {
+        "definitionVersion": 1,
+        "id": "bcap",
+        "label": "bore1",
+        "parameters": {
+          "maximum": 0.5,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1480,
+          "y": 960
+        },
+        "type": "valueLimit"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 120
+        },
+        "position": {
+          "x": -1740,
+          "y": 700
+        },
+        "type": "audioPattern"
+      },
+      "bgain": {
+        "definitionVersion": 1,
+        "id": "bgain",
+        "label": "bgain1",
+        "parameters": {
+          "operand": 0.55,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1740,
+          "y": 960
+        },
+        "type": "valueMath"
+      },
+      "bridge": {
+        "definitionVersion": 1,
+        "id": "bridge",
+        "label": "bridge1",
+        "parameters": {
+          "count": 10560
+        },
+        "position": {
+          "x": -1220,
+          "y": 160
+        },
+        "type": "textureToAttribute"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 600,
+          "y": 160
+        },
+        "type": "add"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            0,
+            0,
+            2
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "sway1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.y": {
+            "bindings": {
+              "driven": {
+                "channel": "rise1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 120,
+          "fov": 50,
+          "lookAt": [
+            0,
+            0,
+            -12
+          ],
+          "near": 0.05,
+          "ortho": false
+        },
+        "position": {
+          "x": -440,
+          "y": 160
+        },
+        "type": "camera"
+      },
+      "glass": {
+        "definitionVersion": 1,
+        "id": "glass",
+        "label": "glass1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -700,
+          "y": -140
+        },
+        "type": "materialUnlit"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 20
+        },
+        "position": {
+          "x": 80,
+          "y": 420
+        },
+        "type": "blur"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 0.7,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 340,
+          "y": 420
+        },
+        "type": "level"
+      },
+      "lcap": {
+        "definitionVersion": 1,
+        "id": "lcap",
+        "label": "lum1",
+        "parameters": {
+          "maximum": 0.85,
+          "minimum": 0.05
+        },
+        "position": {
+          "x": -960,
+          "y": 960
+        },
+        "type": "valueLimit"
+      },
+      "lgain": {
+        "definitionVersion": 1,
+        "id": "lgain",
+        "label": "lgain1",
+        "parameters": {
+          "operand": 0.8,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1220,
+          "y": 960
+        },
+        "type": "valueMath"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 860,
+          "y": 160
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.05,
+                0.03,
+                0.24,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.08,
+                0.45,
+                0.85,
+                1
+              ],
+              "position": 0.26
+            },
+            {
+              "color": [
+                0.25,
+                0.95,
+                0.85,
+                1
+              ],
+              "position": 0.5
+            },
+            {
+              "color": [
+                1,
+                0.72,
+                0.3,
+                1
+              ],
+              "position": 0.7
+            },
+            {
+              "color": [
+                0.02,
+                0.01,
+                0.06,
+                1
+              ],
+              "position": 0.86
+            },
+            {
+              "color": [
+                0.55,
+                0.12,
+                0.7,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -1740,
+          "y": 40
+        },
+        "type": "ramp"
+      },
+      "ribs": {
+        "definitionVersion": 1,
+        "id": "ribs",
+        "label": "ribs1",
+        "parameters": {
+          "material": "glass1",
+          "mode": "instances",
+          "scale": 0.0092,
+          "shape": "quad",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "sample",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -700,
+          "y": 160
+        },
+        "type": "geometry"
+      },
+      "rise": {
+        "definitionVersion": 1,
+        "id": "rise",
+        "label": "rise1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.023,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -960,
+          "y": 700
+        },
+        "type": "lfo"
+      },
+      "roll": {
+        "definitionVersion": 1,
+        "id": "roll",
+        "label": "roll1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
+          "capacity": 10560,
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* The grid's two axes become the tunnel's two axes: x goes AROUND the bore, y indexes\n     which rib you are on. Nothing else in the kernel knows it started life as a plane. */\n  let around = (p.position.x * 0.5 + 0.5) * TAU;\n  let rib = p.position.y * 0.5 + 0.5;\n\n  /* ctx.absTime, and this is the whole reason it exists (T489, §V437). The tunnel's motion\n     is a POSITION read off a clock — the one shape that snaps at a timeline lap if it reads\n     the wrapping one. On the absolute clock the fract() below is continuous forever: the\n     ribs keep coming, a lap does nothing, and an hour behind a set is an hour of tunnel.\n     Deterministic too: absTime is frames-since-transport-start, zeroed at render (T467). */\n  let depth = fract(rib + ctx.absTime * 0.052);\n\n  /* ctx.value1 is the bass (T479): a value write per frame, never a rebuild (§V5). The bore\n     BREATHES on the kick — the whole tunnel widens and settles — which reads at the size a\n     projection is watched from, where a colour change does not. */\n  let flute = 0.19 * sin(around * 8.0 + ctx.absTime * 0.42);\n  let radius = 1.05 + flute + ctx.value1 * 0.62;\n\n  /* Depth 0 sits BEHIND the camera on purpose. A scrolling tunnel has to recycle its ribs\n     somewhere, and the recycle is a teleport; putting it behind the eye means the pop\n     happens where nobody is looking, instead of as a flash in the middle of the frame. */\n  let z = 2.9 - depth * 34.0;\n  q.position = vec3f(cos(around) * radius, sin(around) * radius, z);\n\n  /* p.sample is the palette, read off the ramp by the bridge at this point's own grid\n     position — so the COLOUR is a gradient in the graph, not a formula in this text. All\n     the kernel does is fade it, which is the one thing the ramp cannot know.\n     TWO FADES, and the near one is not optional. A quad has a fixed WORLD size, so a rib\n     three units from the eye draws as a fistful of blocks; the first build looked like the\n     tunnel was made of postage stamps. Fading a rib out as it passes the eye hides the\n     recycle AND the blockiness in one term, and it is also just what depth of field and\n     atmosphere do to a real corridor. */\n  let far = smoothstep(1.0, 0.7, depth);\n  let near = smoothstep(2.0, -2.4, z);\n  q.sample = vec4f(p.sample.rgb * far * near * (0.7 + ctx.value2 * 1.1), 1.0);\n  return q;\n}",
+          "seed": 30,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "bore1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.16
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "lum1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.28
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -960,
+          "y": 160
+        },
+        "type": "pointKernel"
+      },
+      "sheet": {
+        "definitionVersion": 1,
+        "id": "sheet",
+        "label": "grid1",
+        "parameters": {
+          "cols": 176,
+          "count": 10560,
+          "rows": 60
+        },
+        "position": {
+          "x": -1480,
+          "y": 340
+        },
+        "type": "pointGrid"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "ambientIntensity": 0,
+          "background": [
+            0.004,
+            0.005,
+            0.014,
+            1
+          ],
+          "camera": "eye1",
+          "lights": "",
+          "scenes": "ribs1"
+        },
+        "position": {
+          "x": -180,
+          "y": 160
+        },
+        "type": "render"
+      },
+      "sway": {
+        "definitionVersion": 1,
+        "id": "sway",
+        "label": "sway1",
+        "parameters": {
+          "amplitude": 0.34,
+          "frequency": 0.031,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -960,
+          "y": 440
+        },
+        "type": "lfo"
+      },
+      "swellEnv": {
+        "definitionVersion": 1,
+        "id": "swellEnv",
+        "label": "swell1",
+        "parameters": {
+          "lag": 0.11
+        },
+        "position": {
+          "x": -1480,
+          "y": 700
+        },
+        "type": "valueLag"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E30 Nave",
+  "projectId": "example-e30-nave",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 30,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
