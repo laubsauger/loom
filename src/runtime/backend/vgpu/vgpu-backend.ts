@@ -516,6 +516,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
    * caller code that happens to run between two `render()` calls.
    */
   function runFrame(f: Frame, onFrame: () => void): void {
+    // T311: BEFORE the frame opens — building preview resources is an allocation, and
+    // the §V8 guard rightly refuses it once `duringFrame` begins.
+    retryDirtyPreviewHosts();
     const previous = currentFrame;
     currentFrame = f;
     try {
@@ -995,6 +998,36 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
   }
 
+  /**
+   * T311 (§V209): retries dirty preview hosts at FRAME ENTRY, before the frame opens.
+   *
+   * The T258 retry rides the main compile path — which the recompile classifier (T308)
+   * is about to make rarer, since a uniform-only edit will stop reaching
+   * `backend.compile`. A recovery path must be driven by something that happens
+   * UNCONDITIONALLY, or the optimisation that thins its trigger silently reopens the
+   * blackout it was built to close. Frame entry is that unconditional something: as
+   * long as anything renders, a dirty preview heals without waiting for a structural
+   * edit. Zero steady-state cost — the set iteration only finds work while a host is
+   * dirty — and a PERSISTENT failure backs off to one attempt per interval instead of
+   * recompiling preview effects sixty times a second.
+   */
+  const PREVIEW_RETRY_INTERVAL_FRAMES = 30;
+  let previewRetryCooldown = 0;
+
+  function retryDirtyPreviewHosts(): void {
+    if (previewRetryCooldown > 0) {
+      previewRetryCooldown -= 1;
+      return;
+    }
+    let stillDirty = false;
+    for (const h of previewHosts) {
+      if (h.disposed || !h.dirty || h.program === undefined) continue;
+      buildPreviewHost(h);
+      if (h.dirty) stillDirty = true;
+    }
+    if (stillDirty) previewRetryCooldown = PREVIEW_RETRY_INTERVAL_FRAMES;
+  }
+
   /** After a main recompile, preview bindings into replaced main resources are re-pointed (T143 interplay). */
   function refreshPreviewExternals(): void {
     for (const h of previewHosts) {
@@ -1230,6 +1263,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     render(compiled, frameInputs) {
       // §V23: while halted nothing reaches the queue.
       if (disposed || halted || !session || !program) return;
+      // T311: the DIRECT render path (no loop, headless) is its own unconditional
+      // frame entry. Loop renders arrive with a frame already open — runFrame retried
+      // before opening it — so only retry here when no frame is open.
+      if (currentFrame === undefined) retryDirtyPreviewHosts();
       if (compiled.id !== program.id) {
         hub.report(
           backendDiagnostic(

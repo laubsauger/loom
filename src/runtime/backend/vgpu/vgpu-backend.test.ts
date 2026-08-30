@@ -1047,6 +1047,77 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     preview.dispose();
   });
 
+  /**
+   * T311 (§V209): the retry must ride an UNCONDITIONAL path. T258 hung it on the main
+   * compile — which the recompile classifier (T308) makes rarer: once a uniform-only
+   * edit stops reaching `backend.compile`, a dirty preview would stay black through
+   * any amount of knob-turning. Frame entry happens as long as anything renders at
+   * all, so the heal cannot be optimised away; a persistent failure backs off instead
+   * of rebuilding sixty times a second, and a healthy host costs nothing.
+   */
+  it("retries a dirty host at frame entry, without a compile, and backs off (T311)", async () => {
+    const { backend, host } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+
+    preview.setPreviewProgram({
+      resources: [
+        { kind: "sampler" as const, id: "preview:sampler", filter: "linear" as const },
+        { kind: "target" as const, id: "preview:tile:0", size: [192, 108] as const, format: "rgba8unorm" as const },
+        { kind: "target" as const, id: "preview:tile:1", size: [192, 108] as const, format: "rgba8unorm" as const },
+      ],
+      passes: [
+        {
+          kind: "effect" as const,
+          id: "preview:pass:0",
+          shader: PREVIEW_WGSL,
+          target: "preview:tile:0",
+          samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+          textures: [{ binding: "previewSource", resourceId: "output" }],
+        },
+        {
+          kind: "effect" as const,
+          id: "preview:pass:1",
+          shader: PREVIEW_WGSL,
+          target: "preview:tile:1",
+          samplers: [{ binding: "previewSampler", resourceId: "preview:sampler" }],
+          textures: [{ binding: "previewSource", resourceId: "target:ghost:out" }],
+        },
+      ],
+      signature: "partial",
+    });
+    expect(preview.lastBuildStats?.effectsBuilt).toBe(1);
+    const statsAfterAttach = preview.lastBuildStats;
+
+    // A render ALONE — no compile anywhere near it — reruns the build. A fresh stats
+    // object proves the attempt; the good tile CARRIES through it (§V162).
+    backend.render(plan, frameInputs(0));
+    expect(preview.lastBuildStats).not.toBe(statsAfterAttach);
+    expect(preview.lastBuildStats).toMatchObject({ effectsBuilt: 0, effectsReused: 1 });
+
+    // Still failing, so the next frame is inside the backoff window: no new attempt.
+    const statsAfterRetry = preview.lastBuildStats;
+    backend.render(plan, frameInputs(1));
+    expect(preview.lastBuildStats).toBe(statsAfterRetry);
+    preview.dispose();
+  });
+
+  it("leaves a HEALTHY host alone at frame entry (T311)", async () => {
+    const { backend, host } = await harness();
+    const plan = await backend.compile(fixturePlan());
+    const { canvas } = previewCanvas(host);
+    const preview = backend.previewHost(canvas);
+    preview.setPreviewProgram(tileProgram());
+    const statsAfterAttach = preview.lastBuildStats;
+
+    backend.render(plan, frameInputs(0));
+    backend.render(plan, frameInputs(1));
+    // Same stats object: no rebuild was attempted, because nothing was dirty.
+    expect(preview.lastBuildStats).toBe(statsAfterAttach);
+    preview.dispose();
+  });
+
   it("keeps presenting after a structural recompile of the main program (T143 interplay)", async () => {
     const { backend, host, diagnostics } = await harness();
     const first = await backend.compile(fixturePlan());
