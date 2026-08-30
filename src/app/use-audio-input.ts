@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { AudioFeatures } from "@domain/types/frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
+import type { NodeId } from "@domain/types/ids.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { computeAudioFeatures } from "./audio-features.ts";
+import { awaitMediaReady } from "./media-sources.ts";
 import type { AudioAnalysisState } from "./audio-features.ts";
+import type { AppRuntime } from "./app-runtime.ts";
+import type { MediaControlRegistry } from "./media-commands.ts";
+import {
+  applyMediaPlayhead,
+  createMediaTransportRunner,
+  durationOf,
+  type MediaTransportRunner,
+  type PlayableMedia,
+} from "./media-playback.ts";
 
 /**
  * T414: the session's ONE audio capture (§V182's one-listener rule, with sound).
@@ -34,6 +46,16 @@ export interface AudioInputSource {
   /** Per-frame reader for the frame driver. Null while no capture is live. */
   readonly read: () => AudioFeatures | null;
   readonly status: () => AudioInputStatus;
+  /**
+   * T493 — put the file where its transport says, once per rendered frame.
+   *
+   * The movie node's `sync` verbatim, and deliberately so: both doors call
+   * `applyMediaPlayhead` with a head from the same `mediaPlayhead`, so "cue" cannot come
+   * to mean one thing for pictures and another for sound.
+   */
+  readonly sync: (frame: FrameEvaluationInput, channels?: ChannelResolver) => void;
+  /** The app transport stopped: hold the file rather than letting it run on unwatched. */
+  readonly setRunning: (running: boolean) => void;
 }
 
 export interface CaptureConfig {
@@ -42,6 +64,12 @@ export interface CaptureConfig {
   readonly url: string;
   readonly device: string;
   readonly monitor: boolean;
+  /**
+   * T493 — WHICH node's transport drives this capture. The session has one capture, so it
+   * has one transport, and it belongs to the node that supplied the file. Null for a mic:
+   * a live input has no playhead, exactly as a webcam has none.
+   */
+  readonly nodeId: NodeId | null;
 }
 
 /** Static parameter value, mode-envelope tolerant. Capture config never animates. */
@@ -87,7 +115,13 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
   for (const node of nodesOf("audioFileIn")) {
     const url = urlOf(staticValueOf(node, "file"));
     if (url.trim() === "") continue;
-    return { source: "file", url, device: "", monitor: staticValueOf(node, "monitor") !== false };
+    return {
+      source: "file",
+      url,
+      device: "",
+      monitor: staticValueOf(node, "monitor") !== false,
+      nodeId: node.id,
+    };
   }
   const mic = nodesOf("audioIn")[0];
   if (mic === undefined) return null;
@@ -97,6 +131,7 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
     url: "",
     device: typeof device === "string" ? device : "",
     monitor: false,
+    nodeId: null,
   };
 }
 
@@ -104,9 +139,24 @@ interface LiveCapture {
   readonly context: AudioContext;
   readonly analyser: AnalyserNode;
   readonly dispose: () => void;
+  /** T493: present only for a file capture — a mic has no playhead to drive. */
+  readonly element?: PlayableMedia;
+  /** T493: monitoring level, AFTER the analyser, so volume never rescales the channels. */
+  readonly gain?: GainNode;
 }
 
-export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
+export function useAudioInput(
+  getGraph: () => GraphDocument,
+  /**
+   * T493 — the node registry, so transport parameters resolve through the ONE read path
+   * (§V61) and take every mode. Optional because `captureConfigOf` and the analysis half
+   * need nothing from it, and a test that only pins capture precedence should not have to
+   * build a registry to do it.
+   */
+  registry?: AppRuntime["registry"],
+  /** T493: where `media.cue` and `media.reload` find the node that supplied the file. */
+  controls?: MediaControlRegistry,
+): AudioInputSource {
   const captureRef = useRef<LiveCapture | null>(null);
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
   const stateRef = useRef<AudioAnalysisState>({ previousSpectrum: null, previousOnset: 0 });
@@ -115,6 +165,22 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
   const timeDomainRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const getGraphRef = useRef(getGraph);
   getGraphRef.current = getGraph;
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
+  /** T493: the transport of the node whose file is playing. Null for a mic. */
+  const runnerRef = useRef<MediaTransportRunner | null>(null);
+  const channelsRef = useRef<ChannelResolver | undefined>(undefined);
+  const controlsRef = useRef(controls);
+  controlsRef.current = controls;
+  /** Undoes this capture's control registration. Torn down with the capture itself. */
+  const releaseControlRef = useRef<(() => void) | null>(null);
+  /**
+   * T493 — a `reload` re-acquires. Bumping this makes the config key differ, which is the
+   * SAME door a changed file goes through, so there is one teardown/acquire path rather
+   * than a second one that can drift out of step with it.
+   */
+  const reloadTokenRef = useRef(0);
+  const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +188,9 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
     const teardown = (): void => {
       captureRef.current?.dispose();
       captureRef.current = null;
+      runnerRef.current = null;
+      releaseControlRef.current?.();
+      releaseControlRef.current = null;
       stateRef.current.previousSpectrum = null;
       stateRef.current.previousOnset = 0;
       statusRef.current = { kind: "idle" };
@@ -183,12 +252,31 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
           }
           const element = new Audio();
           element.crossOrigin = "anonymous";
-          element.loop = true;
+          // T493: `element.loop = true` used to live here and was the whole transport —
+          // looping you could not turn off, with no parameter naming it. `extend` owns
+          // wrapping now, and the element's own loop would fight every seek.
+          element.loop = false;
           element.src = config.url;
           const input = context.createMediaElementSource(element);
           input.connect(analyser);
-          if (config.monitor) analyser.connect(context.destination);
-          await element.play();
+          /*
+           * T493 — VOLUME SITS AFTER THE ANALYSER, and that placement is the feature.
+           *
+           * The analyser gets the file at unity whatever the monitoring level is, so
+           * turning the room down does not silently rescale every parameter driven by
+           * `level`. A gain node upstream of the analyser would have made the volume
+           * slider a hidden master fader on the whole graph — the plausible-wrong wiring,
+           * with no error to find it by.
+           */
+          const gain = context.createGain();
+          analyser.connect(gain);
+          if (config.monitor) gain.connect(context.destination);
+          // T493/§V369: kicked, never AWAITED. `play()` on a source that never decodes
+          // stays pending forever, so awaiting it left the capture in `idle` — reading
+          // exactly like "everything is fine" — for a file that could not be opened.
+          // `awaitMediaReady` is the half that can actually fail, and it does so by name.
+          void element.play().catch(() => undefined);
+          await awaitMediaReady(element);
           if (cancelled) {
             element.pause();
             void context.close();
@@ -197,12 +285,34 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
           captureRef.current = {
             context,
             analyser,
+            element,
+            gain,
             dispose: () => {
               element.pause();
               element.src = "";
               void context.close();
             },
           };
+          const nodeId = config.nodeId;
+          const nodeRegistry = registryRef.current;
+          if (nodeId !== null && nodeRegistry !== undefined) {
+            const runner = createMediaTransportRunner(nodeId, {
+              graph: () => getGraphRef.current(),
+              registry: nodeRegistry,
+              channels: () => channelsRef.current,
+            });
+            runnerRef.current = runner;
+            releaseControlRef.current =
+              controlsRef.current?.register(nodeId, {
+                cue: () => runner.cue(),
+                reload: () => {
+                  reloadTokenRef.current += 1;
+                  refreshRef.current?.();
+                },
+              }) ?? null;
+          } else {
+            runnerRef.current = null;
+          }
         }
         if (statusRef.current.kind !== "live") statusRef.current = { kind: "live" };
       } catch (error) {
@@ -219,9 +329,12 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
      * config changes are rare, per-second is plenty, and a subscription would re-run
      * this effect on every unrelated graph edit.
      */
-    const interval = setInterval(() => {
+    const refresh = () => {
       const config = captureConfigOf(getGraphRef.current());
-      const key = config === null ? "" : `${config.source}|${config.url}|${config.device}|${config.monitor}`;
+      const key =
+        config === null
+          ? ""
+          : `${config.source}|${config.url}|${config.device}|${config.monitor}|${reloadTokenRef.current}`;
       if (key === configKeyRef.current) return;
       configKeyRef.current = key;
       teardown();
@@ -235,11 +348,16 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
           message: "Waiting for a file — choose one on the Audio File In node.",
         };
       }
-    }, 1000);
+    };
+    refreshRef.current = refresh;
+    // A `reload` pulse must act NOW, not on the next poll: the poll is how a config CHANGE
+    // is noticed, and a button that takes up to a second to do anything reads as broken.
+    const interval = setInterval(refresh, 1000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
+      refreshRef.current = null;
       teardown();
     };
   }, []);
@@ -265,5 +383,38 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
 
   const status = useCallback((): AudioInputStatus => statusRef.current, []);
 
-  return { read, status };
+  /**
+   * T493 — the per-frame half. Identical in shape to the movie node's, by construction.
+   *
+   * `volume` is read here rather than in the capture config on purpose: it is a VALUE, so
+   * it animates through the ordinary path (§V5) and changing it must not tear down and
+   * re-acquire the whole capture the way `monitor` and `file` — which are STRUCTURAL — do.
+   * A volume slider that restarted the track on every drag would be unusable.
+   */
+  const sync = useCallback((frame: FrameEvaluationInput, channels?: ChannelResolver) => {
+    channelsRef.current = channels;
+    const capture = captureRef.current;
+    const runner = runnerRef.current;
+    if (capture?.element === undefined || runner === null) return;
+    const stepped = runner.step(frame, durationOf(capture.element));
+    if (stepped === null) return;
+    applyMediaPlayhead(capture.element, stepped.transport, stepped.head);
+    if (capture.gain !== undefined) {
+      // Read from the SAME resolve the playhead came from, so volume and position can
+      // never come from two different reads of one frame (§B8's shape). And `visible`
+      // mutes: an `extend: "black"` window is black AND silent through one control.
+      const raw = stepped.read("volume");
+      const volume = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, raw) : 1;
+      const level = stepped.head.visible ? volume : 0;
+      if (capture.gain.gain.value !== level) capture.gain.gain.value = level;
+    }
+  }, []);
+
+  const setRunning = useCallback((running: boolean) => {
+    if (running) return;
+    const element = captureRef.current?.element;
+    if (element !== undefined && !element.paused) element.pause();
+  }, []);
+
+  return { read, status, sync, setRunning };
 }

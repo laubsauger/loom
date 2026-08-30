@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
-import { createVideoMediaSource } from "./media-sources.ts";
+import type { MediaControlRegistry } from "./media-commands.ts";
+import {
+  applyMediaPlayhead,
+  createMediaTransportRunner,
+  durationOf,
+  playableMedia,
+  type MediaTransportRunner,
+  type PlayableMedia,
+} from "./media-playback.ts";
+import { awaitMediaReady, createVideoMediaSource } from "./media-sources.ts";
 import type { MediaElement, VideoMediaSource } from "./media-sources.ts";
 import { createTextMediaSource } from "./text-source.ts";
 import type { TextAlign, TextMediaSource, TextRaster, TextVerticalAlign } from "./text-source.ts";
@@ -164,8 +175,16 @@ export function browserMediaEnvironment(): MediaEnvironment {
   const prepare = async (video: HTMLVideoElement): Promise<MediaElement> => {
     video.muted = true;
     video.playsInline = true;
-    video.loop = true;
-    await video.play();
+    // T493: `video.loop = true` USED TO LIVE HERE, and it was the whole of the movie
+    // node's "transport" — looping you could not turn off, in a browser default, with no
+    // parameter naming it. The transport owns wrapping now (`extend`), and leaving the
+    // element's own loop on would fight every seek the playhead asks for.
+    video.loop = false;
+    // Kicked, never AWAITED (T493, §V369): `play()` on a source that never decodes stays
+    // pending forever, and awaiting it stranded this whole loop before `registerMediaSource`
+    // — a black node with nothing reported. `awaitMediaReady` is the half that can fail.
+    void video.play().catch(() => undefined);
+    await awaitMediaReady(video);
     return video as unknown as MediaElement;
   };
 
@@ -208,6 +227,21 @@ export interface MediaWiring {
   readonly diagnostics: readonly RuntimeDiagnostic[];
   /** T465: empty the retained list; anything still real re-reports on its own. */
   clearDiagnostics(): void;
+  /**
+   * T493 — put every movie element where its transport says, once per rendered frame.
+   *
+   * Rides the frame loop's `advanceChannels` seam rather than an effect, because the
+   * position is a function OF THE FRAME (§V436) and an effect has no frame. `channels`
+   * is the value graph's resolver, so a driven `speed` or `trimStart` reaches the element
+   * through the ordinary path (§V107) instead of a second one.
+   */
+  sync(frame: FrameEvaluationInput, channels?: ChannelResolver): void;
+  /**
+   * Whether the app's own transport is running. A timeline-locked movie must stop when
+   * the timeline stops — with the loop paused no frames arrive, so `sync` cannot be what
+   * notices, and an element left running would drift arbitrarily far while nothing moved.
+   */
+  setRunning(running: boolean): void;
 }
 
 export function useMediaSources(
@@ -217,8 +251,21 @@ export function useMediaSources(
   /** Resolved output sizes (T312). Null before the first successful compile. */
   resolved: ResolvedSizeSource | null,
   environment?: MediaEnvironment,
+  /** T493: where `media.cue` and `media.reload` find this node. Optional for tests. */
+  controls?: MediaControlRegistry,
 ): MediaWiring {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
+  /**
+   * T493 — a `reload` pulse re-opens the file, which is STRUCTURAL: the element is torn
+   * down and rebuilt, exactly as a changed URL already does. So it is a dependency of the
+   * open effect rather than a side door into it.
+   *
+   * HONEST LIMIT: the effect opens the document's media as a SET, so a reload re-opens
+   * them all. With a timeline-locked transport that is invisible — every element seeks
+   * straight back to `f(frame)` — but a free-run neighbour would lose its accumulator.
+   * Scoping it per node wants the open loop restructured one node at a time.
+   */
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   // One entry per node, from its FIRST output: a media node has one. Keyed by a flat
   // string so an unrelated recompile — a new node elsewhere, a parameter change — does not
@@ -248,6 +295,18 @@ export function useMediaSources(
   requestsRef.current = requests;
   /** Live text sources by node, so the content effect can push into them (T243). */
   const textSourcesRef = useRef(new Map<NodeId, TextMediaSource>());
+  /**
+   * T493 — live movie transports by node: the element to drive, and the runner that owns
+   * its free-run accumulator. A webcam is deliberately absent — a live camera has no
+   * playhead to derive, which is why the transport is on the FILE node and not on
+   * `compileMedia`'s shared shape.
+   */
+  const playersRef = useRef(
+    new Map<NodeId, { element: PlayableMedia; runner: MediaTransportRunner }>(),
+  );
+  const runningRef = useRef(true);
+  /** The value graph's resolver, refreshed per frame by `sync`. */
+  const channelsRef = useRef<ChannelResolver | undefined>(undefined);
 
   useEffect(() => {
     if (backend === null) return;
@@ -259,6 +318,10 @@ export function useMediaSources(
     // Captured here rather than read in the cleanup: by teardown the ref may already point
     // at the next render's map, and this effect must only take down what IT registered.
     const liveText = textSourcesRef.current;
+    // Same capture rule as `liveText`, for the same reason (T493).
+    const livePlayers = playersRef.current;
+    const playerOpened: NodeId[] = [];
+    const released: Array<() => void> = [];
     const reported: RuntimeDiagnostic[] = [];
 
     /**
@@ -336,6 +399,28 @@ export function useMediaSources(
         );
         opened.push({ source: media, unregister });
 
+        // T493: a FILE gets a transport; a camera does not. A live stream has no playhead
+        // to derive — asking a webcam to seek to second four is not a thing — so the
+        // transport is on the node that has a file, and the element that cannot be driven
+        // simply is not (see `playableMedia`).
+        if (request.type === "movieFileIn") {
+          const playable = playableMedia(element);
+          if (playable !== null) {
+            const runner = createMediaTransportRunner(request.nodeId, {
+              graph: () => graphRef.current,
+              registry: runtimeRef.current.registry,
+              channels: () => channelsRef.current,
+            });
+            livePlayers.set(request.nodeId, { element: playable, runner });
+            playerOpened.push(request.nodeId);
+            const release = controls?.register(request.nodeId, {
+              cue: () => runner.cue(),
+              reload: () => setReloadNonce((nonce) => nonce + 1),
+            });
+            if (release !== undefined) released.push(release);
+          }
+        }
+
         // The size arrives with the first decoded frame, which is after `play()` resolves.
         const applySize = () => {
           const size = media.size();
@@ -363,11 +448,13 @@ export function useMediaSources(
         entry.source.dispose();
         liveText.delete(entry.nodeId);
       }
+      for (const nodeId of playerOpened) livePlayers.delete(nodeId);
+      for (const release of released) release();
       setDiagnostics(NO_DIAGNOSTICS);
     };
     // `key` is the identity of the request set; `requestsRef` carries the values, so a
     // node moving on the canvas does not restart a camera.
-  }, [backend, environment, key]);
+  }, [backend, controls, environment, key, reloadNonce]);
 
   /**
    * What each Text node draws, pushed after registration (T243, T312).
@@ -385,8 +472,36 @@ export function useMediaSources(
     }
   }, [graph, sizes, sizeKey, key]);
 
+  /**
+   * T493 — the per-frame half, and the half that makes the parameters real.
+   *
+   * Six times in this codebase a feature has been built, tested and left unreachable
+   * (B12, B23, T264, B87 …). A transport whose parameters resolve correctly and never
+   * reach a `<video>` would be the seventh. This is the reach.
+   */
+  const sync = useCallback((frame: FrameEvaluationInput, channels?: ChannelResolver) => {
+    channelsRef.current = channels;
+    runningRef.current = true;
+    for (const { element, runner } of playersRef.current.values()) {
+      const stepped = runner.step(frame, durationOf(element));
+      if (stepped === null) continue;
+      applyMediaPlayhead(element, stepped.transport, stepped.head);
+    }
+  }, []);
+
+  const setRunning = useCallback((running: boolean) => {
+    runningRef.current = running;
+    if (running) return;
+    // Paused: the timeline is not producing frames, so nothing will correct the drift.
+    // Stop where we are rather than letting the element run on its own clock — that is
+    // the state that made "pause" and "the picture froze but the sound kept going".
+    for (const { element } of playersRef.current.values()) {
+      if (!element.paused) element.pause();
+    }
+  }, []);
+
   // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
   // real re-reports on its own and thereby proves it is live.
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
-  return { diagnostics, clearDiagnostics };
+  return { diagnostics, clearDiagnostics, sync, setRunning };
 }

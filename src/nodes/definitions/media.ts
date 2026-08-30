@@ -1,6 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHARED_SAMPLER_ID, scratchResourceId } from "../../compiler/resources.ts";
+import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
@@ -77,17 +78,34 @@ function compileMedia(context: unknown): CompiledNodeDescription {
   };
 }
 
+/**
+ * T493 — Movie File In, WITH A TRANSPORT.
+ *
+ * It had one parameter, `file`, and looping was hard-coded in the browser environment
+ * (`video.loop = true`). There was no play, no cue, no speed, no trim: nothing a
+ * TouchDesigner user reaches for. The vocabulary now comes from
+ * `MEDIA_TRANSPORT_PARAMETERS`, shared verbatim with Audio File In so that learning one
+ * teaches the other and neither can drift — see that module for the clock argument, which
+ * is the load-bearing part of this change.
+ */
 export const movieFileInNode: NodeDefinition = {
   type: "movieFileIn",
+  // Still version 1, deliberately (§V10): every added key carries a DEFAULT, so a project
+  // saved before T493 reads identically — locked to the timeline, looping, speed 1 — and
+  // nothing about its stored data changed shape. Bumping without a `migrate` would emit
+  // "nothing describes what changed" on every load of every old file, which would be a
+  // warning saying something false.
   version: 1,
   title: "Movie File In",
   category: "input",
-  description: "Plays a video or still image file. Frames upload only when they change; black until a file is loaded.",
-  tags: ["media", "video", "image", "file"],
+  description:
+    "Plays a video or still image file, with a transport: play mode, speed, cue, trim and an at-end behaviour. Frames upload only when they change; black until a file is loaded. TIMELINE-ANCHORED by default (§V436): the position derives from the frame, so frame one of the clip lands on the in point, a scrub finds the same frame every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
+  tags: ["media", "video", "image", "file", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
-    file: { type: "asset", label: "File", kind: "video" },
+    file: { type: "asset", label: "File", kind: "video", group: "File" },
+    ...MEDIA_TRANSPORT_PARAMETERS,
   },
   resolutionPolicy: { kind: "project" },
   compile: compileMedia,

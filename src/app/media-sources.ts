@@ -42,6 +42,68 @@ export interface MediaElement {
   cancelVideoFrameCallback?(handle: number): void;
 }
 
+/**
+ * How long a file may take to produce metadata before it is called unopenable (T493).
+ *
+ * TD's Movie File In has this exact parameter (`opentimeout`) for the same reason. Ten
+ * seconds is generous for a local file and short enough that a user does not sit in front
+ * of a black node wondering.
+ */
+export const MEDIA_OPEN_TIMEOUT_MS = 10_000;
+
+/** What `awaitMediaReady` needs. A superset of `MediaElement`'s listener pair. */
+export interface OpenableMedia {
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+  readonly readyState?: number;
+  readonly error?: { readonly code?: number } | null;
+}
+
+/**
+ * Resolve when the element has METADATA, reject when it cannot get any (T493, §V369).
+ *
+ * ## The bug this replaces, found by looking at the running app (§V383)
+ *
+ * `openFile` used to `await video.play()`. **A `play()` on a source that never decodes
+ * stays PENDING FOREVER** — no rejection, no timeout, because the promise resolves when
+ * playback actually begins and nothing says it never will. So the open loop stranded
+ * *before* `registerMediaSource`, the node held black, and NOTHING was reported: the exact
+ * "a media element that has not loaded must refuse BY NAME rather than silently holding
+ * black" case T493 was told to close, sitting in the code the whole time.
+ *
+ * `loadedmetadata` is the right event to wait on rather than `canplay`: it is what
+ * `videoWidth`/`duration` need, it is what the node's resolution match needs, and it
+ * arrives without requiring the browser to have buffered anything.
+ */
+export function awaitMediaReady(
+  element: OpenableMedia,
+  timeoutMs: number = MEDIA_OPEN_TIMEOUT_MS,
+  schedule: (callback: () => void, ms: number) => unknown = setTimeout,
+  cancel: (handle: unknown) => void = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+): Promise<void> {
+  // HAVE_METADATA. Already there — a cached file, a stream that came up instantly — so
+  // there is no event left to wait for and waiting would hang on exactly the fast path.
+  if ((element.readyState ?? 0) >= 1) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    let handle: unknown = null;
+    const done = (settle: () => void) => {
+      element.removeEventListener("loadedmetadata", onReady);
+      element.removeEventListener("error", onError);
+      if (handle !== null) cancel(handle);
+      settle();
+    };
+    const onReady = () => done(resolve);
+    const onError = () =>
+      done(() => reject(new Error(`The file could not be decoded (code ${element.error?.code ?? 0}).`)));
+    element.addEventListener("loadedmetadata", onReady);
+    element.addEventListener("error", onError);
+    handle = schedule(
+      () => done(() => reject(new Error(`Timed out after ${timeoutMs}ms waiting for the file to open.`))),
+      timeoutMs,
+    );
+  });
+}
+
 export interface VideoMediaSource {
   readonly source: MediaSource;
   /** Intrinsic size once the browser has decoded enough to know it. Null until then. */

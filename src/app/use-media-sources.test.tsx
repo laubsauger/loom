@@ -9,7 +9,8 @@ import type { AppRuntime } from "./app-runtime.ts";
 import { createVideoMediaSource } from "./media-sources.ts";
 import type { MediaElement } from "./media-sources.ts";
 import type { TextMediaSource, TextRaster } from "./text-source.ts";
-import type { MediaEnvironment, ResolvedSizeSource } from "./use-media-sources.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import type { MediaEnvironment, MediaWiring, ResolvedSizeSource } from "./use-media-sources.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 
 /**
@@ -46,6 +47,20 @@ function fakeElement(width = 640, height = 360) {
     },
     listenerCount(type: string) {
       return listeners.get(type)?.size ?? 0;
+    },
+    // T493: the transport half of a `<video>`. A camera stand-in keeps none of these, so
+    // `playableMedia` correctly declines to drive it.
+    currentTime: 0,
+    playbackRate: 1,
+    duration: 12,
+    paused: true,
+    playCalls: 0,
+    play() {
+      element.paused = false;
+      element.playCalls += 1;
+    },
+    pause() {
+      element.paused = true;
     },
   };
   return element;
@@ -93,6 +108,7 @@ function Harness({
   environment,
   resolved,
   onDiagnostics,
+  onWiring,
 }: {
   runtime: AppRuntime;
   backend: ShaderloomBackend | null;
@@ -101,9 +117,12 @@ function Harness({
   /** Resolved output sizes (T312). Omitted where the test is only about video wiring. */
   resolved?: ResolvedSizeSource | null;
   onDiagnostics?: (messages: readonly string[]) => void;
+  /** T493: the per-frame seam, so a test can drive a frame the way the loop does. */
+  onWiring?: (wiring: MediaWiring) => void;
 }) {
   const media = useMediaSources(runtime, backend, graph, resolved ?? null, environment);
   onDiagnostics?.(media.diagnostics.map((entry) => entry.message));
+  onWiring?.(media);
   return null;
 }
 
@@ -239,6 +258,63 @@ describe("media sources reach the backend (T264)", () => {
         height: 1080,
       });
     });
+  });
+
+  /**
+   * T493 — THE REACH, at the hook level.
+   *
+   * `media-playback.test.ts` proves the seek policy and `domain/media/transport.test.ts`
+   * proves the arithmetic. Neither would notice if `useMediaSources` never called them,
+   * which is the exact shape of B12/B23/T264/B87 and the reason this case is here: a real
+   * document, a real element, one frame pushed through the seam the frame loop uses, and
+   * the ELEMENT asserted.
+   */
+  it("a frame through `sync` puts the movie element where the transport says (T493)", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const element = fakeElement();
+    let wiring: MediaWiring | null = null;
+    const environment: MediaEnvironment = {
+      openFile: () => Promise.resolve(element as unknown as MediaElement),
+      openCamera: () => Promise.reject(new Error("not used")),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            movie: { type: "movieFileIn", parameters: { file: "blob:clip", speed: 2 } },
+          })}
+          environment={environment}
+          onWiring={(value) => {
+            wiring = value;
+          }}
+        />,
+      );
+    });
+    await waitFor(() => expect(registered.has(mediaSourceIdFor("movie"))).toBe(true));
+
+    const frame: FrameEvaluationInput = {
+      timeSeconds: 3,
+      deltaSeconds: 1 / 60,
+      frameIndex: 180,
+      mode: "realtime",
+      randomSeed: 1,
+    };
+    act(() => (wiring as unknown as MediaWiring).sync(frame));
+
+    // speed 2 at t=3 into a 12s clip: second SIX, exactly. A transport that reached the
+    // element with the default speed would say 3, and a transport that never reached it
+    // at all would leave the element at 0 — three distinguishable numbers.
+    expect(element.currentTime).toBe(6);
+    expect(element.playbackRate).toBe(2);
+
+    // ...and a stopped app transport stops the element, which `sync` alone cannot do
+    // because a stopped loop produces no frames to be called from.
+    act(() => (wiring as unknown as MediaWiring).setRunning(false));
+    expect(element.paused).toBe(true);
   });
 
   it("unregisters when the node goes away", async () => {

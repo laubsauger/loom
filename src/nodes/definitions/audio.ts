@@ -1,4 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 
 /**
@@ -74,26 +75,53 @@ function projectFeatures(audio: { level: number; low: number; lowMid: number; hi
  *
  * Same shape as the movie node on purpose (§V7-family: a user who learned one should
  * recognise the other): one `asset` parameter holding the file, resolved by the app's
- * capture hook the same tolerant way media sources read theirs. The file loops, plays
- * audibly when `monitor` is on, and its analysis lands in the SAME per-frame feature
- * record every audio node projects — so a bound file takes over the session's one
- * capture, and `audioIn` nodes read the file too (documented on both).
+ * capture hook the same tolerant way media sources read theirs. Its analysis lands in the
+ * SAME per-frame feature record every audio node projects — so a bound file takes over
+ * the session's one capture, and `audioIn` nodes read the file too (documented on both).
+ *
+ * T493 — THE TRANSPORT IS THE MOVIE NODE'S, LITERALLY: `MEDIA_TRANSPORT_PARAMETERS` is
+ * one object spread into both nodes, so play mode, speed, cue, trim and the at-end
+ * behaviour cannot drift into two meanings, and `mediaPlayhead` is the one function that
+ * turns them into a position for both. Before it, this node had `file` and `monitor` and
+ * looping was hard-coded in the capture hook.
+ *
+ * TWO CLOCKS LIVE HERE AND THEY ARE DIFFERENT (§V436, §V453), which is why both are named
+ * in the description rather than one being allowed to stand for the node:
+ *  - the CHANNELS are clockless — they report what the analyser heard this frame, so a
+ *    timeline lap passes straight through them;
+ *  - the PLAYHEAD is timeline-anchored — where the track is in the piece is the point, so
+ *    it wraps at the lap by design and a scrub finds the same second of the track.
  */
 export const audioFileInNode: NodeDefinition = {
   type: "audioFileIn",
+  // Version 1 still: every T493 key carries a default, so a project saved before it opens
+  // playing exactly as it did. See the same note on `movieFileIn` (§V10).
   version: 1,
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture. CLOCKLESS (§V436): the channels report what was heard this frame, so a timeline loop passes straight through them.",
-  tags: ["value", "input", "audio", "music", "file", "fft"],
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is TIMELINE-ANCHORED by default: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
+  tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    file: { type: "asset", label: "File", kind: "audio" },
+    file: { type: "asset", label: "File", kind: "audio", group: "File" },
+    ...MEDIA_TRANSPORT_PARAMETERS,
+    volume: {
+      type: "number",
+      label: "Volume",
+      group: "Transport",
+      default: 1,
+      min: 0,
+      max: 2,
+      step: 0.01,
+      description:
+        "Monitoring level. Does NOT touch the analysis — the channels report the file at unity however loud you are playing it, so turning the room down does not silently rescale everything driven by it.",
+    },
     monitor: {
       type: "boolean",
       label: "Monitor",
+      group: "Transport",
       default: true,
       description: "Play the file audibly while analysing it.",
     },

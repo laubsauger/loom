@@ -37,6 +37,8 @@ describe("captureConfigOf (T434)", () => {
       url: "",
       device: "",
       monitor: false,
+      // T493: a mic has no playhead, so there is no node whose transport drives it.
+      nodeId: null,
     });
     expect(
       captureConfigOf(graphOf({ a: { type: "audioIn", parameters: { device: "dev-42" } } }))?.device,
@@ -50,7 +52,15 @@ describe("captureConfigOf (T434)", () => {
         a: { type: "audioFileIn", parameters: { file: "blob:track" } },
       }),
     );
-    expect(bound).toEqual({ source: "file", url: "blob:track", device: "", monitor: true });
+    // T493: the config names WHICH node's transport drives the capture — the session has
+    // one capture, so it has one transport, and it belongs to the node that supplied it.
+    expect(bound).toEqual({
+      source: "file",
+      url: "blob:track",
+      device: "",
+      monitor: true,
+      nodeId: "a",
+    });
     // No file chosen yet: the node is waiting, not capturing — the mic keeps the session.
     const unbound = captureConfigOf(
       graphOf({

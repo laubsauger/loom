@@ -58,6 +58,7 @@ import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMediaSources } from "./use-media-sources.ts";
+import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
 import { useRenderRange } from "./use-render-range.ts";
 
@@ -380,7 +381,21 @@ export function App({
    */
   // T312: the resolved sizes, so a generated source (Text) draws at the node's target
   // extent rather than the project resolution.
-  const media = useMediaSources(runtime, backend ?? null, compile.graph, compile.compiled);
+  /**
+   * T493 — where `media.cue` and `media.reload` find a node. Created here because BOTH
+   * media hooks publish into it: the movie node and the audio file node are two doors on
+   * one capability, so one command reaches either without knowing which.
+   */
+  const mediaControls = useMemo(() => createMediaControlRegistry(), []);
+  useMediaCommands(runtime.bus, mediaControls);
+  const media = useMediaSources(
+    runtime,
+    backend ?? null,
+    compile.graph,
+    compile.compiled,
+    undefined,
+    mediaControls,
+  );
 
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
@@ -402,7 +417,11 @@ export function App({
     [analyze, pulses],
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
-  const audioInput = useAudioInput(() => runtime.bus.store.getGraph());
+  const audioInput = useAudioInput(
+    () => runtime.bus.store.getGraph(),
+    runtime.registry,
+    mediaControls,
+  );
   // T452: the recorder WRAPS that read, so the track holds what the engine actually saw.
   const audioTrack = useAudioTrack({
     bus: runtime.bus,
@@ -421,6 +440,11 @@ export function App({
     // Before `animate` reads the channels, every rendered frame (§V179, §V155).
     advanceChannels: (inputs) => {
       valueGraph.evaluate(inputs);
+      // T493: media positions derive from THIS frame, and after the value graph so a
+      // DRIVEN speed or trim reads this frame's channels rather than the last one's
+      // (§V179, the same order contract the animator is held to).
+      media.sync(inputs.frame, valueGraph.resolver);
+      audioInput.sync(inputs.frame, valueGraph.resolver);
       // Immediately after the ONE evaluation, so the plot and the parameter read the same
       // frame's numbers (§V275) and no stateful stage is advanced twice.
       sampleValueHistory(inputs.frame);
@@ -435,6 +459,20 @@ export function App({
     pointer,
     valuesOnly: compile.valuesOnly,
   });
+
+  /**
+   * T493 — a stopped timeline stops the media.
+   *
+   * `sync` only runs on a RENDERED frame, so with the loop paused nothing would correct
+   * the element and it would run on its own clock — the picture frozen and the sound
+   * playing on, which is the state a user reads as "pause is broken". An effect rather
+   * than a call inside the loop, because "the loop is not running" is precisely the
+   * condition the loop cannot report from inside itself.
+   */
+  useEffect(() => {
+    media.setRunning(frameLoop.playing);
+    audioInput.setRunning(frameLoop.playing);
+  }, [audioInput, frameLoop.playing, media]);
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
   // the button and the hotkey cannot drift into two different code paths for one action.
