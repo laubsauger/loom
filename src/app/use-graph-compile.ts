@@ -5,6 +5,11 @@ import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/gr
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
+import type { PreviewSinkStore } from "./preview-sinks.ts";
+
+/** A stable no-op store so the hook's subscription arity never changes. */
+const EMPTY_SINKS: ReadonlyArray<ActiveSink> = [];
+const NO_STORE = { subscribe: () => () => {}, get: () => EMPTY_SINKS };
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -98,6 +103,7 @@ function compileSafely(
   runtime: AppRuntime,
   capabilities: BackendCapabilities,
   resolution: ParameterResolution = {},
+  previewSinks?: ReadonlyArray<ActiveSink>,
 ): { compiled: CompiledGraph | null; diagnostics: RuntimeDiagnostic[] } {
   try {
     const compiled = compileGraph({
@@ -105,9 +111,11 @@ function compileSafely(
       settings: runtime.settings,
       registry: runtime.registry,
       capabilities,
-      // §V28a: EVERY visible texture-producing node, never a partial list — an explicit
-      // list is authoritative, so passing some but not all would silently prune the rest.
-      sinks: visiblePreviewSinks(graph, runtime.registry),
+      // T252 (§V158, B18): the scheduler's KEPT set when a store is wired — the
+      // partition that stops every off-screen node rendering every frame. The old
+      // every-texture-node fallback stands only where no scheduler exists (tests,
+      // project.compile): over-rendering is safe there; under-rendering never is.
+      sinks: previewSinks ?? visiblePreviewSinks(graph, runtime.registry),
       resolution,
     });
     return { compiled, diagnostics: [...compiled.diagnostics] };
@@ -168,11 +176,19 @@ function publishNodeStatus(
 export function useGraphCompile(
   runtime: AppRuntime,
   capabilities: BackendCapabilities | null,
+  previewSinks?: PreviewSinkStore,
 ): GraphCompileResult {
   const graph = useSyncExternalStore<GraphDocument>(
     runtime.bus.store.subscribe,
     runtime.bus.store.getGraph,
     runtime.bus.store.getGraph,
+  );
+  // T252 (§V158): the scheduler's kept set gates PREVIEW-ONLY materialization. The
+  // store notifies only on genuine change, so pans and idle ticks recompile nothing.
+  const scheduledPreviews = useSyncExternalStore(
+    previewSinks?.subscribe ?? NO_STORE.subscribe,
+    previewSinks?.get ?? NO_STORE.get,
+    previewSinks?.get ?? NO_STORE.get,
   );
 
   // Cache for `project.compile`, keyed by the revision it was produced from. Only a
@@ -205,7 +221,13 @@ export function useGraphCompile(
     if (capabilities === null) {
       return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null };
     }
-    const { compiled, diagnostics } = compileSafely(graph, runtime, capabilities, { channels });
+    const { compiled, diagnostics } = compileSafely(
+      graph,
+      runtime,
+      capabilities,
+      { channels },
+      previewSinks === undefined ? undefined : scheduledPreviews,
+    );
     cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
     return {
       graph,
@@ -214,7 +236,7 @@ export function useGraphCompile(
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
       animate,
     };
-  }, [animate, channels, graph, runtime, capabilities]);
+  }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews]);
 
   const capabilitiesRef = useRef(capabilities);
   capabilitiesRef.current = capabilities;

@@ -207,6 +207,15 @@ describe("§V142 — a camera move costs no allocation (B13)", () => {
       installed?.resources.filter((resource) => resource.kind === "target"),
     ).toHaveLength(1);
 
+    // T252: the preview scheduler's kept set converges via ONE recompile after the
+    // first tick registers visible tiles. Settle that handshake before baselining —
+    // the claim under test is that a CAMERA MOVE costs nothing, not that startup does.
+    for (let settle = 0; settle < 10; settle += 1) {
+      const before = counters.compiles;
+      await ticks();
+      if (counters.compiles === before) break;
+    }
+
     const baseline = { ...counters };
     const framing = transformOf(view.container);
 

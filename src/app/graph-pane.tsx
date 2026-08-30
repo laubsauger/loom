@@ -67,6 +67,8 @@ export interface GraphPaneProps {
   compiledOutputs?: ReadonlyArray<ResolvedOutput>;
   previewFps?: number;
   previewLongEdge?: number;
+  /** T252 (§V158): sink for the preview scheduler's kept set, gating compilation. */
+  previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void };
 }
 
 const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
@@ -95,6 +97,7 @@ function GraphPaneInner({
   compiledOutputs = EMPTY_OUTPUTS,
   previewFps = 20,
   previewLongEdge = 192,
+  previewSinks,
 }: GraphPaneProps) {
   const { bus, invocation, nodeRuntime, registry } = useAppRuntime();
   const flow = useReactFlow();
@@ -110,6 +113,7 @@ function GraphPaneInner({
   const getNodePosition = useCallback((nodeId: NodeId) => flow.getNode(nodeId)?.position, [flow]);
 
   useNodePreviews({
+    ...(previewSinks === undefined ? {} : { previewSinks }),
     backend: previewBackend,
     canvasRef: previewCanvasRef,
     bounds: previewBounds,

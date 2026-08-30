@@ -36,6 +36,11 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 const PREVIEW_TILE_CAPACITY = 48;
 
 export interface NodePreviewInputs {
+  /**
+   * T252 (§V158): where the scheduler's kept set goes, so the COMPILER materializes
+   * exactly what is watched. Optional: absent means nobody is gating on previews.
+   */
+  readonly previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void };
   readonly backend: ShaderloomBackend | null | undefined;
   readonly canvasRef: RefObject<HTMLCanvasElement | null>;
   readonly bounds: PreviewSlotBoundsStore;
@@ -103,6 +108,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const candidates = textureNodes(current.graph, current.registry);
       const requests: PreviewRequest[] = [];
       const idle: Array<{ nodeId: NodeId; portId: string }> = [];
+      const visibleIdle: Array<{ nodeId: NodeId; portId: string }> = [];
       // §V100/T197 — a slot that is not live still shows what the compiler resolved for
       // it, never a blank box, so this is looked up regardless of live/suspended/idle.
       const facts = new Map<NodeId, { width: number; height: number; format: string }>();
@@ -118,6 +124,23 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         const offset = current.bounds.get(nodeId);
         const position = current.getNodePosition(nodeId);
         if (output === undefined || offset === undefined || position === undefined) {
+          // T252: a visible slot with NO materialized output cannot render yet, but it
+          // must still register as a preview sink or it never will — the sink triggers
+          // the recompile that materializes it, and the next tick fills the tile.
+          if (offset !== undefined && position !== undefined) {
+            const box = {
+              x: position.x + offset.x,
+              y: position.y + offset.y,
+              width: offset.width,
+              height: offset.height,
+            };
+            const screen = slotScreenRect(box, viewport);
+            const onScreen =
+              screen.x < surface.width && screen.y < surface.height && screen.x + screen.width > 0 && screen.y + screen.height > 0;
+            if (onScreen || current.graph.nodes[nodeId]?.ui?.preview === true) {
+              visibleIdle.push({ nodeId, portId });
+            }
+          }
           idle.push({ nodeId, portId });
           continue;
         }
@@ -153,6 +176,14 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         previewFps: current.previewFps,
         previewLongEdge: current.previewLongEdge,
       });
+
+      // T252: the compiler's preview-sink set = what the scheduler KEEPS, plus the
+      // visible slots waiting on materialization (capped so the sink set cannot outrun
+      // the tile budget the scheduler enforces).
+      current.previewSinks?.set([
+        ...result.schedule.active.map((entry) => ({ nodeId: entry.ref.nodeId as string, portId: entry.ref.portId })),
+        ...visibleIdle.slice(0, Math.max(0, system.capacity - result.schedule.active.length)),
+      ]);
 
       for (const entry of result.schedule.active) {
         const found = facts.get(entry.ref.nodeId);

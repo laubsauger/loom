@@ -35,6 +35,7 @@ import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
 import { useAgentPorts } from "./agent-ports.ts";
 import { useRuntimeCommands } from "./runtime-commands.ts";
+import { createPreviewSinkStore } from "./preview-sinks.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
@@ -171,7 +172,10 @@ export function App({
   const probe = gpuProbe ?? sharedGpuProbe;
   const status = useGpuStatus(probe);
   const capabilities = status.kind === "ready" ? status.capabilities : null;
-  const compile = useGraphCompile(runtime, capabilities);
+  // T252 (§V158): one store links the preview scheduler's kept set to the compiler's
+  // preview sinks — what is watched is what materializes, and nothing else renders.
+  const previewSinks = useMemo(() => createPreviewSinkStore(), []);
+  const compile = useGraphCompile(runtime, capabilities, previewSinks);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
 
   /**
@@ -539,6 +543,7 @@ export function App({
                 compiledOutputs={compile.compiled?.outputs ?? []}
                 previewFps={runtime.settings.previewFps}
                 previewLongEdge={runtime.settings.previewLongEdge}
+                previewSinks={previewSinks}
               />
             </NodeInfoHost>
           }
