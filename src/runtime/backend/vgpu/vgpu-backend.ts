@@ -1046,6 +1046,21 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         deviceGeneration += 1;
         capabilities = describeCapabilities(created.gpu);
         reportCapabilities(capabilities);
+        // §V199: compat mode is NOT a target. The point/geometry render path is
+        // vertex-pulling from SoA storage, which compat's zero vertex-stage storage
+        // buffers cannot express — so the refusal is LOUD at init, never a silent
+        // breakage three nodes in. The named migration (same pairs, VERTEX usage,
+        // instance-step layout) is a later project, not a tuning knob.
+        if ((created.gpu.device as { isCompatibilityMode?: boolean }).isCompatibilityMode === true) {
+          hub.report(
+            backendDiagnostic(
+              "error",
+              BackendDiagnosticCode.capabilityBelowBaseline,
+              "This adapter runs WebGPU compatibility mode (0 vertex-stage storage buffers); point and geometry rendering require core WebGPU and are disabled (§V199).",
+              { suggestion: "Use a browser/device with core WebGPU. Texture nodes keep working." },
+            ),
+          );
+        }
         watchDeviceLoss(created);
         attachTimer();
         // §V47: no surface is created here, with or without `options.canvas`. The plan
