@@ -116,6 +116,15 @@ export interface FrameLoopOptions {
    */
   readonly onReset?: (() => void) | null | undefined;
   /**
+   * The ONE pointer source (T324, §V182, §V236).
+   *
+   * Supplied by the composition root so the surface that PUBLISHES the cursor and the loop
+   * that READS it are the same object. Omitted, the loop makes its own — which is what it
+   * used to do always, and why `FrameEvaluationInput.pointer` was a frozen zero: nothing
+   * outside this file could ever reach the instance to write to it.
+   */
+  readonly pointer?: PointerSource | undefined;
+  /**
    * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
    *
    * A SUGGESTION, never an instruction — the compile effect below verifies it against the
@@ -131,6 +140,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const advanceChannels = options.advanceChannels ?? null;
   const onReset = options.onReset ?? null;
   const valuesOnly = options.valuesOnly ?? false;
+  const suppliedPointer = options.pointer;
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
@@ -217,7 +227,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       return;
     }
     setDiagnostics(NO_DIAGNOSTICS);
-    const pointer = pointerRef.current ?? createPointerSource();
+    const pointer = suppliedPointer ?? pointerRef.current ?? createPointerSource();
     pointerRef.current = pointer;
     // T271/§V172 — ONE fps: the timeline clock advances at `1/fps` and the scheduler is
     // capped to the same rate, or timeline time runs fast on a 120 Hz display and slow on
@@ -302,7 +312,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       driver.stop();
       driverRef.current = null;
     };
-  }, [backend, bus, pushAnimatedValues]);
+  }, [backend, bus, pushAnimatedValues, suppliedPointer]);
 
   /**
    * Keep the SCHEDULER's cap in step with the clock's rate (§V172).

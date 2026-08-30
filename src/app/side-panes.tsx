@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
@@ -12,6 +13,8 @@ import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import { normalizedPointer } from "@runtime/execution/index.ts";
+import type { PointerSource } from "@runtime/execution/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
@@ -227,6 +230,15 @@ export interface ViewerPaneProps {
   graph: GraphDocument;
   /** The live backend, when there is one. The runtime is handed the surface (§V64). */
   backend?: ShaderloomBackend | null;
+  /**
+   * THE pointer source (T324, §V182, §V236). The viewer is the one publisher.
+   *
+   * It publishes here and nowhere else — never the graph canvas, never a window listener —
+   * because a shader reading `pointer` means "where in the PICTURE", and this canvas is the
+   * picture. Two sources for one device drift by a frame and the CPU and GPU halves of one
+   * graph then disagree about where the cursor is (§V182).
+   */
+  pointer?: PointerSource | null;
 }
 
 /**
@@ -249,7 +261,7 @@ export interface ViewerPaneProps {
  * graph; showing its first entry would put an arbitrary intermediate node on the viewer.
  * With no Output node there is nothing to show, and the pane says so.
  */
-export function ViewerPane({ compiled, graph, backend = null }: ViewerPaneProps) {
+export function ViewerPane({ compiled, graph, backend = null, pointer = null }: ViewerPaneProps) {
   const { registry } = useAppRuntime();
 
   const sink = useMemo(() => {
@@ -264,13 +276,48 @@ export function ViewerPane({ compiled, graph, backend = null }: ViewerPaneProps)
   const { canvasRef } = useOutputPresentation(backend, sink?.resourceId ?? null);
   const outputs = compiled?.outputs ?? [];
 
+  /**
+   * Publishing the cursor (T324, §V236).
+   *
+   * The canvas fills its surface exactly, so the element's own box IS the picture's box and
+   * normalising against it needs no letterbox arithmetic. `buttons` rides the same events,
+   * so a press with no movement still reaches a shader.
+   *
+   * There is deliberately NO `onPointerLeave`. §V236 says the pointer HOLDS its last
+   * position when the cursor goes elsewhere, and holding is the absence of a write: zero is
+   * a VALID position, so resetting here would snap every mouse-driven effect to the corner
+   * the instant the cursor crossed into the inspector — a jump that reads as a bug in the
+   * user's own graph. If someone adds a reset here later, that is the bug they will cause.
+   *
+   * §V16 is safe by construction: this writes into a plain object the frame loop samples.
+   * No React state, so a 120 Hz pointer costs zero renders.
+   */
+  const publishPointer = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (pointer === null) return;
+      const box = event.currentTarget.getBoundingClientRect();
+      const normalized = normalizedPointer({ x: event.clientX, y: event.clientY }, box);
+      if (normalized === null) return;
+      pointer.set({ x: normalized.x, y: normalized.y, buttons: event.buttons });
+    },
+    [pointer],
+  );
+
   return (
     <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
       <div className={styles.surface} data-testid="viewer-surface">
         {sink === null ? (
           <p className={styles.note}>No output</p>
         ) : (
-          <canvas ref={canvasRef} className={styles.canvas} aria-label="Rendered output" />
+          <canvas
+            ref={canvasRef}
+            className={styles.canvas}
+            aria-label="Rendered output"
+            data-testid="viewer-canvas"
+            onPointerMove={publishPointer}
+            onPointerDown={publishPointer}
+            onPointerUp={publishPointer}
+          />
         )}
       </div>
       <section className={styles.block} aria-label="Resolved outputs">

@@ -42,6 +42,7 @@ import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import { createPointerSource } from "@runtime/execution/index.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
@@ -201,6 +202,17 @@ export function App({
   const valueGraph = useValueGraph(runtime);
 
   /**
+   * THE pointer (T324, B30, §V182, §V236).
+   *
+   * `PointerSource.set` had no caller: the frame loop created its own instance, nothing
+   * outside that file could reach it, and so `FrameEvaluationInput.pointer` was a frozen
+   * zero — every shader reading the shared block's pointer got (0,0), and Mouse, the only
+   * wirable value source, read that same zero. Built here so the ONE surface that publishes
+   * and the loop that samples hold the same object.
+   */
+  const pointer = useMemo(() => createPointerSource(), []);
+
+  /**
    * The channel ladder, in order (first non-undefined wins).
    *
    * Analyze is a MEASUREMENT of the running program; the value graph is a computation
@@ -283,6 +295,7 @@ export function App({
     advanceChannels: valueGraph.evaluate,
     observe: observeFrame,
     onReset: valueGraph.reset,
+    pointer,
     valuesOnly: compile.valuesOnly,
   });
 
@@ -637,6 +650,7 @@ export function App({
               compiled={compile.compiled}
               graph={compile.graph}
               backend={backend ?? null}
+              pointer={pointer}
             />
           }
           shaderEditor={
