@@ -120,8 +120,14 @@ function sizesFor(plan: CompiledGraph, nodeId: string): number[] {
 /**
  * solid → source blur → subject blur → output, where the SUBJECT's size is an expression
  * reading the SOURCE's size by name.
+ *
+ * `%s` in the expression is the source blur's name; `%c` is the solid's, for the tests
+ * that reference a COLOUR COMPONENT (T332) rather than a plain number.
  */
-async function mountWithReference(expression: string) {
+async function mountWithReference(
+  expression: string,
+  solidParameters?: Record<string, unknown>,
+) {
   const runtime = newRuntime();
   const seeded = await patch(runtime, [
     { op: "addNode", ref: "$solid", type: "solid", position: { x: -300, y: 0 } },
@@ -145,25 +151,33 @@ async function mountWithReference(expression: string) {
     },
   ]);
   const ids = {
+    solid: seeded.output.createdIds["$solid"] as string,
     src: seeded.output.createdIds["$src"] as string,
     subject: seeded.output.createdIds["$subject"] as string,
   };
 
   // The source's NAME is what the reference names (§V129: names are identifiers).
   const sourceName = runtime.bus.store.getGraph().nodes[ids.src]?.label;
+  const solidName = runtime.bus.store.getGraph().nodes[ids.solid]?.label;
   expect(sourceName).toBeDefined();
+  expect(solidName).toBeDefined();
+
+  const source = expression
+    .replace("%s", sourceName as string)
+    .replace("%c", solidName as string);
 
   await patch(runtime, [
     { op: "setParameters", nodeId: ids.src, parameters: { size: SOURCE_SIZE } },
+    ...(solidParameters === undefined
+      ? []
+      : [{ op: "setParameters" as const, nodeId: ids.solid, parameters: solidParameters as never }]),
     {
       op: "setParameters",
       nodeId: ids.subject,
       parameters: {
         size: {
           mode: "expression",
-          bindings: {
-            expression: { kind: "expression", source: expression.replace("%s", sourceName as string) },
-          },
+          bindings: { expression: { kind: "expression", source } },
         },
       },
     },
@@ -182,6 +196,36 @@ async function mountWithReference(expression: string) {
   const plan = plans[plans.length - 1];
   if (plan === undefined) throw new Error("the backend was handed no plan");
   return { runtime, view, ids, plan, sourceName: sourceName as string };
+}
+
+/** Selects a node the way a person does — a real click — so the inspector shows it. */
+async function selectNode(view: ReturnType<typeof render>, nodeId: string): Promise<void> {
+  const element = view.container.querySelector(`[data-testid="node-${nodeId}"]`);
+  if (element === null) throw new Error(`the node ${nodeId} did not render`);
+  await act(async () => {
+    const win = element.ownerDocument.defaultView;
+    if (win === null) throw new Error("no window");
+    for (const type of ["mousedown", "mouseup", "click"]) {
+      const event = new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 40, clientY: 20 });
+      Object.defineProperty(event, "view", { value: win });
+      element.dispatchEvent(event);
+    }
+  });
+  await settle();
+}
+
+/**
+ * Every number the panel is currently showing in a field.
+ *
+ * Compared as NUMBERS, not strings: a field formats to its own precision ("23.00"), and
+ * the claim is that the panel and the plan hold the same value, not that they render it
+ * identically.
+ */
+function numbersOnScreen(view: ReturnType<typeof render>): number[] {
+  const shown = view.container.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"]');
+  return [...shown]
+    .map((input) => Number.parseFloat(input.value))
+    .filter((value) => Number.isFinite(value));
 }
 
 describe("T316 — a cross-node reference resolves everywhere (§V148, §V61)", () => {
@@ -203,35 +247,40 @@ describe("T316 — a cross-node reference resolves everywhere (§V148, §V61)", 
 
   it("shows the SAME number in the inspector as the plan carries (B8)", async () => {
     const { view, ids, plan } = await mountWithReference("op('%s').par.size");
-
-    // Select the subject the way a person does — a real click on its node — so the
-    // inspector is showing what a user would be looking at.
-    const element = view.container.querySelector(`[data-testid="node-${ids.subject}"]`);
-    if (element === null) throw new Error("the subject node did not render");
-    await act(async () => {
-      const win = element.ownerDocument.defaultView;
-      if (win === null) throw new Error("no window");
-      for (const type of ["mousedown", "mouseup", "click"]) {
-        const event = new win.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 40, clientY: 20 });
-        Object.defineProperty(event, "view", { value: win });
-        element.dispatchEvent(event);
-      }
-    });
-    await settle();
+    await selectNode(view, ids.subject);
 
     const planned = sizesFor(plan, ids.subject)[0];
     expect(planned).toBe(SOURCE_SIZE);
 
     // The panel renders the resolved value into its number field. Finding the plan's
     // number on screen is the whole assertion: one document, one resolver, one answer.
-    const shown = view.container.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"]');
-    // Compared as NUMBERS, not strings: the field formats to its own precision ("23.00"),
-    // and the claim is that the panel and the plan hold the same value, not that they
-    // render it identically.
-    const values = [...shown]
-      .map((input) => Number.parseFloat(input.value))
-      .filter((value) => Number.isFinite(value));
-    expect(values).toContain(planned);
+    expect(numbersOnScreen(view)).toContain(planned);
+  }, 30_000);
+
+  /**
+   * T332 / §V113 — the same claim for ONE CHANNEL of a colour.
+   *
+   * It is at this level for the reason the file exists: a component read supplied to the
+   * inspector and not the compiler is B8 rebuilt, and both halves would pass their own
+   * unit tests the whole time. The multiplier is what makes the numbers legible — the
+   * solid's green is 0.25, so the subject's blur size is 25, and blur's default is 8.
+   */
+  it("reads one COMPONENT of another node's colour, in the plan and the panel", async () => {
+    const { view, ids, plan } = await mountWithReference("op('%c').par.color.g * 100", {
+      "color.g": { mode: "static", bindings: { static: { kind: "static", value: 0.25 } } },
+    });
+    await selectNode(view, ids.subject);
+
+    const planned = sizesFor(plan, ids.subject);
+    expect(planned).toContain(25);
+    // NON-VACUITY: not blur's default, and not the DOUBLE DECODE. `color` is
+    // `space: "display"`, so a decode applied at the read as well as at `values` would
+    // give srgbToLinear(0.25) * 100 = 5.09 — a plausible number, which is the worst kind
+    // of wrong (T187 measured exactly this shape).
+    expect(planned).not.toContain(8);
+    expect(planned.some((size) => size > 4 && size < 7)).toBe(false);
+
+    expect(numbersOnScreen(view)).toContain(25);
   }, 30_000);
 
   it("reports a reference to a node that is not there, rather than rendering a default", async () => {
