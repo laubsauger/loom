@@ -793,6 +793,7 @@ Mask ≠ TD Matte, which is 3-input). deprecated & ⊥ copy: **SVG TOP** (docume
 **GLSL Create POP** ∴ our 2nd kernel node = an ADVANCED kernel that ? change counts, ⊥ a
 separate Create node.
 
+NOTE: commit `640de4e` labels this work T279/T280 — ids assigned before the spec's were published & now taken by Remap/Reorder. the work IS T288/T289. ⊥ renumber the commit; record the mapping.
 V189: auto-layout is DETERMINISTIC — same graph → same positions, ∀ time. an agent that re-lays-out & gets different coordinates ⊥ reason about its own canvas, & a human gets churn ∈ every diff. ⊥ randomness, ⊥ iteration count, ⊥ insertion-order dependence.
 V190: layout is a POSITION edit ∴ `nodePosition` classification — editor-only, ⊥ recompile, ⊥ resource rebuild (V1). laying out a 200-node graph ! cost 0 GPU work.
 V191: ONE layout implementation, reached by both the keymap (`L`) & the bus command the agent calls (V78). a "layout for agents" that differs from the button is 2 products.
@@ -1047,8 +1048,8 @@ T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, 
 T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
 T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
 T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
-T288|.|deterministic auto-layout as a BUS COMMAND — layered/topological, rank = depth from sources, order within rank minimizing crossings. keymap `L` & the agent call the SAME one|V189,V190,V191,V78
-T289|.|`add_node` placement ergonomics: optional `{relativeTo, direction}` ∴ an agent building left-to-right ⊥ invent coordinates. still 1 undo group|V189,V34
+T288|x|deterministic auto-layout as a BUS COMMAND — layered/topological, rank = depth from sources, order within rank minimizing crossings. keymap `L` & the agent call the SAME one|V189,V190,V191,V78
+T289|x|`add_node` placement ergonomics: optional `{relativeTo, direction}` ∴ an agent building left-to-right ⊥ invent coordinates. still 1 undo group|V189,V34
 T290|.|MCP server + WebMCP adapters ∈ `src/mcp/**` — transport + schema only. + revision/diagnostic NOTIFICATIONS ∴ an observing agent sees the graph move w/o polling (quasi-realtime, ⊥ command-response)|V192,V39
 T291|.|agent output inspection economics: encoded thumbnails (PNG, bounded long edge) + `describe_output` returning STATS ⊥ pixels (the T236 reduction generalizes). both throttled like `read_points`|V16,V144
 T279|.|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
