@@ -10,7 +10,7 @@
   color-scheme: dark;
 
   /* ---- ground ------------------------------------------------------- */
-  --bg-void: #0b0e14; /* canvas ground, app backdrop */
+  --bg-void: #10141d; /* canvas ground, app backdrop */
   --bg-panel: #12161f; /* pane fill */
   --bg-raise: #1a202c; /* node body, popover, menu */
   --line: #232a38; /* hairline, pane divider */

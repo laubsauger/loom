@@ -53,9 +53,14 @@ function describe(fileName: string, text: string): ExampleProject {
   return { fileName, name, nodeCount, text };
 }
 
-/** Every shipped example, sorted by file name so the list never reshuffles. */
+const EXAMPLE_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/** Every shipped example, in natural file-name order so the list never reshuffles. */
 export function listExampleProjects(): readonly ExampleProject[] {
   return Object.entries(RAW_EXAMPLES)
     .map(([path, text]) => describe(fileNameOf(path), text))
-    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+    // NATURAL order, not lexicographic: plain `localeCompare` puts E10 immediately after
+    // E1 and buries E2 seventh, which reads as "examples are missing" rather than as a
+    // sort. The owner reported exactly that. `numeric` compares digit runs as numbers.
+    .sort((a, b) => EXAMPLE_ORDER.compare(a.fileName, b.fileName));
 }

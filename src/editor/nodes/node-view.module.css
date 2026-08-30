@@ -288,7 +288,14 @@
 
 .preview {
   aspect-ratio: 16 / 9;
+  /*
+    A preview's CONTENT is frequently pure black (an unlit render, a node with no signal),
+    which is darker than every surface behind it — so without an edge the tile, the node
+    body and the canvas ground collapse into one shape. The inset hairline draws the
+    tile's boundary from the INSIDE, so it survives a black frame.
+  */
   border-bottom: var(--border-hairline);
+  box-shadow: inset 0 0 0 1px var(--line);
   background: var(--bg-sunken);
   overflow: hidden;
 }
