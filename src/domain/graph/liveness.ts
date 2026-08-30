@@ -2,6 +2,7 @@ import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { StoredParameter } from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import type { NodeDefinition } from "../types/node-definition.ts";
 import { parseExpression, type ExpressionAst } from "../expressions/index.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
 
@@ -26,6 +27,11 @@ import { isParameterSlot } from "../parameters/slots.ts";
  * DEAD (§V173) means: was a candidate for GPU work and nothing reaches it. A value
  * source is never a candidate, so it appears in neither list.
  */
+
+/** Non-plan-resident by design (§V173): a channel/value-graph node, never a GPU candidate. */
+export function isValueSourceDefinition(definition: NodeDefinition | undefined): boolean {
+  return definition !== undefined && (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined);
+}
 
 export interface LivenessNode {
   readonly name: string | undefined;
@@ -129,7 +135,7 @@ export function documentLiveness(graph: GraphDocument, registry: NodeRegistryVie
     nodes.set(nodeId, {
       name: node.label,
       parameters: node.parameters,
-      isValueSource: definition?.valueChannel !== undefined,
+      isValueSource: isValueSourceDefinition(definition),
       isSink: definition?.sink === true,
     });
   }

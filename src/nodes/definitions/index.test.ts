@@ -68,6 +68,13 @@ describe("core catalogue (T70, T40)", () => {
       "analyze",
       "movieFileIn",
       "webcam",
+      "mouse",
+      "valueMath",
+      "limit",
+      "slope",
+      "trigger",
+      "lag",
+      "valueFilter",
     ]);
   });
 

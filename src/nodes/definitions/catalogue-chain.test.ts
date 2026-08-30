@@ -164,7 +164,7 @@ describe("the catalogue compiles through the real compiler", () => {
       // A value source (§V143) has no ports and no passes: its output is a NUMBER read
       // through the channel seam, so a texture-graph sweep has nothing to compile.
       // values.test.ts covers it where it actually runs — the parameter resolver.
-      if (definition.valueChannel !== undefined) continue;
+      if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue;
       const graph = minimalGraphFor(definition);
       const plan = compile(graph);
       // Not just errors: a warning here means an unknown parameter, a version mismatch or
@@ -212,7 +212,7 @@ describe("the catalogue compiles through the real compiler", () => {
   it("sets exactly the uniforms its shader declares", () => {
     for (const definition of coreNodeDefinitions) {
       if (definition.passthrough !== undefined) continue; // a wire has no uniforms to check (§V130)
-      if (definition.valueChannel !== undefined) continue; // a value source has no passes (§V143)
+      if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue; // a value source has no passes (§V143)
       const plan = compile(minimalGraphFor(definition));
       const passes = plan.passes.filter(
         (pass) =>

@@ -1,7 +1,7 @@
 import type { NodeId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { NodeDefinition } from "../domain/types/node-definition.ts";
-import { computeLiveness, type LivenessNode } from "../domain/graph/liveness.ts";
+import { computeLiveness, isValueSourceDefinition, type LivenessNode } from "../domain/graph/liveness.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
 import type { ActiveSink, CompileEdge } from "./types.ts";
 import type { ResolvedNode } from "./validate.ts";
@@ -156,7 +156,7 @@ export function pruneToActiveSinks(
     livenessNodes.set(nodeId, {
       name: resolved.node.label,
       parameters: resolved.node.parameters,
-      isValueSource: resolved.definition.valueChannel !== undefined,
+      isValueSource: isValueSourceDefinition(resolved.definition),
       isSink: false, // seeds come from the resolved ACTIVE sinks below, not the manifest
     });
   }

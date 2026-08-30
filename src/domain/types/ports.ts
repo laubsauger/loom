@@ -67,7 +67,15 @@ export type PortType =
   | { kind: "light" }
   | { kind: "transform3d" }
   | { kind: "event" }
-  | { kind: "audioFeatures" };
+  | { kind: "audioFeatures" }
+  /**
+   * A CPU-side channel stream (T273, §V179): named numbers, evaluated per frame BEFORE
+   * the render by the value-graph evaluator — TD's CHOP wire. Structureless on purpose:
+   * every value port carries a channel bag, and which channels are present is runtime
+   * data (a Mouse publishes x and y), not a static port claim. §V183: CPU-side because
+   * these are SCALARS — the reasoning explicitly does not generalise to pixels.
+   */
+  | { kind: "value" };
 
 export type PortKind = PortType["kind"];
 

@@ -137,6 +137,24 @@ export interface MigrationResult {
   diagnostics?: RuntimeDiagnostic[];
 }
 
+/** A value node's per-frame output: named numbers (T274). */
+export type ValueChannels = Readonly<Record<string, number>>;
+
+export interface ValueEvaluateContext {
+  /** Upstream channel bags, one per connected input port (merged over sorted edge ids). */
+  readonly inputs: Readonly<Record<PortId, ValueChannels>>;
+  /** The node's effective parameter values (static view + frame-scoped expressions). */
+  readonly values: Readonly<Record<string, ParameterValue>>;
+  readonly frame: FrameEvaluationInput;
+  /**
+   * §V182: the SAME pointer the shaders read, from FrameInputs — never a second DOM
+   * listener. Absent when the composition root has no pointer (offline render).
+   */
+  readonly pointer?: { readonly x: number; readonly y: number; readonly buttons: number };
+  /** Per-node persistent state (§V181). Mutate in place; cleared on transport reset. */
+  readonly state: Record<string, unknown>;
+}
+
 /**
  * Versioned manifest plus compile implementation. Must be executable headless —
  * never import React or @xyflow from a node definition (§V11).
@@ -189,6 +207,20 @@ export interface NodeDefinition {
     values: Readonly<Record<string, ParameterValue>>,
     frame: FrameEvaluationInput,
   ): number;
+  /**
+   * The full value-graph hook (T273/T274, §V179): evaluated per frame, CPU-side,
+   * BEFORE the render, in topological order over value edges. Returns the node's
+   * channel bag — named numbers (`{ x, y }` for a Mouse, `{ value }` for a scalar) —
+   * addressed downstream as `name` or `name:channel`. Supersedes `valueChannel` when
+   * both exist; `valueChannel` remains the single-channel shorthand (`{ value }`).
+   *
+   * `state` is the node's persistent bag (§V181): a stateful stage (Lag, Slope,
+   * Trigger) reads and mutates it in place, MUST also declare `stateful` (§V46/§V155 —
+   * a skipped stateful node diverges permanently), and gets it cleared on transport
+   * reset. Determinism stands (§V143): frame + inputs + params + state in, numbers
+   * out, no clock, no ambient reads.
+   */
+  valueEvaluate?(context: ValueEvaluateContext): ValueChannels;
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
 }

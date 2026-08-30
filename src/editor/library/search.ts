@@ -200,6 +200,8 @@ export function friendlyPortLabel(type: PortType): string {
       return "event";
     case "audioFeatures":
       return "audio features";
+    case "value":
+      return "value";
     default: {
       // Exhaustiveness guard: a new PortType member must be handled explicitly.
       const never: never = type;
