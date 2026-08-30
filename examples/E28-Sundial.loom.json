@@ -1,0 +1,580 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-floorlay-ground": {
+        "id": "e-floorlay-ground",
+        "source": {
+          "nodeId": "floorLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ground",
+          "portId": "points"
+        }
+      },
+      "e-floorpts-lay": {
+        "id": "e-floorpts-lay",
+        "source": {
+          "nodeId": "floorPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "floorLay",
+          "portId": "in"
+        }
+      },
+      "e-shot-out": {
+        "id": "e-shot-out",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-sky-shot": {
+        "id": "e-sky-shot",
+        "source": {
+          "nodeId": "sky",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shot",
+          "portId": "environment"
+        }
+      },
+      "e-stonelay-stones": {
+        "id": "e-stonelay-stones",
+        "source": {
+          "nodeId": "stoneLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stones",
+          "portId": "points"
+        }
+      },
+      "e-stonepts-lay": {
+        "id": "e-stonepts-lay",
+        "source": {
+          "nodeId": "stonePts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stoneLay",
+          "portId": "in"
+        }
+      },
+      "e-sunorbit-sun": {
+        "id": "e-sunorbit-sun",
+        "source": {
+          "nodeId": "sunOrbit",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sun",
+          "portId": "points"
+        }
+      },
+      "e-sunpt-orbit": {
+        "id": "e-sunpt-orbit",
+        "source": {
+          "nodeId": "sunPt",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sunOrbit",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.4
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.y": 1.25,
+          "eye.z": 4.9,
+          "fov": 40,
+          "lookAt": [
+            0,
+            0.15,
+            -0.4
+          ]
+        },
+        "position": {
+          "x": -280,
+          "y": 40
+        },
+        "type": "camera"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.03,
+          "offset": 0.4,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -280,
+          "y": 560
+        },
+        "type": "lfo"
+      },
+      "floorLay": {
+        "definitionVersion": 1,
+        "id": "floorLay",
+        "label": "floorlay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 768,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the grid lies down: xy becomes xz, the floor is the world's ground plane */\n  q.position = vec3f(p.position.x, 0.0, p.position.y);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1180,
+          "y": 40
+        },
+        "type": "pointKernel"
+      },
+      "floorPts": {
+        "definitionVersion": 1,
+        "id": "floorPts",
+        "label": "floorpts1",
+        "parameters": {
+          "cols": 32,
+          "count": 768,
+          "rows": 24,
+          "sizeX": 13,
+          "sizeY": 10
+        },
+        "position": {
+          "x": -1460,
+          "y": 40
+        },
+        "type": "pointGrid"
+      },
+      "ground": {
+        "definitionVersion": 1,
+        "id": "ground",
+        "label": "ground1",
+        "parameters": {
+          "material": "matground1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -880,
+          "y": 40
+        },
+        "type": "geometry"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            1,
+            0.88,
+            0.72,
+            1
+          ],
+          "direction": [
+            -1,
+            -0.45,
+            0.25
+          ],
+          "intensity": 1.4,
+          "kind": "directional",
+          "shadowExtent": 5,
+          "shadows": true
+        },
+        "position": {
+          "x": -280,
+          "y": 300
+        },
+        "type": "light"
+      },
+      "matGround": {
+        "definitionVersion": 1,
+        "id": "matGround",
+        "label": "matground1",
+        "parameters": {
+          "color": [
+            0.36,
+            0.37,
+            0.42,
+            1
+          ],
+          "roughness": 0.85,
+          "shininess": 10,
+          "specular": [
+            0.25,
+            0.28,
+            0.35,
+            1
+          ]
+        },
+        "position": {
+          "x": -580,
+          "y": 40
+        },
+        "type": "materialPhong"
+      },
+      "matStone": {
+        "definitionVersion": 1,
+        "id": "matStone",
+        "label": "matstone1",
+        "parameters": {
+          "color": [
+            0.58,
+            0.52,
+            0.44,
+            1
+          ],
+          "roughness": 0.3,
+          "shininess": 60,
+          "specular": [
+            0.8,
+            0.85,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -580,
+          "y": 300
+        },
+        "type": "materialPhong"
+      },
+      "matSun": {
+        "definitionVersion": 1,
+        "id": "matSun",
+        "label": "matsun1",
+        "parameters": {
+          "color": [
+            1,
+            0.55,
+            0.2,
+            1
+          ],
+          "roughness": 0.35,
+          "shininess": 40,
+          "specular": [
+            1,
+            0.9,
+            0.7,
+            1
+          ]
+        },
+        "position": {
+          "x": -580,
+          "y": 560
+        },
+        "type": "materialPhong"
+      },
+      "orbX": {
+        "definitionVersion": 1,
+        "id": "orbX",
+        "label": "orbx1",
+        "parameters": {
+          "amplitude": 1.7,
+          "frequency": 0.04,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1460,
+          "y": 900
+        },
+        "type": "lfo"
+      },
+      "orbZ": {
+        "definitionVersion": 1,
+        "id": "orbZ",
+        "label": "orbz1",
+        "parameters": {
+          "amplitude": 1.7,
+          "frequency": 0.04,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1460,
+          "y": 1080
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 280,
+          "y": 40
+        },
+        "type": "output"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.4,
+            0.5,
+            0.95,
+            1
+          ],
+          "ambientIntensity": 0.3,
+          "background": [
+            0.05,
+            0.06,
+            0.12,
+            1
+          ],
+          "camera": "cam1",
+          "environmentIntensity": 1,
+          "lights": "key1",
+          "scenes": "ground1 stones1 sun1"
+        },
+        "position": {
+          "x": 0,
+          "y": 40
+        },
+        "type": "render"
+      },
+      "sky": {
+        "definitionVersion": 2,
+        "id": "sky",
+        "label": "sky1",
+        "parameters": {
+          "interp": "linear",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.06,
+                0.13,
+                0.34,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.42,
+                0.5,
+                0.68,
+                1
+              ],
+              "position": 0.42
+            },
+            {
+              "color": [
+                1,
+                0.55,
+                0.28,
+                1
+              ],
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.2,
+                0.12,
+                0.1,
+                1
+              ],
+              "position": 0.62
+            },
+            {
+              "color": [
+                0.08,
+                0.06,
+                0.06,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -580,
+          "y": 820
+        },
+        "type": "ramp"
+      },
+      "stoneLay": {
+        "definitionVersion": 1,
+        "id": "stoneLay",
+        "label": "stonelay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 3,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* three marks, placed off-axis so no two shadows ever agree */\n  if (ctx.index == 0u) { q.position = vec3f(-1.5, 0.4, -0.9); }\n  else if (ctx.index == 1u) { q.position = vec3f(0.5, 0.4, -1.5); }\n  else { q.position = vec3f(1.7, 0.4, 0.3); }\n  return q;\n}"
+        },
+        "position": {
+          "x": -1180,
+          "y": 340
+        },
+        "type": "pointKernel"
+      },
+      "stonePts": {
+        "definitionVersion": 1,
+        "id": "stonePts",
+        "label": "stonepts1",
+        "parameters": {
+          "cols": 3,
+          "count": 3,
+          "rows": 1,
+          "sizeX": 3,
+          "sizeY": 1
+        },
+        "position": {
+          "x": -1460,
+          "y": 340
+        },
+        "type": "pointGrid"
+      },
+      "stones": {
+        "definitionVersion": 1,
+        "id": "stones",
+        "label": "stones1",
+        "parameters": {
+          "material": "matstone1",
+          "mode": "instances",
+          "scale": 0.4,
+          "shape": "box"
+        },
+        "position": {
+          "x": -880,
+          "y": 340
+        },
+        "type": "geometry"
+      },
+      "sun": {
+        "definitionVersion": 1,
+        "id": "sun",
+        "label": "sun1",
+        "parameters": {
+          "material": "matsun1",
+          "mode": "instances",
+          "scale": 0.34,
+          "shape": "octahedron"
+        },
+        "position": {
+          "x": -880,
+          "y": 660
+        },
+        "type": "geometry"
+      },
+      "sunOrbit": {
+        "definitionVersion": 1,
+        "id": "sunOrbit",
+        "label": "sunorbit1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 1,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* two quadrature LFOs, in through the value slots (T479): values, never rebuilds */\n  q.position = vec3f(ctx.value1, 0.85, ctx.value2);\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "orbx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.7
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "orbz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1180,
+          "y": 660
+        },
+        "type": "pointKernel"
+      },
+      "sunPt": {
+        "definitionVersion": 1,
+        "id": "sunPt",
+        "label": "sunpt1",
+        "parameters": {
+          "cols": 1,
+          "count": 1,
+          "rows": 1,
+          "sizeX": 1,
+          "sizeY": 1
+        },
+        "position": {
+          "x": -1460,
+          "y": 660
+        },
+        "type": "pointGrid"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E28 Sundial",
+  "projectId": "example-e28-sundial",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 432,
+      "width": 768
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

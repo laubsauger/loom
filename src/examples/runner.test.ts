@@ -52,6 +52,7 @@ describe("examples: the gate", () => {
       "E25-Stage.loom.json",
       "E26-Interference.loom.json",
       "E27-Relief.loom.json",
+      "E28-Sundial.loom.json",
       "E3-Animated-Noise-Field.loom.json",
       "E4-Bloom.loom.json",
       "E5-Kaleidoscope.loom.json",

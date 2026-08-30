@@ -33,6 +33,7 @@ happened:
 | [E25 Stage](./E25-Stage.md) | the multi-stage render: scene A filmed by an orbiting camera becomes a MATERIAL MAP on scene B's screen, filmed again to the output — a virtual screen inside a scene, everything driven (T444, T377, T428) |
 | [E26 Interference](./E26-Interference.md) | one ring field read TWICE and subtracted from itself: nine nodes, no WGSL, no state, and a moiré whose structure is in neither input (§V6, T475) |
 | [E27 Relief](./E27-Relief.md) | a picture LIFTED into geometry: 96,000 unlit points at 3D heights with per-point colour in the scene pipeline, and the UNDERSTUDY pattern — a synthetic performer plays on open while `webcam` stays in the plan and gets compiled (§V411, §V363, T478) |
+| [E28 Sundial](./E28-Sundial.md) | a hard shadow travelling across a floor: one orbiting caster under a fixed raking key with `shadows` on, three standing stones, and a dusk sky worn as the render's environment — seen only in the specular sheen (T481, T482, T484) |
 
 ## Running them
 
