@@ -200,3 +200,93 @@ describe("component navigation (T130, §V82)", () => {
     expect(resolved.breadcrumbs).toEqual([{ label: "Main", path: [] }]);
   });
 });
+
+/**
+ * T187 / §V56 / B8 — a published DISPLAY colour must reach the child still encoded.
+ *
+ * The scope chain is not an evaluation result; it is an intermediate the child's own
+ * resolution re-reads. `ResolvedParameters.values` is already decoded for evaluation, so
+ * publishing it makes the child decode a second time and the rendered colour lands far
+ * darker than the swatch the user picked. B8 is the same family: nobody reports it,
+ * because a colour that is merely too dark reads as an art-direction choice.
+ */
+function tinted() {
+  const harness = createComponentHarness();
+
+  const inner: GraphComponentDefinition = {
+    componentId: "tint",
+    version: 1,
+    name: "Tint",
+    graph: graphOf([
+      node("s1", "test.solid", { color: [0.25, 0.25, 0.25, 1] }, {
+        state: { parentBindings: { color: "parent.tint" } },
+      }),
+    ]),
+    inputs: [],
+    outputs: [],
+    parameters: [
+      {
+        key: "tint",
+        definition: { type: "color", label: "Tint", default: [0, 0, 0, 1], space: "display" },
+        targets: [{ nodeId: "s1", key: "color" }],
+      },
+    ],
+  };
+  harness.components.register(inner);
+
+  const root = graphOf([instanceNode("tintInst", "tint", 1, { tint: [0.5, 0.5, 0.5, 1] })]);
+  const resolved = resolveComponentNavigation({
+    root,
+    path: ["tintInst"],
+    components: harness.components.view(),
+    nodes: harness.nodes,
+  });
+  return { harness, resolved };
+}
+
+describe("T187 — a published display colour decodes ONCE (§V56, B8)", () => {
+  /** srgbToLinear(0.5). What a picked mid-grey is worth as light. */
+  const MID_GREY_LINEAR = 0.21404114048223255;
+
+  it("publishes the STORED value into the scope, not the decoded one", () => {
+    const { resolved } = tinted();
+    // The instance's own page is display-encoded, exactly as the user picked it. Decoding
+    // here is invisible: the number only looks wrong once a child has decoded it again.
+    expect(resolved.scope?.parameters.tint).toEqual([0.5, 0.5, 0.5, 1]);
+  });
+
+  it("decodes a bound child colour ONCE — it must not land at a fifth of its light", () => {
+    const { harness, resolved } = tinted();
+    const child = resolveComponentParameters(
+      resolved.graph.nodes.s1!,
+      harness.nodes.get("test.solid"),
+      resolved.scope,
+    );
+
+    // What the inspector shows the user: the space they picked in (§V56, T148).
+    expect(child.resolved.get("color")?.value).toEqual([0.5, 0.5, 0.5, 1]);
+    expect(child.resolved.get("color")?.driven).toBe(true);
+
+    // What the shader gets. The double decode put this at 0.0376 — dark enough to read as
+    // an art-direction choice, which is precisely why B8 went unreported.
+    const evaluated = child.resolved.values.color as readonly number[];
+    expect(evaluated[0]).toBeCloseTo(MID_GREY_LINEAR, 12);
+    expect(evaluated[1]).toBeCloseTo(MID_GREY_LINEAR, 12);
+    expect(evaluated[2]).toBeCloseTo(MID_GREY_LINEAR, 12);
+    expect(evaluated[3]).toBe(1); // alpha is coverage, never transferred
+  });
+
+  it("still decodes a colour the child holds itself, so the fix is not just a bypass", () => {
+    const { harness, resolved } = tinted();
+    const unbound = node("plain", "test.solid", { color: [0.5, 0.5, 0.5, 1] });
+    const outcome = resolveComponentParameters(
+      unbound,
+      harness.nodes.get("test.solid"),
+      resolved.scope,
+    );
+    expect((outcome.resolved.values.color as readonly number[])[0]).toBeCloseTo(
+      MID_GREY_LINEAR,
+      12,
+    );
+  });
+});

@@ -80,12 +80,30 @@ export function resolveComponentParameters(
 /**
  * Effective PUBLISHED values of a component instance — the values its children see as
  * `parent.<key>`. Goes through the resolver like every other read (§V61).
+ *
+ * In STORED space: `ResolvedParameter.value`, never `ResolvedParameters.values` (T187,
+ * §V56, B8).
+ *
+ * A scope entry is not an evaluation result. It is an intermediate that the CHILD's own
+ * `resolveParameters` re-reads — the driver feeds it in, and the child's `values` applies
+ * the display→linear decode on the way out. `values` here is already decoded, so
+ * publishing it decodes twice: a picked mid-grey (0.5) leaves the instance at 0.214 and
+ * reaches the shader as 0.0376, less than a fifth of the light the user asked for.
+ *
+ * B8's lesson is why this had to be a test and not an eyeball: a colour that is merely
+ * too dark reads as an art-direction choice, so nobody files it. `storedSpaceValues` in
+ * `src/compiler/flatten.ts` is the same decision on the compile path, for the same
+ * reason — both re-resolve, so both must be handed the encoded number.
  */
 export function resolveInstanceValues(
   node: GraphNode,
   definition: NodeDefinition,
 ): Readonly<Record<string, ParameterValue>> {
-  return resolveParameters(node, definition).values;
+  const values: Record<string, ParameterValue> = {};
+  for (const entry of resolveParameters(node, definition).entries) {
+    values[entry.key] = entry.value;
+  }
+  return values;
 }
 
 export interface ComponentNavigationInput {
