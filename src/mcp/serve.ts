@@ -38,6 +38,9 @@ export function serveStdio(): void {
 
   store.view.subscribe((state) => {
     connection.notifyRevision(state.graph.revision);
+    // T294: registrations do not tick the store, but a store tick is the cheapest
+    // plausible moment to re-check; identical lists send nothing.
+    connection.refreshTools();
   });
 
   const lines = createInterface({ input: process.stdin });

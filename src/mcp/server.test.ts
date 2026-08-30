@@ -9,6 +9,7 @@ import { createMcpConnection } from "./server.ts";
 import { registerWebMcp } from "./webmcp.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
 import { layoutGraphInput } from "../agent/schemas.ts";
+import { registerTransportCommands } from "../app/transport-commands.ts";
 
 /**
  * T290 (§V39, §V192): the adapters are transport + schema over the ONE agent surface —
@@ -33,7 +34,7 @@ function harness() {
     await connection.receive({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
     return sent.findLast((m) => m["id"] === id) as { result?: Record<string, unknown>; error?: unknown };
   };
-  return { store, surface, connection, sent, request };
+  return { store, surface, connection, sent, request, bus };
 }
 
 describe("MCP connection (T290)", () => {
@@ -142,5 +143,31 @@ describe("zodToJsonSchema", () => {
     // Every field of this input is optional; an honest schema says so by omitting
     // `required` entirely rather than inventing one.
     expect(schema["required"]).toBeUndefined();
+  });
+});
+
+describe("tools/list_changed (T294)", () => {
+  it("notifies when availability moves, and only then", async () => {
+    const { bus, connection, sent, request } = harness();
+    const initialized = await request("initialize");
+    expect(
+      (initialized.result?.["capabilities"] as { tools?: { listChanged?: boolean } }).tools?.listChanged,
+    ).toBe(true);
+    await request("tools/list", undefined, 2);
+
+    const changedCount = () =>
+      sent.filter((message) => message["method"] === "notifications/tools/list_changed").length;
+
+    // Nothing moved: any number of plausible triggers send nothing.
+    connection.refreshTools();
+    connection.refreshTools();
+    expect(changedCount()).toBe(0);
+
+    // A grant arrives late — the transport verbs register — and exactly one
+    // notification goes out; re-checking after stays quiet.
+    registerTransportCommands(bus);
+    connection.refreshTools();
+    connection.refreshTools();
+    expect(changedCount()).toBe(1);
   });
 });

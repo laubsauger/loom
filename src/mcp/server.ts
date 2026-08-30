@@ -40,6 +40,13 @@ export interface McpConnection {
   notifyRevision(revision: number): void;
   /** Pushes `notifications/shaderloom/diagnostics` — wire to the diagnostics stream. */
   notifyDiagnostics(diagnostics: ReadonlyArray<Record<string, unknown>>): void;
+  /**
+   * T294: diffs the surface's tool list against what this connection last announced
+   * and pushes the standard `notifications/tools/list_changed` IF it moved — a grant
+   * arriving, a port mounting, a tool family registering late. Safe to call on any
+   * plausible trigger (a store tick, a mount effect): identical lists send nothing.
+   */
+  refreshTools(): void;
 }
 
 export const MCP_PROTOCOL_VERSION = "2024-11-05";
@@ -69,6 +76,11 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
     send({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
   };
 
+  /** What list_changed diffing considers "the list": names + availability. */
+  const toolSignature = (): string =>
+    JSON.stringify(surface.listTools().map((tool) => [tool.name, tool.available]));
+  let announcedTools = toolSignature();
+
   const toolList = (): Record<string, unknown> => ({
     tools: surface.listTools().map((tool) => {
       const schema = toolInputSchema(tool.name);
@@ -94,7 +106,7 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
           case "initialize":
             respond(request.id, {
               protocolVersion: MCP_PROTOCOL_VERSION,
-              capabilities: { tools: { listChanged: false } },
+              capabilities: { tools: { listChanged: true } },
               serverInfo,
             });
             return;
@@ -104,6 +116,7 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
             respond(request.id, {});
             return;
           case "tools/list":
+            announcedTools = toolSignature();
             respond(request.id, toolList());
             return;
           case "tools/call": {
@@ -140,6 +153,13 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
       } catch (error) {
         respondError(request.id, -32603, error instanceof Error ? error.message : String(error));
       }
+    },
+
+    refreshTools() {
+      const current = toolSignature();
+      if (current === announcedTools) return;
+      announcedTools = current;
+      send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
     },
 
     notifyRevision(revision) {
