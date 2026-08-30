@@ -786,6 +786,16 @@ TD wires CHOPs w/ cables ∴ so do we. a `value` PORT TYPE, value EDGES, & a CPU
 evaluated ∀ frame BEFORE the render. this is the same split TD has (CHOP network vs TOP
 network) ∈ 1 canvas.
 
+### TD catalogue survey — 149 TOPs, 102 POPs, crawled ⊥ remembered (2026-08-30)
+what it changed: Flip's `swap` was WRONG (squashed non-square — fixed), Mirror lacked TD's
+ROTATE (added), 2 comment claims were invented ("TD's Premultiply TOP" ⊥ exist among 149;
+Mask ≠ TD Matte, which is 3-input). deprecated & ⊥ copy: **SVG TOP** (documented, ⊥ runs),
+**GLSL Create POP** ∴ our 2nd kernel node = an ADVANCED kernel that ? change counts, ⊥ a
+separate Create node.
+
+V186: a comment citing an EXTERNAL fact is a claim. if nobody checked it, ⊥ write it — the next person treats it as researched. 2 invented TD citations shipped ∈ this catalogue before a survey caught them.
+V187: `index.test.ts`'s type list catches a node registered w/ the wrong name. it ⊥ catch WRITTEN BUT NEVER REGISTERED — a shader + definition can sit unreferenced & every gate stays green. the catalogue-chain sweep is what must own that claim.
+V188: POP survey vs §V104 — TD passes UNMODIFIED attributes downstream BY REFERENCE (copy-on-write); V104 mandates fresh pairs for ∀ a node outputs. V104's REASON is sound (aliased sim state across nodes). its COST is ~80 buffers where TD allocates 12. re-read before P3a allocates — ⊥ inherit the number by accident.
 V183: know WHICH crossing costs. SCALARS crossing CPU↔GPU are ~free — a value graph is a handful of f32 & the uniform write already happens ∀ frame (V5's path). TEXTURES crossing are ⊥ free. ∴ the value graph is CPU-side BECAUSE it is scalars; the rule ⊥ generalize to pixels.
 V184: ⊥ NEW GPU→CPU route. the ONLY readback is the existing ASYNC between-frames one (V48/V7/V144), 1 frame late by contract. ⊥ `mapAsync`-await inside the frame loop, ⊥ a "just this once" sync read. a stall is invisible ∈ a test & fatal ∈ a 60Hz loop.
 V185: readbacks are COUNTED & SHOWN. N Analyze nodes = N readbacks/frame; the perf panel reports the count & total bytes ∴ a user who drops 20 of them SEES why it got slow, ⊥ guesses. an invisible cost gets paid repeatedly.
@@ -1033,6 +1043,15 @@ T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, 
 T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
 T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
 T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
+T279|.|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
+T280|.|**Reorder** (2-input channel shuffle). we have ⊥ way to move a value between channels @ all — capability gap, ⊥ convenience|V56,V57
+T281|.|premultiply/unpremultiply as Math modes. we took TD's straight-alpha default w/o its escape hatch ∴ blurring a cutout halos & nothing can fix it|V56
+T282|.|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 cost — `operation` already `compileTime` & V140 forces 1 blend module|V140,V141
+T283|.|**Limit** — quantize. value → posterize, position → pixelate. 1 neighbourless shader, 2 recognisable looks|-
+T284|.|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
+T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampler ∴ the existing `scale: 1/4` preview path aliases. ⊥ hypothetical|V60
+T286|.|POP **Map page** — a per-point attribute as a PARAMETER MODE (5th `ParameterBinding` kind). decide the shape while the union is cheap to grow|V107,V69
+T287|.|POP **attribute qualifiers** (Color/Direction/Quaternion) — declares how a transform ! treat an attribute. our spec is type-only; encoding this ∈ magic names later is "index as identity" again|V75
 T278|.|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
 T277|.|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
 T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
@@ -1062,13 +1081,13 @@ T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression 
 T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
 T236|.|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
-T237|.|**Cache / Time Machine** — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
+T237|.|**Cache / Time Machine** — TRAP: needs a 3D-texture resource kind we ⊥ have, & ~1 GB for 60 frames @ 1080p rgba16float. cost the resource kind BEFORE the node — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
 T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
 T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
 T240|x|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
 T241|x|Edge + Convolve (arbitrary kernel) filters|-
 T242|x|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
-T243|.|Text generator — glyph atlas → texture|-
+T243|.|Text generator — glyph atlas → texture. DEPENDS ON T262: text is a media node ∈ disguise (the atlas is an external texture)|T262
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
@@ -1271,6 +1290,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B22|2026-08-30|**`scale` resolution override ALIASES today.** ⊥ mipmaps anywhere + 1 shared sampler ∴ a node overridden to `scale: 1/4` minifies by point-sampling → shimmer on any moving high-frequency content (noise, checker, edges). ⊥ found by a test; found by reading the sampler contract. the override reads as "cheaper" & is quietly "worse"|T285
 B21|2026-08-30|**`time * k` animates JITTERY.** owner guessed JS rounding; ⊥ — `liveClock` accumulates WALL deltas & rAF jitters ~±several ms ∴ time advances unevenly & a linear expression steps unevenly. clock already does the 2 hard things right (clamped delta, epoch 0 for f32). missing piece = a TIMELINE clock, uniform by construction. workaround today: `frame * k` (`frame` IS ∈ scope)|V176
 B20|2026-08-30|**a WORKING LFO reports as PRUNED.** value trio has ⊥ ports ∴ never enters the plan; `pruneToActiveSinks` walks edges ∴ lists them ∈ `plan.pruned`. `node-info-popup` renders `<Badge tone="warn">pruned</Badge>` & the perf panel counts them. the node works — the driven channel resolves off the DOCUMENT — & the UI says it's dead. found by writing E7, ⊥ by a test|V173
 B19|2026-08-30|**DISPATCH RAN BEFORE ALL RENDER PASSES, same frame.** vgpu computes have ⊥ frame-level pass API — `compute.dispatch()` makes its OWN encoder & SUBMITS IMMEDIATELY; render passes submit @ frame close. ∴ ∈ 1 frame every dispatch executed before every render pass regardless of plan order. Analyze read all-zeros; `textureToAttribute` (TOP→POP bridge) has sampled the PREVIOUS frame SINCE IT LANDED & its Dawn test tolerated it. ⊥ visible ∈ any mock, ⊥ per-layer test failed. fixed for the DIRECT path (segmented encoding); LOOP path keeps 1-frame effect→dispatch latency until vgpu gains a frame compute hook|V168
