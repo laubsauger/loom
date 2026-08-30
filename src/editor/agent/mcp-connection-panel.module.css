@@ -148,3 +148,23 @@
   color: var(--text-dim);
   white-space: pre;
 }
+
+/* T453: attach by hand. One row, field then action — no heading, the row's label is it. */
+.connect {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+}
+
+.tokenField {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}

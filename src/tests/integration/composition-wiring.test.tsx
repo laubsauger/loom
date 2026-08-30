@@ -47,6 +47,37 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>)["showOpenFilePicker"];
 });
 
+/**
+ * The relay's socket, played by the test (T453). Assignable handlers and a recorder —
+ * the app's own adapter wires a real `WebSocket`'s events onto exactly these four fields.
+ */
+class FakeRelaySocket {
+  readonly sent: string[] = [];
+  closed = false;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.onclose?.();
+  }
+
+  emit(message: Record<string, unknown>): void {
+    this.onmessage?.({ data: JSON.stringify(message) });
+  }
+}
+
 const NO_WEBGPU: GpuStatus = { kind: "unavailable", reason: "No WebGPU in this environment." };
 
 const CAPABILITIES: BackendCapabilities = {
@@ -992,6 +1023,87 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
       expect(screen.getByTestId("mcp-state-webmcp").textContent).toBe("Disconnected");
     } finally {
       Reflect.deleteProperty(globalThis.navigator, "modelContext");
+    }
+  });
+
+  /**
+   * T453/§V220: THE RELAY, THROUGH THE APP THE USER OPERATES.
+   *
+   * Nothing here hands anything to a panel. `App` builds its own surface, its own
+   * registry and its own relay client; this test types a token into the field a user
+   * types into, clicks the button a user clicks, and then plays the part of the relay on
+   * the other end of the socket the app itself opened. The node that appears at the end
+   * is in the app's OWN document, reached only through that path.
+   *
+   * §V339, stated not glossed: jsdom paints nothing, so this proves the row and the field
+   * are MOUNTED and the pipe is CONNECTED, not that either is visible. Visibility was
+   * checked separately, in Chrome, against a real relay.
+   *
+   * §V382, stated too: the WebSocket is the stub, so the boundary this asserts at is
+   * "the app opened this URL and sent these frames" — the frames themselves are checked
+   * against the reference client in `relay-client.test.ts`, and the whole chain against a
+   * running relay outside the suite.
+   */
+  it("T453: attaching the relay from the panel lets an outside caller edit THIS document", async () => {
+    const opened: FakeRelaySocket[] = [];
+    const previous = (globalThis as Record<string, unknown>)["WebSocket"];
+    (globalThis as Record<string, unknown>)["WebSocket"] = class {
+      constructor(url: string) {
+        const socket = new FakeRelaySocket(url);
+        opened.push(socket);
+        return socket as unknown as WebSocket;
+      }
+    };
+
+    try {
+      const { runtime } = await mountApp({ status: READY });
+      expect(await screen.findByTestId("mcp-state-relay")).toBeDefined();
+      // Idle, and nothing dialled: the app does not attach a tab its owner did not attach.
+      expect(screen.getByTestId("mcp-state-relay").textContent).toBe("Disconnected");
+      expect(opened).toHaveLength(0);
+
+      const token = btoa(JSON.stringify({ server: "ws://localhost:4899", token: "reg-token" }));
+      await act(async () => {
+        fireEvent.change(screen.getByTestId("mcp-token-relay"), { target: { value: token } });
+        fireEvent.click(screen.getByText("Connect"));
+      });
+
+      // Step 2-3 of the handshake, played by this test as the relay would.
+      const registration = opened[0];
+      expect(registration?.url).toBe("ws://localhost:4899/register");
+      await act(async () => {
+        registration?.onopen?.();
+        registration?.emit({ type: "registerSuccess", channel: "/x", token: "session" });
+      });
+
+      const channel = opened[1];
+      expect(channel?.url).toContain("?token=session");
+      await act(async () => {
+        channel?.onopen?.();
+      });
+      expect(screen.getByTestId("mcp-state-relay").textContent).toBe("Connected");
+      expect(screen.getByTestId("mcp-consent").textContent).toBe("Attached agents can edit this document.");
+
+      // The payoff: a tool call off the socket lands in the app's live document.
+      expect(Object.values(runtime.bus.store.getGraph().nodes)).toHaveLength(0);
+      await act(async () => {
+        channel?.emit({ type: "callTool", id: "1", tool: "add_node", arguments: { type: "solid" } });
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(Object.values(runtime.bus.store.getGraph().nodes)).toHaveLength(1);
+      });
+      expect(Object.values(runtime.bus.store.getGraph().nodes)[0]?.type).toBe("solid");
+      expect(screen.getByTestId("mcp-last-relay").textContent).toContain("add_node");
+
+      // And it is revocable from the same row, which is the consent half of §V338.
+      await act(async () => {
+        fireEvent.click(screen.getByText("Disconnect"));
+      });
+      expect(channel?.closed).toBe(true);
+      expect(screen.getByTestId("mcp-state-relay").textContent).toBe("Disconnected");
+    } finally {
+      (globalThis as Record<string, unknown>)["WebSocket"] = previous;
     }
   });
 

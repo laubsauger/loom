@@ -65,6 +65,29 @@ function withoutBase64(result: unknown): unknown {
   return { ...shaped, data: rest };
 }
 
+export type McpContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
+/**
+ * One tool result as MCP content blocks (T291, T453).
+ *
+ * The whole ToolResult travels as structured JSON text: refusals, conflicts and
+ * diagnostics are DATA the calling model reads (§V66), so nothing here is ever an error.
+ * An image-shaped result ALSO travels as image content, so a client that renders images
+ * shows the picture inline — the agent literally looks at the node — and the base64 is
+ * lifted out of the JSON text so the pixels are never paid for twice.
+ *
+ * Exported because the relay transport (T453) hands results to the same MCP client
+ * through a different pipe and must not invent a second envelope (§V39).
+ */
+export function toolResultContent(result: unknown): McpContent[] {
+  const image = imageContentOf(result);
+  return image === null
+    ? [{ type: "text", text: JSON.stringify(result) }]
+    : [image, { type: "text", text: JSON.stringify(withoutBase64(result)) }];
+}
+
 export function createMcpConnection(options: McpConnectionOptions): McpConnection {
   const { surface, send } = options;
   const serverInfo = options.serverInfo ?? { name: "shaderloom", version: "0.1.0" };
@@ -126,22 +149,9 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
               return;
             }
             const result = await surface.callTool(name, request.params?.["arguments"] ?? {});
-            // The whole ToolResult travels as structured JSON text: refusals, conflicts
-            // and diagnostics are DATA the calling model reads (§V66), so `isError` is
-            // reserved for transport-level failure, not for a tool saying "no".
-            //
-            // T291: an image-shaped result ALSO travels as MCP image content, so a
-            // client that renders images (Claude does) shows the picture inline — the
-            // agent literally looks at the node. The base64 is lifted out of the JSON
-            // text so the pixels are never paid for twice.
-            const image = imageContentOf(result);
-            respond(request.id, {
-              content:
-                image === null
-                  ? [{ type: "text", text: JSON.stringify(result) }]
-                  : [image, { type: "text", text: JSON.stringify(withoutBase64(result)) }],
-              isError: false,
-            });
+            // `isError` is reserved for transport-level failure, not for a tool saying
+            // "no" — see `toolResultContent` for the envelope and why (§V66, T291).
+            respond(request.id, { content: toolResultContent(result), isError: false });
             return;
           }
           default:

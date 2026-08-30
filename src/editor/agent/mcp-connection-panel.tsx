@@ -139,6 +139,10 @@ export function McpConnectionPanel({ transports, describeTool, onOpenSetup }: Mc
                 </p>
               )}
 
+              {transport.connect === null ? null : (
+                <ConnectForm kind={transport.kind} onConnect={transport.connect} />
+              )}
+
               {isOpen ? (
                 <ToolList
                   names={transport.toolNames}
@@ -153,6 +157,57 @@ export function McpConnectionPanel({ transports, describeTool, onOpenSetup }: Mc
         })}
       </ul>
     </section>
+  );
+}
+
+interface ConnectFormProps {
+  readonly kind: McpTransportKind;
+  readonly onConnect: (token: string) => void;
+}
+
+/**
+ * ATTACHING, BY HAND (T453).
+ *
+ * Rendered only for a transport that reports a `connect` — the relay does, because it
+ * dials OUT and needs the user's token; WebMCP does not, because it publishes on load
+ * and has nothing to start. That is why the affordance is a nullable callback on the
+ * status rather than a prop on the panel: the transport that can be attached says so,
+ * and this file never decides which one that is.
+ *
+ * The field is a password field. The pasted string is a credential that authorises an
+ * outside model to rewrite the open document, and shoulder-legible credentials in a
+ * screen-shared pro tool are a real cost for no benefit. It is never read back out, and
+ * the panel keeps no copy after submit.
+ */
+function ConnectForm({ kind, onConnect }: ConnectFormProps) {
+  const [token, setToken] = useState("");
+  return (
+    <form
+      className={styles.connect}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onConnect(token);
+        setToken("");
+      }}
+    >
+      <input
+        type="password"
+        className={styles.tokenField}
+        value={token}
+        placeholder="Connection token"
+        aria-label="Connection token"
+        spellCheck={false}
+        autoComplete="off"
+        data-testid={`mcp-token-${kind}`}
+        onChange={(event) => setToken(event.target.value)}
+        // The graph canvas binds single letters; a token typed here must not also be a
+        // keymap invocation (§V78's hazard, the same guard the help panel's field uses).
+        onKeyDown={(event) => event.stopPropagation()}
+      />
+      <Button type="submit" variant="outline">
+        Connect
+      </Button>
+    </form>
   );
 }
 

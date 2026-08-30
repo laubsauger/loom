@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { toolInputSchema } from "@agent/surface.ts";
 import type { McpToolDetail } from "@editor/agent/index.ts";
 import { createMcpTransportRegistry } from "../mcp/connections.ts";
 import type { McpTransportStatus } from "../mcp/connections.ts";
 import { registerWebMcp } from "../mcp/webmcp.ts";
+import { createRelayClient } from "../mcp/relay-client.ts";
 import { zodToJsonSchema } from "../mcp/json-schema.ts";
 
 /**
@@ -42,6 +43,38 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
   useEffect(() => {
     registerWebMcp(surface, { registry });
   }, [surface, registry]);
+
+  /**
+   * The relay (T453). CONSTRUCTING it opens nothing: it publishes its idle row, which
+   * carries the `connect` the panel renders a field for, and no socket exists until the
+   * user submits a token. That distinction is the whole security posture — an agent
+   * cannot attach to a tab whose owner did not attach it — so the construction lives
+   * here, on mount, and the dialling lives behind a human action in the panel.
+   *
+   * ## Why `surface` is NOT a dependency
+   *
+   * MEASURED against a real relay and a real tab: the app mints a new surface whenever
+   * the runtime identity changes, so an effect keyed on `surface` re-ran mid-session,
+   * disconnected the attached agent and rebuilt an idle client — about every thirty
+   * seconds, with no error anywhere, because a deliberate disconnect looks exactly like
+   * a deliberate disconnect. The surface is read through a ref instead, so the client
+   * always calls the CURRENT one and the socket outlives the object.
+   *
+   * Unmount still disconnects, so a closed tab never leaves a live socket publishing the
+   * document's tools to a relay nobody is watching.
+   */
+  const surfaceRef = useRef(surface);
+  surfaceRef.current = surface;
+  useEffect(() => {
+    const relay = createRelayClient({
+      surface: () => surfaceRef.current,
+      registry,
+      host: globalThis.location?.host ?? "",
+    });
+    return () => {
+      relay.disconnect();
+    };
+  }, [registry]);
 
   const subscribe = useCallback((listener: () => void) => registry.subscribe(listener), [registry]);
   const snapshot = useCallback(() => registry.snapshot(), [registry]);

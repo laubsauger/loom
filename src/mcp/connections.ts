@@ -33,14 +33,14 @@
 /**
  * The pipes this build can speak. One row each, always.
  *
- * A union of one, for now, and deliberately not more: T398 went looking for the relay
- * transport (the page connects OUT, an external client attaches to the same relay) and
- * found no protocol to implement — see the note at the foot of this file. A `"relay"`
- * member with no implementation behind it would be the §V220 failure inverted: a UI row
- * for a capability that does not exist, which reads on screen as a feature you have not
- * switched on yet.
+ *  - `webmcp` — `navigator.modelContext`, the standards-track in-page API (`webmcp.ts`).
+ *  - `relay` — the webmcp.dev loopback relay, which the page connects OUT to so an
+ *    external MCP client drives THIS tab (`relay-client.ts`, T453).
+ *
+ * `relay` exists here because the protocol was READ, not guessed — see the note at the
+ * foot of this file, and §V378 for why the previous verdict was wrong.
  */
-export type McpTransportKind = "webmcp";
+export type McpTransportKind = "webmcp" | "relay";
 
 export type McpTransportState =
   /** The host provides no such transport. `detail` says which capability is missing. */
@@ -74,6 +74,17 @@ export interface McpTransportStatus {
   readonly toolNames: readonly string[];
   /** The most recent tool call that arrived over this transport, if any. */
   readonly lastInvocation: McpInvocation | null;
+  /**
+   * ATTACHES this transport, given whatever the user pastes for it. `null` when the
+   * transport cannot be initiated from here — `webmcp` publishes on page load and has
+   * nothing to start, so it reports `null` rather than offering a button that means
+   * nothing (§V90: a control that does nothing is worse than no control).
+   *
+   * Present ONLY so a human can start it. T453's rule, and the reason the relay does not
+   * dial on load: attaching hands an outside model write access to the open document, so
+   * it is an explicit act with a visible result, never a side effect of opening a tab.
+   */
+  readonly connect: ((token: string) => void) | null;
   /** Revokes the publication. `null` when the transport genuinely cannot be revoked. */
   readonly disconnect: (() => void) | null;
 }
@@ -94,12 +105,17 @@ export interface McpTransportRegistry {
  */
 export const TRANSPORT_LABEL: Readonly<Record<McpTransportKind, string>> = {
   webmcp: "In-page (WebMCP)",
+  relay: "Relay (webmcp.dev)",
 };
 
 /** Row order in the panel, and the set §V338 insists always has a row. */
 const DECLARED: ReadonlyArray<{ kind: McpTransportKind; detail: string }> = [
   {
     kind: "webmcp",
+    detail: "Not detected yet.",
+  },
+  {
+    kind: "relay",
     detail: "Not detected yet.",
   },
 ];
@@ -116,6 +132,7 @@ export function createMcpTransportRegistry(options: { now?: () => number } = {})
         detail: declared.detail,
         toolNames: [],
         lastInvocation: null,
+        connect: null,
         disconnect: null,
       },
     ]),
@@ -154,36 +171,36 @@ export function createMcpTransportRegistry(options: { now?: () => number } = {})
 }
 
 /**
- * WHY THERE IS NO RELAY ROW (T398).
+ * THE RELAY ROW, AND THE VERDICT THAT HAD TO BE WITHDRAWN (T453, §V378).
  *
- * The brief was: the page connects OUT to a relay with a user-pasted TOKEN, an external
- * MCP client attaches to the same relay, and the live tab's tools become that client's
- * tools. Researched from primary sources before designing anything, per the standing rule
- * about confident-and-wrong transports. What is actually out there, as of 2026-08:
+ * T398 researched this transport from primary sources and concluded it could not be
+ * built. Every fact in that research held up: `@jason.today/webmcp` (webmcp.dev) carries
+ * its author's own deprecation notice, its last release is 0.1.13 from 2025-03-22, its
+ * session token really does travel as a WebSocket QUERY PARAMETER, the maintained fork
+ * (MCP-B) really has no credential at all, and MCP's transport specification really does
+ * define only stdio and HTTP.
  *
- *  - The paste-token design is `@jason.today/webmcp` (github.com/jasonjmcghee/WebMCP,
- *    webmcp.dev). Last release 0.1.13, 2025-03-22; the protocol files have not moved
- *    since March 2025. Its own README now says "This implementation is not compliant with
- *    the W3C spec" and points at webmachinelearning/webmcp instead. Its token travels as
- *    a WebSocket QUERY PARAMETER — a credential in a URL, which is the one place a
- *    credential must never go, and by itself a reason not to copy the design.
- *  - The MAINTAINED relay is MCP-B (`@mcp-b/webmcp-local-relay`, WebMCP-org). It has no
- *    credential of any kind: the only gate is an HTTP Origin allow-list defaulting to
- *    `['*']`, and its README states the consequence itself — any site open in the browser
- *    can publish tools to it. `--relay-id` / `--workspace` are discovery filters
- *    broadcast in an unauthenticated hello, not credentials. Its wire format is prose
- *    plus exported zod schemas, with no conformance language, no versioning policy, and a
- *    breaking rewrite at 5.0.0.
- *  - MCP's own transport specification defines stdio and HTTP. It defines no WebSocket
- *    transport and no relay.
+ * The CONCLUSION drawn from those facts — "the paste-token flow does not exist" — was
+ * wrong, and the owner disproved it by running it. Deprecated is not non-functional, and
+ * a release date is not a measurement. §V378 records that against the verdict, not
+ * against the research.
  *
- * So the token this panel would have collected does not exist to be collected, and the
- * envelope an implementation would have to speak is one project's internal detail. A
- * transport written against a guess is worse than no transport: no client could talk to
- * it, and the failure would present as a network problem rather than as a design error.
+ * So the protocol is not a guess any more. `relay-client.ts` implements the page half of
+ * it, READ OFF the published client (`src/webmcp.js` in the package) rather than
+ * reconstructed from behaviour, and this registry declares the row it publishes into.
  *
- * The path that DOES work today is `serve.ts` over stdio — a real MCP server an external
- * client attaches to directly, with no relay in the middle and no credential to leak.
- * `pnpm mcp:serve` starts it; `client-config.ts` is the snippet that points a client at
- * it, and the help panel's Agents tab is where a user finds that snippet.
+ * ## What is deliberately NOT copied from the reference client
+ *
+ *  - Its session token in the channel URL is inherent to the relay's own handshake and
+ *    cannot be avoided from the page side. It is stated in the row's `detail` instead of
+ *    being hidden, because a user who can see the cost can decide about it (§V288).
+ *  - Its `sessionStorage` persistence and silent reconnect on page load. Attaching hands
+ *    an outside model write access to the open document; that is an explicit act every
+ *    time, never a thing a reload restores.
+ *  - Its floating widget. The state belongs in the one panel that already answers "what
+ *    is attached", beside every other transport (§V338).
+ *
+ * The stdio path (`serve.ts`, `client-config.ts`) is unaffected and remains the way to
+ * drive a HEADLESS Shaderloom. This row is the way to drive the tab the user is looking
+ * at, which is a different product question with the same tools behind it.
  */

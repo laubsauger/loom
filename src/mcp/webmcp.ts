@@ -1,7 +1,6 @@
 import type { AgentToolSurface } from "../agent/surface.ts";
-import { toolInputSchema } from "../agent/surface.ts";
 import { TRANSPORT_LABEL, type McpTransportRegistry } from "./connections.ts";
-import { zodToJsonSchema } from "./json-schema.ts";
+import { publishedTools } from "./published-tools.ts";
 
 /**
  * The WebMCP adapter (T290, §V39, §V192): the SAME agent surface, published to the
@@ -74,17 +73,17 @@ export function registerWebMcp(
         "This browser exposes no navigator.modelContext, so there is no in-page model to publish tools to.",
       toolNames: [],
       lastInvocation: null,
+      connect: null,
       disconnect: null,
     });
     return { registered: false, toolCount: 0 };
   }
 
-  const tools: WebMcpToolDescriptor[] = surface.listTools().map((tool) => {
-    const schema = toolInputSchema(tool.name);
+  const tools: WebMcpToolDescriptor[] = publishedTools(surface).map((tool) => {
     return {
       name: tool.name,
       description: tool.description,
-      inputSchema: schema === null ? { type: "object" } : zodToJsonSchema(schema),
+      inputSchema: tool.inputSchema,
       execute: async (args) => {
         // Noted BEFORE the call, so a tool that hangs still shows as the last thing the
         // agent reached for — §V42's visibility is about what is happening, not only
@@ -110,6 +109,7 @@ export function registerWebMcp(
     detail: "An in-page model can call these tools, which edit this document.",
     toolNames: tools.map((tool) => tool.name),
     lastInvocation: null,
+    connect: null,
     // Revocable ONLY through `provideContext`, which replaces the published set: handing
     // it an empty list genuinely takes the tools away. The `registerTool` fallback has no
     // inverse in the proposal, and a Disconnect button that left the tools published
@@ -125,6 +125,7 @@ export function registerWebMcp(
               detail: "Tools withdrawn. Reload the page to publish them again.",
               toolNames: [],
               lastInvocation: null,
+              connect: null,
               disconnect: null,
             });
           }
