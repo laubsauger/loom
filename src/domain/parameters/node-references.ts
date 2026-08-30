@@ -210,7 +210,7 @@ function readerWithin(
     if (component !== undefined) {
       const resolvedComponent = entry?.components?.find((each) => each.name === component);
       /**
-       * §V243 again, applied to the channel actually being read.
+       * §V262 — §V243 applied to the channel actually being read, and not wider.
        *
        * A component with its OWN slot resolved on its own terms, so the compound's
        * fallback says nothing about it and forwarding that diagnostic would be a false

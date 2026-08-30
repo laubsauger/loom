@@ -1,5 +1,5 @@
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { GraphDocument } from "../types/graph.ts";
+import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
 import { opReferenceNames } from "./liveness.ts";
@@ -28,7 +28,7 @@ import { nodeNames } from "./names.ts";
  * `a.x → b.y` together with `b.z → a.w` really does recurse forever even though the two
  * parameter chains never touch: reading `b.y` resolves `b.z` on the way past. The
  * reader's visited set is keyed by node id for that reason, and this gate is keyed the
- * same way DELIBERATELY (§V61's spirit: one answer to "is this a cycle", not two).
+ * same way DELIBERATELY (§V263, and §V61's spirit: one answer to "is this a cycle").
  * Making the gate finer than the reader would accept documents the reader then refuses
  * one hop down — where §V243 says the failure is invisible at the top of the chain.
  * If the reader ever resolves a single parameter in isolation, both halves move together.
@@ -49,13 +49,36 @@ interface ReferenceEdge {
 }
 
 /**
- * Every ACTIVE `op()` reference in the document, as node → node edges.
+ * One node's ACTIVE `op()` references, as edges leaving it.
  *
  * Active bindings only, matching §V110's convention and `liveness.ts`: a retained
  * expression on a parameter sitting in Constant is data, not a dependency (§V108), and
  * activating it is itself a patch which re-runs this check. Component slots (`color.r`,
  * §V113) are ordinary carriers of an expression and are walked like any other key.
  */
+function outgoingFrom(
+  node: GraphNode,
+  nodeId: NodeId,
+  byName: ReadonlyMap<string, NodeId>,
+): ReferenceEdge[] {
+  const outgoing: ReferenceEdge[] = [];
+  for (const key of Object.keys(node.parameters).sort()) {
+    const stored = node.parameters[key];
+    if (stored === undefined || !isParameterSlot(stored)) continue;
+    const binding = stored.bindings[stored.mode];
+    if (binding?.kind !== "expression") continue;
+    for (const name of opReferenceNames(binding.source)) {
+      const target = byName.get(name);
+      // A reference to a name nothing carries is a dangling reference, reported at
+      // resolution. It cannot close a loop, so it is not this function's business.
+      if (target === undefined) continue;
+      outgoing.push({ from: nodeId, parameterKey: key, to: target });
+    }
+  }
+  return outgoing;
+}
+
+/** Every such reference in the document, keyed by the node that carries it. */
 function referenceEdges(graph: GraphDocument): Map<NodeId, ReferenceEdge[]> {
   const byName = nodeNames(graph);
   const edges = new Map<NodeId, ReferenceEdge[]>();
@@ -63,20 +86,7 @@ function referenceEdges(graph: GraphDocument): Map<NodeId, ReferenceEdge[]> {
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
     if (node === undefined) continue;
-    const outgoing: ReferenceEdge[] = [];
-    for (const key of Object.keys(node.parameters).sort()) {
-      const stored = node.parameters[key];
-      if (stored === undefined || !isParameterSlot(stored)) continue;
-      const binding = stored.bindings[stored.mode];
-      if (binding?.kind !== "expression") continue;
-      for (const name of opReferenceNames(binding.source)) {
-        const target = byName.get(name);
-        // A reference to a name nothing carries is a dangling reference, reported at
-        // resolution. It cannot close a loop, so it is not this function's business.
-        if (target === undefined) continue;
-        outgoing.push({ from: nodeId, parameterKey: key, to: target });
-      }
-    }
+    const outgoing = outgoingFrom(node, nodeId, byName);
     if (outgoing.length > 0) edges.set(nodeId, outgoing);
   }
 
@@ -180,6 +190,21 @@ export function referenceCycleDiagnostics(graph: GraphDocument): RuntimeDiagnost
  * that went through the bus can never hold one.
  */
 export function referenceCyclesThrough(graph: GraphDocument, nodeId: NodeId): RuntimeDiagnostic[] {
+  const node = graph.nodes[nodeId];
+  if (node === undefined) return [];
+
+  /**
+   * A loop through this node needs an edge OUT of it, so that is checked first — one
+   * node's parameters parsed instead of the whole document's.
+   *
+   * Not a micro-optimisation: this runs on every `addNode`, and creating a node from the
+   * palette or pasting fifty of them carries no reference at all. Without the
+   * short-circuit that common gesture would parse every expression in the document once
+   * per node created.
+   */
+  const byName = nodeNames(graph);
+  if (outgoingFrom(node, nodeId, byName).length === 0) return [];
+
   const loop = loopThrough(referenceEdges(graph), nodeId);
   return loop === null ? [] : [cycleDiagnostic(graph, loop, nodeId)];
 }

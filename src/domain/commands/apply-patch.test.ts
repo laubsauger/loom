@@ -928,6 +928,81 @@ describe("graph.applyPatch — op() reference cycles refused at write time (T331
     ]);
     expect(result.status).toBe("applied");
   });
+
+  /**
+   * T342 — the hole T331 left: an edge appears when a reference is WRITTEN, and also when
+   * a NAME starts resolving. `op('foo')` sitting dangling is not a dependency; the moment
+   * something is called `foo` it becomes one, and no `setParameters` was involved.
+   */
+  it("refuses a RENAME that makes a dangling reference close a loop", async () => {
+    const [a, b] = await twoNodes();
+    // `solid2` reads a name nothing holds yet — legal, and reported at resolution, not
+    // refused: an expression must be writable before its target exists.
+    const dangling = await apply([
+      { op: "setParameters", nodeId: b, parameters: { amount: expression("op('target').par.amount") } as never },
+    ]);
+    expect(dangling.status).toBe("applied");
+    // `solid1` reads `solid2`, so the loop needs only one more thing: a node called
+    // `target`, which is what this rename would make `solid1`.
+    const half = await apply([
+      { op: "setParameters", nodeId: a, parameters: { amount: expression("op('solid2').par.amount") } as never },
+    ]);
+    expect(half.status).toBe("applied");
+
+    const snapshot = graph();
+    const result = await apply([{ op: "setNodeLabel", nodeId: a, label: "target" }]);
+
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.some((d) => d.code === "parameter.referenceCycle")).toBe(true);
+    // The name did not land either: §V32, and the reason the check runs on the draft.
+    expect(graph()).toBe(snapshot);
+    expect(graph().nodes[a]?.label).toBe("solid1");
+  });
+
+  it("refuses a CREATE whose auto-name reclaims one a dangling reference points at", async () => {
+    // §V129 numbers from what is free, with no memory of what still references the name a
+    // deleted node held. So a fresh node can be born already referenced.
+    const [a] = await twoNodes();
+    await apply([
+      { op: "setParameters", nodeId: a, parameters: { amount: expression("op('solid3').par.amount") } as never },
+    ]);
+
+    const result = await apply([
+      {
+        op: "addNode",
+        ref: "$c",
+        type: "test.solid",
+        position: { x: 200, y: 0 },
+        parameters: { amount: expression("op('solid1').par.amount") },
+      } as never,
+    ]);
+
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.some((d) => d.code === "parameter.referenceCycle")).toBe(true);
+  });
+
+  it("still allows a rename that only makes a dangling reference RESOLVE", async () => {
+    // The non-vacuity of the two above: naming a node something an expression already
+    // reads is the normal way a reference starts working, and must stay ordinary.
+    const [a, b] = await twoNodes();
+    await apply([
+      { op: "setParameters", nodeId: b, parameters: { amount: expression("op('target').par.amount") } as never },
+    ]);
+    const result = await apply([{ op: "setNodeLabel", nodeId: a, label: "target" }]);
+    expect(result.status).toBe("applied");
+    expect(graph().nodes[a]?.label).toBe("target");
+  });
+
+  it("still allows CLEARING a name, which can only remove edges", async () => {
+    const [a, b] = await twoNodes();
+    await apply([
+      { op: "setParameters", nodeId: b, parameters: { amount: expression("op('solid1').par.amount") } as never },
+    ]);
+    const result = await apply([{ op: "setNodeLabel", nodeId: a, label: null }]);
+    expect(result.status).toBe("applied");
+    // Stranded, not refused — the right shape for a reference that stops resolving.
+    expect(result.diagnostics.some((d) => d.code === "node.name.stranded")).toBe(true);
+  });
 });
 
 describe("graph.applyPatch — names as identifiers (T221/T222, §V128/§V129)", () => {

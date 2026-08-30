@@ -343,6 +343,32 @@ function executeOperation(
     return node as GraphNode;
   };
 
+  /**
+   * §V152/§V244: refuse a patch that leaves an `op()` reference cycle through `nodeId`.
+   *
+   * Called by every operation that can ADD an edge to the reference graph, which is not
+   * only the obvious one. A reference is `op('<name>') → node`, so an edge appears either
+   * when the reference is written (`setParameters`) or when a NAME starts resolving —
+   * `op('foo')` sitting dangling in some other node's expression becomes a live edge the
+   * moment anything is called `foo`. That happens on a rename, and it happens on
+   * `addNode`, whose auto-name RECLAIMS a name a deleted node used to hold (§V129's
+   * numbering has no memory of what references still point at it).
+   *
+   * Removing a name only ever removes edges, so clearing a label and deleting a node need
+   * no check — they are already reported as stranded references, which is the right shape
+   * for them.
+   *
+   * Scoped to one node, per §V264: a document that arrives holding a cycle must stay
+   * repairable, and refusing every unrelated edit is a gate that blocks its own fix.
+   */
+  const refuseReferenceCycle = (nodeId: NodeId): void => {
+    const cycles = referenceCyclesThrough(draft, nodeId);
+    if (cycles.length > 0) {
+      run.diagnostics.push(...cycles);
+      throw new PatchAbort();
+    }
+  };
+
   switch (operation.op) {
     case "addNode": {
       const definition = registry.get(operation.type);
@@ -385,6 +411,10 @@ function executeOperation(
         // (`noise1`, `noise2`), which is what makes `op('name')` references resolvable.
         label: uniqueNodeName(draft, nameBaseFor(definition.type)),
       };
+      // The new node arrives with a name and, optionally, expressions of its own — both
+      // halves a loop needs. The name is the surprising half: numbering reuses a name a
+      // deleted node held, so references still pointing at it go live on this node.
+      refuseReferenceCycle(nodeId as NodeId);
       return;
     }
 
@@ -612,13 +642,8 @@ function executeOperation(
       // §V152/§V244: the same rule for a CROSS-NODE reference. `op('a').par.x` closes a
       // loop no bind check and no texture topo sort can see, and the runtime guard that
       // names it is a mitigation, not the gate — a document should never hold the cycle
-      // in the first place. Scoped to this node: a loop elsewhere in a file someone
-      // hand-edited is the compiler's report, not a reason to refuse an unrelated edit.
-      const referenceCycles = referenceCyclesThrough(draft, node.id);
-      if (referenceCycles.length > 0) {
-        run.diagnostics.push(...referenceCycles);
-        throw new PatchAbort();
-      }
+      // in the first place.
+      refuseReferenceCycle(node.id);
       return;
     }
 
@@ -760,6 +785,12 @@ function executeOperation(
           });
         }
       }
+      // AFTER the rewrite, deliberately: §V128 has just repointed every reference to the
+      // old name, so this sees the reference graph the document will actually hold. The
+      // new edges are the ones that were DANGLING — `op('foo')` written before anything
+      // was called `foo` — and taking the name makes them resolve, which is how a rename
+      // closes a loop nobody typed as one.
+      refuseReferenceCycle(node.id);
       return;
     }
 
