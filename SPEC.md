@@ -827,6 +827,9 @@ V219: a per-shape `vertexCount` would make SHAPE structural. all shapes draw the
 2. ⊥ frame-level COMPUTE PASS hook — `compute.dispatch()` submits immediately (B19/V168).
 3. ⊥ compute `timestampWrites` (T181) — compute passes are unmeasurable.
 
+V262: **FALSE ALARMS teach people to ignore REAL ones ∴ V243 is ⊥ symmetric across a compound.** a component w/ its OWN stored slot resolves on its own terms — forwarding the compound's diagnostic would flag a GOOD channel. a component w/ ⊥ slot INHERITS the compound's number, so it ! inherit its diagnostic too. propagate a diagnostic exactly where the VALUE is inherited, ⊥ everywhere it could be.
+V263: a GATE's granularity ! match the READER's granularity. `op('b').par.y` resolves b's WHOLE schema ∴ `a.x → b.y` + `b.z → a.w` genuinely recurses though the 2 parameter chains never touch — node-granular is CORRECT, ⊥ conservative. a finer gate would ACCEPT documents the reader then refuses 1 hop down, which is V243's invisible failure. if the reader ever resolves a single parameter ∈ isolation, both halves move together (pinned).
+V264: a gate that blocks REPAIR is worse than the thing it gates. the patch gate is scoped to the EDITED node, ⊥ the document: a file can arrive holding a cycle, & refusing every unrelated edit until it is fixed makes the file harder to repair than to abandon. editing a node INSIDE the loop is still refused.
 V259: **`auto` is ⊥ frame-identical to `always` TODAY, & the cause is ORDERING ⊥ the gate.** measured over 8 frames of a static plan whose brightness starts moving @ frame 3: `always` encodes 15,1,1,1,1,1,1,1; `auto` encodes 15,0,0,**0**,1,1,1,1 — frame 3 is SKIPPED & its value appears @ frame 4. that is EXACTLY the 1-frame lag V157 names as the signature failure, & V157's whole point is that it self-corrects ∴ an end-state comparison would pass. the uniform push runs ∈ the frame callback AFTER `render` has asked the gate ∴ the dirty mark arrives too late for the encode it belongs to. `always` stays the default; the switch is reachable & someone ! choose it, which is what V157 describes.
 V260: when a FIXTURE lacks a contract method, give the FIXTURE the method — ⊥ make the caller defensive. 8 backend fixtures implemented every method but `setCookPolicy`, & an optional call would have let the app tolerate a backend that ⊥ implement its contract, which is how a missing wire HIDES. a fixture is construction-complete so ports wire; that is its job.
 V261: to add a line to a file another track is EDITING: build the file as **HEAD + your line**, commit that path, then restore their working-tree version w/ your line preserved. HEAD gets your fix & none of their in-flight work; their worktree is untouched & their eventual commit ⊥ revert you. verified both ends.
@@ -1219,6 +1222,8 @@ T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T �
 T235|x|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
 T236|~|**Analyze** node — GPU half done, CPU half UNWIRED (B25/T305) — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|x|**Cache — `ring` resource kind + rotate pass, FIXED TAPS only.** COSTED: ⊥ a 3D texture — a ring is `pingPong` generalised 2→N (V226). fixed taps re-point an ordinary `texture_2d` binding per frame ∴ **⊥ WGSL change, ⊥ new binding type, ⊥ capability question**. beats chained Feedback strictly: chaining costs 2 textures PER TAP, a ring costs 1× (t-3 = 95 MiB & 3 nodes chained, vs 63 MiB & 1 node @ 4 slices). defaults `frames:8` `scale:1/2` ≈ 32 MiB (V228). resize invalidates the WHOLE ring (V62b), a stated consequence @ 60 slices|V226,V227,V228,V229,V62b
+T342|.|gate RENAME for reference cycles — renaming a node can make a previously-dangling `op('foo')` RESOLVE & close a loop. `validateGraph` reports it; the bus does ⊥ refuse it, which is a hole ∈ "the bus can never write one"|V152,V264
+T343|.|composed test for the component READ (~20 lines): `op('solid1').par.color.g * 100` asserting 25 ∈ BOTH plan & panel — which also catches a double decode as 5.09. dropped deliberately while its file was a live collision zone|V61,V196
 T340|.|**push uniforms BEFORE the encode** so a dirty mark reaches the gate for its own frame (V259). driver-ordering change ∴ its own task & its own measurement — `auto` cannot be default until `auto` == `always` @ EVERY frame index|V259,V157,V5
 T341|.|per-node `stale` is VACUOUS (B36) — decide whether `stale` is per-node | program-level, then either publish it | delete the field & the badge that reads it|V85,B17
 T338|.|request `requiredLimits` @ device creation — `min(adapter.limits[k], what we need)` per key, never blindly (over-request FAILS creation). widens EVERY kernel @ once; the report & T328's validator follow because `describeCapabilities` already reads `device.limits`|V256,V12,V257
@@ -1228,8 +1233,8 @@ T337|x|**decide which shader pane the app mounts** (B35) — `ShaderEditorPanel`
 T335|.|**T323 spawn** — parents spawn (ABI v3: injected `spawnCount`, optional `spawn(parent, child, ctx)` hook, ⊥ hook = copy parent). 2nd scan over the same machinery w/ a different flags binding. identity by GPU counter (V248), flags packed (V249), drops counted (V250)|V248,V249,V250,V74,V45,V73
 T334|x|headless MCP `export` behind an EXPLICIT invocation flag (V246) — refusal names the flag; the seam is 1 line|V246,V38,V67
 T333|.|draw-time GROUP predicate on RENDERERS — deliberately ⊥ ∈ T300's v1: a vertex-stage predicate sees only the attributes THAT renderer binds, a narrower language than the kernel's full Point. design it w/ T287's qualifiers rather than faking a 2nd dialect now|T287,T300
-T331|.|authoring-time `op()` CYCLE gate (V152) — `bindCycleDiagnostics` covers `bind` only ∴ an `op()` cycle can be written & can arrive from a FILE. the runtime visited-set names it; V152 wants it REFUSED @ command time w/ the path|V152,V244
-T332|.|`op('x').par.color.r` — component paths ∈ cross-node references. the grammar already PARSES the longer path; the reader refuses it deliberately rather than guessing a namespace. pairs w/ the owner's "colour as separate RGBA to drive & animate"|V71,V113
+T331|x|authoring-time `op()` CYCLE gate (V152) — `bindCycleDiagnostics` covers `bind` only ∴ an `op()` cycle can be written & can arrive from a FILE. the runtime visited-set names it; V152 wants it REFUSED @ command time w/ the path|V152,V244
+T332|x|`op('x').par.color.r` — component paths ∈ cross-node references. the grammar already PARSES the longer path; the reader refuses it deliberately rather than guessing a namespace. pairs w/ the owner's "colour as separate RGBA to drive & animate"|V71,V113
 T329|x|**decide which `ViewerPane` the app mounts** (B34) — the mounted one owns the canvas; the unmounted one has channel masks, tonemap, pixel readout & the keyboard probe. likely: fold T36's features into the mounted one. a PRODUCT decision|V242,V36
 T330|x|widen the seam enumeration to PANES — a `*-pane` module nothing renders, checked against the pane registry (V241). ⊥ "every exported component", which drowns|V241,V193
 T327|x|backend ERROR SCOPE around pipeline creation / first dispatch → hub (B33a). today a limit breach is silent|V240,V9
@@ -1354,6 +1359,11 @@ side & takes whatever anyone else left staged.
 **`git rm` STAGES.** a staged deletion sits ∈ the shared index & rides the next bare commit
 from ANY session. for deletions: plain `rm`, then name the path ∈ `git commit -- <paths>`.
 that is the door the path rule ⊥ cover.
+
+**`git diff HEAD` before committing catches a STALE EDITOR BUFFER too.** an Edit wrote back a
+buffer that predated another session's committed line & silently reverted it; the diff caught it
+& the line was restored. the tool-level hazard is the same shape as the index one: what you are
+committing is ⊥ only what you typed.
 
 **READ THE INDEX BEFORE COMMITTING: `git diff --cached --stat`.** ⊥ after — printing it ∈ the
 same command as the commit shows you the contamination ∈ the output of the thing that already
