@@ -101,7 +101,7 @@ test("a drag on a control never pans the graph or moves the node (§V20)", async
   expect(afterBox?.y).toBeCloseTo(beforeBox?.y ?? Number.NaN, 1);
   expect(afterTransform, "the control drag panned the canvas").toBe(beforeTransform);
   // The gesture belongs to the control: the node it sits on is still the selection.
-  await expect(page.locator('section[aria-label="Inspector"]')).toContainText(noise);
+  await expect(page.getByRole("tabpanel", { name: "inspector" })).toContainText(noise);
 });
 
 test("typing a value into the field commits it, and one undo takes it back", async ({ page }) => {

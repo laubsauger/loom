@@ -86,7 +86,7 @@ test("a project saves to a file and reloads with its nodes, edges and parameters
   // The parameter, not just the node count — a loader that dropped values would pass
   // every structural assertion above.
   await selectNode(page, noise);
-  await expect(page.locator('section[aria-label="Inspector"]')).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "inspector" })).toBeVisible();
   await expect(page.locator('input[aria-label="Seed"]')).toHaveValue("42");
 
   // §V10 again, from the other side: the ids in the file are the ids on the canvas, so

@@ -25,10 +25,10 @@ test("a render node offers no input sockets, and a named camera paints a hued re
   // and a buried node cannot be dragged (the press lands on whatever is on top).
   // Overlapping nodes also draw no line: between intersecting rects there is no
   // exterior segment, and not drawing one is correct.
-  const cam = await addNode(page, "value", "Camera");
+  const cam = await addNode(page, "render", "Camera");
   await moveNode(page, cam, -350, -180);
 
-  const render = await addNode(page, "generator", "Render");
+  const render = await addNode(page, "render", "Render");
   await moveNode(page, render, 300, 200);
 
   // (a) Every input of Render is reference-fed plumbing: no target handle exists to
