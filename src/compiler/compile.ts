@@ -18,6 +18,7 @@ import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { declaredColorSpace } from "../domain/graph/port-compat.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
+import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
 import { resolveNodeFormat } from "./format.ts";
@@ -1129,6 +1130,25 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         ),
       );
     }
+  }
+
+  /**
+   * T328/B33 — a pass that binds more than the device allows is refused HERE.
+   *
+   * The runtime net (T327) catches this too, and cannot catch it everywhere: a headless
+   * render and a CI run have no session to report through, and the user on a stricter
+   * device is exactly the person the author never reproduces. Nine storage buffers
+   * against a limit of eight does not throw — pipeline creation fails, dispatches
+   * silently no-op, and the plan compiles clean while frames keep "rendering". So this is
+   * an ERROR: a plan the GPU will decline is not a plan.
+   */
+  for (const overflow of bindingOverflows(read.passes, request.capabilities)) {
+    diagnostics.push(
+      compilerDiagnostic("error", CompilerDiagnosticCode.bindingBudget, describeOverflow(overflow), {
+        ...(overflow.nodeId === undefined ? {} : { nodeId: overflow.nodeId as NodeId }),
+        suggestion: overflow.remedy,
+      }),
+    );
   }
 
   // §V24: the project memory budget is REPORTED, not enforced — per-resource caps are

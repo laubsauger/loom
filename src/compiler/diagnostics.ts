@@ -36,6 +36,8 @@ export const CompilerDiagnosticCode = {
   scratchInvalid: "compiler/scratch-invalid",
   resolutionParameter: "compiler/resolution-parameter",
   bindingUnfilterable: "compiler/binding-unfilterable",
+  /** A pass binds more of something than the device allows (T328, B33, §V24). */
+  bindingBudget: "compiler/binding-budget",
   /** Component flattening (T134, T135, §V82, §V83). */
   componentRecursion: "compiler/component-recursion",
   componentMissing: "compiler/component-missing",
