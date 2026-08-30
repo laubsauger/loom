@@ -118,3 +118,52 @@ describe("renderPoints on a counted edge (T322)", () => {
     ]);
   });
 });
+
+describe("spawn hook (T339)", () => {
+  it("emits NO pass when empty — children stay copies at zero cost", () => {
+    const bare = pointKernelAdvancedNode.compile(
+      compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256 } }),
+    );
+    const withEmpty = pointKernelAdvancedNode.compile(
+      compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256, spawn: "   " } }),
+    );
+    expect((withEmpty.passes as PassShape[]).map((pass) => pass.id)).toEqual(
+      (bare.passes as PassShape[]).map((pass) => pass.id),
+    );
+    expect((bare.passes as PassShape[]).some((pass) => pass.id.includes("spawnHook"))).toBe(false);
+  });
+
+  it("appends the in-place pass LAST, bound to the read halves and the counts", () => {
+    const result = pointKernelAdvancedNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        parameters: {
+          capacity: 256,
+          spawn: "fn spawn(child: Point, ctx: PointCtx) -> Point { var q = child; return q; }",
+        },
+      }),
+    );
+    expect(result.diagnostics ?? []).toEqual([]);
+    const passes = result.passes as PassShape[];
+    const hook = passes[passes.length - 1];
+    expect(hook?.id).toBe("sim:spawnHook");
+    for (const binding of hook?.buffers ?? []) {
+      if (binding.binding.startsWith("io_")) expect(binding.half, binding.binding).toBe("read");
+    }
+    // n+1 bindings — the whole reason the two-pass design fits where one pass cannot.
+    expect(hook?.buffers.length).toBe(4); // position, velocity, id + counts
+  });
+
+  it("refuses a hook without the contract signature", () => {
+    const result = pointKernelAdvancedNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        parameters: { capacity: 256, spawn: "fn nope() -> f32 { return 1.0; }" },
+      }),
+    );
+    expect(result.passes).toEqual([]);
+    expect(result.diagnostics?.[0]?.code).toBe("node.points.spawn");
+  });
+});

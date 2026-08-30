@@ -45,7 +45,8 @@ export const MAX_SPAWN_PER_PARENT = 8;
  * spawn: the monotone id cursor (§V73 — identity survives compaction AND birth),
  * the CUMULATIVE dropped-births counter (a saturating emitter must be countable,
  * or it is indistinguishable from a working one that spawns fewer), and this
- * frame's raw birth total, scratch for finalize.
+ * frame's births — raw before finalize, PLACED after it (the spawn hook's range
+ * input, T339).
  */
 export const COUNTS_LIVE = 0;
 export const COUNTS_NEXT_ID = 1;
@@ -468,6 +469,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   counts[${COUNTS_NEXT_ID}u] =
     select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.frameIndex == 0u) + placed;
   counts[${COUNTS_LIVE}u] = alive + placed;
+  /* T339: the births slot ends the frame holding PLACED, which is the spawn hook's
+     range input — [live - placed, live) is exactly the newborns. */
+  counts[${COUNTS_BIRTHS}u] = placed;
 }`;
 }
 

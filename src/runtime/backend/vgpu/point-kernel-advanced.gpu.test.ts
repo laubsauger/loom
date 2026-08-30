@@ -280,3 +280,89 @@ describe("spawn end to end on Dawn (T323)", () => {
     }
   });
 });
+
+describe("spawn hook end to end on Dawn (T339)", () => {
+  it("shapes ONLY the newborns; everyone else passes through untouched", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const hook = `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  /* The child ARRIVED as its parent's copy; identity is already its own. */
+  q.position = vec3f(f32(q.id) * 0.01, -0.5, 0.0);
+  return q;
+}`;
+    const plan = compileGraph({
+      graph: {
+        revision: 1,
+        nodes: {
+          sim: {
+            id: "sim",
+            type: "pointKernelAdvanced",
+            definitionVersion: 1,
+            position: { x: 0, y: 0 },
+            parameters: { capacity: 16, seed: 7, kernel: SPAWN_KERNEL, spawn: hook },
+          },
+          draw: { id: "draw", type: "renderPoints", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { count: 16, sizePixels: 6 } },
+          out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        },
+        edges: {
+          e1: { id: "e1", source: { nodeId: "sim", portId: "out" }, target: { nodeId: "draw", portId: "points" } },
+          e2: { id: "e2", source: { nodeId: "draw", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+        },
+        groups: {},
+      },
+      settings: {
+        outputResolution: { width: 64, height: 64 },
+        workingFormat: "rgba8unorm",
+        randomSeed: 7,
+        previewLongEdge: 192,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      },
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      },
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const errors: string[] = [];
+    backend.onDiagnostic((d) => {
+      if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
+    });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      expect(errors).toEqual([]);
+
+      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      // Survivors (slots 0..7): the KERNEL's positions, y = 0 — the hook did not touch
+      // them, which is the range guard's whole claim.
+      for (let slot = 0; slot < 8; slot += 1) {
+        expect(positions[slot * 4], `survivor ${slot} x`).toBeCloseTo(slot * 0.1 - 0.7, 5);
+        expect(positions[slot * 4 + 1], `survivor ${slot} y`).toBeCloseTo(0, 5);
+      }
+      // Newborns (slots 8..12, ids 16..20): the HOOK's positions, exactly — shaped
+      // from their own fresh ids, marked at y = -0.5.
+      for (let child = 0; child < 5; child += 1) {
+        const slot = 8 + child;
+        expect(positions[slot * 4], `newborn ${child} x`).toBeCloseTo((16 + child) * 0.01, 5);
+        expect(positions[slot * 4 + 1], `newborn ${child} y`).toBeCloseTo(-0.5, 5);
+      }
+    } finally {
+      backend.dispose();
+    }
+  });
+});

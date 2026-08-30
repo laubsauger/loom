@@ -346,5 +346,113 @@ ${stores}
   };
 }
 
+
+/* ------------------------------------------------------------------------------------
+ * T339: the spawn HOOK — pass two of the two-pass design the binding budget forces
+ * (a one-pass hook needs 2n+4 storage bindings; Dawn/Metal grants 10).
+ *
+ * `fn spawn(child: Point, ctx: PointCtx) -> Point` runs IN PLACE over just the
+ * newborn range, after the copy passes: the child ARRIVES as its parent's copy, so
+ * inheritance is the initial value and the pass needs only the read halves
+ * (read_write) plus the counts buffer — n+1 bindings.
+ *
+ * The hook's Point deliberately has NO alive/spawnCount fields: this frame's
+ * lifecycle already ran, so a hook-written kill or birth would be silently lost next
+ * frame (the kernel loads both by construction). A hook shapes ATTRIBUTES; the
+ * lifecycle stays the kernel's. Omitting the fields makes the wrong program fail to
+ * compile instead of quietly doing nothing.
+ * ---------------------------------------------------------------------------------- */
+
+const SPAWN_HOOK_SIGNATURE = /fn\s+spawn\s*\(\s*\w+\s*:\s*Point\s*,\s*\w+\s*:\s*PointCtx\s*\)\s*->\s*Point/;
+
+export interface SpawnHookRequest {
+  readonly attributes: ReadonlyArray<PointAttributeSchema>;
+  /** The packed lifecycle word — excluded from the hook's Point and bindings. */
+  readonly flagsAttribute: string;
+  /** WGSL text containing `fn spawn(child: Point, ctx: PointCtx) -> Point`. */
+  readonly hook: string;
+  readonly workgroupSize?: number;
+}
+
+export function generateSpawnHookModule(request: SpawnHookRequest): KernelModuleResult {
+  const errors: string[] = [];
+  const schemaCheck = validateAttributes(request.attributes);
+  errors.push(...schemaCheck.errors);
+  if (!SPAWN_HOOK_SIGNATURE.test(request.hook)) {
+    errors.push("spawn hook must define `fn spawn(child: Point, ctx: PointCtx) -> Point` (§V77 contract v2)");
+  }
+  const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
+  if (errors.length > 0) return { ok: false, errors };
+
+  const shaped = request.attributes.filter((attribute) => attribute.name !== request.flagsAttribute);
+  const bindings: PointBufferBinding[] = [
+    // In place: the read halves, where the copy passes left the newborns.
+    ...shaped.map((attribute, index) => ({
+      attribute: attribute.name,
+      variable: `io_${attribute.name}`,
+      binding: index + 1,
+      access: "read_write" as const,
+      role: "out" as const,
+    })),
+    { attribute: "counts", variable: "counts", binding: shaped.length + 1, access: "read", role: "live" },
+  ];
+
+  const wgsl = `// Generated spawn hook (T339, contract v${ADVANCED_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
+struct KernelFrame {
+  timeSeconds: f32,
+  deltaSeconds: f32,
+  frameIndex: u32,
+  seed: u32,
+  count: u32,
+};
+
+@group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
+
+${shaped
+  .map(
+    (attribute, index) =>
+      `@group(0) @binding(${index + 1}) var<storage, read_write> io_${attribute.name}: array<${attribute.type}>;`,
+  )
+  .join("\n")}
+@group(0) @binding(${shaped.length + 1}) var<storage, read> counts: array<u32>;
+
+struct Point {
+${shaped.map((attribute) => `  ${attribute.name}: ${attribute.type},`).join("\n")}
+};
+
+struct PointCtx {
+  /* Slot in the buffers — addressing, never identity (§V73). */
+  index: u32,
+  count: u32,
+  time: f32,
+  delta: f32,
+  frameIndex: u32,
+};
+
+${RNG_WGSL}
+
+${request.hook}
+
+@compute @workgroup_size(${workgroupSize})
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  let live = counts[0u];
+  let placed = counts[3u];
+  /* Only the newborn range [live - placed, live): everyone else was shaped by the
+     kernel this frame and must pass through untouched. */
+  if (index + placed < live || index >= live) {
+    return;
+  }
+  var p: Point;
+${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
+  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
+  let q = spawn(p, ctx);
+${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
+}
+`;
+
+  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize };
+}
+
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */
 export { COMPONENT_COUNTS };

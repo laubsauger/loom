@@ -2,7 +2,11 @@ import type { CompiledNodeDescription, NodeDefinition, ScratchRequest } from "..
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { PointAttributeSchema } from "../../points/attributes.ts";
 import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
-import { ADVANCED_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
+import {
+  ADVANCED_KERNEL_CONTRACT_VERSION,
+  generateKernelModule,
+  generateSpawnHookModule,
+} from "../../points/codegen.ts";
 import {
   SCAN_WORKGROUP_SIZE,
   blockCount,
@@ -101,6 +105,15 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       compileTime: true,
       description:
         "T300: WGSL predicate over (p, ctx). Only matching points run the kernel — non-members pass through ALIVE and unchanged. Empty = all.",
+    },
+    spawn: {
+      type: "string",
+      label: "Spawn Hook",
+      default: "",
+      multiline: true,
+      compileTime: true,
+      description:
+        "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies.",
     },
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
@@ -213,6 +226,25 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       flagsAttribute: FLAGS,
     });
 
+    // T339: the optional second pass. Zero cost when unused — no pass, no bindings,
+    // the pass list byte-identical to the hookless one (T300's property, kept).
+    const hookSource = typeof parameters["spawn"] === "string" ? parameters["spawn"].trim() : "";
+    let hookModule: ReturnType<typeof generateSpawnHookModule> | undefined;
+    if (hookSource !== "") {
+      hookModule = generateSpawnHookModule({ attributes, flagsAttribute: FLAGS, hook: hookSource });
+      if (!hookModule.ok) {
+        return {
+          passes: [],
+          diagnostics: hookModule.errors.map((message) => ({
+            severity: "error" as const,
+            code: "node.points.spawn",
+            message: `Node "${nodeId}": ${message}`,
+            nodeId,
+          })),
+        };
+      }
+    }
+
     const counts = liveCountBufferId(nodeId);
     const scanned = pointPairId(nodeId, "scanned");
     const blockSums = pointPairId(nodeId, "blockSums");
@@ -300,6 +332,27 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           nodeId,
         }),
       ),
+      ...(hookModule?.ok === true
+        ? [
+            {
+              kind: "dispatch" as const,
+              id: `${nodeId}:spawnHook`,
+              shader: hookModule.wgsl,
+              entryPoint: "main",
+              workgroups: [Math.ceil(capacity / hookModule.workgroupSize), 1, 1] as [number, number, number],
+              buffers: hookModule.buffers.map((binding) =>
+                binding.role === "live"
+                  ? { binding: binding.variable, resourceId: counts }
+                  : // In place, on the READ halves — where the copy passes left the
+                    // newborns and where consumers bind (§V231).
+                    { binding: binding.variable, resourceId: pointPairId(nodeId, binding.attribute), half: "read" as const },
+              ),
+              uniforms: { ...frameUniforms, seed: readNumber(parameters, "seed", 7), count: capacity },
+              uniformBinding: "kernelFrame",
+              nodeId,
+            },
+          ]
+        : []),
     ];
 
     const scratch: ScratchRequest[] = [
