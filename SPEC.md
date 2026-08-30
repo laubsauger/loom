@@ -1046,7 +1046,7 @@ T271|x|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (se
 T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: new `stops` param type = `{position, color}[]` + `space` (V196), static-as-a-whole (V195). compile → capped uniform array (16) + count, diagnostic beyond. stop editor UI: add|remove|reorder|position|swatch, 1 patch per gesture (V114)|V175,V195,V196,V56 N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
-T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
+T267|x|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|x|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
 T273|x|`value` port type + value EDGES + CPU value-graph evaluator (topo order, cycle rejection, ∀ frame pre-render)|V179,V19,V152
 T274|x|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
