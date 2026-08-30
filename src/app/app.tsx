@@ -651,6 +651,7 @@ export function App({
               graph={compile.graph}
               backend={backend ?? null}
               pointer={pointer}
+              probe={agentPorts.probe}
             />
           }
           shaderEditor={

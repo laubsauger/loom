@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
@@ -14,7 +14,10 @@ import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { normalizedPointer } from "@runtime/execution/index.ts";
-import type { PointerSource } from "@runtime/execution/index.ts";
+import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
+import { usePixelReadout } from "@editor/viewer/index.ts";
+import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
+import type { PixelProbe } from "@runtime/previews/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
@@ -224,6 +227,18 @@ function FutureParameters({
   );
 }
 
+/** Stable identity of a resolved output — the selector's value and its label. */
+function outputKey(output: { nodeId: string; portId: string }): string {
+  return `${output.nodeId}:${output.portId}`;
+}
+
+/** A sampled channel, in the project's LINEAR working space (§V56). */
+function formatChannel(value: number): string {
+  if (Number.isNaN(value)) return "NaN";
+  if (!Number.isFinite(value)) return value > 0 ? "+Inf" : "-Inf";
+  return value.toFixed(4);
+}
+
 export interface ViewerPaneProps {
   compiled: CompiledGraph | null;
   /** Needed only to tell a declared Output node from a preview sink — see below. */
@@ -239,6 +254,13 @@ export interface ViewerPaneProps {
    * graph then disagree about where the cursor is (§V182).
    */
   pointer?: PointerSource | null;
+  /**
+   * Pixel inspection through the export interface (§V48, T36). Absent with no backend, in
+   * which case the readout says so rather than showing a plausible zero.
+   */
+  probe?: PixelProbe | undefined;
+  /** Injected by the readout tests to drive its rate limiter. */
+  readoutOptions?: PixelReadoutOptions;
 }
 
 /**
@@ -261,20 +283,65 @@ export interface ViewerPaneProps {
  * graph; showing its first entry would put an arbitrary intermediate node on the viewer.
  * With no Output node there is nothing to show, and the pane says so.
  */
-export function ViewerPane({ compiled, graph, backend = null, pointer = null }: ViewerPaneProps) {
+export function ViewerPane({
+  compiled,
+  graph,
+  backend = null,
+  pointer = null,
+  probe,
+  readoutOptions,
+}: ViewerPaneProps) {
   const { registry } = useAppRuntime();
+  const outputs = useMemo(() => compiled?.outputs ?? [], [compiled]);
 
   const sink = useMemo(() => {
-    for (const output of compiled?.outputs ?? []) {
+    for (const output of outputs) {
       const type = graph.nodes[output.nodeId]?.type;
       const definition = type === undefined ? undefined : registry.get(type);
       if (definition !== undefined && isDeclaredSink(definition)) return output;
     }
     return null;
-  }, [compiled, graph, registry]);
+  }, [graph, outputs, registry]);
 
-  const { canvasRef } = useOutputPresentation(backend, sink?.resourceId ?? null);
-  const outputs = compiled?.outputs ?? [];
+  /**
+   * Which output is on screen (T329, T36).
+   *
+   * The DECLARED sink is still the default, for the reason the note above gives — every
+   * visible texture node is a preview sink (§V28b), so defaulting to the first resolved
+   * output would put an arbitrary intermediate on the viewer. What the selector adds is the
+   * ability to say otherwise: repointing is `setOutput` (§V70), which is why it costs a
+   * uniform-sized change and not a re-attach.
+   */
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const selected = useMemo(() => {
+    if (pinnedKey !== null) {
+      const match = outputs.find((output) => outputKey(output) === pinnedKey);
+      // A pinned output the graph no longer produces must not leave the surface pointing
+      // at a resource that has been freed; falling back to the sink is the safe answer.
+      if (match !== undefined) return match;
+    }
+    return sink;
+  }, [outputs, pinnedKey, sink]);
+
+  const { canvasRef } = useOutputPresentation(backend, selected?.resourceId ?? null);
+  /**
+   * The probe's target, keyed on PRIMITIVES.
+   *
+   * `compiled.outputs` is a fresh array on every compile, so a memo keyed on the resolved
+   * output object would hand `usePixelReadout` a new `ref` after every recompile — and its
+   * reset-on-new-output effect would wipe the sample and the cursor each time. The user
+   * would see the readout blink out whenever anything in the graph changed, which looks
+   * like the probe failing rather than like the pane working correctly.
+   */
+  const selectedNodeId = selected?.nodeId ?? null;
+  const selectedPortId = selected?.portId ?? null;
+  const selectedRef = useMemo(
+    () =>
+      selectedNodeId === null || selectedPortId === null
+        ? null
+        : { nodeId: selectedNodeId, portId: selectedPortId },
+    [selectedNodeId, selectedPortId],
+  );
 
   /**
    * Publishing the cursor (T324, §V236).
@@ -292,6 +359,40 @@ export function ViewerPane({ compiled, graph, backend = null, pointer = null }: 
    * §V16 is safe by construction: this writes into a plain object the frame loop samples.
    * No React state, so a 120 Hz pointer costs zero renders.
    */
+  /**
+   * Pixel inspection (T36, §V7, §V48).
+   *
+   * `usePixelReadout` is the rate limiter: one read per 100 ms and one in flight at a time,
+   * so a pointer moving at 120 Hz produces ten reads a second and never a frame grab. It
+   * was written for a pane nothing mounted; this is that pane's job now.
+   */
+  const readout = usePixelReadout(probe, selectedRef, readoutOptions ?? {});
+  const { probeAt, clear } = readout;
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+
+  const probePixel = useCallback(
+    (x: number, y: number) => {
+      setCursor({ x, y });
+      probeAt(x, y);
+    },
+    [probeAt],
+  );
+
+  /** Client point -> IMAGE pixel, using the same rect the pointer is normalised against. */
+  const pixelAt = useCallback(
+    (clientX: number, clientY: number, box: PointerRect): { x: number; y: number } | null => {
+      if (selected === null) return null;
+      const normalized = normalizedPointer({ x: clientX, y: clientY }, box);
+      if (normalized === null) return null;
+      const [width, height] = selected.size;
+      return {
+        x: Math.min(width - 1, Math.max(0, Math.floor(normalized.x * width))),
+        y: Math.min(height - 1, Math.max(0, Math.floor(normalized.y * height))),
+      };
+    },
+    [selected],
+  );
+
   const publishPointer = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       if (pointer === null) return;
@@ -303,10 +404,82 @@ export function ViewerPane({ compiled, graph, backend = null, pointer = null }: 
     [pointer],
   );
 
+  /**
+   * ONE handler, two jobs (§V182).
+   *
+   * The cursor is published for shaders and probed for the readout from the SAME event on
+   * the SAME element. A second listener would be a second source for one device, and the
+   * two would disagree by a frame about where the cursor is.
+   */
+  const onCanvasPointer = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      publishPointer(event);
+      const pixel = pixelAt(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+      if (pixel !== null) probePixel(pixel.x, pixel.y);
+    },
+    [pixelAt, probePixel, publishPointer],
+  );
+
+  /**
+   * §V19 — the readout is reachable without a pointer. Arrow keys walk the probe cursor
+   * over the image (shift = 10 px), which is the only way a keyboard user can inspect a
+   * value at all. Deliberately NOT published to `pointer`: a shader's cursor is where the
+   * mouse is, and inventing one from the keyboard would make Mouse lie.
+   */
+  const onCanvasKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+      if (selected === null) return;
+      const step = event.shiftKey ? 10 : 1;
+      const [width, height] = selected.size;
+      const from = cursor ?? { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+      let dx = 0;
+      let dy = 0;
+      if (event.key === "ArrowLeft") dx = -step;
+      else if (event.key === "ArrowRight") dx = step;
+      else if (event.key === "ArrowUp") dy = -step;
+      else if (event.key === "ArrowDown") dy = step;
+      else return;
+      event.preventDefault();
+      probePixel(
+        Math.min(width - 1, Math.max(0, from.x + dx)),
+        Math.min(height - 1, Math.max(0, from.y + dy)),
+      );
+    },
+    [cursor, probePixel, selected],
+  );
+
+  // A new output invalidates the sample on screen: the number belonged to the old picture.
+  useEffect(() => {
+    setCursor(null);
+    clear();
+  }, [clear, selectedRef]);
+
   return (
     <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
+      <div className={styles.bar}>
+        <label className={styles.barLabel} htmlFor="viewer-output">
+          output
+        </label>
+        <select
+          id="viewer-output"
+          data-testid="viewer-output-select"
+          className={styles.select}
+          value={selected === null ? "" : outputKey(selected)}
+          onChange={(event) => setPinnedKey(event.target.value === "" ? null : event.target.value)}
+          disabled={outputs.length === 0}
+        >
+          {outputs.length === 0 ? <option value="">no outputs</option> : null}
+          {outputs.map((output) => (
+            <option key={outputKey(output)} value={outputKey(output)}>
+              {outputKey(output)}
+              {sink !== null && outputKey(sink) === outputKey(output) ? " (output)" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className={styles.surface} data-testid="viewer-surface">
-        {sink === null ? (
+        {selected === null ? (
           <p className={styles.note}>No output</p>
         ) : (
           <canvas
@@ -314,31 +487,39 @@ export function ViewerPane({ compiled, graph, backend = null, pointer = null }: 
             className={styles.canvas}
             aria-label="Rendered output"
             data-testid="viewer-canvas"
-            onPointerMove={publishPointer}
-            onPointerDown={publishPointer}
-            onPointerUp={publishPointer}
+            tabIndex={0}
+            onPointerMove={onCanvasPointer}
+            onPointerDown={onCanvasPointer}
+            onPointerUp={onCanvasPointer}
+            onKeyDown={onCanvasKeyDown}
           />
         )}
       </div>
-      <section className={styles.block} aria-label="Resolved outputs">
-        <h3 className={styles.blockTitle}>outputs</h3>
-        {outputs.length === 0 ? (
-          <p className={styles.note}>No output</p>
-        ) : (
-          <ul className={styles.list}>
-            {outputs.map((output) => (
-              <li key={`${output.nodeId}:${output.portId}`} className={styles.row}>
-                <span className={styles.rowName}>
-                  {output.nodeId}:{output.portId}
-                </span>
-                <span className={styles.rowValue}>
-                  {output.size[0]} × {output.size[1]} · {output.format}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+
+      <dl className={styles.readout} data-testid="viewer-readout">
+        <dt className={styles.rowName}>pixel</dt>
+        <dd className={styles.rowValue}>
+          {cursor === null ? "—" : `${cursor.x}, ${cursor.y}`}
+        </dd>
+        <dt className={styles.rowName}>value</dt>
+        <dd className={styles.rowValue}>
+          {readout.error !== null
+            ? readout.error
+            : readout.sample === null
+              ? probe === undefined
+                ? "no device"
+                : "—"
+              : readout.sample.rgba.map(formatChannel).join("  ")}
+        </dd>
+      </dl>
+      <dl className={styles.readout} aria-label="Resolved output">
+        <dt className={styles.rowName}>size</dt>
+        <dd className={styles.rowValue}>
+          {selected === null
+            ? "—"
+            : `${selected.size[0]} × ${selected.size[1]} · ${selected.format}`}
+        </dd>
+      </dl>
     </div>
   );
 }
