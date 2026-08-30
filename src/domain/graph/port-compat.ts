@@ -71,10 +71,14 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
     case "transform3d":
     case "event":
     case "audioFeatures":
-    // A value wire carries a channel bag; which channels is runtime data (T273), so
-    // kind equality is the whole static claim — and a value output can never reach a
-    // texture input, which is the split doing its real work.
     case "value":
+      // A value wire carries a channel bag; which channels is runtime data (T273), so
+      // kind equality is the whole static claim — and a value output can never reach a
+      // texture input, which is the split doing its real work.
+      //
+      // The comment sits INSIDE the shared body rather than between the labels: a case
+      // containing only a comment reads as a fallthrough to `no-fallthrough`, so the
+      // explanation has to live where the statements are.
       return true;
     default: {
       // Exhaustiveness guard: a new PortType member must be handled explicitly rather
