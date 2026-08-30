@@ -71,7 +71,7 @@ describe("point generator family (T298)", () => {
     const torus = pointTorusNode.compile(
       compileContext({ nodeId: "gen", outputs: [], parameters: { count: 4096, cols: 48, rows: 24 } }),
     );
-    expect(torus.pointsets?.["out"]?.topology).toBe("grid:48x24");
+    expect(torus.pointsets?.["out"]?.topology).toBe("grid:48x24:wrapUV");
   });
 
   it("switches shape through a uniform, never a recompile (§V5)", () => {

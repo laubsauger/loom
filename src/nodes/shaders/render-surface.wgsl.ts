@@ -16,6 +16,8 @@ export const RENDER_SURFACE_WGSL = `struct SurfaceParams {
   color: vec4f,
   cols: u32,
   rows: u32,
+  wrapU: u32,
+  wrapV: u32,
 };
 
 @group(0) @binding(0) var<uniform> params: SurfaceParams;
@@ -36,22 +38,37 @@ fn cellCorner(v: u32) -> vec2u {
 }
 
 fn gridPosition(gx: u32, gy: u32) -> vec3f {
-  return positions[gy * params.cols + gx];
+  /* Wrapped axes address modularly — the seam cell's far corner IS column/row zero. */
+  let px = select(gx, gx % params.cols, params.wrapU == 1u);
+  let py = select(gy, gy % params.rows, params.wrapV == 1u);
+  return positions[py * params.cols + px];
+}
+
+/* +1/-1 neighbours along one axis: modular when wrapped, clamped one-sided at open
+   borders — so normals stay central differences everywhere a neighbour exists. */
+fn nextIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
+  return select(min(i + 1u, extent - 1u), (i + 1u) % extent, wrapped);
+}
+fn previousIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
+  return select(max(i, 1u) - 1u, (i + extent - 1u) % extent, wrapped);
 }
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
-  let cells = params.cols - 1u;
+  let cellsU = select(params.cols - 1u, params.cols, params.wrapU == 1u);
   let quad = vertex / 6u;
   let corner = cellCorner(vertex % 6u);
-  let gx = (quad % cells) + corner.x;
-  let gy = (quad / cells) + corner.y;
+  let gx = (quad % cellsU) + corner.x;
+  let gy = (quad / cellsU) + corner.y;
 
   let world = gridPosition(gx, gy);
 
-  /* Central difference where both neighbours exist, one-sided at the borders. */
-  let du = gridPosition(min(gx + 1u, params.cols - 1u), gy) - gridPosition(max(gx, 1u) - 1u, gy);
-  let dv = gridPosition(gx, min(gy + 1u, params.rows - 1u)) - gridPosition(gx, max(gy, 1u) - 1u);
+  let wrapU = params.wrapU == 1u;
+  let wrapV = params.wrapV == 1u;
+  let du = gridPosition(nextIndex(gx, params.cols, wrapU), gy) -
+    gridPosition(previousIndex(gx, params.cols, wrapU), gy);
+  let dv = gridPosition(gx, nextIndex(gy, params.rows, wrapV)) -
+    gridPosition(gx, previousIndex(gy, params.rows, wrapV));
 
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);

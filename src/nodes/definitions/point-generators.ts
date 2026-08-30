@@ -2,6 +2,7 @@ import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { ParameterSchema } from "../../domain/types/parameters.ts";
 import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import { formatTopology } from "../../points/topology.ts";
 import { POINT_GENERATOR_WGSL } from "../shaders/point-generators.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
@@ -116,8 +117,13 @@ function compileGenerator(fixedShape: GeneratorShape | null) {
         out: {
           pairs: { position: pointPairId(nodeId, "position") },
           capacity,
-          // T301's connectivity: a gridded shape publishes its analytic topology.
-          topology: shape === "grid" || shape === "tube" || shape === "torus" ? `grid:${cols}x${rows}` : "points",
+          // T301's connectivity, in T302's vocabulary: a gridded shape publishes its
+          // analytic topology, with the seams its parametrization actually closes.
+          topology: formatTopology(
+            shape === "grid" || shape === "tube" || shape === "torus"
+              ? { kind: "grid", cols, rows, wrapU: shape !== "grid", wrapV: shape === "torus" }
+              : { kind: "points" },
+          ),
         },
       },
     };

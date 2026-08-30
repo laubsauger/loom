@@ -42,6 +42,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let rows = max(params.rows, 1u);
   let u = f32(index % cols) / max(f32(cols) - 1.0, 1.0);
   let v = f32((index / cols) % rows) / max(f32(rows) - 1.0, 1.0);
+  /* Wrapped axes parametrize EXCLUSIVELY — [0, 1), so column cols-1 is one step short
+     of TAU and the wrap topology (T302) closes the seam without a duplicated ring. */
+  let uw = f32(index % cols) / f32(cols);
+  let vw = f32((index / cols) % rows) / f32(rows);
 
   var position = vec3f(0.0);
   switch (params.shape) {
@@ -61,13 +65,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       let angle = GOLDEN_ANGLE * i;
       position = vec3f(cos(angle) * ring, y, sin(angle) * ring) * params.radius;
     }
-    case 4u: { // tube along z: u around, v along
-      let angle = u * TAU;
+    case 4u: { // tube along z: u around (wrapped), v along (open)
+      let angle = uw * TAU;
       position = vec3f(cos(angle) * params.radius, sin(angle) * params.radius, (v - 0.5) * params.sizeZ);
     }
-    default: { // 5: torus — u around the major ring, v around the minor
-      let major = u * TAU;
-      let minor = v * TAU;
+    default: { // 5: torus — u around the major ring, v around the minor, both wrapped
+      let major = uw * TAU;
+      let minor = vw * TAU;
       let ring = params.radius + cos(minor) * params.radius2;
       position = vec3f(cos(major) * ring, sin(minor) * params.radius2, sin(major) * ring);
     }

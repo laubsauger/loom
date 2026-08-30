@@ -68,6 +68,9 @@ function errorsOf(diagnostics: ReadonlyArray<{ severity: string; message: string
   return diagnostics.filter((d) => d.severity === "error").map((d) => d.message);
 }
 
+/** Nodes whose entire compiled output is a pointset edge claim — no passes (T302). */
+const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology"]);
+
 describe("the catalogue compiles through the real compiler", () => {
   it("registers the whole catalogue in one registry with no type collisions", () => {
     const types = createNodeRegistry(allNodeDefinitions)
@@ -187,6 +190,18 @@ describe("the catalogue compiles through the real compiler", () => {
       // output must alias its producer's resource. Everything else must contribute one —
       // a node that compiles to nothing "passes" every structural check while rendering
       // nothing at all. Any kind counts: point nodes contribute dispatch/draw passes.
+      // T302: an EDGE-PAYLOAD transform contributes no pass BY DESIGN — its whole
+      // output is the pointset claim on the edge, which this plan-level sweep cannot
+      // observe. It must still survive pruning; the payload itself (pairs aliased,
+      // topology rewritten, capacity checked) is pinned in point-topology.test.ts.
+      if (PAYLOAD_ONLY.has(definition.type)) {
+        expect(
+          read.passes.some((pass) => "nodeId" in pass && pass.nodeId === "subject"),
+          definition.type,
+        ).toBe(false);
+        expect(plan.pruned, definition.type).not.toContain("subject");
+        continue;
+      }
       if (definition.passthrough !== undefined) {
         expect(
           read.passes.some((pass) => "nodeId" in pass && pass.nodeId === "subject"),
@@ -220,6 +235,7 @@ describe("the catalogue compiles through the real compiler", () => {
     for (const definition of coreNodeDefinitions) {
       if (definition.passthrough !== undefined) continue; // a wire has no uniforms to check (§V130)
       if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue; // a value source has no passes (§V143)
+      if (PAYLOAD_ONLY.has(definition.type)) continue; // an edge-payload transform has no passes (T302)
       const plan = compile(minimalGraphFor(definition));
       const passes = plan.passes.filter(
         (pass) =>

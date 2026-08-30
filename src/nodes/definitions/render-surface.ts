@@ -4,6 +4,7 @@ import { viewProjection } from "../../domain/geometry/camera.ts";
 import { RENDER_SURFACE_WGSL } from "../shaders/render-surface.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 
 /**
@@ -14,12 +15,10 @@ import { readColor, readNumber, readVector } from "./parameter-readers.ts";
  * diagnostic: a surface over unordered points would render garbage confidently, and
  * the topology claim belongs to the producer, not to a count the user retypes here.
  *
- * Known v1 gap, deliberate: tube and torus grids render with a seam (the u wrap is not
- * closed). Closing it needs the topology string to carry wrap flags — T302's
- * kernel/topology split owns that vocabulary; inventing it here would preempt it.
+ * Wrap flags (T302's vocabulary, `points/topology.ts`): a wrapped axis contributes a
+ * seam CELL — its far corner addresses column/row zero — so a tube closes its ring and
+ * a torus closes both, with no duplicated points and no seam.
  */
-
-const GRID_TOPOLOGY = /^grid:(\d+)x(\d+)$/;
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
@@ -76,22 +75,22 @@ export const renderSurfaceNode: NodeDefinition = {
     if (pointset === undefined) {
       return refuse("the points input carries no edge payload; topology cannot be read.");
     }
-    const parsed = GRID_TOPOLOGY.exec(pointset.topology ?? "");
-    if (parsed === null) {
+    const parsed = parseTopology(pointset.topology);
+    if (parsed === null || parsed.kind !== "grid") {
       return refuse(
         `a surface needs analytic grid topology; the upstream edge published "${pointset.topology ?? "none"}".`,
       );
     }
-    const cols = Number(parsed[1]);
-    const rows = Number(parsed[2]);
+    const { cols, rows } = parsed;
     if (cols < 2 || rows < 2) {
       return refuse(`a ${cols}x${rows} grid has no cells to shade.`);
     }
-    if (cols * rows > pointset.capacity) {
+    if (gridPointCount(parsed) > pointset.capacity) {
       return refuse(
-        `topology "grid:${cols}x${rows}" addresses ${cols * rows} points but the edge carries ${pointset.capacity}.`,
+        `topology "${pointset.topology}" addresses ${gridPointCount(parsed)} points but the edge carries ${pointset.capacity}.`,
       );
     }
+    const { cellsU, cellsV } = gridCellCounts(parsed);
 
     const eye = readVector(parameters, "eye", [0, 0, 3]);
     const center = readVector(parameters, "lookAt", [0, 0, 0]);
@@ -114,8 +113,9 @@ export const renderSurfaceNode: NodeDefinition = {
       target,
       topology: "triangle-list",
       instances: 1,
-      // The analytic index buffer: six vertices per grid cell, cells from the edge.
-      vertexCount: (cols - 1) * (rows - 1) * 6,
+      // The analytic index buffer: six vertices per grid cell, cells from the edge —
+      // a wrapped axis has a seam cell, so its cell count equals its point count.
+      vertexCount: cellsU * cellsV * 6,
       buffers: [
         // WRITE half: THIS frame's positions (§V168), whoever owns the pair (§V197).
         { binding: "positions", resourceId: positionPair, half: "write" },
@@ -125,6 +125,8 @@ export const renderSurfaceNode: NodeDefinition = {
         color: readColor(parameters, "color", [1, 1, 1, 1]),
         cols,
         rows,
+        wrapU: parsed.wrapU ? 1 : 0,
+        wrapV: parsed.wrapV ? 1 : 0,
       },
       uniformBinding: "params",
       nodeId,

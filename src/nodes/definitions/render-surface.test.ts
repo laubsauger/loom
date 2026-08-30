@@ -42,6 +42,23 @@ describe("renderSurface — the topology contract (T301)", () => {
     expect(renderSurfaceNode.depthOutputs).toEqual(["out"]);
   });
 
+  it("closes wrapped seams: a wrapped axis contributes its seam cell (T302)", () => {
+    const result = renderSurfaceNode.compile(
+      compileContext({
+        nodeId: "surf",
+        inputs: ["points"],
+        pointsets: {
+          points: { pairs: { position: "scratch:gen:position" }, capacity: 48 * 24, topology: "grid:48x24:wrapUV" },
+        },
+      }),
+    );
+    expect(result.diagnostics ?? []).toEqual([]);
+    const pass = result.passes[0] as DrawShape;
+    expect(pass.vertexCount).toBe(48 * 24 * 6);
+    expect(pass.uniforms["wrapU"]).toBe(1);
+    expect(pass.uniforms["wrapV"]).toBe(1);
+  });
+
   it("REFUSES a pointset without grid topology, naming what was published", () => {
     const result = renderSurfaceNode.compile(
       compileContext({

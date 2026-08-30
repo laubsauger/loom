@@ -91,6 +91,7 @@ describe("core catalogue (T70, T40)", () => {
       "pointTorus",
       "renderInstances",
       "renderSurface",
+      "pointTopology",
     ]);
   });
 
