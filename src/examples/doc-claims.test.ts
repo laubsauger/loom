@@ -40,6 +40,17 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
     reason: "the microphone half of the same instruction.",
   },
   {
+    doc: "E27-Relief.md",
+    type: "audioIn",
+    reason:
+      "the UNDERSTUDY paragraph, generalising: the pattern this example establishes for `webcam` is what would let the two audio inputs be exampled under §V363 too. A statement about a FUTURE graph, deliberately not applied here — one example, one claim.",
+  },
+  {
+    doc: "E27-Relief.md",
+    type: "audioFileIn",
+    reason: "the file half of the same generalisation.",
+  },
+  {
     doc: "E13-Prism.md",
     type: "renderInstances",
     reason:

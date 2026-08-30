@@ -1,0 +1,670 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bed-sum": {
+        "id": "e-bed-sum",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in2"
+        }
+      },
+      "e-bridge-lift": {
+        "id": "e-bridge-lift",
+        "source": {
+          "nodeId": "bridge",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lift",
+          "portId": "in"
+        }
+      },
+      "e-burn-out": {
+        "id": "e-burn-out",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-cam-pick": {
+        "id": "e-cam-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "cam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-coat-bridge": {
+        "id": "e-coat-bridge",
+        "source": {
+          "nodeId": "coat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "texture"
+        }
+      },
+      "e-halo-burn": {
+        "id": "e-halo-burn",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-lift-body": {
+        "id": "e-lift-body",
+        "source": {
+          "nodeId": "lift",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "body",
+          "portId": "points"
+        }
+      },
+      "e-palette-coat": {
+        "id": "e-palette-coat",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "lookup"
+        }
+      },
+      "e-pick-coat": {
+        "id": "e-pick-coat",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "source"
+        }
+      },
+      "e-ripple-bed": {
+        "id": "e-ripple-bed",
+        "source": {
+          "nodeId": "ripple",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "input"
+        }
+      },
+      "e-sheet-bridge": {
+        "id": "e-sheet-bridge",
+        "source": {
+          "nodeId": "sheet",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "points"
+        }
+      },
+      "e-shot-burn": {
+        "id": "e-shot-burn",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-shot-halo": {
+        "id": "e-shot-halo",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-sum-pick": {
+        "id": "e-sum-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "sum",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-swell-sum": {
+        "id": "e-swell-sum",
+        "source": {
+          "nodeId": "swell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in1"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "blacklevel": 0.42,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1.05
+        },
+        "position": {
+          "x": -1380,
+          "y": 300
+        },
+        "type": "level"
+      },
+      "body": {
+        "definitionVersion": 1,
+        "id": "body",
+        "label": "body1",
+        "parameters": {
+          "material": "phosphor1",
+          "mode": "instances",
+          "scale": 0.0026,
+          "shape": "quad",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "sample",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": 420,
+          "y": 140
+        },
+        "type": "geometry"
+      },
+      "bridge": {
+        "definitionVersion": 1,
+        "id": "bridge",
+        "label": "bridge1",
+        "parameters": {
+          "count": 96000
+        },
+        "position": {
+          "x": -180,
+          "y": 140
+        },
+        "type": "textureToAttribute"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 1320,
+          "y": 140
+        },
+        "type": "add"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {},
+        "position": {
+          "x": -1080,
+          "y": 420
+        },
+        "type": "webcam"
+      },
+      "coat": {
+        "definitionVersion": 1,
+        "id": "coat",
+        "label": "coat1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": -780,
+          "y": -20
+        },
+        "type": "lookup"
+      },
+      "driftx": {
+        "definitionVersion": 1,
+        "id": "driftx",
+        "label": "driftx1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.019,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1680,
+          "y": 560
+        },
+        "type": "lfo"
+      },
+      "drifty": {
+        "definitionVersion": 1,
+        "id": "drifty",
+        "label": "drifty1",
+        "parameters": {
+          "amplitude": 0.22,
+          "frequency": 0.013,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1380,
+          "y": 560
+        },
+        "type": "lfo"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            1.2,
+            -1.5,
+            3.45
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "sway1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.2
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 100,
+          "fov": 40,
+          "lookAt": [
+            0,
+            0,
+            0.2
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": 420,
+          "y": -180
+        },
+        "type": "camera"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 14
+        },
+        "position": {
+          "x": 1020,
+          "y": 300
+        },
+        "type": "blur"
+      },
+      "lift": {
+        "definitionVersion": 1,
+        "id": "lift",
+        "label": "lift1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
+          "capacity": 96000,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401): the PALETTED source at this\n     point's own xy. Luminance is the height, and the colour rides along to the draw. */\n  let height = dot(p.sample.rgb, vec3f(0.2126, 0.7152, 0.0722));\n  /* Sampled on a square (the bridge's mapping demands it), drawn at 16:9. */\n  q.position = vec3f(p.position.x * 1.7778, p.position.y, height * 1.05);\n  q.sample = p.sample;\n  return q;\n}",
+          "seed": 41
+        },
+        "position": {
+          "x": 120,
+          "y": 140
+        },
+        "type": "pointKernel"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1620,
+          "y": 140
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.01,
+                0.02,
+                0.06,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.05,
+                0.14,
+                0.42,
+                1
+              ],
+              "position": 0.3
+            },
+            {
+              "color": [
+                0.55,
+                0.16,
+                0.62,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                1,
+                0.34,
+                0.45,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                1,
+                0.95,
+                0.85,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1080,
+          "y": -180
+        },
+        "type": "ramp"
+      },
+      "phosphor": {
+        "definitionVersion": 1,
+        "id": "phosphor",
+        "label": "phosphor1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": 120,
+          "y": -180
+        },
+        "type": "materialUnlit"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -780,
+          "y": 280
+        },
+        "type": "switch"
+      },
+      "ripple": {
+        "definitionVersion": 1,
+        "id": "ripple",
+        "label": "ripple1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.32,
+          "rough": 0.55,
+          "s4d": 1,
+          "seed": 41,
+          "speed": 0.16,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1680,
+          "y": 300
+        },
+        "type": "noise"
+      },
+      "sheet": {
+        "definitionVersion": 1,
+        "id": "sheet",
+        "label": "grid1",
+        "parameters": {
+          "cols": 480,
+          "count": 96000,
+          "rows": 200
+        },
+        "position": {
+          "x": -480,
+          "y": 280
+        },
+        "type": "pointGrid"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "ambientIntensity": 0,
+          "background": [
+            0.002,
+            0.004,
+            0.011,
+            1
+          ],
+          "camera": "eye1",
+          "lights": "",
+          "scenes": "body1"
+        },
+        "position": {
+          "x": 720,
+          "y": 140
+        },
+        "type": "render"
+      },
+      "sum": {
+        "definitionVersion": 1,
+        "id": "sum",
+        "label": "sum1",
+        "parameters": {},
+        "position": {
+          "x": -1080,
+          "y": 140
+        },
+        "type": "add"
+      },
+      "sway": {
+        "definitionVersion": 1,
+        "id": "sway",
+        "label": "sway1",
+        "parameters": {
+          "amplitude": 1.3,
+          "frequency": 0.024,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 120,
+          "y": -420
+        },
+        "type": "lfo"
+      },
+      "swell": {
+        "definitionVersion": 1,
+        "id": "swell",
+        "label": "swell1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "driftx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "drifty1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "fillcolor": [
+            0.94,
+            0.9,
+            0.84,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.34,
+            0.34
+          ],
+          "softness": 0.7
+        },
+        "position": {
+          "x": -1680,
+          "y": 0
+        },
+        "type": "circle"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E27 Relief",
+  "projectId": "example-e27-relief",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 41,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

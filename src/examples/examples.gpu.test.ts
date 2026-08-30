@@ -431,6 +431,99 @@ describe("E26 is interference, and it moves", () => {
   }, 300_000);
 });
 
+/**
+ * E27 IS A RELIEF, AND IT MOVES (T475, T402, §V147, §V383).
+ *
+ * MOTION: 533,647 of 921,600 pixels — 57.9% — change between two frames four seconds
+ * apart, measured on Dawn while writing this. Lower than E26's 91% because half the frame
+ * is background, which is the honest number for an object on a dark ground.
+ *
+ * THE CONTROL, and it is the one that makes this a CROSSING rather than a picture: set the
+ * kernel's height gain to zero and the sheet becomes flat. Everything else is unchanged —
+ * same points, same per-point colour, same camera, same bloom — so the only difference is
+ * whether the image was LIFTED into geometry. Measured: 336,347 pixels differ, 36.5% of the
+ * frame. A structural test cannot tell those two apart; both compile, both draw 96,000
+ * instances, both animate.
+ */
+describe("E27 lifts the picture into geometry, and it moves", () => {
+  async function capture(
+    mutate: (graph: GraphDocument) => GraphDocument,
+    frames: ReadonlyArray<number>,
+  ) {
+    const file = listExamples().find((entry) => entry.fileName === "E27-Relief.loom.json");
+    if (file === undefined) throw new Error("E27 is not shipped");
+    const { document } = requireExample(file);
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: mutate(document.graph),
+      settings: document.settings,
+      frames: Math.max(...frames) + 1,
+      capture: [...frames],
+      outputNodeId: "out",
+      fps: 60,
+      animate: true,
+    });
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    return result.frames;
+  }
+
+  const rgb = (frame: { bytes: Uint8Array }, index: number): [number, number, number] => {
+    const view = new DataView(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength);
+    const offset = index * 8;
+    return [
+      halfFloat(view.getUint16(offset, true)),
+      halfFloat(view.getUint16(offset + 2, true)),
+      halfFloat(view.getUint16(offset + 4, true)),
+    ];
+  };
+
+  const differing = (
+    a: { bytes: Uint8Array; width: number; height: number },
+    b: { bytes: Uint8Array; width: number; height: number },
+  ): number => {
+    let count = 0;
+    for (let index = 0; index < a.width * a.height; index += 1) {
+      const p = rgb(a, index);
+      const q = rgb(b, index);
+      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) > 0.02) count += 1;
+    }
+    return count;
+  };
+
+  it("changes over half the frame in four seconds, and is a different picture lying flat", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const [early, late] = await capture((graph) => graph, [60, 300]);
+    if (early === undefined || late === undefined) throw new Error("no frames");
+    // Measured 0.5790.
+    expect(differing(early, late) / (early.width * early.height)).toBeGreaterThan(0.25);
+
+    // THE CONTROL: the same graph with the lift turned off.
+    const [flat] = await capture((graph) => {
+      const lift = graph.nodes["lift"];
+      if (lift === undefined) throw new Error("E27 has no lift node");
+      const kernel = lift.parameters["kernel"];
+      if (typeof kernel !== "string" || !kernel.includes("height * 1.05")) {
+        throw new Error("the lift kernel no longer carries the height gain this control edits");
+      }
+      return {
+        ...graph,
+        nodes: {
+          ...graph.nodes,
+          lift: {
+            ...lift,
+            parameters: { ...lift.parameters, kernel: kernel.replace("height * 1.05", "height * 0.0") },
+          },
+        },
+      };
+    }, [300]);
+    if (flat === undefined) throw new Error("no control frame");
+    // Measured 336,347 of 921,600. A tenth of the frame is a wide margin and still fails
+    // outright if the sample stops reaching position.z.
+    expect(differing(flat, late)).toBeGreaterThan(90_000);
+  }, 300_000);
+});
+
 function halfFloat(bits: number): number {
   const sign = (bits & 0x8000) === 0 ? 1 : -1;
   const exponent = (bits & 0x7c00) >> 10;

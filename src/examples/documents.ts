@@ -76,11 +76,23 @@ function node(
   };
 }
 
-function edge(id: string, from: readonly [string, string], to: readonly [string, string]): GraphEdge {
+function edge(
+  id: string,
+  from: readonly [string, string],
+  to: readonly [string, string],
+  /**
+   * §V131/T225: which slot this edge takes on a VARIADIC port. Absent sorts last and ties
+   * break by id, which is fine for the single-edge ports every other example uses and is
+   * NOT fine for a Switch — there the index is the picture, and leaving it to id order
+   * means the branch that plays on open is decided by a spelling.
+   */
+  order?: number,
+): GraphEdge {
   return {
     id,
     source: { nodeId: from[0] as string, portId: from[1] as string },
     target: { nodeId: to[0] as string, portId: to[1] as string },
+    ...(order === undefined ? {} : { order }),
   };
 }
 
@@ -2358,6 +2370,214 @@ const interferenceDocument = document(
   ),
 );
 
+/**
+ * E27 — Relief (T475, T409).
+ *
+ * A moving picture STANDS UP off the screen: a grid of points is pushed toward the viewer
+ * in proportion to the brightness under it, drawn as thousands of small unlit quads and
+ * filmed by a drifting camera. Rutt-Etra, the analog video-synth look — except the source
+ * is a live graph rather than a scan converter.
+ *
+ * ## THE UNDERSTUDY PATTERN (V411), and it is the reusable idea here
+ *
+ * §V363 says a demo must demonstrate itself, and until now that has meant no example may
+ * contain a live input at all. That is exactly why `webcam` shipped DEAD for months (B39):
+ * no example used it, so nothing ever compiled its shader or bound its external texture.
+ *
+ * `pick1` dissolves the conflict. A Switch's branches are all rendered — it selects a
+ * RESOURCE, it does not prune a subgraph — so with `index: 0` this file opens playing its
+ * own synthetic performer, AND `cam1` is in the graph, in the plan, and compiled on Dawn by
+ * `examples.gpu.test.ts`. That is the integration gate §V362 names as the only one we have,
+ * and it is the gate B39 escaped. Move the index to 1 and it is your camera; nothing else
+ * in the graph changes.
+ *
+ * The same shape generalises to `audioIn`/`audioFileIn`, the other two nodes §V363 has been
+ * keeping unexampled. It is not applied here — one example, one claim — but it is the
+ * reason to write this one down.
+ *
+ * ## Why POINTS and not a surface
+ *
+ * `textureToAttribute` reads with `textureLoad` — NEAREST, unfiltered, deliberately, so a
+ * data field survives it (§V57). A displaced SURFACE is therefore brutally sensitive to the
+ * ratio between mesh and field: coarser and a narrow feature falls between two vertices and
+ * spikes, finer and every vertex in one texel shares a height and the surface steps. Points
+ * have neither failure, because there is no shared edge between them to tear or facet — a
+ * point that samples a texel just sits where that texel says. That is what makes a relief
+ * the honest thing to build on this bridge, and it is why the grid here can be a different
+ * shape from the field without anything going wrong.
+ *
+ * ## The aspect fix lives in the kernel
+ *
+ * The bridge maps `position.xy * 0.5 + 0.5` to uv, so the sampling grid HAS to span
+ * x,y in [-1,1] — a square. The source is 16:9. So `lift1` samples on the square and then
+ * stretches x by 16/9 on its way out: the picture is read square and DRAWN wide, which is
+ * one line of kernel and the only place the aspect appears.
+ */
+const RELIEF_COLS = 480;
+const RELIEF_ROWS = 200;
+
+const RELIEF_LIFT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* p.sample is the bridge's pair, bound from UPSTREAM (T401): the PALETTED source at this
+     point's own xy. Luminance is the height, and the colour rides along to the draw. */
+  let height = dot(p.sample.rgb, vec3f(0.2126, 0.7152, 0.0722));
+  /* Sampled on a square (the bridge's mapping demands it), drawn at 16:9. */
+  q.position = vec3f(p.position.x * 1.7778, p.position.y, height * 1.05);
+  q.sample = p.sample;
+  return q;
+}`;
+
+const reliefDocument = document(
+  "e27-relief",
+  "E27 Relief",
+  settings({ randomSeed: 41 }),
+  graph(
+    [
+      /* THE UNDERSTUDY. A word travelling across a living bed of noise: something with
+         SHAPE in it, so the relief is a picture rather than a texture, and something that
+         moves everywhere, so no part of the frame is still (T402). */
+      node("ripple", "noise", [-1680, 300], {
+        type: "perlin4d", seed: 41, period: 0.32, harmon: 3, spread: 2, gain: 0.55,
+        rough: 0.55, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0, s4d: 1, speed: 0.16,
+      }, { label: "ripple1" }),
+      node("bed", "level", [-1380, 300], {
+        /* Crushed to a low, rolling swell: the bed is the sea the word rides on, and at
+           full contrast it would compete with the word for the eye. */
+        blacklevel: 0.42, whitelevel: 1.05, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+      }, { label: "bed1" }),
+      /* THE SWELL. A soft dome, wide and low-contrast, wandering across the sea on two
+         incommensurate drifts. It is the SHAPE in the picture: without it the relief is a
+         texture, and a texture in relief is E20 with extra steps. */
+      node("swell", "circle", [-1680, 0], {
+        mode: "fill", center: [0.5, 0.5], radius: [0.34, 0.34],
+        /* Softness far past the radius makes this a DOME rather than a disc (E13's
+           finding): a hard disc lifts as a cylinder with a cliff edge, and a cliff is
+           where a point relief looks like a bug. */
+        softness: 0.7,
+        /* Under 1.0 on purpose: the bed is ADDED on top, and a dome already at full
+           brightness clips flat where the two meet — which renders as a scooped, level
+           summit instead of a peak. */
+        fillcolor: [0.94, 0.9, 0.84, 1], bgcolor: [0, 0, 0, 0], aspectcorrect: true,
+      }, {
+        label: "swell1",
+        parameters: {
+          "center.x": drivenSlot("driftx1", 0.5),
+          "center.y": drivenSlot("drifty1", 0.5),
+        },
+      }),
+      node("driftx", "lfo", [-1680, 560], {
+        shape: "sine", frequency: 0.019, amplitude: 0.3, offset: 0.5, phase: 0,
+      }, { label: "driftx1" }),
+      node("drifty", "lfo", [-1380, 560], {
+        shape: "sine", frequency: 0.013, amplitude: 0.22, offset: 0.5, phase: 0.25,
+      }, { label: "drifty1" }),
+      node("sum", "add", [-1080, 140], {}, { label: "sum1" }),
+
+      /* THE REAL THING — in the graph, in the plan, compiled on Dawn, one index away. */
+      node("cam", "webcam", [-1080, 420], {}, { label: "cam1" }),
+      node("pick", "switch", [-780, 280], { index: 0 }, { label: "pick1" }),
+
+      node("palette", "ramp", [-1080, -180], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        /* A scan-line palette: near-black in the flats, through a cold blue and a hot
+           magenta, to a white crest. Monotone in luminance because that same luminance is
+           the HEIGHT — the brightest points are the ones standing closest to you, which is
+           what a phosphor relief does. */
+        stops: [
+          { position: 0, color: [0.01, 0.02, 0.06, 1] },
+          { position: 0.3, color: [0.05, 0.14, 0.42, 1] },
+          { position: 0.58, color: [0.55, 0.16, 0.62, 1] },
+          { position: 0.8, color: [1, 0.34, 0.45, 1] },
+          { position: 1, color: [1, 0.95, 0.85, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+      node("coat", "lookup", [-780, -20], {
+        channel: "luminance", row: 0.5, scale: 1, offset: 0,
+      }, { label: "coat1" }),
+
+      node("sheet", "pointGrid", [-480, 280], {
+        count: RELIEF_COLS * RELIEF_ROWS, cols: RELIEF_COLS, rows: RELIEF_ROWS,
+      }, { label: "grid1" }),
+      node("bridge", "textureToAttribute", [-180, 140], {
+        count: RELIEF_COLS * RELIEF_ROWS,
+      }, { label: "bridge1" }),
+      node("lift", "pointKernel", [120, 140], {
+        capacity: RELIEF_COLS * RELIEF_ROWS,
+        seed: 41,
+        attributes: JSON.stringify([
+          { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+          { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
+        ]),
+        kernel: RELIEF_LIFT_KERNEL,
+      }, { label: "lift1" }),
+
+      /* UNLIT, and that is the look: a phosphor does not have a diffuse response. The
+         colour comes entirely from T478's per-point TINT, so `render`'s light list is
+         empty and nothing shades these quads. */
+      node("phosphor", "materialUnlit", [120, -180], {
+        color: [1, 1, 1, 1],
+      }, { label: "phosphor1" }),
+      node("body", "geometry", [420, 140], {
+        /* The quad half-extent must stay UNDER half the point spacing (3.56 world units
+           across 480 columns = 0.0074), or the quads overlap into a solid slab and the
+           scan lines disappear. The first build ran 0.0075 and rendered one flat sheet. */
+        mode: "instances", shape: "quad", scale: 0.0026, material: "phosphor1",
+        tint: [1, 1, 1, 1],
+      }, {
+        label: "body1",
+        /* T478: the sampled colour multiplies the material's base colour PER POINT. White
+           base means the tint IS the colour. */
+        parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } },
+      }),
+      node("eye", "camera", [420, -180], {
+        /* Off to one side and above the sheet's plane. Face-on, a height field is just the
+           picture again and the whole crossing is invisible; this is the angle at which the
+           scan lines separate and the word reads as an OBJECT. */
+        eye: [1.2, -1.5, 3.45], lookAt: [0, 0, 0.2], fov: 40, near: 0.1, far: 100, ortho: false,
+      }, {
+        label: "eye1",
+        parameters: { "eye.x": drivenSlot("sway1", 1.2) },
+      }),
+      node("sway", "lfo", [120, -420], {
+        shape: "sine", frequency: 0.024, amplitude: 1.3, offset: 0, phase: 0,
+      }, { label: "sway1" }),
+      node("shot", "render", [720, 140], {
+        scenes: "body1", camera: "eye1", lights: "",
+        ambientColor: [1, 1, 1, 1], ambientIntensity: 0,
+        background: [0.002, 0.004, 0.011, 1],
+      }, { label: "shot1" }),
+
+      /* BLOOM, and on an unlit phosphor it is not decoration: it is what makes thousands of
+         separate quads read as one glowing surface instead of as a dotted grid. */
+      node("halo", "blur", [1020, 300], { size: 14, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("burn", "add", [1320, 140], {}, { label: "burn1" }),
+      node("out", "output", [1620, 140], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-ripple-bed", ["ripple", "out"], ["bed", "input"]),
+      edge("e-swell-sum", ["swell", "out"], ["sum", "in1"]),
+      edge("e-bed-sum", ["bed", "out"], ["sum", "in2"]),
+      // BRANCH 0 is the understudy, BRANCH 1 is the camera, and the ORDER SAYS SO (§V131).
+      // Left to the id tiebreak, "e-cam-pick" sorts before "e-sum-pick" and the file opens
+      // on a black camera — the exact null state §V363 exists to prevent, chosen by
+      // alphabet.
+      edge("e-sum-pick", ["sum", "out"], ["pick", "inputs"], 0),
+      edge("e-cam-pick", ["cam", "out"], ["pick", "inputs"], 1),
+      edge("e-pick-coat", ["pick", "out"], ["coat", "source"]),
+      edge("e-palette-coat", ["palette", "out"], ["coat", "lookup"]),
+      edge("e-sheet-bridge", ["sheet", "out"], ["bridge", "points"]),
+      edge("e-coat-bridge", ["coat", "out"], ["bridge", "texture"]),
+      edge("e-bridge-lift", ["bridge", "out"], ["lift", "in"]),
+      edge("e-lift-body", ["lift", "out"], ["body", "points"]),
+      edge("e-shot-halo", ["shot", "out"], ["halo", "input"]),
+      edge("e-shot-burn", ["shot", "out"], ["burn", "in1"]),
+      edge("e-halo-burn", ["halo", "out"], ["burn", "in2"]),
+      edge("e-burn-out", ["burn", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 /** Every example, in the order they are meant to be read. */
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -2378,4 +2598,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   audioRdDocument,
   stageDocument,
   interferenceDocument,
+  reliefDocument,
 ];
