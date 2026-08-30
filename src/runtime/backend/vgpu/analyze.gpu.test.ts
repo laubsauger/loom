@@ -12,6 +12,7 @@ import {
 } from "../../execution/analyze-channels.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+import { createUniformAnimator } from "../../../app/animate-parameters.ts";
 
 /**
  * T236 end to end on Dawn (§V144, §V48): a Solid's colour goes in, a NUMBER comes out —
@@ -119,4 +120,113 @@ describe("Analyze on Dawn (T236)", () => {
       backend.dispose();
     }
   });
+});
+
+/**
+ * T480: the loop CLOSED TO THE PIXEL. The test above proves image→number; this proves
+ * number→parameter→image — the readback channel drives a uniform through the real
+ * per-frame resolution path and the picture changes. §V361 for the whole circle: the
+ * frame before the value lands renders dark, the frame after renders bright, and both
+ * ends are exact bytes.
+ */
+describe("Analyze drives a parameter that changes the PICTURE (T480, §V144, §V361)", () => {
+  it("a white input pushes the driven amount from 0 to 1 between frames", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        // WHITE, because 1 is a fixed point of the display decode (§V56): the average
+        // is exactly 1, so the driven amount is exactly 1, so the pixel is exactly 255.
+        gen: node("gen", "solid", { parameters: { color: [1, 1, 1, 1] } }),
+        meter: node("meter", "analyze", {
+          label: "meter1",
+          parameters: { channel: "r", operation: "average" },
+        }),
+        feed: node("feed", "solid", { parameters: { color: [1, 1, 1, 1] } }),
+        dim: node("dim", "customWgsl", {
+          parameters: {
+            amount: {
+              mode: "driven",
+              bindings: {
+                // The retained static: the picture BEFORE the channel lands.
+                static: { kind: "static", value: 0 },
+                driven: { kind: "driven", channel: "meter1" },
+              },
+            },
+          },
+        }),
+        out: node("out", "output", {}),
+      },
+      edges: {
+        e0: { id: "e0", source: { nodeId: "gen", portId: "out" }, target: { nodeId: "meter", portId: "input" } },
+        e1: { id: "e1", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "dim", portId: "input" } },
+        e2: { id: "e2", source: { nodeId: "dim", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      } as unknown as GraphDocument["edges"],
+      groups: {},
+    } as unknown as GraphDocument;
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const channels = createAnalyzeChannels({ readBuffer: (id) => backendRefFor.readBuffer(id) });
+    // rgba8unorm here so readOutput hands back display BYTES, not raw half-floats.
+    const settings8: ProjectSettings = { ...settings, workingFormat: "rgba8unorm" };
+    const compileAt = (frameIndex: number) =>
+      compileGraph({
+        graph,
+        settings: settings8,
+        registry,
+        capabilities,
+        resolution: {
+          frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 1 },
+          channels: channels.resolver,
+        },
+      } as never);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const backendRefFor = backend;
+    try {
+      await backend.initialize({});
+      channels.track(analyzeChannelEntries(graph, registry));
+
+      // FRAME 0: no readback has landed, the driven amount resolves to its retained 0.
+      const first = compileAt(0);
+      expect(first.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const compiled = await backend.compile(first);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 1 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const dark = await backend.readOutput("target:dim:out");
+      const centre = (32 * 64 + 32) * 4;
+      expect(dark.bytes[centre]).toBe(0);
+
+      // Between frames (§V48's window): the sample lands the white average, exactly 1.
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (channels.resolver("meter1", {} as never) !== undefined) break;
+        channels.sample();
+        await backend.whenSettled();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(channels.resolver("meter1", {} as never)).toBe(1);
+
+      // FRAME 1: the SAME document re-resolves — the driven amount is now the channel's
+      // 1 — and travels the path the app actually uses (§V5): the per-frame plan diffs
+      // against the structural one and the animator pushes the changed block as a
+      // uniform WRITE. Never a recompile; that is the whole point of the seam.
+      const second = compileAt(1);
+      const written = createUniformAnimator().push(backend, first, second);
+      expect(written).toBeGreaterThan(0);
+      backend.render(compiled, {
+        frame: { timeSeconds: 1 / 60, deltaSeconds: 1 / 60, frameIndex: 1, mode: "offline", randomSeed: 1 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const bright = await backend.readOutput("target:dim:out");
+      expect(bright.bytes[centre]).toBe(255);
+    } finally {
+      backend.dispose();
+    }
+  }, 120_000);
 });
