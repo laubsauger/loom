@@ -45,13 +45,15 @@
   min-height: 0;
 }
 
-/* Dividers: 1px of --line, zero radius (§C), with a generous invisible hit
-   area supplied by the handle's pointer margins. */
+/* Dividers: a 3px GUTTER of recessed ground (T491, V438), zero radius (§C), with a
+   generous invisible hit area supplied by the handle's pointer margins. The tone step
+   below the pane fill is what separates a structural division from the 1px --line
+   hairlines that rule tab strips and sections — architecture heavier than furniture. */
 .handle {
   position: relative;
   flex: 0 0 auto;
   border-radius: var(--radius-none);
-  background: var(--line);
+  background: var(--bg-void);
   transition: background var(--dur-instant) var(--ease-out);
 }
 

@@ -103,7 +103,12 @@
   --pane-header-h: 24px;
   --control-h: 20px;
   --control-h-lg: 24px;
-  --divider: 1px; /* visual thickness; hit area is widened in JS */
+  /* T491 (V438): STRUCTURAL boundaries read a step heavier than content hairlines.
+     A pane division at 1px of --line was indistinguishable from a tab strip's border
+     or a section rule, so the shell's architecture and its furniture carried equal
+     weight. 3px of recessed ground (the gutter shows --bg-void between panes) is a
+     tone step AND a weight step — never a second hairline beside the first. */
+  --divider: 3px; /* visual thickness; hit area is widened in JS */
 
   /* ---- motion (V19) --------------------------------------------------
      Zeroed under prefers-reduced-motion below, so any consumer that drives
