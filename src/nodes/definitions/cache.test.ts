@@ -22,7 +22,9 @@ function passes(parameters: Readonly<Record<string, ParameterValue>> = {}) {
   return compiled(parameters).passes as ReadonlyArray<{
     id: string;
     target: string;
-    textures?: ReadonlyArray<{ binding: string; resourceId: string; tap?: number }>;
+    textures?: ReadonlyArray<{ binding: string; resourceId: string; array?: boolean }>;
+    uniforms?: { tap?: number };
+    uniformBinding?: string;
   }>;
 }
 
@@ -45,7 +47,12 @@ describe("Cache (T237)", () => {
     ]);
 
     expect(read?.target).toBe(outputResourceId("out"));
-    expect(read?.textures).toEqual([{ binding: "inputTexture", resourceId: ring, tap: 3 }]);
+    // T425: the ring binds as ONE stable ARRAY view and the tap rides the uniform block
+    // — a per-layer view would rebuild the pass's bind group every rotation, which the
+    // settled-frame allocation gate refuses (found the day a cache entered an example).
+    expect(read?.textures).toEqual([{ binding: "ringTexture", resourceId: ring, array: true }]);
+    expect(read?.uniforms).toEqual({ tap: 3 });
+    expect(read?.uniformBinding).toBe("cacheTap");
   });
 
   it("never taps the slice it is writing", () => {
@@ -53,7 +60,7 @@ describe("Cache (T237)", () => {
     // ping-pong's read/write split exists to prevent, and the reason the plan reader
     // refuses a tap below 1 rather than trusting each node to remember.
     const taps = [0, -4, 1].map(
-      (index) => passes({ index }).at(1)?.textures?.[0]?.tap,
+      (index) => (passes({ index }).at(1)?.uniforms as { tap?: number } | undefined)?.tap,
     );
     expect(taps).toEqual([1, 1, 1]);
   });
@@ -63,7 +70,7 @@ describe("Cache (T237)", () => {
     // indistinguishable from the node being broken. Clamping without saying so is the
     // same bug with better manners.
     const result = compiled({ frames: 8, index: 12 });
-    expect((result.passes as ReadonlyArray<{ textures?: ReadonlyArray<{ tap?: number }> }>)[1]?.textures?.[0]?.tap).toBe(7);
+    expect((result.passes as ReadonlyArray<{ uniforms?: { tap?: number } }>)[1]?.uniforms?.tap).toBe(7);
     expect(result.diagnostics?.[0]?.code).toBe("node.compile.tapClamped");
     expect(result.diagnostics?.[0]?.severity).toBe("warning");
     expect(result.diagnostics?.[0]?.suggestion).toMatch(/Raise Frames/);

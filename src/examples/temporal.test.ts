@@ -107,6 +107,7 @@ describe("examples with a temporal loop", () => {
       "E1-Feedback-Echo.loom.json",
       "E12-Fluid.loom.json",
       "E2-Reaction-Diffusion.loom.json",
+      "E24-Audio-Reaction-Diffusion.loom.json",
     ]);
   });
 });

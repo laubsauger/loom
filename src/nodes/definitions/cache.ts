@@ -4,7 +4,7 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { CACHE_BLIT_WGSL } from "../shaders/cache.wgsl.ts";
+import { CACHE_BLIT_WGSL, CACHE_READ_WGSL } from "../shaders/cache.wgsl.ts";
 
 /**
  * Cache — holds the last N frames and reads one of them back (T237). TD's Cache TOP.
@@ -168,10 +168,15 @@ export const cacheNode: NodeDefinition = {
     const read: EffectPassDescriptor = {
       kind: "effect",
       id: `${nodeId}:cache-read:${index}`,
-      shader: CACHE_BLIT_WGSL,
+      shader: CACHE_READ_WGSL,
       target,
-      textures: [{ binding: "inputTexture", resourceId: ring, tap: index }],
+      // T425: the ring as ONE stable array view; the tap is a NUMBER in the uniform
+      // block, so nothing rebinds per frame. The backend's T321 head loop merges
+      // ringLatest/ringWritten/ringFrames into `cacheTap` every frame by name.
+      textures: [{ binding: "ringTexture", resourceId: ring, array: true }],
       samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniforms: { tap: index },
+      uniformBinding: "cacheTap",
       nodeId,
       label: "Cache Read",
     };

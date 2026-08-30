@@ -1,0 +1,912 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-broad-warp": {
+        "id": "e-broad-warp",
+        "source": {
+          "nodeId": "broad",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "source"
+        }
+      },
+      "e-detail-warp": {
+        "id": "e-detail-warp",
+        "source": {
+          "nodeId": "detail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "disp"
+        }
+      },
+      "e-env-sgain": {
+        "id": "e-env-sgain",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sgain",
+          "portId": "a"
+        }
+      },
+      "e-env-wgain": {
+        "id": "e-env-wgain",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wgain",
+          "portId": "a"
+        }
+      },
+      "e-fringe-out": {
+        "id": "e-fringe-out",
+        "source": {
+          "nodeId": "fringe",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-fringerg-fringe": {
+        "id": "e-fringerg-fringe",
+        "source": {
+          "nodeId": "fringeRG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fringe",
+          "portId": "in1"
+        }
+      },
+      "e-kgain-kscale": {
+        "id": "e-kgain-kscale",
+        "source": {
+          "nodeId": "kgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "kscale",
+          "portId": "a"
+        }
+      },
+      "e-kick-kgain": {
+        "id": "e-kick-kgain",
+        "source": {
+          "nodeId": "kick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "kgain",
+          "portId": "a"
+        }
+      },
+      "e-music-env": {
+        "id": "e-music-env",
+        "source": {
+          "nodeId": "music",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-music-trig": {
+        "id": "e-music-trig",
+        "source": {
+          "nodeId": "music",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trig",
+          "portId": "in"
+        }
+      },
+      "e-palette-tint": {
+        "id": "e-palette-tint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "lookup"
+        }
+      },
+      "e-rd-pack": {
+        "id": "e-rd-pack",
+        "source": {
+          "nodeId": "rd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in1"
+        }
+      },
+      "e-rd-tint": {
+        "id": "e-rd-tint",
+        "source": {
+          "nodeId": "rd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "source"
+        }
+      },
+      "e-sbase-scap": {
+        "id": "e-sbase-scap",
+        "source": {
+          "nodeId": "sbase",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "scap",
+          "portId": "in"
+        }
+      },
+      "e-sgain-sbase": {
+        "id": "e-sgain-sbase",
+        "source": {
+          "nodeId": "sgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sbase",
+          "portId": "a"
+        }
+      },
+      "e-shape-pack": {
+        "id": "e-shape-pack",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
+        }
+      },
+      "e-state-wind": {
+        "id": "e-state-wind",
+        "source": {
+          "nodeId": "state",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wind",
+          "portId": "input"
+        }
+      },
+      "e-tapb-fringe": {
+        "id": "e-tapb-fringe",
+        "source": {
+          "nodeId": "tapB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fringe",
+          "portId": "in2"
+        }
+      },
+      "e-tapg-fringerg": {
+        "id": "e-tapg-fringerg",
+        "source": {
+          "nodeId": "tapG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fringeRG",
+          "portId": "in2"
+        }
+      },
+      "e-tapr-fringerg": {
+        "id": "e-tapr-fringerg",
+        "source": {
+          "nodeId": "tapR",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fringeRG",
+          "portId": "in1"
+        }
+      },
+      "e-tint-tapb": {
+        "id": "e-tint-tapb",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapB",
+          "portId": "input"
+        }
+      },
+      "e-tint-tapg": {
+        "id": "e-tint-tapg",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapG",
+          "portId": "input"
+        }
+      },
+      "e-tint-tapr": {
+        "id": "e-tint-tapr",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tapR",
+          "portId": "input"
+        }
+      },
+      "e-trig-kick": {
+        "id": "e-trig-kick",
+        "source": {
+          "nodeId": "trig",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "kick",
+          "portId": "in"
+        }
+      },
+      "e-warp-shape": {
+        "id": "e-warp-shape",
+        "source": {
+          "nodeId": "warp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "input"
+        }
+      },
+      "e-wbase-wcap": {
+        "id": "e-wbase-wcap",
+        "source": {
+          "nodeId": "wbase",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wcap",
+          "portId": "in"
+        }
+      },
+      "e-wgain-wbase": {
+        "id": "e-wgain-wbase",
+        "source": {
+          "nodeId": "wgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wbase",
+          "portId": "a"
+        }
+      },
+      "e-wind-rd": {
+        "id": "e-wind-rd",
+        "source": {
+          "nodeId": "wind",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "broad": {
+        "definitionVersion": 1,
+        "id": "broad",
+        "label": "broad1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": true,
+          "offset": 0,
+          "period": 0.55,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.05,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1460,
+          "y": -140
+        },
+        "type": "noise"
+      },
+      "cycle": {
+        "definitionVersion": 1,
+        "id": "cycle",
+        "label": "lfo1",
+        "parameters": {
+          "amplitude": 0.06,
+          "frequency": 0.05,
+          "offset": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -200,
+          "y": 540
+        },
+        "type": "lfo"
+      },
+      "detail": {
+        "definitionVersion": 1,
+        "id": "detail",
+        "label": "detail1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.13,
+          "rough": 0.6,
+          "s4d": 1,
+          "seed": 19,
+          "speed": 0.09,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1460,
+          "y": 100
+        },
+        "type": "noise"
+      },
+      "env": {
+        "definitionVersion": 1,
+        "id": "env",
+        "label": "env1",
+        "parameters": {
+          "lag": 0.12
+        },
+        "position": {
+          "x": -1220,
+          "y": 420
+        },
+        "type": "valueLag"
+      },
+      "fringe": {
+        "definitionVersion": 1,
+        "id": "fringe",
+        "label": "fringe1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in2b",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 820,
+          "y": 440
+        },
+        "type": "reorder"
+      },
+      "fringeRG": {
+        "definitionVersion": 1,
+        "id": "fringeRG",
+        "label": "fringerg1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in1b",
+          "outg": "in2g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 580,
+          "y": 370
+        },
+        "type": "reorder"
+      },
+      "kgain": {
+        "definitionVersion": 1,
+        "id": "kgain",
+        "label": "kgain1",
+        "parameters": {
+          "operand": 0.9,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -740,
+          "y": 660
+        },
+        "type": "valueMath"
+      },
+      "kick": {
+        "definitionVersion": 1,
+        "id": "kick",
+        "label": "kick1",
+        "parameters": {
+          "lag": 0.35
+        },
+        "position": {
+          "x": -980,
+          "y": 660
+        },
+        "type": "valueLag"
+      },
+      "kscale": {
+        "definitionVersion": 1,
+        "id": "kscale",
+        "label": "kscale1",
+        "parameters": {
+          "operand": 2.4,
+          "operation": "add"
+        },
+        "position": {
+          "x": -500,
+          "y": 660
+        },
+        "type": "valueMath"
+      },
+      "music": {
+        "definitionVersion": 1,
+        "id": "music",
+        "label": "music1",
+        "parameters": {},
+        "position": {
+          "x": -1460,
+          "y": 420
+        },
+        "type": "audioFileIn"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 1080,
+          "y": 440
+        },
+        "type": "output"
+      },
+      "pack": {
+        "definitionVersion": 1,
+        "id": "pack",
+        "label": "pack1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in2lum",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 60,
+          "y": 120
+        },
+        "type": "reorder"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.01,
+                0.02,
+                0.07,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.03,
+                0.2,
+                0.38,
+                1
+              ],
+              "position": 0.32
+            },
+            {
+              "color": [
+                0.24,
+                0.6,
+                0.5,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                0.95,
+                0.62,
+                0.24,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                1,
+                0.95,
+                0.85,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -200,
+          "y": 380
+        },
+        "type": "ramp"
+      },
+      "rd": {
+        "definitionVersion": 1,
+        "id": "rd",
+        "label": "rd1",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\n// The BAND the chemistry map walks. Feed/kill pairs are famously sensitive: these two\n// endpoints bracket the region where fronts keep breaking up and dividing rather than\n// settling into a fixed pattern, so no part of the image goes static.\nconst FEED_LOW: f32 = 0.028;\nconst KILL_LOW: f32 = 0.0545;\nconst FEED_HIGH: f32 = 0.042;\nconst KILL_HIGH: f32 = 0.0680;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it\n  // walks is the constants above. A constant map is the old uniform behaviour exactly.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -200,
+          "y": 120
+        },
+        "type": "customWgsl"
+      },
+      "sbase": {
+        "definitionVersion": 1,
+        "id": "sbase",
+        "label": "sbase1",
+        "parameters": {
+          "operand": 14,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 340
+        },
+        "type": "valueMath"
+      },
+      "scap": {
+        "definitionVersion": 1,
+        "id": "scap",
+        "label": "steps1",
+        "parameters": {
+          "maximum": 34,
+          "minimum": 1
+        },
+        "position": {
+          "x": -500,
+          "y": 340
+        },
+        "type": "valueLimit"
+      },
+      "sgain": {
+        "definitionVersion": 1,
+        "id": "sgain",
+        "label": "sgain1",
+        "parameters": {
+          "operand": 20,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 340
+        },
+        "type": "valueMath"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "label": "shape1",
+        "parameters": {
+          "blacklevel": 0.28,
+          "brightness": 1,
+          "contrast": 1.6,
+          "gamma1": 1,
+          "whitelevel": {
+            "bindings": {
+              "driven": {
+                "channel": "wlevel1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.72
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -940,
+          "y": -60
+        },
+        "type": "level"
+      },
+      "state": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "state",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 1,
+          "source": "pack1",
+          "substeps": {
+            "bindings": {
+              "driven": {
+                "channel": "steps1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 14
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -680,
+          "y": 120
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "feedback"
+      },
+      "tapB": {
+        "definitionVersion": 1,
+        "id": "tapB",
+        "label": "tapb1",
+        "parameters": {
+          "frames": 10,
+          "index": 9,
+          "scale": 1
+        },
+        "position": {
+          "x": 320,
+          "y": 580
+        },
+        "type": "cache"
+      },
+      "tapG": {
+        "definitionVersion": 1,
+        "id": "tapG",
+        "label": "tapg1",
+        "parameters": {
+          "frames": 7,
+          "index": 5,
+          "scale": 1
+        },
+        "position": {
+          "x": 320,
+          "y": 440
+        },
+        "type": "cache"
+      },
+      "tapR": {
+        "definitionVersion": 1,
+        "id": "tapR",
+        "label": "tapr1",
+        "parameters": {
+          "frames": 4,
+          "index": 2,
+          "scale": 1
+        },
+        "position": {
+          "x": 320,
+          "y": 300
+        },
+        "type": "cache"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "channel": "green",
+          "offset": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "row": 0.5,
+          "scale": {
+            "bindings": {
+              "driven": {
+                "channel": "kscale1:onsetCount",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.4
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 60,
+          "y": 380
+        },
+        "type": "lookup"
+      },
+      "trig": {
+        "definitionVersion": 1,
+        "id": "trig",
+        "label": "trig1",
+        "parameters": {
+          "threshold": 0.5
+        },
+        "position": {
+          "x": -1220,
+          "y": 580
+        },
+        "type": "valueTrigger"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "label": "warp1",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.22,
+            0.22
+          ]
+        },
+        "position": {
+          "x": -1180,
+          "y": -60
+        },
+        "type": "displace"
+      },
+      "wbase": {
+        "definitionVersion": 1,
+        "id": "wbase",
+        "label": "wbase1",
+        "parameters": {
+          "operand": 0.64,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 500
+        },
+        "type": "valueMath"
+      },
+      "wcap": {
+        "definitionVersion": 1,
+        "id": "wcap",
+        "label": "wlevel1",
+        "parameters": {
+          "maximum": 0.8,
+          "minimum": 0.62
+        },
+        "position": {
+          "x": -500,
+          "y": 500
+        },
+        "type": "valueLimit"
+      },
+      "wgain": {
+        "definitionVersion": 1,
+        "id": "wgain",
+        "label": "wgain1",
+        "parameters": {
+          "operand": 0.16,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 500
+        },
+        "type": "valueMath"
+      },
+      "wind": {
+        "definitionVersion": 1,
+        "id": "wind",
+        "label": "wind1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "mirror",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0.02,
+          "s": [
+            1,
+            1
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -440,
+          "y": 120
+        },
+        "type": "transform"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E24 Audio Reaction-Diffusion",
+  "projectId": "example-e24-audio-reaction-diffusion",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 512,
+      "width": 512
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

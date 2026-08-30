@@ -1208,3 +1208,74 @@ describe("E20 Gooeyball", () => {
   });
 });
 
+describe("E24 Audio Reaction-Diffusion", () => {
+  const { document, plan } = example("E24-Audio-Reaction-Diffusion.loom.json");
+
+  /**
+   * T425's headline: substeps is DRIVEN, capped twice. The document binds the channel,
+   * the plan carries a loop REGION whose count is the retained base (channels resolve
+   * live, not at compile), and the graph-side fence sits exactly on [1, 34].
+   */
+  it("drives substeps from the bass, through a hard fence, into a live loop region", () => {
+    const state = document.graph.nodes["state"] as GraphNode;
+    const slot = state.parameters["substeps"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
+    expect(slot.mode).toBe("driven");
+    expect(slot.bindings?.driven?.channel).toBe("steps1:low");
+    const begin = plan.passes.find((pass) => pass.kind === "loop" && pass.edge === "begin") as {
+      count?: number;
+    };
+    expect(begin).toBeDefined();
+    expect(begin.count).toBe(14); // the retained base — silence's iteration rate
+    const cap = document.graph.nodes["scap"] as GraphNode;
+    expect(cap.parameters["minimum"]).toBe(1);
+    expect(cap.parameters["maximum"]).toBe(34);
+  });
+
+  /**
+   * The tutorial's safe-bounds warning, as assertions: the white point is driven, and
+   * its fence keeps the chemistry inside the band where the pattern SURVIVES — dead
+   * Gray-Scott is a fixed point silence cannot revive.
+   */
+  it("range-maps audio into the chemistry with bounds the pattern survives", () => {
+    const shape = document.graph.nodes["shape"] as GraphNode;
+    const slot = shape.parameters["whitelevel"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
+    expect(slot.mode).toBe("driven");
+    expect(slot.bindings?.driven?.channel).toBe("wlevel1:lowMid");
+    const fence = document.graph.nodes["wcap"] as GraphNode;
+    expect(fence.parameters["minimum"]).toBe(0.62);
+    expect(fence.parameters["maximum"]).toBe(0.8);
+  });
+
+  /** The RGB delay is TIME: three ring taps at three depths, braided one channel each. */
+  it("builds the RGB delay from three cache taps, not per-channel scaling", () => {
+    const taps = plan.passes
+      .filter((pass) => pass.kind === "effect" && String((pass as { id: string }).id).includes("cache-read"))
+      .map((pass) => ((pass as { uniforms?: { tap?: number } }).uniforms?.tap ?? 0));
+    expect([...taps].sort((a, b) => a - b)).toEqual([2, 5, 9]);
+    const rings = plan.resources.filter((resource) => resource.kind === "ring") as ReadonlyArray<{
+      frames: number;
+    }>;
+    expect(rings.map((ring) => ring.frames).sort((a, b) => a - b)).toEqual([4, 7, 10]);
+  });
+
+  /** The wind is INSIDE the loop region, so substeps multiply the stirring. */
+  it("stirs inside the loop: the wind pass sits between the loop markers", () => {
+    const ids = plan.passes.map((pass) => (pass as { id: string }).id);
+    const begin = ids.findIndex((id) => id.endsWith("#loop:begin"));
+    const end = ids.findIndex((id) => id.endsWith("#loop:end"));
+    const windIndex = ids.findIndex((id) => id.startsWith("wind#"));
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(windIndex).toBeGreaterThan(begin);
+    expect(windIndex).toBeLessThan(end);
+  });
+
+  /** Kick colour: onset EVENTS through Trigger, decayed by Lag, punching the lookup gain. */
+  it("gates the kick on onsetCount and eases the palette back through a lag", () => {
+    const tint = document.graph.nodes["tint"] as GraphNode;
+    const slot = tint.parameters["scale"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
+    expect(slot.bindings?.driven?.channel).toBe("kscale1:onsetCount");
+    expect((document.graph.nodes["trig"] as GraphNode).type).toBe("valueTrigger");
+    expect((document.graph.nodes["kick"] as GraphNode).type).toBe("valueLag");
+  });
+});
+

@@ -1655,6 +1655,175 @@ const GOOEY_GOO_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
+/**
+ * E24 — Audio-Reactive Reaction-Diffusion (T425). The CAPSTONE.
+ *
+ * E2's rebuilt chemistry, played like an instrument. The owner supplied a TouchDesigner
+ * walkthrough as the brief; this file is its mapping onto OUR machinery, node by node:
+ *
+ *  · AUDIO → SUBSTEPS. The bass envelope multiplies iterations per frame (T425's whole
+ *    reason: the count is a per-frame VALUE), so the pattern physically ACCELERATES on
+ *    the beat — not brighter, FASTER. The value chain caps it (valueLimit 1..34) before
+ *    it ever reaches the plan, and expandLoops clamps again at encode: two fences, one
+ *    contract — a loud passage cannot spike frame time unboundedly.
+ *  · AUDIO → CHEMISTRY, RANGE-MAPPED WITH SAFE BOUNDS. The tutorial's own warning is
+ *    the teaching: lowMid drives the map-shaping Level's white point, but through
+ *    multiply → add → valueLimit into [0.62, 0.80] — the band where the pattern keeps
+ *    breaking and reforming. Unclamped, one loud moment drives feed/kill out of the
+ *    regime where the simulation survives, the pattern dies, and SILENCE DOES NOT
+ *    BRING IT BACK — dead state is a fixed point. The clamp is not tuning; it is what
+ *    makes the instrument recoverable.
+ *  · RGB DELAY, HONESTLY TEMPORAL. TD's RGB Delay is time, not space: three cache
+ *    rings tap the coloured output at 2, 5 and 9 frames back, and a Reorder wears one
+ *    channel from each — motion fringes into rainbow, stillness stays clean. The naive
+ *    per-channel-scaling translation would be chromatic aberration, the wrong effect.
+ *  · KICK → COLOUR. onsetCount (T437: rising events, not a beat claim) through
+ *    Trigger, then a Lag turns each pulse into a decaying envelope that bumps the
+ *    palette row — the gradient jumps warm on a hit and eases back.
+ *  · WIND. A Transform INSIDE the loop (state → wind → rd), rotating a hair per
+ *    iteration. Substeps multiply it, so the bass literally stirs faster — the T350
+ *    reference keeps the loop a name (`source: "pack1"`) while the body grows a node.
+ *  · SILENCE IS A PICTURE, NOT A FAILURE (§V329). Unbound audio reads all-zero
+ *    channels: substeps rest at their base, the chemistry sits mid-band, the palette
+ *    breathes on its own LFO — the example ANIMATES (T402) with no track bound, and
+ *    binding one adds the instrument on top.
+ */
+const audioRdDocument = document(
+  "e24-audio-reaction-diffusion",
+  "E24 Audio Reaction-Diffusion",
+  settings({ outputResolution: { width: 512, height: 512 } }),
+  graph(
+    [
+      // ---- the sound ------------------------------------------------------------
+      node("music", "audioFileIn", [-1460, 420], {}, { label: "music1" }),
+      node("env", "valueLag", [-1220, 420], { lag: 0.12 }, { label: "env1" }),
+      // Substeps: low band, scaled 0..20 over a base of 14, fenced 1..34.
+      node("sgain", "valueMath", [-980, 340], { operation: "multiply", operand: 20 }, { label: "sgain1" }),
+      node("sbase", "valueMath", [-740, 340], { operation: "add", operand: 14 }, { label: "sbase1" }),
+      node("scap", "valueLimit", [-500, 340], { minimum: 1, maximum: 34 }, { label: "steps1" }),
+      // Chemistry: lowMid nudges the white point 0.64..0.80, hard-fenced to the band
+      // where the pattern SURVIVES (the tutorial's "so the pattern doesn't disappear").
+      node("wgain", "valueMath", [-980, 500], { operation: "multiply", operand: 0.16 }, { label: "wgain1" }),
+      node("wbase", "valueMath", [-740, 500], { operation: "add", operand: 0.64 }, { label: "wbase1" }),
+      node("wcap", "valueLimit", [-500, 500], { minimum: 0.62, maximum: 0.8 }, { label: "wlevel1" }),
+      // Kick: onset EVENTS through Trigger, then Lag makes each pulse a decaying bump.
+      node("trig", "valueTrigger", [-1220, 580], { threshold: 0.5 }, { label: "trig1" }),
+      node("kick", "valueLag", [-980, 660], { lag: 0.35 }, { label: "kick1" }),
+      node("kgain", "valueMath", [-740, 660], { operation: "multiply", operand: 0.9 }, { label: "kgain1" }),
+      node("kscale", "valueMath", [-500, 660], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
+
+      // ---- the chemistry map (E2's, verbatim in spirit) -------------------------
+      node("broad", "noise", [-1460, -140], {
+        type: "perlin4d", seed: 5, period: 0.55, harmon: 2, spread: 2, gain: 0.55,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0, s4d: 1, speed: 0.05,
+      }, { label: "broad1" }),
+      node("detail", "noise", [-1460, 100], {
+        type: "perlin4d", seed: 19, period: 0.13, harmon: 3, spread: 2, gain: 0.5,
+        rough: 0.6, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0, s4d: 1, speed: 0.09,
+      }, { label: "detail1" }),
+      node("warp", "displace", [-1180, -60], {
+        weight: [0.22, 0.22], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, { label: "warp1" }),
+      node("shape", "level", [-940, -60], {
+        blacklevel: 0.28, contrast: 1.6, brightness: 1, gamma1: 1,
+      }, {
+        label: "shape1",
+        parameters: { whitelevel: drivenSlot("wlevel1:lowMid", 0.72) },
+      }),
+
+      // ---- the simulation loop, with wind ---------------------------------------
+      node("state", "feedback", [-680, 120], { source: "pack1", persistence: 1, clearColor: [0, 0, 0, 0] }, {
+        resolution: { mode: "fixed", width: 512, height: 512 },
+        format: { mode: "fixed", format: "rgba16float" },
+        parameters: { substeps: drivenSlot("steps1:low", 14) },
+      }),
+      // The wind: a hair of rotation per ITERATION, inside the loop — substeps
+      // multiply it, so the bass stirs the dish faster, which is the point.
+      node("wind", "transform", [-440, 120], {
+        t: [0, 0], r: 0.02, s: [1, 1], p: [0, 0], xord: "srt", extend: "mirror", aspectcorrect: true,
+      }, { label: "wind1" }),
+      node("rd", "customWgsl", [-200, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
+      node("pack", "reorder", [60, 120], {
+        outr: "in1r", outg: "in1g", outb: "in2lum", outa: "in1a",
+      }, { label: "pack1" }),
+
+      // ---- colour, then TIME ----------------------------------------------------
+      node("palette", "ramp", [-200, 380], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0, color: [0.01, 0.02, 0.07, 1] },
+          { position: 0.32, color: [0.03, 0.2, 0.38, 1] },
+          { position: 0.58, color: [0.24, 0.6, 0.5, 1] },
+          { position: 0.8, color: [0.95, 0.62, 0.24, 1] },
+          { position: 1, color: [1, 0.95, 0.85, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+      node("cycle", "lfo", [-200, 540], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+        label: "lfo1",
+      }),
+      node("tint", "lookup", [60, 380], { channel: "green", row: 0.5 }, {
+        label: "tint1",
+        parameters: {
+          offset: drivenSlot("lfo1", 0),
+          // The kick PUNCHES the lookup's gain: every front shifts down-ramp for the
+          // length of the lag's decay — a colour pulse the whole image shares.
+          scale: drivenSlot("kscale1:onsetCount", 2.4),
+        },
+      }),
+      // The RGB delay: three taps into time, one per channel. Full scale — this ring
+      // is read for its colour, not just its motion.
+      node("tapR", "cache", [320, 300], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
+      node("tapG", "cache", [320, 440], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
+      node("tapB", "cache", [320, 580], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
+      // Reorder is two-input, so the three taps braid in two steps: red-with-green
+      // first, then the blue tap joins.
+      node("fringeRG", "reorder", [580, 370], {
+        outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a",
+      }, { label: "fringerg1" }),
+      node("fringe", "reorder", [820, 440], {
+        outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a",
+      }, { label: "fringe1" }),
+      node("out", "output", [1080, 440]),
+    ],
+    [
+      // sound
+      edge("e-music-env", ["music", "out"], ["env", "in"]),
+      edge("e-env-sgain", ["env", "out"], ["sgain", "a"]),
+      edge("e-sgain-sbase", ["sgain", "out"], ["sbase", "a"]),
+      edge("e-sbase-scap", ["sbase", "out"], ["scap", "in"]),
+      edge("e-env-wgain", ["env", "out"], ["wgain", "a"]),
+      edge("e-wgain-wbase", ["wgain", "out"], ["wbase", "a"]),
+      edge("e-wbase-wcap", ["wbase", "out"], ["wcap", "in"]),
+      edge("e-music-trig", ["music", "out"], ["trig", "in"]),
+      edge("e-trig-kick", ["trig", "out"], ["kick", "in"]),
+      edge("e-kick-kgain", ["kick", "out"], ["kgain", "a"]),
+      edge("e-kgain-kscale", ["kgain", "out"], ["kscale", "a"]),
+      // chemistry map
+      edge("e-broad-warp", ["broad", "out"], ["warp", "source"]),
+      edge("e-detail-warp", ["detail", "out"], ["warp", "disp"]),
+      edge("e-warp-shape", ["warp", "out"], ["shape", "input"]),
+      edge("e-shape-pack", ["shape", "out"], ["pack", "in2"]),
+      // the loop, wind inside it
+      edge("e-state-wind", ["state", "out"], ["wind", "input"]),
+      edge("e-wind-rd", ["wind", "out"], ["rd", "input"]),
+      edge("e-rd-pack", ["rd", "out"], ["pack", "in1"]),
+      // colour then time
+      edge("e-rd-tint", ["rd", "out"], ["tint", "source"]),
+      edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
+      edge("e-tint-tapr", ["tint", "out"], ["tapR", "input"]),
+      edge("e-tint-tapg", ["tint", "out"], ["tapG", "input"]),
+      edge("e-tint-tapb", ["tint", "out"], ["tapB", "input"]),
+      edge("e-tapr-fringerg", ["tapR", "out"], ["fringeRG", "in1"]),
+      edge("e-tapg-fringerg", ["tapG", "out"], ["fringeRG", "in2"]),
+      edge("e-fringerg-fringe", ["fringeRG", "out"], ["fringe", "in1"]),
+      edge("e-tapb-fringe", ["tapB", "out"], ["fringe", "in2"]),
+      edge("e-fringe-out", ["fringe", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 const gooeyballDocument = document(
   "e20-gooeyball",
   "E20 Gooeyball",
@@ -1826,4 +1995,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   prismDocument,
   murmurationDocument,
   gooeyballDocument,
+  audioRdDocument,
 ];

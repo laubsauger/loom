@@ -228,15 +228,46 @@ export function applySubstepLoops(
     const bodyIndices = new Set(entries.flatMap((entry, index) => (inBody(entry) ? [index] : [])));
     if (bodyIndices.size === 0) continue;
 
-    // §V288: a swap or rotation we do not own, sitting inside the span the reorder crosses,
-    // would land on the wrong side of the passes that bind it. Refuse, loudly.
+    // §V288: a swap or rotation we do not own, sitting inside the span the reorder
+    // crosses, would land on the wrong side of the passes that bind it — IF anything
+    // being moved binds it. T425 refined the original blanket refusal: the repartition
+    // moves non-body entries wholesale into `before`/`after` with their mutual order
+    // preserved, so a foreign temporal resource whose ENTIRE lifecycle (swap and every
+    // pass binding it) lives among the non-body entries cannot be re-ordered against
+    // itself — an RGB-delay cache chain downstream of the loop's colour output is the
+    // case. The refusal remains for a swap whose resource the BODY (or an ancestor,
+    // which moves to `before`) actually binds: iterating across it would read a
+    // mid-rotation half.
     const ordered = [...bodyIndices];
     const first = ordered[0] as number;
     const last = ordered[ordered.length - 1] as number;
+    const movedNodeBindsResource = (resourceId: unknown): boolean => {
+      if (typeof resourceId !== "string") return true; // unknown shape: stay conservative
+      const binds = (pass: RawPass): boolean => {
+        if (pass["target"] === resourceId || pass["resourceId"] === resourceId) return true;
+        const textures = pass["textures"];
+        if (Array.isArray(textures) && textures.some((t) => (t as RawPass)["resourceId"] === resourceId)) return true;
+        const buffers = pass["buffers"];
+        if (Array.isArray(buffers) && buffers.some((b) => (b as RawPass)["resourceId"] === resourceId)) return true;
+        return false;
+      };
+      const ancestors = ancestorsOf(loop.bodyNodes);
+      return entries.some((entry, index) => {
+        const moved =
+          bodyIndices.has(index) || [...entry.nodeIds].some((id) => ancestors.has(id));
+        if (!moved) return false;
+        return entry.passes.some((pass) => pass["kind"] !== "swap" && binds(pass));
+      });
+    };
     const trapped = entries.slice(first, last + 1).find(
       (entry, offset) =>
         !bodyIndices.has(first + offset) &&
-        entry.passes.some((pass) => pass["kind"] === "swap" && pass["id"] !== loop.swapPassId),
+        entry.passes.some(
+          (pass) =>
+            pass["kind"] === "swap" &&
+            pass["id"] !== loop.swapPassId &&
+            movedNodeBindsResource(pass["resourceId"]),
+        ),
     );
     if (trapped !== undefined) {
       // T425 emits regions at count 1 too — but a loop that CANNOT reorder (a foreign
