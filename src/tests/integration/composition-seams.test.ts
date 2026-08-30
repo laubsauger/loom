@@ -75,6 +75,11 @@ const ENTRY_POINTS = [
  */
 const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
   {
+    name: "createHeadlessMcpServer",
+    reason:
+      "Constructed by serveStdio() in the SAME module — the stdio MCP server's own process entry point (T294), which this scan does not treat as an app root. serve.gpu.test.ts drives it end to end with real pixels.",
+  },
+  {
     name: "createSequentialIdFactory",
     reason:
       "Deliberately never used in the app — its own docstring says so. Two sessions would mint identical ids and collide on merge (§V40). Fixtures and the shipped-component builder only.",
@@ -106,11 +111,6 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
     name: "createFrameRecorder",
     reason:
       "Sequence recording is export-side and has no UI entry point yet; `recordSequence` is driven by tests and the headless path.",
-  },
-  {
-    name: "createPixelProbe",
-    reason:
-      "Live pixel inspection is reachable through the agent's `describe_output`; the standalone probe has no separate mount.",
   },
   {
     name: "createShaderCompilePipeline",
