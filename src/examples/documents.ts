@@ -771,6 +771,103 @@ const instancedTorusDocument = document(
   ),
 );
 
+/**
+ * E11 — Gradient Remap (T354, T270).
+ *
+ *   noise1(noise) ──► lookup1.source ─┐
+ *   ramp1(ramp, 5 stops) ─► .lookup ──┴─► lookup1(lookup) ─► out1(output)
+ *
+ * Ramp into Lookup is the standard way to recolour an image through a palette, and it is
+ * the pairing multi-stop Ramp (T270) was built for: with two colours it is a tinted
+ * greyscale and barely worth wiring: the fifth stop is what makes it a PALETTE. The noise
+ * supplies structure, its luminance is read as a POSITION along the gradient, and the
+ * colour found there is the output — so every pixel's brightness becomes a hue.
+ *
+ * The two inputs are not interchangeable and the manifest's policies say so: resolution
+ * inherits `source` (the image whose shape survives), format inherits `lookup` (the output
+ * pixels ARE the palette's pixels, so their space belongs to the palette).
+ *
+ * This is also multi-stop Ramp's only shipped regression test, and a better one than a
+ * unit test: §V196 decodes a display-space colour PER ENTRY, and a list makes a
+ * double-decode or a dropped entry N times harder to see because the eye checks one swatch
+ * and assumes the rest. Here a mis-decoded stop is a WRONG PALETTE — the whole image goes
+ * muddy or the midtones lose their hue, which is legible at a glance.
+ */
+const gradientRemapDocument = document(
+  "e11-gradient-remap",
+  "E11 Gradient Remap",
+  settings({ randomSeed: 11 }),
+  graph(
+    [
+      node(
+        "field",
+        "noise",
+        [-640, -120],
+        {
+          type: "perlin2d",
+          // Large, soft features: the palette needs broad areas to show a hue in, and a
+          // fine field would dither five colours into visual mud.
+          period: 0.9,
+          harmon: 4,
+          spread: 2,
+          gain: 0.55,
+          rough: 0.5,
+          exp: 1,
+          amp: 1,
+          offset: 0,
+          mono: true,
+          aspectcorrect: true,
+          seed: 3,
+          s4d: 1,
+          t4d: 0,
+          speed: 0,
+        },
+        { label: "noise1" },
+      ),
+      node(
+        "palette",
+        "ramp",
+        [-640, 160],
+        {
+          type: "horizontal",
+          interp: "smooth",
+          phase: 0,
+          period: 1,
+          /**
+           * Five stops with real hue movement — indigo to magenta to red to amber to a
+           * pale highlight. Stored in DISPLAY space (§V56), which is what a colour picker
+           * hands over, and decoded per entry on the way to the shader (§V196).
+           */
+          stops: [
+            { position: 0, color: [0.04, 0.03, 0.18, 1] },
+            { position: 0.3, color: [0.45, 0.09, 0.52, 1] },
+            { position: 0.55, color: [0.86, 0.24, 0.29, 1] },
+            { position: 0.8, color: [0.98, 0.62, 0.16, 1] },
+            { position: 1, color: [1, 0.95, 0.78, 1] },
+          ],
+        },
+        { label: "ramp1", definitionVersion: 2 },
+      ),
+      node(
+        "remap",
+        "lookup",
+        [-260, 0],
+        // Luminance is the index: a mono field's brightness IS its position along the
+        // palette. `row` picks the middle of the gradient image, which is the whole of it
+        // for a horizontal ramp.
+        { channel: "luminance", row: 0.5, offset: 0, scale: 1 },
+        { label: "lookup1" },
+      ),
+      node("out", "output", [120, 0], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-field-remap", ["field", "out"], ["remap", "source"]),
+      edge("e-palette-remap", ["palette", "out"], ["remap", "lookup"]),
+      edge("e-remap-out", ["remap", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 /** Every example, in the order they are meant to be read. */
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -783,4 +880,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   slitScanDocument,
   particleFountainDocument,
   instancedTorusDocument,
+  gradientRemapDocument,
 ];

@@ -38,10 +38,11 @@ const FRAME_COUNT = 6;
 describe("examples: the gate", () => {
   it("finds the examples the spec names", () => {
     // §C names them. Discovery would happily report "0 examples, all passing".
-    // Lexicographic listing order: E10 sorts between E1 and E2.
+    // Lexicographic listing order: E10 and E11 sort between E1 and E2.
     expect(examples.map((file) => file.fileName)).toEqual([
       "E1-Feedback-Echo.loom.json",
       "E10-Instanced-Torus.loom.json",
+      "E11-Gradient-Remap.loom.json",
       "E2-Reaction-Diffusion.loom.json",
       "E3-Animated-Noise-Field.loom.json",
       "E4-Bloom.loom.json",

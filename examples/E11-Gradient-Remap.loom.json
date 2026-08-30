@@ -1,0 +1,182 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-field-remap": {
+        "id": "e-field-remap",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "remap",
+          "portId": "source"
+        }
+      },
+      "e-palette-remap": {
+        "id": "e-palette-remap",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "remap",
+          "portId": "lookup"
+        }
+      },
+      "e-remap-out": {
+        "id": "e-remap-out",
+        "source": {
+          "nodeId": "remap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "noise1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 4,
+          "mono": true,
+          "offset": 0,
+          "period": 0.9,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 3,
+          "speed": 0,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin2d"
+        },
+        "position": {
+          "x": -640,
+          "y": -120
+        },
+        "type": "noise"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "ramp1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.04,
+                0.03,
+                0.18,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.45,
+                0.09,
+                0.52,
+                1
+              ],
+              "position": 0.3
+            },
+            {
+              "color": [
+                0.86,
+                0.24,
+                0.29,
+                1
+              ],
+              "position": 0.55
+            },
+            {
+              "color": [
+                0.98,
+                0.62,
+                0.16,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                1,
+                0.95,
+                0.78,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -640,
+          "y": 160
+        },
+        "type": "ramp"
+      },
+      "remap": {
+        "definitionVersion": 1,
+        "id": "remap",
+        "label": "lookup1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "lookup"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E11 Gradient Remap",
+  "projectId": "example-e11-gradient-remap",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 11,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

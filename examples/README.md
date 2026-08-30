@@ -24,6 +24,7 @@ happened:
 | [E8 Slit Scan](./E8-Slit-Scan.md) | per-pixel time from a 48-frame ring bound as one texture array (T321, §V229) |
 | [E9 Particle Fountain](./E9-Particle-Fountain.md) | GPU-side kill and spawn, deterministic compaction, indirect draw off a live count (§V74, T322/T323) |
 | [E10 Instanced Torus](./E10-Instanced-Torus.md) | lit 3D primitives on generated points via the edge payload; a driven component spins it (§V197, §V198, §V113) |
+| [E11 Gradient Remap](./E11-Gradient-Remap.md) | Ramp into Lookup: a multi-stop palette remapping an image by luminance; per-entry colour decode (T270, §V196) |
 
 ## Running them
 
