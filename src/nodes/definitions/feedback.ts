@@ -41,9 +41,11 @@ export const feedbackNode: NodeDefinition = {
       id: "in",
       label: "In",
       type: RGBA_TEXTURE,
-      description: "Written into the pair this frame; comes back out one frame later.",
+      description:
+        "Fed by the SOURCE reference (T350). Legacy documents may still wire it; the editor only ever writes the reference.",
     },
   ],
+  sourceReference: { parameter: "source", input: "in" },
   outputs: [
     {
       id: "out",
@@ -53,6 +55,19 @@ export const feedbackNode: NodeDefinition = {
     },
   ],
   parameters: {
+    /**
+     * T350 (§V285): the loop is a REFERENCE, not a wire. Naming the source keeps
+     * `edges` a DAG — the confusing back-edge is gone and the dashed line (T248)
+     * shows the relationship instead. The compiler synthesizes the exact edge the
+     * wired shape had, so every temporal mechanism downstream is unchanged.
+     */
+    source: {
+      type: "string",
+      label: "Source",
+      default: "",
+      compileTime: true,
+      description: "Name of the node this loop records — e.g. over1. The dashed line shows the link.",
+    },
     persistence: {
       type: "number",
       label: "Persistence",

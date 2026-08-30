@@ -161,7 +161,7 @@
   },
   "name": "E11 Gradient Remap",
   "projectId": "example-e11-gradient-remap",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

@@ -94,3 +94,47 @@ describe("reference rewriting (§V128)", () => {
     expect(countNodeNameReferences(graph, "other")).toBe(0);
   });
 });
+
+describe("rename rewrites EVERY reference kind (§V128, §V316)", () => {
+  const graphWith = (parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    ({
+      revision: 1,
+      nodes: {
+        lfo: { id: "lfo", type: "lfo", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "lfo1" },
+        user: { id: "user", type: "cross", definitionVersion: 1, position: { x: 0, y: 0 }, parameters, ...extra },
+      },
+      edges: {},
+      groups: {},
+    }) as never;
+
+  it("kind 2 (B40): a driven channel follows the rename — with and without a :channel", () => {
+    const graph = graphWith({
+      a: { mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1" } } },
+      b: { mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1:x" } } },
+      c: { mode: "driven", bindings: { driven: { kind: "driven", channel: "other1" } } },
+    });
+    const rewritten = rewriteNodeNameReferences(graph, "lfo1", "wobble");
+    expect(rewritten).toBe(2);
+    const parameters = (graph as { nodes: Record<string, { parameters: Record<string, { bindings: { driven: { channel: string } } }> }> })
+      .nodes["user"]!.parameters;
+    expect(parameters["a"]?.bindings.driven.channel).toBe("wobble");
+    expect(parameters["b"]?.bindings.driven.channel).toBe("wobble:x");
+    expect(parameters["c"]?.bindings.driven.channel).toBe("other1");
+  });
+
+  it("kind 3 (T350): a feedback source follows the rename", () => {
+    const graph = {
+      revision: 1,
+      nodes: {
+        mix: { id: "mix", type: "over", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "over1" },
+        echo: { id: "echo", type: "feedback", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { source: "over1" } },
+      },
+      edges: {},
+      groups: {},
+    } as never;
+    expect(rewriteNodeNameReferences(graph, "over1", "blend")).toBe(1);
+    expect(
+      (graph as { nodes: Record<string, { parameters: Record<string, unknown> }> }).nodes["echo"]!.parameters["source"],
+    ).toBe("blend");
+  });
+});

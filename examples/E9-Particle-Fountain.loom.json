@@ -81,7 +81,7 @@
   },
   "name": "E9 Particle Fountain",
   "projectId": "example-e9-particle-fountain",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

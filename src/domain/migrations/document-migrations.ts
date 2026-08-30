@@ -62,7 +62,84 @@ const previewPinBecomesSwitch: DocumentMigration = {
   },
 };
 
-export const DOCUMENT_MIGRATIONS: readonly DocumentMigration[] = [previewPinBecomesSwitch];
+function rawEdges(document: RawDocument): Record<string, Record<string, unknown>> {
+  const graph = document["graph"];
+  if (typeof graph !== "object" || graph === null) return {};
+  const edges = (graph as Record<string, unknown>)["edges"];
+  if (typeof edges !== "object" || edges === null) return {};
+  return edges as Record<string, Record<string, unknown>>;
+}
+
+/**
+ * 2 → 3 (T350, §V285): feedback loops stop being WIRED. A feedback node's `in` edge
+ * becomes a `source` parameter naming the source node, and the edge is deleted —
+ * `edges` is a DAG from here on, and the loop the user sees is the dashed reference.
+ *
+ * The name written is the node's effective name (its label, or the auto-number the
+ * name derivation assigns) — the same currency driven channels and op() use (§V129).
+ * The compiler synthesizes the identical edge back at compile time, so a converted
+ * document's PLAN is byte-identical to the wired one's; the equivalence test pins it.
+ */
+const feedbackLoopBecomesReference: DocumentMigration = {
+  from: 2,
+  to: 3,
+  description: "Feedback takes its source by NAME: the wired in-edge becomes the `source` parameter.",
+  migrate(document) {
+    const nodes = rawNodes(document);
+    const edges = rawEdges(document);
+    for (const [edgeId, edge] of Object.entries(edges)) {
+      const target = edge["target"] as { nodeId?: string; portId?: string } | undefined;
+      if (target?.portId !== "in") continue;
+      const targetNode = nodes[target.nodeId ?? ""];
+      if (targetNode?.["type"] !== "feedback") continue;
+      const source = edge["source"] as { nodeId?: string } | undefined;
+      const sourceNode = nodes[source?.nodeId ?? ""];
+      if (sourceNode === undefined) continue;
+      const name = effectiveName(nodes, source?.nodeId ?? "");
+      if (name === undefined) continue;
+      const parameters = (targetNode["parameters"] ?? {}) as Record<string, unknown>;
+      parameters["source"] = name;
+      targetNode["parameters"] = parameters;
+      delete edges[edgeId];
+    }
+    return document;
+  },
+};
+
+/**
+ * The source node's NAME — its label, or one this migration ASSIGNS. Names are labels
+ * and nothing else (`nodeNames` in names.ts): an unlabeled node has NO name, so a
+ * reference to a derived-but-unwritten name would dangle at compile. Assigning the
+ * label makes the name real, the way creating the node in the editor would have.
+ */
+function effectiveName(
+  nodes: Record<string, Record<string, unknown>>,
+  nodeId: string,
+): string | undefined {
+  const node = nodes[nodeId];
+  if (node === undefined) return undefined;
+  const label = node["label"];
+  if (typeof label === "string" && label.trim() !== "") return label.trim();
+  const type = node["type"];
+  if (typeof type !== "string") return undefined;
+  const taken = new Set(
+    Object.values(nodes)
+      .map((entry) => entry["label"])
+      .filter((value): value is string => typeof value === "string"),
+  );
+  for (let index = 1; ; index += 1) {
+    const candidate = `${type}${index}`;
+    if (!taken.has(candidate)) {
+      node["label"] = candidate;
+      return candidate;
+    }
+  }
+}
+
+export const DOCUMENT_MIGRATIONS: readonly DocumentMigration[] = [
+  previewPinBecomesSwitch,
+  feedbackLoopBecomesReference,
+];
 
 export interface MigrateDocumentOptions {
   migrations?: readonly DocumentMigration[];

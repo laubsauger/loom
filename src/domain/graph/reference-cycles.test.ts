@@ -123,3 +123,37 @@ describe("op() reference cycles (§V152)", () => {
     expect(referenceCyclesThrough(graphOf(a, b), "n1")).toHaveLength(1);
   });
 });
+
+describe("the feedback kind is EXEMPT (T350/§V285)", () => {
+  it("a feedback reference closing a loop is not a refusable cycle — closing it is its job", () => {
+    // over reads op('echo') in an expression; echo names over as its source. Through
+    // the walk that is a cycle — and it is exactly the legal one the temporal split
+    // exists for. The gate rules on `reference` chains only.
+    const graph = {
+      revision: 1,
+      nodes: {
+        mix: {
+          id: "mix",
+          type: "over",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: {
+            opacity: { mode: "expression", bindings: { expression: { kind: "expression", source: "op('echo1').par.persistence" } } },
+          },
+          label: "over1",
+        },
+        echo: {
+          id: "echo",
+          type: "feedback",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: { source: "over1" },
+          label: "echo1",
+        },
+      },
+      edges: {},
+      groups: {},
+    } as never;
+    expect(referenceCycleDiagnostics(graph)).toEqual([]);
+  });
+});

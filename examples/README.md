@@ -25,6 +25,8 @@ happened:
 | [E9 Particle Fountain](./E9-Particle-Fountain.md) | GPU-side kill and spawn, deterministic compaction, indirect draw off a live count (§V74, T322/T323) |
 | [E10 Instanced Torus](./E10-Instanced-Torus.md) | lit 3D primitives on generated points via the edge payload; a driven component spins it (§V197, §V198, §V113) |
 | [E11 Gradient Remap](./E11-Gradient-Remap.md) | Ramp into Lookup: a multi-stop palette remapping an image by luminance; per-entry colour decode (T270, §V196) |
+| [E12 Fluid](./E12-Fluid.md) | two temporal states — a velocity field carrying a dye; advection as a Displace; the pointer stirs both halves (§V182, §V236) |
+| [E13 Prism](./E13-Prism.md) | the showcase: dispersion through three refractions, per-point colour, LFO → Lag, Mouse → Lag, an expression (T364, §V179, §V71) |
 
 ## Running them
 
@@ -44,6 +46,8 @@ step — there is no list to add it to.
 - `concepts.test.ts` — the specific claim each example's doc makes.
 - `sync.test.ts` — these files are byte-identical to what the app's own save path writes.
 - `component-sync.test.ts` — the same for `components/`, plus the §V89 gate on each.
+- `examples.gpu.test.ts` — every example built on **Dawn**: the one place the WGSL an
+  example ships is actually compiled. See "What the gate cannot check" below.
 
 ## `components/` — the starter component set
 
@@ -94,6 +98,17 @@ There is no GPU in CI. "Renders deterministically" here means:
 
 It does **not** mean pixels. The mock device executes no shaders, so a readback returns
 zeroes; comparing those images would be a test that looks like it verifies rendering and
-does not. Pixel-level parity between browser and headless is the Dawn track's gate (§V47),
-and WGSL in these files is not compiled by any validator here — a shader error in an
-example would surface on a real device, not in this suite.
+does not. Pixel-level parity between browser and headless is the Dawn track's gate (§V47).
+
+The WGSL an example ships **is** compiled, but only since `examples.gpu.test.ts` (T362):
+before that, E2's Gray-Scott kernel had shipped for a week without any validator ever
+looking at it, because the mock host does not compile shaders. That test builds every
+example's plan on Dawn — which reflects each module, resolves every binding by name and
+creates the pipelines — and steps six frames. Running the same file on both hosts is
+§V280's rule: the mock proves the plan is constructible, Dawn proves the shaders are real,
+and neither finds the other's bugs.
+
+It checks **one** pixel property, deliberately, and only for E12: with the stirring force on
+the dye reaches thirty-two times more of the frame than with it off. "It flows" is a claim
+about pixels, and every other assertion in the suite is one a motionless fluid would also
+satisfy (§V147, B15). There is still no reference-image comparison anywhere.

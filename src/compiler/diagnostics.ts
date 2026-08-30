@@ -48,6 +48,10 @@ export const CompilerDiagnosticCode = {
   passthroughUnconnected: "compiler/passthrough-unconnected",
   /** T356: bypass on a converter — no input matches the output's kind; muted instead. */
   bypassIncoherent: "compiler/bypass-incoherent",
+  /** T350: a source reference naming no existing node (or one with no output). */
+  sourceReferenceMissing: "compiler/source-reference-missing",
+  /** T350: a source reference AND a wired input on the same loop — one truth. */
+  sourceReferenceAmbiguous: "compiler/source-reference-ambiguous",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

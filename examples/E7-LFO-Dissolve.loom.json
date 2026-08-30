@@ -135,7 +135,7 @@
   },
   "name": "E7 LFO Dissolve",
   "projectId": "example-e7-lfo-dissolve",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

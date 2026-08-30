@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sourceReferenceName } from "../domain/graph/source-references.ts";
 import { compileGraph, diffPlans, feedbackToReset, swapPassId } from "../compiler/index.ts";
 import type { CompiledGraph } from "../compiler/index.ts";
 import type { GraphDocument, ProjectDocument } from "../domain/types/graph.ts";
@@ -98,24 +99,37 @@ function compile(document: ProjectDocument, graph: GraphDocument): CompiledGraph
 }
 
 describe("examples with a temporal loop", () => {
-  it("covers E1 and E2 — the two the spec builds on Feedback", () => {
+  it("covers every example the spec builds on Feedback", () => {
+    // Lexicographic, so E12 sorts between E1 and E2. E12 closes TWO loops in one file
+    // (velocity and dye), which is why it is the one that would notice a swap ordered
+    // per-plan rather than per-pair.
     expect(temporalExamples.map((entry) => entry.file.fileName)).toEqual([
       "E1-Feedback-Echo.loom.json",
+      "E12-Fluid.loom.json",
       "E2-Reaction-Diffusion.loom.json",
     ]);
   });
 });
 
 describe.each(temporalExamples)("$file.fileName temporal structure", ({ document, plan }) => {
-  /** §V4: the graph has a cycle, and it is legal because a temporal edge is in it. */
-  it("closes a real cycle through the temporal node", () => {
+  /**
+   * §V4 → §V285: the LOOP is real, but since T350 the document no longer wires it —
+   * Feedback NAMES its source, `edges` stays a DAG, and the compiler synthesizes the
+   * closing edge. A legacy document may still wire it (the loader accepts both, never
+   * both at once); either way the temporal node is fed and feeds the loop.
+   */
+  it("closes a real loop through the temporal node — by reference or legacy wire", () => {
     const edges = Object.values(document.graph.edges);
     const temporalNodes = new Set(plan.feedback.map((pair) => pair.nodeId));
 
-    // Something feeds the feedback node, and the feedback node feeds something: that is a
-    // cycle by construction, since the compiler already refused any illegal one.
     for (const nodeId of temporalNodes) {
-      expect(edges.some((edge) => edge.target.nodeId === nodeId)).toBe(true);
+      const node = document.graph.nodes[nodeId];
+      const fedByReference =
+        node !== undefined && sourceReferenceName(node.type, node.parameters) !== undefined;
+      const fedByWire = edges.some((edge) => edge.target.nodeId === nodeId);
+      expect(fedByReference || fedByWire, `${nodeId} must be fed`).toBe(true);
+      // One loop, one truth: never both (the compiler refuses the ambiguity).
+      expect(fedByReference && fedByWire).toBe(false);
       expect(edges.some((edge) => edge.source.nodeId === nodeId)).toBe(true);
     }
     expect(temporalNodes.size).toBeGreaterThan(0);

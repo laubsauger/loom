@@ -3,6 +3,7 @@ import type { NodeId } from "../types/ids.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
 import { parseExpression, type ExpressionAst } from "../expressions/index.ts";
 import { nodeNames } from "./names.ts";
+import { sourceReferenceName, sourceReferenceOf } from "./source-references.ts";
 
 /**
  * What a parameter DEPENDS ON, as edges between nodes (T248, §V154).
@@ -35,7 +36,15 @@ export type ParameterDependencyKind =
   /** `op('name').par.key` inside an expression (§V127). */
   | "reference"
   /** A `driven` slot naming a value node's channel (§V143, T238). */
-  | "driven";
+  | "driven"
+  /**
+   * T350 (§V285): a source-reference parameter naming the node a Feedback records.
+   * Who rules on it: LIVENESS counts it (the source chain is alive, §V154); the
+   * LINES draw it (the loop the user sees is this, dashed); the CYCLE GATE exempts
+   * it — closing the loop is this reference's entire purpose, and the compiler's
+   * temporal split is what legalises the cycle it closes.
+   */
+  | "feedback";
 
 export interface ParameterDependency {
   readonly from: NodeId;
@@ -124,6 +133,20 @@ export function bindingTargets(
   return targets;
 }
 
+/** The `kind: "feedback"` half: a source-reference parameter, resolved like any name. */
+function sourceReferenceDependency(
+  node: GraphNode,
+  nodeId: NodeId,
+  byName: ReadonlyMap<string, NodeId>,
+): ParameterDependency[] {
+  const spec = sourceReferenceOf(node.type);
+  const name = sourceReferenceName(node.type, node.parameters);
+  if (spec === undefined || name === undefined) return [];
+  const to = byName.get(name);
+  if (to === undefined) return [];
+  return [{ from: nodeId, parameterKey: spec.parameter, kind: "feedback", address: name, to }];
+}
+
 /** The name each kind of address resolves against — the one place the two differ. */
 const targetNameOf = (kind: ParameterDependencyKind, address: string): string =>
   kind === "driven" ? channelTargetName(address) : address;
@@ -150,6 +173,7 @@ export function parameterDependencies(graph: GraphDocument): Map<NodeId, Paramet
       if (to === undefined) continue;
       outgoing.push({ from: nodeId, parameterKey, kind, address, to });
     }
+    outgoing.push(...sourceReferenceDependency(node, nodeId, byName));
     if (outgoing.length > 0) found.set(nodeId, outgoing);
   }
 
@@ -160,6 +184,7 @@ export function parameterDependencies(graph: GraphDocument): Map<NodeId, Paramet
 export function dependenciesFrom(graph: GraphDocument, node: GraphNode, nodeId: NodeId): ParameterDependency[] {
   const byName = nodeNames(graph);
   const outgoing: ParameterDependency[] = [];
+  outgoing.push(...sourceReferenceDependency(node, nodeId, byName));
   for (const { parameterKey, kind, address } of bindingTargets(node.parameters)) {
     const to = byName.get(targetNameOf(kind, address));
     if (to === undefined) continue;

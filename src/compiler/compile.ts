@@ -1,6 +1,9 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
+import { nodeNames } from "../domain/graph/names.ts";
+import { sourceReferenceName, sourceReferenceOf } from "../domain/graph/source-references.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
+import type { GraphDocument, GraphEdge } from "../domain/types/graph.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
 import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
@@ -612,7 +615,72 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     // §V83: a recursive graph expands for ever. It stops here, with the cycle named.
     if (flattened.recursion !== null) return emptyPlan(stamp(diagnostics), [], sourceRows);
   }
-  const graph = flattened?.graph ?? request.graph;
+  const flatGraph = flattened?.graph ?? request.graph;
+
+  // T350 (§V285): a SOURCE REFERENCE synthesizes the exact edge the wired shape had.
+  // The document stays a DAG; everything downstream — V13 validation, inheritance
+  // through the input, the temporal split, the pair, the swap — is the machinery that
+  // already existed, so the ref and the wire compile to IDENTICAL plans by
+  // construction. A dangling name and a ref-plus-wire ambiguity are both said here.
+  const graph = ((): GraphDocument => {
+    let synthesized: Record<string, GraphEdge> | undefined;
+    const names = nodeNames(flatGraph);
+    for (const nodeId of Object.keys(flatGraph.nodes).sort()) {
+      const node = flatGraph.nodes[nodeId];
+      if (node === undefined) continue;
+      const spec = sourceReferenceOf(node.type);
+      if (spec === undefined) continue;
+      const name = sourceReferenceName(node.type, node.parameters);
+      const wired = Object.values(flatGraph.edges).find(
+        (edge) => edge.target.nodeId === nodeId && edge.target.portId === spec.input,
+      );
+      if (name === undefined) continue; // unwired AND unnamed = the ordinary missing-input story
+      if (wired !== undefined) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "error",
+            CompilerDiagnosticCode.sourceReferenceAmbiguous,
+            `Node "${nodeId}" (${node.type}) names source "${name}" AND has "${spec.input}" wired; one loop, one truth.`,
+            { nodeId, suggestion: `Clear the ${spec.parameter} parameter, or disconnect the wire.` },
+          ),
+        );
+        continue;
+      }
+      const sourceId = names.get(name);
+      if (sourceId === undefined) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "error",
+            CompilerDiagnosticCode.sourceReferenceMissing,
+            `Node "${nodeId}" (${node.type}) names source "${name}", which no node in the document is called.`,
+            { nodeId, suggestion: "Name an existing node, or rename the intended one to match." },
+          ),
+        );
+        continue;
+      }
+      const sourceNode = flatGraph.nodes[sourceId];
+      const sourceDefinition = sourceNode === undefined ? undefined : registry.get(sourceNode.type);
+      const sourcePort = sourceDefinition?.outputs[0]?.id;
+      if (sourcePort === undefined) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "error",
+            CompilerDiagnosticCode.sourceReferenceMissing,
+            `Node "${nodeId}" (${node.type}) names source "${name}", which has no output to record.`,
+            { nodeId },
+          ),
+        );
+        continue;
+      }
+      synthesized ??= { ...flatGraph.edges };
+      synthesized[`ref:${nodeId}`] = {
+        id: `ref:${nodeId}`,
+        source: { nodeId: sourceId, portId: sourcePort },
+        target: { nodeId, portId: spec.input },
+      };
+    }
+    return synthesized === undefined ? flatGraph : { ...flatGraph, edges: synthesized };
+  })();
 
   // A sink naming an instance has to follow it into the flattening (§V25, §V28).
   const explicitSinks: ReadonlyArray<ActiveSink> | undefined =

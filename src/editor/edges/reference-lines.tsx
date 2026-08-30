@@ -48,6 +48,9 @@ const KIND_COLOR: Record<ParameterDependencyKind, string> = {
   driven: "var(--port-value)",
   // An expression reference belongs to no family; quiet grey, clearly not a signal.
   reference: "var(--text-dim)",
+  // T350: the feedback loop the user used to WIRE — the temporal family's own hue,
+  // because this line is the loop.
+  feedback: "var(--port-texture2d)",
 };
 
 const DASH_PX = 6;

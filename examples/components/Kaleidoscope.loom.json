@@ -300,7 +300,7 @@
   },
   "name": "Kaleidoscope",
   "projectId": "component-kaleidoscope",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

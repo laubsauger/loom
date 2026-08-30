@@ -111,3 +111,37 @@ describe("parameterDependencies (§V154)", () => {
     expect(found?.map((entry) => entry.kind)).toEqual(["driven", "reference"]);
   });
 });
+
+describe("the feedback kind (T350/§V285)", () => {
+  it("a source reference is a dependency the walk reports — liveness and the lines read it", () => {
+    const graph = {
+      revision: 1,
+      nodes: {
+        mix: { id: "mix", type: "over", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "over1" },
+        echo: { id: "echo", type: "feedback", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { source: "over1" } },
+      },
+      edges: {},
+      groups: {},
+    } as never;
+    const deps = [...parameterDependencies(graph).values()].flat();
+    expect(deps).toContainEqual({
+      from: "echo",
+      parameterKey: "source",
+      kind: "feedback",
+      address: "over1",
+      to: "mix",
+    });
+  });
+
+  it("a dangling name is dropped, like every other unresolved address", () => {
+    const graph = {
+      revision: 1,
+      nodes: {
+        echo: { id: "echo", type: "feedback", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { source: "ghost1" } },
+      },
+      edges: {},
+      groups: {},
+    } as never;
+    expect([...parameterDependencies(graph).values()].flat()).toEqual([]);
+  });
+});

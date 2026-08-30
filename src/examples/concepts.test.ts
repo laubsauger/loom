@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { compileGraph, CompilerDiagnosticCode } from "../compiler/index.ts";
 import type { CompiledGraph } from "../compiler/index.ts";
+import { createValueGraphSession } from "../domain/channels/value-graph.ts";
+import { sourceReferenceName } from "../domain/graph/source-references.ts";
 import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
+import type { FrameEvaluationInput } from "../domain/types/frame.ts";
 import type { GraphDocument, GraphNode, ProjectDocument } from "../domain/types/graph.ts";
 import type { SelectableColorFormat } from "../domain/types/node-definition.ts";
-import type { EffectPassDescriptor } from "../runtime/backend/plan.ts";
+import type { DrawPassDescriptor, EffectPassDescriptor } from "../runtime/backend/plan.ts";
+import { sharedUniformsFromFrame } from "../runtime/backend/shared-uniforms.ts";
 import { EXTEND_OPTIONS } from "../nodes/definitions/parameter-readers.ts";
 import { NOISE_TYPE_OPTIONS } from "../nodes/shaders/noise.wgsl.ts";
 import { srgbToLinear } from "../domain/parameters/resolve.ts";
@@ -53,6 +57,62 @@ function recompile(document: ProjectDocument, graph: GraphDocument): CompiledGra
     capabilities: TIER_B_CAPABILITIES,
   });
 }
+
+interface Pointer {
+  readonly x: number;
+  readonly y: number;
+  readonly buttons: number;
+}
+
+/**
+ * A LIVE value-graph session over one example, stepped a frame at a time (§V179).
+ *
+ * The examples' own gate compiles with no `resolution` at all, so every driven parameter
+ * there resolves to its §V108 retained value — which is correct for a structural compile
+ * and proves nothing about whether the wiring WORKS. This runs the real session, hands its
+ * resolver to the real compiler, and returns the plan the runtime would push.
+ *
+ * The session is held ACROSS steps deliberately: a Lag is stateful (§V181), so a fresh
+ * session per frame would restart its trajectory and every smoothing assertion below would
+ * pass against a build with no smoothing in it at all.
+ */
+function valueGraphRun(document: ProjectDocument) {
+  const session = createValueGraphSession(exampleRegistry());
+  let frameIndex = 0;
+
+  const frameAt = (index: number): FrameEvaluationInput => ({
+    timeSeconds: index / 60,
+    deltaSeconds: 1 / 60,
+    frameIndex: index,
+    mode: "offline",
+    randomSeed: document.settings.randomSeed,
+  });
+
+  return {
+    /** Advance one frame at this pointer and compile at the values it produced. */
+    step(pointer: Pointer): { plan: CompiledGraph; frame: FrameEvaluationInput } {
+      const frame = frameAt(frameIndex);
+      frameIndex += 1;
+      const { resolver } = session.evaluate(document.graph, frame, { pointer: { ...pointer } });
+      const plan = compileGraph({
+        graph: document.graph,
+        settings: document.settings,
+        registry: exampleRegistry(),
+        capabilities: TIER_B_CAPABILITIES,
+        resolution: { frame, channels: resolver },
+      });
+      return { plan, frame };
+    },
+    /** Advance `count` frames at one pointer; the last plan is returned. */
+    hold(pointer: Pointer, count: number): { plan: CompiledGraph; frame: FrameEvaluationInput } {
+      let last = this.step(pointer);
+      for (let index = 1; index < count; index += 1) last = this.step(pointer);
+      return last;
+    },
+  };
+}
+
+const CENTRE: Pointer = { x: 0.5, y: 0.5, buttons: 0 };
 
 /** Same graph with one node's `format` override replaced or dropped. For the control cases. */
 function withFormat(
@@ -107,7 +167,10 @@ describe("E2 Reaction-Diffusion", () => {
     const intoKernel = edges.filter((edge) => edge.target.nodeId === "kernel");
     expect(intoKernel).toHaveLength(1);
     expect(intoKernel[0]?.source).toEqual({ nodeId: "state", portId: "out" });
-    expect(edges.some((e) => e.source.nodeId === "kernel" && e.target.nodeId === "state")).toBe(true);
+    // T350 (§V285): the back half of the loop is a NAME, not a wire — the feedback
+    // names the kernel and the compiler synthesizes the closing edge.
+    expect(document.graph.nodes["state"]?.parameters["source"]).toBe("kernel1");
+    expect(edges.some((e) => e.target.nodeId === "state")).toBe(false);
   });
 
   /**
@@ -510,5 +573,366 @@ describe("E11 Gradient Remap", () => {
   it("reads the source's LUMINANCE as the position along the gradient", () => {
     expect(effectFor(plan, "remap").uniforms?.["channel"]).toBe(0);
     expect(document.graph.nodes["remap"]?.parameters["channel"]).toBe("luminance");
+  });
+});
+
+describe("E12 Fluid", () => {
+  const { document, plan } = example("E12-Fluid.loom.json");
+
+  const ADVECT = "advect";
+  const STIR = "stir";
+
+  /**
+   * The claim that separates this file from E2: a fluid has TWO states.
+   *
+   * E2's whole simulation lives in one ping-pong pair, because a chemistry generates its
+   * pattern where the pattern is. A fluid CARRIES one — the velocity field is a state, the
+   * dye is a state, and the only connection between them is that one is the coordinate the
+   * other is sampled at. Collapse this to one loop and it stops being a fluid; it renders
+   * fine and it is E2 with different constants.
+   */
+  it("keeps the velocity and the dye as two separate temporal states", () => {
+    const pairs = plan.feedback.map((entry) => entry.nodeId).sort();
+    expect(pairs).toEqual(["dye", "velocity"]);
+
+    const advect = effectFor(plan, ADVECT);
+    const bound = new Map((advect.textures ?? []).map((t) => [t.binding, t.resourceId]));
+    // The DYE is the image being moved; the VELOCITY is the field moving it. Swapped, the
+    // dye becomes a coordinate field and the picture is still a picture.
+    expect(bound.get("inputTexture")).toBe(outputFor(plan, "dye").resourceId);
+    expect(bound.get("displaceTexture")).toBe(outputFor(plan, STIR).resourceId);
+  });
+
+  /**
+   * THE SIGN. Semi-Lagrangian advection samples UPSTREAM: the dye arriving here came from
+   * `uv - v`. A positive weight samples downstream instead — the unstable forward scheme —
+   * and the difference is not a crash or a black frame, it is a fluid that still flows and
+   * blows itself apart over a minute. This is the parameter that dies first, so it is the
+   * one that is pinned rather than the presence of the Displace node.
+   *
+   * `offset` is [0, 0] for the same reason: the field is SIGNED, so zero means "no motion".
+   * At the 0.5 default the whole frame would slide diagonally for ever.
+   */
+  it("advects backward, against a signed velocity field", () => {
+    const uniforms = effectFor(plan, ADVECT).uniforms as Record<string, readonly number[]>;
+    const weight = uniforms["weight"] as readonly number[];
+
+    expect(weight).toHaveLength(2);
+    expect(weight[0]).toBeLessThan(0);
+    expect(weight[1]).toBeLessThan(0);
+    expect(uniforms["offset"]).toEqual([0, 0]);
+  });
+
+  /**
+   * §V6, and the reason the velocity is not one frame stale: the kernel's output is the
+   * texture that closes the velocity loop AND the field the dye is displaced by, rendered
+   * once. Reading `vel1.out` instead would work and would put the dye a frame behind the
+   * flow carrying it — invisible in a still, wrong in motion.
+   */
+  it("steers the dye with THIS frame's velocity, computed once", () => {
+    const kernelPasses = plan.passes.filter((pass) => pass.kind === "effect" && pass.nodeId === STIR);
+    expect(kernelPasses).toHaveLength(1);
+
+    // T350 (§V285): the loop's back half is a NAME, so `edges` carries only the forward
+    // consumer and the reference carries the other. Both halves are asserted, because it
+    // is the PAIR of them that means "this frame's velocity, in both places".
+    const wired = Object.values(document.graph.edges).filter((edge) => edge.source.nodeId === STIR);
+    expect(wired.map((edge) => edge.target.nodeId).sort()).toEqual([ADVECT]);
+
+    const velocity = document.graph.nodes["velocity"] as GraphNode;
+    expect(sourceReferenceName(velocity.type, velocity.parameters)).toBe("stir1");
+    expect(document.graph.nodes[STIR]?.label).toBe("stir1");
+    // And the dye loop closes the same way, on the composite that injects the ink.
+    const dye = document.graph.nodes["dye"] as GraphNode;
+    expect(sourceReferenceName(dye.type, dye.parameters)).toBe("inject1");
+  });
+
+  /**
+   * §V44/§V182: the stirring force reaches the shader through the shared frame block, which
+   * is the only channel a kernel has to anything outside itself. The BINDING is the claim —
+   * the node emits `sharedBinding` only because the source declares the block, so a kernel
+   * that stopped reading the pointer would stop being handed one.
+   */
+  it("stirs from the shared frame block's pointer, not from a clock or a listener", () => {
+    const stir = effectFor(plan, STIR);
+    expect(stir.sharedBinding).toBe("frameU");
+    expect(stir.shader).toContain("frameU.pointer");
+    // The kernel has its own uniform too, so the stir strength is a live knob (§V5).
+    expect(stir.uniformBinding).toBe("params");
+  });
+
+  /**
+   * §V182 END TO END, and the assertion this example exists to make.
+   *
+   * The shader's vortex and the CPU's ink blob are two readers of ONE pointer. Here they
+   * are compared at the same frame: the value the Mouse node published into `ink1.center`
+   * and the value the shared uniform block carries into `frameU.pointer` must be the same
+   * numbers, in the same order, with v the same way up.
+   *
+   * BEING EXACT ABOUT WHAT THIS CATCHES. Both halves are handed the same pointer struct
+   * here, so this cannot prove the VIEWER publishes one — that is the publisher's own test.
+   * What it proves is that neither reader transforms it on the way through: a Mouse node
+   * that flipped v "for TD parity", or clamped, or reported pixels, would agree with
+   * nothing and the ink would sit somewhere the vortex is not. That is the failure §V182
+   * describes, and it is invisible in any test that looks at one half.
+   */
+  it("puts the ink in the eye of the vortex: one pointer, two readers", () => {
+    const pointer: Pointer = { x: 0.32, y: 0.71, buttons: 1 };
+    const { plan: live, frame } = valueGraphRun(document).hold(pointer, 3);
+
+    expect(messagesOf(live.diagnostics)).toEqual([]);
+    const centre = (effectFor(live, "ink").uniforms as Record<string, readonly number[]>)["center"];
+    expect(centre).toEqual([pointer.x, pointer.y]);
+
+    const shared = sharedUniformsFromFrame({
+      frame,
+      pointer,
+      resolution: [document.settings.outputResolution.width, document.settings.outputResolution.height],
+    });
+    expect(shared.pointer.slice(0, 2)).toEqual([...(centre as readonly number[])]);
+  });
+
+  /**
+   * The control case for the one above: with no pointer attached the blob is not merely
+   * wrong, it is the retained centre (§V108). Without this, "the centre equals the pointer"
+   * would also pass on a build where the centre happened to be 0.5 and the pointer was too.
+   */
+  it("falls back to the retained centre when nothing is driving it", () => {
+    const centre = (effectFor(plan, "ink").uniforms as Record<string, readonly number[]>)["center"];
+    expect(centre).toEqual([0.5, 0.5]);
+    expect(centre).not.toEqual([0.32, 0.71]);
+  });
+});
+
+describe("E13 Prism", () => {
+  const { document, plan } = example("E13-Prism.loom.json");
+
+  const drawFor = (source: CompiledGraph, nodeId: string): DrawPassDescriptor => {
+    const pass = source.passes.find((entry) => entry.kind === "draw" && entry.nodeId === nodeId);
+    if (pass === undefined || pass.kind !== "draw") throw new Error(`no draw pass for ${nodeId}`);
+    return pass;
+  };
+  const reorderChannel = (source: CompiledGraph, nodeId: string, key: string): number =>
+    (effectFor(source, nodeId).uniforms as Record<string, number>)[key] as number;
+
+  /**
+   * DISPERSION, traced through the plan rather than read off the node names.
+   *
+   * Three refractions and two Reorders is the whole trick, and the Reorders are where it
+   * silently stops working: leave `fuse1.outg` at its `in1g` default and every pass still
+   * runs, the picture is still a refracted scene, and it is the RED path three times over
+   * with no colour separation anywhere. So the claim is followed end to end — which
+   * resource each output channel actually comes from — and each path must be a different
+   * one.
+   */
+  it("assembles one channel from each of three refractions", () => {
+    const index = (value: string) =>
+      ["in1r", "in1g", "in1b", "in1a", "in1lum", "in2r", "in2g", "in2b", "in2a", "in2lum", "one", "zero"].indexOf(value);
+
+    const fuse = effectFor(plan, "fuse");
+    const prism = effectFor(plan, "prism");
+    const bound = (pass: EffectPassDescriptor) =>
+      new Map((pass.textures ?? []).map((texture) => [texture.binding, texture.resourceId]));
+
+    // fuse takes red from in1 and green from in2 ...
+    expect(reorderChannel(plan, "fuse", "outr")).toBe(index("in1r"));
+    expect(reorderChannel(plan, "fuse", "outg")).toBe(index("in2g"));
+    expect(bound(fuse).get("inputTexture")).toBe(outputFor(plan, "bendR").resourceId);
+    expect(bound(fuse).get("input2Texture")).toBe(outputFor(plan, "bendG").resourceId);
+
+    // ... and prism keeps those two and takes blue from the third.
+    expect(reorderChannel(plan, "prism", "outr")).toBe(index("in1r"));
+    expect(reorderChannel(plan, "prism", "outg")).toBe(index("in1g"));
+    expect(reorderChannel(plan, "prism", "outb")).toBe(index("in2b"));
+    expect(bound(prism).get("inputTexture")).toBe(outputFor(plan, "fuse").resourceId);
+    expect(bound(prism).get("input2Texture")).toBe(outputFor(plan, "bendB").resourceId);
+  });
+
+  /**
+   * The three indices are DIFFERENT and ORDERED. Equal weights compile, render, and produce
+   * a refracted scene with no spectrum in it — the failure that looks like success. Blue
+   * furthest is the physics; reversed, the fringe reverses and stays plausible.
+   */
+  it("refracts blue furthest and red least, from one shared source", () => {
+    const weightOf = (nodeId: string): number =>
+      ((effectFor(plan, nodeId).uniforms as Record<string, readonly number[]>)["weight"] as readonly number[])[0] as number;
+
+    const red = weightOf("bendR");
+    const green = weightOf("bendG");
+    const blue = weightOf("bendB");
+    expect(Math.abs(blue)).toBeGreaterThan(Math.abs(green));
+    expect(Math.abs(green)).toBeGreaterThan(Math.abs(red));
+
+    // §V6: one scene and one normal field, each rendered once, sampled by all three.
+    const scene = outputFor(plan, "field").resourceId;
+    const normals = outputFor(plan, "normals").resourceId;
+    for (const nodeId of ["bendR", "bendG", "bendB"]) {
+      const bound = new Map((effectFor(plan, nodeId).textures ?? []).map((t) => [t.binding, t.resourceId]));
+      expect(bound.get("inputTexture"), nodeId).toBe(scene);
+      expect(bound.get("displaceTexture"), nodeId).toBe(normals);
+    }
+    expect(plan.passes.filter((p) => p.kind === "effect" && p.nodeId === "field")).toHaveLength(1);
+  });
+
+  /**
+   * T364, and the reason there is a spectrum to bend at all.
+   *
+   * `color` maps the whole compound onto the kernel's `tint` and `sizePixels` maps onto
+   * `pscale`, and with BOTH mapped the sprite pass's params struct would be empty — WGSL
+   * refuses an empty struct, so the uniform block DISAPPEARS. That absence is the
+   * observable fact: a regression to the static colour restores the block and paints 2400
+   * identical sprites, which still renders and disperses into grey.
+   */
+  it("draws 2400 sprites with no uniform block, because both colour and size are mapped", () => {
+    const draw = drawFor(plan, "sparks");
+    expect(draw.uniformBinding).toBeUndefined();
+    expect(draw.uniforms).toBeUndefined();
+
+    const sparks = document.graph.nodes["sparks"] as GraphNode;
+    const colorSlot = sparks.parameters["color"] as { mode?: string; bindings?: { map?: { attribute?: string } } };
+    const sizeSlot = sparks.parameters["sizePixels"] as { mode?: string; bindings?: { map?: { attribute?: string } } };
+    expect(colorSlot.mode).toBe("map");
+    expect(colorSlot.bindings?.map?.attribute).toBe("tint");
+    expect(sizeSlot.mode).toBe("map");
+    expect(sizeSlot.bindings?.map?.attribute).toBe("pscale");
+
+    // The attribute has to EXIST on the incoming pointset, and be vec4f: the head map
+    // refuses anything else by name. The kernel has to write it, or every sprite is black.
+    const swarm = document.graph.nodes["swarm"] as GraphNode;
+    const attributes = JSON.parse(String(swarm.parameters["attributes"])) as ReadonlyArray<{
+      name: string;
+      type: string;
+      qualifier?: string;
+    }>;
+    const tint = attributes.find((entry) => entry.name === "tint");
+    expect(tint?.type).toBe("vec4f");
+    // §V313/T287: a colour attribute says so, so a colour-space op would convert it and a
+    // spatial transform would leave it alone.
+    expect(tint?.qualifier).toBe("color");
+    expect(String(swarm.parameters["kernel"])).toContain("q.tint =");
+    expect(String(swarm.parameters["kernel"])).toContain("q.pscale =");
+  });
+
+  /**
+   * The control case. Force `color` back to a static value and the uniform block comes
+   * back — which is what proves the absence above is caused by the map rather than by some
+   * unrelated property of a draw pass.
+   */
+  it("gets its uniform block back the moment the colour stops being mapped", () => {
+    const sparks = document.graph.nodes["sparks"] as GraphNode;
+    const staticColour: GraphNode = {
+      ...sparks,
+      parameters: { ...sparks.parameters, color: [1, 1, 1, 1] },
+    };
+    const plain = recompile(document, {
+      ...document.graph,
+      nodes: { ...document.graph.nodes, sparks: staticColour },
+    });
+
+    expect(messagesOf(plain.diagnostics)).toEqual([]);
+    const draw = plain.passes.find((pass) => pass.kind === "draw" && pass.nodeId === "sparks");
+    expect(draw?.kind === "draw" ? draw.uniformBinding : undefined).toBe("params");
+  });
+
+  /**
+   * THE LAG IS THE POINT, not the wire.
+   *
+   * `mouse1 → follow1(Lag) → lens1.center` is the owner's canonical chain, and a test that
+   * only checked the centre eventually equals the pointer would pass with the Lag deleted.
+   * So the assertion is the SHAPE of the approach: one frame after the pointer jumps the
+   * lens has moved, and has moved only part of the way; many frames later it has arrived.
+   *
+   * That discriminates three things at once — no chain (never moves), no Lag (arrives on
+   * the first frame), and a Lag that holds instead of integrating (never arrives).
+   */
+  it("eases the lens toward the pointer instead of snapping to it", () => {
+    const run = valueGraphRun(document);
+    const target: Pointer = { x: 0.18, y: 0.82, buttons: 0 };
+
+    // Settle on the centre first, so the jump is a jump.
+    const settled = run.hold(CENTRE, 60);
+    const centreOf = (source: CompiledGraph): readonly number[] =>
+      (effectFor(source, "lens").uniforms as Record<string, readonly number[]>)["center"] as readonly number[];
+    expect(centreOf(settled.plan)).toEqual([0.5, 0.5]);
+
+    const oneFrame = centreOf(run.step(target).plan);
+    // Moved...
+    expect(oneFrame[0]).toBeLessThan(0.5);
+    expect(oneFrame[1]).toBeGreaterThan(0.5);
+    // ...but nowhere near arrived. A missing Lag lands on the pointer this frame.
+    expect(oneFrame[0]).toBeGreaterThan(0.4);
+    expect(oneFrame[1]).toBeLessThan(0.6);
+
+    const arrived = centreOf(run.hold(target, 90).plan);
+    expect(arrived[0]).toBeCloseTo(target.x, 3);
+    expect(arrived[1]).toBeCloseTo(target.y, 3);
+  });
+
+  /**
+   * A SQUARE WAVE THROUGH A LAG IS AN EASE, and that is the whole reason the LFO is a
+   * square rather than a sine here. A sine would look smooth with the Lag removed and this
+   * assertion would be unfalsifiable; a square takes exactly two values, so every value
+   * BETWEEN them in the compiled uniforms was produced by the smoothing stage.
+   */
+  it("eases the lens radius between the square wave's two levels", () => {
+    const run = valueGraphRun(document);
+    const radii = new Set<number>();
+    // 0.22 Hz: a bit over four seconds a cycle, so 300 frames crosses both edges.
+    for (let index = 0; index < 300; index += 1) {
+      const { plan: live } = run.step(CENTRE);
+      const radius = (effectFor(live, "lens").uniforms as Record<string, readonly number[]>)["radius"] as readonly number[];
+      expect(radius[0]).toBe(radius[1]);
+      radii.add(Number((radius[0] as number).toFixed(6)));
+    }
+
+    // Two values would mean the Lag is not in the path at all.
+    expect(radii.size).toBeGreaterThan(50);
+    // And every one of them lies inside the wave's own range: the LFO's amplitude and
+    // offset are chosen so the manifest never has to clamp (a clamp is a warning, and the
+    // gate treats a warning as a failure).
+    for (const radius of radii) {
+      expect(radius).toBeGreaterThanOrEqual(0.18 - 1e-6);
+      expect(radius).toBeLessThanOrEqual(0.46 + 1e-6);
+    }
+  });
+
+  /**
+   * THE EXPRESSION WRAPS, and the `%` is the load-bearing character.
+   *
+   * Transform's `r` is clamped to ±360 by its manifest, so `time * 7` alone would pin the
+   * roll at 360 degrees after 51 seconds AND raise the out-of-range warning the gate treats
+   * as a failure — a rotation that silently stops. Compiled a hundred seconds in, the angle
+   * here is the wrapped one and there is no diagnostic.
+   */
+  it("keeps rolling past 360 degrees, because the expression does the wrap", () => {
+    const seconds = 100;
+    const late = compileGraph({
+      graph: document.graph,
+      settings: document.settings,
+      registry: exampleRegistry(),
+      capabilities: TIER_B_CAPABILITIES,
+      resolution: {
+        frame: {
+          timeSeconds: seconds,
+          deltaSeconds: 1 / 60,
+          frameIndex: seconds * 60,
+          mode: "offline",
+          randomSeed: document.settings.randomSeed,
+        },
+      },
+    });
+
+    expect(messagesOf(late.diagnostics)).toEqual([]);
+    const degrees = ((seconds * 7) % 360) as number;
+    expect(degrees).toBeLessThan(360);
+    const rot = (effectFor(late, "roll").uniforms as Record<string, number>)["rot"] as number;
+    expect(rot).toBeCloseTo((degrees * Math.PI) / 180, 10);
+
+    const slot = (document.graph.nodes["roll"] as GraphNode).parameters["r"] as {
+      mode?: string;
+      bindings?: { expression?: { source?: string } };
+    };
+    expect(slot.mode).toBe("expression");
+    expect(slot.bindings?.expression?.source).toContain("%");
   });
 });

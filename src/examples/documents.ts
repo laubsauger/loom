@@ -6,8 +6,9 @@ import type {
   ProjectDocument,
   ProjectSettings,
 } from "../domain/types/graph.ts";
-import type { ParameterValue } from "../domain/types/parameters.ts";
+import type { ParameterSlot, ParameterValue } from "../domain/types/parameters.ts";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
+import { FLUID_VELOCITY_WGSL } from "./shaders/fluid-velocity.wgsl.ts";
 import { GRAY_SCOTT_WGSL } from "./shaders/gray-scott.wgsl.ts";
 
 /**
@@ -83,6 +84,32 @@ function edge(id: string, from: readonly [string, string], to: readonly [string,
   };
 }
 
+/**
+ * A `driven` slot (§V107): the channel is in effect, `retained` is what §V108 keeps and
+ * what every host without that channel attached resolves to — the compiler in the example
+ * gate included, which is why a retained value has to be a sane picture on its own.
+ */
+function drivenSlot(channel: string, retained: number): ParameterSlot {
+  return {
+    mode: "driven",
+    bindings: {
+      static: { kind: "static", value: retained },
+      driven: { kind: "driven", channel },
+    },
+  };
+}
+
+/** An `expression` slot (§V71): our own grammar, arithmetic over the frame's variables. */
+function expressionSlot(source: string, retained: number): ParameterSlot {
+  return {
+    mode: "expression",
+    bindings: {
+      static: { kind: "static", value: retained },
+      expression: { kind: "expression", source },
+    },
+  };
+}
+
 function graph(nodes: readonly GraphNode[], edges: readonly GraphEdge[]): GraphDocument {
   return {
     revision: 1,
@@ -143,8 +170,10 @@ export const feedbackEchoDocument = document(
         fillcolor: [1, 0.72, 0.28, 1],
         bgcolor: [0, 0, 0, 0],
       }),
-      node("over", "over", [40, -60], { opacity: 1 }),
+      node("over", "over", [40, -60], { opacity: 1 }, { label: "over1" }),
       node("echo", "feedback", [40, 140], {
+        // T350 (§V285): the loop is a NAME — no wired back-edge, edges stay a DAG.
+        source: "over1",
         persistence: 0.94,
         clearColor: [0, 0, 0, 0],
       }),
@@ -163,7 +192,6 @@ export const feedbackEchoDocument = document(
     ],
     [
       edge("e-source-over", ["source", "out"], ["over", "in1"]),
-      edge("e-over-feedback", ["over", "out"], ["echo", "in"]),
       edge("e-feedback-drift", ["echo", "out"], ["drift", "input"]),
       edge("e-drift-soften", ["drift", "out"], ["soften", "input"]),
       edge("e-soften-decay", ["soften", "out"], ["decay", "input"]),
@@ -205,18 +233,18 @@ export const reactionDiffusionDocument = document(
         "state",
         "feedback",
         [-80, 0],
-        { persistence: 1, clearColor: [0, 0, 0, 0] },
+        // T350 (§V285): the simulation loop is a NAME too.
+        { source: "kernel1", persistence: 1, clearColor: [0, 0, 0, 0] },
         {
           resolution: { mode: "fixed", width: 512, height: 512 },
           format: { mode: "fixed", format: "rgba16float" },
         },
       ),
-      node("kernel", "customWgsl", [200, 0], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }),
+      node("kernel", "customWgsl", [200, 0], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "kernel1" }),
       node("out", "output", [460, 120]),
     ],
     [
       edge("e-state-kernel", ["state", "out"], ["kernel", "input"]),
-      edge("e-kernel-state", ["kernel", "out"], ["state", "in"]),
       edge("e-kernel-out", ["kernel", "out"], ["out", "input"]),
     ],
   ),
@@ -868,6 +896,445 @@ const gradientRemapDocument = document(
   ),
 );
 
+/**
+ * E12 — Fluid (T362).
+ *
+ *   vel1(feedback) ─► stir1(customWgsl) ─► advect1.disp        the VELOCITY loop
+ *        ╰┄┄┄┄┄┄┄┄ source: "stir1" ┄┄┄┄┄┄┄┄┄┄╯               (a reference, T350)
+ *   dye1(feedback) ─► advect1(displace) ─► diffuse1(blur) ─► inject1.in2
+ *   ink1(circle, centre ← mouse1) ─────────────────────────► inject1.in1
+ *   inject1(over) ─► out1(output)                             the DYE loop
+ *        ╰┄┄┄┄┄┄┄┄ dye1.source: "inject1" ┄┄╯
+ *
+ * E2 is already a reaction-diffusion, and the difference is the whole reason this file
+ * exists: a chemistry BLOOMS — the pattern is generated where it stands — while a fluid
+ * FLOWS, because the pattern is CARRIED. So this graph has two states, not one. The
+ * velocity field is a state, the dye is a state, and the only thing connecting them is
+ * that one is used as the coordinate the other is sampled at.
+ *
+ * ADVECTION IS A DISPLACE NODE, and that is the point of building it here rather than in
+ * one kernel. Backward semi-Lagrangian advection — sample the dye one step upstream — is
+ * exactly `uv + shift * weight` with a negative weight, which is Displace's whole shader.
+ * Diffusion is a Blur. The fade is the Feedback node's own `persistence`. The only thing
+ * that needed WGSL is the velocity field's self-advection plus the stirring force, and
+ * that is one node. Written as a single kernel the graph would show nothing at all.
+ *
+ * THE NEGATIVE WEIGHT IS THE EXAMPLE. `weight: [-1, -1]` with `offset: [0, 0]` reads the
+ * velocity as a SIGNED per-step displacement and samples AGAINST it. Flip the sign and
+ * the dye still moves, still looks like a fluid, and is running the unstable forward
+ * scheme — plausible-wrong, which is why `concepts.test.ts` pins the sign rather than the
+ * presence of the node.
+ *
+ * ONE POINTER, TWO READERS (§V182). The stirring vortex is in the shader, reading
+ * `frameU.pointer` from the shared frame block. The ink blob is on the CPU, its `center`
+ * driven by the Mouse node. Neither of them is a DOM listener: both are the coordinate the
+ * viewer published for this frame, so the ink lands in the eye of the vortex on every
+ * frame by construction rather than by tuning.
+ *
+ * TWO LOOPS, NO CYCLE (T350, §V285). Neither Feedback is wired back into: each NAMES the
+ * node it records, `edges` stays a DAG, and the compiler synthesizes the closing edge. Two
+ * loops in one file is also what makes this the example that would notice a swap ordered
+ * per-plan rather than per-pair — the velocity pair must swap after the dye has read it.
+ *
+ * WHY ONLY ONE LOOP IS PINNED (§V50/§V51). Both loops are still cycles, and a cycle breaks
+ * resolution/format INHERITANCE because the chain has no ground to stand on — that is why
+ * E2 pins its Feedback node. Here only the velocity loop needs it: the dye loop's
+ * Composite inherits from `in1`, which is the ink generator, which takes the project's
+ * settings. The dye loop is grounded through the ink; the velocity loop is grounded
+ * nowhere, so it says what it needs. rgba16float on the velocity is not decoration —
+ * a per-step displacement of 0.005 uv has no representation in rgba8unorm at all.
+ *
+ * The frame is SQUARE. Displace's weight is in uv units, so a 16:9 frame would make one
+ * unit of velocity travel a different distance horizontally than vertically, and the
+ * vortex would come out as an ellipse.
+ */
+const fluidDocument = document(
+  "e12-fluid",
+  "E12 Fluid",
+  settings({ outputResolution: { width: 640, height: 640 }, randomSeed: 17 }),
+  graph(
+    [
+      node("mouse", "mouse", [-980, 320], {}, { label: "mouse1" }),
+      node(
+        "velocity",
+        "feedback",
+        [-640, 200],
+        // T350 (§V285): the loop is a REFERENCE. The velocity feedback NAMES the kernel
+        // that produces it, so `edges` stays a DAG and the picture stops showing a cycle.
+        { persistence: 1, clearColor: [0, 0, 0, 0], reset: false, source: "stir1" },
+        {
+          label: "vel1",
+          // The velocity loop's only ground (see the note above).
+          resolution: { mode: "fixed", width: 640, height: 640 },
+          format: { mode: "fixed", format: "rgba16float" },
+        },
+      ),
+      node(
+        "stir",
+        "customWgsl",
+        [-320, 200],
+        { [SHADER_SOURCE_PARAMETER]: FLUID_VELOCITY_WGSL, amount: 1 },
+        { label: "stir1" },
+      ),
+      node(
+        "dye",
+        "feedback",
+        [-640, -120],
+        { persistence: 0.985, clearColor: [0, 0, 0, 0], reset: false, source: "inject1" },
+        { label: "dye1" },
+      ),
+      node(
+        "advect",
+        "displace",
+        [-320, -120],
+        {
+          // Per STEP, signed, sampled upstream. See the note above; the sign is the claim.
+          weight: [-1, -1],
+          offset: [0, 0],
+          sourcex: "red",
+          sourcey: "green",
+          // Nothing may smear in from outside the box.
+          extend: "zero",
+        },
+        { label: "advect1" },
+      ),
+      node("diffuse", "blur", [-40, -120], { size: 1.4, filter: "gaussian", extend: "zero" }, { label: "diffuse1" }),
+      node(
+        "ink",
+        "circle",
+        [-40, 60],
+        {
+          mode: "fill",
+          radius: [0.028, 0.028],
+          softness: 0.055,
+          fillcolor: [1, 0.62, 0.24, 0.6],
+          bgcolor: [0, 0, 0, 0],
+          aspectcorrect: true,
+        },
+        {
+          label: "ink1",
+          // §V113 component slots, §V182's CPU half: the blob sits where the pointer is,
+          // in the same 0..1 v-down coordinate the kernel reads (§V236).
+          parameters: {
+            "center.x": drivenSlot("mouse1:x", 0.5),
+            "center.y": drivenSlot("mouse1:y", 0.5),
+          },
+        },
+      ),
+      node("inject", "over", [240, -60], { opacity: 1 }, { label: "inject1" }),
+      node("out", "output", [520, -60], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-velocity-stir", ["velocity", "out"], ["stir", "input"]),
+      // The SAME texture that closes the velocity loop steers the dye — this frame's
+      // velocity, not last frame's, and rendered once for both consumers (§V6).
+      edge("e-stir-advect", ["stir", "out"], ["advect", "disp"]),
+      edge("e-dye-advect", ["dye", "out"], ["advect", "source"]),
+      edge("e-advect-diffuse", ["advect", "out"], ["diffuse", "input"]),
+      edge("e-diffuse-inject", ["diffuse", "out"], ["inject", "in2"]),
+      edge("e-ink-inject", ["ink", "out"], ["inject", "in1"]),
+      edge("e-inject-out", ["inject", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
+/**
+ * E13 — Prism (T363, T364).
+ *
+ *   swarm1(pointKernel) ─► sparks1(renderPoints) ─► roll1(transform) ─► field1.in1
+ *   backdrop1(ramp) ───────────────────────────────────────────────────► field1.in2
+ *   field1(over) ─┬─► bendR1(displace) ─┐
+ *                 ├─► bendG1(displace) ─┴─► fuse1(reorder) ─┐
+ *                 └─► bendB1(displace) ──────────────────────┴─► prism1(reorder) ─► out1
+ *   lens1(circle) ─► normals1(slope) ─► the `disp` input of all three
+ *
+ *   mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
+ *   pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
+ *   roll1.r = "time * 7 % 360"   (an expression, §V71)
+ *   sparks1.color ← the `tint` attribute, sparks1.sizePixels ← `pscale` (map mode, T364)
+ *
+ * THE ONE THAT IS SUPPOSED TO SHOW THE WHOLE TOOL. Every other example demonstrates one
+ * mechanism. This one exists because someone who has read twelve single-mechanism files
+ * still has not seen them in one frame, and "in one frame" is the actual product claim.
+ *
+ * THE LOOK: DISPERSION. A lens bends blue further than red, so a coloured edge seen
+ * through one comes apart into a spectrum. There is no per-channel Displace and none is
+ * needed: the same scene is refracted THREE TIMES at three strengths and reassembled
+ * channel by channel through two Reorders. Reorder exists for exactly this, and one image
+ * feeding three Displaces is §V6 — the scene and the normal field are each rendered once.
+ *
+ * COLOUR COMES FROM THE POINTS, WHICH IS WHY THE PRISM HAS ANYTHING TO BEND (T364, §V313).
+ * `sparks1` maps its whole `color` compound onto the kernel's `tint` attribute and its
+ * `sizePixels` onto `pscale`, so 2400 sprites carry 2400 colours and 2400 sizes and the
+ * draw pass ends up carrying NO uniform block at all — with both mapped the params struct
+ * would be empty, and WGSL refuses an empty struct, so it vanishes. A uniform-coloured
+ * swarm would disperse into grey fringes; a spectral one disperses into a spectrum.
+ *
+ * Those attribute values are LINEAR (§V313). A point attribute is DATA — nothing
+ * display-decodes it — so the kernel's cosine palette writes linear light directly and
+ * must not be authored as if it were a colour picker's swatch.
+ *
+ * THE LENS IS A SOFT DOME, not a hard disc. `softness` roughly twice the radius makes the
+ * Circle a smooth bump; Slope's `normal` mode turns the bump into a normal field, largest
+ * tilt at the rim and none at the centre. That is what a real lens does, and it is why the
+ * fringe appears around the edge of the glass rather than uniformly over the frame.
+ *
+ * THREE WAYS TO MOVE A PARAMETER, doing three different jobs:
+ *
+ *   THE VALUE GRAPH (§V179), twice, and both times it is the owner's canonical chain.
+ *   `mouse1 → follow1(Lag) → lens1.center` gives the glass weight: the pointer is the
+ *   target, the Lag is the mass. `pulse1(LFO) → ease1(Lag) → lens1.radius` breathes it.
+ *   The LFO is a SQUARE wave deliberately — a square through a one-pole smoother is an
+ *   EASE, so the Lag's contribution is visible rather than theoretical. Delete `ease1` and
+ *   the lens snaps between two sizes like a shutter; that is the whole argument for the node.
+ *
+ *   AN EXPRESSION (§V71) rolls the light field. `time * 7 % 360` is written where it is
+ *   read — no node, no channel, no wire — and the `%` is load-bearing: Transform's `r` is
+ *   clamped to ±360 by its manifest, so the wrap belongs in the expression. Being honest
+ *   about the scope: the v1 grammar is arithmetic only, so an LFO could produce this same
+ *   ramp. What the expression buys here is locality, not reach.
+ *
+ *   A KERNEL (§V45) animates the swarm. `ctx.time` reaches the GPU through the same frame
+ *   contract everything else does, and the kernel is STATELESS — position and colour are
+ *   functions of the slot index and the clock — so frame N is the same picture whether it
+ *   was replayed from zero or arrived at live.
+ *
+ * WHICH WAY THE POINTER GOES. v runs DOWN (§V236), and the lens follows the pointer 1:1
+ * because a lens centre and a pointer are the same unit. E12 drives the same kind of
+ * parameter with no chain at all (channel liveness with no edge, §V173b); here it goes
+ * through a real value EDGE into a Lag, which is the difference worth seeing side by side.
+ */
+const PRISM_SWARM_KERNEL = `const TAU: f32 = 6.28318530717958647692;
+
+/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so
+    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */
+fn spectrum(t: f32) -> vec3f {
+  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */
+  q.id = ctx.index;
+  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);
+
+  /* Three interleaved lobes, breathing — a woven band rather than a plain ring. */
+  let angle = (t * TAU * 3.0) + (ctx.time * 0.22);
+  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.time * 0.55));
+  let radius = 0.56 + breathe;
+  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);
+
+  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */
+  q.tint = vec4f(spectrum(t + (ctx.time * 0.04)), 1.0);
+  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */
+  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);
+  return q;
+}`;
+
+/** The swarm's schema. `tint` is `color`-QUALIFIED (§V313/T287) — it is what a colour-space
+ *  operation would convert and what a spatial transform must leave alone. */
+const PRISM_SWARM_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "id", type: "u32", semantic: "id", default: [0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "pscale", type: "f32", semantic: "size", default: [3] },
+]);
+
+const prismDocument = document(
+  "e13-prism",
+  "E13 Prism",
+  settings({ randomSeed: 23 }),
+  graph(
+    [
+      // ---- the value graph -------------------------------------------------------
+      node("mouse", "mouse", [-1180, 420], {}, { label: "mouse1" }),
+      node("follow", "valueLag", [-940, 420], { lag: 0.14 }, { label: "follow1" }),
+      node(
+        "pulse",
+        "lfo",
+        [-1180, 580],
+        // 0.14 either side of 0.32: the lens breathes between radius 0.18 and 0.46, both
+        // well inside the manifest's range, so nothing is ever clamped on the way through.
+        { shape: "square", frequency: 0.22, amplitude: 0.14, offset: 0.32, phase: 0 },
+        { label: "pulse1" },
+      ),
+      node("ease", "valueLag", [-940, 580], { lag: 0.45 }, { label: "ease1" }),
+
+      // ---- the light -------------------------------------------------------------
+      node(
+        "swarm",
+        "pointKernel",
+        [-1180, 100],
+        {
+          capacity: 2400,
+          seed: 23,
+          attributes: PRISM_SWARM_ATTRIBUTES,
+          kernel: PRISM_SWARM_KERNEL,
+          group: "",
+        },
+        { label: "swarm1" },
+      ),
+      node(
+        "sparks",
+        "renderPoints",
+        [-880, 100],
+        { count: 2400, blend: "additive", accumulate: false },
+        {
+          label: "sparks1",
+          // T364: the map mode, on a COMPOUND HEAD and on a scalar. With both mapped the
+          // draw carries no uniform block at all — see the note above.
+          parameters: {
+            color: {
+              mode: "map",
+              bindings: {
+                static: { kind: "static", value: [1, 1, 1, 1] },
+                map: { kind: "map", attribute: "tint" },
+              },
+            },
+            sizePixels: {
+              mode: "map",
+              bindings: {
+                static: { kind: "static", value: 4 },
+                map: { kind: "map", attribute: "pscale" },
+              },
+            },
+          },
+        },
+      ),
+      node(
+        "roll",
+        "transform",
+        [-580, 100],
+        { t: [0, 0], s: [1, 1], p: [0, 0], xord: "srt", extend: "zero", aspectcorrect: true },
+        {
+          label: "roll1",
+          // The `%` is not decoration: `r` is clamped to ±360, so the wrap lives here.
+          parameters: { r: expressionSlot("time * 7 % 360", 0) },
+        },
+      ),
+      node(
+        "backdrop",
+        "ramp",
+        [-880, -140],
+        {
+          type: "radial",
+          interp: "smooth",
+          phase: 0,
+          period: 1,
+          // Dark, never black. Dispersion moves WHERE a colour is read from, so a field
+          // with no colour in it disperses into nothing.
+          stops: [
+            { position: 0, color: [0.13, 0.08, 0.3, 1] },
+            { position: 0.55, color: [0.05, 0.04, 0.13, 1] },
+            { position: 1, color: [0.01, 0.01, 0.04, 1] },
+          ],
+        },
+        { label: "backdrop1", definitionVersion: 2 },
+      ),
+      node("field", "over", [-300, 0], { opacity: 1 }, { label: "field1" }),
+
+      // ---- the lens --------------------------------------------------------------
+      node(
+        "lens",
+        "circle",
+        [-580, -320],
+        {
+          mode: "fill",
+          center: [0.5, 0.5],
+          // Softness past the radius: a DOME, not a disc. The dome's gradient is the lens
+          // profile; a disc's gradient is a ring one pixel wide and refracts nothing.
+          softness: 0.62,
+          fillcolor: [1, 1, 1, 1],
+          bgcolor: [0, 0, 0, 1],
+          aspectcorrect: true,
+        },
+        {
+          label: "lens1",
+          parameters: {
+            "center.x": drivenSlot("follow1:x", 0.5),
+            "center.y": drivenSlot("follow1:y", 0.5),
+            "radius.x": drivenSlot("ease1", 0.32),
+            "radius.y": drivenSlot("ease1", 0.32),
+          },
+        },
+      ),
+      node(
+        "normals",
+        "slope",
+        [-300, -320],
+        // The dome's slope is gentle — one unit of luminance across 0.6 uv — so the Sobel
+        // result needs the manifest's full strength to tilt the normal far enough to bend.
+        { mode: "normal", channel: "luminance", strength: 20, zeropoint: 0.5, angle: 45, extend: "hold" },
+        { label: "normals1" },
+      ),
+
+      // ---- dispersion: one scene, three refractive indices ------------------------
+      node(
+        "bendR",
+        "displace",
+        [0, -220],
+        { weight: [-0.75, -0.75], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
+        { label: "bendR1" },
+      ),
+      node(
+        "bendG",
+        "displace",
+        [0, -20],
+        { weight: [-1.05, -1.05], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
+        { label: "bendG1" },
+      ),
+      node(
+        "bendB",
+        "displace",
+        [0, 180],
+        // Blue bends furthest, as it does through glass. Order the three the other way and
+        // the fringe reverses: the picture stays plausible and the physics does not.
+        { weight: [-1.4, -1.4], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
+        { label: "bendB1" },
+      ),
+      node(
+        "fuse",
+        "reorder",
+        [300, -120],
+        { outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a" },
+        { label: "fuse1" },
+      ),
+      node(
+        "prism",
+        "reorder",
+        [560, -20],
+        { outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a" },
+        { label: "prism1" },
+      ),
+      node("out", "output", [820, -20], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
+      edge("e-pulse-ease", ["pulse", "out"], ["ease", "in"]),
+
+      edge("e-swarm-sparks", ["swarm", "out"], ["sparks", "points"]),
+      edge("e-sparks-roll", ["sparks", "out"], ["roll", "input"]),
+      edge("e-roll-field", ["roll", "out"], ["field", "in1"]),
+      edge("e-backdrop-field", ["backdrop", "out"], ["field", "in2"]),
+
+      edge("e-lens-normals", ["lens", "out"], ["normals", "input"]),
+
+      edge("e-field-bendR", ["field", "out"], ["bendR", "source"]),
+      edge("e-field-bendG", ["field", "out"], ["bendG", "source"]),
+      edge("e-field-bendB", ["field", "out"], ["bendB", "source"]),
+      edge("e-normals-bendR", ["normals", "out"], ["bendR", "disp"]),
+      edge("e-normals-bendG", ["normals", "out"], ["bendG", "disp"]),
+      edge("e-normals-bendB", ["normals", "out"], ["bendB", "disp"]),
+
+      edge("e-bendR-fuse", ["bendR", "out"], ["fuse", "in1"]),
+      edge("e-bendG-fuse", ["bendG", "out"], ["fuse", "in2"]),
+      edge("e-fuse-prism", ["fuse", "out"], ["prism", "in1"]),
+      edge("e-bendB-prism", ["bendB", "out"], ["prism", "in2"]),
+      edge("e-prism-out", ["prism", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 /** Every example, in the order they are meant to be read. */
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -881,4 +1348,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   particleFountainDocument,
   instancedTorusDocument,
   gradientRemapDocument,
+  fluidDocument,
+  prismDocument,
 ];

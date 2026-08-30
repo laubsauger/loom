@@ -179,7 +179,7 @@
   },
   "name": "E5 Kaleidoscope",
   "projectId": "example-kaleidoscope",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

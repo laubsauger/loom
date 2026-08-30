@@ -1,6 +1,7 @@
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
+import { sourceReferenceOf } from "./source-references.ts";
 
 /**
  * Node names as identifiers (T221/T222, §V127-§V129).
@@ -93,27 +94,76 @@ export function rewriteNodeNameReferences(
   newName: string,
 ): number {
   if (oldName === newName) return 0;
-  const pattern = referencePattern(oldName);
   let rewritten = 0;
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
     if (node === undefined) continue;
-    for (const key of Object.keys(node.parameters).sort()) {
-      const stored = node.parameters[key];
-      if (stored === undefined || !isParameterSlot(stored)) continue;
-      const binding = stored.bindings.expression;
-      if (binding?.kind !== "expression") continue;
-      pattern.lastIndex = 0;
-      if (!pattern.test(binding.source)) continue;
-      const source = binding.source.replace(referencePattern(oldName), (_match, quote: string) => `op(${quote}${newName}${quote})`);
-      node.parameters[key] = {
-        ...stored,
-        bindings: { ...stored.bindings, expression: { kind: "expression", source } },
-      };
-      rewritten += 1;
-    }
+    rewritten += rewriteExpressionReferences(node, oldName, newName);
+    rewritten += rewriteDrivenChannels(node, oldName, newName);
+    rewritten += rewriteSourceReference(node, oldName, newName);
   }
   return rewritten;
+}
+
+/*
+ * §V128 says "every stored reference", and §V316 says an invariant stated over a
+ * CATEGORY but implemented over one MEMBER narrows silently — which is exactly what
+ * happened here (B40): only expressions were scanned, and a rename orphaned every
+ * `driven` parameter naming the node, with no symptom because an unattached channel
+ * is deliberately info-severity (§V317). One clause PER REFERENCE KIND, so kind four
+ * has to declare itself instead of being forgotten.
+ */
+
+/** Kind 1: `op('name')` inside expression payloads (the original clause). */
+function rewriteExpressionReferences(node: GraphNode, oldName: string, newName: string): number {
+  const pattern = referencePattern(oldName);
+  let rewritten = 0;
+  for (const key of Object.keys(node.parameters).sort()) {
+    const stored = node.parameters[key];
+    if (stored === undefined || !isParameterSlot(stored)) continue;
+    const binding = stored.bindings.expression;
+    if (binding?.kind !== "expression") continue;
+    pattern.lastIndex = 0;
+    if (!pattern.test(binding.source)) continue;
+    const source = binding.source.replace(referencePattern(oldName), (_match, quote: string) => `op(${quote}${newName}${quote})`);
+    node.parameters[key] = {
+      ...stored,
+      bindings: { ...stored.bindings, expression: { kind: "expression", source } },
+    };
+    rewritten += 1;
+  }
+  return rewritten;
+}
+
+/** Kind 2 (B40): `driven` channels — `name` or `name:channel`, the part before the colon. */
+function rewriteDrivenChannels(node: GraphNode, oldName: string, newName: string): number {
+  let rewritten = 0;
+  for (const key of Object.keys(node.parameters).sort()) {
+    const stored = node.parameters[key];
+    if (stored === undefined || !isParameterSlot(stored)) continue;
+    const binding = stored.bindings.driven;
+    if (binding?.kind !== "driven") continue;
+    const colon = binding.channel.indexOf(":");
+    const head = colon < 0 ? binding.channel : binding.channel.slice(0, colon);
+    if (head !== oldName) continue;
+    const channel = colon < 0 ? newName : `${newName}${binding.channel.slice(colon)}`;
+    node.parameters[key] = {
+      ...stored,
+      bindings: { ...stored.bindings, driven: { kind: "driven", channel } },
+    };
+    rewritten += 1;
+  }
+  return rewritten;
+}
+
+/** Kind 3 (T350): a source-reference parameter holding the bare name. */
+function rewriteSourceReference(node: GraphNode, oldName: string, newName: string): number {
+  const spec = sourceReferenceOf(node.type);
+  if (spec === undefined) return 0;
+  const stored = node.parameters[spec.parameter];
+  if (typeof stored !== "string" || stored.trim() !== oldName) return 0;
+  node.parameters[spec.parameter] = newName;
+  return 1;
 }
 
 /** How many stored references name `name` — what a CLEAR of the label would strand. */

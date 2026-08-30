@@ -40,17 +40,6 @@
                 "portId": "input"
               }
             },
-            "e-over-feedback": {
-              "id": "e-over-feedback",
-              "source": {
-                "nodeId": "over",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "echo",
-                "portId": "in"
-              }
-            },
             "e-soften-decay": {
               "id": "e-soften-decay",
               "source": {
@@ -116,7 +105,8 @@
                   0,
                   0
                 ],
-                "persistence": 0.94
+                "persistence": 0.94,
+                "source": "over1"
               },
               "position": {
                 "x": 40,
@@ -127,6 +117,7 @@
             "over": {
               "definitionVersion": 1,
               "id": "over",
+              "label": "over1",
               "parameters": {
                 "opacity": 1
               },
@@ -354,7 +345,7 @@
   },
   "name": "FeedbackEcho",
   "projectId": "component-feedbackEcho",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

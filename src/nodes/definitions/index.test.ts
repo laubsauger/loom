@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SOURCE_REFERENCE_PARAMETERS } from "../../domain/graph/source-references.ts";
 
 import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions, coreNodeDefinitions, spikeNodeDefinitions } from "./index.ts";
@@ -191,6 +192,22 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
         (parameter) => parameter.type === "pulse",
       );
       expect(hasPulse, `${type} has a pulse now — drop its exemption`).toBe(false);
+    }
+  });
+});
+
+describe("source references: the table and the declarations agree (T350)", () => {
+  it("every declaration is in the domain table, and the table names only declarations", () => {
+    const declared = new Map(
+      coreNodeDefinitions
+        .filter((definition) => definition.sourceReference !== undefined)
+        .map((definition) => [definition.type, definition.sourceReference]),
+    );
+    // Both directions: a declaration the table misses breaks the walk silently; a
+    // table row with no declaration is a reference to nothing.
+    expect(Object.keys(SOURCE_REFERENCE_PARAMETERS).sort()).toEqual([...declared.keys()].sort());
+    for (const [type, spec] of Object.entries(SOURCE_REFERENCE_PARAMETERS)) {
+      expect(declared.get(type), type).toEqual(spec);
     }
   });
 });

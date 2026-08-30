@@ -23,6 +23,7 @@ import {
   rewriteNodeNameReferences,
   uniqueNodeName,
 } from "../graph/names.ts";
+import { sourceReferenceOf } from "../graph/source-references.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
 import { referenceCyclesThrough } from "../graph/reference-cycles.ts";
@@ -470,6 +471,20 @@ function executeOperation(
         fail(
           "port.missing",
           `"${targetNode.type}" has no input port "${operation.target.portId}".`,
+          { nodeId: targetNode.id, portId: operation.target.portId },
+        );
+        return;
+      }
+
+      // T350 (§V285): the editor never CREATES a wired loop into a source-reference
+      // input — the loop is a NAME, and the dashed line shows it. Legacy documents
+      // that arrive wired still load and compile; they just cannot grow new wires
+      // here, or the confusing shape survives forever and the migration never ends.
+      const sourceSpec = sourceReferenceOf(targetNode.type);
+      if (sourceSpec !== undefined && sourceSpec.input === operation.target.portId) {
+        fail(
+          "port.sourceReference",
+          `"${targetNode.type}" takes its source by NAME, not a wire — set its "${sourceSpec.parameter}" parameter to the source node's name instead.`,
           { nodeId: targetNode.id, portId: operation.target.portId },
         );
         return;
