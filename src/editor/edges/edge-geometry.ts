@@ -52,6 +52,20 @@ export interface EdgeCubic {
 export const EDGE_HIT_TOLERANCE_PX = 12;
 
 /**
+ * How close a WIRE has to pass to a dropped node's centre to be spliced (T213).
+ *
+ * Expressed as a fraction of the node's own height, floored at the cursor tolerance
+ * above, because the two gestures are aiming with different instruments. A connection
+ * drop is a cursor landing on a line, so §V14c's screen-pixel pad is the right unit. A
+ * node drop is a 178px box being parked on a line, and a pad that small would make the
+ * gesture feel broken — while a whole-rectangle test would splice every time a node was
+ * parked anywhere near a wire that merely passes behind it, silently rewiring a graph
+ * during an ordinary tidy-up. A band through the middle of the node is the honest
+ * reading of "I put this node ON that wire".
+ */
+export const SPLICE_BAND_FRACTION = 0.25;
+
+/**
  * Samples per curve for the distance test.
  *
  * A bezier's distance function has no cheap closed form, so the curve is walked as a

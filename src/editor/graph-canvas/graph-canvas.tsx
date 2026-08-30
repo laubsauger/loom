@@ -32,8 +32,12 @@ import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
-import { EDGE_HIT_TOLERANCE_PX, createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
-import { replaceEdgeOperations } from "@editor/edges/edge-drop.ts";
+import {
+  EDGE_HIT_TOLERANCE_PX,
+  SPLICE_BAND_FRACTION,
+  createEdgeGeometry,
+} from "@editor/edges/edge-geometry.ts";
+import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
@@ -136,6 +140,20 @@ export function GraphCanvas({
   );
 
   /**
+   * The live React Flow instance, kept in a ref rather than in state.
+   *
+   * `screenToFlowPosition` is the only way to turn a drop point into graph coordinates,
+   * and it needs the current viewport transform. Subscribing to that transform would
+   * re-render this component on every frame of a pan — which is precisely the shape of
+   * B13 (§V142: a camera move must cost nothing). A ref updated once, on init, gives the
+   * drop handlers the live projection and re-renders nothing, ever.
+   */
+  const flowRef = useRef<ReactFlowInstance<LoomNode, LoomEdge> | null>(null);
+  const onInit = useCallback((instance: ReactFlowInstance<LoomNode, LoomEdge>) => {
+    flowRef.current = instance;
+  }, []);
+
+  /**
    * Live drag positions. React Flow reports a position on every move and then a final
    * `dragging: false` change with no position of its own, so the last seen position is
    * kept here — outside both the document and React state — and committed once (§V15).
@@ -153,6 +171,42 @@ export function GraphCanvas({
    * `resizing` explicitly rather than reacting to `dimensions` being present.
    */
   const dragSizes = useRef(new Map<NodeId, { width: number; height: number }>());
+
+  /**
+   * T213 / §V14b's sibling — a NODE dropped on an edge SPLICES into it.
+   *
+   * The hit test is done entirely in GRAPH space: the node's centre against the wire's
+   * curve. Both are graph-space facts, so unlike a cursor drop this one needs no screen
+   * projection and means the same thing at every zoom (§V142). The position comes from
+   * the live drag rather than from the document, which is stale for the whole gesture
+   * (§V112); only the node's measured SIZE is read from React Flow, and that does not
+   * move while it is being dragged.
+   *
+   * Edges attached to the dragged node are excluded from the search, not just refused
+   * afterwards: they follow the node, so one of them is always the nearest wire, and
+   * leaving them in would let a node's own edge shadow the one it was dropped on.
+   */
+  const spliceAt = useCallback(
+    (nodeId: NodeId, position: { x: number; y: number }): GraphPatchOperation[] => {
+      const view = flowRef.current?.getNode(nodeId);
+      const width = view?.measured?.width ?? view?.width ?? 0;
+      const height = view?.measured?.height ?? view?.height ?? 0;
+      if (!(width > 0) || !(height > 0)) return [];
+
+      const graph = bus.store.getGraph();
+      const centre = { x: position.x + width / 2, y: position.y + height / 2 };
+      const tolerance = Math.max(EDGE_HIT_TOLERANCE_PX, height * SPLICE_BAND_FRACTION);
+      const edgeId = edgeGeometry.nearest(centre, tolerance, (candidate) => {
+        const edge = graph.edges[candidate];
+        return edge === undefined || edge.source.nodeId === nodeId || edge.target.nodeId === nodeId;
+      });
+      if (edgeId === null) return [];
+      const edge = graph.edges[edgeId];
+      if (edge === undefined) return [];
+      return spliceNodeOperations(graph, registry, edge, nodeId);
+    },
+    [bus, edgeGeometry, registry],
+  );
 
   const onNodesChange = useCallback(
     (changes: NodeChange<LoomNode>[]) => {
@@ -203,14 +257,27 @@ export function GraphCanvas({
         }
         dispatch(operations, "Resize node");
       }
-      if (Object.keys(committed).length > 0) {
-        dispatch([{ op: "moveNodes", positions: committed }], "Move node");
+      const movedIds = Object.keys(committed);
+      if (movedIds.length > 0) {
+        const operations: GraphPatchOperation[] = [{ op: "moveNodes", positions: committed }];
+        // Only a single-node drop can splice. Dropping a whole selection on a wire has no
+        // one answer — which of them goes inline? — and picking one silently would be a
+        // guess the user cannot see or undo separately from the move.
+        const only = movedIds.length === 1 ? movedIds[0] : undefined;
+        const target = only === undefined ? undefined : committed[only];
+        const splice = only === undefined || target === undefined ? [] : spliceAt(only, target);
+        // The move and the splice are ONE gesture, so they are one patch and one undo
+        // entry (§V15, §V32, §V34): undoing puts the node back AND restores the wire it
+        // cut into. Two patches would make the user undo twice for one drop, and would
+        // leave a graph rewired around a node that had moved back.
+        operations.push(...splice);
+        dispatch(operations, splice.length > 0 ? "Insert node into edge" : "Move node");
       }
       if (removed.length > 0) {
         dispatch([{ op: "removeNodes", nodeIds: removed }], "Delete node");
       }
     },
-    [dispatch],
+    [dispatch, spliceAt],
   );
 
   const onEdgesChange = useCallback(
@@ -256,20 +323,6 @@ export function GraphCanvas({
     },
     [dispatch, domainEdges, domainNodes, registry],
   );
-
-  /**
-   * The live React Flow instance, kept in a ref rather than in state.
-   *
-   * `screenToFlowPosition` is the only way to turn a drop point into graph coordinates,
-   * and it needs the current viewport transform. Subscribing to that transform would
-   * re-render this component on every frame of a pan — which is precisely the shape of
-   * B13 (§V142: a camera move must cost nothing). A ref updated once, on init, gives the
-   * drop handlers the live projection and re-renders nothing, ever.
-   */
-  const flowRef = useRef<ReactFlowInstance<LoomNode, LoomEdge> | null>(null);
-  const onInit = useCallback((instance: ReactFlowInstance<LoomNode, LoomEdge>) => {
-    flowRef.current = instance;
-  }, []);
 
   /**
    * §V14b/§V14c — an EDGE is a drop target for a connection.
