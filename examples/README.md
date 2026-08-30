@@ -15,7 +15,7 @@ happened:
 | File | Proves |
 | --- | --- |
 | [E1 Feedback Echo](./E1-Feedback-Echo.md) | explicit temporal boundary, fade + transform inside a loop, stable ping-pong (§V4, §V22) |
-| [E2 Reaction-Diffusion](./E2-Reaction-Diffusion.md) | iterative simulation through render feedback, seeded init, reset, rgba16float precision (§V45, §V51) |
+| [E2 Reaction-Diffusion](./E2-Reaction-Diffusion.md) | the algorithm as a GRAPH: animated noise into a spatially varying feed/kill map, 20 substeps per frame, colour through a Ramp (T387, T388) |
 | [E3 Animated Noise Field](./E3-Animated-Noise-Field.md) | time via `FrameEvaluationInput` and never a clock, fan-out rendered once (§V44, §V6) |
 | [E4 Bloom](./E4-Bloom.md) | multi-branch converge, HDR intermediate through a per-node format override (§V51, §V6) |
 | [E5 Kaleidoscope](./E5-Kaleidoscope.md) | extend modes, per-node resolution override, cheap chain at high resolution (§V50) |

@@ -75,10 +75,10 @@ export const GRAY_SCOTT_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
 // The BAND the chemistry map walks. Feed/kill pairs are famously sensitive: these two
 // endpoints bracket the region where fronts keep breaking up and dividing rather than
 // settling into a fixed pattern, so no part of the image goes static.
-const FEED_LOW: f32 = 0.030;
-const KILL_LOW: f32 = 0.0580;
-const FEED_HIGH: f32 = 0.058;
-const KILL_HIGH: f32 = 0.0635;
+const FEED_LOW: f32 = 0.028;
+const KILL_LOW: f32 = 0.0545;
+const FEED_HIGH: f32 = 0.042;
+const KILL_HIGH: f32 = 0.0680;
 
 const DIFFUSE_U: f32 = 0.2097;
 const DIFFUSE_V: f32 = 0.105;

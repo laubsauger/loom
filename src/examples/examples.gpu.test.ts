@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { compileGraph } from "../compiler/index.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
-import type { GraphDocument } from "../domain/types/graph.ts";
+import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 // The sanctioned Dawn host: `src/runtime/backend/vgpu/` is the only place a `vgpu` import
 // is legal (§V3), and this is that boundary's node entry point.
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
@@ -179,6 +179,161 @@ describe("E12 actually flows", () => {
 });
 
 /** rgba16float is half-precision; a readback is bytes, and this is how they mean anything. */
+/**
+ * E2 IS ALIVE, AND THE MAP IS WHAT MAKES IT (T388, §V147, B15).
+ *
+ * The owner's complaint about E2 was aesthetic — "not this interesting biochemistry cell
+ * structure that feels alive and evolving" — and a test cannot judge a picture. What it CAN
+ * do is pin the three mechanisms the look rests on, each of which fails silently: a
+ * reaction-diffusion that has structurally frozen still renders a plausible image, and one
+ * whose chemistry map is not reaching the kernel renders a perfectly nice uniform maze.
+ *
+ * All four numbers below were measured on Dawn while writing this, on the shipped file, at
+ * frame 300 of a 512x512 simulation (262,144 pixels), counting pixels whose V exceeds 0.1.
+ */
+describe("E2 is alive, and its chemistry map is doing the work", () => {
+  const STATE = "target:rd:out";
+  const SIZE = 512;
+
+  async function simulate(
+    mutate: (graph: GraphDocument) => GraphDocument,
+    captures: ReadonlyArray<number>,
+  ): Promise<ReadonlyArray<Float32Array>> {
+    const file = listExamples().find((entry) => entry.fileName === "E2-Reaction-Diffusion.loom.json");
+    if (file === undefined) throw new Error("E2 is not shipped");
+    const { document } = requireExample(file);
+    const plan = compileGraph({
+      graph: mutate(document.graph),
+      settings: document.settings,
+      registry: exampleRegistry(),
+      capabilities: TIER_B_CAPABILITIES,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const frames: Float32Array[] = [];
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      let index = 0;
+      for (const target of captures) {
+        for (; index < target; index += 1) {
+          backend.render(compiled, {
+            frame: {
+              timeSeconds: index / 60,
+              deltaSeconds: 1 / 60,
+              frameIndex: index,
+              mode: "offline",
+              randomSeed: document.settings.randomSeed,
+            },
+            pointer: { x: 0.5, y: 0.5, buttons: 0 },
+            resolution: [SIZE, SIZE],
+          });
+        }
+        const image = await backend.readOutput(STATE);
+        expect(image.format).toBe("rgba16float");
+        const view = new DataView(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength);
+        const v = new Float32Array(image.width * image.height);
+        for (let y = 0; y < image.height; y += 1) {
+          for (let x = 0; x < image.width; x += 1) {
+            // Green is V, the reagent the pattern is made of. Read as DATA, which is also
+            // why the example colours it through a Ramp rather than showing it.
+            v[(y * image.width) + x] = halfFloat(view.getUint16((y * image.rowStride) + (x * 8) + 2, true));
+          }
+        }
+        frames.push(v);
+      }
+    } finally {
+      backend.dispose();
+    }
+    return frames;
+  }
+
+  /** Pixels the pattern occupies. */
+  const coverage = (v: Float32Array): number => v.reduce((count, value) => count + (value > 0.1 ? 1 : 0), 0);
+
+  /** Pixels that changed by more than half a percent of full scale. */
+  function moved(a: Float32Array, b: Float32Array): number {
+    let count = 0;
+    for (let index = 0; index < a.length; index += 1) if (Math.abs((a[index] as number) - (b[index] as number)) > 0.02) count += 1;
+    return count;
+  }
+
+  /**
+   * How much the pattern's FEATURE DENSITY varies from region to region.
+   *
+   * Coverage cannot see this — spots and worms can occupy the same area — and feature
+   * density is exactly what the eye reads as "different things are growing here and there".
+   * Counted as horizontal 0.1-crossings per 64x64 tile; the spread across the 64 tiles is
+   * the number that separates a map from a constant.
+   */
+  function featureSpread(v: Float32Array): number {
+    const tiles: number[] = [];
+    for (let ty = 0; ty < 8; ty += 1) {
+      for (let tx = 0; tx < 8; tx += 1) {
+        let crossings = 0;
+        for (let y = ty * 64; y < (ty + 1) * 64; y += 1) {
+          for (let x = (tx * 64) + 1; x < (tx + 1) * 64; x += 1) {
+            if (((v[(y * SIZE) + x - 1] as number) > 0.1) !== ((v[(y * SIZE) + x] as number) > 0.1)) crossings += 1;
+          }
+        }
+        tiles.push(crossings);
+      }
+    }
+    const mean = tiles.reduce((a, b) => a + b, 0) / tiles.length;
+    return Math.sqrt(tiles.reduce((a, b) => a + ((b - mean) ** 2), 0) / tiles.length);
+  }
+
+  const withNode =
+    (id: string, parameters: GraphNode["parameters"]) =>
+    (graph: GraphDocument): GraphDocument => {
+      const node = graph.nodes[id];
+      if (node === undefined) throw new Error(`E2 has no ${id} node`);
+      const patched: GraphNode = { ...node, parameters: { ...node.parameters, ...parameters } };
+      return { ...graph, nodes: { ...graph.nodes, [id]: patched } };
+    };
+
+  it("evolves, twenty times faster than one step per frame could (T387)", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const [at300, at310] = await simulate((graph) => graph, [300, 310]);
+
+    // IT MOVES. §V147/B15: a frozen simulation renders a perfectly plausible picture, and
+    // every structural assertion in `concepts.test.ts` would still pass on one. Measured:
+    // 14,035 pixels of 262,144 changed across ten displayed frames.
+    expect(moved(at300 as Float32Array, at310 as Float32Array)).toBeGreaterThan(5_000);
+
+    // AND SUBSTEPS ARE WHY. The same 300 displayed frames at one iteration each — which is
+    // all this product could do before T387 — leave the pattern barely out of its seed
+    // plate. Measured: 161,907 pixels covered against 28,028, a factor of 5.8.
+    const [oneStep] = await simulate(withNode("state", { substeps: 1 }), [300]);
+    expect(coverage(at300 as Float32Array)).toBeGreaterThan(coverage(oneStep as Float32Array) * 3);
+  }, 300_000);
+
+  it("runs genuinely different chemistries where the map says so, not one maze everywhere", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    // The two ends of the band the kernel walks, forced flat by having the Reorder write a
+    // literal instead of the noise chain's luminance. Nothing else changes.
+    const [low] = await simulate(withNode("pack", { outb: "zero" }), [300]);
+    const [high] = await simulate(withNode("pack", { outb: "one" }), [300]);
+
+    // They are not the same creature, and it is not close: measured 149,410 pixels covered
+    // at one end against 10,500 at the other. A band whose ends behave alike is the uniform
+    // look wearing a map, which is exactly what shipped before.
+    expect(coverage(low as Float32Array)).toBeGreaterThan(coverage(high as Float32Array) * 8);
+
+    // …and with the real map, feature density varies from region to region MORE than it
+    // does under either constant. Measured spreads: 89.8 varied, 62.1 at the low end, 33.2
+    // at the high end. This is the assertion that fails if the chemistry never reaches the
+    // kernel — the Reorder's blue channel, the state texture's precision, the kernel's read
+    // of `centre.b` — every one of which still renders a beautiful uniform maze.
+    const [varied] = await simulate((graph) => graph, [300]);
+    expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(low as Float32Array));
+    expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(high as Float32Array));
+  }, 300_000);
+});
+
 function halfFloat(bits: number): number {
   const sign = (bits & 0x8000) === 0 ? 1 : -1;
   const exponent = (bits & 0x7c00) >> 10;
