@@ -225,7 +225,10 @@ describe("T49 Phase 1 exit — one output feeds multiple consumers without dupli
 
       // `encode()` walks `plan.passes` once per frame, so this list IS the per-frame
       // execution order. One entry per kept node, plus one swap per feedback pair.
-      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap");
+      // T425/§V358: a feedback loop carries its region MARKERS even at one step per
+      // frame — they encode nothing and build nothing, so they are excluded the same
+      // way swaps are.
+      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap" && pass.kind !== "loop");
       const swapPasses = plan.passes.filter((pass) => pass.kind === "swap");
       expect(effectPasses).toHaveLength(plan.order.length);
       expect(swapPasses).toHaveLength(plan.feedback.length);
@@ -287,7 +290,7 @@ describe("T49 Phase 1 exit — one output feeds multiple consumers without dupli
       const plan = compile(pocGraph(), capabilities);
       await backend.compile(plan);
       const calls = host.instrumentation?.calls;
-      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap").length;
+      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap" && pass.kind !== "loop").length;
       expect(calls?.createRenderPipeline).toBe(effectPasses);
       expect(calls?.createShaderModule).toBe(effectPasses);
     } finally {
@@ -359,7 +362,7 @@ describe("T49 Phase 1 exit — a feedback graph runs long without accumulating G
       const warmUp = 4;
       for (let index = 0; index < warmUp; index += 1) backend.render(compiled, frameInputs(index));
       const baseline = { ...host.instrumentation?.calls };
-      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap").length;
+      const effectPasses = plan.passes.filter((pass) => pass.kind !== "swap" && pass.kind !== "loop").length;
       // One bind group per pass, plus one for the pair's other half — bounded, not per frame.
       expect(baseline.createBindGroup).toBeLessThanOrEqual(effectPasses + plan.feedback.length);
 

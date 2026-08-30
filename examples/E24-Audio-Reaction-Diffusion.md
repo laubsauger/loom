@@ -1,15 +1,23 @@
 # E24 — Audio Reaction-Diffusion
 
-E2's chemistry, played like an instrument. Bind a track (or grant the microphone) and
-the bass makes the pattern grow FASTER — not brighter, faster — the mids steer which
-chemistry the dish runs, each kick bumps the palette warm, and motion fringes into a
-genuinely temporal RGB delay. Unplug everything and it still animates: silence is a
-picture here, not a failure.
+E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. The
+music source is a deterministic beat pattern (`audioPattern`, 112 bpm): the bass makes
+the pattern grow FASTER — not brighter, faster — the mids steer which chemistry the
+dish runs, each kick pulses the palette warm, and motion fringes into a genuinely
+temporal RGB delay. To play it with REAL sound, replace the one `music1` node with an
+`audioFileIn` (choose a file) or `audioIn` (microphone) and KEEP THE LABEL — every
+mapping downstream drives from whatever wears the name `music1`.
+
+Why a synthetic source ships (§V363): assets are session-only, so no example can carry
+a bound track, and an audio-reactive graph whose null state looks finished demos
+nothing. The pattern is also the audio path's deterministic test signal — the replay
+gate renders this file twice and demands byte-identical frames, with no recording
+involved.
 
 ## Graph
 
 ```
-music1(audioFileIn) ─► env1(lag) ─► sgain1·sbase1·steps1 ┄┄drives┄┄► state1.substeps
+music1(audioPattern) ─► env1(lag) ─► sgain1·sbase1·steps1 ┄┄drives┄┄► state1.substeps
                               └───► wgain1·wbase1·wlevel1 ┄┄drives┄┄► shape1.whitelevel
 music1 ─► trig1(trigger: onsetCount) ─► kick1(lag) ─► kgain1·kscale1 ┄┄drives┄┄► tint1.scale
 
@@ -57,10 +65,11 @@ STILL pixels too, and that is the wrong effect wearing the right name.
 
 ## Silence, stated
 
-Unbound audio reads all-zero channels (§V329): substeps rest at 14, the white point
-sits mid-band, the kick never fires, and the noises + LFO keep the picture breathing.
-Every audio mapping is an ADDITION on top of a self-animating base — which is what
-makes the example demonstrable anywhere and an instrument when fed.
+Swap in a live source and mute it, and the channels read all-zero (§V329): substeps
+rest at 14, the white point sits mid-band, the kick never fires, and the noises + LFO
+keep the picture breathing. Every audio mapping is an ADDITION on top of a
+self-animating base. An `audioFileIn` with no file chosen SAYS so — the inspector's
+Audio section reads "Waiting for a file" rather than an idle that looks finished.
 
 ## Regression signatures
 

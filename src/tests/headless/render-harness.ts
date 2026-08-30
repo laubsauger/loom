@@ -7,6 +7,8 @@ import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
+import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
+import { createUniformAnimator } from "../../app/animate-parameters.ts";
 import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
@@ -58,6 +60,13 @@ export interface HeadlessRenderRequest {
   readonly beforeFrames?: (control: HarnessControl) => void;
   /** Called after frame `at`, before the next step. Used by the resize case. */
   readonly betweenFrames?: (control: HarnessControl, frameIndex: number) => void;
+  /**
+   * T442 (T431's skeleton): evaluate the VALUE GRAPH each frame and push driven
+   * parameter values through the animator before the encode — the live app's T340
+   * order, headless. Off by default: a static render must not pay for a value session
+   * it does not use, and every existing caller keeps its exact behaviour.
+   */
+  readonly animate?: boolean;
 }
 
 export interface HarnessControl {
@@ -140,12 +149,34 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     };
     request.beforeFrames?.(control);
 
+    const valueSession = request.animate === true ? createValueGraphSession(registry()) : null;
+    const animator = request.animate === true ? createUniformAnimator() : null;
     const driver = createFrameDriver({
       backend,
       // §V45: the seed is the project's, not the transport's own invention.
       transport: offlineTransport({ fps, seed: settings.randomSeed, mode: "fixed-step" }),
       pointer: createPointerSource(),
       resolution: () => [settings.outputResolution.width, settings.outputResolution.height],
+      ...(valueSession === null || animator === null
+        ? {}
+        : {
+            // T340's order, headless: channels advance, then the per-frame plan is
+            // re-resolved and only changed VALUES are pushed (§V5 — a structural
+            // difference is refused by the animator, never silently recompiled).
+            onBeforeFrame: (inputs) => {
+              const evaluated = valueSession.evaluate(request.graph, inputs.frame, {
+                ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
+              });
+              const next = compileGraph({
+                graph: request.graph,
+                settings,
+                registry: registry(),
+                capabilities,
+                resolution: { frame: inputs.frame, channels: evaluated.resolver },
+              });
+              animator.push(backend, plan, next);
+            },
+          }),
     });
     driver.setPlan(compiled);
 

@@ -101,3 +101,72 @@ export const audioFileInNode: NodeDefinition = {
   valueEvaluate: ({ audio }) => projectFeatures(audio),
   compile: (): CompiledNodeDescription => ({ passes: [] }),
 };
+
+/**
+ * T442 — Audio Pattern: the audio path's TEST SIGNAL, and the reason the flagship
+ * plays the moment it opens (B74, §V363: a demo must demonstrate itself).
+ *
+ * A deterministic beat — kick on the beat, snare on the off-beats, eighth-note hats —
+ * synthesized as band envelopes from the FRAME CLOCK alone. Pure function of
+ * (timeSeconds, deltaSeconds, params): no capture, no permission, no asset, and
+ * therefore REPLAYABLE BY CONSTRUCTION — the deterministic audio source the capture
+ * path cannot be, which is what a byte-identical replay gate needs (§V352 without even
+ * a recorded track).
+ *
+ * It publishes the SAME channel set as audioIn/audioFileIn, so swapping a real source
+ * in is replacing one node and keeping its label — every downstream edge and driven
+ * channel reference survives untouched.
+ *
+ * `onsetCount` is computed over the frame INTERVAL (floor(beats(t)) − floor(beats(t−Δ)))
+ * — so a low display rate under a high bpm honestly reports 2 events in one frame,
+ * which makes this the first source to exercise T437's interval semantics beyond 0|1.
+ */
+export const audioPatternNode: NodeDefinition = {
+  type: "audioPattern",
+  version: 1,
+  title: "Audio Pattern",
+  category: "value",
+  description:
+    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Same channels as Audio In (level, bands, onset, onsetCount, onsetMax), so swapping in a live source is one node. No microphone, no file, replayable by construction.",
+  tags: ["value", "audio", "test", "beat", "pattern", "deterministic"],
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    bpm: { type: "number", label: "BPM", default: 112, min: 20, max: 300 },
+    amount: { type: "number", label: "Amount", default: 1, min: 0, max: 1, description: "Master gain on every channel." },
+  },
+  valueEvaluate: ({ values, frame }) => {
+    const bpm = typeof values["bpm"] === "number" ? values["bpm"] : 112;
+    const amount = typeof values["amount"] === "number" ? values["amount"] : 1;
+    const beats = (frame.timeSeconds * bpm) / 60;
+    const beatsBefore = ((frame.timeSeconds - frame.deltaSeconds) * bpm) / 60;
+    const beatPhase = beats - Math.floor(beats);
+
+    /* Exponential strikes: an instant attack on the boundary, a musical decay after. */
+    const kick = Math.exp(-beatPhase * 7);
+    const snare = Math.floor(beats) % 2 === 1 ? Math.exp(-beatPhase * 9) * 0.8 : 0;
+    const hatPhase = beats * 2 - Math.floor(beats * 2);
+    const hat = Math.exp(-hatPhase * 14) * 0.5;
+
+    const low = (0.12 + 0.88 * kick) * amount;
+    const lowMid = (0.15 + 0.55 * snare + 0.15 * kick) * amount;
+    const highMid = (0.1 + 0.5 * hat) * amount;
+    const high = (0.06 + 0.45 * hat) * amount;
+    /* T437's interval semantics, honestly: a slow frame under a fast bpm counts 2. */
+    const onsetCount = Math.max(0, Math.floor(beats) - Math.floor(Math.max(beatsBefore, 0)));
+    const onset = Math.max(kick, snare, hat) * amount;
+
+    return {
+      level: 0.3 * low + 0.3 * lowMid + 0.2 * highMid + 0.2 * high,
+      low,
+      lowMid,
+      highMid,
+      high,
+      onset,
+      onsetCount,
+      onsetMax: onsetCount > 0 ? amount : onset,
+    };
+  },
+  compile: (): CompiledNodeDescription => ({ passes: [] }),
+};
+

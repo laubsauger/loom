@@ -179,3 +179,45 @@ describe("audioFileIn (T434)", () => {
     expect((file as { kind?: string }).kind).toBe("audio");
   });
 });
+
+describe("audioPattern (T442)", () => {
+  const channelsAt = (timeSeconds: number, deltaSeconds = 1 / 60, parameters: Record<string, number> = {}) =>
+    registry.get("audioPattern")?.valueEvaluate?.({
+      inputs: {},
+      values: { bpm: 120, amount: 1, ...parameters },
+      frame: { timeSeconds, deltaSeconds, frameIndex: Math.round(timeSeconds * 60), mode: "offline", randomSeed: 7 },
+      state: {},
+    }) as Record<string, number>;
+
+  it("strikes the kick EXACTLY on the beat: full low at phase zero, decayed just before", () => {
+    // 120 bpm: a beat every 0.5s. On the boundary the kick envelope is exp(0) = 1.
+    const onBeat = channelsAt(1.0);
+    expect(onBeat.low).toBe(1);
+    expect(onBeat.onsetCount).toBe(1);
+    // Just before the next beat the envelope has decayed to exp(-phase*7).
+    const late = channelsAt(1.49);
+    const phase = (1.49 * 2) % 1;
+    expect(late.low).toBeCloseTo(0.12 + 0.88 * Math.exp(-phase * 7), 10);
+    expect(late.onsetCount).toBe(0);
+  });
+
+  it("reports MULTI-EVENT frames honestly — T437's interval semantics beyond 0|1", () => {
+    // A whole second at 120 bpm inside one delta: two beats crossed, count says 2.
+    const slow = channelsAt(2.0, 1.0);
+    expect(slow.onsetCount).toBe(2);
+    expect(slow.onsetMax).toBe(1);
+  });
+
+  it("is pure: the same clock gives the same channels — replayable by construction", () => {
+    expect(channelsAt(3.21)).toEqual(channelsAt(3.21));
+  });
+
+  it("shares audioIn's channel NAMES exactly, so a live source swaps in as one node", () => {
+    const pattern = Object.keys(channelsAt(0)).sort();
+    const live = Object.keys(
+      registry.get("audioIn")?.valueEvaluate?.({ inputs: {}, values: {}, frame: frame(0), state: {} }) ?? {},
+    ).sort();
+    expect(pattern).toEqual(live);
+  });
+});
+

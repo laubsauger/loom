@@ -88,6 +88,7 @@ describe("core catalogue (T70, T40)", () => {
       // and the trio. Deliberately named for what it IS, not a TD analog.
       "audioIn",
       "audioFileIn",
+      "audioPattern",
       "pointGenerator",
       "pointGrid",
       "pointLine",

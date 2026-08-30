@@ -17,8 +17,8 @@ import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
-export { audioFileInNode, audioInNode } from "./audio.ts";
-import { audioFileInNode, audioInNode } from "./audio.ts";
+export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
+import { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
 import { pointGeneratorDefinitions } from "./point-generators.ts";
 import { renderInstancesNode } from "./render-instances.ts";
 import { renderSurfaceNode } from "./render-surface.ts";
@@ -159,6 +159,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...valueGraphNodeDefinitions,
   audioInNode,
   audioFileInNode,
+  audioPatternNode,
   ...pointGeneratorDefinitions,
   renderInstancesNode,
   renderSurfaceNode,

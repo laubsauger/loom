@@ -1695,7 +1695,14 @@ const audioRdDocument = document(
   graph(
     [
       // ---- the sound ------------------------------------------------------------
-      node("music", "audioFileIn", [-1460, 420], {}, { label: "music1" }),
+      /*
+       * T442 (B74, §V363): the flagship PLAYS on first open. Assets are session-only,
+       * so no example can ship a bound audio file — and an audio-reactive graph whose
+       * null state is indistinguishable from a broken one demos nothing. The pattern
+       * node is the deterministic stand-in: swap this ONE node for an audioFileIn or
+       * audioIn (keep the label) and every mapping downstream drives from real sound.
+       */
+      node("music", "audioPattern", [-1460, 420], { bpm: 112, amount: 1 }, { label: "music1" }),
       node("env", "valueLag", [-1220, 420], { lag: 0.12 }, { label: "env1" }),
       // Substeps: low band, scaled 0..20 over a base of 14, fenced 1..34.
       node("sgain", "valueMath", [-980, 340], { operation: "multiply", operand: 20 }, { label: "sgain1" }),

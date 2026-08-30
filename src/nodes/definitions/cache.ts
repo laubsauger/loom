@@ -175,7 +175,10 @@ export const cacheNode: NodeDefinition = {
       // ringLatest/ringWritten/ringFrames into `cacheTap` every frame by name.
       textures: [{ binding: "ringTexture", resourceId: ring, array: true }],
       samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
-      uniforms: { tap: index },
+      // The ring head trio is RESERVED here at zero — vgpu matches uniforms by name,
+      // and the backend overwrites all three every frame from the ring's own counters
+      // (the T367 pointer convention: present exactly when the block declares it).
+      uniforms: { tap: index, ringLatest: 0, ringWritten: 0, ringFrames: frames },
       uniformBinding: "cacheTap",
       nodeId,
       label: "Cache Read",

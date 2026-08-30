@@ -474,12 +474,15 @@
         "definitionVersion": 1,
         "id": "music",
         "label": "music1",
-        "parameters": {},
+        "parameters": {
+          "amount": 1,
+          "bpm": 112
+        },
         "position": {
           "x": -1460,
           "y": 420
         },
-        "type": "audioFileIn"
+        "type": "audioPattern"
       },
       "out": {
         "definitionVersion": 1,

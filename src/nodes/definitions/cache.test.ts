@@ -51,7 +51,7 @@ describe("Cache (T237)", () => {
     // — a per-layer view would rebuild the pass's bind group every rotation, which the
     // settled-frame allocation gate refuses (found the day a cache entered an example).
     expect(read?.textures).toEqual([{ binding: "ringTexture", resourceId: ring, array: true }]);
-    expect(read?.uniforms).toEqual({ tap: 3 });
+    expect(read?.uniforms).toEqual({ tap: 3, ringLatest: 0, ringWritten: 0, ringFrames: 8 });
     expect(read?.uniformBinding).toBe("cacheTap");
   });
 

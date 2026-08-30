@@ -142,10 +142,20 @@ describe("feedback node — the real compiler accepts the loop (§V4, T25, T33)"
     expect(pingPongs).toHaveLength(1);
     expect(plan.feedback).toHaveLength(1);
 
-    // §V22: the swap comes after every current-frame consumer.
+    // §V22: the swap comes after every current-frame CONSUMER of the pair. Until T425
+    // this was assertable as "after every effect" because the swap trailed the whole
+    // plan; the substep region (emitted even at one step, §V358) gathers the loop
+    // contiguously, so unrelated downstream effects legally follow the swap now — the
+    // property was always about the pair's READERS, so that is what is asserted.
+    const pairId = pingPongs[0]?.id as string;
     const swapIndex = plan.passes.findIndex((pass) => pass.kind === "swap");
-    const lastEffectIndex = plan.passes.map((pass) => pass.kind).lastIndexOf("effect");
-    expect(swapIndex).toBeGreaterThan(lastEffectIndex);
+    plan.passes.forEach((pass, index) => {
+      const reads =
+        pass.kind === "effect" &&
+        (pass.textures ?? []).some((binding) => binding.resourceId === pairId);
+      if (reads) expect(swapIndex, `swap after consumer ${pass.id}`).toBeGreaterThan(index);
+    });
+    expect(swapIndex).toBeGreaterThanOrEqual(0);
   });
 
   it("rejects the same loop without the Feedback node (control case)", () => {

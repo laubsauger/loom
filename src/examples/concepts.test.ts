@@ -1277,5 +1277,16 @@ describe("E24 Audio Reaction-Diffusion", () => {
     expect((document.graph.nodes["trig"] as GraphNode).type).toBe("valueTrigger");
     expect((document.graph.nodes["kick"] as GraphNode).type).toBe("valueLag");
   });
+
+  /**
+   * B74/§V363: the flagship demonstrates ITSELF. Assets are session-only, so no example
+   * can ship a bound track — the music node must be the deterministic pattern, or the
+   * first-open experience is an LFO breathing over a doc line nobody reads.
+   */
+  it("ships the synthetic pattern as its source, so it plays on first open", () => {
+    const music = document.graph.nodes["music"] as GraphNode;
+    expect(music.type).toBe("audioPattern");
+    expect(music.label).toBe("music1"); // the swap contract: replace the node, keep the label
+  });
 });
 

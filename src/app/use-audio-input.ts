@@ -70,6 +70,13 @@ function urlOf(value: unknown): string {
  * present — otherwise the first `audioIn` by node id opens the microphone with its
  * device selection. Exported pure so the precedence is pinned by test.
  */
+/** B74: an audioFileIn with no file is a node WAITING — the status must say so. */
+export function hasUnboundAudioFile(graph: GraphDocument): boolean {
+  return Object.values(graph.nodes).some(
+    (node) => node.type === "audioFileIn" && urlOf(staticValueOf(node as GraphNode, "file")).trim() === "",
+  );
+}
+
 export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
   const nodesOf = (type: string): GraphNode[] =>
     Object.keys(graph.nodes)
@@ -218,7 +225,16 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
       if (key === configKeyRef.current) return;
       configKeyRef.current = key;
       teardown();
-      if (config !== null) void acquire(config);
+      if (config !== null) {
+        void acquire(config);
+      } else if (hasUnboundAudioFile(getGraphRef.current())) {
+        // B74/§V363: no capture, but a file node is WAITING — name that state instead
+        // of an idle that reads identically to "everything is fine".
+        statusRef.current = {
+          kind: "idle",
+          message: "Waiting for a file — choose one on the Audio File In node.",
+        };
+      }
     }, 1000);
 
     return () => {
