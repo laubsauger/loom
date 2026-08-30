@@ -116,8 +116,6 @@ export type PlannedCommandName =
   | "ui.cancel"
   | "ui.openNodeSearch"
   | "ui.openShaderEditor"
-  | "view.frameAll"
-  | "view.frameSelected"
   | "view.home"
   | "view.homeSelected"
   | "view.overview";
@@ -133,8 +131,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "ui.cancel",
   "ui.openNodeSearch",
   "ui.openShaderEditor",
-  "view.frameAll",
-  "view.frameSelected",
   "view.home",
   "view.homeSelected",
   "view.overview",

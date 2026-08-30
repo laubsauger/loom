@@ -85,6 +85,10 @@ const APP_REGISTERED = [
   // bus does not own it. Live, not planned: this row is the FIRST door the command has
   // ever had (§V153, §V356).
   "ui.toggleReferenceLines",
+  // T430/§V354: registered by the mounted graph pane (`src/app/view-commands.ts`) — only
+  // the canvas can move its own camera, and framing is view state that writes no patch.
+  // Live, not planned: `F` and this row both fit the graph in the window.
+  "view.frameAll",
 ];
 
 describe("what the menus promise but nobody has built", () => {

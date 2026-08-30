@@ -19,6 +19,7 @@ import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
+import { registerViewCommands } from "./view-commands.ts";
 import { useNodePreviews } from "./use-node-previews.ts";
 import styles from "./panes.module.css";
 
@@ -266,6 +267,37 @@ function GraphPaneInner({
       selectAll: (nodeIds: readonly NodeId[]) => {
         const wanted = new Set(nodeIds);
         flow.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: wanted.has(node.id) })));
+      },
+    };
+    holder.current = handlers;
+    return () => {
+      if (holder.current === handlers) holder.current = null;
+    };
+  }, [bus, flow]);
+
+  /**
+   * `F` and `f` (T430/§V354). Same shape as select-all above and for the same reason: the
+   * canvas is the only thing that can move its own camera, so it fills the holder while
+   * it is mounted.
+   *
+   * The count comes from the nodes React Flow ACTUALLY holds, not from the ids asked for.
+   * `fitView` silently ignores an id it does not know, so counting the request would let
+   * a stale selection report a camera move that never happened (§V123).
+   */
+  useEffect(() => {
+    const holder = registerViewCommands(bus);
+    const handlers = {
+      frame: (nodeIds: readonly string[] | null): number => {
+        if (nodeIds === null) {
+          const all = flow.getNodes();
+          if (all.length > 0) void flow.fitView();
+          return all.length;
+        }
+        const wanted = new Set(nodeIds);
+        const present = flow.getNodes().filter((node) => wanted.has(node.id));
+        if (present.length === 0) return 0;
+        void flow.fitView({ nodes: present.map((node) => ({ id: node.id })) });
+        return present.length;
       },
     };
     holder.current = handlers;

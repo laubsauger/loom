@@ -86,7 +86,9 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       { command: "graph.selectAll", label: "Select all" },
       { separator: true },
       { command: planned("graph.layoutAll"), label: "Layout" },
-      { command: planned("view.frameAll"), label: "Frame all" },
+      // T430/§V354: live since the canvas registers it — the menu row and `F` are the
+      // same command, so a click and a keypress cannot mean different things (§V78).
+      { command: "view.frameAll", label: "Frame all" },
       // B68/§V153: the toggle the invariant calls a real control, which until now had no
       // door at all — `registerReferenceLinesCommand` is called for its STORE, so the
       // seam gate saw a reached registrar while the command it registers was named by no

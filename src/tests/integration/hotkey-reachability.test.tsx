@@ -521,3 +521,113 @@ describe("T440/§V354 — `v` reaches the viewer command and says why when it ca
     expect(runtime.bus.hasCommand("node.openViewer")).toBe(true);
   });
 });
+
+/**
+ * T430/§V354 — `F` and `f`, the two keys that moved nothing while the canvas filled the
+ * screen.
+ *
+ * Both were bound from T77 and planned, so pressing them did nothing and the palette
+ * called them unavailable. The surface they act on is the largest thing in the app, which
+ * is precisely when "honest-absent" stops being honest.
+ *
+ * The observable is the VIEWPORT TRANSFORM (§V350): not that the command returned
+ * `applied`, but that the camera is somewhere else afterwards. `viewport-transform.test.tsx`
+ * establishes that this transform is real and mutable under jsdom — a pan and a wheel zoom
+ * both move it there — so this is a genuine camera assertion rather than a DOM-existence
+ * one (§V339).
+ */
+describe("T430/§V354 — `F` frames the graph and `f` frames the selection", () => {
+  const transformOf = (container: Element): string =>
+    container.querySelector<HTMLElement>(".react-flow__viewport")?.style.transform ?? "none";
+
+  it("puts the camera back on the whole graph when `F` is pressed", async () => {
+    // The camera is moved by the OTHER key under test rather than by a pan gesture:
+    // d3-zoom needs a `view` on the event to accept a middle-drag, and borrowing that
+    // machinery would make this a test of the pan harness. `f` moving the camera is
+    // asserted independently below, so each key is the other's non-vacuity.
+    const { container } = await mountWithNodes(3);
+    await waitFor(() => {
+      expect(transformOf(container)).not.toBe("none");
+    });
+    const frameAll = transformOf(container);
+
+    const node = container.querySelectorAll(".react-flow__node")[2];
+    if (node === undefined) throw new Error("expected three nodes");
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "f" });
+    });
+    await waitFor(() => {
+      expect(transformOf(container), "`f` did not move the camera").not.toBe(frameAll);
+    });
+
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "F", shiftKey: true });
+    });
+
+    await waitFor(() => {
+      expect(
+        transformOf(container),
+        "`F` did not frame the whole graph — the camera stayed on the selection",
+      ).toBe(frameAll);
+    });
+  });
+
+  it("frames only the selection when `f` is pressed", async () => {
+    // Three nodes spread across the canvas, so framing ONE cannot land on the same
+    // transform as framing all three.
+    const { container } = await mountWithNodes(3);
+    await waitFor(() => {
+      expect(transformOf(container)).not.toBe("none");
+    });
+    const frameAll = transformOf(container);
+
+    const node = container.querySelectorAll(".react-flow__node")[2];
+    if (node === undefined) throw new Error("expected three nodes");
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "f" });
+    });
+
+    await waitFor(() => {
+      expect(
+        transformOf(container),
+        "`f` left the camera on the whole graph — it framed everything, or nothing",
+      ).not.toBe(frameAll);
+    });
+  });
+
+  it("names the ids it does not hold rather than reporting a move it did not make", async () => {
+    // §V123: `fitView` silently ignores an id it does not know, so a handler that counted
+    // what it was ASKED for would answer "applied, framed 1" for a selection the canvas
+    // no longer holds — a camera move that never happened, reported as one that did.
+    const { runtime } = await mountWithNodes(2);
+    const result = await act(async () =>
+      runtime.bus.execute("view.frameSelected", { nodeIds: ["nd_gone"] }, runtime.invocation),
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.framed).toBe(0);
+    expect(result.diagnostics[0]?.message).toContain("nd_gone");
+  });
+
+  it("refuses by name rather than doing nothing when there is nothing to frame", async () => {
+    const { container } = await mountWithNodes(0);
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "F", shiftKey: true });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent ?? "").toContain("nothing to frame");
+  });
+});

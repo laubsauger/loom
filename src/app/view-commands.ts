@@ -1,0 +1,135 @@
+import type { ShaderloomBus } from "@domain/commands/bus.ts";
+
+/**
+ * `view.frameAll` / `view.frameSelected` — TouchDesigner's `F` and `f` (T430, §V354).
+ *
+ * Both were bound in `defaults.ts` from T77 and sat in `PLANNED_COMMANDS`, so the palette
+ * called them unavailable and the two keys did nothing. §V354 is why that stopped being
+ * honest: the canvas whose camera they move is the largest thing on the screen. A key
+ * that does nothing while the surface it acts on is right there reads as a broken app
+ * rather than an unbuilt feature.
+ *
+ * Framing is view state, not document state, so — like `graph.selectAll` and
+ * `node.openViewer` — the command lives beside its surface with nothing for `ctx.apply`
+ * to write, and the canvas fills a holder while it is mounted. A camera move must not
+ * make an undo entry: §V34 groups an EDIT, and Cmd+Z after a glance has to undo the edit
+ * before it, not the glance.
+ *
+ * ## Why only FRAME, and not `H`/`h`/`o`
+ *
+ * "Fit these nodes in the window" has exactly one meaning, and React Flow's `fitView`
+ * already is it. Home and Overview do not: §I transcribes them from TouchDesigner as
+ * "default view" and "overview", and against a real TD install `H` may reset the zoom to
+ * 1:1, or fit-all — which would make it a duplicate of `F` — and Overview may be a
+ * zoomed-out fit or TD's separate navigation pane. Guessing would put a wrong meaning on
+ * a key that then has to be un-taught. They stay planned, and the note is in `defaults.ts`
+ * beside the bindings.
+ */
+declare module "@domain/types/commands.ts" {
+  interface CommandMap {
+    /** Fit every node in the graph. Reports how many it framed. */
+    "view.frameAll": { input: Record<string, never>; output: { framed: number } };
+    /** Fit the given nodes. Reports how many of them the canvas actually holds. */
+    "view.frameSelected": { input: { nodeIds: readonly string[] }; output: { framed: number } };
+  }
+}
+
+export interface ViewHandlers {
+  /**
+   * Frames `nodeIds`, or the whole graph when null. Returns how many nodes were framed —
+   * NOT how many were asked for, so a stale id reports honestly rather than claiming a
+   * move that did not happen (§V123).
+   */
+  frame(nodeIds: readonly string[] | null): number;
+}
+
+export interface ViewHolder {
+  current: ViewHandlers | null;
+}
+
+const holders = new WeakMap<object, ViewHolder>();
+
+export function viewHolderFor(bus: ShaderloomBus): ViewHolder {
+  const existing = holders.get(bus);
+  if (existing !== undefined) return existing;
+  const holder: ViewHolder = { current: null };
+  holders.set(bus, holder);
+  return holder;
+}
+
+const NO_CANVAS = {
+  severity: "warning" as const,
+  code: "view.noCanvas",
+  message: "No graph canvas is mounted, so there is no camera to move.",
+};
+
+/** Idempotent: the bus has no unregister, and React mounts more than once. */
+export function registerViewCommands(bus: ShaderloomBus): ViewHolder {
+  const holder = viewHolderFor(bus);
+  if (bus.hasCommand("view.frameAll")) return holder;
+
+  bus.registerCommand({
+    name: "view.frameAll",
+    description: "Fit every node in the graph into the view.",
+    handler: (_input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) {
+        return { status: "rejected", revision, diagnostics: [NO_CANVAS], output: { framed: 0 } };
+      }
+      if (context.dryRun) return { status: "validated", revision, output: { framed: 0 } };
+      const framed = holder.current.frame(null);
+      if (framed === 0) {
+        // §V288: an empty canvas is a real answer, and a silent no-op looks like a dead
+        // key — which is the whole reason this command now exists.
+        return {
+          status: "rejected",
+          revision,
+          diagnostics: [
+            {
+              severity: "info" as const,
+              code: "view.nothingToFrame",
+              message: "The graph is empty, so there is nothing to frame.",
+            },
+          ],
+          output: { framed: 0 },
+        };
+      }
+      return { status: "applied", revision, output: { framed } };
+    },
+    rejectionOutput: () => ({ framed: 0 }),
+  });
+
+  bus.registerCommand({
+    name: "view.frameSelected",
+    description: "Fit the selected nodes into the view.",
+    handler: (input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) {
+        return { status: "rejected", revision, diagnostics: [NO_CANVAS], output: { framed: 0 } };
+      }
+      if (context.dryRun) return { status: "validated", revision, output: { framed: 0 } };
+      const framed = holder.current.frame(input.nodeIds);
+      if (framed === 0) {
+        return {
+          status: "rejected",
+          revision,
+          diagnostics: [
+            {
+              severity: "warning" as const,
+              code: "view.nothingToFrame",
+              message:
+                input.nodeIds.length === 0
+                  ? "Nothing is selected, so there is nothing to frame."
+                  : `The canvas holds none of ${[...input.nodeIds].sort().join(", ")}.`,
+            },
+          ],
+          output: { framed: 0 },
+        };
+      }
+      return { status: "applied", revision, output: { framed } };
+    },
+    rejectionOutput: () => ({ framed: 0 }),
+  });
+
+  return holder;
+}
