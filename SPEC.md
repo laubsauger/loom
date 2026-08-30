@@ -337,6 +337,8 @@ interface GraphComponentDefinition {
   outputs: ExposedPort[];
   parameters: PublishedParameter[];  // internal params → component param page
   migrations?: ComponentMigration[];
+  description?: string;
+  capabilities?: CapabilityRequirement[];  // what the internal network needs (V38)
 }
 
 interface ExposedPort { externalId: PortId; label: string; nodeId: NodeId; portId: PortId; }
@@ -737,7 +739,7 @@ V82: component compiles by FLATTENING into parent logical graph. source path pre
 V83: component recursion ⊥ — direct & indirect. detected @ instantiate, save, load.
 V84: instance pins component version. upgrade = explicit migration, ⊥ silent (V10).
 V85: node info = read-only view over the runtime telemetry channel (V16), ⊥ document store, ⊥ its own subscription. refresh ≤ 10Hz. ⊥ readback (V7) — every field ← plan + timer spans + diagnostics already collected.
-V86: node timing ← GPU timer spans, ⊥ CPU encode duration. timestamp query optional (V12) — absent → field reads "unavailable", ⊥ a fabricated number.
+V86: node timing shows GPU spans & CPU spans SEPARATELY — never mixed, never summed, never 1 under the other's label. (AMENDED: the original text FORBADE CPU encode duration outright; T256 wants both, & Notch's profiler showing them together is the 1 thing it does better than TD's. the prohibition was aimed @ the real hazard — a CPU number wearing a GPU label — so the invariant now names the SEPARATION, which is what was actually meant.) timestamp query optional (V12) — absent → the GPU half reads "unavailable", ⊥ a fabricated number, & a category containing 1 unmeasurable node totals to unavailable ⊥ to a wrong sum. timestamp query optional (V12) — absent → field reads "unavailable", ⊥ a fabricated number.
 V87: component info aggregates over its flattened passes by source path (V82): own | children | total. ⊥ reporting only the instance's own pass.
 V88: example project = real `.loom.json` loaded through the SAME loader as a user file (V10). ⊥ hand-built in-memory fixture — an example that only exists as code ⊥ prove the format works.
 V89: ∀ example ! load, compile w/ 0 error diagnostics, and render deterministically from a fixed seed + frame sequence (V45). CI runs them; a broken example = release blocker.
@@ -810,6 +812,8 @@ Houdini publishes an exact 3-line transform composition order; TD publishes NONE
 
 V202: the frame loop follows the VISIBLE surface. when a perform window is open, IT hosts the scheduler. Chrome clamps rAF to ~1Hz ∈ a non-foreground tab & suspends it entirely after a while ∴ an editor tab backgrounded while a perform window shows output means THE SHOW FREEZES. that is a real failure mode for a TD replacement, ⊥ a test artefact. background timers are throttled too ∴ the robust answers are the perform window's own context, or the worker + OffscreenCanvas already committed for Phase 2.
 V203: when rAF cadence COLLAPSES while playing, SAY SO. compare wall time to frame count (cheap) & surface "throttled by the browser". a frozen picture w/ ⊥ explanation is indistinguishable from a bug — & it generated ~6 "nothing animates" reports before anyone worked out what it was.
+V205: V193's enumeration covers AGENT TOOLS. that is ⊥ enough — the 4th instance of "built, tested, ⊥ wired" was `createAnalyzeChannels`, a RUNTIME SERVICE constructed only ∈ its own gpu test, so the image→parameter loop is ⊥ closed ∈ the product & no agent-tool guard could see it. the enumeration ! cover every SEAM the app is supposed to construct, ⊥ 1 category of them.
+V206: a number ∈ the SPEC is a claim like any other (V186). this spec asserted a display colour decoded to ~0.046; measurement says 0.0376. the wrong number had been copied into a source comment & read as researched for weeks. cite measurements, ⊥ recollections — & when correcting one, grep for its copies.
 V204: a CANVAS RETAINS its last presented frame ∴ "the previews look rendered" is ⊥ evidence that anything is rendering NOW. I read retained pixels as a live picture & filed a critical bug on it. the live check is the FRAME COUNT, ⊥ the image.
 V201: a composed test that STUBS the thing under suspicion proves the layers around it & says NOTHING about it. T267 drives a stubbed `loop` & ticks it by hand ∴ it proves edit→plan and is silent on whether `backend.loop` ever fires. ⊥ a defence of the code — a gap ∈ the test.
 V200: a "we measured & stopped" decision is recorded W/ ITS NUMBERS & the script that produced them, ⊥ as "deferred". a bare deferral reads as laziness to the next person & gets re-litigated from scratch; the census is what makes the decision re-checkable when the assumption (graph size) changes.
@@ -1090,6 +1094,9 @@ T282|x|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 
 T283|x|**Limit** — quantize. value → posterize, position → pixelate. 1 neighbourless shader, 2 recognisable looks|-
 T284|x|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
 T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampler ∴ the existing `scale: 1/4` preview path aliases. ⊥ hypothetical|V60
+T305|.|**wire `createAnalyzeChannels` ∈ the composition root** (B25) — the image→parameter loop is ⊥ closed ∈ the product today|V205,V144
+T306|.|extend the enumeration guard past agent tools to ∀ runtime SEAM the app constructs (V205). the guard that would have caught B25|V205,V193
+T307|.|shared `storedValues(resolved)` ∈ `src/domain/parameters/` — `storedSpaceValues` (flatten.ts) & the fixed `resolveInstanceValues` are now the SAME 4-line decision ∈ 2 places. that duplication IS B8's shape|V56,V57
 T303|.|frame loop follows the VISIBLE surface — perform window hosts the scheduler when open (falls out of T110/T192 multi-window)|V202,V70,V64
 T304|.|"throttled by the browser" notice when rAF cadence collapses while playing — wall time vs frame count|V203
 T295|.|**camera matrix + depth attachment** — camera is free (a uniform array, ⊥ IR change); depth is a small real change. EVERYTHING geometric is invisible w/o them ∴ first|V199
@@ -1102,7 +1109,7 @@ T301|.|`renderSurface` w/ ANALYTIC topology (TD's Connectivity + `Dim[]`) — gr
 T302|.|split kernel authoring like TD did: an ADVANCED kernel (may change counts) + a separate TOPOLOGY node. TD deprecated the combined Create POP ∴ ⊥ rebuild it|-
 T286|.|POP **Map page** — a per-point attribute as a PARAMETER MODE (5th `ParameterBinding` kind). decide the shape while the union is cheap to grow|V107,V69
 T287|.|POP **attribute qualifiers** (Color/Direction/Quaternion) — declares how a transform ! treat an attribute. our spec is type-only; encoding this ∈ magic names later is "index as identity" again|V75
-T278|.|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
+T278|x|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
 T277|x|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
 T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
 T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
@@ -1121,7 +1128,7 @@ T252|x|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` 
 T253|x|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
 T254|~|**DEFERRED W/ NUMBERS, ⊥ pending.** the STATIC-PLAN gate shipped (a fully static plan w/ nothing dirty skips the frame outright; V155 safe by construction). the per-node residual is ⊥ worth its correctness risk: census over ∀ 7 examples — E1 13%, E2-E4 0%, E5 100%, E6 17%, E7 25%. shared-frame binding propagates time-dependence through nearly everything ∴ gating buys ≤25% on ANIMATED graphs. revisit ONLY if 200-node graphs make 25% matter; the census script ∈ the commit reproduces the basis| ∈ `encode()` + dirty set on `Program` + pure clock-free `runtime/execution/cook.ts` policy|V155,V156,V159,V157
 T255|x|**fix `renderedThisFrame`** — `noteFrame()` bumps EVERY node ∀ frame ∴ popup always reads true (B17)|V85
-T256|.|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, better than TD's)|V85
+T256|x|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, better than TD's)|V85
 T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
 T247|x|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
 T246|.|parameter context menu (TD analog): copy value, copy REFERENCE, paste, reset→default, mode switch. items ← bus registry per V78 — ⊥ a 2nd hardcoded menu|V148,V149,V78,V107
@@ -1130,7 +1137,7 @@ T244|x|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
-T236|x|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
+T236|~|**Analyze** node — GPU half done, CPU half UNWIRED (B25/T305) — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|.|**Cache / Time Machine** — TRAP: needs a 3D-texture resource kind we ⊥ have, & ~1 GB for 60 frames @ 1080p rgba16float. cost the resource kind BEFORE the node — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
 T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
 T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
@@ -1175,8 +1182,8 @@ T192|x|float / pop-out a pane into its own window, sharing ONE bus + store + run
 T193|x|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
 T188|x|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
 T189|x|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
-T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
-T187|.|`component-scope.ts::resolveInstanceValues` returns DECODED `.values` into the parent scope ∴ a display colour decodes TWICE (mid-grey → ~0.046). ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
+T190|x|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
+T187|x|`component-scope.ts::resolveInstanceValues` returned DECODED `.values` into the parent scope ∴ a display colour decoded TWICE. MEASURED: stored 0.5 → shader got **0.0376**, correct is **0.2140** (`srgbToLinear(0.5)`=0.21404; decoding THAT again = 0.03765). the ~0.046 in this row & ∈ `flatten.ts`'s comment was WRONG — right about the correct value, wrong about the broken one. ! return stored-space `entries[].value`, as `flatten.ts` now does|V56,V61,V81
 T184|x|**START THE FRAME LOOP.** `backend.loop()` is called NOWHERE ∴ nothing renders — ⊥ node preview, ⊥ viewer, ⊥ output. compiler runs, backend exists, ⊥ frame is ever driven|V8,V49
 T185|x|mount the preview system: construct `createPreviewSystem`, `backend.previewHost(canvas)`, feed `PreviewSystemFrame.requests` ← visible set, present tiles per frame|V7,V28,V64
 T186|x|drop-on-occupied-input REPLACES the edge in 1 patch|V14a,V32,V34
@@ -1342,6 +1349,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B25|2026-08-30|**Analyze's CPU half is ⊥ CONSTRUCTED ∈ the app.** `createAnalyzeChannels` appears ONLY ∈ `analyze.gpu.test.ts` ∴ an Analyze node ∈ a running project drives ⊥ channel & the image→parameter loop is ⊥ closed ∈ the product. T236 was marked done on its tests. 4th instance of the shape (B12, T264 media, B23 render_preview, this) — & T292's guard covers AGENT TOOLS only ∴ could ⊥ see it|V205
 B24|2026-08-30|**a DECLARED pointset topology ⊥ connect to a consumer asking for none.** `port-compat.ts` compared topology by STRICT INEQUALITY ∴ `undefined` was a VALUE, ⊥ an absent claim. ⊥ visible today (nothing declares topology ∴ both sides `undefined` ∴ equal) — it bites the FIRST generator honest enough to declare `topology:"points"`, which then fails to connect to `renderPoints`. the reward for precision would have been a graph that refuses to wire. same rule colour space already follows ∈ the same file|V13
 B23|2026-08-30|**`render_preview` was DEAD ∈ the product.** built, schema'd, unit-tested — & NOTHING ∈ `src/app` ever handed the surface a preview port; the only `ExportInterface` construction ∈ the tree was inside the ACCEPTANCE TEST. so the test proved the tool works against a fixture nobody ships. 3rd instance of the shape (B12, T264 media, this)|V193
 B22|2026-08-30|**`scale` resolution override ALIASES today.** ⊥ mipmaps anywhere + 1 shared sampler ∴ a node overridden to `scale: 1/4` minifies by point-sampling → shimmer on any moving high-frequency content (noise, checker, edges). ⊥ found by a test; found by reading the sampler contract. the override reads as "cheaper" & is quietly "worse"|T285
