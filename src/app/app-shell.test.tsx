@@ -779,7 +779,7 @@ describe("T436 — named layouts", () => {
  * against a v2 entry and what is on screen is what they left there.
  */
 describe("V311 — a v2 layout still opens on what the user arranged", () => {
-  it("mounts a customised v2 arrangement and keeps it as a named layout", async () => {
+  it("mounts the NEW DEFAULT and keeps a customised v2 arrangement as a named layout", async () => {
     const user = userEvent.setup();
     const storage = createMemoryStorage({
       "shaderloom.shell.layout.v2": JSON.stringify({
@@ -798,8 +798,14 @@ describe("V311 — a v2 layout still opens on what the user arranged", () => {
 
     render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
 
-    // Where they left it, not where this build's default would put it.
-    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
+    // T466: the app opens on the NEW default — the owner reported twice that they never
+    // saw it, because migrating and SELECTING their old arrangement made it unreachable.
+    // The editor is where this build puts it, not where v2 left it.
+    expect(zoneElement("left").contains(screen.queryByText("editor slot") ?? document.body)).toBe(
+      false,
+    );
+
+    // And nothing is lost: their arrangement is a row in the menu, one click away.
     await user.click(screen.getByRole("button", { name: "Layout" }));
     expect(screen.getByRole("button", { name: /^Saved layout/ })).toBeDefined();
     // And v2's key is gone, so one key holds the layout.
