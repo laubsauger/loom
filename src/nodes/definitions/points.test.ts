@@ -7,6 +7,7 @@ import {
   pointKernelNode,
   pointKernelResources,
   pointPairId,
+  pointSetInfoFor,
   renderPointsNode,
 } from "./points.ts";
 import { compileContext } from "./test-support.ts";
@@ -231,5 +232,47 @@ describe("the emitted output is a plan the backend accepts", () => {
     const read = readExecutionPlan(plan);
     expect(read.diagnostics).toEqual([]);
     expect(read.ok).toBe(true);
+  });
+});
+
+describe("attribute qualifiers ride the schema end to end (T287)", () => {
+  it("a qualified attribute compiles and reaches read_points intact", () => {
+    const attributes = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      { name: "id", type: "u32", semantic: "id", default: [0] },
+      { name: "heading", type: "vec3f", qualifier: "direction", default: [0, 1, 0] },
+    ]);
+    const result = pointKernelNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        parameters: {
+          attributes,
+          kernel: "fn process(p: Point, ctx: PointCtx) -> Point { var q = p; q.heading = q.heading; return q; }",
+        },
+      }),
+    );
+    expect(result.diagnostics ?? []).toEqual([]);
+    // The agent-facing view (T293): the qualifier is DATA a reader can act on, never
+    // a magic name it has to know.
+    const info = pointSetInfoFor({ type: "pointKernel", parameters: { attributes } });
+    expect(info?.attributes.find((attribute) => attribute.name === "heading")?.qualifier).toBe("direction");
+  });
+
+  it("a malformed qualifier is refused with the node's own diagnostic", () => {
+    const result = pointKernelNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        parameters: {
+          attributes: JSON.stringify([
+            { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            { name: "aim", type: "f32", qualifier: "direction", default: [0] },
+          ]),
+        },
+      }),
+    );
+    expect(result.passes).toEqual([]);
+    expect(result.diagnostics?.[0]?.code).toBe("node.points.attributes");
   });
 });

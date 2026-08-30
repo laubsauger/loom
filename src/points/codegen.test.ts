@@ -203,3 +203,27 @@ describe("group predicate (T300)", () => {
     expect(bare.wgsl).not.toContain("groupMatch");
   });
 });
+
+describe("attribute qualifiers (T287, §V75)", () => {
+  const base = { name: "aim", default: [0, 0, 0] } as const;
+
+  it("accepts a coherent qualifier and carries it on the schema", () => {
+    const result = validateAttributes([
+      { ...base, type: "vec3f", qualifier: "direction" },
+      { name: "tint", type: "vec4f", qualifier: "color", default: [1, 1, 1, 1] },
+      { name: "orient", type: "vec4f", qualifier: "quaternion", default: [0, 0, 0, 1] },
+    ]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("refuses a qualifier its type cannot honour — rotating an f32 means nothing", () => {
+    const direction = validateAttributes([{ name: "aim", type: "f32", qualifier: "direction", default: [0] }]);
+    expect(direction.errors.join(" ")).toContain('"direction", which needs vec3f');
+    const quaternion = validateAttributes([{ ...base, type: "vec3f", qualifier: "quaternion" }]);
+    expect(quaternion.errors.join(" ")).toContain("vec4f");
+    const unknown = validateAttributes([
+      { ...base, type: "vec3f", qualifier: "sideways" as unknown as "color" },
+    ]);
+    expect(unknown.errors.join(" ")).toContain('unknown qualifier "sideways"');
+  });
+});

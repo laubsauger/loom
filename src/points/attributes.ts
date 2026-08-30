@@ -21,11 +21,41 @@ export const POINT_SEMANTICS = ["position", "color", "size", "id", "life"] as co
 
 export type PointSemantic = (typeof POINT_SEMANTICS)[number];
 
+/**
+ * T287 (§V75): how a TRANSFORM must treat an attribute — Houdini's qualifier model,
+ * declared in the schema rather than encoded in magic names ("an attribute named `Cd`
+ * is a colour" is index-as-identity all over again).
+ *
+ *   - `color`: values are a colour; a spatial transform leaves them alone, a
+ *     colour-space operation converts them.
+ *   - `direction`: a vector IN SPACE with no position — rotates with the points,
+ *     never translates (a normal, a velocity treated as a heading).
+ *   - `quaternion`: an orientation; composing a rotation MULTIPLIES rather than
+ *     rotating componentwise.
+ *
+ * v1 is the DECLARATION plus its type constraints, made now while the union is cheap
+ * to grow. Transform nodes that honour it arrive with the transform family; a
+ * consumer that ignores a qualifier today is merely incomplete, but a schema that
+ * cannot say it would force the magic-name convention this exists to prevent.
+ */
+export const ATTRIBUTE_QUALIFIERS = ["color", "direction", "quaternion"] as const;
+
+export type AttributeQualifier = (typeof ATTRIBUTE_QUALIFIERS)[number];
+
+/** The types a qualifier is coherent on: rotating an f32 "direction" means nothing. */
+export const QUALIFIER_TYPES: Readonly<Record<AttributeQualifier, ReadonlyArray<PointAttributeType>>> = {
+  color: ["vec3f", "vec4f"],
+  direction: ["vec3f"],
+  quaternion: ["vec4f"],
+};
+
 export interface PointAttributeSchema {
   /** WGSL-safe identifier; becomes the `Point` struct field and the buffer names. */
   readonly name: string;
   readonly type: PointAttributeType;
   readonly semantic?: PointSemantic;
+  /** T287: transform treatment. Absent = plain data, transformed by nothing. */
+  readonly qualifier?: AttributeQualifier;
   /** Value for newly emitted points, component count matching the type. */
   readonly default: ReadonlyArray<number>;
 }
@@ -106,6 +136,18 @@ export function validateAttributes(attributes: ReadonlyArray<PointAttributeSchem
     // under compaction. An id that is not u32 cannot be that identity.
     if (attribute.semantic === "id" && type !== "u32") {
       errors.push(`attribute "${name}" carries semantic "id" and must be u32, not "${type}"`);
+    }
+    // T287: a qualifier promises transform behaviour, which only certain types can honour.
+    if (attribute.qualifier !== undefined) {
+      if (!ATTRIBUTE_QUALIFIERS.includes(attribute.qualifier)) {
+        errors.push(`attribute "${name}" has unknown qualifier "${String(attribute.qualifier)}"`);
+      } else if (!QUALIFIER_TYPES[attribute.qualifier].includes(type)) {
+        errors.push(
+          `attribute "${name}" is qualified "${attribute.qualifier}", which needs ${QUALIFIER_TYPES[
+            attribute.qualifier
+          ].join(" or ")}, not "${type}"`,
+        );
+      }
     }
   }
 
