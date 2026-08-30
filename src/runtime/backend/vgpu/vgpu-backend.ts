@@ -198,6 +198,52 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let gpuTimer: Timer | undefined;
   const timingListeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
   let unsubscribeTimer: (() => void) | undefined;
+  /**
+   * T327 (B33): the PERSISTENT device-error net. B9's listener only lives for the
+   * compile window, but a pipeline built lazily fails at its FIRST DISPATCH — inside a
+   * frame, long after compile unsubscribed — and the error then went to gpu.onError
+   * with nobody listening: nine storage buffers against a limit of eight rendered
+   * "successfully" forever with zero diagnostics. A recovery path must ride something
+   * unconditional (§V209); for device verdicts that is the session's whole lifetime.
+   */
+  let unsubscribeErrorNet: (() => void) | undefined;
+  /** True while compile()'s own listener owns pipeline-compile errors (B9's veto). */
+  let compileErrorWindow = false;
+
+  function attachErrorNet(watched: GpuSession): void {
+    unsubscribeErrorNet?.();
+    const report = (error: unknown): void => {
+      // During the compile window the B9 listener triages pipeline failures itself
+      // (veto + release); reporting them here too would double every shader error.
+      if (compileErrorWindow && isPipelineCompileError(error)) return;
+      hub.report(
+        backendDiagnostic(
+          "error",
+          BackendDiagnosticCode.frameError,
+          `GPU validation error: ${describeError(error)}`,
+          { suggestion: "The failing pass renders nothing. Check binding counts and formats against device limits." },
+        ),
+      );
+    };
+    const unsubscribeScoped = watched.gpu.onError(report);
+    // vgpu's onError only carries its OWN scoped errors. A verdict outside any scope —
+    // a bind-group or dispatch validation failure — surfaces on the RAW device's
+    // uncaptured-error path, which nothing forwarded (the literal B33 hole). This is
+    // the sanctioned reach-through (§V3), same as compileShader's.
+    const raw = (watched.gpu.device as { gpu?: GPUDevice }).gpu;
+    const uncaptured = (event: { readonly error?: { readonly message?: string } }): void => {
+      report(new Error(event.error?.message ?? "uncaptured GPU error"));
+    };
+    if (raw !== undefined && "onuncapturederror" in raw) {
+      (raw as { onuncapturederror: unknown }).onuncapturederror = uncaptured;
+    }
+    unsubscribeErrorNet = () => {
+      unsubscribeScoped();
+      if (raw !== undefined && "onuncapturederror" in raw) {
+        (raw as { onuncapturederror: unknown }).onuncapturederror = null;
+      }
+    };
+  }
 
   interface PreviewHostState {
     readonly canvas: PresentableCanvas;
@@ -388,6 +434,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       capabilities = describeCapabilities(next.gpu);
       reportCapabilities(capabilities);
       watchDeviceLoss(next);
+      attachErrorNet(next);
       attachTimer();
 
       if (program) {
@@ -1121,6 +1168,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           );
         }
         watchDeviceLoss(created);
+        attachErrorNet(created);
         attachTimer();
         // §V47: no surface is created here, with or without `options.canvas`. The plan
         // always renders offscreen; a canvas becomes visible only through present() (T87).
@@ -1204,6 +1252,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // awaited via `settled()` BEFORE the program is installed, or a broken shader
       // replaces (and releases) the last valid program with all lights green.
       const asyncErrors: unknown[] = [];
+      compileErrorWindow = true;
       const unsubscribe = active.gpu.onError((error: unknown) => {
         asyncErrors.push(error);
       });
@@ -1233,6 +1282,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         throw error;
       } finally {
         unsubscribe();
+        compileErrorWindow = false;
       }
 
       const pipelineFailures = asyncErrors.filter(isPipelineCompileError);
@@ -1799,6 +1849,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       presentations.clear();
+      unsubscribeErrorNet?.();
+      unsubscribeErrorNet = undefined;
       unsubscribeTimer?.();
       unsubscribeTimer = undefined;
       gpuTimer = undefined;
