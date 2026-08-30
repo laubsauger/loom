@@ -1,6 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import { cameraPayloadMatrix, viewProjection } from "../../domain/geometry/camera.ts";
+import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { CameraPayload } from "../../domain/types/scene.ts";
 import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL, renderInstancesWgsl } from "../shaders/render-instances.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -26,6 +27,22 @@ export const INSTANCE_SHAPES = ["quad", "box", "octahedron"] as const;
 const SHAPE_INDEX: Record<string, number> = { quad: 0, box: 1, octahedron: 2 };
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
+
+/**
+ * §V146 — a NAMED camera replaces these wholesale (T457), so while one is named the
+ * inline eye/look/FOV cannot affect the output at all.
+ *
+ * B104/T500: the owner reported "any of the camera parameters are not really reflecting
+ * in the output", and a renderer that shows a live-looking Camera Eye it is ignoring is
+ * one honest way to see exactly that — the parameter is edited, the picture does not
+ * move, and nothing says why. §V146 exists for this: the row dims and gives the reason,
+ * and it stays editable, because setting the inline camera before clearing the name is a
+ * normal way to work.
+ */
+const namedCameraWins = (values: Readonly<Record<string, ParameterValue>>): string | null => {
+  const named = typeof values["camera"] === "string" ? values["camera"].trim() : "";
+  return named === "" ? null : `Camera "${named}" frames this render; its parameters replace this one.`;
+};
 
 export const renderInstancesNode: NodeDefinition = {
   type: "renderInstances",
@@ -92,11 +109,11 @@ export const renderInstancesNode: NodeDefinition = {
       default: "",
       description: "Name of a camera node. When set, it replaces the inline eye/look/FOV below.",
     },
-    eye: { type: "vector", size: 3, label: "Camera Eye", default: [0, 0, 3] },
-    lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
-    fov: { type: "number", label: "FOV", default: 60, min: 1, max: 179, unit: "degrees" },
-    near: { type: "number", label: "Near", default: 0.1, min: 0.001 },
-    far: { type: "number", label: "Far", default: 100, min: 0.01 },
+    eye: { type: "vector", size: 3, label: "Camera Eye", default: [0, 0, 3], inactiveWhen: namedCameraWins },
+    lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0], inactiveWhen: namedCameraWins },
+    fov: { type: "number", label: "FOV", default: 60, min: 1, max: 179, unit: "degrees", inactiveWhen: namedCameraWins },
+    near: { type: "number", label: "Near", default: 0.1, min: 0.001, inactiveWhen: namedCameraWins },
+    far: { type: "number", label: "Far", default: 100, min: 0.01, inactiveWhen: namedCameraWins },
     group: {
       type: "string",
       label: "Group",
