@@ -119,7 +119,7 @@ describe("every shell slot is filled with a real pane", () => {
     // features were folded in, and it is a better marker for "the viewer is mounted":
     // the list rendered with no device, the selector is the pane doing its job.
     expect(screen.getByTestId("viewer-output-select")).toBeDefined();
-    expect(screen.getByText("No shader selected")).toBeDefined();
+    expect(screen.getByText("No code selected")).toBeDefined();
     // The real T41 panel, reading the telemetry hub — not the hand-rolled placeholder
     // that used to re-derive the plan's counts from `CompiledGraph` beside it.
     expect(screen.getByTestId("performance-panel")).toBeDefined();

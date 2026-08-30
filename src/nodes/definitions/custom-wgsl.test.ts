@@ -55,14 +55,15 @@ describe("CustomWGSL node (T15)", () => {
     expect(SHADER_SOURCE_PARAMETER).toBe("source");
     const parameter = customWgslNode.parameters[SHADER_SOURCE_PARAMETER];
     expect(parameter).toBeDefined();
-    expect(parameter?.type).toBe("string");
+    // T492: source is CODE now — the kind every editing surface derives from.
+    expect(parameter?.type).toBe("code");
     // compileTime: editing the shader changes structure and must force a rebuild (§V5).
     expect(parameter?.compileTime).toBe(true);
   });
 
   it("ships the default source as the shader parameter's default", () => {
     const parameter = customWgslNode.parameters[SHADER_SOURCE_PARAMETER];
-    expect(parameter?.type === "string" ? parameter.default : undefined).toBe(
+    expect(parameter?.type === "code" ? parameter.default : undefined).toBe(
       CUSTOM_WGSL_DEFAULT_SOURCE,
     );
   });
@@ -164,6 +165,27 @@ describe("custom kernels receive uniforms and time (B7/T166)", () => {
    */
   it("does not offer a `time` field in its own uniform block", () => {
     expect(firstPass(contextFor()).uniforms).not.toHaveProperty("time");
+    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain("var<uniform> frameU: SharedFrame");
+  });
+
+  /**
+   * §V436/T497 — WHICH CLOCK THE STARTER TEACHES, and the assertion is on the READ rather
+   * than on the text, because §V443: this source deliberately NAMES `frameU.time` in a
+   * comment pointing at the other choice, so `toContain("frameU.time")` — which is what
+   * this file asserted before T497 — passes whichever clock the body actually uses.
+   *
+   * Every user who makes a shader opens this file, so what it demonstrates is what gets
+   * copied. It demonstrated the TIMELINE clock, which wraps at the out point (T455), and so
+   * every shader written by imitation inherited a seam at the loop. That is §V437's shape:
+   * the absolute clock reached the surfaces and never reached the thing teaching them.
+   */
+  it("pulses on the ABSOLUTE clock, so the shader people copy laps seamlessly", () => {
+    const body = CUSTOM_WGSL_DEFAULT_SOURCE.replace(/\/\/[^\n]*/g, "");
+    expect(body).toContain("sin(frameU.absTime)");
+    expect(body).not.toContain("frameU.time");
+    // The other clock is still REACHABLE and still named where the bindings are declared —
+    // a starter that hid it would teach a different wrong thing (§V436: it is a decision).
+    expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain("absTime");
     expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain("frameU.time");
   });
 

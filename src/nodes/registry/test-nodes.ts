@@ -141,7 +141,7 @@ export const customWgslNode: NodeDefinition = {
   inputs: [{ id: "source", label: "Source", type: rgba }],
   outputs: [{ id: "out", label: "Out", type: rgba }],
   parameters: {
-    source: { type: "string", label: "Source", default: "", multiline: true, compileTime: true },
+    source: { type: "code", language: "wgsl", label: "Source", default: "", compileTime: true },
   },
   compile: noPasses,
 };

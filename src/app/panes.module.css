@@ -345,3 +345,25 @@
   font-size: var(--fs-body);
   line-height: 1;
 }
+
+/* T492: one pane, several code subjects — the kernel, its spawn hook, its schema. */
+.codeSubjects {
+  display: inline-flex;
+  gap: 2px;
+}
+.codeSubject,
+.codeSubjectActive {
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  border: var(--border-hairline);
+  border-radius: var(--radius-none);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.codeSubjectActive {
+  color: var(--text);
+  background: var(--bg-raise);
+  border-color: var(--line-hot);
+}

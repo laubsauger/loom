@@ -90,6 +90,10 @@ export function validateParameterValue(
         : wrongType(`${definition.size} finite numbers`);
     case "string":
       return typeof value === "string" ? null : wrongType("a string");
+    case "code":
+      // Code travels as a string; its LANGUAGE gates highlighting, never validity —
+      // a kernel that does not compile is the compiler's diagnostic, not the file's.
+      return typeof value === "string" ? null : wrongType("a string of source code");
     case "asset":
       // null is the legitimate "no asset bound yet" state (§C relink flow).
       return value === null || typeof value === "string" ? null : wrongType("an asset id or null");

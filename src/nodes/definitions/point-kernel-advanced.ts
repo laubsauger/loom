@@ -82,25 +82,26 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     },
     seed: { type: "number", label: "Seed", default: 7, step: 1 },
     attributes: {
-      type: "string",
+      type: "code",
+      language: "json",
       label: "Attributes",
       default: "",
-      multiline: true,
       compileTime: true,
       description:
         'JSON schema, e.g. [{"name":"position","type":"vec3f","semantic":"position","default":[0,0,0]}]. Empty = position/velocity/id. "alive" is injected.',
     },
     kernel: {
-      type: "string",
+      type: "code",
+      language: "wgsl",
       label: "Kernel",
       default: DEFAULT_POINT_KERNEL,
-      multiline: true,
       compileTime: true,
       description:
         "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). ctx.pointer (vec4f: x, y, buttons), ctx.value1..value4 (this node's drivable Value parameters, T479) and ctx.absTime/ctx.absFrame (the clock that keeps growing across a timeline loop, where ctx.time wraps — T489) are available to a kernel that names them. pointRand(pointId, salt) is available.",
     },
     group: {
-      type: "string",
+      type: "code",
+      language: "wgsl",
       label: "Group",
       default: "",
       compileTime: true,
@@ -108,10 +109,10 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         "T300: WGSL predicate over (p, ctx). Only matching points run the kernel — non-members pass through ALIVE and unchanged. Empty = all.",
     },
     spawn: {
-      type: "string",
+      type: "code",
+      language: "wgsl",
       label: "Spawn Hook",
       default: "",
-      multiline: true,
       compileTime: true,
       description:
         "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies. Same ctx as the kernel: ctx.absTime is the clock that does not restart at a loop, so newborns after a lap do not repeat the phases of the ones before it (T489).",

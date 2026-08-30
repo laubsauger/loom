@@ -1,0 +1,16 @@
+/* T492: a code parameter inside an inspector row — the pane's editor at desk size.
+   Bounded height with its own scroll, so a long kernel never swallows the panel. */
+.field {
+  max-height: 220px;
+  min-height: 72px;
+  overflow: hidden;
+  display: flex;
+  border: var(--border-hairline);
+  border-radius: var(--radius-none);
+}
+.field > * {
+  flex: 1;
+  min-width: 0;
+  max-height: 220px;
+  overflow: auto;
+}

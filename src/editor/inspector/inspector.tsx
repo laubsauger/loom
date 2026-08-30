@@ -8,6 +8,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
+import { CodeField } from "@editor/shader-editor/index.ts";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
@@ -283,6 +284,10 @@ export function Inspector({
                 // §V124: a pulse writes nothing to the document, so it travels its own
                 // path — one command, audited, never undoable, never saved.
                 onPulse={(key) => editor.pulse(node.id, key)}
+                // T492: the REAL editor for a code-valued parameter, injected here
+                // because the control kit cannot import CodeMirror. One editor (T356):
+                // the same component the code pane mounts, at inspector-row size.
+                codeField={(props) => <CodeField {...props} />}
                 onStoredChange={(entries, phase) => editor.setStored(node.id, entries, phase)}
                 onChange={(value, phase) => editor.setParameter(node.id, entry.key, value, phase)}
               />

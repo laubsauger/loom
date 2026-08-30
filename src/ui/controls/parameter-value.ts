@@ -57,6 +57,8 @@ export function matchesDefinition(definition: ParameterDefinition, value: unknow
       return isFiniteNumberArray(value, definition.size);
     case "string":
       return typeof value === "string";
+    case "code":
+      return typeof value === "string";
     case "asset":
       return value === null || typeof value === "string";
     // Armed or not. §V124's "never stored armed" is a WRITE rule and lives in

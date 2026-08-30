@@ -87,3 +87,5 @@ export type { ProblemsPanelProps } from "./problems-panel.tsx";
 export { ShaderStatusBadge } from "./shader-status-badge.tsx";
 export { shaderStatusBadgeProps } from "./shader-status.ts";
 export type { ShaderStatusBadgeProps } from "./shader-status.ts";
+export { CodeField } from "./code-field.tsx";
+export { json } from "./json-language.ts";

@@ -73,11 +73,17 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
   },
   {
     file: "src/app/dock-panes.tsx",
-    text: "Select a node with a WGSL source parameter — Custom WGSL — to edit its shader.",
+    // T492: the pane serves every code-KIND parameter now, and its empty state says so.
+    text: "Select a node with a code parameter — a Custom WGSL shader, a point kernel, a spawn hook, an attribute schema.",
   },
   {
     file: "src/app/dock-panes.tsx",
     text: "WGSL is checked when the graph compiles on a device; there is no standalone shader compile yet.",
+  },
+  {
+    file: "src/app/dock-panes.tsx",
+    // T492: the JSON subjects' twin of the sentence above — a diagnostic fact, not decor.
+    text: "JSON is checked when the graph compiles; a schema that does not parse refuses by name.",
   },
   {
     file: "src/editor/component/component-inspector.tsx",

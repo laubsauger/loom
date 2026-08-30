@@ -18,11 +18,14 @@ import type { Diagnostic } from "@codemirror/lint";
 import { cx } from "@ui/cx.ts";
 import type { ShaderEditorMarker } from "./compile-types.ts";
 import { wgsl } from "./wgsl-language.ts";
+import { json } from "./json-language.ts";
 import { shaderEditorHighlighting } from "./theme.ts";
 import styles from "./shader-editor.module.css";
 
 export interface ShaderEditorProps {
   value: string;
+  /** T492: highlighting follows the parameter's declared language. Default WGSL. */
+  language?: "wgsl" | "json" | undefined;
   onChange?: ((value: string) => void) | undefined;
   /** Fired when focus leaves the editor — the natural moment to commit and compile. */
   onBlur?: (() => void) | undefined;
@@ -49,6 +52,7 @@ const readOnlyCompartment = new Compartment();
  */
 export function ShaderEditor({
   value,
+  language = "wgsl",
   onChange,
   onBlur,
   markers,
@@ -88,7 +92,7 @@ export function ShaderEditor({
           search(),
           highlightSelectionMatches(),
           lintGutter(),
-          wgsl(),
+          language === "json" ? json() : wgsl(),
           shaderEditorHighlighting,
           // History first: mod+z must reach the text history before anything else can
           // claim it (§V53).
@@ -110,10 +114,12 @@ export function ShaderEditor({
       viewRef.current = null;
       view.destroy();
     };
-    // Mount once. `value`, `readOnly` and `label` are synced by the effects below;
-    // rebuilding the view on every prop change would discard the undo history.
+    // Mount once per LANGUAGE. `value`, `readOnly` and `label` are synced by the effects
+    // below; rebuilding the view on every prop change would discard the undo history. A
+    // language change means a different parameter is the subject, so a fresh view (and a
+    // fresh history) is the correct behavior, not a loss.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [language]);
 
   // External value changes (node switch, undo of the graph, agent edit) replace the doc.
   useEffect(() => {

@@ -49,6 +49,7 @@ const everythingNode: NodeDefinition = {
     tint: { type: "color", label: "Tint", default: [1, 1, 1, 1], space: "display", group: "Colour" },
     offset: { type: "vector", label: "Offset", size: 2, default: [0, 0], group: "Colour" },
     note: { type: "string", label: "Note", default: "" },
+    kernel: { type: "code", language: "wgsl", label: "Kernel", default: "fn f() {}" },
     image: { type: "asset", label: "Image", kind: "image" },
     falloff: { type: "curve", label: "Falloff", default: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
   },
@@ -152,6 +153,28 @@ describe("T38 — manifest-driven inspector", () => {
     const { bus } = createDomainBus({ store, registry: createNodeRegistry([everythingNode]).view() });
     render(<Inspector bus={bus} context={context} nodeId={null} settings={settings} />);
     expect(screen.getByText("No node selected")).toBeDefined();
+  });
+});
+
+/**
+ * T492 — a code-KIND parameter renders the REAL editor, by derivation.
+ *
+ * The chain under test is the whole point: manifest declares `type: "code"` → the
+ * control kit's exhaustive switch offers the injected editor → the inspector injects
+ * CodeField (the one CodeMirror, T356). Nothing here names "kernel" outside the
+ * fixture; a ninth code parameter anywhere gets this control the day it is declared,
+ * which is the gate the owner's "any other parameter that is this kind of stuff" asks
+ * for (§V437).
+ */
+describe("T492 — code parameters get the code editor", () => {
+  it("mounts CodeMirror for a code-kind parameter, not a plain text field", async () => {
+    await setup();
+    const host = document.querySelector('[data-parameter-code]');
+    expect(host).not.toBeNull();
+    // The real editor, not the multiline fallback: CodeMirror renders its own surface.
+    expect(host?.querySelector('[data-testid="shader-editor-surface"]')).not.toBeNull();
+    // And the plain string parameter beside it stays a plain field.
+    expect(screen.getByLabelText("Note").tagName).toBe("INPUT");
   });
 });
 

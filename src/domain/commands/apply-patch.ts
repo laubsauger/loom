@@ -682,10 +682,16 @@ function executeOperation(
       const node = requireNode(operation.nodeId);
       const definition = registry.get(node.type);
       const parameter = definition?.parameters[SHADER_SOURCE_PARAMETER];
-      if (definition === undefined || parameter === undefined || parameter.type !== "string") {
+      // T492: the source parameter is declared as CODE now; "string" stays accepted so
+      // an out-of-tree definition predating the kind keeps its op.
+      if (
+        definition === undefined ||
+        parameter === undefined ||
+        (parameter.type !== "code" && parameter.type !== "string")
+      ) {
         fail(
           "node.notShaderAuthorable",
-          `node type "${node.type}" has no "${SHADER_SOURCE_PARAMETER}" string parameter.`,
+          `node type "${node.type}" has no "${SHADER_SOURCE_PARAMETER}" code parameter.`,
           { nodeId: node.id },
         );
       }

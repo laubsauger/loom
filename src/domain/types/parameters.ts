@@ -73,6 +73,25 @@ export interface StringParameter extends ParameterBase {
   multiline?: boolean;
 }
 
+/**
+ * T492: a parameter whose VALUE IS CODE — a WGSL kernel, a JSON attribute schema.
+ *
+ * A KIND, never an inference (§V437): "any other parameter that is this kind of stuff"
+ * is a property, and we have shipped properties as site lists four times. Declaring
+ * code-ness here is what lets every editing surface — the inspector control, the code
+ * pane, enlarge and pop-out — follow from the manifest by construction, so parameter
+ * N+1 gets the real editor without touching a UI file. `language` picks the
+ * highlighting per kind; WGSL and JSON are different languages and one global mode
+ * would mis-colour both. `media.text` stays a multiline STRING on purpose: prose is
+ * not code, and the counter-example is what proves the kind must be declared rather
+ * than inferred from `multiline`.
+ */
+export interface CodeParameter extends ParameterBase {
+  type: "code";
+  language: "wgsl" | "json";
+  default: string;
+}
+
 export interface AssetParameter extends ParameterBase {
   type: "asset";
   kind: "image" | "video" | "audio" | "gltf" | "binary";
@@ -170,6 +189,7 @@ export type ParameterDefinition =
   | ColorParameter
   | VectorParameter
   | StringParameter
+  | CodeParameter
   | AssetParameter
   | CurveParameter
   | PulseParameter

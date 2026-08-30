@@ -69,10 +69,10 @@ export const customWgslNode: NodeDefinition = {
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
     [SHADER_SOURCE_PARAMETER]: {
-      type: "string",
+      type: "code",
+      language: "wgsl",
       label: "Source",
       default: CUSTOM_WGSL_DEFAULT_SOURCE,
-      multiline: true,
       compileTime: true,
     },
     /**

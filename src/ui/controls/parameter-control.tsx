@@ -79,6 +79,23 @@ export interface ParameterControlProps {
   inactive?: string | null;
   /** The stored mode envelope at the bare key, when the document holds one. */
   slot?: ParameterSlot | undefined;
+  /**
+   * T492: the REAL code editor, injected by the layer that owns it. The control kit
+   * cannot import CodeMirror (it is the leaf layer), and a second lightweight editor
+   * here would be the two-implementations shape T356 deleted — so the editor arrives
+   * as a render prop from the inspector, and the fallback is the plain multiline
+   * field, which is what every test of this kit alone sees.
+   */
+  codeField?:
+    | ((props: {
+        id: string;
+        label: string;
+        value: string;
+        language: "wgsl" | "json";
+        disabled: boolean;
+        onCommit: (next: string) => void;
+      }) => ReactNode)
+    | undefined;
   /** Per-channel resolutions for a compound parameter (§V113). */
   components?: readonly ResolvedComponent[] | undefined;
   /** Why the active mode is not producing a value, as the resolver reported it. */
@@ -107,6 +124,7 @@ export function ParameterControl({
   inactive = null,
   onPulse,
   slot: storedSlot,
+  codeField,
   components,
   diagnostic = null,
   onStoredChange,
@@ -331,6 +349,29 @@ export function ParameterControl({
           onChange={(next, phase) => emit(next, phase)}
         />,
         { stacked: definition.multiline === true },
+      );
+
+    case "code":
+      return row(
+        codeField !== undefined ? (
+          codeField({
+            id: controlId,
+            label,
+            value: typeof resolved === "string" ? resolved : definition.default,
+            language: definition.language,
+            disabled: shared.disabled === true,
+            onCommit: (next) => emit(next, "commit"),
+          })
+        ) : (
+          <TextField
+            {...shared}
+            id={controlId}
+            value={typeof resolved === "string" ? resolved : definition.default}
+            multiline
+            onChange={(next, phase) => emit(next, phase)}
+          />
+        ),
+        { stacked: true, hint: definition.language },
       );
 
     case "asset":

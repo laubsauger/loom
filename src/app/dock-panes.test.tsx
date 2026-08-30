@@ -96,7 +96,7 @@ describe("ShaderPane — a subject switch commits the outgoing draft (§T219, B1
     const runtime = fakeRuntime();
     render(<Harness runtime={runtime} />);
 
-    const editor = screen.getByLabelText(/WGSL source for n1/i);
+    const editor = screen.getByLabelText(/Source for n1/i);
     fireEvent.change(editor, { target: { value: "@fragment fn fs() {}" } });
 
     // The click both blurs the editor (simulated: never fires here) and clears the

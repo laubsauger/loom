@@ -9,6 +9,7 @@ import { PerformancePanel } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
+import { codeParametersOf } from "@domain/parameters/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
 import type { McpTransportsView } from "./use-mcp-transports.ts";
@@ -57,65 +58,103 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
 
   const node = nodeId === null ? undefined : graph.nodes[nodeId];
   const definition = node === undefined ? undefined : registry.get(node.type);
-  const parameter = definition?.parameters[SHADER_SOURCE_PARAMETER];
-  const authorable = node !== undefined && parameter !== undefined && parameter.type === "string";
+  /**
+   * T492: the pane's subjects are EVERY code-valued parameter of the selected node —
+   * derived from the manifest kind, never a roster of names (§V437). One node may carry
+   * several (a kernel, its spawn hook, its group predicate, its attribute schema); the
+   * strip below switches between them and the buffer machinery treats (node, parameter)
+   * as the subject where it used to treat the node alone.
+   */
+  const codeParameters = useMemo(
+    () => (definition === undefined ? [] : codeParametersOf(definition.parameters)),
+    [definition],
+  );
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const activeKey =
+    selectedKey !== null && codeParameters.some((entry) => entry.key === selectedKey)
+      ? selectedKey
+      : (codeParameters[0]?.key ?? null);
+  const active = codeParameters.find((entry) => entry.key === activeKey);
+  const authorable = node !== undefined && active !== undefined && nodeId !== null;
 
   const committed = useMemo(() => {
     if (!authorable) return "";
-    const value = node.parameters[SHADER_SOURCE_PARAMETER];
+    const value = node.parameters[active.key];
     if (typeof value === "string") return value;
-    return parameter.type === "string" ? parameter.default : "";
-  }, [authorable, node, parameter]);
+    return active.definition.default;
+  }, [authorable, node, active]);
 
   const [draft, setDraft] = useState(committed);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  /** What the render before this one committed the buffer to. */
-  const subjectRef = useRef({ nodeId, committed });
-  /** A draft this render must flush for a node THIS render is about to stop showing. */
-  const pendingCommitRef = useRef<{ nodeId: NodeId; source: string } | null>(null);
+  /**
+   * Two commit paths, on purpose, and here is why two exist (T492): the WGSL `source`
+   * parameter travels `setShaderSource` — its own patch op, which the shader cache,
+   * the compile pipeline and track B's conventions all key on — while every other code
+   * parameter is an ordinary parameter and commits as one, through `setParameters`.
+   * Collapsing them would either strip `source` of its cache semantics or launder a
+   * kernel edit through an op named for shaders.
+   */
+  const commitCode = useCallback(
+    (subjectNode: NodeId, key: string, source: string) => {
+      if (key === SHADER_SOURCE_PARAMETER) {
+        void commitShaderSource({
+          bus,
+          context: invocation,
+          nodeId: subjectNode,
+          source,
+          baseRevision: bus.store.getRevision(),
+        });
+        return;
+      }
+      void bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: bus.store.getRevision(),
+          operations: [{ op: "setParameters", nodeId: subjectNode, parameters: { [key]: source } }],
+          label: `edit ${key}`,
+        },
+        invocation,
+      );
+    },
+    [bus, invocation],
+  );
 
-  // Re-sync when the subject or the stored text changes underneath the buffer. Read
-  // `subjectRef`/`draftRef` — not `draft`/`committed` — for what is OUTGOING: `draft`
-  // state has not been reset yet at this point in the render, but `sync`-by-comparison
-  // reads would be wrong the instant a *second* switch happened before the first
-  // effect ran, which refs cannot be.
-  if (subjectRef.current.nodeId !== nodeId || subjectRef.current.committed !== committed) {
+  /** What the render before this one committed the buffer to. */
+  const subjectRef = useRef({ nodeId, key: activeKey, committed });
+  /** A draft this render must flush for a subject THIS render is about to stop showing. */
+  const pendingCommitRef = useRef<{ nodeId: NodeId; key: string; source: string } | null>(null);
+
+  // Re-sync when the subject or the stored text changes underneath the buffer (§T219/B11:
+  // blur and reselect land in one tick, so the OUTGOING subject's draft is flushed from
+  // refs the reset cannot clobber — leaving a node, by any route, never discards typing).
+  if (
+    subjectRef.current.nodeId !== nodeId ||
+    subjectRef.current.key !== activeKey ||
+    subjectRef.current.committed !== committed
+  ) {
     const outgoing = subjectRef.current;
-    if (outgoing.nodeId !== null && draftRef.current !== outgoing.committed) {
-      pendingCommitRef.current = { nodeId: outgoing.nodeId, source: draftRef.current };
+    if (outgoing.nodeId !== null && outgoing.key !== null && draftRef.current !== outgoing.committed) {
+      pendingCommitRef.current = { nodeId: outgoing.nodeId, key: outgoing.key, source: draftRef.current };
     }
-    subjectRef.current = { nodeId, committed };
+    subjectRef.current = { nodeId, key: activeKey, committed };
     setDraft(committed);
   }
 
-  // No dependency array: checked after every commit, which is what makes this run
-  // effectively immediately after the render above stashed something, while staying a
-  // real effect rather than a bus call made during render.
+  // No dependency array: checked after every commit, effectively immediately after the
+  // render above stashed something, while staying a real effect.
   useEffect(() => {
     const pending = pendingCommitRef.current;
     if (pending === null) return;
     pendingCommitRef.current = null;
-    void commitShaderSource({
-      bus,
-      context: invocation,
-      nodeId: pending.nodeId,
-      source: pending.source,
-      baseRevision: bus.store.getRevision(),
-    });
+    commitCode(pending.nodeId, pending.key, pending.source);
   });
 
   const commit = useCallback(() => {
-    if (nodeId === null || draft === committed) return;
-    void commitShaderSource({
-      bus,
-      context: invocation,
-      nodeId,
-      source: draft,
-      baseRevision: bus.store.getRevision(),
-    });
-  }, [bus, committed, draft, invocation, nodeId]);
+    if (nodeId === null || activeKey === null || draft === committed) return;
+    commitCode(nodeId, activeKey, draft);
+  }, [activeKey, commitCode, committed, draft, nodeId]);
 
   const nodeDiagnostics = useMemo(
     () => diagnostics.filter((diagnostic) => diagnostic.nodeId === nodeId),
@@ -130,16 +169,20 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
   const errorCount = nodeDiagnostics.filter((entry) => entry.severity === "error").length;
   const warningCount = nodeDiagnostics.filter((entry) => entry.severity === "warning").length;
   const markers = useMemo(
-    () => diagnosticsToMarkers(draft, nodeDiagnostics),
-    [draft, nodeDiagnostics],
+    // Gutter positions are offsets into the SOURCE text; other code parameters keep the
+    // node-level counts above but take no ranged markers until their diagnostics carry
+    // spans of their own.
+    () => (activeKey === SHADER_SOURCE_PARAMETER ? diagnosticsToMarkers(draft, nodeDiagnostics) : []),
+    [activeKey, draft, nodeDiagnostics],
   );
 
-  if (!authorable || nodeId === null) {
+  if (!authorable) {
     return (
       <div className={styles.dockEmpty}>
-        <span>No shader selected</span>
+        <span>No code selected</span>
         <span className={styles.note}>
-          Select a node with a WGSL source parameter — Custom WGSL — to edit its shader.
+          Select a node with a code parameter — a Custom WGSL shader, a point kernel, a
+          spawn hook, an attribute schema.
         </span>
       </div>
     );
@@ -153,6 +196,22 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
         <span className={styles.rowName}>
           {definition?.title ?? node.type} · {nodeId}
         </span>
+        {codeParameters.length > 1 ? (
+          <span className={styles.codeSubjects} role="tablist" aria-label="Code parameters">
+            {codeParameters.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                role="tab"
+                aria-selected={entry.key === activeKey}
+                className={entry.key === activeKey ? styles.codeSubjectActive : styles.codeSubject}
+                onClick={() => setSelectedKey(entry.key)}
+              >
+                {entry.definition.label}
+              </button>
+            ))}
+          </span>
+        ) : null}
         <span className={styles.note}>
           {draft === committed ? "saved" : "unsaved — commits when focus leaves"}
         </span>
@@ -183,38 +242,23 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
           </span>
         </span>
         <span className={styles.note}>
-          WGSL is checked when the graph compiles on a device; there is no standalone
-          shader compile yet.
+          {active.definition.language === "wgsl"
+            ? "WGSL is checked when the graph compiles on a device; there is no standalone shader compile yet."
+            : "JSON is checked when the graph compiles; a schema that does not parse refuses by name."}
         </span>
       </div>
       <ShaderEditor
         value={draft}
+        language={active.definition.language}
         onChange={setDraft}
         onBlur={commit}
         markers={markers}
-        label={`WGSL source for ${nodeId}`}
+        label={`${active.definition.label} for ${nodeId}`}
       />
     </div>
   );
 }
 
-/**
- * The `performance` slot (T41, §V16, §V86, §V92a).
- *
- * This used to be a hand-rolled placeholder that re-derived the plan's counts from
- * `CompiledGraph` and printed a paragraph about timing not existing. The real panel had
- * shipped and tested behind it the whole time. It reads the telemetry hub — the same
- * snapshot the node info popup reads, at the same <= 10 Hz — so there is one answer to
- * "how many passes" and one answer to "how long did they take" rather than two.
- *
- * With no timing source attached every ms field reads "unavailable", which is the
- * truthful state and the one §V86 requires: not 0.000, and not a CPU-side number wearing
- * a GPU label.
- *
- * The device/build card (§V92a) lives here rather than on the viewer: tier, timestamp
- * query, formats and reuse counts are what someone diagnosing COST is looking at, and a
- * content pane whose job is showing pixels is not that surface.
- */
 export function PerformancePane({
   status,
   cookPolicy,
