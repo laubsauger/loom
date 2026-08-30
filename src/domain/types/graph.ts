@@ -34,6 +34,22 @@ export type NodeFormatOverride =
   | { mode: "input"; input?: PortId }
   | { mode: "fixed"; format: SelectableColorFormat };
 
+/**
+ * Floor for `GraphNode.size` (T208, §V116).
+ *
+ * One constant, read by both ends of the gesture: the editor hands it to React Flow's
+ * resizer so the drag itself cannot go below it, and `applyGraphPatch` clamps to it so
+ * an agent — or a hand-written patch — cannot either. Two numbers in two places is how
+ * the UI floor and the document floor drift apart.
+ *
+ * Sized to keep a node legible: the title bar, a preview worth looking at, and a couple
+ * of port rows still fit. Below this a node is a smudge you cannot aim at (§V99).
+ */
+export const MIN_NODE_SIZE: { readonly width: number; readonly height: number } = Object.freeze({
+  width: 120,
+  height: 96,
+});
+
 /** TD-style presets. "auto" and "custom" are handled outside this list. */
 export const RESOLUTION_SCALE_PRESETS = [
   { label: "1/8", factor: 0.125 },
@@ -49,6 +65,12 @@ export interface GraphNode {
   type: string;
   definitionVersion: number;
   position: { x: number; y: number };
+  /**
+   * Explicit size in graph-space CSS px, set by dragging the node's resize handles
+   * (T208, §V116). Absent = the node sizes itself from its content, which is what an
+   * untouched node does. Persisted and undoable like every other document field: a
+   * saved project keeps the composition the user laid out.
+   */
   size?: { width: number; height: number };
   parameters: Record<string, StoredParameter>;
   /**

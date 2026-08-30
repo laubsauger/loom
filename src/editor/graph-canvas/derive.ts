@@ -50,6 +50,28 @@ function samePosition(a: { x: number; y: number }, b: { x: number; y: number }):
 }
 
 /**
+ * §V116 — node size is DOCUMENT state, so it projects exactly like position does.
+ *
+ * `undefined` on both sides means "no override": the node sizes itself from its content,
+ * which is what an untouched node does and what an undo of a resize must restore.
+ */
+function sameSize(
+  view: { width?: number | undefined; height?: number | undefined },
+  domain: { width: number; height: number } | undefined,
+): boolean {
+  if (domain === undefined) return view.width === undefined && view.height === undefined;
+  return view.width === domain.width && view.height === domain.height;
+}
+
+function withSize(node: LoomNode, size: { width: number; height: number } | undefined): LoomNode {
+  if (size === undefined) {
+    const { width: _width, height: _height, ...rest } = node;
+    return rest as LoomNode;
+  }
+  return { ...node, width: size.width, height: size.height };
+}
+
+/**
  * Returns `previous` itself when the new projection is element-wise identical, so a
  * document revision that did not touch the graph view produces no re-render at all.
  */
@@ -74,20 +96,25 @@ export function projectNodes(
       if (domain === undefined) return [];
       const prior = before.get(nodeId);
       if (prior === undefined) {
-        return [
-          {
-            id: nodeId,
-            type: LOOM_NODE_TYPE,
-            position: { x: domain.position.x, y: domain.position.y },
-            data: { nodeId },
-          },
-        ];
+        const fresh: LoomNode = {
+          id: nodeId,
+          type: LOOM_NODE_TYPE,
+          position: { x: domain.position.x, y: domain.position.y },
+          data: { nodeId },
+        };
+        return [withSize(fresh, domain.size)];
       }
-      // A node being dragged keeps the view position until the drag commits (§V15);
-      // anything else takes its position from the document.
-      const keepPosition = prior.dragging === true || samePosition(prior.position, domain.position);
-      if (keepPosition) return [prior];
-      return [{ ...prior, position: { x: domain.position.x, y: domain.position.y } }];
+      // A node mid-GESTURE keeps the view's geometry until that gesture commits (§V15):
+      // a drag and a resize are both deliberately uncommitted until release, so the
+      // document is stale for the whole of one and must not be projected back over it.
+      if (prior.dragging === true || prior.resizing === true) return [prior];
+      const keepPosition = samePosition(prior.position, domain.position);
+      const keepSize = sameSize(prior, domain.size);
+      if (keepPosition && keepSize) return [prior];
+      const moved: LoomNode = keepPosition
+        ? prior
+        : { ...prior, position: { x: domain.position.x, y: domain.position.y } };
+      return [keepSize ? moved : withSize(moved, domain.size)];
     });
   return stable(previous, next);
 }

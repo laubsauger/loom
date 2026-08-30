@@ -1,11 +1,12 @@
 import { memo, useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, NodeResizer, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { useStore } from "zustand";
 import { cx } from "@ui/cx.ts";
 import { portFamilyColor } from "@ui/ports.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
+import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
 import type { NodeToggleCommand } from "@editor/graph-canvas/canvas-context.ts";
@@ -78,114 +79,137 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   const agent = snapshot.agent;
 
   return (
-    <div
-      className={cx(styles.node, selected && styles.selected)}
-      data-testid={`node-${id}`}
-      data-status={status}
-      data-bypassed={bypassed}
-      data-muted={muted}
-      data-agent={agent?.kind ?? "none"}
-      style={cssVars({ "--status-color": STATUS_TOKEN[status] })}
-    >
-      <header className={styles.title}>
-        <span
-          className={styles.dot}
-          data-testid={`node-status-${id}`}
-          data-status={status}
-          role="img"
-          aria-label={`Status: ${STATUS_LABEL[status]}`}
-          title={STATUS_LABEL[status]}
-        />
-        {/*
-          A user-given label wins over the definition title; absence means "follow the
-          definition", so an unrenamed node tracks a retitled definition (§V29 rename).
-        */}
-        <span className={styles.name} title={node.label ?? definition?.title ?? node.type}>
-          {node.label ?? definition?.title ?? node.type}
-        </span>
-        {/* Compile/diagnostic badge is track H's component (§V27) — it renders nothing
-            at all when the node is clean, which is what keeps the chrome quiet. */}
-        <ShaderStatusBadge
-          errorCount={snapshot.errorCount}
-          warningCount={snapshot.warningCount}
-          stale={snapshot.stale}
-          compiling={status === "compiling"}
-        />
-        <span
-          className={styles.timing}
-          aria-label="GPU time for this pass"
-          title="GPU time for this pass"
-        >
-          {formatGpuMs(snapshot.gpuMs)}
-        </span>
-        <NodeToggle
-          label="Pin preview"
-          title="Pin — keep previewing when scrolled off screen"
-          short="P"
-          pressed={pinned}
-          onToggle={() => toggle("node.toggleDisplay")}
-        />
-        <NodeToggle
-          label="Bypass"
-          short="B"
-          pressed={bypassed}
-          onToggle={() => toggle("node.toggleBypass")}
-        />
-        <NodeToggle
-          label="Mute"
-          short="M"
-          pressed={muted}
-          onToggle={() => toggle("node.toggleRender")}
-        />
-      </header>
+    <>
+      {/*
+        T208/§V116 — resize handles, shown on the selected node only: permanent handles
+        on every node in a dense graph are visual noise competing with the imagery, and
+        the node you are about to resize is the node you just clicked.
 
-      {agent === null ? null : (
-        <p
-          className={styles.agent}
-          data-agent={agent.kind}
-          style={cssVars({ "--agent-color": AGENT_TOKEN[agent.kind] })}
-        >
-          <span className={styles.agentKind}>{AGENT_LABEL[agent.kind]}</span>
-          <span className={styles.agentActor}>{agent.actorLabel}</span>
-          {agent.detail === undefined ? null : (
-            <span className={styles.agentDetail}>{agent.detail}</span>
-          )}
-        </p>
-      )}
+        The floor comes from the document contract (`MIN_NODE_SIZE`), not from a number
+        typed here, so the drag cannot reach a size `applyGraphPatch` would clamp — the
+        UI and the document agree about the smallest legal node by construction.
 
-      {hasPreview ? (
-        // §V28b: a visible texture-producing node previews by default — the slot exists
-        // whether or not the node is pinned. §V28 still governs whether it is actually
-        // LIVE right now (on screen or pinned) versus suspended; that state comes back
-        // on the runtime channel and `NodePreview` renders it (§V16).
-        <div className={cx(styles.preview, "nodrag", "nopan")} data-testid={`node-preview-${id}`}>
-          {renderPreview?.(id)}
+        This emits NO patch of its own. Every pointer move is React Flow view state; the
+        canvas commits the finished gesture as one `setNodeSize` (§V15, §V29).
+      */}
+      <NodeResizer
+        isVisible={selected === true}
+        minWidth={MIN_NODE_SIZE.width}
+        minHeight={MIN_NODE_SIZE.height}
+      />
+      <div
+        className={cx(styles.node, selected && styles.selected)}
+        data-testid={`node-${id}`}
+        data-status={status}
+        data-bypassed={bypassed}
+        data-muted={muted}
+        // §V117 — a resized node fills the box it was dragged to, and the PREVIEW is
+        // what absorbs the extra room (the CSS beside this). That is the whole point of
+        // the gesture: "the node got bigger" means "I can see the image better".
+        data-sized={node.size !== undefined}
+        data-agent={agent?.kind ?? "none"}
+        style={cssVars({ "--status-color": STATUS_TOKEN[status] })}
+      >
+        <header className={styles.title}>
+          <span
+            className={styles.dot}
+            data-testid={`node-status-${id}`}
+            data-status={status}
+            role="img"
+            aria-label={`Status: ${STATUS_LABEL[status]}`}
+            title={STATUS_LABEL[status]}
+          />
+          {/*
+            A user-given label wins over the definition title; absence means "follow the
+            definition", so an unrenamed node tracks a retitled definition (§V29 rename).
+          */}
+          <span className={styles.name} title={node.label ?? definition?.title ?? node.type}>
+            {node.label ?? definition?.title ?? node.type}
+          </span>
+          {/* Compile/diagnostic badge is track H's component (§V27) — it renders nothing
+              at all when the node is clean, which is what keeps the chrome quiet. */}
+          <ShaderStatusBadge
+            errorCount={snapshot.errorCount}
+            warningCount={snapshot.warningCount}
+            stale={snapshot.stale}
+            compiling={status === "compiling"}
+          />
+          <span
+            className={styles.timing}
+            aria-label="GPU time for this pass"
+            title="GPU time for this pass"
+          >
+            {formatGpuMs(snapshot.gpuMs)}
+          </span>
+          <NodeToggle
+            label="Pin preview"
+            title="Pin — keep previewing when scrolled off screen"
+            short="P"
+            pressed={pinned}
+            onToggle={() => toggle("node.toggleDisplay")}
+          />
+          <NodeToggle
+            label="Bypass"
+            short="B"
+            pressed={bypassed}
+            onToggle={() => toggle("node.toggleBypass")}
+          />
+          <NodeToggle
+            label="Mute"
+            short="M"
+            pressed={muted}
+            onToggle={() => toggle("node.toggleRender")}
+          />
+        </header>
+
+        {agent === null ? null : (
+          <p
+            className={styles.agent}
+            data-agent={agent.kind}
+            style={cssVars({ "--agent-color": AGENT_TOKEN[agent.kind] })}
+          >
+            <span className={styles.agentKind}>{AGENT_LABEL[agent.kind]}</span>
+            <span className={styles.agentActor}>{agent.actorLabel}</span>
+            {agent.detail === undefined ? null : (
+              <span className={styles.agentDetail}>{agent.detail}</span>
+            )}
+          </p>
+        )}
+
+        {hasPreview ? (
+          // §V28b: a visible texture-producing node previews by default — the slot exists
+          // whether or not the node is pinned. §V28 still governs whether it is actually
+          // LIVE right now (on screen or pinned) versus suspended; that state comes back
+          // on the runtime channel and `NodePreview` renders it (§V16).
+          <div className={cx(styles.preview, "nodrag", "nopan")} data-testid={`node-preview-${id}`}>
+            {renderPreview?.(id)}
+          </div>
+        ) : null}
+
+        {renderControls === undefined ? null : (
+          <div className={cx(styles.controls, "nodrag", "nopan")}>{renderControls(id)}</div>
+        )}
+
+        <div className={styles.ports}>
+          <ul className={cx(styles.column, styles.inputs)}>
+            {(definition?.inputs ?? []).map((port) => (
+              <PortRow key={port.id} port={port} side="input" />
+            ))}
+          </ul>
+          <ul className={cx(styles.column, styles.outputs)}>
+            {(definition?.outputs ?? []).map((port) => (
+              <PortRow key={port.id} port={port} side="output" />
+            ))}
+          </ul>
         </div>
-      ) : null}
 
-      {renderControls === undefined ? null : (
-        <div className={cx(styles.controls, "nodrag", "nopan")}>{renderControls(id)}</div>
-      )}
-
-      <div className={styles.ports}>
-        <ul className={cx(styles.column, styles.inputs)}>
-          {(definition?.inputs ?? []).map((port) => (
-            <PortRow key={port.id} port={port} side="input" />
-          ))}
-        </ul>
-        <ul className={cx(styles.column, styles.outputs)}>
-          {(definition?.outputs ?? []).map((port) => (
-            <PortRow key={port.id} port={port} side="output" />
-          ))}
-        </ul>
+        {message === null || message === undefined ? null : (
+          <p className={styles.message} title={message}>
+            {message}
+          </p>
+        )}
       </div>
-
-      {message === null || message === undefined ? null : (
-        <p className={styles.message} title={message}>
-          {message}
-        </p>
-      )}
-    </div>
+    </>
   );
 });
 

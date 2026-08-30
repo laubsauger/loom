@@ -29,6 +29,15 @@ export type GraphPatchOperation =
   | { op: "setParameters"; nodeId: NodeRef; parameters: Record<string, StoredParameter> }
   | { op: "setShaderSource"; nodeId: NodeRef; source: string }
   | { op: "moveNodes"; positions: Record<NodeId, { x: number; y: number }> }
+  /**
+   * Node size, in graph-space CSS pixels (T208, §V116).
+   *
+   * Document state, not view state: a resized node is how a graph gets a composition —
+   * the node you are working on big, its neighbours small — and a saved project that
+   * lost that would have lost the layout the user built. `null` clears the override and
+   * returns the node to its content-derived size.
+   */
+  | { op: "setNodeSize"; nodeId: NodeRef; size: { width: number; height: number } | null }
   | { op: "setNodeUi"; nodeId: NodeRef; ui: Record<string, unknown> }
   /** null clears the label, returning the node to its definition's title. */
   | { op: "setNodeLabel"; nodeId: NodeRef; label: string | null }

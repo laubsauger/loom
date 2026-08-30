@@ -282,6 +282,18 @@ export const graphPatchOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("setParameters"), nodeId: refString, parameters: patchParameters }).strict(),
   z.object({ op: z.literal("setShaderSource"), nodeId: refString, source: z.string() }).strict(),
   z.object({ op: z.literal("moveNodes"), positions: z.record(patchPoint) }).strict(),
+  z
+    .object({
+      op: z.literal("setNodeSize"),
+      nodeId: refString,
+      // Structural only (§V66): the FLOOR is applied where the document is written, so
+      // there is one clamp rather than a schema rule and a handler rule disagreeing.
+      size: z
+        .object({ width: finiteNumber.positive(), height: finiteNumber.positive() })
+        .strict()
+        .nullable(),
+    })
+    .strict(),
   z.object({ op: z.literal("setNodeUi"), nodeId: refString, ui: z.record(z.unknown()) }).strict(),
   z.object({ op: z.literal("setNodeLabel"), nodeId: refString, label: z.string().nullable() }).strict(),
   z

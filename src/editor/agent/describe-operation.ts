@@ -47,6 +47,15 @@ export function describeOperation(operation: GraphPatchOperation): OperationRow 
       };
     case "moveNodes":
       return { kind: operation.op, targets: Object.keys(operation.positions).sort(), detail: null };
+    case "setNodeSize":
+      return {
+        kind: operation.op,
+        targets: [operation.nodeId],
+        detail:
+          operation.size === null
+            ? "cleared"
+            : `${Math.round(operation.size.width)}x${Math.round(operation.size.height)}`,
+      };
     case "setNodeUi":
       return {
         kind: operation.op,

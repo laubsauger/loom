@@ -134,12 +134,25 @@ export function GraphCanvas({
    * kept here — outside both the document and React state — and committed once (§V15).
    */
   const dragPositions = useRef(new Map<NodeId, { x: number; y: number }>());
+  /**
+   * Live resize sizes, kept for the same reason and with the same shape (T208, §V15).
+   *
+   * React Flow reports a `dimensions` change on every pointer move of a resize and then
+   * one final change carrying `resizing: false`. Only the last one is a semantic edit;
+   * the rest are the gesture in flight, so they stay out of the document entirely. A
+   * `dimensions` change with no `resizing` field at all is React Flow MEASURING the node
+   * (its resize observer, on mount and on any content reflow) — that is not an edit by
+   * anyone and must never write to the document, which is why both branches below test
+   * `resizing` explicitly rather than reacting to `dimensions` being present.
+   */
+  const dragSizes = useRef(new Map<NodeId, { width: number; height: number }>());
 
   const onNodesChange = useCallback(
     (changes: NodeChange<LoomNode>[]) => {
       setViewNodes((previous) => applyNodeChanges(changes, previous));
 
       const committed: Record<NodeId, { x: number; y: number }> = {};
+      const resized: Array<[NodeId, { width: number; height: number }]> = [];
       const removed: NodeId[] = [];
       for (const change of changes) {
         if (change.type === "position") {
@@ -149,11 +162,40 @@ export function GraphCanvas({
             dragPositions.current.delete(change.id);
             if (position !== undefined) committed[change.id] = { x: position.x, y: position.y };
           }
+        } else if (change.type === "dimensions") {
+          if (change.resizing === true && change.dimensions !== undefined) {
+            dragSizes.current.set(change.id, change.dimensions);
+          } else if (change.resizing === false) {
+            const size = dragSizes.current.get(change.id) ?? change.dimensions;
+            dragSizes.current.delete(change.id);
+            if (size !== undefined) resized.push([change.id, size]);
+          }
         } else if (change.type === "remove") {
           removed.push(change.id);
         }
       }
 
+      if (resized.length > 0) {
+        // ONE patch for the whole gesture (§V15, §V32). Dragging a top or left handle
+        // moves the node as well as sizing it, and React Flow reports those as separate
+        // changes with no `dragging: false` of their own — so the position half is
+        // drained here rather than left to expire, and both halves land as one undo
+        // entry. Undoing a resize that also moved must not leave the node relocated.
+        const moved: Record<NodeId, { x: number; y: number }> = {};
+        const operations: GraphPatchOperation[] = [];
+        for (const [nodeId, size] of resized) {
+          const position = dragPositions.current.get(nodeId);
+          if (position !== undefined) {
+            dragPositions.current.delete(nodeId);
+            moved[nodeId] = { x: position.x, y: position.y };
+          }
+          operations.push({ op: "setNodeSize", nodeId, size });
+        }
+        if (Object.keys(moved).length > 0) {
+          operations.unshift({ op: "moveNodes", positions: moved });
+        }
+        dispatch(operations, "Resize node");
+      }
       if (Object.keys(committed).length > 0) {
         dispatch([{ op: "moveNodes", positions: committed }], "Move node");
       }

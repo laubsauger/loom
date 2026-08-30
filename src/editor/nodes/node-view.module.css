@@ -27,6 +27,28 @@
 }
 
 /*
+  T208/§V116/§V117 — a node the user resized fills the box React Flow gives it, and the
+  PREVIEW is what grows. TD's behaviour and the reason the gesture is worth having: you
+  drag a node bigger because you want to see the image, not because you want more grey.
+
+  The chrome (title, ports, message) keeps its intrinsic height; only the preview is
+  `flex: 1`, so the extra pixels all land in the one region that can use them. Its
+  16 / 9 default is dropped here — the box is whatever the user dragged, and §V118 keeps
+  the IMAGE honest inside it by letterboxing rather than stretching.
+*/
+.node[data-sized="true"] {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.node[data-sized="true"] .preview {
+  flex: 1 1 auto;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+/*
   `.node.selected`, not `.selected`: the bare class is specificity (0,1,0) and `.node:hover`
   is (0,2,0), so hover REPLACED the selection border regardless of source order — pointing
   at a selected node made it look deselected. Selection is state and must outrank a

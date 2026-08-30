@@ -58,6 +58,9 @@ export function operationClass(operation: GraphPatchOperation): PatchOperationCl
     case "addGroup":
     case "removeGroups":
       return "structural";
+    // `setNodeSize` is here for the same reason `moveNodes` is (T208, §V190): a size is
+    // layout. It changes what the canvas draws and nothing the compiler reads, so it
+    // contends with an edit to the same node and with nobody's structural work.
     case "setParameters":
     case "setShaderSource":
     case "moveNodes":
@@ -65,6 +68,7 @@ export function operationClass(operation: GraphPatchOperation): PatchOperationCl
     case "setNodeLabel":
     case "setNodeResolution":
     case "setNodeFormat":
+    case "setNodeSize":
     case "setGroup":
     case "setViewport":
       return "value";
@@ -154,7 +158,8 @@ export function touchedEntities(
     case "setNodeUi":
     case "setNodeLabel":
     case "setNodeResolution":
-    case "setNodeFormat": {
+    case "setNodeFormat":
+    case "setNodeSize": {
       node(operation.nodeId);
       return into;
     }

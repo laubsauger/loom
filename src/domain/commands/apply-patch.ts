@@ -2,6 +2,7 @@ import { SELECTABLE_COLOR_FORMATS } from "../types/node-definition.ts";
 import { graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
+import { MIN_NODE_SIZE } from "../types/graph.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
 import type { StoredParameter } from "../types/parameters.ts";
 import type {
@@ -552,6 +553,31 @@ function executeOperation(
         }
         node.position = { x: position.x, y: position.y };
       }
+      return;
+    }
+
+    case "setNodeSize": {
+      const node = requireNode(operation.nodeId);
+      // null clears it: absence IS "size yourself from your content", so a cleared node
+      // goes back to the default box rather than being stuck at whatever it was dragged
+      // to once.
+      if (operation.size === null) {
+        delete node.size;
+        return;
+      }
+      const { width, height } = operation.size;
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        fail("node.size.invalid", `size for "${node.id}" must be positive and finite.`, {
+          nodeId: node.id,
+        });
+      }
+      // §V116's floor, clamped rather than rejected: the gesture's intent is "smaller",
+      // and refusing the whole patch because the user overshot by a pixel would also
+      // throw away the position half of the same drag (§V32).
+      node.size = {
+        width: Math.max(MIN_NODE_SIZE.width, Math.round(width)),
+        height: Math.max(MIN_NODE_SIZE.height, Math.round(height)),
+      };
       return;
     }
 
