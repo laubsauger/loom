@@ -43,7 +43,10 @@ function planOf(
       kind: p.kind ?? "effect",
       ...(p.nodeId === undefined ? {} : { nodeId: p.nodeId }),
     })),
-    resources: [{}, {}],
+    resources: [
+      { id: "target:a:out", kind: "target" },
+      { id: "target:b:out", kind: "target" },
+    ],
     order: nodeIds,
     pruned: [],
     sources: [],

@@ -15,6 +15,8 @@ import type {
 import { NO_PASS_TIMING, emptyNodeTelemetry } from "./types.ts";
 import { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";
 import type { ComponentTiming } from "./aggregate.ts";
+import { EMPTY_READBACK_BUDGET, readbackPlanBudget } from "./readback.ts";
+import type { DeclaredReadback, ReadbackBudget, SizedResource } from "./readback.ts";
 
 /**
  * The metrics pipe (T41, T42, §V16).
@@ -71,7 +73,7 @@ export interface PlanLike {
     readonly nodeId?: string | undefined;
     readonly label?: string | undefined;
   }>;
-  readonly resources: ReadonlyArray<unknown>;
+  readonly resources: ReadonlyArray<SizedResource>;
   readonly order: ReadonlyArray<NodeId>;
   readonly pruned: ReadonlyArray<NodeId>;
   readonly sources: ReadonlyArray<TelemetrySourcePath>;
@@ -79,10 +81,21 @@ export interface PlanLike {
 }
 
 /** Projects a compiled plan into the static half of a telemetry snapshot. */
-export function telemetryPlan(
-  plan: PlanLike,
-  options: { readonly memoryBudgetBytes?: number | undefined } = {},
-): TelemetryPlan {
+export interface TelemetryPlanOptions {
+  readonly memoryBudgetBytes?: number | undefined;
+  /**
+   * What the graph reads back from the GPU every frame (T278, §V185).
+   *
+   * Passed in rather than derived here because the LIST is a document fact (which nodes
+   * declare a readback) while the SIZE is a plan fact (what resource each one allocates),
+   * and telemetry only owns the second. `analyzeReadbacks` in `./readback.ts` builds the
+   * list from the same function that drives the sampler, so the panel and the sampler can
+   * never disagree about how many readbacks a graph does.
+   */
+  readonly readbacks?: readonly DeclaredReadback[] | undefined;
+}
+
+export function telemetryPlan(plan: PlanLike, options: TelemetryPlanOptions = {}): TelemetryPlan {
   const passes: TelemetryPass[] = plan.passes.map((pass) => ({
     id: pass.id,
     kind: pass.kind,
@@ -90,6 +103,11 @@ export function telemetryPlan(
     label: pass.label ?? null,
   }));
   return {
+    readback: readbackPlanBudget({
+      declared: options.readbacks ?? [],
+      resources: plan.resources,
+      sources: plan.sources,
+    }),
     passes,
     sources: plan.sources,
     resourceCount: plan.resources.length,
@@ -114,6 +132,12 @@ export interface TelemetryHub extends TelemetrySource {
   setPlan(plan: TelemetryPlan | null): void;
   /** `BackendStatus.lastBuild` after a structural build (T143). */
   setBuild(build: TelemetryBuildStats | null): void;
+  /**
+   * `BackendStatus.readbacks` — how many readbacks the backend has actually performed
+   * (T278). Null means nobody is counting, which is a different reading from zero and must
+   * stay different: zero is a backend saying "none yet".
+   */
+  setReadbacksPerformed(count: number | null): void;
   /**
    * Points the hub at the backend's GPU timer. Returns a detach function. Passing a
    * source with `timestampQuery: false` puts every field into the "unavailable" reading.
@@ -152,6 +176,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
   let build: TelemetryBuildStats | null = null;
   let framesRendered = 0;
   let lastFrameIndex: number | null = null;
+  let readbacksPerformed: number | null = null;
 
   /** Most recent GPU span per pass id, ms. Only ever written from `onPassTimings`. */
   const spans = new Map<string, number>();
@@ -279,6 +304,16 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
     });
   }
 
+  /** Plan budget + the observed counter. The plan half is computed once, at setPlan. */
+  function readbackBudget(): ReadbackBudget {
+    if (plan === null) {
+      return readbacksPerformed === null
+        ? EMPTY_READBACK_BUDGET
+        : { ...EMPTY_READBACK_BUDGET, performed: readbacksPerformed };
+    }
+    return { ...plan.readback, performed: readbacksPerformed };
+  }
+
   function buildSnapshot(): TelemetrySnapshot {
     const budget = plan?.memoryBudgetBytes ?? null;
     return {
@@ -290,6 +325,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       frame: frameBucket(),
       passes: passRows(),
       overBudget: budget !== null && plan !== null && plan.estimatedResourceBytes > budget,
+      readback: readbackBudget(),
     };
   }
 
@@ -307,6 +343,13 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
 
     setBuild(next) {
       build = next;
+      schedule();
+    },
+
+    setReadbacksPerformed(count) {
+      const next = count === null || !Number.isFinite(count) ? null : count;
+      if (next === readbacksPerformed) return;
+      readbacksPerformed = next;
       schedule();
     },
 

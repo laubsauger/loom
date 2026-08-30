@@ -1,4 +1,5 @@
 import type { GraphDocument } from "../../domain/types/graph.ts";
+import type { NodeId } from "../../domain/types/ids.ts";
 import type { ChannelResolver } from "../../domain/parameters/resolve.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
@@ -23,6 +24,12 @@ import { storedStaticValue } from "../../domain/parameters/slots.ts";
 export interface AnalyzeEntry {
   /** The channel name — the analyze node's NAME (§V129). */
   readonly channel: string;
+  /**
+   * The node the channel belongs to. The channel is the user-facing identity; this is the
+   * one telemetry attributes the readback to, so the perf panel can name a node the canvas
+   * can select rather than a name it would have to search for (T278, §V185).
+   */
+  readonly nodeId: NodeId;
   /** The reduction buffer's resource id in the current plan. */
   readonly resourceId: string;
   /** Which of [average, minimum, maximum] the channel publishes. */
@@ -44,6 +51,7 @@ export function analyzeChannelEntries(
     const operation = storedStaticValue(node.parameters["operation"]);
     entries.push({
       channel: node.label,
+      nodeId,
       resourceId: scratchResourceId(nodeId, resultKey),
       operation: operation === "minimum" || operation === "maximum" ? operation : "average",
     });

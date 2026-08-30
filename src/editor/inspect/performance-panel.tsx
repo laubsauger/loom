@@ -20,6 +20,12 @@ import styles from "./inspect.module.css";
  * quietly substitute CPU encode time, which on a real workload differs by more than an
  * order of magnitude and would send someone optimising a pass that costs nothing.
  *
+ * READBACK (T278, §V185) sits beside the frame cost because it is a frame cost: N Analyze
+ * nodes are N GPU→CPU round trips every frame, and someone who drops twenty of them has to
+ * SEE why it got slow rather than guess. Two numbers are on the surface — how many, how
+ * many bytes — and the per-node attribution is one disclosure down, because "which node" is
+ * the second question and §V90 says the panel shows what someone acts on first.
+ *
  * The whole pane re-renders once per telemetry tick — at most 10 times a second (§V16) —
  * because the hub, not this component, owns the rate.
  */
@@ -68,6 +74,71 @@ export function PerformancePanel({ telemetry }: PerformancePanelProps) {
   return <PerformanceView snapshot={snapshot} />;
 }
 
+/**
+ * Readback cost per frame, with per-node attribution (T278, §V185).
+ *
+ * Two readings, deliberately not merged. The BUDGET is what the compiled graph asks for
+ * every frame and is the number a user can act on — deleting an Analyze node lowers it.
+ * PERFORMED is the backend's own counter of round trips that actually happened, and it is
+ * shown only when something is counting: "—" means nobody reported, which is a different
+ * fact from a backend reporting none, and collapsing the two would hide a readback path
+ * that is not running at all.
+ */
+function ReadbackSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
+  const { readback } = snapshot;
+  return (
+    <section aria-label="Readback">
+      <h3 className={styles.blockTitle}>readback</h3>
+      {readback.count === 0 ? (
+        <p className={styles.note}>No readbacks in this plan.</p>
+      ) : (
+        <>
+          <div className={styles.statRow}>
+            <Stat label="per frame" value={String(readback.count)} />
+            <Stat
+              label="bytes / frame"
+              value={`${readback.incomplete ? "≥ " : ""}${formatBytes(readback.bytes)}`}
+            />
+            <Stat
+              label="performed"
+              value={readback.performed === null ? "—" : String(readback.performed)}
+            />
+          </div>
+          <details className={styles.disclosure}>
+            <summary className={styles.summary}>per node</summary>
+            <div className={styles.tableScroll}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th scope="col">node</th>
+                    <th scope="col">reason</th>
+                    <th scope="col" className={styles.numeric}>
+                      bytes / frame
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {readback.rows.map((row) => (
+                    <tr key={`${row.nodeId}:${row.resourceId}`}>
+                      <td>{row.sourcePath ?? row.nodeId}</td>
+                      <td>{row.reason}</td>
+                      <td
+                        className={`${styles.numeric} ${row.bytes === null ? styles.absent : ""}`.trim()}
+                      >
+                        {row.bytes === null ? "unknown" : formatBytes(row.bytes)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
 export interface PerformanceViewProps {
   readonly snapshot: TelemetrySnapshot;
 }
@@ -97,6 +168,8 @@ export function PerformanceView({ snapshot }: PerformanceViewProps) {
           </p>
         )}
       </section>
+
+      <ReadbackSection snapshot={snapshot} />
 
       <section aria-label="Plan">
         <h3 className={styles.blockTitle}>plan</h3>

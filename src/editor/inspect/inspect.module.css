@@ -231,3 +231,29 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/*
+ * Disclosure for the second question (§V90): the numbers someone acts on stay on the
+ * surface, the per-row breakdown is one click down rather than permanently in the way.
+ */
+.disclosure {
+  margin-top: var(--space-2);
+}
+
+.summary {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+  cursor: pointer;
+}
+
+.summary:hover,
+.summary:focus-visible {
+  color: var(--text);
+}
+
+.disclosure[open] > .summary {
+  margin-bottom: var(--space-2);
+}

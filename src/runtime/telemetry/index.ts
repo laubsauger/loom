@@ -32,4 +32,20 @@ export { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";
 export type { AggregateInput, ComponentTiming } from "./aggregate.ts";
 
 export { TELEMETRY_TICK_MS, createTelemetryHub, telemetryPlan } from "./hub.ts";
-export type { NodeMetricSink, PlanLike, TelemetryHub, TelemetryHubOptions } from "./hub.ts";
+export type {
+  NodeMetricSink,
+  PlanLike,
+  TelemetryHub,
+  TelemetryHubOptions,
+  TelemetryPlanOptions,
+} from "./hub.ts";
+
+export { EMPTY_READBACK_BUDGET, analyzeReadbacks, readbackPlanBudget } from "./readback.ts";
+export type {
+  DeclaredReadback,
+  ReadbackBudget,
+  ReadbackBudgetInput,
+  ReadbackPlanBudget,
+  ReadbackRow,
+  SizedResource,
+} from "./readback.ts";

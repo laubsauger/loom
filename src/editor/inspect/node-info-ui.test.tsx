@@ -7,6 +7,7 @@ import { alice, contextFor, createHarness } from "@domain/commands/test-support.
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { PassDescriptor, ResourceDescriptor } from "@runtime/backend/plan.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
+import { EMPTY_READBACK_BUDGET } from "@runtime/telemetry/index.ts";
 import type { TelemetrySnapshot } from "@runtime/telemetry/index.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { SHOW_NODE_INFO_COMMAND } from "./command.ts";
@@ -190,6 +191,7 @@ describe("the performance tab (T41)", () => {
   const snapshot = (over: Partial<TelemetrySnapshot> = {}): TelemetrySnapshot => ({
     timingAvailable: true,
     plan: {
+      readback: EMPTY_READBACK_BUDGET,
       passes: [{ id: "blur:p0", kind: "effect", nodeId: "blur", label: null }],
       sources: [],
       resourceCount: 3,
@@ -199,6 +201,7 @@ describe("the performance tab (T41)", () => {
       prunedCount: 1,
     },
     build: { resourcesCreated: 1, resourcesReused: 6, effectsBuilt: 2, effectsReused: 3 },
+    readback: EMPTY_READBACK_BUDGET,
     framesRendered: 120,
     lastFrameIndex: 119,
     frame: { availability: "measured", gpuMs: 3.5, passCount: 1, nodeCount: 1 },
@@ -256,6 +259,104 @@ describe("the performance tab (T41)", () => {
     );
     expect(screen.getAllByText("unavailable").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("0.000 ms")).toBeNull();
+  });
+
+  /**
+   * T278 / §V185 — the readback budget is on the surface, the attribution one level down.
+   *
+   * The number that has to be READABLE WITHOUT A CLICK is the count: that is the one a user
+   * acts on when the frame got slow. "Which node" is the follow-up question, so it lives in
+   * a disclosure — §V90's rule, applied to the pane where numbers breed fastest.
+   */
+  const withReadback = (over: Partial<TelemetrySnapshot["readback"]> = {}) =>
+    snapshot({
+      readback: {
+        count: 2,
+        bytes: 32,
+        incomplete: false,
+        performed: 41,
+        rows: [
+          {
+            nodeId: "meterA",
+            sourcePath: "Main / Bloom_1 / meter1",
+            reason: 'Analyze channel "meter1"',
+            resourceId: "scratch:meterA:result",
+            bytes: 16,
+          },
+          {
+            nodeId: "meterB",
+            sourcePath: null,
+            reason: 'Analyze channel "meter2"',
+            resourceId: "scratch:meterB:result",
+            bytes: 16,
+          },
+        ],
+        ...over,
+      },
+    });
+
+  it("puts the per-frame readback count and bytes on the surface (§V185)", () => {
+    render(<PerformanceView snapshot={withReadback()} />);
+    const section = screen.getByLabelText("Readback");
+    expect(section.textContent).toContain("per frame");
+    expect(section.textContent).toContain("2");
+    expect(section.textContent).toContain("32 B");
+    // The observed counter beside the budget: what the graph asks for, and what happened.
+    expect(section.textContent).toContain("41");
+  });
+
+  it("attributes each readback to a node, behind a disclosure (§V90, §V82)", () => {
+    render(<PerformanceView snapshot={withReadback()} />);
+    const section = screen.getByLabelText("Readback");
+    const disclosure = section.querySelector("details");
+    expect(disclosure).toBeTruthy();
+    // Closed by default: the breakdown is available, not permanently in the way.
+    expect((disclosure as HTMLDetailsElement).open).toBe(false);
+    expect(section.textContent).toContain("Main / Bloom_1 / meter1");
+    expect(section.textContent).toContain('Analyze channel "meter2"');
+  });
+
+  it("shows an unsizable row as unknown and the total as a floor, not as zero", () => {
+    render(
+      <PerformanceView
+        snapshot={withReadback({
+          bytes: 16,
+          incomplete: true,
+          rows: [
+            {
+              nodeId: "meterA",
+              sourcePath: null,
+              reason: 'Analyze channel "meter1"',
+              resourceId: "scratch:meterA:result",
+              bytes: 16,
+            },
+            {
+              nodeId: "meterB",
+              sourcePath: null,
+              reason: 'Analyze channel "meter2"',
+              resourceId: "scratch:meterB:result",
+              bytes: null,
+            },
+          ],
+        })}
+      />,
+    );
+    const section = screen.getByLabelText("Readback");
+    expect(section.textContent).toContain("≥ 16 B");
+    expect(section.textContent).toContain("unknown");
+  });
+
+  it("names the state when a plan reads nothing back (§V91)", () => {
+    render(
+      <PerformanceView
+        snapshot={snapshot({
+          readback: { count: 0, bytes: 0, incomplete: false, rows: [], performed: 0 },
+        })}
+      />,
+    );
+    // Names the STATE, not the pane's purpose, and shows no zeroed table.
+    expect(screen.getByLabelText("Readback").textContent).toContain("No readbacks in this plan");
+    expect(screen.getByLabelText("Readback").querySelector("details")).toBeNull();
   });
 });
 

@@ -1,4 +1,5 @@
 import type { NodeId } from "../../domain/types/ids.ts";
+import type { ReadbackBudget, ReadbackPlanBudget } from "./readback.ts";
 
 /**
  * Telemetry contracts (T41, T42, §V16, §V85, §V86).
@@ -92,6 +93,11 @@ export interface TelemetryPass {
 
 /** Static facts about the plan currently running. Set at compile, never per frame. */
 export interface TelemetryPlan {
+  /**
+   * What this graph costs per frame in GPU→CPU readbacks (T278, §V185). Derived at compile
+   * from the plan, never sampled — see `./readback.ts`.
+   */
+  readonly readback: ReadbackPlanBudget;
   readonly passes: ReadonlyArray<TelemetryPass>;
   readonly sources: ReadonlyArray<TelemetrySourcePath>;
   readonly resourceCount: number;
@@ -137,6 +143,11 @@ export interface TelemetrySnapshot {
   readonly passes: ReadonlyArray<PassTimingRow>;
   /** True when `estimatedResourceBytes` exceeds the project budget (§V24). */
   readonly overBudget: boolean;
+  /**
+   * Readback cost: what the plan asks for every frame, and what the backend has actually
+   * performed (T278, §V185). Empty when no plan is compiled.
+   */
+  readonly readback: ReadbackBudget;
 }
 
 /** Per-node telemetry, the numbers TD's Info CHOP would show (§I node info). */
