@@ -27,6 +27,11 @@ export function parameterReference(nodeName: string, parameterKey: string): stri
 export interface ParsedParameterReference {
   /** The node's NAME (§V127), not its id — a reference survives ids and follows renames. */
   nodeName: string;
+  /**
+   * The parameter, or one component of it (`color.r`, §V113) — the same key a local bind
+   * ref uses, which is what lets a pasted component reference become an ordinary bind
+   * when it names the paste target's own node.
+   */
   parameterKey: string;
 }
 
@@ -41,9 +46,17 @@ export interface ParsedParameterReference {
 export function parseParameterReference(text: string): ParsedParameterReference | null {
   const parsed = parseExpression(text.trim());
   if (!parsed.ok || parsed.ast.kind !== "opRef") return null;
-  const [scope, key, ...rest] = parsed.ast.path;
-  // `.par.<key>` and nothing deeper: `op('a').par` names no parameter, and
-  // `op('a').par.x.y` names something this model has no meaning for.
+  const [scope, key, component, ...rest] = parsed.ast.path;
+  // `.par.<key>`, optionally `.<component>` (§V113/T332), and nothing deeper: `op('a').par`
+  // names no parameter, and `op('a').par.x.y.z` names something this model has no meaning
+  // for. A component is not validated here — this function has no schema, and the reader
+  // reports an unknown channel by name. What matters is that it is RECOGNISED: unparsed,
+  // it would fall through to `parseValueText` and paste as a literal string, which is the
+  // silent-success failure the module note is about.
   if (scope !== "par" || key === undefined || key === "" || rest.length > 0) return null;
-  return { nodeName: parsed.ast.name, parameterKey: key };
+  if (component === "") return null;
+  return {
+    nodeName: parsed.ast.name,
+    parameterKey: component === undefined ? key : `${key}.${component}`,
+  };
 }

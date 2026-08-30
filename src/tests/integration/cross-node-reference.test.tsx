@@ -121,10 +121,7 @@ function sizesFor(plan: CompiledGraph, nodeId: string): number[] {
  * solid → source blur → subject blur → output, where the SUBJECT's size is an expression
  * reading the SOURCE's size by name.
  */
-async function mountWithReference(
-  expression: string,
-  options: { solidParameters?: Record<string, unknown> } = {},
-) {
+async function mountWithReference(expression: string) {
   const runtime = newRuntime();
   const seeded = await patch(runtime, [
     { op: "addNode", ref: "$solid", type: "solid", position: { x: -300, y: 0 } },

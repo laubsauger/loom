@@ -39,9 +39,19 @@ describe("parameter references round-trip (§V148)", () => {
     expect(parseParameterReference("2 + 2")).toBeNull();
     expect(parseParameterReference("op('a').par.b * 2")).toBeNull();
     expect(parseParameterReference("op('a').par")).toBeNull();
-    expect(parseParameterReference("op('a').par.b.c")).toBeNull();
+    expect(parseParameterReference("op('a').par.b.c.d")).toBeNull();
     expect(parseParameterReference("hello")).toBeNull();
     expect(parseParameterReference("")).toBeNull();
+  });
+
+  it("reads a COMPONENT reference as the key a local bind uses (T332, §V113)", () => {
+    // `op('a').par.color.r` resolves (T332), so it has to be RECOGNISED here too:
+    // unparsed, it falls through to the value reader and pastes as a literal string —
+    // a paste that looks like it worked and references nothing.
+    expect(parseParameterReference(parameterReference("solid1", "color.r"))).toEqual({
+      nodeName: "solid1",
+      parameterKey: "color.r",
+    });
   });
 
   it("matches the form rename rewrites, so a reference survives being renamed", () => {

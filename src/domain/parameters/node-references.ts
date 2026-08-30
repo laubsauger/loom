@@ -3,6 +3,7 @@ import type { NodeReferenceReader, NodeReferenceResult } from "../expressions/in
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
+import { componentKey, componentNamesFor } from "./slots.ts";
 import { resolveParameterSchema, type ResolveParametersOptions } from "./resolve.ts";
 
 /**
@@ -44,7 +45,10 @@ import { resolveParameterSchema, type ResolveParametersOptions } from "./resolve
  * other would accept documents the other refuses.
  */
 
-/** A path this reader understands. `par` is the only namespace v1 exposes. */
+/**
+ * A path this reader understands. `par` is the only namespace v1 exposes, and one
+ * component may follow the parameter (`par.color.r`, §V113/T332).
+ */
 const PARAMETER_NAMESPACE = "par";
 
 export interface NodeReferenceOptions {
@@ -69,8 +73,10 @@ export interface NodeReferenceOptions {
  *
  * Only numeric parameters are readable, and that is §V71's rule rather than a limitation
  * of this function: an expression evaluates to a number, so a reference inside one has to
- * be a number too. A colour or a curve reports what it is instead of being coerced into
- * whatever its first channel happens to hold.
+ * be a number too. A curve reports what it is instead of being coerced into whatever its
+ * first channel happens to hold; a COMPOUND says which components it has, because
+ * `op('x').par.color.r` is now a thing you can write (T332) and "reads a number" alone
+ * would send the user looking for the wrong fix.
  */
 function asNumber(value: ParameterValue | undefined, reference: string): NodeReferenceResult {
   if (typeof value === "number") return { ok: true, value };
@@ -100,7 +106,7 @@ function readerWithin(
   return (name, path): NodeReferenceResult => {
     const reference = `op('${name}').${path.join(".")}`;
 
-    const [namespace, key, ...rest] = path;
+    const [namespace, key, component, ...rest] = path;
     if (namespace !== PARAMETER_NAMESPACE) {
       return {
         ok: false,
@@ -108,7 +114,10 @@ function readerWithin(
       };
     }
     if (key === undefined || rest.length > 0) {
-      return { ok: false, reason: `${reference}: name one parameter, as op('${name}').par.gain` };
+      return {
+        ok: false,
+        reason: `${reference}: name one parameter, as op('${name}').par.gain, or one of its components, as op('${name}').par.color.r`,
+      };
     }
 
     const targetId = nodeByName(options.graph, name);
@@ -131,8 +140,46 @@ function readerWithin(
     if (schema === undefined) {
       return { ok: false, reason: `${reference}: "${name}" has an unknown node type` };
     }
-    if (!(key in schema)) {
+    const definition = schema[key];
+    if (definition === undefined) {
       return { ok: false, reason: `${reference}: "${name}" has no parameter "${key}"` };
+    }
+
+    /**
+     * §V113's component addressing, reached from another node (T332).
+     *
+     * The grammar has parsed `op('x').par.color.r` since T221; the reader refused it
+     * rather than guess a namespace. It is not a nicety: colour is stored as four
+     * independently-moded slots precisely so one channel can be driven, and a channel
+     * nothing outside its own node can read is only half of that.
+     *
+     * The names and the error wording come from `componentNamesFor` and read like the
+     * LOCAL bind case (`color.r` as a bind ref, `resolveBindRef`) because §V113 already
+     * settled that grammar — a second spelling for the same idea is a thing users have to
+     * learn twice and we have to keep in sync forever.
+     *
+     * The number handed back is the channel in its STORED space, which for a
+     * `space: "display"` colour means the picker's number and not the linear one. Same as
+     * the local bind, same as `ResolvedParameter.value`, and deliberate: the decode
+     * happens once, where `values` leaves the resolver as evaluation input (T148, §V56).
+     * Decoding here would decode twice for anything that lands back on a colour — T187's
+     * measured bug (stored 0.5 reached the shader as 0.0376), and the reason the rule is
+     * written down at all.
+     */
+    const componentNames = componentNamesFor(definition);
+    if (component !== undefined) {
+      if (componentNames === null) {
+        return {
+          ok: false,
+          reason: `${reference}: "${key}" is a ${definition.type} and has no components`,
+        };
+      }
+      if (!componentNames.includes(component)) {
+        return {
+          ok: false,
+          reason: `${reference}: "${key}" has no component "${component}" (it has ${componentNames.join(", ")})`,
+        };
+      }
     }
 
     // The recursive step. The target resolves with the same frame and channels, and with
@@ -159,8 +206,36 @@ function readerWithin(
      * number.
      */
     const entry = resolved.get(key);
+
+    if (component !== undefined) {
+      const resolvedComponent = entry?.components?.find((each) => each.name === component);
+      /**
+       * §V243 again, applied to the channel actually being read.
+       *
+       * A component with its OWN slot resolved on its own terms, so the compound's
+       * fallback says nothing about it and forwarding that diagnostic would be a false
+       * alarm on a channel that is fine. One with no slot follows the compound, so it
+       * inherits the compound's problem along with the compound's number — and reporting
+       * the value without the diagnostic is exactly the fallback-hides-the-error trap,
+       * one channel at a time and therefore harder to see.
+       */
+      const storedItself = target.parameters[componentKey(key, component)] !== undefined;
+      const governing =
+        resolvedComponent?.diagnostic ?? (storedItself ? null : (entry?.diagnostic ?? null));
+      if (governing !== null) return { ok: false, reason: `${reference}: ${governing.message}` };
+      return asNumber(resolvedComponent?.value, reference);
+    }
+
     if (entry?.diagnostic != null) {
       return { ok: false, reason: `${reference}: ${entry.diagnostic.message}` };
+    }
+    if (componentNames !== null) {
+      // A compound read WHOLE. Taking channel 0 would be a number that looks like an
+      // answer (§V71); the fix is one keystroke away, so the message spells it.
+      return {
+        ok: false,
+        reason: `${reference} is a ${definition.type}, and an expression reads a number — name a component, as ${reference}.${componentNames[0] ?? "r"}`,
+      };
     }
     return asNumber(entry?.value, reference);
   };
