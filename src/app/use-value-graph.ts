@@ -133,6 +133,8 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
         // §V182: the SAME pointer the shaders read. A second DOM listener would drift by a
         // frame and the CPU and GPU halves of one graph would disagree about the cursor.
         pointer: inputs.pointer,
+        // T414: the same rule with sound — the ONE feature record the frame carries.
+        ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
       });
       latest.current = result.resolver;
       latestBags.current = result.byName;

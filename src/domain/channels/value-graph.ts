@@ -1,6 +1,6 @@
 import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId, PortId } from "../types/ids.ts";
-import type { FrameEvaluationInput } from "../types/frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "../types/frame.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { NodeDefinition, ValueChannels } from "../types/node-definition.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
@@ -47,7 +47,7 @@ export interface ValueGraphSession {
   evaluate(
     graph: GraphDocument,
     frame: FrameEvaluationInput,
-    extras?: { pointer?: { x: number; y: number; buttons: number } },
+    extras?: { pointer?: { x: number; y: number; buttons: number }; audio?: AudioFeatures },
   ): ValueGraphResult;
   /** Clears every node's persistent state (§V181) — transport reset, backward seek. */
   reset(): void;
@@ -161,6 +161,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
               values: resolved.values,
               frame,
               ...(extras.pointer === undefined ? {} : { pointer: extras.pointer }),
+              ...(extras.audio === undefined ? {} : { audio: extras.audio }),
               state,
             });
           } else if (member.definition.valueChannel !== undefined) {

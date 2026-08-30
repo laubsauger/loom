@@ -1,7 +1,7 @@
 import type { PortId } from "./ids.ts";
 import type { PortDefinition } from "./ports.ts";
 import type { ParameterSchema, ParameterValue } from "./parameters.ts";
-import type { FrameEvaluationInput } from "./frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "./frame.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 
 export type ResolutionPolicy =
@@ -216,6 +216,13 @@ export interface ValueEvaluateContext {
    * listener. Absent when the composition root has no pointer (offline render).
    */
   readonly pointer?: { readonly x: number; readonly y: number; readonly buttons: number };
+  /**
+   * T414: the frame's audio FEATURES, from FrameInputs — never a second analyser, the
+   * §V182 rule with sound. Absent when the session has no audio input (offline render
+   * with no recorded track, headless, mic denied): sources publish silence, loudly
+   * documented, never a different render per run (§V45, §V329).
+   */
+  readonly audio?: AudioFeatures;
   /** Per-node persistent state (§V181). Mutate in place; cleared on transport reset. */
   readonly state: Record<string, unknown>;
 }

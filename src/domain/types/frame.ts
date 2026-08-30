@@ -46,6 +46,42 @@ export interface FrameEvaluationInput {
   wallDeltaSeconds?: number;
 }
 
+/**
+ * T414: per-frame audio FEATURES — the sound determinism boundary (§V45, §V329).
+ *
+ * What crosses into the engine is this record, never audio samples. The live session's
+ * analyser computes it once per displayed frame (app layer — the engine cannot own a
+ * microphone); everything downstream — value channels, uniforms, substep counts — is
+ * then a pure function of (frame, features), so the whole audio-reactive family takes
+ * exactly one field's worth of §V45 carve-out, the same shape the pointer stream took.
+ *
+ * REPLAY records FEATURES, not PCM: a recorded `frameIndex → AudioFeatures` track fed
+ * back through this field reproduces a performance bit-exactly by construction, where
+ * re-analysing audio offline would have to reproduce the browser analyser's windowing
+ * and FFT bit-for-bit across engines — a §V47 parity promise nobody can keep. An
+ * offline render either replays a track or runs in silence (all zeros) with a notice;
+ * it never re-listens.
+ *
+ * Ranges are nominal 0..1 (levels can exceed 1 on hot signals; consumers clamp via
+ * `valueLimit`). Smoothing is deliberately ABSENT — `valueLag` downstream gives both
+ * the raw transient and the damped envelope, where a pre-smoothed source gives neither.
+ */
+export interface AudioFeatures {
+  /** Broadband RMS of the current analysis window. */
+  readonly level: number;
+  /** Band energies: ~20-250 Hz, 250-2k, 2k-6k, 6k-16k. */
+  readonly low: number;
+  readonly lowMid: number;
+  readonly highMid: number;
+  readonly high: number;
+  /**
+   * Positive spectral flux, normalised — an ONSET envelope, not a beat claim: it rises
+   * on any broadband energy increase (a kick, a snare, a chord, a cough). Threshold it
+   * yourself (`valueTrigger`) for the transients you mean.
+   */
+  readonly onset: number;
+}
+
 /** Wall time, falling back to the timeline when the transport supplied none (§V172). */
 export function wallSecondsOf(frame: FrameEvaluationInput): number {
   return frame.wallSeconds ?? frame.timeSeconds;

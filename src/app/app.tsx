@@ -44,6 +44,7 @@ import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
+import { useAudioInput } from "./use-audio-input.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
@@ -364,9 +365,12 @@ export function App({
     },
     [analyze, pulses],
   );
+  // T414: the session's one audio capture, driven by audioIn nodes in the document.
+  const audioInput = useAudioInput(() => runtime.bus.store.getGraph());
   const frameLoop = useFrameLoop({
     bus: runtime.bus,
     backend: backend ?? null,
+    audio: audioInput.read,
     compiled: compile.compiled,
     settings: runtime.settings,
     animate: compile.animate,

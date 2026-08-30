@@ -84,6 +84,9 @@ describe("core catalogue (T70, T40)", () => {
       "valueTrigger",
       "valueLag",
       "valueFilter",
+      // T414: sound as channels — the value family's third input source after Mouse
+      // and the trio. Deliberately named for what it IS, not a TD analog.
+      "audioIn",
       "pointGenerator",
       "pointGrid",
       "pointLine",

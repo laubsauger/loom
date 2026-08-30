@@ -1,4 +1,4 @@
-import type { FrameEvaluationInput } from "./frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "./frame.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 import type { TextureFormat } from "./node-definition.ts";
 
@@ -35,6 +35,8 @@ export interface CompiledExecutionPlan {
 export interface FrameInputs {
   frame: FrameEvaluationInput;
   pointer: { x: number; y: number; buttons: number };
+  /** T414: the frame's audio features. Absent = no audio input this session (silence). */
+  audio?: AudioFeatures;
   resolution: readonly [number, number];
 }
 

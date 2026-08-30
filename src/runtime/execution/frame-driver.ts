@@ -1,4 +1,5 @@
 import type { CompiledExecutionPlan, FrameInputs } from "../../domain/types/backend.ts";
+import type { AudioFeatures } from "../../domain/types/frame.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
 import type { FrameLoopControl, ShaderloomBackend } from "../backend/backend-types.ts";
 import type { PointerSource } from "./pointer.ts";
@@ -20,6 +21,12 @@ export interface FrameDriverOptions {
   readonly backend: ShaderloomBackend;
   readonly transport: TransportSource;
   readonly pointer: PointerSource;
+  /**
+   * T414: the frame's audio FEATURES, read per tick like the pointer — the ONE audio
+   * source of the session (§V182's rule with sound). Absent or null = silence: the
+   * field is simply left off FrameInputs and every consumer reads zeros.
+   */
+  readonly audio?: () => AudioFeatures | null;
   /** Output resolution in pixels; read per frame so a resize needs no driver restart. */
   readonly resolution: () => readonly [number, number];
   readonly fps?: number;
@@ -64,9 +71,11 @@ export function createFrameDriver(options: FrameDriverOptions): FrameDriver {
 
   function tick(): FrameInputs | null {
     if (!plan) return null;
+    const features = options.audio?.() ?? null;
     const inputs: FrameInputs = {
       frame: transport.next(),
       pointer: pointer.state,
+      ...(features === null ? {} : { audio: features }),
       resolution: resolution(),
     };
     // ORDER IS THE CONTRACT (T340). Values for THIS frame are written before the encode

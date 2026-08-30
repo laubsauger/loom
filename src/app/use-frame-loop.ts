@@ -7,6 +7,7 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { projectFps } from "@domain/types/graph.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
+import type { AudioFeatures } from "@domain/types/frame.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
@@ -125,6 +126,11 @@ export interface FrameLoopOptions {
    */
   readonly pointer?: PointerSource | undefined;
   /**
+   * T414: the session's ONE audio feature source (§V182's rule with sound). Read per
+   * rendered frame; null = silence, and the field stays off FrameInputs entirely.
+   */
+  readonly audio?: (() => AudioFeatures | null) | undefined;
+  /**
    * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
    *
    * A SUGGESTION, never an instruction — the compile effect below verifies it against the
@@ -172,6 +178,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const animatorRef = useRef(createUniformAnimator());
   const driftRef = useRef(false);
   const pointerRef = useRef<PointerSource | null>(null);
+  const audioRef = useRef<(() => AudioFeatures | null) | null>(options.audio ?? null);
+  audioRef.current = options.audio ?? null;
   const generationRef = useRef(0);
 
   // Read live so a resize needs no driver restart — `FrameDriverOptions.resolution` is
@@ -246,6 +254,9 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       backend,
       transport,
       pointer,
+      // Read through the ref PER TICK: an audio source that appears later (the user
+      // adds an audioIn node mid-session) must not need a driver restart.
+      audio: () => audioRef.current?.() ?? null,
       resolution: () => {
         const { width, height } = resolutionRef.current;
         return [width, height] as const;
