@@ -34,6 +34,7 @@ import { TimelineReadout } from "./timeline-readout.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
 import { useAgentPorts } from "./agent-ports.ts";
+import { useRuntimeCommands } from "./runtime-commands.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
@@ -349,7 +350,8 @@ export function App({
    */
   // T291: the pixel ports — export interface over the live backend and the CURRENT
   // plan, so render_preview and describe_output work in the product, not only in tests.
-  const agentPorts = useAgentPorts({ backend, compiled: compile.compiled, playing: frameLoop.playing });
+  const agentPorts = useAgentPorts({ backend, compiled: compile.compiled, playing: frameLoop.playing, graph: runtime.bus.store.getGraph });
+  useRuntimeCommands({ bus: runtime.bus, backend, compiled: compile.compiled });
   const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
 
   /** The installed catalogue, for the library panes and the help panel's node reference. */

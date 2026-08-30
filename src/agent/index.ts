@@ -31,6 +31,7 @@ export type {
   AgentTool,
   AgentToolInfo,
   OutputRef,
+  PointsExport,
   PreviewExport,
   PreviewImage,
   PreviewImageRequest,

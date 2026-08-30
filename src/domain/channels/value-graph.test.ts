@@ -54,7 +54,7 @@ describe("value graph evaluation (T273/T274)", () => {
       [
         node("mouse1", "mouse"),
         node("math1", "valueMath", { parameters: { operation: "multiply", operand: 2 } }),
-        node("limit1", "limit"),
+        node("limit1", "valueLimit"),
       ],
       [
         ["mouse1", "out", "math1", "a"],

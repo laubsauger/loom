@@ -15,6 +15,9 @@ declare module "@domain/types/commands.ts" {
   interface CommandMap {
     /** Toggle the live frame loop. Reports the resulting play state. */
     "transport.togglePlay": { input: Record<string, never>; output: { playing: boolean } };
+    /** Idempotent verbs (T292): an agent told "play" while playing must not pause. */
+    "transport.play": { input: Record<string, never>; output: { playing: boolean } };
+    "transport.pause": { input: Record<string, never>; output: { playing: boolean } };
     /** Render exactly `frames` (default 1) frames synchronously. Reports the last frame index. */
     "transport.stepFrame": { input: { frames?: number }; output: { frameIndex: number } };
     /**
@@ -95,6 +98,36 @@ export function registerTransportCommands(bus: ShaderloomBus): TransportHolder {
       rejectionOutput: () => ({ playing: false }),
     });
   }
+
+  // T292: `play` and `pause` as their own verbs — the agent tools have named them since
+  // T77, and "toggle" is the wrong contract for a caller that cannot see the current
+  // state (an agent told "play" while playing must NOT pause).
+  const registerVerb = (name: "transport.play" | "transport.pause", want: boolean): void => {
+    if (bus.hasCommand(name)) return;
+    bus.registerCommand<"transport.play">({
+      name: name as "transport.play",
+      description: want ? "Start the frame loop (idempotent)." : "Stop the frame loop (idempotent).",
+      handler: (_input, context) => {
+        if (holder.current === null) {
+          return {
+            status: "rejected",
+            revision: context.store.getRevision(),
+            diagnostics: [NO_LOOP_DIAGNOSTIC],
+            output: { playing: false },
+          };
+        }
+        if (!context.dryRun && holder.current.isPlaying() !== want) holder.current.togglePlay();
+        return {
+          status: "applied",
+          revision: context.store.getRevision(),
+          output: { playing: holder.current.isPlaying() },
+        };
+      },
+      rejectionOutput: () => ({ playing: false }),
+    });
+  };
+  registerVerb("transport.play", true);
+  registerVerb("transport.pause", false);
 
   if (!bus.hasCommand("transport.stepFrame")) {
     bus.registerCommand({

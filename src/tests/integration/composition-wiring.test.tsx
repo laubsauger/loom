@@ -55,7 +55,48 @@ const CAPABILITIES: BackendCapabilities = {
   limits: { maxTextureDimension2D: 8192 },
 };
 
-const READY: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true };
+/**
+ * A backend the composed fixtures can hand to the app (T292): construction-complete —
+ * every method exists so PORTS wire — while pixel methods refuse honestly (this
+ * fixture has no GPU; availability is about WIRING, not about rendering).
+ */
+function fixtureBackend(): ShaderloomBackend {
+  const noGpu = () => Promise.reject(new Error("composition fixture has no GPU"));
+  return {
+    status: {
+      initialized: true,
+      disposed: false,
+      halted: false,
+      deviceGeneration: 1,
+      temporalResets: 0,
+      resourceBuilds: 0,
+      framesSubmitted: 0,
+      readbacks: 0,
+      stale: false,
+      estimatedResourceBytes: 0,
+    },
+    initialize: () => Promise.resolve(CAPABILITIES),
+    compile: (plan) => Promise.resolve({ id: "fixture", logical: plan }),
+    render() {},
+    resize() {},
+    readOutput: noGpu,
+    onDiagnostic: () => () => {},
+    dispose() {},
+    loop: () => ({ stop() {} }),
+    updateUniforms() {},
+    resetTemporalHistory() {},
+    recover: () => Promise.resolve(),
+    present: (_canvas, options) => ({ id: "p", outputId: options.outputId, setOutput() {}, dispose() {} }),
+    previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
+    onGpuTimings: () => () => {},
+    compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
+    readBuffer: noGpu,
+    registerMediaSource: () => () => {},
+    setCookPolicy() {},
+  };
+}
+
+const READY: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend: fixtureBackend() };
 
 function newRuntime(): AppRuntime {
   return createAppRuntime({
@@ -756,6 +797,42 @@ describe("§V28a — preview sinks", () => {
  * structurally cannot see.
  */
 describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () => {
+  /**
+   * T292: EVERY tool, enumerated. Three findings this project (B12's agent surface,
+   * T264's media registration, B23's preview port) shared one shape: built, green unit
+   * tests, dead in the product — because a port or a mount is precisely the thing a
+   * unit test cannot see; the test supplies it. Per-tool composed tests caught none of
+   * them, because each was written by someone who knew their own tool and not the
+   * wiring. An enumeration covers a NEW tool the day it exists rather than the day
+   * someone remembers — a tool added without its wiring turns this red the same hour.
+   */
+  it("T292: every tool on the surface is LIVE — ports, queries and commands wired", async () => {
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("the composition root constructed no agent surface");
+
+    // Ports arrive with the backend, one render after mount — wait for the live set.
+    await waitFor(() => {
+      expect(built.listTools().filter((tool) => !tool.available && tool.name !== "set_output")).toEqual([]);
+    });
+    const tools = built.listTools();
+    expect(tools.length).toBeGreaterThan(20); // the roster, not a subset
+    // Exemptions are EXPLICIT and carry the reason: an entry here is a declared feature
+    // gap, never an excuse for a missing wire. Anything else unavailable is a bug.
+    const declaredGaps = new Map([
+      ["set_output", "graph.setOutput needs a document-level output designation first (§V59)"],
+    ]);
+    for (const tool of tools) {
+      if (declaredGaps.has(tool.name)) continue;
+      const missing = [...tool.missing.commands, ...tool.missing.queries, ...tool.missing.ports];
+      expect(
+        tool.available,
+        `${tool.name} is on the surface but not wired: missing ${missing.join(", ")}`,
+      ).toBe(true);
+    }
+  });
+
   it("hands out a surface whose tools are available, not `unavailable`", async () => {
     let surface: AgentToolSurface | null = null;
     await mountApp({ status: READY, onAgentSurface: (next) => (surface = next) });

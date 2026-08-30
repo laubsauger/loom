@@ -113,9 +113,9 @@ export const valueMathNode: NodeDefinition = {
   compile: noPasses,
 };
 
-/** T276 — Limit: clamp every channel. */
-export const limitNode: NodeDefinition = {
-  type: "limit",
+/** T276 — Limit: clamp every channel. (The TOP of the same name clamps pixels; this is its CHOP twin.) */
+export const valueLimitNode: NodeDefinition = {
+  type: "valueLimit",
   version: 1,
   title: "Limit",
   category: "value",
@@ -252,7 +252,7 @@ export const valueFilterNode: NodeDefinition = {
 export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
   valueMathNode,
-  limitNode,
+  valueLimitNode,
   slopeNode,
   triggerNode,
   lagNode,

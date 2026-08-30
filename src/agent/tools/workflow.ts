@@ -23,24 +23,6 @@ import type { AgentTool, ToolStatus } from "../types.ts";
  * writes a file, so it is gated behind the `localFile` capability (§V38).
  */
 
-function unavailableTool(
-  name: string,
-  command: string,
-  title: string,
-  description: string,
-): AgentTool<EmptyInput, never> {
-  return {
-    name,
-    title,
-    description,
-    kind: "workflow",
-    inputSchema: emptyInput,
-    requires: { commands: [command] },
-    capabilities: [],
-    mutates: false,
-    run: () => result<never>(name, "unavailable", null),
-  };
-}
 
 /**
  * Real since the bus registered `project.validate`, which runs the compiler's own
@@ -90,19 +72,29 @@ export const compileProject: AgentTool<EmptyInput, unknown> = {
   },
 };
 
-export const play = unavailableTool(
-  "play",
-  "transport.play",
-  "Play",
-  "Start the frame loop. Requires a transport.play command, which is not registered.",
-);
+function transportTool(name: "play" | "pause", command: "transport.play" | "transport.pause", title: string, description: string): AgentTool<Record<string, never>, { playing: boolean }> {
+  return {
+    name,
+    title,
+    description,
+    kind: "workflow",
+    inputSchema: emptyInput,
+    requires: { commands: [command] },
+    capabilities: [],
+    mutates: false,
+    async run(_input, runtime) {
+      const dispatched = await runtime.execute<{ playing: boolean }>(command, {});
+      return result<{ playing: boolean }>(name, dispatched.status === "applied" ? "ok" : "rejected", dispatched.output ?? null, {
+        diagnostics: dispatched.diagnostics,
+        revision: dispatched.revision,
+      });
+    },
+  };
+}
 
-export const pause = unavailableTool(
-  "pause",
-  "transport.pause",
-  "Pause",
-  "Stop the frame loop. Requires a transport.pause command, which is not registered.",
-);
+/** Idempotent verbs, not a toggle: an agent told "play" while playing must not pause. */
+export const play = transportTool("play", "transport.play", "Play", "Start the frame loop. Idempotent.");
+export const pause = transportTool("pause", "transport.pause", "Pause", "Stop the frame loop. Idempotent.");
 
 export interface SaveProjectData {
   readonly saved: boolean;

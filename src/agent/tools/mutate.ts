@@ -277,17 +277,33 @@ export const setOutput: AgentTool<SetOutputInput, never> = {
   run: () => result<never>("set_output", "unavailable", null),
 };
 
-export const resetFeedback: AgentTool<ResetFeedbackInput, never> = {
+export interface ResetFeedbackData {
+  readonly cleared: number;
+}
+
+/** TD's reset-with-a-pulse (§V126), live since T215 gave the backend per-pair resets. */
+export const resetFeedback: AgentTool<ResetFeedbackInput, ResetFeedbackData> = {
   name: "reset_feedback",
   title: "Reset feedback",
   description:
-    "Clear the history held by temporal nodes. Requires a runtime.resetFeedback command, which is not registered.",
+    "Clear the history held by temporal (feedback) nodes: the named nodes' pairs, or every pair when unscoped.",
   kind: "mutate",
   inputSchema: resetFeedbackInput,
   requires: { commands: ["runtime.resetFeedback"] },
   capabilities: [],
   mutates: true,
-  run: () => result<never>("reset_feedback", "unavailable", null),
+  async run(input, runtime) {
+    const dispatched = await runtime.execute<ResetFeedbackData>(
+      "runtime.resetFeedback",
+      input.nodeIds === undefined ? {} : { nodeIds: input.nodeIds },
+    );
+    return result<ResetFeedbackData>(
+      "reset_feedback",
+      dispatched.status === "applied" ? "ok" : "error",
+      dispatched.output ?? null,
+      { diagnostics: [...dispatched.diagnostics], revision: dispatched.revision },
+    );
+  },
 };
 
 export interface HistoryToolData {

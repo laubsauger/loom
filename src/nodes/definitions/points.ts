@@ -28,6 +28,7 @@ import { readColor, readNumber } from "./parameter-readers.ts";
  */
 
 import { scratchResourceId } from "../../compiler/resources.ts";
+import { storedStaticValue } from "../../domain/parameters/slots.ts";
 
 /**
  * The producer/consumer id contract for a pointset attribute's ping-pong pair. ONE
@@ -35,6 +36,37 @@ import { scratchResourceId } from "../../compiler/resources.ts";
  * `scratchResourceId(nodeId, attribute)`, and consumers derive the identical id from
  * the edge's source identity — no second convention to drift.
  */
+
+/**
+ * The point schema a node's parameters resolve to (T293) — the `pointSetInfo` the
+ * read_points port needs, derived from the DOCUMENT so the composition root can wire
+ * the port without re-reading node internals. Undefined for a non-point node or an
+ * attributes parameter the schema rejects (the compile diagnostic already said why).
+ */
+export function pointSetInfoFor(
+  node: { type: string; parameters: Readonly<Record<string, unknown>> },
+): { attributes: ReadonlyArray<PointAttributeSchema>; capacity: number } | undefined {
+  const numberOf = (key: string, fallback: number): number => {
+    const value = storedStaticValue(node.parameters[key] as never);
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(1, Math.round(value)) : fallback;
+  };
+  if (node.type === "pointKernel") {
+    const { attributes } = parseAttributes(storedStaticValue(node.parameters["attributes"] as never));
+    if (attributes === undefined) return undefined;
+    return { attributes, capacity: numberOf("capacity", 4096) };
+  }
+  if (node.type === "textureToAttribute") {
+    return {
+      attributes: [
+        { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+        { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
+      ],
+      capacity: numberOf("count", 4096),
+    };
+  }
+  return undefined;
+}
+
 export function pointPairId(nodeId: string, attribute: string): string {
   return scratchResourceId(nodeId, attribute);
 }

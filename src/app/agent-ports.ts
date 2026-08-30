@@ -1,15 +1,18 @@
 import { useMemo, useRef } from "react";
 
-import type { AgentPorts, PreviewExport } from "@agent/index.ts";
+import type { AgentPorts, PointsExport, PreviewExport } from "@agent/index.ts";
 import type { CompiledGraph } from "../compiler/types.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import {
   createExportInterface,
+  createPointsReadback,
   describeOutputStats,
   exportOutputsFrom,
   readbackSourceFromBackend,
   renderPreviewPng,
 } from "@runtime/export/index.ts";
+import { pointSetInfoFor } from "@nodes/definitions/index.ts";
+import type { GraphDocument } from "@domain/types/graph.ts";
 
 /**
  * The agent's pixel ports, CONSTRUCTED (T291 — and B12's shape closed a third time):
@@ -27,11 +30,14 @@ export function useAgentPorts(inputs: {
   backend: ShaderloomBackend | undefined;
   compiled: CompiledGraph | null;
   playing: boolean;
+  graph: () => GraphDocument;
 }): AgentPorts {
   const compiledRef = useRef(inputs.compiled);
   compiledRef.current = inputs.compiled;
   const playingRef = useRef(inputs.playing);
   playingRef.current = inputs.playing;
+  const graphRef = useRef(inputs.graph);
+  graphRef.current = inputs.graph;
 
   const backend = inputs.backend;
   return useMemo(() => {
@@ -48,6 +54,17 @@ export function useAgentPorts(inputs: {
       },
       describeOutput: (ref) => describeOutputStats(exports, ref),
     };
-    return { preview };
+    // T293: the read_points port — the same B12 shape closed in the same pass it was
+    // found. Date.now is injected HERE, at the composition root, which is the one
+    // place the §V44 boundary permits a wall clock.
+    const points: PointsExport = createPointsReadback({
+      readBuffer: (resourceId) => backend.readBuffer(resourceId),
+      pointSetInfo: (nodeId) => {
+        const node = graphRef.current().nodes[nodeId];
+        return node === undefined ? undefined : pointSetInfoFor(node);
+      },
+      now: Date.now,
+    });
+    return { preview, points };
   }, [backend]);
 }
