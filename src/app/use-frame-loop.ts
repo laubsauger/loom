@@ -38,6 +38,8 @@ const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
 
 export interface FrameLoopResult {
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** T465: empty the retained list; anything still real re-reports on its own. */
+  clearDiagnostics(): void;
   /** True while the loop is running. Reflects the driver, not a request. */
   readonly playing: boolean;
   /**
@@ -525,5 +527,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
 
   const latestFrame = useCallback(() => latestFrameRef.current, []);
 
-  return { diagnostics, playing, looping, latestFrame };
+  // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
+  // real re-reports on its own and thereby proves it is live.
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
+  return { diagnostics, clearDiagnostics, playing, looping, latestFrame };
 }

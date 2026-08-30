@@ -79,6 +79,8 @@ export interface PendingConfirm {
 export interface ProjectWiring {
   /** Save/open diagnostics, merged into the problems tab. */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** T465: empty the retained list; anything still real re-reports on its own. */
+  clearDiagnostics(): void;
   /** Last file written or read, for the top bar. */
   readonly fileName: string | null;
   readonly busy: boolean;
@@ -346,8 +348,12 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     [bus, invocation],
   );
 
+  // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
+  // real re-reports on its own and thereby proves it is live.
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
   return {
     diagnostics,
+    clearDiagnostics,
     fileName,
     busy,
     confirm: pending,

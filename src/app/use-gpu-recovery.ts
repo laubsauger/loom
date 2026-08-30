@@ -27,6 +27,8 @@ export interface GpuRecovery {
   readonly retrying: boolean;
   /** Runtime diagnostics the backend reported, newest last. */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** T465: empty the retained list; anything still real re-reports on its own. */
+  clearDiagnostics(): void;
   /** Ask the backend to re-acquire a device. No-op when there is nothing to recover. */
   retry(): void;
 }
@@ -81,5 +83,8 @@ export function useGpuRecovery(backend: ShaderloomBackend | null | undefined): G
       });
   }, []);
 
-  return { halted, retrying, diagnostics, retry };
+  // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
+  // real re-reports on its own and thereby proves it is live.
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
+  return { halted, retrying, diagnostics, clearDiagnostics, retry };
 }

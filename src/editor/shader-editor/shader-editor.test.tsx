@@ -165,3 +165,35 @@ describe("node status badge (§V27)", () => {
     expect(props).toEqual({ errorCount: 1, warningCount: 1, stale: true, compiling: true });
   });
 });
+
+describe("T465 — clear empties, the truth repopulates", () => {
+  it("offers Clear only when given the verb, and it fires", () => {
+    const seen: string[] = [];
+    const { rerender } = render(
+      <ProblemsPanel
+        diagnostics={[{ severity: "error", code: "x", message: "boom" }]}
+        onClear={() => seen.push("cleared")}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear problems" }));
+    expect(seen).toEqual(["cleared"]);
+
+    // Without the verb, no button — the panel stays a pure view of its list.
+    rerender(<ProblemsPanel diagnostics={[{ severity: "error", code: "x", message: "boom" }]} />);
+    expect(screen.queryByRole("button", { name: "Clear problems" })).toBeNull();
+  });
+
+  it("an emptied list is just the empty state — nothing is remembered as dismissed", () => {
+    // The design claim: clearing is not acknowledging. The panel renders whatever it
+    // is GIVEN; a live problem handed back after a clear renders again, identically.
+    const { rerender } = render(<ProblemsPanel diagnostics={[]} onClear={() => {}} />);
+    expect(screen.getByText("No problems")).toBeDefined();
+    rerender(
+      <ProblemsPanel
+        diagnostics={[{ severity: "warning", code: "still.live", message: "still here" }]}
+        onClear={() => {}}
+      />,
+    );
+    expect(screen.getByText("still here")).toBeDefined();
+  });
+});

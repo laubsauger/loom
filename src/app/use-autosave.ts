@@ -38,6 +38,8 @@ export const AUTOSAVE_FAILED_CODE = "project.autosave.failed";
 export interface AutosaveWiring {
   /** Problems-tab diagnostics: storage missing, or a write that failed. */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** T465: empty the retained list; anything still real re-reports on its own. */
+  clearDiagnostics(): void;
   /** True when there is no snapshot store at all — autosave is OFF, loudly. */
   readonly unavailable: boolean;
   /** Newest snapshot found at launch, if any. The prompt offers it (§T139). */
@@ -143,5 +145,8 @@ export function useAutosave(runtime: AppRuntime, options: UseAutosaveOptions = {
   const flush = useCallback(() => flushRef.current(), []);
   const dismissRestore = useCallback(() => setRestore(null), []);
 
-  return { diagnostics, unavailable, restore, dismissRestore, flush };
+  // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
+  // real re-reports on its own and thereby proves it is live.
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
+  return { diagnostics, clearDiagnostics, unavailable, restore, dismissRestore, flush };
 }

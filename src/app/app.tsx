@@ -573,6 +573,21 @@ export function App({
     onSaved: dirty.markSaved,
   });
 
+  /**
+   * T465: Clear EMPTIES every accumulating source; the list rebuilds from the current
+   * compile on the next render, so live problems return immediately (the proof they
+   * are live) and resolved ones do not. Deliberately no dismissed-set — nothing can
+   * be silenced while still true.
+   */
+  const clearProblems = useCallback(() => {
+    setRejection(NO_DIAGNOSTICS);
+    autosave.clearDiagnostics();
+    media.clearDiagnostics();
+    project.clearDiagnostics();
+    recovery.clearDiagnostics();
+    frameLoop.clearDiagnostics();
+  }, [autosave, frameLoop, media, project, recovery]);
+
   const problems = useMemo<RuntimeDiagnostic[]>(() => {
     const list: RuntimeDiagnostic[] = [];
     if (status.kind === "unavailable") {
@@ -935,7 +950,7 @@ export function App({
           }
           problems={
             <ErrorBoundary name="Problems">
-              <ProblemsPanel diagnostics={problems} />
+              <ProblemsPanel diagnostics={problems} onClear={clearProblems} />
             </ErrorBoundary>
           }
           performance={

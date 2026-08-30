@@ -143,3 +143,10 @@
   line-height: var(--lh-prose);
   color: var(--line-hot);
 }
+
+/* T465: the one verb the list has. Trailing, quiet — the rows are the content. */
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-1) var(--space-2);
+}

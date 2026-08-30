@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import { Button } from "@ui/primitives/button.tsx";
 import { cx } from "@ui/cx.ts";
 import { formatDiagnosticLocation, partitionDiagnostics } from "./shader-diagnostics.ts";
 import styles from "./problems-panel.module.css";
@@ -11,6 +12,13 @@ export interface ProblemsPanelProps {
   onSelect?: ((diagnostic: RuntimeDiagnostic) => void) | undefined;
   /** Copy for the "nothing wrong" state. */
   emptyHint?: string | undefined;
+  /**
+   * T465: empty the list. The list then REPOPULATES from the current compile, so a
+   * live problem returns immediately — which is how you learn it is live — and a
+   * resolved one does not. There is deliberately no acknowledged-state: nothing is
+   * remembered as dismissed, nothing can be silenced while still true.
+   */
+  onClear?: (() => void) | undefined;
 }
 
 type Tone = "error" | "warning" | "info";
@@ -34,7 +42,7 @@ const ROW_CLASS: Record<Tone, string> = {
  * severity: a warning that scrolls in among twelve errors is a warning nobody reads, and
  * §V27 asks for them to display separately for exactly that reason.
  */
-export function ProblemsPanel({ diagnostics, onSelect, emptyHint }: ProblemsPanelProps) {
+export function ProblemsPanel({ diagnostics, onSelect, emptyHint, onClear }: ProblemsPanelProps) {
   const { errors, warnings, info } = useMemo(
     () => partitionDiagnostics(diagnostics),
     [diagnostics],
@@ -55,6 +63,13 @@ export function ProblemsPanel({ diagnostics, onSelect, emptyHint }: ProblemsPane
 
   return (
     <div className={styles.panel} aria-label="Problems">
+      {onClear === undefined ? null : (
+        <div className={styles.toolbar}>
+          <Button aria-label="Clear problems" onClick={onClear}>
+            clear
+          </Button>
+        </div>
+      )}
       <DiagnosticGroup tone="error" label="errors" items={errors} {...(onSelect ? { onSelect } : {})} />
       <DiagnosticGroup tone="warning" label="warnings" items={warnings} {...(onSelect ? { onSelect } : {})} />
       <DiagnosticGroup tone="info" label="info" items={info} {...(onSelect ? { onSelect } : {})} />

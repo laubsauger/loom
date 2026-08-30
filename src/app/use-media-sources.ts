@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -206,6 +206,8 @@ export interface ResolvedSizeSource {
 export interface MediaWiring {
   /** Why a node is black. Merged into the problems surface (§I.diag). */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** T465: empty the retained list; anything still real re-reports on its own. */
+  clearDiagnostics(): void;
 }
 
 export function useMediaSources(
@@ -383,5 +385,8 @@ export function useMediaSources(
     }
   }, [graph, sizes, sizeKey, key]);
 
-  return { diagnostics };
+  // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
+  // real re-reports on its own and thereby proves it is live.
+  const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
+  return { diagnostics, clearDiagnostics };
 }
