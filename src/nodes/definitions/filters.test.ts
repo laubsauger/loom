@@ -10,6 +10,7 @@ import {
   edgeNode,
   filterNodes,
   remapNode,
+  slopeNode,
 } from "./filters.ts";
 import { uvNode } from "./generators.ts";
 import { CHANNEL_OPTIONS, EXTEND_OPTIONS } from "./parameter-readers.ts";
@@ -69,6 +70,7 @@ describe("filter nodes (T40)", () => {
       "displace",
       "edge",
       "remap",
+      "slope",
     ]);
   });
 
@@ -343,5 +345,63 @@ describe("Convolve (T241)", () => {
       expect(parameter?.type).toBe("vector");
       expect(parameter?.type === "vector" ? parameter.size : 0).toBe(3);
     }
+  });
+});
+
+/**
+ * Slope (T284) — the decisions that are arguments rather than code.
+ */
+describe("Slope (T284)", () => {
+  it("writes the neutral value Displace reads as no displacement", () => {
+    // The point of the node, as a contract between two of them: Slope's `zeropoint` is
+    // what a flat area writes, Displace's `offset` is the value it treats as zero shift.
+    // They have to be the same number or Slope -> Displace (example E6's missing half)
+    // slides the whole image sideways before it displaces anything, and the fix — type
+    // the same number into two nodes — is invisible to someone who does not already know
+    // both parameters exist. Asserted against each other, not against 0.5, so moving one
+    // default without the other fails here rather than in a picture.
+    const slopeZero = slopeNode.parameters["zeropoint"];
+    const displaceOffset = displaceNode.parameters["offset"];
+    const neutral = slopeZero?.type === "number" ? slopeZero.default : undefined;
+    const expected = displaceOffset?.type === "vector" ? displaceOffset.default : undefined;
+    expect([neutral, neutral]).toEqual(expected);
+  });
+
+  it("negates the gradient when it encodes a normal", () => {
+    // A surface rising to the RIGHT tilts its normal to the LEFT. Drop the negation and
+    // every bump reads as a dent under lighting — while the normal map itself still looks
+    // like a perfectly plausible normal map, which is why this one hides.
+    expect(firstPass(slopeNode, { mode: "normal" }).shader).toContain(
+      "normalize(vec3f(-slope.x, -slope.y, 1.0))",
+    );
+  });
+
+  it("passes alpha through instead of differentiating it", () => {
+    // Edge's argument, and it holds for the same reason (§V56): coverage is not light, and
+    // differentiating a uniformly opaque image would hand back a fully transparent one.
+    // One `source.a` per mode's return, and no mode writing a constant alpha instead.
+    const shader = firstPass(slopeNode).shader;
+    expect(shader.match(/source\.a/g)).toHaveLength(3);
+    expect(shader).not.toMatch(/return vec4f\([^;]*, 1\.0\);/);
+  });
+
+  it("switches modes with a uniform, sharing one derivative (§V5)", () => {
+    // Normal and Emboss are presentations of the SAME Sobel, so they are modes rather than
+    // nodes — three nodes would be three copies of one kernel, drifting apart at the first
+    // fix. Keeping the mode a uniform also means changing it never rebuilds a pipeline.
+    const slope = firstPass(slopeNode);
+    const normal = firstPass(slopeNode, { mode: "normal" });
+    const emboss = firstPass(slopeNode, { mode: "emboss" });
+    expect([slope.uniforms?.["mode"], normal.uniforms?.["mode"], emboss.uniforms?.["mode"]]).toEqual(
+      [0, 1, 2],
+    );
+    expect(normal.shader).toBe(slope.shader);
+    expect(emboss.shader).toBe(slope.shader);
+  });
+
+  it("scales its sampling with the target resolution", () => {
+    // A fixed step would make the derivative a different physical size at every
+    // resolution, so a height field would displace by a different amount on export.
+    expect(firstPass(slopeNode, {}, [200, 100]).uniforms?.["texel"]).toEqual([1 / 200, 1 / 100]);
   });
 });

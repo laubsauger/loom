@@ -257,3 +257,91 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let source = sampleExtend(inputTexture, inputSampler, uv, params.extend);
   return vec4f((sum / divisor) + vec3f(params.bias), source.a);
 }`;
+
+/**
+ * Slope — the derivative of an image (T284). TD's Slope TOP.
+ *
+ * Edge answers "where does this change?" with a magnitude; Slope answers "which way and
+ * how fast?" with a signed vector, and that is the difference between drawing an outline
+ * and driving something with the shape of an image. Height field to displacement field,
+ * height field to normal map, height field to relief — all three are this one derivative
+ * presented differently, which is why they are MODES rather than three nodes copying the
+ * same Sobel.
+ *
+ * MODE IS A UNIFORM, not a shader switch (§V5): flipping between the three is a uniform
+ * write, and the branch is uniform across the draw. Limit does the same with its four
+ * modes; Composite compiles per operation instead because its menu selects entire blend
+ * shaders rather than a presentation of one shared result.
+ *
+ * THE SIGN IN NORMAL MODE is the decision most likely to be got wrong and least likely to
+ * be noticed: a surface rising to the RIGHT tilts its normal to the LEFT, so the gradient
+ * is negated before it is encoded. Get it backwards and every lit surface is inverted —
+ * bumps read as dents — while the picture still looks like a plausible normal map.
+ *
+ * GREEN CARRIES THE SLOPE ALONG OUR V AXIS, which runs DOWN (the same convention the UV
+ * generator and Remap use). A consumer expecting an OpenGL-style green-up normal map wants
+ * that channel inverted; a Reorder or a Level does it, which is one reason T280 comes first.
+ *
+ * The Sobel weights sum to 8 per side, so the gradient is divided by 8 to leave a change in
+ * height units PER PIXEL rather than a number that silently depends on the kernel's scale.
+ *
+ * Alpha PASSES THROUGH, exactly as in Edge and for the same reason: under straight alpha
+ * (§V56) coverage is not light, and differentiating it would hand back a fully transparent
+ * image wherever the input was uniformly opaque.
+ */
+export const SLOPE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+${WGSL_CHANNEL}
+
+struct Params {
+  texel: vec2f,
+  mode: f32,
+  channel: f32,
+  strength: f32,
+  zeropoint: f32,
+  angle: f32,
+  extend: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  var gx = 0.0;
+  var gy = 0.0;
+  let kx = array<f32, 9>(-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0);
+  let ky = array<f32, 9>(-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0);
+  for (var j = 0; j < 3; j = j + 1) {
+    for (var i = 0; i < 3; i = i + 1) {
+      let offset = vec2f(f32(i - 1), f32(j - 1)) * params.texel;
+      let tap = sampleExtend(inputTexture, inputSampler, uv + offset, params.extend);
+      let height = channelValue(tap, params.channel);
+      let index = (j * 3) + i;
+      gx = gx + (height * kx[index]);
+      gy = gy + (height * ky[index]);
+    }
+  }
+  // Per pixel, not per kernel: Sobel's weights sum to 8 on each side.
+  let slope = vec2f(gx, gy) * (params.strength / 8.0);
+  let source = sampleExtend(inputTexture, inputSampler, uv, params.extend);
+  let mode = u32(params.mode + 0.5);
+  if (mode == 1u) {
+    // A surface rising to the right tilts its normal LEFT, hence the negation. z = 1
+    // measures the tilt against a flat surface one unit tall, the tangent-space default.
+    let normal = normalize(vec3f(-slope.x, -slope.y, 1.0));
+    return vec4f((normal * 0.5) + vec3f(0.5), source.a);
+  }
+  if (mode == 2u) {
+    // Emboss: the slope along ONE direction, which is what a raking light reveals.
+    let relief = dot(slope, vec2f(cos(params.angle), sin(params.angle)));
+    return vec4f(vec3f(relief + params.zeropoint), source.a);
+  }
+  // Slope: the signed derivative itself, biased so the neutral value is representable in
+  // an unsigned format. Blue carries the same neutral so every channel reads "no slope".
+  return vec4f(
+    slope.x + params.zeropoint,
+    slope.y + params.zeropoint,
+    params.zeropoint,
+    source.a,
+  );
+}`;

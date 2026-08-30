@@ -5,6 +5,7 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import {
   CHANNEL_OPTIONS,
+  DEGREES_TO_RADIANS,
   EXTEND_OPTIONS,
   readEnumIndex,
   readFlag,
@@ -17,6 +18,7 @@ import {
   BLUR_FRAGMENT_WGSL,
   DISPLACE_FRAGMENT_WGSL,
   REMAP_FRAGMENT_WGSL,
+  SLOPE_FRAGMENT_WGSL,
 } from "../shaders/filters.wgsl.ts";
 
 /**
@@ -515,10 +517,138 @@ export const convolveNode: NodeDefinition = {
   },
 };
 
+/** How the derivative is presented. Index order is what the shader branches on. */
+const SLOPE_MODE_OPTIONS = [
+  { value: "slope", label: "Slope" },
+  { value: "normal", label: "Normal Map" },
+  { value: "emboss", label: "Emboss" },
+] as const;
+
+/**
+ * Slope — the derivative of an image (T284). TD's Slope TOP.
+ *
+ * Edge reports a magnitude: where the image changes. Slope reports a signed VECTOR: which
+ * way it changes and how fast. That is the difference between drawing an outline and
+ * driving something else with the shape of an image, and it is the missing half of example
+ * E6 — a height field becomes a displacement field here, and Displace consumes it.
+ *
+ * THREE MODES, ONE DERIVATIVE. Normal is the same gradient encoded as a tangent-space
+ * normal; Emboss is the same gradient dotted with a light direction. Shipping them as three
+ * nodes would be three copies of one Sobel, drifting apart at the first bug fix — and a
+ * user reaching for "make a normal map from this" and a user reaching for "give me the
+ * derivative" are asking for the same operation with different plans for the answer.
+ *
+ * ZERO POINT AND DISPLACE. `zeropoint` is the value written where the image is flat, and it
+ * defaults to 0.5 because that is what Displace's `offset` defaults to: Slope -> Displace
+ * is a working chain with nothing to configure, which is the whole point of building this.
+ * (TD's Slope TOP has the same parameter and documents the same 8-bit-friendly default; it
+ * also suggests 0 for a 32-bit float pipeline, which is what to type here when nothing
+ * downstream needs an unsigned range.)
+ *
+ * COLOUR (§V56): the input is read as a HEIGHT FIELD through one channel — its space is
+ * irrelevant and it must not be converted — and the output is DATA in Slope and Normal
+ * modes. Emboss is the one mode whose output is meant to be looked at.
+ */
+export const slopeNode: NodeDefinition = {
+  type: "slope",
+  version: 1,
+  title: "Slope",
+  category: "filter",
+  description:
+    "The signed derivative of a height field: an offset field, a normal map, or an emboss. TD Slope TOP.",
+  inputs: [
+    {
+      id: "input",
+      label: "Input",
+      type: RGBA_TEXTURE,
+      description: "Read as a height field through one channel, never colour-converted (§V56).",
+    },
+  ],
+  outputs: [
+    {
+      id: "out",
+      label: "Out",
+      type: RGBA_TEXTURE,
+      description: "DATA in Slope and Normal modes: a derivative, not light.",
+    },
+  ],
+  parameters: {
+    mode: { type: "enum", label: "Mode", default: "slope", options: [...SLOPE_MODE_OPTIONS] },
+    channel: {
+      type: "enum",
+      label: "Source",
+      default: "luminance",
+      options: [...CHANNEL_OPTIONS],
+      description: "Which channel is the height.",
+    },
+    strength: {
+      type: "number",
+      label: "Strength",
+      default: 1,
+      min: 0,
+      max: 20,
+      description: "Scales the gradient. A gentle height field needs more than 1 to show.",
+    },
+    zeropoint: {
+      type: "number",
+      label: "Zero Point",
+      default: 0.5,
+      min: -1,
+      max: 1,
+      description:
+        "What a flat area writes, in Slope and Emboss modes. 0.5 is Displace's neutral; use 0 for a float pipeline.",
+    },
+    angle: {
+      type: "number",
+      label: "Light Angle",
+      default: 45,
+      min: -180,
+      max: 180,
+      unit: "degrees",
+      description: "Emboss mode only: which direction the raking light comes from.",
+    },
+    extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters, resolution } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:slope`,
+      shader: SLOPE_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      // Key order matches the WGSL struct's field order, as everywhere else here.
+      uniforms: {
+        texel: [1 / resolution[0], 1 / resolution[1]],
+        mode: readEnumIndex(parameters, "mode", SLOPE_MODE_OPTIONS, "slope"),
+        channel: readEnumIndex(parameters, "channel", CHANNEL_OPTIONS, "luminance"),
+        strength: readNumber(parameters, "strength", 1),
+        zeropoint: readNumber(parameters, "zeropoint", 0.5),
+        angle: readNumber(parameters, "angle", 45) * DEGREES_TO_RADIANS,
+        extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
+      },
+      nodeId,
+      label: "Slope",
+    };
+    return { passes: [pass] };
+  },
+};
+
 export const filterNodes: readonly NodeDefinition[] = [
   blurNode,
   edgeNode,
   convolveNode,
   displaceNode,
   remapNode,
+  slopeNode,
 ];

@@ -135,9 +135,16 @@ export const valueLimitNode: NodeDefinition = {
   compile: noPasses,
 };
 
-/** T276 — Slope: per-channel derivative, per second. Stateful (previous frame's bag). */
-export const slopeNode: NodeDefinition = {
-  type: "slope",
+/**
+ * T276 — Slope: per-channel derivative, per second. Stateful (previous frame's bag).
+ *
+ * Prefixed under §V194 like Math, Limit and Filter: the image catalogue has its own Slope
+ * (T284, the derivative of an IMAGE) and type strings are one flat namespace across
+ * families. This one shipped first and unprefixed only because the collision had not
+ * arrived yet; TD tells the two apart by the CHOP/TOP suffix, and we have no such thing.
+ */
+export const valueSlopeNode: NodeDefinition = {
+  type: "valueSlope",
   version: 1,
   title: "Slope",
   category: "value",
@@ -253,7 +260,7 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
   valueMathNode,
   valueLimitNode,
-  slopeNode,
+  valueSlopeNode,
   triggerNode,
   lagNode,
   valueFilterNode,

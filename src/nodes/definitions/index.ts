@@ -27,7 +27,7 @@ export {
   mouseNode,
   valueMathNode,
   valueLimitNode,
-  slopeNode,
+  valueSlopeNode,
   triggerNode,
   lagNode,
   valueFilterNode,
@@ -74,6 +74,7 @@ export {
   convolveNode,
   displaceNode,
   remapNode,
+  slopeNode,
   filterNodes,
 } from "./filters.ts";
 export {

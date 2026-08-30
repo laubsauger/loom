@@ -123,7 +123,7 @@ describe("stateful stages (T276/T277, §V181)", () => {
     const graph = graphOf(
       [
         node("mouse1", "mouse"),
-        node("slope1", "slope"),
+        node("slope1", "valueSlope"),
         node("trig1", "trigger", { parameters: { threshold: 0.5 } }),
       ],
       [
