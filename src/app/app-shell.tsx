@@ -29,12 +29,15 @@ import {
   floatTab,
   leavesOf,
   moveTab,
+  moveTabToEdge,
+  spawnEdge,
+  spawnableEdges,
   selectTab,
   setSplitRatio,
   splitLeaf,
   DEFAULT_PANE_TREE,
 } from "./pane-tree.ts";
-import type { LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
+import type { ShellEdge, LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
 import {
   allNamedPaneTrees,
   applyNamedPaneTree,
@@ -281,6 +284,19 @@ export function AppShell({
     (role: PaneRole) => applyLayout((layout) => restoreRole(layout, role)),
     [applyLayout],
   );
+  // T494, door one: spawn an absent edge area empty — the role picker says what it shows.
+  const onSpawnEdge = useCallback(
+    (edge: ShellEdge) => applyLayout((layout) => spawnEdge(layout, edge).layout),
+    [applyLayout],
+  );
+  // T494, door two: the same operation, entered by dragging a tab to the shell's edge.
+  const onDropEdge = useCallback(
+    (key: PaneKey, edge: ShellEdge) => {
+      setDragging(null);
+      applyLayout((layout) => moveTabToEdge(layout, key, edge));
+    },
+    [applyLayout],
+  );
 
   /** RESTORE a named layout: the stored ratios must win, so the groups remount. */
   const restoreLayout = useCallback(
@@ -516,6 +532,8 @@ export function AppShell({
                 floating={tree.floating}
                 absentRoles={PANE_IDS.filter((role) => !tabs.some((tab) => tab.role === role))}
                 onRestoreRole={onRestoreRole}
+                spawnEdges={spawnableEdges(tree)}
+                onSpawnEdge={onSpawnEdge}
                 presentToggles={TOGGLE_TARGETS.filter((target) =>
                   target.id.startsWith("leaf-")
                     ? findLeaf(tree, target.id) !== undefined
@@ -539,6 +557,29 @@ export function AppShell({
             ) : (
               renderNode(tree.root)
             )}
+            {/* T494, door two: while a tab drags, absent edges become drop zones. The
+                standard dockable gesture — drag to the outer edge, the area is created
+                and the tab lands in it. Same tree operation as the menu row. */}
+            {dragging !== null
+              ? spawnableEdges(tree).map((edge) => (
+                  <div
+                    key={edge}
+                    className={styles.edgeDrop}
+                    data-edge={edge}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const key = event.dataTransfer.getData("text/x-shaderloom-pane") || dragging;
+                      if (key) onDropEdge(key, edge);
+                    }}
+                  >
+                    <span className={styles.edgeDropLabel}>new {edge} pane</span>
+                  </div>
+                ))
+              : null}
           </div>
         </div>
       </PaneHostProvider>
@@ -561,6 +602,9 @@ interface LayoutMenuProps {
   /** T486 (V423): the roles with NO pane anywhere — the possibility space, not the tree. */
   absentRoles: readonly PaneId[];
   onRestoreRole: (role: PaneRole) => void;
+  /** T494: shell edges with no dedicated area — offered for spawning, absent ones only (V423). */
+  spawnEdges: readonly ShellEdge[];
+  onSpawnEdge: (edge: ShellEdge) => void;
   presentToggles: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   onToggle: (id: string) => void;
   onDock: (key: PaneKey) => void;
@@ -583,6 +627,8 @@ function LayoutMenu({
   floating,
   absentRoles,
   onRestoreRole,
+  spawnEdges,
+  onSpawnEdge,
   presentToggles,
   onToggle,
   onDock,
@@ -734,6 +780,16 @@ function LayoutMenu({
               <span>{PANE_TITLES[role]} (closed)</span>
               <Button aria-label={`Restore ${PANE_TITLES[role]}`} onClick={() => onRestoreRole(role)}>
                 restore
+              </Button>
+            </div>
+          ))}
+          {/* T494 (V423 both ways): absent EDGES are offered as fresh empty areas —
+              only while absent, so the menu never grows with what already exists. */}
+          {spawnEdges.map((edge) => (
+            <div key={edge} className={styles.layoutRow}>
+              <span>{edge} area (none)</span>
+              <Button aria-label={`New ${edge} pane`} onClick={() => onSpawnEdge(edge)}>
+                spawn
               </Button>
             </div>
           ))}

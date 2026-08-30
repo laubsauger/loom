@@ -200,3 +200,40 @@
   font-size: var(--fs-micro);
   line-height: var(--lh-prose);
 }
+
+/* T494, door two: while a tab drags, absent shell edges become drop zones. Fixed
+   strips over the body — visible enough to aim at, translucent enough to keep the
+   layout readable underneath. */
+.edgeDrop {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px dashed var(--color-accent);
+  border-radius: 4px;
+  pointer-events: auto;
+}
+.edgeDrop[data-edge="left"] {
+  inset: 8px auto 8px 4px;
+  width: 56px;
+}
+.edgeDrop[data-edge="right"] {
+  inset: 8px 4px 8px auto;
+  width: 56px;
+}
+.edgeDrop[data-edge="bottom"] {
+  inset: auto 8px 4px 8px;
+  height: 48px;
+}
+.edgeDropLabel {
+  font-size: 11px;
+  color: var(--color-accent);
+  writing-mode: initial;
+  white-space: nowrap;
+}
+.edgeDrop[data-edge="left"] .edgeDropLabel,
+.edgeDrop[data-edge="right"] .edgeDropLabel {
+  writing-mode: vertical-rl;
+}

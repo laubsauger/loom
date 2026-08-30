@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANE_TREE,
   addTab,
+  moveTabToEdge,
+  spawnEdge,
+  spawnableEdges,
   allTabs,
   assignRole,
   closeLeaf,
@@ -188,6 +191,86 @@ describe("the split/close algebra", () => {
     expect(findLeaf(selected, "leaf-left")?.active).toBe(components.key);
     const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
     expect(findLeaf(selectTab(tree, "leaf-left", viewer.key), "leaf-left")?.active).toBe(left.active);
+  });
+});
+
+/**
+ * T494 — creating an area that does not exist. Both owner reports were this gap through
+ * two doors (a menu row, an edge drop), so both doors run ONE operation and these gates
+ * pin the operation plus the offer rule.
+ */
+describe("edge areas spawn back (T494)", () => {
+  it("the default layout holds all three edges — nothing to offer (V423)", () => {
+    expect(spawnableEdges(DEFAULT_PANE_TREE)).toEqual([]);
+  });
+
+  it("a single center leaf holds nothing: touching an edge AND its opposite anchors nowhere", () => {
+    const solo: PaneTreeLayout = {
+      root: { kind: "leaf", id: "leaf-1", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      floating: [],
+      nextKey: 2,
+    };
+    expect(spawnableEdges(solo)).toEqual(["left", "right", "bottom"]);
+  });
+
+  it("spawning an edge wraps the ROOT: a fresh empty leaf on that side, the old tree intact", () => {
+    const solo: PaneTreeLayout = {
+      root: { kind: "leaf", id: "leaf-1", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      floating: [],
+      nextKey: 2,
+    };
+    const { layout, leafId } = spawnEdge(solo, "bottom");
+    const root = layout.root;
+    if (root.kind !== "split") throw new Error("root did not split");
+    expect(root.direction).toBe("column");
+    expect(root.second.kind).toBe("leaf");
+    expect((root.second as { id: string }).id).toBe(leafId);
+    expect((root.second as { tabs: readonly unknown[] }).tabs).toEqual([]);
+    expect(root.first).toBe(solo.root);
+    // The new area is a dock, not a half — and the edge is now held.
+    expect(root.ratio).toBeGreaterThan(50);
+    expect(spawnableEdges(layout)).toEqual(["left", "right"]);
+  });
+
+  it("left spawns FIRST at a dock share; right spawns SECOND", () => {
+    const solo: PaneTreeLayout = {
+      root: { kind: "leaf", id: "leaf-1", tabs: [], active: null },
+      floating: [],
+      nextKey: 2,
+    };
+    const left = spawnEdge(solo, "left");
+    if (left.layout.root.kind !== "split") throw new Error("no split");
+    expect(left.layout.root.direction).toBe("row");
+    expect((left.layout.root.first as { id: string }).id).toBe(left.leafId);
+    expect(left.layout.root.ratio).toBeLessThan(50);
+    const right = spawnEdge(solo, "right");
+    if (right.layout.root.kind !== "split") throw new Error("no split");
+    expect((right.layout.root.second as { id: string }).id).toBe(right.leafId);
+    expect(right.layout.root.ratio).toBeGreaterThan(50);
+  });
+
+  it("door two IS door one: dragging a tab to an edge spawns the same area and drops in", () => {
+    const two: PaneTreeLayout = {
+      root: {
+        kind: "split", id: "split-1", direction: "row", ratio: 50,
+        first: { kind: "leaf", id: "leaf-1", tabs: [{ key: "graph-1", role: "graph" }, { key: "viewer-2", role: "viewer" }], active: "graph-1" },
+        second: { kind: "leaf", id: "leaf-2", tabs: [{ key: "inspector-3", role: "inspector" }], active: "inspector-3" },
+      },
+      floating: [],
+      nextKey: 4,
+    };
+    const moved = moveTabToEdge(two, "viewer-2", "bottom");
+    const root = moved.root;
+    if (root.kind !== "split" || root.direction !== "column") throw new Error("no bottom area");
+    const fresh = root.second;
+    if (fresh.kind !== "leaf") throw new Error("bottom is not a leaf");
+    expect(fresh.tabs.map((tab) => tab.key)).toEqual(["viewer-2"]);
+    expect(fresh.active).toBe("viewer-2");
+    // The tab LEFT its old leaf — moved, never duplicated.
+    const remaining = leavesOf(root).flatMap((leaf) => leaf.tabs).filter((tab) => tab.key === "viewer-2");
+    expect(remaining).toHaveLength(1);
+    // An unknown tab spawns nothing.
+    expect(moveTabToEdge(two, "nope", "bottom")).toBe(two);
   });
 });
 

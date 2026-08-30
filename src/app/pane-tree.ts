@@ -296,6 +296,99 @@ export function moveTab(
   return placed ? { ...removed, root } : layout;
 }
 
+/**
+ * T494: the shell's outer edges as SPAWNABLE areas.
+ *
+ * Once an area is gone no gesture brought it back: every drop target was a band on an
+ * EXISTING leaf and the menu listed what existed. Both owner reports ("spawn the
+ * bottom, left and right side as empty panes if they are closed", "drag and drop is
+ * not able to produce a new bottom pane if its not there") are this one gap through
+ * two doors — so both doors run THIS operation, or they would disagree about ratios
+ * and anchors the way the two layout algorithms once did.
+ */
+export type ShellEdge = "left" | "right" | "bottom";
+
+/** New area's share of the shell, per edge — a dock, not a half. */
+const EDGE_SHARE: Readonly<Record<ShellEdge, number>> = { left: 22, right: 22, bottom: 28 };
+
+/**
+ * Which edges are HELD by a dedicated area. The rule, chosen to be explainable in one
+ * sentence: an edge is held when a strip anchored there — touching it WITHOUT touching
+ * the opposite edge — covers the MAJORITY of it. The center leaf of a bottom-less
+ * layout touches the bottom but also the top, so it anchors nowhere; the default
+ * layout's bottom-right viewer touches the bottom but spans only its own column, so
+ * closing the wide bottom bar genuinely frees the edge. V423 both ways: offer the
+ * possibility space (any absent edge), never what is already there.
+ */
+export function heldEdges(layout: PaneTreeLayout): ReadonlySet<ShellEdge> {
+  const coverage: Record<ShellEdge, number> = { left: 0, right: 0, bottom: 0 };
+  const epsilon = 1e-6;
+  const walk = (node: LayoutNode, x: number, y: number, w: number, h: number): void => {
+    if (node.kind === "split") {
+      const share = node.ratio / 100;
+      if (node.direction === "row") {
+        walk(node.first, x, y, w * share, h);
+        walk(node.second, x + w * share, y, w * (1 - share), h);
+      } else {
+        walk(node.first, x, y, w, h * share);
+        walk(node.second, x, y + h * share, w, h * (1 - share));
+      }
+      return;
+    }
+    const touchesLeft = x < epsilon;
+    const touchesRight = x + w > 1 - epsilon;
+    const touchesTop = y < epsilon;
+    const touchesBottom = y + h > 1 - epsilon;
+    // Anchored strips ACCUMULATE: a dock stacked into two leaves (the default right
+    // column) covers its edge together, though neither half does alone.
+    if (touchesLeft && !touchesRight) coverage.left += h;
+    if (touchesRight && !touchesLeft) coverage.right += h;
+    if (touchesBottom && !touchesTop) coverage.bottom += w;
+  };
+  walk(layout.root, 0, 0, 1, 1);
+  const held = new Set<ShellEdge>();
+  for (const edge of ["left", "right", "bottom"] as const) {
+    if (coverage[edge] > 0.5) held.add(edge);
+  }
+  return held;
+}
+
+/** The edges a spawn gesture may offer right now. */
+export function spawnableEdges(layout: PaneTreeLayout): ShellEdge[] {
+  const held = heldEdges(layout);
+  return (["left", "right", "bottom"] as const).filter((edge) => !held.has(edge));
+}
+
+/**
+ * Creates the area: wraps the ROOT in a split with a fresh EMPTY leaf on `edge` — empty
+ * so the role picker renders and the user says what it shows (T406), exactly like a
+ * leaf split. Returns the new layout and the minted leaf id so the drag door can drop
+ * into it; the menu door ignores the id.
+ */
+export function spawnEdge(
+  layout: PaneTreeLayout,
+  edge: ShellEdge,
+): { readonly layout: PaneTreeLayout; readonly leafId: PaneKey } {
+  const leafId = `leaf-graph-${layout.nextKey}`;
+  const splitId = `split-${layout.nextKey + 1}`;
+  const fresh: LeafNode = { kind: "leaf", id: leafId, tabs: [], active: null };
+  const share = EDGE_SHARE[edge];
+  const root: SplitNode =
+    edge === "bottom"
+      ? { kind: "split", id: splitId, direction: "column", ratio: 100 - share, first: layout.root, second: fresh }
+      : edge === "left"
+        ? { kind: "split", id: splitId, direction: "row", ratio: share, first: fresh, second: layout.root }
+        : { kind: "split", id: splitId, direction: "row", ratio: 100 - share, first: layout.root, second: fresh };
+  return { layout: { ...layout, root, nextKey: layout.nextKey + 2 }, leafId };
+}
+
+/** Door two in one move: spawn the area, drop the dragged tab into it. */
+export function moveTabToEdge(layout: PaneTreeLayout, key: PaneKey, edge: ShellEdge): PaneTreeLayout {
+  if (findTab(layout, key) === undefined) return layout;
+  const spawned = spawnEdge(layout, edge);
+  return moveTab(spawned.layout, key, spawned.leafId);
+}
+
 export function selectTab(layout: PaneTreeLayout, leafId: PaneKey, key: PaneKey): PaneTreeLayout {
   return {
     ...layout,

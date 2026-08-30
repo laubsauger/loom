@@ -887,6 +887,84 @@ describe("V340 — a pane can change what it shows without moving", () => {
  * restore what is ABSENT, so the menu offers closed ROLES — the possibility space —
  * and restoring one re-splits the area it lived in.
  */
+/**
+ * T494 — creating an area that DOES NOT EXIST. Both owner reports were one gap through
+ * two doors: the menu listed only what existed, and every drop target was a band on an
+ * existing leaf, so a closed edge area was gone for good. The menu door is exercised
+ * here end to end; the drag door shares the identical tree operation (pinned in
+ * pane-tree.test.ts), so the two cannot disagree about ratios or anchors.
+ */
+describe("T494 — an absent edge area spawns back", () => {
+  it("offers no edge rows while all three edges are held (V423)", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+    expect(screen.queryByRole("button", { name: /^New (left|right|bottom) pane$/ })).toBeNull();
+  });
+
+  it("door two: dragging a tab shows the absent edge's drop zone, and dropping spawns the area", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} />);
+
+    // Make the bottom absent.
+    const bottom = zoneElement("bottom");
+    await user.click(within(bottom).getByRole("button", { name: "Split or close this pane area" }));
+    await user.click(screen.getByRole("button", { name: "Close area" }));
+    // No strip while nothing drags — drag-only chrome.
+    expect(document.querySelector('[data-edge="bottom"]')).toBeNull();
+
+    let carried = "";
+    const transfer = {
+      setData: (_type: string, value: string) => {
+        carried = value;
+      },
+      getData: () => carried,
+      effectAllowed: "",
+      dropEffect: "",
+    };
+    fireEvent.dragStart(screen.getByRole("tab", { name: "viewer" }), { dataTransfer: transfer });
+
+    // Only the ABSENT edge offers itself.
+    const strip = document.querySelector<HTMLElement>('[data-edge="bottom"]');
+    expect(strip, "no bottom drop zone while a tab is being dragged").not.toBeNull();
+    expect(document.querySelector('[data-edge="left"]')).toBeNull();
+    fireEvent.drop(strip as HTMLElement, { dataTransfer: transfer });
+
+    // The area exists, holding the dropped tab — the SAME operation the menu row runs.
+    expect(document.querySelector('[data-edge="bottom"]')).toBeNull();
+    const persisted = readPaneTreeStore(storage);
+    const root = persisted.current.root;
+    if (root.kind !== "split" || root.direction !== "column") throw new Error("no bottom area spawned");
+    const fresh = root.second;
+    if (fresh.kind !== "leaf") throw new Error("bottom is not a leaf");
+    expect(fresh.tabs.map((tab) => tab.role)).toEqual(["viewer"]);
+    expect(screen.getByText("viewer slot")).toBeDefined();
+  });
+
+  it("close the bottom area, spawn it empty from the menu, assign it a role", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} />);
+
+    const bottom = zoneElement("bottom");
+    await user.click(within(bottom).getByRole("button", { name: "Split or close this pane area" }));
+    await user.click(screen.getByRole("button", { name: "Close area" }));
+
+    // The edge is now offerable — and ONLY that edge.
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+    expect(screen.queryByRole("button", { name: "New left pane" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New right pane" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "New bottom pane" }));
+
+    // A fresh EMPTY leaf spans the bottom: the role picker renders (T406's empty state),
+    // and the edge stops being offered.
+    expect(screen.getByText("What should this pane show?")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+    expect(screen.queryByRole("button", { name: "New bottom pane" })).toBeNull();
+  });
+});
+
 describe("T486 — a closed area comes back through the layout menu", () => {
   it("close every bottom tab's area, restore the shader from the menu, the bar returns", async () => {
     const user = userEvent.setup();
