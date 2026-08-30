@@ -20,7 +20,7 @@ lens1(circle) ─► normals1(slope) ─► the `disp` input of all three
 
 mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
 pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
-roll1.r = "time * 7 % 360"                              an expression
+roll1.r = "abstime * 7 % 360"                           an expression
 sparks1.color ← `tint`, sparks1.sizePixels ← `pscale`   the map mode
 ```
 
@@ -68,13 +68,13 @@ contribution is visible rather than theoretical. Delete `ease1` and the lens sna
 two sizes like a shutter. That is the entire argument for having a Lag node, and it is why
 the concept test counts distinct radii instead of checking that a wire exists.
 
-*An expression (§V71) rolls the light field.* `time * 7 % 360` is written where it is read
+*An expression (§V71) rolls the light field.* `abstime * 7 % 360` is written where it is read
 — no node, no channel, no wire — and the `%` is load-bearing: Transform's `r` is clamped to
 ±360 by its manifest, so the wrap belongs in the expression. Being honest about the scope:
 the v1 grammar is arithmetic only, so an LFO with a saw shape could produce this same ramp.
 What the expression buys here is locality, not reach.
 
-*A kernel (§V45) animates the swarm.* `ctx.time` arrives through the same frame contract
+*A kernel (§V45) animates the swarm.* `ctx.absTime` arrives through the same frame contract
 everything else uses, and the kernel is **stateless** — position and colour are functions of
 the slot index and the clock — so frame N is the same picture whether it was replayed from
 zero or arrived at live.

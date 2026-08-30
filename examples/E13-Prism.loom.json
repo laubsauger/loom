@@ -544,7 +544,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "time * 7 % 360"
+                "source": "abstime * 7 % 360"
               },
               "static": {
                 "kind": "static",
@@ -623,7 +623,7 @@
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"pscale\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[3]}]",
           "capacity": 2400,
           "group": "",
-          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so\n    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */\nfn spectrum(t: f32) -> vec3f {\n  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */\n  q.id = ctx.index;\n  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);\n\n  /* Three interleaved lobes, breathing — a woven band rather than a plain ring. */\n  let angle = (t * TAU * 3.0) + (ctx.time * 0.22);\n  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.time * 0.55));\n  let radius = 0.56 + breathe;\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);\n\n  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */\n  q.tint = vec4f(spectrum(t + (ctx.time * 0.04)), 1.0);\n  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */\n  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);\n  return q;\n}",
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so\n    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */\nfn spectrum(t: f32) -> vec3f {\n  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */\n  q.id = ctx.index;\n  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);\n\n  /* FREE-RUNNING (§V436, T497): ctx.absTime, not ctx.time. The swarm's rotation and hue\n     drift are \"always going\", and ctx.time wraps at the out point once the piece is\n     bounded (T455) — on it the whole band jumped back to its frame-zero pose every lap. */\n  let angle = (t * TAU * 3.0) + (ctx.absTime * 0.22);\n  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.absTime * 0.55));\n  let radius = 0.56 + breathe;\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);\n\n  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */\n  q.tint = vec4f(spectrum(t + (ctx.absTime * 0.04)), 1.0);\n  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */\n  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);\n  return q;\n}",
           "seed": 23
         },
         "position": {

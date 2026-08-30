@@ -10,10 +10,23 @@ import { WGSL_HASH } from "./common.wgsl.ts";
  * someone auditions a type from the menu, which is precisely the interaction this node
  * is used through.
  *
- * TIME (§V44): the fourth noise dimension is `t4d + frameU.time * speed`, where `frameU`
- * is the shared uniform block the runtime fills from `FrameEvaluationInput`. There is no
- * other clock reachable from here — that is what makes a timeline, a fixed-step offline
- * render and a headless parity test all produce the same frames.
+ * TIME (§V44, §V436, T497): the fourth noise dimension is `t4d + frameU.absTime * speed`,
+ * where `frameU` is the shared uniform block the runtime fills from `FrameEvaluationInput`.
+ * There is no other clock reachable from here — that is what makes a timeline, a fixed-step
+ * offline render and a headless parity test all produce the same frames.
+ *
+ * FREE-RUNNING, and it is a decision rather than a default. Scrolling noise is the thing
+ * people reach for when they want "always going": the same call the LFO got in B98. On
+ * `frameU.time` — the TIMELINE clock, which wraps at the out point once a piece is bounded
+ * (T455) — the whole field snapped back to its frame-zero slice at every lap, so any noise
+ * with `speed != 0` had a visible seam with the period of the loop. Seven shipped examples
+ * were on the wrong side of that. `absTime` keeps counting through a lap (T461), so the
+ * field scrolls through the loop boundary as if it were not there.
+ *
+ * Still deterministic (§V44/§V47): `absTime` is a frame COUNT at the timeline rate, never a
+ * wall reading, and a RENDER zeroes it first (T467) — so a take reproduces frame for frame.
+ * A noise node that wants to wrap with the piece sets `speed` to 0 and drives `t4d` from an
+ * expression on `time`, which is the timeline-anchored reading spelled out loud.
  *
  * SEED (§V45): `params.seed` is a uint32 folded on the CPU from the node's `seed`
  * parameter with the domain's own `hashSeed`, and it is XORed here with the project seed
@@ -319,7 +332,9 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // x axis widened by the target's aspect so features stay square on a non-square output.
   let centred = (uv - vec2f(0.5)) * vec2f(params.aspect, 1.0);
   let placed = invTransform3(vec3f(centred, 0.0));
-  let w = (params.t4d + (frameU.time * params.speed)) / max(abs(params.s4d), 1e-6);
+  // FREE-RUNNING (§V436, T497): absTime, not time. The timeline clock wraps at the out
+  // point, and a scrolling field that snaps back there is the seam B98 found in the LFO.
+  let w = (params.t4d + (frameU.absTime * params.speed)) / max(abs(params.s4d), 1e-6);
   let q = vec4f(placed, w) / max(abs(params.period), 1e-6);
 
   // The project seed rides in the shared block, so re-seeding a project re-seeds every

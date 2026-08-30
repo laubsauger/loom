@@ -100,14 +100,23 @@ describe("Noise node (T70)", () => {
    * §V44: the ONLY clock a node may read is the shared frame block the runtime fills from
    * `FrameEvaluationInput`. If the pass stopped declaring it, the 4D types would freeze
    * and nothing else would fail — so the binding is asserted, not assumed.
+   *
+   * §V436/T497: and it is the ABSOLUTE member of that block. Scrolling noise is FREE-RUNNING
+   * — the same call B98 made for the LFO — so a timeline lap must not put the field back to
+   * its frame-zero slice. `frameU.time` here is the bug, not a synonym, and asserting the
+   * ABSENCE of it is the half that catches a well-meaning revert: the two clocks carry the
+   * same number until the first wrap, so nothing else in this suite could tell them apart.
    */
   it("takes time from the shared frame uniform block, never a wall clock (§V44)", () => {
     const pass = uniformsFor({ speed: 1 });
     expect(pass.sharedBinding).toBe("frameU");
-    expect(NOISE_FRAGMENT_WGSL).toContain("frameU.time");
+    expect(NOISE_FRAGMENT_WGSL).toContain("frameU.absTime");
     expect(NOISE_FRAGMENT_WGSL).toContain("var<uniform> frameU: SharedFrame");
     // The 4th dimension is where time enters the field.
-    expect(NOISE_FRAGMENT_WGSL).toContain("params.t4d + (frameU.time * params.speed)");
+    expect(NOISE_FRAGMENT_WGSL).toContain("params.t4d + (frameU.absTime * params.speed)");
+    // Not the wrapping one, anywhere in the source — comments included, so a revert cannot
+    // arrive wearing an explanation (§V443).
+    expect(NOISE_FRAGMENT_WGSL).not.toContain("frameU.time");
   });
 
   /**

@@ -867,6 +867,19 @@ const slitScanDocument = document(
  */
 const PARTICLE_FOUNTAIN_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
+  /* TIMELINE-ANCHORED, deliberately (§V436, T497) — the one clock read in this file that is
+     not on the absolute clock. This guard does not mean "the show started", it means "my
+     buffers were just cleared", and those are the same event only for the timeline clock: a
+     SEEK zeroes ctx.frameIndex and drops the point pairs together (§V170), while the absolute
+     frame counter keeps counting through it. On that one, every seek would leave a fountain
+     in which no point was ever given an id, so all of them believe they are the emitter.
+     The cost is real and named: with an in point at frame 0 a LAP re-seeds the population,
+     so this is the one shipped example that does restart at the loop. The missing primitive
+     is a ctx member meaning "this buffer is fresh"; until there is one, this is the honest
+     read. (The absolute members are named WITHOUT a ctx dot anywhere in this comment, on
+     purpose: codegen detects ctx members by scanning the text and does not strip comments,
+     so spelling one here would grow this kernel's uniform block for a member it never
+     reads — §V309.) */
   if (ctx.frameIndex == 0u) {
     q.id = ctx.index;
     if (ctx.index > 0u) {
@@ -1291,16 +1304,22 @@ const fluidDocument = document(
  *   EASE, so the Lag's contribution is visible rather than theoretical. Delete `ease1` and
  *   the lens snaps between two sizes like a shutter; that is the whole argument for the node.
  *
- *   AN EXPRESSION (§V71) rolls the light field. `time * 7 % 360` is written where it is
+ *   AN EXPRESSION (§V71) rolls the light field. `abstime * 7 % 360` is written where it is
  *   read — no node, no channel, no wire — and the `%` is load-bearing: Transform's `r` is
  *   clamped to ±360 by its manifest, so the wrap belongs in the expression. Being honest
  *   about the scope: the v1 grammar is arithmetic only, so an LFO could produce this same
  *   ramp. What the expression buys here is locality, not reach.
  *
- *   A KERNEL (§V45) animates the swarm. `ctx.time` reaches the GPU through the same frame
+ *   A KERNEL (§V45) animates the swarm. `ctx.absTime` reaches the GPU through the same frame
  *   contract everything else does, and the kernel is STATELESS — position and colour are
  *   functions of the slot index and the clock — so frame N is the same picture whether it
  *   was replayed from zero or arrived at live.
+ *
+ *   BOTH OF THOSE ARE ON THE ABSOLUTE CLOCK, and that is the T497 decision this file makes
+ *   twice. A roll and a drifting spectrum are FREE-RUNNING (§V436): they are "always going",
+ *   so they must not see the timeline lap. `time` and `abstime` are the same number until
+ *   the first wrap, which is exactly why this shipped wrong for so long — the file looked
+ *   right in every screenshot and seamed only once someone bounded the piece and played it.
  *
  * WHICH WAY THE POINTER GOES. v runs DOWN (§V236), and the lens follows the pointer 1:1
  * because a lens centre and a pointer are the same unit. E12 drives the same kind of
@@ -1321,14 +1340,16 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   q.id = ctx.index;
   let t = f32(ctx.index) / max(f32(ctx.count), 1.0);
 
-  /* Three interleaved lobes, breathing — a woven band rather than a plain ring. */
-  let angle = (t * TAU * 3.0) + (ctx.time * 0.22);
-  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.time * 0.55));
+  /* FREE-RUNNING (§V436, T497): ctx.absTime, not ctx.time. The swarm's rotation and hue
+     drift are "always going", and ctx.time wraps at the out point once the piece is
+     bounded (T455) — on it the whole band jumped back to its frame-zero pose every lap. */
+  let angle = (t * TAU * 3.0) + (ctx.absTime * 0.22);
+  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.absTime * 0.55));
   let radius = 0.56 + breathe;
   q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);
 
   /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */
-  q.tint = vec4f(spectrum(t + (ctx.time * 0.04)), 1.0);
+  q.tint = vec4f(spectrum(t + (ctx.absTime * 0.04)), 1.0);
   /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */
   q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);
   return q;
@@ -1412,7 +1433,10 @@ const prismDocument = document(
         {
           label: "roll1",
           // The `%` is not decoration: `r` is clamped to ±360, so the wrap lives here.
-          parameters: { r: expressionSlot("time * 7 % 360", 0) },
+          // FREE-RUNNING (§V436, T497): `abstime`, not `time`. A continuous roll on the
+          // timeline clock snaps back to 0° at every lap; `%` keeps it inside Transform's
+          // ±360 clamp either way, so the wrap that belongs here is the ARITHMETIC one.
+          parameters: { r: expressionSlot("abstime * 7 % 360", 0) },
         },
       ),
       node(
@@ -1579,7 +1603,11 @@ const MURMURATION_FLOCK_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   /* T401: p.position is the UPSTREAM sphere's pair, fresh every frame — the anchor.
      offset/velocity are this kernel's OWN state and persist (§V197). */
   let anchor = p.position;
-  let t = ctx.time * 0.6;
+  /* FREE-RUNNING (§V436, T497): ctx.absTime, not ctx.time. The flow field is the wind, and
+     wind does not restart when the piece does — ctx.time wraps at the out point (T455) and
+     put every phase back where it was at frame zero, snapping the whole flock at each lap.
+     ctx.delta below is untouched: a step is continuous across a lap by construction (T464). */
+  let t = ctx.absTime * 0.6;
   /* The "flock": one shared flow field, phase-keyed by the anchor, so neighbours on the
      formation swirl together without any neighbour reads. */
   let flow = vec3f(

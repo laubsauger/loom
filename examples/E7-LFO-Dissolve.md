@@ -26,7 +26,7 @@ document. Nothing in the compiled plan knows the LFO exists.
 ## What it proves
 
 **A parameter can move without a shader knowing.** Every other animated example moves
-because a shader reads `frameU.time`. Here the shader is handed a different number each
+because a shader reads the frame block itself. Here the shader is handed a different number each
 frame and is otherwise unaware — which is what makes `driven` mode worth having, because
 it works on parameters no shader would ever have thought to animate.
 

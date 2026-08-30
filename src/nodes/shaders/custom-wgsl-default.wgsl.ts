@@ -20,8 +20,18 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * `Params.time` is gone, and its absence is the point. A per-pass uniform block is
  * written at compile time and on parameter change (§V5, §V21) — it structurally cannot
  * carry a per-frame clock. Time has exactly one home, the shared frame block the runtime
- * fills from `FrameEvaluationInput` (§V44), and that is `frameU.time` here. Leaving a
- * `time` field in `Params` would have re-created the same trap one struct over.
+ * fills from `FrameEvaluationInput` (§V44), and that is `frameU` here. Leaving a `time`
+ * field in `Params` would have re-created the same trap one struct over.
+ *
+ * WHICH CLOCK THE STARTER DEMONSTRATES (§V436, T497). The pulse reads `frameU.absTime`,
+ * not `frameU.time`, and that is a teaching decision rather than a detail. This is the
+ * source every user opens the first time they make a shader, so whatever it does is what
+ * gets copied — and it used to demonstrate the TIMELINE clock, which wraps at the out point
+ * once a piece is bounded (T455). Every shader written by imitating it inherited a seam at
+ * the loop, which is §V437's shape exactly: the property was delivered to the surfaces and
+ * never to the thing that teaches the surfaces. The block still carries both clocks and the
+ * comment beside the binding names both, so a shader whose motion IS the position in the
+ * piece — a wipe, a scrubbed envelope — reaches for `frameU.time` deliberately.
  *
  * The body is a PASSTHROUGH by arithmetic, not by omission: `amount` defaults to 1 and
  * `PULSE_DEPTH` is 0, so a freshly-created node shows its input unchanged while both
@@ -52,7 +62,9 @@ const PULSE_DEPTH: f32 = 0.0;
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let color = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
-  let pulse = 1.0 + (PULSE_DEPTH * sin(frameU.time));
+  // FREE-RUNNING: absTime keeps counting across a timeline loop, so this pulse has no seam
+  // at the out point. Swap it for frameU.time when the motion IS the position in the piece.
+  let pulse = 1.0 + (PULSE_DEPTH * sin(frameU.absTime));
   return vec4f(color.rgb * params.amount * pulse, color.a);
 }`;
 
