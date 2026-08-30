@@ -1,6 +1,6 @@
 import type { EdgeId, NodeId, PortId } from "../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
-import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
+import type { ColorPolicy, GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { NodeCompileContext, TextureFormat } from "../domain/types/node-definition.ts";
 import type { ParameterValue } from "../domain/types/parameters.ts";
@@ -288,6 +288,14 @@ export type CompilerNodeContext = {
   /** Id of the shared sampler resource; bind it rather than declaring one per node. */
   readonly sampler: string;
   readonly projectResolution: readonly [number, number];
+  /**
+   * The project's colour commitments (T84, T375, §V56). Only a DISPLAY node acts on it —
+   * §V56 puts the encode at the output/display node and forbids it anywhere else — and
+   * `sinkDisplayEncode` in `src/domain/color/display.ts` is the one function that reads it
+   * on a node's behalf, so the compiler's published `space` and the node's shader are the
+   * same decision (B47 was those two disagreeing).
+   */
+  readonly colorPolicy: ColorPolicy;
 };
 
 /**

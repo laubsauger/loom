@@ -29,6 +29,8 @@ export const CompilerDiagnosticCode = {
   formatDepthOnColor: "compiler/format-depth-on-color",
   formatNoFallback: "compiler/format-no-fallback",
   colorSpaceMismatch: "compiler/color-space-mismatch",
+  /** T375/B47: a sink target format the present blit cannot show as the graph made it. */
+  sinkFormatUndisplayable: "compiler/sink-format-undisplayable",
   nodeNoPasses: "compiler/node-no-passes",
   nodeCompileFailed: "compiler/node-compile-failed",
   passInvalid: "compiler/pass-invalid",
@@ -52,6 +54,12 @@ export const CompilerDiagnosticCode = {
   sourceReferenceMissing: "compiler/source-reference-missing",
   /** T350: a source reference AND a wired input on the same loop — one truth. */
   sourceReferenceAmbiguous: "compiler/source-reference-ambiguous",
+  /**
+   * T387: substeps were asked for and are NOT being run, with the reason and the parameter
+   * named (§V288). A silently-ignored substep count is the worst version of this — the
+   * picture is plausible and the simulation is fifty times slower than the number says.
+   */
+  substepsRefused: "compiler/substeps-refused",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

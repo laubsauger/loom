@@ -120,6 +120,10 @@ function spikeSettings(): ProjectSettings {
   return {
     outputResolution: { width: SIZE, height: SIZE },
     workingFormat: "rgba8unorm",
+    // T375 (§V56): the criteria below are about a UNIFORM reaching a shader, asserted
+    // against exact linear values. The Output node's display transform would ride on top
+    // of every one of them, so this fixture turns it off and measures the working space.
+    colorPolicy: { workingSpace: "linear", displayTransform: "none" },
     randomSeed: 7,
     previewLongEdge: 192,
     previewFps: 20,

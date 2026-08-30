@@ -29,7 +29,14 @@ export interface OutputStats {
 
 export async function describeOutputStats(api: ExportInterface, ref: OutputRef): Promise<OutputStats> {
   const image = await api.read(ref, { reason: "export" });
-  const plane = decodeToLinear(image);
+  const described = api.describe(ref);
+  if (described === null) {
+    throw new Error(`describeOutputStats("${ref.nodeId}:${ref.portId}") read an output it cannot describe.`);
+  }
+  // T375 (§V57): channel statistics are LINEAR-space numbers, so an already-encoded
+  // output has to be decoded first — otherwise the mean of an Output node's target reads
+  // as a brighter picture than the same pixels one node upstream.
+  const plane = decodeToLinear(image, described.space);
 
   const totals = [0, 0, 0, 0];
   const mins = [Infinity, Infinity, Infinity, Infinity];

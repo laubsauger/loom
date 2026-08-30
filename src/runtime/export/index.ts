@@ -54,7 +54,6 @@ export {
 export { BYTES_PER_PIXEL, clamp01, decodeHalf, linearToSrgb, srgbToLinear } from "./pixel-format.ts";
 
 export {
-  autoTransfer,
   boundedSize,
   decodeToLinear,
   encodePlaneToRgba8,

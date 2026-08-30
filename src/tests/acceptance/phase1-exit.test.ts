@@ -508,7 +508,7 @@ describe("T49 Phase 1 exit — any visible branch previews without readback (§V
         if (output === undefined) throw new Error(`no materialized output for "${nodeId}"`);
         return {
           ref: { nodeId, portId: output.portId },
-          source: { resourceId: output.resourceId, size: output.size, format: output.format },
+          source: { resourceId: output.resourceId, size: output.size, format: output.format, space: output.space },
           rect: { x: index * 110, y: 8, width: 96, height: 96 },
           area: { width: 96, height: 96 },
           visible: true,

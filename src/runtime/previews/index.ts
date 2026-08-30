@@ -53,7 +53,6 @@ export type { SlotBox, TileSizeInput, ViewportTransform } from "./geometry.ts";
 
 export {
   PREVIEW_SAMPLER_BINDING,
-  PREVIEW_SHADERS,
   PREVIEW_TEXTURE_BINDING,
   PREVIEW_UNIFORM_BINDING,
   channelIndex,

@@ -22,6 +22,7 @@ export function exportOutputsFrom(
     width: output.size[0],
     height: output.size[1],
     format: output.format,
+    space: output.space,
   }));
 }
 

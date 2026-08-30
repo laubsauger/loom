@@ -9,7 +9,10 @@ import { createNodeRegistry, validateNodeDefinition } from "../registry/registry
 import { outputNode } from "./output.ts";
 import { isSinkNode, SINK_TAG } from "./sink.ts";
 import { solidNode } from "./solid.ts";
-import { OUTPUT_PASSTHROUGH_WGSL } from "../shaders/output-passthrough.wgsl.ts";
+import {
+  OUTPUT_DISPLAY_ENCODE_WGSL,
+  OUTPUT_PASSTHROUGH_WGSL,
+} from "../shaders/output-passthrough.wgsl.ts";
 
 /** Output — viewer sink (T15). */
 
@@ -21,6 +24,11 @@ function contextFor(overrides: Partial<NodeCompileContext> = {}): NodeCompileCon
     sampler: "sampler:linear",
     parameters: {},
     target: "canvas-output",
+    format: "rgba16float",
+    space: "linear",
+    // T375: the display transform is a project commitment the sink reads. Default "none"
+    // here so the pass-shape tests below stay about pass shape.
+    colorPolicy: { workingSpace: "linear", displayTransform: "none" },
     ...overrides,
   };
 }
@@ -68,6 +76,38 @@ describe("Output node (T15)", () => {
       expect(pass.textures).toEqual([{ binding: "inputTexture", resourceId: "scene" }]);
       expect(pass.samplers).toEqual([{ binding: "inputSampler", resourceId: "linear" }]);
     }
+  });
+
+  /**
+   * T375/B47 (§V56, §V70a). The sink is where the display transform lives, and until
+   * T375 it lived nowhere: the viewer showed raw linear light (measured 55 for a
+   * display-0.5 grey) while the preview tile and the exported PNG showed 127. These two
+   * cases are the whole of the node's colour behaviour, and they are asserted here
+   * because a shader chosen by a policy nobody reads is exactly how B47 happened.
+   */
+  it("applies the project display transform, and only when the project asks for one", () => {
+    const encoded = outputNode.compile(
+      contextFor({ colorPolicy: { workingSpace: "linear", displayTransform: "srgb" } }),
+    );
+    expect((encoded.passes[0] as { shader: string }).shader).toBe(OUTPUT_DISPLAY_ENCODE_WGSL);
+
+    const raw = outputNode.compile(
+      contextFor({ colorPolicy: { workingSpace: "linear", displayTransform: "none" } }),
+    );
+    expect((raw.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
+  });
+
+  it("leaves a data target and an -srgb target alone — the transform would be applied twice", () => {
+    const srgbPolicy = { workingSpace: "linear", displayTransform: "srgb" } as const;
+    // `data` is not a colour (§V56).
+    const data = outputNode.compile(contextFor({ colorPolicy: srgbPolicy, space: "data" }));
+    expect((data.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
+    // An -srgb target's hardware already encodes on write; doing it in the shader too
+    // would store the transform twice.
+    const srgb = outputNode.compile(
+      contextFor({ colorPolicy: srgbPolicy, format: "rgba8unorm-srgb" }),
+    );
+    expect((srgb.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
   });
 
   it("reports a diagnostic instead of a malformed pass when it has no assigned render target", () => {

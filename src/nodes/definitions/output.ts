@@ -3,7 +3,8 @@ import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { SINK_TAG } from "./sink.ts";
-import { OUTPUT_PASSTHROUGH_WGSL } from "../shaders/output-passthrough.wgsl.ts";
+import { OUTPUT_DISPLAY_ENCODE_WGSL, OUTPUT_PASSTHROUGH_WGSL } from "../shaders/output-passthrough.wgsl.ts";
+import { sinkDisplayEncode } from "../../domain/color/display.ts";
 
 /**
  * Output — the viewer sink (T15; TD "Out" family).
@@ -29,6 +30,13 @@ import { OUTPUT_PASSTHROUGH_WGSL } from "../shaders/output-passthrough.wgsl.ts";
  * the project (a downscaled preview surface, an oversampled still for export) is a real
  * thing to want. What changes is only the DEFAULT — the project, not whatever happens to
  * be plugged in.
+ *
+ * COLOUR (T375, B47, §V56, §V70a). This is the node the project's `displayTransform`
+ * belongs to, and until T375 nothing read it: the sink passed linear light straight to a
+ * canvas the compositor treats as sRGB, so the viewer was measurably darker than every
+ * other view of the same texture. `sinkDisplayEncode` decides, the compiler asks the same
+ * function to publish this target's `space`, and every downstream consumer reads that
+ * declaration rather than guessing (§V57).
  */
 export const outputNode: NodeDefinition = {
   type: "output",
@@ -48,17 +56,18 @@ export const outputNode: NodeDefinition = {
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, target } = readCompileInputs(context);
+    const { nodeId, inputs, target, format, space, colorPolicy } = readCompileInputs(context);
     const source = inputs["input"];
     if (source === undefined || target === undefined) {
       const what = source === undefined ? 'input port "input"' : "its render target";
       return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
     }
 
+    const encode = sinkDisplayEncode(colorPolicy, format, space);
     const pass: EffectPassDescriptor = {
       kind: "effect",
       id: `${nodeId}:present`,
-      shader: OUTPUT_PASSTHROUGH_WGSL,
+      shader: encode === "encode" ? OUTPUT_DISPLAY_ENCODE_WGSL : OUTPUT_PASSTHROUGH_WGSL,
       target,
       textures: [{ binding: "inputTexture", resourceId: source.resource }],
       samplers: [{ binding: "inputSampler", resourceId: source.sampler }],

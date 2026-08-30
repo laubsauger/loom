@@ -45,6 +45,11 @@ export function paritySettings(options: ParitySettingsOptions = {}): ProjectSett
     // the assertion. A parity failure then means the pixels differ, not that two decoders
     // disagree. The rgba16float path gets its own case in the Dawn suite.
     workingFormat: options.workingFormat ?? "rgba8unorm",
+    // T375 (§V56): these fixtures assert SHADER MATHS against CPU oracles written in the
+    // linear working space, so the Output node must not put a display transform on top of
+    // the numbers being measured. Saying so explicitly is also a live check that the
+    // policy is READ — before T375 nothing read it, and this line would have been inert.
+    colorPolicy: { workingSpace: "linear", displayTransform: "none" },
     randomSeed: options.seed ?? 7,
     previewLongEdge: 192,
     previewFps: 20,

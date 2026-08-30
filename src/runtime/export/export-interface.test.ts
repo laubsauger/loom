@@ -27,6 +27,7 @@ function output(partial: Partial<ExportOutput> = {}): ExportOutput {
     width: 2,
     height: 2,
     format: "rgba8unorm",
+    space: "linear",
     ...partial,
   };
 }

@@ -1,5 +1,6 @@
 import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { EffectPassDescriptor, ResourceDescriptor } from "../backend/plan.ts";
 
 /**
@@ -147,6 +148,11 @@ export interface PreviewRequest {
     readonly resourceId: string;
     readonly size: readonly [number, number];
     readonly format: TextureFormat;
+    /**
+     * T375 (§V57): the space the compiler DECLARED for this resource. Required, so a new
+     * caller cannot skip it and get a plausible-looking double encode (B47).
+     */
+    readonly space: ColorSpace;
   };
   /** Where the tile lands on the shared surface, CSS px (see `geometry.ts`). */
   readonly rect: PreviewRect;

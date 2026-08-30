@@ -14,7 +14,7 @@ function frame(timeSeconds: number, frameIndex: number): FrameEvaluationInput {
 function request(id: string, overrides: Partial<PreviewRequest> = {}): PreviewRequest {
   return {
     ref: { nodeId: id, portId: "out" },
-    source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float" },
+    source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float", space: "linear" },
     rect: { x: 10, y: 10, width: 192, height: 108 },
     area: { width: 192, height: 108 },
     visible: true,

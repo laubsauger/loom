@@ -3,7 +3,7 @@ import type { TransferMode } from "./image.ts";
 import { toRgba8 } from "./image.ts";
 import { encodePng } from "./png.ts";
 import type { ExportFile, ExportInterface, FileSink, OutputRef, ReadbackReason } from "./types.ts";
-import { outputRefKey } from "./types.ts";
+import { ExportDiagnosticCode, ExportError, exportDiagnostic, outputRefKey } from "./types.ts";
 
 /**
  * Screenshot / still export — the v1 export step (§C export order, T68).
@@ -46,8 +46,23 @@ export async function capturePng(
     reason: options.reason ?? "export",
     ...(options.whilePlaying === undefined ? {} : { whilePlaying: options.whilePlaying }),
   });
+  // T375 (§V57): the file's transfer comes from what the graph DECLARED this output to be,
+  // not from its pixel format. `read` has already refused an unknown ref, so a null here
+  // is a catalogue that changed under us — reported, never guessed at.
+  const described = api.describe(ref);
+  if (described === null) {
+    throw new ExportError(
+      exportDiagnostic(
+        "error",
+        ExportDiagnosticCode.unknownOutput,
+        `Output "${outputRefKey(ref)}" was read but is no longer in the catalogue; its colour space is unknown.`,
+        { nodeId: ref.nodeId, portId: ref.portId },
+      ),
+    );
+  }
   const png = encodePng(
     toRgba8(image, {
+      space: described.space,
       ...(options.maxWidth === undefined ? {} : { maxWidth: options.maxWidth }),
       ...(options.maxHeight === undefined ? {} : { maxHeight: options.maxHeight }),
       ...(options.transfer === undefined ? {} : { transfer: options.transfer }),

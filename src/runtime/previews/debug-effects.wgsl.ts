@@ -1,3 +1,7 @@
+import { SRGB_TRANSFER_WGSL } from "../../domain/color/display.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
+import type { PreviewModeKind } from "./types.ts";
+
 /**
  * Debug preview effects (T35, doc §12.4).
  *
@@ -43,7 +47,20 @@ export const PREVIEW_PARAMS_WGSL = `struct PreviewParams {
 @group(0) @binding(2) var previewTexture: texture_2d<f32>;`;
 
 /** Helpers every mode shares. Kept in one place so "what exposure means" has one definition. */
-export const PREVIEW_COMMON_WGSL = `fn exposed(c: vec3f) -> vec3f {
+export function previewCommonWgsl(space: ColorSpace): string {
+  // T375/B47 (§V57): the ONE place a preview reads its source, and the ONE place the
+  // texture's DECLARED space is honoured. A tile always ends display-encoded (the tile is
+  // a display), so a source that is already encoded must be brought back to linear before
+  // the lens touches it — exposure and a tonemap on sRGB values are arithmetic on the
+  // wrong numbers, and re-encoding an encoded picture is what made the Output node's
+  // preview 187 where 127 was right. `data` is untouched (§V56).
+  const decode = space === "encoded" ? "decodeDisplay(raw.rgb)" : "raw.rgb";
+  return `fn sourceTexel(uv: vec2f) -> vec4f {
+  let raw = textureSampleLevel(previewTexture, previewSampler, uv, 0.0);
+  return vec4f(${decode}, raw.a);
+}
+
+fn exposed(c: vec3f) -> vec3f {
   return c * params.exposure;
 }
 
@@ -59,13 +76,7 @@ fn maybeTonemap(c: vec3f) -> vec3f {
   return select(c, tonemapFilmic(c), params.tonemap > 0.5);
 }
 
-/** Linear -> sRGB piecewise encode, for display only (§V56). */
-fn encodeDisplay(c: vec3f) -> vec3f {
-  let v = clamp(c, vec3f(0.0), vec3f(1.0));
-  let low = v * 12.92;
-  let high = (pow(v, vec3f(1.0 / 2.4)) * 1.055) - vec3f(0.055);
-  return select(high, low, v <= vec3f(0.0031308));
-}
+${SRGB_TRANSFER_WGSL}
 
 /** Index order r,g,b,a — fixed by PREVIEW_CHANNELS in types.ts; the two must agree. */
 fn pickChannel(c: vec4f, which: f32) -> f32 {
@@ -89,17 +100,20 @@ fn stripe(position: vec2f, period: f32) -> f32 {
   let d = fract((position.x + position.y) / max(period, 1.0));
   return select(0.0, 1.0, d < 0.5);
 }`;
+}
 
-const PRELUDE = `${PREVIEW_PARAMS_WGSL}
+function prelude(space: ColorSpace): string {
+  return `${PREVIEW_PARAMS_WGSL}
 
-${PREVIEW_COMMON_WGSL}`;
+${previewCommonWgsl(space)}`;
+}
 
 /** Normal colour. Channel mask, exposure, optional tonemap, display encode. */
-export const PREVIEW_COLOR_WGSL = `${PRELUDE}
+const colorShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0) * params.mask;
+  let source = sourceTexel(uv) * params.mask;
   return vec4f(encodeDisplay(maybeTonemap(exposed(source.rgb))), 1.0);
 }`;
 
@@ -110,11 +124,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * unreadable next to a green image, and every compositor that offers channel isolation shows
  * luminance for the same reason.
  */
-export const PREVIEW_CHANNEL_WGSL = `${PRELUDE}
+const channelShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0);
+  let source = sourceTexel(uv);
   let value = pickChannel(source, params.channel);
   return vec4f(encodeDisplay(maybeTonemap(exposed(vec3f(value)))), 1.0);
 }`;
@@ -128,11 +142,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * different one. This is the mode a compositor reaches for to judge contrast without hue
  * pulling the eye around, and it is why channel isolation elsewhere renders grayscale too.
  */
-export const PREVIEW_LUMINANCE_WGSL = `${PRELUDE}
+const luminanceShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0) * params.mask;
+  let source = sourceTexel(uv) * params.mask;
   let graded = maybeTonemap(exposed(source.rgb));
   let luma = dot(graded, vec3f(0.2126, 0.7152, 0.0722));
   return vec4f(encodeDisplay(vec3f(luma)), 1.0);
@@ -145,11 +159,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * source would read as too dark here, which is a real signal rather than a bug: it means the
  * upstream node and this preview disagree about the convention.
  */
-export const PREVIEW_ALPHA_WGSL = `${PRELUDE}
+const alphaShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@builtin(position) fragment: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0);
+  let source = sourceTexel(uv);
   let ground = vec3f(checkerValue(fragment.xy, params.checkerSize));
   let colour = maybeTonemap(exposed(source.rgb));
   let over = mix(ground, colour, clamp(source.a, 0.0, 1.0));
@@ -163,11 +177,11 @@ fn fs(@builtin(position) fragment: vec4f, @location(0) uv: vec2f) -> @location(0
  * exposure is hatched warm, one below 0.0 is hatched cool. Without the markers, tonemapping
  * quietly hides exactly the clipping the user opened this mode to find.
  */
-export const PREVIEW_EXPOSURE_WGSL = `${PRELUDE}
+const exposureShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@builtin(position) fragment: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0) * params.mask;
+  let source = sourceTexel(uv) * params.mask;
   let scaled = exposed(source.rgb);
   let shown = encodeDisplay(tonemapFilmic(scaled));
   let hatch = stripe(fragment.xy, 8.0);
@@ -189,13 +203,13 @@ fn fs(@builtin(position) fragment: vec4f, @location(0) uv: vec2f) -> @location(0
  * an infinity test by magnitude works regardless. The base image is dimmed to a desaturated
  * grey so the markers read at a glance without losing the context of where they are.
  */
-export const PREVIEW_NAN_WGSL = `${PRELUDE}
+const nanShader = (prefix: string) => `${prefix}
 
 const F32_MAX: f32 = 3.4028234e38;
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0);
+  let source = sourceTexel(uv);
   let isNan = source != source;
   let isPosInf = source > vec4f(F32_MAX);
   let isNegInf = source < vec4f(-F32_MAX);
@@ -217,11 +231,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * find it. Applied to the selected channel, since the textures that carry signed data
  * (displacement, velocity, SDF) are read one channel at a time.
  */
-export const PREVIEW_SIGNED_WGSL = `${PRELUDE}
+const signedShader = (prefix: string) => `${prefix}
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let source = textureSampleLevel(previewTexture, previewSampler, uv, 0.0);
+  let source = sourceTexel(uv);
   let value = pickChannel(source, params.channel);
   let t = clamp(value / max(params.signedScale, 1e-6), -1.0, 1.0);
   let positive = max(t, 0.0);
@@ -230,3 +244,25 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let cool = vec3f(0.1, 0.5, 1.0) * negative;
   return vec4f(encodeDisplay(warm + cool), 1.0);
 }`;
+
+/**
+ * THE preview shader for a mode and a SOURCE SPACE (T35, T375).
+ *
+ * `space` is required, not defaulted: a default would let a caller that has never heard of
+ * §V57 compile a shader that silently re-encodes an already-encoded picture, which is B47
+ * in miniature and §V272's shape ("an optional prop for a required capability"). Making it
+ * a parameter turns every unwired call site into a type error instead.
+ */
+const BODIES: Readonly<Record<PreviewModeKind, (prefix: string) => string>> = {
+  color: colorShader,
+  channel: channelShader,
+  luminance: luminanceShader,
+  alpha: alphaShader,
+  exposure: exposureShader,
+  nan: nanShader,
+  signed: signedShader,
+};
+
+export function previewShaderSource(mode: PreviewModeKind, space: ColorSpace): string {
+  return BODIES[mode](prelude(space));
+}

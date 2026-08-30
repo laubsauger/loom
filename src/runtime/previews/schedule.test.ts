@@ -25,7 +25,7 @@ function input(timeSeconds: number, overrides: Partial<ScheduleInput> = {}): Sch
 function request(id: string, overrides: Partial<PreviewRequest> = {}): PreviewRequest {
   return {
     ref: { nodeId: id, portId: "out" },
-    source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float" },
+    source: { resourceId: `target/${id}`, size: [1280, 720], format: "rgba16float", space: "linear" },
     rect: { x: 10, y: 10, width: 192, height: 108 },
     area: { width: 192, height: 108 },
     visible: true,
@@ -242,7 +242,7 @@ describe("tile sizing", () => {
   it("keeps the source aspect ratio", () => {
     const scheduler = createPreviewScheduler({ capacity: 4 });
     const schedule = scheduler.select(
-      [request("tall", { source: { resourceId: "t", size: [512, 1024], format: "rgba8unorm" } })],
+      [request("tall", { source: { resourceId: "t", size: [512, 1024], format: "rgba8unorm", space: "linear" } })],
       input(0, { devicePixelRatio: 1 }),
     );
     expect(schedule.active[0]?.tileSize).toEqual([96, 192]);

@@ -161,7 +161,13 @@ export function createFrameRecorder(options: FrameRecorderOptions): FrameRecorde
     // Reason "recording" is what tells the export interface this read is expected to happen
     // while the loop runs (§V7). It is counted, not waved through.
     const image = await options.api.read(options.ref, { reason: "recording" });
-    const rgba = toRgba8At(image, width, height, options.transfer ?? "auto");
+    // T375 (§V57): every frame of a take gets the transfer the OUTPUT declares, so a
+    // recording and a screenshot of the same graph are the same picture.
+    const described = options.api.describe(options.ref);
+    const rgba = toRgba8At(image, width, height, {
+      space: described?.space ?? "linear",
+      ...(options.transfer === undefined ? {} : { transfer: options.transfer }),
+    });
     const micros = 1_000_000 / options.fps;
     await options.encoder.encode({
       image: rgba,

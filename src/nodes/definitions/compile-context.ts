@@ -1,4 +1,7 @@
-import type { NodeCompileContext } from "../../domain/types/node-definition.ts";
+import type { ColorPolicy } from "../../domain/types/graph.ts";
+import { DEFAULT_COLOR_POLICY } from "../../domain/types/graph.ts";
+import type { NodeCompileContext, TextureFormat } from "../../domain/types/node-definition.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { PortId } from "../../domain/types/ids.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
@@ -81,6 +84,16 @@ export interface NodeCompileInputs {
    * `1.0 / resolution` in a shader can never divide by zero.
    */
   readonly resolution: readonly [number, number];
+  /** Pixel format this node's outputs resolved to (§V21, §V51). */
+  readonly format: TextureFormat;
+  /** Colour space those outputs derive, before this node says anything (§V57). */
+  readonly space: ColorSpace;
+  /**
+   * The project's colour commitments (T84, T375, §V56). Only the Output node acts on it —
+   * §V56 puts the display transform at the sink and nowhere else — but it is read HERE so
+   * there is one adapter, and so the next display node does not invent a second route.
+   */
+  readonly colorPolicy: ColorPolicy;
 }
 
 /** The compiler-side shape this adapter reads. Kept local so src/nodes stays headless. */
@@ -104,6 +117,9 @@ interface CompilerContextShape {
     >
   >;
   readonly outputs?: Readonly<Record<PortId, { resourceId: string }>>;
+  readonly format?: TextureFormat;
+  readonly space?: ColorSpace;
+  readonly colorPolicy?: ColorPolicy;
 }
 
 export function readCompileInputs(context: NodeCompileContext): NodeCompileInputs {
@@ -145,6 +161,9 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
     parameters: raw.parameters,
     parameterMaps: raw.parameterMaps ?? {},
     resolution,
+    format: raw.format ?? "rgba8unorm",
+    space: raw.space ?? "linear",
+    colorPolicy: raw.colorPolicy ?? DEFAULT_COLOR_POLICY,
     ...(raw.target === undefined ? {} : { target: raw.target }),
   };
 }

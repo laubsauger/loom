@@ -64,7 +64,10 @@ export function buildPreviewProgram(
     passes.push({
       kind: "effect",
       id: previewPassId(key),
-      shader: previewShader(entry.request.view.mode),
+      // T375 (§V57): the source's DECLARED space, not an assumption. An Output node's
+      // target is display-encoded; every other node's is linear; the tile is the same
+      // picture either way because the shader is told which it is getting.
+      shader: previewShader(entry.request.view.mode, entry.request.source.space),
       target: tile.resourceId,
       clear: true,
       textures: [

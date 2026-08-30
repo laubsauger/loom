@@ -1,13 +1,6 @@
 import type { UniformValues } from "../backend/plan.ts";
-import {
-  PREVIEW_ALPHA_WGSL,
-  PREVIEW_CHANNEL_WGSL,
-  PREVIEW_COLOR_WGSL,
-  PREVIEW_EXPOSURE_WGSL,
-  PREVIEW_LUMINANCE_WGSL,
-  PREVIEW_NAN_WGSL,
-  PREVIEW_SIGNED_WGSL,
-} from "./debug-effects.wgsl.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
+import { previewShaderSource } from "./debug-effects.wgsl.ts";
 import { ALL_CHANNELS, DEFAULT_PREVIEW_VIEW, PREVIEW_CHANNELS } from "./types.ts";
 import type {
   ChannelMask,
@@ -18,23 +11,16 @@ import type {
 } from "./types.ts";
 
 /**
- * The debug preview effect catalogue (T35).
+ * The debug preview effect for a mode and the DECLARED space of what it is previewing
+ * (T35, T375).
  *
- * A record keyed by the mode union rather than a switch, so adding a mode without giving it a
- * shader is a type error instead of a runtime hole.
+ * `space` is a required argument, not a default (§V272): a tile is a display and always
+ * ends display-encoded, so what the shader has to know is whether its source is display
+ * values already. Defaulting it would let a caller that never heard of §V57 re-encode an
+ * encoded picture and see a plausible, wrong image — B47's exact failure.
  */
-export const PREVIEW_SHADERS: Readonly<Record<PreviewModeKind, string>> = {
-  color: PREVIEW_COLOR_WGSL,
-  channel: PREVIEW_CHANNEL_WGSL,
-  luminance: PREVIEW_LUMINANCE_WGSL,
-  alpha: PREVIEW_ALPHA_WGSL,
-  exposure: PREVIEW_EXPOSURE_WGSL,
-  nan: PREVIEW_NAN_WGSL,
-  signed: PREVIEW_SIGNED_WGSL,
-};
-
-export function previewShader(mode: PreviewModeKind): string {
-  return PREVIEW_SHADERS[mode];
+export function previewShader(mode: PreviewModeKind, space: ColorSpace): string {
+  return previewShaderSource(mode, space);
 }
 
 /** WGSL binding names the preview passes declare. The plan descriptor names them by string. */

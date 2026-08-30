@@ -2,6 +2,7 @@ import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { ReadbackImage, ReadbackRegion } from "../../domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { NodeId, PortId } from "../../domain/types/ids.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 
 /**
@@ -63,6 +64,12 @@ export interface ExportOutput {
   readonly width: number;
   readonly height: number;
   readonly format: TextureFormat;
+  /**
+   * T375 (§V57): the DECLARED colour space of this output. What decides whether an
+   * exported file gets a display transform — the format used to decide that here, and
+   * disagreed with the preview and the viewer about the same picture (B47).
+   */
+  readonly space: ColorSpace;
   readonly label?: string;
 }
 
@@ -79,6 +86,7 @@ export interface ResolvedOutputLike {
   readonly resourceId: string;
   readonly size: readonly [number, number];
   readonly format: TextureFormat;
+  readonly space: ColorSpace;
 }
 
 /**

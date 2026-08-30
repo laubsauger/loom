@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  PREVIEW_SHADERS,
   channelIndex,
   previewShader,
   previewUniforms,
@@ -24,11 +23,16 @@ function mask(partial: Partial<ChannelMask>): ChannelMask {
 
 describe("T35 — each debug effect emits the WGSL its mode means", () => {
   it("covers every declared mode", () => {
-    expect(Object.keys(PREVIEW_SHADERS).sort()).toEqual([...PREVIEW_MODES].sort());
+    // Every mode compiles to real WGSL for both source spaces (T375): a mode that only
+    // works for a linear source is a mode that breaks on the Output node's preview.
+    for (const mode of PREVIEW_MODES) {
+      expect(previewShader(mode, "linear")).toContain("@fragment");
+      expect(previewShader(mode, "encoded")).toContain("@fragment");
+    }
   });
 
   it.each(PREVIEW_MODES)("%s declares the shared binding layout and a fragment entry", (mode) => {
-    const shader = previewShader(mode);
+    const shader = previewShader(mode, "linear");
     expect(shader).toContain("@group(0) @binding(0) var<uniform> params: PreviewParams;");
     expect(shader).toContain("@group(0) @binding(1) var previewSampler: sampler;");
     expect(shader).toContain("@group(0) @binding(2) var previewTexture: texture_2d<f32>;");
@@ -42,19 +46,19 @@ describe("T35 — each debug effect emits the WGSL its mode means", () => {
 
   it("gives every mode a DIFFERENT program", () => {
     // If two modes compiled to the same text, one of them would be silently unimplemented.
-    const sources = new Set(PREVIEW_MODES.map(previewShader));
+    const sources = new Set(PREVIEW_MODES.map((mode) => previewShader(mode, "linear")));
     expect(sources.size).toBe(PREVIEW_MODES.length);
   });
 
   it("colour applies the channel mask, exposure and the display encode", () => {
-    const shader = previewShader("color");
+    const shader = previewShader("color", "linear");
     expect(shader).toContain("* params.mask");
     expect(shader).toContain("exposed(source.rgb)");
     expect(shader).toContain("encodeDisplay(");
   });
 
   it("single-channel isolates one channel as grayscale", () => {
-    const shader = previewShader("channel");
+    const shader = previewShader("channel", "linear");
     expect(shader).toContain("pickChannel(source, params.channel)");
     expect(shader).toContain("vec3f(value)");
   });
@@ -63,20 +67,20 @@ describe("T35 — each debug effect emits the WGSL its mode means", () => {
     // Order matters and is the whole reason this is asserted: luminance answers "how bright
     // is what I am looking at", so exposure and the tonemap come FIRST. Weighting the raw
     // sample would report the brightness of a picture nobody is being shown.
-    const shader = previewShader("luminance");
+    const shader = previewShader("luminance", "linear");
     expect(shader).toContain("maybeTonemap(exposed(source.rgb))");
     expect(shader).toContain("dot(graded, vec3f(0.2126, 0.7152, 0.0722))");
   });
 
   it("alpha composites over a checkerboard using the source alpha", () => {
-    const shader = previewShader("alpha");
+    const shader = previewShader("alpha", "linear");
     expect(shader).toContain("checkerValue(fragment.xy, params.checkerSize)");
     expect(shader).toContain("mix(ground, colour, clamp(source.a, 0.0, 1.0))");
   });
 
   it("hdr exposure tonemaps AND marks the range it clipped", () => {
     // Tonemapping without the markers hides exactly the clipping this mode exists to find.
-    const shader = previewShader("exposure");
+    const shader = previewShader("exposure", "linear");
     expect(shader).toContain("tonemapFilmic(scaled)");
     expect(shader).toContain("any(scaled > vec3f(1.0))");
     expect(shader).toContain("any(scaled < vec3f(0.0))");
@@ -84,14 +88,14 @@ describe("T35 — each debug effect emits the WGSL its mode means", () => {
   });
 
   it("nan/inf highlighting tests both NaN and both infinities", () => {
-    const shader = previewShader("nan");
+    const shader = previewShader("nan", "linear");
     expect(shader).toContain("source != source");
     expect(shader).toContain("source > vec4f(F32_MAX)");
     expect(shader).toContain("source < vec4f(-F32_MAX)");
   });
 
   it("signed visualisation is two-sided about zero and scaled", () => {
-    const shader = previewShader("signed");
+    const shader = previewShader("signed", "linear");
     expect(shader).toContain("params.signedScale");
     expect(shader).toContain("max(t, 0.0)");
     expect(shader).toContain("max(-t, 0.0)");
@@ -100,7 +104,7 @@ describe("T35 — each debug effect emits the WGSL its mode means", () => {
   it("declares no WGSL reserved word as a variable name", () => {
     // `out` is reserved in WGSL; using it compiles nowhere and is an easy slip.
     for (const mode of PREVIEW_MODES) {
-      expect(previewShader(mode)).not.toMatch(/\b(?:var|let)\s+out\b/);
+      expect(previewShader(mode, "linear")).not.toMatch(/\b(?:var|let)\s+out\b/);
     }
   });
 });
@@ -191,7 +195,7 @@ describe("preview lens resolves to a view (T336)", () => {
     for (const kind of PREVIEW_LENSES) {
       const view = viewForLens(lens({ lens: kind }));
       expect(PREVIEW_MODES).toContain(view.mode);
-      expect(previewShader(view.mode)).toBeTruthy();
+      expect(previewShader(view.mode, "linear")).toBeTruthy();
     }
   });
 

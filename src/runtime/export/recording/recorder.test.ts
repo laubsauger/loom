@@ -22,6 +22,8 @@ const OUTPUT: ExportOutput = {
   width: 4,
   height: 4,
   format: "rgba8unorm",
+      // Frame-identity fixture: the bytes ARE the picture, so they pass through.
+      space: "encoded",
 };
 
 /** A source whose pixels encode the frame index, so a mislabelled frame is detectable. */

@@ -1,5 +1,6 @@
 import type { ReadbackImage } from "../../domain/types/backend.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
 import { BYTES_PER_PIXEL, clamp01, linearToSrgb, readChannels, srgbToLinear } from "./pixel-format.ts";
 import { ExportDiagnosticCode, ExportError, exportDiagnostic } from "./types.ts";
 
@@ -7,21 +8,48 @@ import { ExportDiagnosticCode, ExportError, exportDiagnostic } from "./types.ts"
  * Readback bytes to an 8-bit image, with the transfer decision made explicitly.
  *
  * The trap here is silent double-encoding, the same one §V70a calls out for the present blit.
- * A PNG has no way to say "these values are linear", so something has to decide, and a
- * decision made by accident is the one that produces a washed-out screenshot nobody can
- * explain. So:
+ * A PNG has no way to say "these values are linear", so something has to decide.
  *
- *  - `rgba8unorm-srgb` bytes are ALREADY display-encoded. They pass through byte-exact.
- *  - `rgba8unorm` bytes are the values the graph produced. They pass through byte-exact too —
- *    the export interface captures what the Output node made (§V56), it does not add a
- *    display transform the graph declined to add.
- *  - `rgba16float` / `r32float` cannot pass through: they hold values outside 0..1 and more
- *    bits than a PNG has. They are clamped and sRGB-encoded, because quantising raw linear
- *    floats to 8 bits produces an image that misrepresents the buffer far more badly.
+ * T375/B47: it used to be decided HERE, from the pixel FORMAT — `rgba8unorm` passed through
+ * byte-exact, everything else was sRGB-encoded. That was this module's own private answer to
+ * a question §V57 already answers on the texture, and it is why the SAME picture exported as
+ * 127 from a `rgba16float` project and 55 from an `rgba8unorm` one. The declared SPACE
+ * decides now, and it is required rather than derived:
+ *
+ *  - `encoded` — the bytes ARE display values (the Output node encoded them, or the format
+ *    did). Byte-exact passthrough; encoding again is B47.
+ *  - `linear` — the bytes are light. A PNG is a display file, so they are display-encoded.
+ *  - `data` — not a colour. Clamped, never transferred (§V56).
  *
  * `transfer` overrides all of it when a caller knows better.
  */
-export type TransferMode = "auto" | "raw" | "srgb";
+export type TransferMode = "raw" | "srgb";
+
+/**
+ * THE transfer for a declared space (§V57). One answer, asked by every export path.
+ *
+ * Note what it is NOT: "encoded means do nothing". By the time a transfer is applied the
+ * plane is LINEAR — `decodeToLinear` has already undone whatever the bytes carried, because
+ * a resize has to average in linear or every downscale darkens. So a colour is always
+ * display-encoded on the way out, and byte-exactness for an already-encoded capture comes
+ * from the PASSTHROUGH path, which skips the round trip entirely rather than cancelling it.
+ * `data` is the only thing that is never transferred (§V56).
+ */
+export function transferForSpace(space: ColorSpace): TransferMode {
+  return space === "data" ? "raw" : "srgb";
+}
+
+/**
+ * True when these READBACK BYTES are display values.
+ *
+ * Two ways that happens and they are not the same fact: the format applied the transfer on
+ * write (`-srgb`), or the graph did and said so (`space: "encoded"` — an Output node's
+ * target in an 8-bit or float working format). Both mean "do not encode again", and both
+ * mean a RESIZE has to decode first or it averages in the wrong space.
+ */
+function bytesAreEncoded(format: TextureFormat, space: ColorSpace): boolean {
+  return format === "rgba8unorm-srgb" || space === "encoded";
+}
 
 /** RGBA float image in the format's own space, one Float32 per channel, tightly packed. */
 export interface Plane {
@@ -38,12 +66,6 @@ export interface Rgba8Image {
   readonly height: number;
   /** `width * height * 4` bytes, tightly packed, straight (non-premultiplied) alpha. */
   readonly data: Uint8Array;
-}
-
-export function autoTransfer(format: TextureFormat): Exclude<TransferMode, "auto"> {
-  // srgb-typed bytes are re-encoded after any linear-space resize; plain unorm bytes are
-  // written as they are; float formats are display-encoded because 8 bits demands it.
-  return format === "rgba8unorm" ? "raw" : "srgb";
 }
 
 function refuseDepth(format: TextureFormat): void {
@@ -66,13 +88,13 @@ function refuseDepth(format: TextureFormat): void {
  * naive readers break, and the failure (every row after the first shifted) reads as a
  * rendering bug rather than as a decoding bug.
  */
-export function decodeToLinear(image: ReadbackImage): Plane {
+export function decodeToLinear(image: ReadbackImage, space: ColorSpace): Plane {
   refuseDepth(image.format);
   const bytesPerPixel = BYTES_PER_PIXEL[image.format];
   const rgba = new Float32Array(image.width * image.height * 4);
   const view = new DataView(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength);
   const channels = new Float32Array(4);
-  const encoded = image.format === "rgba8unorm-srgb";
+  const encoded = bytesAreEncoded(image.format, space);
 
   for (let y = 0; y < image.height; y += 1) {
     const rowStart = y * image.rowStride;
@@ -144,9 +166,8 @@ export function boundedSize(
   return [Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale))];
 }
 
-export function encodePlaneToRgba8(plane: Plane, transfer: TransferMode = "auto"): Rgba8Image {
-  const mode = transfer === "auto" ? autoTransfer(plane.format) : transfer;
-  const encode = mode === "srgb" ? linearToSrgb : clamp01;
+export function encodePlaneToRgba8(plane: Plane, transfer: TransferMode): Rgba8Image {
+  const encode = transfer === "srgb" ? linearToSrgb : clamp01;
   const data = new Uint8Array(plane.width * plane.height * 4);
   // r32float has one channel; replicating R across RGB is a DISPLAY choice made here and
   // nowhere else, so a caller reading raw values (decodePixel) still sees the honest zeroes.
@@ -186,6 +207,12 @@ function passthroughRgba8(image: ReadbackImage): Rgba8Image {
 export interface ToRgba8Options {
   readonly maxWidth?: number;
   readonly maxHeight?: number;
+  /**
+   * The DECLARED space of what was read (§V57). Required, not defaulted: a default is how
+   * B47 happened — every consumer quietly assuming, and three of them assuming differently.
+   */
+  readonly space: ColorSpace;
+  /** Overrides `transferForSpace` when a caller genuinely knows better. */
   readonly transfer?: TransferMode;
 }
 
@@ -201,24 +228,35 @@ export function toRgba8At(
   image: ReadbackImage,
   width: number,
   height: number,
-  transfer: TransferMode = "auto",
+  options: Pick<ToRgba8Options, "space" | "transfer">,
 ): Rgba8Image {
   refuseDepth(image.format);
+  const transfer = options.transfer ?? transferForSpace(options.space);
   const eightBit = image.format === "rgba8unorm" || image.format === "rgba8unorm-srgb";
   const unchanged = width === image.width && height === image.height;
-  if (eightBit && unchanged && (transfer === "auto" || transfer === autoTransfer(image.format))) {
+  // Byte-exact only when the bytes ARE what the file should hold: 8 bits, no resize,
+  // display values already, and no caller asking for something else on top.
+  if (
+    eightBit &&
+    unchanged &&
+    options.transfer === undefined &&
+    bytesAreEncoded(image.format, options.space)
+  ) {
     return passthroughRgba8(image);
   }
-  return encodePlaneToRgba8(resizePlane(decodeToLinear(image), width, height), transfer);
+  return encodePlaneToRgba8(
+    resizePlane(decodeToLinear(image, options.space), width, height),
+    transfer,
+  );
 }
 
 /** Readback bytes to an 8-bit RGBA image, optionally bounded in size (aspect preserved). */
-export function toRgba8(image: ReadbackImage, options: ToRgba8Options = {}): Rgba8Image {
+export function toRgba8(image: ReadbackImage, options: ToRgba8Options): Rgba8Image {
   const [width, height] = boundedSize(
     image.width,
     image.height,
     options.maxWidth ?? image.width,
     options.maxHeight ?? image.height,
   );
-  return toRgba8At(image, width, height, options.transfer ?? "auto");
+  return toRgba8At(image, width, height, options);
 }

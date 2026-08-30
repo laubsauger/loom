@@ -92,7 +92,7 @@ function readback(
 describe("PNG encoding", () => {
   it("produces an image a decoder that did not write it can read", () => {
     const source = readback(3, 2, (x, y) => [x * 40, y * 90, 12, 255]);
-    const png = encodePng(toRgba8(source));
+    const png = encodePng(toRgba8(source, { space: "encoded" }));
     const decoded = decodePng(png.bytes);
     expect([decoded.width, decoded.height]).toEqual([3, 2]);
     expect(decoded.chunks.map((chunk) => chunk.type)).toEqual(["IHDR", "IDAT", "IEND"]);
@@ -107,7 +107,7 @@ describe("PNG encoding", () => {
     // The screenshot claim: what the GPU produced is what lands in the file. A decode/encode
     // round trip would be within a rounding error, which is not the same as within zero.
     const source = readback(4, 4, (x, y) => [x * 17, y * 31, (x + y) * 5, 255 - x]);
-    const decoded = decodePng(encodePng(toRgba8(source)).bytes);
+    const decoded = decodePng(encodePng(toRgba8(source, { space: "encoded" })).bytes);
     for (let y = 0; y < 4; y += 1) {
       for (let x = 0; x < 4; x += 1) {
         expect([...decoded.pixels.subarray((y * 4 + x) * 4, (y * 4 + x) * 4 + 4)]).toEqual([
@@ -122,7 +122,7 @@ describe("PNG encoding", () => {
 
   it("encodes at a bounded size, preserving aspect", () => {
     const source = readback(64, 32, () => [200, 100, 50, 255]);
-    const png = encodePng(toRgba8(source, { maxWidth: 16, maxHeight: 16 }));
+    const png = encodePng(toRgba8(source, { space: "encoded", maxWidth: 16, maxHeight: 16 }));
     const decoded = decodePng(png.bytes);
     expect([decoded.width, decoded.height]).toEqual([16, 8]);
     expect(decoded.pixels.length).toBe(16 * 8 * 4);
@@ -137,7 +137,7 @@ describe("PNG encoding", () => {
     // Stored blocks cap at 65535 bytes; the block-splitting loop is exactly the sort of code
     // that works until the first image bigger than a thumbnail.
     const source = readback(200, 200, (x, y) => [x & 0xff, y & 0xff, 0, 255]);
-    const decoded = decodePng(encodePng(toRgba8(source)).bytes);
+    const decoded = decodePng(encodePng(toRgba8(source, { space: "encoded" })).bytes);
     expect(decoded.pixels.length).toBe(200 * 200 * 4);
     expect([...decoded.pixels.subarray((199 * 200 + 199) * 4, (199 * 200 + 199) * 4 + 4)]).toEqual([
       199, 199, 0, 255,
