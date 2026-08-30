@@ -219,6 +219,13 @@ export const tileNode: NodeDefinition = {
  * the sampler's filter and softens it a little every time. And it is what someone actually
  * looks for — nobody reaches for "set scale x to -1" when they want a mirror image, so a
  * Transform-only answer is a discoverability failure dressed up as orthogonality.
+ *
+ * There is deliberately NO transpose. A `swap` exchanging x and y reads as a free 90 degree
+ * rotation and silently squashes every non-square image, because the output keeps the
+ * input's resolution. TD splits the two across two nodes for this reason — its Flop CHANGES
+ * the resolution, and the resolution-preserving transpose lives on Tile — and both need a
+ * resolution policy that swaps its axes, which we do not have. Shipping the broken half
+ * would be worse than shipping neither.
  */
 export const flipNode: NodeDefinition = {
   type: "flip",
@@ -231,12 +238,6 @@ export const flipNode: NodeDefinition = {
   parameters: {
     flipx: { type: "boolean", label: "Flip X", default: false },
     flipy: { type: "boolean", label: "Flip Y", default: false },
-    swap: {
-      type: "boolean",
-      label: "Swap XY",
-      default: false,
-      description: "Transposes the axes. With a flip this gives 90 degree rotations free.",
-    },
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
   formatPolicy: { kind: "inherit", input: "input" },
@@ -258,7 +259,6 @@ export const flipNode: NodeDefinition = {
       uniformBinding: "params",
       uniforms: {
         flip: [readFlag(parameters, "flipx", false), readFlag(parameters, "flipy", false)],
-        swap: readFlag(parameters, "swap", false),
       },
       nodeId,
       label: "Flip",
@@ -275,8 +275,10 @@ export const flipNode: NodeDefinition = {
  * kaleidoscopes, symmetric masks, and making a hand-drawn shape symmetric without drawing
  * both halves.
  *
- * The pivot is why this is a node rather than a checkbox on Flip. Folding about the centre
- * is the boring case; folding about 0.3 is where it becomes a design tool.
+ * The pivot and the ROTATION are why this is a node rather than a checkbox on Flip. Folding
+ * about the centre on an axis is only symmetry; folding about an arbitrary point across an
+ * arbitrary line is the kaleidoscope operation. TD's Mirror carries the same three controls
+ * for the same reason.
  */
 export const mirrorNode: NodeDefinition = {
   type: "mirror",
@@ -304,6 +306,15 @@ export const mirrorNode: NodeDefinition = {
       default: false,
       description: "Which half survives the fold and is copied onto the other.",
     },
+    rotate: {
+      type: "number",
+      label: "Rotate",
+      default: 0,
+      min: -180,
+      max: 180,
+      unit: "deg",
+      description: "Angle of the fold line. Off-axis is what makes a kaleidoscope.",
+    },
     extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
@@ -328,6 +339,7 @@ export const mirrorNode: NodeDefinition = {
         pivot: readVector(parameters, "pivot", [0.5, 0.5]),
         axis: [readFlag(parameters, "mirrorx", true), readFlag(parameters, "mirrory", false)],
         keepHigh: readFlag(parameters, "keephigh", false),
+        rotate: readNumber(parameters, "rotate", 0) * DEGREES_TO_RADIANS,
         extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
       },
       nodeId,

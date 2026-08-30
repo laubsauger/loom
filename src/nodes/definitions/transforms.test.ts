@@ -131,8 +131,28 @@ describe("Flip and Mirror (T242)", () => {
     // centres, where a -1 scale runs the image through the sampler's filter and softens it
     // slightly every time. If this shader ever grows a matrix, that argument is gone.
     const shader = firstPass(flipNode, { flipx: true }).shader;
-    expect(shader).toContain("vec2f(1.0) - swapped");
+    expect(shader).toContain("vec2f(1.0) - uv");
     expect(shader).not.toContain("matrix");
+  });
+
+  it("has no transpose, because a resolution-preserving one squashes non-square images", () => {
+    // A `swap` exchanging x and y reads as a free 90 degree rotation and silently squashes
+    // every non-square image, since the output keeps the input's resolution. TD splits the
+    // two operations across two nodes for exactly this reason. Pinned so it is not helpfully
+    // re-added by someone who notices Flip "should" be able to rotate.
+    expect(flipNode.parameters["swap"]).toBeUndefined();
+    expect(firstPass(flipNode).shader).not.toContain("uv.yx");
+  });
+
+  it("folds across a ROTATED line, which is what makes a kaleidoscope", () => {
+    // Folding on x or y is symmetry; folding across an arbitrary diagonal is the operation
+    // people actually want a Mirror for.
+    expect(mirrorNode.parameters["rotate"]).toBeDefined();
+    const shader = firstPass(mirrorNode).shader;
+    expect(shader).toContain("invRotate2");
+    // Rotated in, folded, rotated back — so the pivot stays the point the image folds
+    // about rather than drifting as the angle changes.
+    expect(shader).toContain("params.pivot + invRotate2");
   });
 
   it("mirrors about a pivot, not just the centre", () => {
@@ -141,7 +161,7 @@ describe("Flip and Mirror (T242)", () => {
     // away later.
     const uniforms = firstPass(mirrorNode, { pivot: [0.3, 0.5] }).uniforms as Record<string, unknown>;
     expect(uniforms["pivot"]).toEqual([0.3, 0.5]);
-    expect(firstPass(mirrorNode).shader).toContain("abs(uv - params.pivot)");
+    expect(firstPass(mirrorNode).shader).toContain("abs(local)");
   });
 
   it("samples the fold through the extend helper, because folded coords leave [0,1]", () => {

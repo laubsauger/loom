@@ -21,8 +21,10 @@ import {
  * every node in the family uses the same order — including the arithmetic ones, where it
  * only matters for Difference (and for `opacity`, which always scales the front).
  *
- * ALPHA is straight (non-premultiplied) throughout, matching TD, whose separate Premultiply
- * TOP only makes sense if the default is not premultiplied. Over does coverage-aware
+ * ALPHA is straight (non-premultiplied) throughout, matching TD. (An earlier note here
+ * justified that by "TD's separate Premultiply TOP"; a catalogue survey of all 149 TOPs
+ * found no such operator — TD exposes premultiply/unpremultiply as a Math TOP mode. The
+ * convention is still right; the evidence cited for it was not.) Over does coverage-aware
  * source-over; the arithmetic operators work per channel across RGBA, as TD's Composite
  * TOP does, so adding two images adds their alpha too.
  *
@@ -285,14 +287,16 @@ export const crossNode: NodeDefinition = {
  * straight-alpha convention and keeps the colour valid where coverage is partial. When
  * `texture2d.space` lands, `mask` wants `space: "data"` while `input` stays colour.
  *
- * TD's nearest equivalent is the Matte TOP; the name here follows the brief's vocabulary.
+ * TD's nearest equivalent is the Matte TOP, but it is NOT the same operator — TD's Matte
+ * is a three-input over-with-matte, where this is a two-input alpha multiply. Called Mask
+ * because that is what it does and what the brief calls it.
  */
 export const maskNode: NodeDefinition = {
   type: "mask",
   version: 1,
   title: "Mask",
   category: "composite",
-  description: "Multiplies the source's alpha by a channel of the mask input. TD Matte TOP.",
+  description: "Multiplies the source's alpha by a channel of the mask input.",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "The image being masked." },
     {

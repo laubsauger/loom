@@ -100,12 +100,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * want a mirror image, so a Transform-only answer is a discoverability failure rather than
  * a feature.
  *
- * `swap` transposes x and y, which is the half of a 90 degree rotation that costs nothing.
- * Combined with a flip it gives all four rotations without a matrix or a resample.
+ * NO TRANSPOSE HERE, deliberately. A first version had a `swap` that exchanged x and y,
+ * which looks like a free 90 degree rotation and is not: transposing a 1920x1080 image into
+ * a 1920x1080 target squashes it, silently and only for non-square inputs — the common case.
+ * TD does not put one on Flip either; its Flop CHANGES THE RESOLUTION ("the X resolution
+ * becomes the Y resolution") and the resolution-preserving transpose lives on Tile. Both
+ * want machinery we do not have yet (a resolution policy that swaps its axes), so neither is
+ * pretended at here.
  */
 export const FLIP_FRAGMENT_WGSL = `struct Params {
   flip: vec2f,
-  swap: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var inputSampler: sampler;
@@ -113,8 +117,7 @@ export const FLIP_FRAGMENT_WGSL = `struct Params {
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let swapped = select(uv, uv.yx, params.swap > 0.5);
-  let source = select(swapped, vec2f(1.0) - swapped, params.flip > vec2f(0.5));
+  let source = select(uv, vec2f(1.0) - uv, params.flip > vec2f(0.5));
   return textureSampleLevel(inputTexture, inputSampler, source, 0.0);
 }`;
 
@@ -130,16 +133,25 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * of subtracting keeps the high side. That is the whole operation, and the reason it reads
  * as one line is that a fold IS an absolute value about a point.
  *
+ * `rotate` turns the fold line off-axis, and it is what separates a mirror from a novelty:
+ * folding across an arbitrary diagonal is the kaleidoscope operation, where folding across
+ * x or y is only ever symmetry. TD's Mirror carries the same three controls for the same
+ * reason. The rotation is applied around the pivot and undone afterwards, so the pivot stays
+ * the point the image folds about rather than drifting as the angle changes.
+ *
  * Folded coordinates leave [0,1] whenever the pivot is off centre — at pivot 0.2 the far
  * edge maps to -0.6 — so this samples through the shared extend helper rather than
  * pretending the range is safe.
  */
 export const MIRROR_FRAGMENT_WGSL = `${WGSL_EXTEND}
 
+${WGSL_TRANSFORM2D}
+
 struct Params {
   pivot: vec2f,
   axis: vec2f,
   keepHigh: f32,
+  rotate: f32,
   extend: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -148,10 +160,11 @@ struct Params {
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let folded_low = params.pivot - abs(uv - params.pivot);
-  let folded_high = params.pivot + abs(uv - params.pivot);
-  let folded = select(folded_low, folded_high, params.keepHigh > 0.5);
-  // Per axis: fold only where the node was asked to.
-  let source = select(uv, folded, params.axis > vec2f(0.5));
+  // Fold in the ROTATED frame, then rotate back: the fold line is the rotated axis, and
+  // the pivot stays put because the rotation happens around it.
+  let local = invRotate2(uv - params.pivot, params.rotate);
+  let folded = select(-abs(local), abs(local), vec2f(params.keepHigh > 0.5));
+  let mixed = select(local, folded, params.axis > vec2f(0.5));
+  let source = params.pivot + invRotate2(mixed, -params.rotate);
   return sampleExtend(inputTexture, inputSampler, source, params.extend);
 }`;
