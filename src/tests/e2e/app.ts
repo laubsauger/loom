@@ -47,7 +47,9 @@ export async function openApp(page: Page): Promise<void> {
   });
   await page.goto("/");
   await expect(page.getByTestId("graph-canvas")).toBeVisible();
-  await expect(page.locator('section[aria-label="Node Library"]')).toBeVisible();
+  // The library pane is ready when its search box is: T427 dissolved the old
+  // "Node Library" wrapper section, so the search box is the stable landmark.
+  await expect(page.locator('input[aria-label="Search nodes"]')).toBeVisible();
 }
 
 /** Adds a node from the library by its category and title, and returns its React Flow id. */
@@ -123,7 +125,8 @@ export async function moveNode(page: Page, nodeId: string, dx: number, dy: numbe
 /** Selects a node so the inspector shows its parameters. Clicks the header, not the body. */
 export async function selectNode(page: Page, nodeId: string): Promise<void> {
   await page.locator(`.react-flow__node[data-id="${nodeId}"]`).click({ position: { x: 40, y: 8 } });
-  await expect(page.locator('section[aria-label="Inspector"]')).toContainText(nodeId);
+  // The inspector lives in a dock tab panel titled by its pane (T436 layout shell).
+  await expect(page.getByRole("tabpanel", { name: "inspector" })).toContainText(nodeId);
 }
 
 /**

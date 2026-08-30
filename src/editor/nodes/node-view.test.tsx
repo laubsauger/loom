@@ -9,6 +9,9 @@ import { alice, contextFor } from "@domain/commands/test-support.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import type { NodeRegistry } from "@nodes/registry/registry.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import {
   CanvasFixture,
   fixtureContext,
@@ -35,6 +38,8 @@ interface Options {
   renderControls?: (nodeId: string) => React.ReactNode;
   /** Current canvas selection (§V101) — defaults to none. */
   selection?: readonly string[];
+  /** T457: the REAL catalogue, for nodes whose behaviour keys off their true type. */
+  registry?: ReturnType<NodeRegistry["view"]>;
 }
 
 /**
@@ -46,7 +51,7 @@ function mountNode(type: string, options: Options = {}) {
     ids: createSequentialIdFactory("n"),
     ...(options.graph === undefined ? {} : { initialGraph: options.graph }),
   });
-  const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
+  const { bus } = createDomainBus({ store, registry: options.registry ?? createTestRegistry().view() });
   const dispatched: GraphPatchOperation[][] = [];
   const toggled: { command: string; nodeIds: readonly string[] }[] = [];
 
@@ -437,5 +442,35 @@ describe("preview slot (§V28b) — visible texture-producing node previews by d
     // The SLOT survives: a switched-off preview says so in its body (§V91/§V100) rather
     // than the node changing shape under the press.
     expect(screen.getByText("tile")).toBeDefined();
+  });
+});
+
+describe("T457 (V387) — reference-fed inputs render NO socket", () => {
+  const catalogue = createNodeRegistry(allNodeDefinitions).view();
+
+  it("a render node shows no input sockets at all — its whole left side is names", () => {
+    const { container } = mountNode("render", { graph: graphWith("render"), registry: catalogue });
+    // scenes/camera/lights are all reference-fed plumbing: a socket here invites a
+    // wire that apply-patch refuses (port.sourceReference), so none is drawn.
+    const inputs = [...container.querySelectorAll('[data-handlepos="left"]')];
+    expect(inputs).toEqual([]);
+    // The output socket is real and stays.
+    const outputs = [...container.querySelectorAll('[data-handlepos="right"]')];
+    expect(outputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["out"]);
+  });
+
+  it("a wireable input on the same node keeps its socket (renderSurface: points yes, camera no)", () => {
+    const { container } = mountNode("renderSurface", {
+      graph: graphWith("renderSurface"),
+      registry: catalogue,
+    });
+    const inputs = [...container.querySelectorAll('[data-handlepos="left"]')];
+    expect(inputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["points"]);
+  });
+
+  it("feedback's in port is plumbing too — the loop is a NAME (T350)", () => {
+    const { container } = mountNode("feedback", { graph: graphWith("feedback"), registry: catalogue });
+    const inputs = [...container.querySelectorAll('[data-handlepos="left"]')];
+    expect(inputs).toEqual([]);
   });
 });

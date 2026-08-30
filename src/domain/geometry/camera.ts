@@ -126,3 +126,31 @@ export function orthographic(height: number, aspect: number, near: number, far: 
   m[14] = near / (near - far);
   return m;
 }
+
+/**
+ * T457: one camera VALUE to one matrix, composed where the aspect is known (§V198).
+ * Every consumer of a camera payload — Render, renderSurface, renderInstances — goes
+ * through this, so a camera node means the same picture wherever it is named (V387).
+ */
+export function cameraPayloadMatrix(
+  camera: {
+    readonly eye: readonly [number, number, number];
+    readonly lookAt: readonly [number, number, number];
+    readonly fovDeg: number;
+    readonly near: number;
+    readonly far: number;
+    readonly ortho: boolean;
+    readonly orthoHeight: number;
+  },
+  aspect: number,
+): Mat4 {
+  const view = lookAt(
+    [camera.eye[0], camera.eye[1], camera.eye[2]],
+    [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],
+    [0, 1, 0],
+  );
+  const projection = camera.ortho
+    ? orthographic(camera.orthoHeight, aspect, camera.near, camera.far)
+    : perspective((camera.fovDeg * Math.PI) / 180, aspect, camera.near, camera.far);
+  return multiply(projection, view);
+}

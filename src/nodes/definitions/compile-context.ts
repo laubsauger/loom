@@ -55,6 +55,11 @@ export interface NodeCompileInputs {
           /** T322: GPU-resident live count, when the producer kills points. */
           readonly count?: { readonly buffer: string };
         };
+        /**
+         * T447/T457: the scene payload on a reference-fed edge (camera, light,
+         * geometry, material) — a CPU value, no GPU resource behind it.
+         */
+        readonly scene?: unknown;
       }
     >
   >;

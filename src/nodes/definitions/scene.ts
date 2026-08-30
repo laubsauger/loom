@@ -2,7 +2,7 @@ import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
-import { lookAt, multiply, orthographic, perspective } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -35,7 +35,7 @@ export const cameraNode: NodeDefinition = {
   title: "Camera",
   category: "value",
   description:
-    "A camera other nodes reference by NAME: a Render names it in its camera parameter; renderInstances/renderSurface can be pointed at it later. Every parameter is drivable — an orbiting camera is a uniform write, never a rebuild.",
+    "A camera other nodes reference by NAME: Render, Render Surface and Render Instances all name it in their camera parameter, so one camera frames them together. Every parameter is drivable — an orbiting camera is a uniform write, never a rebuild.",
   tags: ["3d", "scene", "camera", "view"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: { kind: "camera" } }],
@@ -389,15 +389,7 @@ export const renderNode: NodeDefinition = {
     }
 
     const aspect = resolution[0] / Math.max(resolution[1], 1);
-    const view = lookAt(
-      [camera.eye[0], camera.eye[1], camera.eye[2]],
-      [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],
-      [0, 1, 0],
-    );
-    const projection = camera.ortho
-      ? orthographic(camera.orthoHeight, aspect, camera.near, camera.far)
-      : perspective((camera.fovDeg * Math.PI) / 180, aspect, camera.near, camera.far);
-    const viewProjectionMatrix = multiply(projection, view);
+    const viewProjectionMatrix = cameraPayloadMatrix(camera, aspect);
 
     const ambient = readColor(parameters, "ambientColor", [1, 1, 1, 1]);
     const ambientIntensity = readNumber(parameters, "ambientIntensity", 0.12);

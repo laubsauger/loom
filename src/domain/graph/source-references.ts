@@ -42,6 +42,10 @@ export const SOURCE_REFERENCE_PARAMETERS: Readonly<Record<string, ReadonlyArray<
     { parameter: "camera", input: "camera" },
     { parameter: "lights", input: "lights", list: true },
   ],
+  // T457 (V387): the point renderers share the SAME camera-by-name model as Render —
+  // one camera node can frame instances, a surface and a scene render at once.
+  renderSurface: [{ parameter: "camera", input: "camera" }],
+  renderInstances: [{ parameter: "camera", input: "camera" }],
 };
 
 export function sourceReferencesOf(nodeType: string): ReadonlyArray<SourceReferenceSpec> {

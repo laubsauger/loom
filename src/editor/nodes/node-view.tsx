@@ -10,6 +10,7 @@ import { cx } from "@ui/cx.ts";
 import { portFamilyColor } from "@ui/ports.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
 import { nameBaseFor } from "@domain/graph/names.ts";
+import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
@@ -333,9 +334,18 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
 
         <div className={styles.ports}>
           <ul className={cx(styles.column, styles.inputs)}>
-            {(definition?.inputs ?? []).map((port) => (
-              <PortRow key={port.id} port={port} side="input" />
-            ))}
+            {/*
+              T457 (V387): a reference-fed input is PLUMBING — the compiler synthesizes
+              its edge from a name parameter, and a wire into it is refused
+              (apply-patch's port.sourceReference). A socket the user cannot connect
+              invites the wire and then refuses it, so it does not render at all; the
+              relationship is already visible as the hued reference line (T248/T391).
+            */}
+            {(definition?.inputs ?? [])
+              .filter((port) => sourceReferenceForInput(node.type, port.id) === undefined)
+              .map((port) => (
+                <PortRow key={port.id} port={port} side="input" />
+              ))}
           </ul>
           <ul className={cx(styles.column, styles.outputs)}>
             {(definition?.outputs ?? []).map((port) => (

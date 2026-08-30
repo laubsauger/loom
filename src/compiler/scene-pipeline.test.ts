@@ -6,6 +6,7 @@ import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { DrawPassDescriptor } from "../runtime/backend/plan.ts";
+import { cameraPayloadMatrix } from "../domain/geometry/camera.ts";
 
 /**
  * T377/T447: the scene pipeline at the compiler level.
@@ -292,3 +293,65 @@ describe("instances mode (T428b)", () => {
   });
 });
 
+
+describe("the point renderers take a camera by NAME (T457, V387)", () => {
+  const surfaceGraph = (parameters: Record<string, unknown>): GraphDocument =>
+    ({
+      revision: 1,
+      nodes: Object.fromEntries(
+        [
+          node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"),
+          node("surf", "renderSurface", parameters, "surf1"),
+          node("cam", "camera", { eye: [5, 2, 9] }, "cam1"),
+          node("out", "output", {}, "out1"),
+        ].map((entry) => [entry.id, entry]),
+      ),
+      edges: {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "surf", portId: "points" } },
+        e2: { id: "e2", source: { nodeId: "surf", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    }) as never;
+
+  const surfaceMatrix = (compiled: { passes: ReadonlyArray<unknown> }): ReadonlyArray<number> => {
+    const pass = compiled.passes.find(
+      (p) => (p as { kind: string }).kind === "draw" && String((p as { id: string }).id).endsWith(":surface"),
+    ) as DrawPassDescriptor;
+    return (pass.uniforms as { viewProjection: number[] }).viewProjection;
+  };
+
+  it("a named camera replaces the inline eye/look/FOV — cut the name and they return (V361)", () => {
+    const named = compile(surfaceGraph({ camera: "cam1" }));
+    expect(named.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    // The EXACT matrix the shared composer gives for cam1's payload (§V147/§V198):
+    // eye overridden, everything else the camera node's own defaults, aspect 64/64.
+    const expected = cameraPayloadMatrix(
+      { eye: [5, 2, 9], lookAt: [0, 0, 0], fovDeg: 55, near: 0.1, far: 100, ortho: false, orthoHeight: 2 },
+      1,
+    );
+    expect(surfaceMatrix(named)).toEqual(Array.from(expected));
+
+    // §V361 as matrices: unname the camera and the INLINE parameters compose instead.
+    const inline = compile(surfaceGraph({}));
+    expect(inline.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(surfaceMatrix(inline)).not.toEqual(surfaceMatrix(named));
+  });
+
+  it("a dangling or wrong-kind camera name refuses BY NAME (§V369) — on instances too", () => {
+    const dangling = compile(surfaceGraph({ camera: "ghost1" }));
+    expect(dangling.diagnostics.some((d) => d.severity === "error" && d.message.includes('"ghost1"'))).toBe(true);
+
+    const graph = surfaceGraph({ camera: "grid1" });
+    const wrongKind = compile(graph);
+    expect(
+      wrongKind.diagnostics.some((d) => d.severity === "error" && d.message.includes("publishes no camera")),
+    ).toBe(true);
+
+    // renderInstances rides the same table entry; one dangling probe pins the wiring.
+    const instances = surfaceGraph({});
+    (instances.nodes["surf"] as GraphNode as { type: string }).type = "renderInstances";
+    ((instances.nodes["surf"] as GraphNode).parameters as Record<string, unknown>)["camera"] = "ghost1";
+    const refused = compile(instances);
+    expect(refused.diagnostics.some((d) => d.severity === "error" && d.message.includes('"ghost1"'))).toBe(true);
+  });
+});

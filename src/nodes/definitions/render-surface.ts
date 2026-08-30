@@ -1,6 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
-import { viewProjection } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, viewProjection } from "../../domain/geometry/camera.ts";
+import type { CameraPayload } from "../../domain/types/scene.ts";
 import { RENDER_SURFACE_WGSL } from "../shaders/render-surface.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
@@ -37,11 +38,21 @@ export const renderSurfaceNode: NodeDefinition = {
       type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
       description: "Needs a vec3f position attribute AND analytic grid topology on the edge.",
     },
+    // T457: reference-fed plumbing (V373/V387) — never rendered as a socket; the
+    // `camera` PARAMETER names the node and the compiler synthesizes this edge.
+    { id: "camera", label: "Camera", optional: true, type: { kind: "camera" } },
   ],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   depthOutputs: ["out"],
+  sourceReferences: [{ parameter: "camera", input: "camera" }],
   parameters: {
     color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
+    camera: {
+      type: "string",
+      label: "Camera",
+      default: "",
+      description: "Name of a camera node. When set, it replaces the inline eye/look/FOV below.",
+    },
     eye: { type: "vector", size: 3, label: "Camera Eye", default: [0, 0, 3] },
     lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
     fov: { type: "number", label: "FOV", default: 60, min: 1, max: 179, unit: "degrees" },
@@ -92,14 +103,21 @@ export const renderSurfaceNode: NodeDefinition = {
     }
     const { cellsU, cellsV } = gridCellCounts(parsed);
 
+    // T457 (V387): one camera model everywhere. A NAMED camera arrives as a scene
+    // payload on the reference-fed edge and replaces the inline parameters wholesale;
+    // unnamed keeps the inline eye/look/FOV exactly as before.
+    const referenced = inputs["camera"]?.scene as CameraPayload | undefined;
     const eye = readVector(parameters, "eye", [0, 0, 3]);
     const center = readVector(parameters, "lookAt", [0, 0, 0]);
-    const matrix = viewProjection([eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 3], [center[0] ?? 0, center[1] ?? 0, center[2] ?? 0], {
-      fovY: readNumber(parameters, "fov", 60) * DEGREES_TO_RADIANS,
-      aspect: resolution[0] / resolution[1],
-      near: readNumber(parameters, "near", 0.1),
-      far: readNumber(parameters, "far", 100),
-    });
+    const matrix =
+      referenced?.kind === "camera"
+        ? cameraPayloadMatrix(referenced, resolution[0] / resolution[1])
+        : viewProjection([eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 3], [center[0] ?? 0, center[1] ?? 0, center[2] ?? 0], {
+            fovY: readNumber(parameters, "fov", 60) * DEGREES_TO_RADIANS,
+            aspect: resolution[0] / resolution[1],
+            near: readNumber(parameters, "near", 0.1),
+            far: readNumber(parameters, "far", 100),
+          });
 
     const positionPair = pointset.pairs["position"];
     if (positionPair === undefined) {

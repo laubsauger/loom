@@ -1,6 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
-import { viewProjection } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, viewProjection } from "../../domain/geometry/camera.ts";
+import type { CameraPayload } from "../../domain/types/scene.ts";
 import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL, renderInstancesWgsl } from "../shaders/render-instances.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
@@ -41,9 +42,13 @@ export const renderInstancesNode: NodeDefinition = {
       type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
       description: "Needs a vec3f position attribute; everything else rides along.",
     },
+    // T457: reference-fed plumbing (V373/V387) — never rendered as a socket; the
+    // `camera` PARAMETER names the node and the compiler synthesizes this edge.
+    { id: "camera", label: "Camera", optional: true, type: { kind: "camera" } },
   ],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   depthOutputs: ["out"],
+  sourceReferences: [{ parameter: "camera", input: "camera" }],
   parameters: {
     count: {
       type: "number",
@@ -80,6 +85,12 @@ export const renderInstancesNode: NodeDefinition = {
       space: "display",
       description:
         "T369: in Map mode a vec4f point attribute drives every instance's colour, LINEAR by declaration (§V313) — the lighting still applies.",
+    },
+    camera: {
+      type: "string",
+      label: "Camera",
+      default: "",
+      description: "Name of a camera node. When set, it replaces the inline eye/look/FOV below.",
     },
     eye: { type: "vector", size: 3, label: "Camera Eye", default: [0, 0, 3] },
     lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
@@ -119,16 +130,23 @@ export const renderInstancesNode: NodeDefinition = {
       };
     }
 
+    // T457 (V387): one camera model everywhere. A NAMED camera arrives as a scene
+    // payload on the reference-fed edge and replaces the inline parameters wholesale;
+    // unnamed keeps the inline eye/look/FOV exactly as before.
+    const referenced = inputs["camera"]?.scene as CameraPayload | undefined;
     const eye = readVector(parameters, "eye", [0, 0, 3]);
     const center = readVector(parameters, "lookAt", [0, 0, 0]);
     const rotate = readVector(parameters, "rotate", [0, 0, 0]);
     const shapeParameter = parameters["shape"];
-    const matrix = viewProjection([eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 3], [center[0] ?? 0, center[1] ?? 0, center[2] ?? 0], {
-      fovY: readNumber(parameters, "fov", 60) * DEGREES_TO_RADIANS,
-      aspect: resolution[0] / resolution[1],
-      near: readNumber(parameters, "near", 0.1),
-      far: readNumber(parameters, "far", 100),
-    });
+    const matrix =
+      referenced?.kind === "camera"
+        ? cameraPayloadMatrix(referenced, resolution[0] / resolution[1])
+        : viewProjection([eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 3], [center[0] ?? 0, center[1] ?? 0, center[2] ?? 0], {
+            fovY: readNumber(parameters, "fov", 60) * DEGREES_TO_RADIANS,
+            aspect: resolution[0] / resolution[1],
+            near: readNumber(parameters, "near", 0.1),
+            far: readNumber(parameters, "far", 100),
+          });
 
     // T369 (§V288): a map is STORABLE on any parameter, and a consumer that cannot honour
     // one says so by name rather than drawing the retained static. `color` is the one this
