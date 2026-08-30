@@ -156,6 +156,16 @@ const BUILDERS: Record<string, InputBuilder> = {
  * Exported so the seam test can assert the pair: every toggle the menus guard has a
  * builder here.
  */
+/**
+ * T486: every COMMAND the builder table knows, surface prefixes stripped — the middle
+ * link of B87's chain (TOGGLE_GUARD ⊆ builders ⊆ registered-or-planned), exported so
+ * the seam gate can check the second inclusion too: a builder for a command nothing
+ * registers is a menu row that resolves perfect input for a dispatch that cannot land.
+ */
+export function menuInputBuilderCommands(): readonly string[] {
+  return [...new Set(Object.keys(BUILDERS).map((key) => key.includes(":") ? (key.split(":")[1] as string) : key))];
+}
+
 export function hasMenuInputBuilder(command: string): boolean {
   return (
     BUILDERS[command] !== undefined ||

@@ -4,7 +4,7 @@ import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
 import type { ParameterMode } from "@domain/types/parameters.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 import type { MenuEntry, MenuItem, MenuSchema } from "@domain/types/menus.ts";
-import { hasMenuInputBuilder } from "./input.ts";
+import { hasMenuInputBuilder, menuInputBuilderCommands } from "./input.ts";
 import { isMenuSeparator } from "@domain/types/menus.ts";
 import { isMenuGuardName } from "./guards.ts";
 import { PLANNED_COMMANDS, TOGGLE_GUARD, addNodeSubmenu, menuSchemaFor } from "./schemas.ts";
@@ -212,6 +212,20 @@ describe("every guarded toggle can actually dispatch (B87)", () => {
   it("each TOGGLE_GUARD command is registered on the bus", () => {
     for (const command of Object.keys(TOGGLE_GUARD)) {
       expect(bus.hasCommand(command), `${command} is guarded but nothing registers it`).toBe(true);
+    }
+  });
+
+  // T486 closes the chain's middle link: a BUILDER for a command nothing registers or
+  // plans is a menu row that resolves perfect input for a dispatch that cannot land —
+  // B87's failure one enumeration to the left.
+  it("each input-builder command is registered, app-registered, or named as planned", () => {
+    for (const command of menuInputBuilderCommands()) {
+      expect(
+        bus.hasCommand(command) ||
+          APP_REGISTERED.includes(command) ||
+          (PLANNED_COMMANDS as readonly string[]).includes(command),
+        `${command} has an input builder but is neither registered nor planned`,
+      ).toBe(true);
     }
   });
 });
