@@ -22,7 +22,7 @@ Browser WebGPU node compositor: typed graph → compiled pass plan → live mult
 - ⊥ .toe / Notch import. ⊥ NDI/Spout/Syphon/capture. ⊥ native plugin ABI.
 - ⊥ marketplace. ⊥ pass fusion. ⊥ resource aliasing pool. ⊥ timeline/keyframes.
 - ⊥ 3D geometry graph, scenes, materials, cameras, lights (doc §32 → Phase 3).
-- ⊥ image/video/webcam loader nodes, asset registry (doc §33 → Phase 2).
+- asset registry (doc §33 → Phase 2). **CORRECTION**: image/video/WEBCAM loader nodes were scoped out here & then SHIPPED (T262/T263/T264) — the line stood stale for days. a scope line nobody re-reads describes the product it was written for, ⊥ the one that exists (V186 applies to §C too).
 - components/subgraphs = CORE (track U), ⊥ deferred. TD COMP model: instance pins version, params published to a component page, `parent` scope, flatten @ compile.
 - ⊥ WebMCP adapter, ⊥ MCP server (doc §30.2 → Phase 2). bus ! shaped so both add w/ 0 logic dup.
 - ⊥ CRDT, presence, live collab (doc §34 → Phase 4). arch prep only: stable IDs, atomic patch, actor-tagged mutation, actor-local undo.
@@ -1315,7 +1315,7 @@ T214|x|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ 
 T215|x|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|x|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both). **NOT Noise reseed** — Noise declares ⊥ `stateful`; it is a pure fn of seed & frame, & reseeding mutates the `seed` PARAMETER, which is document state: serialized & undoable. calling that a pulse breaks V124. accumulator, point sim|V123,V46
 T229|x|`externalTexture` resource kind + runtime media-source registry + upload-on-frame-ready. BLOCKS T211 — media cannot exist without it|V135,V136,V63,V58
-T231|.|**DeviceIn** node — device enumeration + pick, permission flow, live indicator, negotiated-vs-requested resolution, ∀ interruption states as node status. rides T229's registry|V137,V138,V139,V38
+T231|~|**DeviceIn** — the SHIPPED node is called `webcam` & does the basics (T263/T264). STILL OPEN: device ENUMERATION + pick, the permission flow as node STATUS, live indicator, negotiated-vs-requested resolution, & interruption states. also V295: sources open sequentially ∴ a pending prompt blocks every other media node|V137,V138,V139,V38
 T230|.|asset registry: resolve `AssetReference` → a decoded source; File System Access + drag-drop + relink flow for unresolved|V121,V10
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
 T211|.|**MovieFileIn** node — image\|video\|sequence → texture. play/pause/seek/loop/rate, in\|out points, outputs res + current time + duration + frame-ready. `AssetReference`, media-source abstraction|V121,V10,V13
