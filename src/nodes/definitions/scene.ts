@@ -351,6 +351,20 @@ export const renderNode: NodeDefinition = {
     { id: "scenes", label: "Scenes", optional: true, variadic: true, type: { kind: "scene" } },
     { id: "camera", label: "Camera", optional: true, type: { kind: "camera" } },
     { id: "lights", label: "Lights", optional: true, variadic: true, type: { kind: "light" } },
+    {
+      // T482: a real WIRE, because pixels are data (V372). Sampled as an equirect along
+      // the reflection vector by phong and pbr materials, scaled by (1 − roughness) and
+      // the specular tint (T428's IBL-lite plan, an approximation stated as one).
+      // Lambert and unlit materials ignore it — said here, not discovered (V349). For
+      // MIRROR reflections of the scene itself, a second render through a mirrored
+      // camera into a material's albedo is already expressible (the T444 pattern).
+      id: "environment",
+      label: "Environment",
+      optional: true,
+      type: RGBA_TEXTURE,
+      description:
+        "Equirect environment. Phong/PBR add its reflection along R, scaled by (1 − roughness) and the specular tint; lambert and unlit ignore it. u = atan2(R.x, −R.z)/2π + 0.5, v = acos(R.y)/π, read with textureLoad.",
+    },
   ],
   outputs: [
     {
@@ -372,6 +386,14 @@ export const renderNode: NodeDefinition = {
     ambientColor: { type: "color", label: "Ambient", default: [1, 1, 1, 1], space: "display" },
     ambientIntensity: { type: "number", label: "Ambient Intensity", default: 0.12, min: 0, max: 1 },
     background: { type: "color", label: "Background", default: [0, 0, 0, 1], space: "display" },
+    environmentIntensity: {
+      type: "number",
+      label: "Env Intensity",
+      default: 1,
+      min: 0,
+      description: "Scales the wired environment's reflection. A value: drivable, never a rebuild.",
+      inactiveWhen: () => null,
+    },
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
@@ -465,6 +487,14 @@ export const renderNode: NodeDefinition = {
     );
     const shadowTargetOf = (slot: number): string => `scratch:${nodeId}:shadow${casting[slot]?.index ?? slot}`;
     const castingIndices = casting.map(({ index }) => index);
+
+    /* T482: the environment, wired or absent — presence is structural (a shader
+       variant, like maps); intensity is a value. */
+    const environmentInput = (context as { inputs?: Record<string, ReadonlyArray<{ resourceId?: string }>> })
+      .inputs?.["environment"]?.[0];
+    const environmentResource =
+      typeof environmentInput?.resourceId === "string" ? environmentInput.resourceId : undefined;
+    const environmentIntensity = readNumber(parameters, "environmentIntensity", 1);
 
     const ambient = readColor(parameters, "ambientColor", [1, 1, 1, 1]);
     const ambientIntensity = readNumber(parameters, "ambientIntensity", 0.12);
@@ -675,6 +705,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             lightCount: lights.length,
             ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
+            ...(environmentResource === undefined ? {} : { environment: true }),
           }),
           target,
           topology: "triangle-list",
@@ -710,15 +741,23 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             ...Object.fromEntries(
               shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
             ),
+            ...(environmentResource === undefined || model !== "phong"
+              ? {}
+              : { environment: [environmentIntensity, 0, 0, 0] }),
           },
-          ...(casting.length === 0
+          ...(casting.length === 0 && environmentResource === undefined
             ? {}
             : {
-                textures: casting.map((_, slot) => ({
-                  binding: `shadowMap${slot}`,
-                  resourceId: shadowTargetOf(slot),
-                  sampled: "unfiltered" as const,
-                })),
+                textures: [
+                  ...casting.map((_, slot) => ({
+                    binding: `shadowMap${slot}`,
+                    resourceId: shadowTargetOf(slot),
+                    sampled: "unfiltered" as const,
+                  })),
+                  ...(environmentResource === undefined || model !== "phong"
+                    ? []
+                    : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
+                ],
               }),
           uniformBinding: "params",
           clear: false,
@@ -797,6 +836,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
           maps,
           ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
           ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
+          ...(environmentResource === undefined ? {} : { environment: true }),
         }),
         target,
         topology: "triangle-list",
@@ -814,7 +854,10 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                 },
               ]),
         ],
-        ...(material.maps.albedo === undefined && material.maps.roughness === undefined && casting.length === 0
+        ...(material.maps.albedo === undefined &&
+        material.maps.roughness === undefined &&
+        casting.length === 0 &&
+        (environmentResource === undefined || model !== "phong")
           ? {}
           : {
               textures: [
@@ -829,6 +872,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                   resourceId: shadowTargetOf(slot),
                   sampled: "unfiltered" as const,
                 })),
+                ...(environmentResource === undefined || model !== "phong"
+                  ? []
+                  : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
               ],
             }),
         uniforms: {
@@ -849,6 +895,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
           ...Object.fromEntries(
             shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
           ),
+          ...(environmentResource === undefined || model !== "phong"
+            ? {}
+            : { environment: [environmentIntensity, 0, 0, 0] }),
         },
         uniformBinding: "params",
         clear: false,

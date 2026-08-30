@@ -27,6 +27,13 @@ export interface SceneShadingOptions {
    * binding 5+s. Empty or absent emits byte-identical text (§V309).
    */
   readonly shadows?: ReadonlyArray<number>;
+  /**
+   * T482: an equirect ENVIRONMENT is wired on the render. Phong (and pbr-through-
+   * phong) adds its reflection — sampled along R, scaled by (1−roughness) and the
+   * specular tint, per T428's preserved IBL-lite plan. Lambert and unlit ignore it,
+   * STATED on the input rather than silently (V349). Absent emits byte-identical text.
+   */
+  readonly environment?: boolean;
 }
 
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
@@ -58,6 +65,24 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     }
 `;
   };
+  const environment = options.environment === true && options.model === "phong";
+  const envBinding = 5 + shadows.length;
+  const envDeclarations = environment
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n`
+    : "";
+  const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
+  /* Equirect, documented exactly: u = atan2(R.x, −R.z)/2π + 0.5, v = acos(R.y)/π. */
+  const envTerm = environment
+    ? `  let reflectDir = reflect(-viewDir, normal);
+  let envUv = vec2f(
+    atan2(reflectDir.x, -reflectDir.z) / 6.2831853 + 0.5,
+    acos(clamp(reflectDir.y, -1.0, 1.0)) / 3.14159265,
+  );
+  let envDims = vec2f(textureDimensions(environmentMap, 0));
+  let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
+  lit += envColor * params.specular.rgb * (1.0 - roughness) * params.environment.x;
+`
+    : "";
 
 
   /* Lights as GENERATED SCALAR MEMBERS — three vec4 rows per light (meta / colour /
@@ -113,17 +138,18 @@ ${
 }  }
 `;
 
+  const needsViewDir = lightCount > 0 || environment;
   const shading =
     options.model === "unlit"
       ? `  return vec4f(albedo.rgb, albedo.a);`
       : `  let ambient = params.ambientColor.rgb * params.ambientColor.a;
   var lit = albedo.rgb * ambient;
 ${
-  lightCount === 0
+  !needsViewDir
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}  return vec4f(lit, albedo.a);`;
+}${envTerm}  return vec4f(lit, albedo.a);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -133,11 +159,11 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,          // rgb specular colour, w = shininess
   material: vec4f,          // x = metallic, y = roughness, zw reserved
   grid: vec4f,              // cols, rows, wrapU, wrapV
-${lightField}${shadowFields}};
+${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -224,6 +250,8 @@ export function sceneInstancesWgsl(options: {
   pointColor?: boolean;
   /** T481: casting light indices — see SceneShadingOptions.shadows. */
   shadows?: ReadonlyArray<number>;
+  /** T482: equirect environment wired — see SceneShadingOptions.environment. */
+  environment?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
@@ -233,6 +261,23 @@ export function sceneInstancesWgsl(options: {
   const shadowBindings = shadows
     .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
     .join("");
+  const environment = options.environment === true && options.model === "phong";
+  const envBinding = 5 + shadows.length;
+  const envDeclarations = environment
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n`
+    : "";
+  const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
+  const envTerm = environment
+    ? `  let reflectDir = reflect(-viewDir, normal);
+  let envUv = vec2f(
+    atan2(reflectDir.x, -reflectDir.z) / 6.2831853 + 0.5,
+    acos(clamp(reflectDir.y, -1.0, 1.0)) / 3.14159265,
+  );
+  let envDims = vec2f(textureDimensions(environmentMap, 0));
+  let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
+  lit += envColor * params.specular.rgb * (1.0 - params.material.y) * params.environment.x;
+`
+    : "";
   const shadowFactor = (index: number): string => {
     const slot = shadowSlotOf(index);
     if (slot < 0) return "";
@@ -278,17 +323,18 @@ ${
     : ""
 }  }
 `;
+  const needsViewDir = lightCount > 0 || environment;
   const shading =
     options.model === "unlit"
       ? `  return vec4f(albedo.rgb, albedo.a);`
       : `  let ambient = params.ambientColor.rgb * params.ambientColor.a;
   var lit = albedo.rgb * ambient;
 ${
-  lightCount === 0
+  !needsViewDir
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}  return vec4f(lit, albedo.a);`;
+}${envTerm}  return vec4f(lit, albedo.a);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -298,11 +344,11 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,
   material: vec4f,
   instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
-${lightField}${shadowFields}};
+${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,

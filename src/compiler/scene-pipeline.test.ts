@@ -514,3 +514,53 @@ describe("shadows are opt-in per light, priced in the open (T481, §V309)", () =
     expect(refusal?.suggestion).toContain("Directional");
   });
 });
+
+describe("the environment input is REAL (T482, §V309)", () => {
+  const envGraph = (material?: string): GraphDocument => {
+    const graph = sceneGraph(
+      material === undefined
+        ? {}
+        : { extraNodes: [node("skin", material, {}, "skin1")] },
+    );
+    (graph.nodes as Record<string, GraphNode>)["sky"] = node("sky", "solid", { color: [0, 0, 1, 1] }, "sky1") as never;
+    (graph.edges as Record<string, unknown>)["env"] = {
+      id: "env",
+      source: { nodeId: "sky", portId: "out" },
+      target: { nodeId: "shot", portId: "environment" },
+    };
+    if (material !== undefined) {
+      ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["material"] = "skin1";
+    }
+    return graph;
+  };
+
+  it("a wired environment reaches a PHONG draw as texture + intensity", () => {
+    const compiled = compile(envGraph("materialPhong"));
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    expect(draw.shader).toContain("environmentMap");
+    expect(draw.shader).toContain("reflect(-viewDir");
+    expect(draw.textures?.some((texture) => texture.binding === "environmentMap")).toBe(true);
+    expect(draw.uniforms?.["environment"]).toEqual([1, 0, 0, 0]);
+  });
+
+  it("a LAMBERT material ignores it — stated on the input, enforced in the plan (V349)", () => {
+    const compiled = compile(envGraph());
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    expect(draw.shader).not.toContain("environmentMap");
+    expect(draw.textures?.some((texture) => texture.binding === "environmentMap") ?? false).toBe(false);
+  });
+
+  it("§V309: unwired — the phong build is byte-identical to the pre-environment form", () => {
+    const withEnv = compile(envGraph("materialPhong"));
+    const without = ((): ReturnType<typeof compile> => {
+      const graph = envGraph("materialPhong");
+      delete (graph.edges as Record<string, unknown>)["env"];
+      delete (graph.nodes as Record<string, unknown>)["sky"];
+      return compile(graph);
+    })();
+    expect(drawOf(without).shader).not.toContain("environmentMap");
+    expect(drawOf(withEnv).shader).not.toBe(drawOf(without).shader);
+  });
+});

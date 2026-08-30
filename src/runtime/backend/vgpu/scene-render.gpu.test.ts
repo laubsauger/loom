@@ -396,3 +396,84 @@ describe("shadows land exactly (T481, §V147, §V361)", () => {
     savePng("scene-shadow-off.png", cut);
   }, 120_000);
 });
+
+describe("the environment reflects exactly (T482, §V147, §V361)", () => {
+  it("a mirror-flat phong grid adds exactly the env colour; unwire it and the term is gone", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+
+    const buildGraph = (wired: boolean): GraphDocument => {
+      const graph = sceneGraph("");
+      const nodes = graph.nodes as Record<string, { parameters: Record<string, unknown> }>;
+      // A mirror: black base (no ambient term), white specular, roughness 0, through
+      // the phong path. The flat grid faces the on-axis camera, so R hits ONE texel of
+      // the equirect for every centre fragment — and the env is a solid anyway.
+      (graph.nodes as Record<string, unknown>)["mirror"] = {
+        id: "mirror",
+        type: "materialPhong",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: { color: [0, 0, 0, 1], specular: [1, 1, 1, 1], shininess: 8, roughness: 0 },
+        label: "mirror1",
+      };
+      nodes["geo"]!.parameters["material"] = "mirror1";
+      if (wired) {
+        (graph.nodes as Record<string, unknown>)["sky"] = {
+          id: "sky",
+          type: "solid",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: { color: [0, 0, 1, 1] }, // display 1 decodes to linear 1: exact
+          label: "sky1",
+        };
+        (graph.edges as Record<string, unknown>)["env"] = {
+          id: "env",
+          source: { nodeId: "sky", portId: "out" },
+          target: { nodeId: "shot", portId: "environment" },
+        };
+      }
+      return graph;
+    };
+
+    const render = async (wired: boolean): Promise<Uint8Array> => {
+      const plan = compileGraph({
+        graph: buildGraph(wired),
+        settings: SETTINGS,
+        registry,
+        capabilities: {
+          tier: "B",
+          features: [],
+          formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+          timestampQuery: false,
+          limits: { maxTextureDimension2D: 8192 },
+        } as never,
+      });
+      expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const backend = createVgpuBackend({ host: nodeGpuHost() });
+      try {
+        await backend.initialize({});
+        const compiled = await backend.compile(plan);
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        const image = await backend.readOutput("target:shot:out");
+        return image.bytes;
+      } finally {
+        backend.dispose();
+      }
+    };
+
+    const centre = (32 * 64 + 32) * 4;
+    const mirrored = await render(true);
+    // The whole pixel IS the env term: black base kills ambient and diffuse, no lights
+    // are named, and (1 − roughness) × intensity = 1. Blue, to the byte.
+    expect([mirrored[centre], mirrored[centre + 1], mirrored[centre + 2]]).toEqual([0, 0, 255]);
+
+    // §V361's cut: the same scene with nothing wired is the black mirror in a dark room.
+    const cut = await render(false);
+    expect([cut[centre], cut[centre + 1], cut[centre + 2]]).toEqual([0, 0, 0]);
+  }, 120_000);
+});
