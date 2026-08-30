@@ -10,7 +10,8 @@ import type { ProjectSettings } from "../domain/types/graph.ts";
 import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { createAgentPorts } from "../runtime/export/agent-ports.ts";
-import { createMcpConnection } from "./server.ts";
+import { createMcpConnection, type McpConnection } from "./server.ts";
+import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Shaderloom on stdio — store,
@@ -26,6 +27,21 @@ import { createMcpConnection } from "./server.ts";
  *
  * Frames are OFFLINE mode with a monotonically stepped index (§V44: the frame is the
  * clock; there is no rAF here and no wall time in any evaluation).
+ *
+ * ## AND IT IS THE BRIDGE (T451)
+ *
+ * The headless twin was always the gap: an agent talking to this process builds a graph the
+ * owner will never see. So this process ALSO listens on loopback, and a Shaderloom tab can
+ * attach to it from a button in the agent panel with a pairing code this server prints.
+ * While a tab is attached, `tools/list` and `tools/call` are answered by THAT tab's surface,
+ * against the live document behind the visible canvas.
+ *
+ * The owner's MCP client config does not change, which is the constraint the whole design
+ * is built around: the same `node … serve.ts --grant-export` invocation, one new listener.
+ *
+ * With nothing attached this serves headless exactly as before — that path works and the
+ * tests depend on it — but says so in the `instructions`, in every tool description and in
+ * every tool result, so "the agent built a graph I cannot see" is never silent (§V338).
  */
 
 /** Mirrors the app's new-project defaults until documents carry settings (T272). */
@@ -47,14 +63,42 @@ export interface HeadlessMcpServer {
   receive(message: unknown): Promise<void>;
   /** Resolves when the GPU decision (attached or degraded) has been made. */
   readonly ready: Promise<void>;
+  /**
+   * What the loopback bridge is doing, or null when this server was built without one.
+   *
+   * §V338: the detection result is READABLE, not merely branched on. `serveStdio` prints it;
+   * a test asserts on it; nothing has to infer the bridge's state from behaviour.
+   */
+  bridgeStatus(): BridgeStatus | null;
   dispose(): void;
 }
 
-export function createHeadlessMcpServer(options: {
+export interface HeadlessMcpServerOptions {
   send: (message: Record<string, unknown>) => void;
   /** T334: pixels/readbacks leave the process only when the INVOCATION said so. */
   grantExport?: boolean;
-}): HeadlessMcpServer {
+  /**
+   * Open the loopback bridge so a Shaderloom tab can attach and take over execution (T451).
+   *
+   * Default OFF, and ON in `serveStdio` — which is the only caller that owns a process. A
+   * server constructed inside a test suite must not bind a port: several of them run at once
+   * and a listener nobody closed outlives the test that made it.
+   */
+  bridge?: {
+    readonly port?: number;
+    /**
+     * Where a HUMAN reads the bridge's news — the pairing code above all.
+     *
+     * Separate from the diagnostics notification on purpose: the notification reaches the
+     * MCP client's model, this reaches the operator's terminal or log. The pairing code has
+     * to arrive on a channel a person can see, or the gate it guards is unusable (§V233:
+     * a check with no reachable grant path is a permanent denial in a costume).
+     */
+    readonly announce?: (message: string) => void;
+  };
+}
+
+export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): HeadlessMcpServer {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const { bus } = createDomainBus({ store, registry });
@@ -85,7 +129,46 @@ export function createHeadlessMcpServer(options: {
     bus.grants.grant({ kind: "agent", id: "mcp", label: "MCP client" }, "export");
   }
 
-  const connection = createMcpConnection({ surface, send: options.send });
+  /**
+   * The bridge sits BETWEEN the connection and the surface (T451).
+   *
+   * Not a branch inside the connection and not a second connection: one module decides which
+   * document a call lands on, and `tools/list` therefore describes whatever will actually
+   * execute. Without a bridge the connection reads the headless surface directly, exactly as
+   * before — `bridgeStatus()` returns null and nothing in the protocol changes.
+   */
+  // Declared before the bridge and assigned just after it, because the two genuinely refer
+  // to each other: the connection reads the bridge's source, and the bridge pushes
+  // list-changed and diagnostics back down the connection. Not `const`, because the
+  // assignment cannot be at the declaration. The bridge's callbacks fire only from a socket
+  // event or a `listen` callback — both later ticks — so nothing reads this before it is set.
+  // eslint-disable-next-line prefer-const
+  let connection: McpConnection;
+  const bridge =
+    options.bridge === undefined
+      ? null
+      : createBridgeHost({
+          headless: surface,
+          ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
+          onToolsChanged: () => {
+            connection.refreshTools();
+          },
+          onNotice: (report) => {
+            // Two audiences, both told. T294: the bridge's verdicts ride the EXISTING
+            // notification channel to the MCP client; `announce` carries the same sentence
+            // to the human whose terminal or log holds the pairing code.
+            connection.notifyDiagnostics([
+              { severity: report.severity, code: "mcp/bridge", message: report.message },
+            ]);
+            options.bridge?.announce?.(report.message);
+          },
+        });
+
+  connection = createMcpConnection({
+    surface: bridge?.source ?? surface,
+    send: options.send,
+    ...(bridge === null ? {} : { instructions: () => bridge.instructions() }),
+  });
 
   /** Compile the current document and render ONE offline frame (§V44). */
   const compileAndRender = async (): Promise<void> => {
@@ -188,8 +271,10 @@ export function createHeadlessMcpServer(options: {
       await connection.receive(message);
     },
     ready,
+    bridgeStatus: () => bridge?.status() ?? null,
     dispose() {
       disposed = true;
+      bridge?.dispose();
       backend?.dispose();
       backend = undefined;
     },
@@ -202,6 +287,13 @@ export function serveStdio(): void {
       process.stdout.write(`${JSON.stringify(message)}\n`);
     },
     grantExport: process.argv.includes("--grant-export"),
+    // The listener is ON here and nowhere else: this is the one caller that owns a process
+    // (T451). stdout is the JSON-RPC channel, so everything a HUMAN reads goes to stderr.
+    bridge: {
+      announce: (message) => {
+        process.stderr.write(`[shaderloom bridge] ${message}\n`);
+      },
+    },
   });
 
   const lines = createInterface({ input: process.stdin });

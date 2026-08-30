@@ -1,4 +1,3 @@
-import type { AgentToolSurface } from "../agent/surface.ts";
 import { toolInputSchema } from "../agent/surface.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
 
@@ -26,11 +25,53 @@ interface JsonRpcRequest {
   readonly params?: Record<string, unknown>;
 }
 
+/**
+ * One tool as a connection announces it — everything except the zod schema.
+ *
+ * The schema is derived locally from `toolInputSchema`, never carried: a connection whose
+ * tools come from ANOTHER PROCESS (the bridge, T451) runs the same catalogue, so shipping a
+ * serialised schema would create a second copy that can disagree with the zod the call is
+ * actually validated against (§V39).
+ */
+export interface McpToolListing {
+  readonly name: string;
+  readonly title: string;
+  readonly description: string;
+  readonly available: boolean;
+  readonly missing: {
+    readonly commands: readonly string[];
+    readonly queries: readonly string[];
+    readonly ports: readonly string[];
+  };
+}
+
+/**
+ * WHAT AN MCP CONNECTION ACTUALLY USES.
+ *
+ * Two methods, and `AgentToolSurface` satisfies it structurally, so the ordinary case is
+ * unchanged. It is named because T451's bridge is a source too: it answers from the
+ * ATTACHED PAGE's surface when a tab is attached and from the headless one otherwise, and
+ * `tools/list` must therefore describe whichever will actually execute. Narrowing the
+ * dependency is what lets that be a decision one module makes rather than a branch here.
+ */
+export interface McpToolSource {
+  listTools(): readonly McpToolListing[];
+  callTool(name: string, input?: unknown): Promise<unknown>;
+}
+
 export interface McpConnectionOptions {
-  readonly surface: AgentToolSurface;
+  readonly surface: McpToolSource;
   /** Where outgoing messages go — a stdio writer, a test array, a WebSocket later. */
   readonly send: (message: Record<string, unknown>) => void;
   readonly serverInfo?: { name: string; version: string };
+  /**
+   * The `instructions` the MCP client hands its model at initialize, read at request time.
+   *
+   * A function, not a string: the bridge's advice depends on whether a tab is attached and
+   * on a pairing code minted after this connection is built (§V338 — the detection result
+   * is REPORTED, and this is the channel that reaches the model rather than a human).
+   */
+  readonly instructions?: () => string;
 }
 
 export interface McpConnection {
@@ -126,13 +167,16 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
 
       try {
         switch (request.method) {
-          case "initialize":
+          case "initialize": {
+            const instructions = options.instructions?.();
             respond(request.id, {
               protocolVersion: MCP_PROTOCOL_VERSION,
               capabilities: { tools: { listChanged: true } },
               serverInfo,
+              ...(instructions === undefined ? {} : { instructions }),
             });
             return;
+          }
           case "notifications/initialized":
             return; // client ack; nothing to do
           case "ping":

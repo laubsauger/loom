@@ -1,6 +1,7 @@
 import type { AgentToolSurface } from "../agent/surface.ts";
 import { toolInputSchema } from "../agent/surface.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
+import type { McpToolListing } from "./server.ts";
 
 /**
  * WHAT A TRANSPORT PUBLISHES, IN ONE PLACE (T453, §V39).
@@ -24,6 +25,31 @@ export interface PublishedTool {
   readonly description: string;
   /** JSON Schema for the tool's arguments, derived from its zod schema. */
   readonly inputSchema: Record<string, unknown>;
+}
+
+/**
+ * The same surface as an MCP tool LISTING — name, title, description, availability.
+ *
+ * T451's bridge sends this from the page so the node process's `tools/list` describes the
+ * tools that will ACTUALLY execute. The schema is deliberately absent: both processes run
+ * the same catalogue and each derives JSON Schema from the same zod, so putting a copy on
+ * the wire would create a second description that can disagree with the validator (§V39).
+ *
+ * `available` and `missing` are the half the other process genuinely cannot know — the tab
+ * has GPU ports and a preview the headless twin may not, and vice versa.
+ */
+export function toolListings(surface: AgentToolSurface): readonly McpToolListing[] {
+  return surface.listTools().map((tool) => ({
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    available: tool.available,
+    missing: {
+      commands: [...tool.missing.commands],
+      queries: [...tool.missing.queries],
+      ports: [...tool.missing.ports],
+    },
+  }));
 }
 
 export function publishedTools(surface: AgentToolSurface): readonly PublishedTool[] {

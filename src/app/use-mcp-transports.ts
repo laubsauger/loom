@@ -6,6 +6,7 @@ import { createMcpTransportRegistry } from "../mcp/connections.ts";
 import type { McpTransportStatus } from "../mcp/connections.ts";
 import { registerWebMcp } from "../mcp/webmcp.ts";
 import { createRelayClient } from "../mcp/relay-client.ts";
+import { createBridgeClient, type BridgeClient } from "../mcp/bridge-client.ts";
 import { zodToJsonSchema } from "../mcp/json-schema.ts";
 
 /**
@@ -75,6 +76,42 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
       relay.disconnect();
     };
   }, [registry]);
+
+  /**
+   * THE BRIDGE (T451) — the transport we ship, with no third party in it.
+   *
+   * Constructed on mount and dialling nothing: it publishes its idle row with the `connect`
+   * the panel renders a field for, and no socket exists until a human types the pairing code
+   * the MCP server printed. Same rule as the relay, same reason — attaching hands an outside
+   * model write access to the open document, so it is an explicit act with a visible result,
+   * never a side effect of opening a tab.
+   *
+   * Keyed on `registry` alone for B76's reason, recorded on `BridgeClientOptions.surface`:
+   * an effect keyed on the surface tore down a live attachment every time autosave ticked
+   * the runtime identity, and an accidental teardown is indistinguishable from a deliberate
+   * one. The surface is read through the ref, so the socket outlives any one surface object.
+   */
+  const bridgeRef = useRef<BridgeClient | null>(null);
+  useEffect(() => {
+    const bridge = createBridgeClient({
+      surface: () => surfaceRef.current,
+      registry,
+      client: globalThis.location?.host ?? "a Shaderloom tab",
+    });
+    bridgeRef.current = bridge;
+    return () => {
+      bridgeRef.current = null;
+      bridge.disconnect();
+    };
+  }, [registry]);
+
+  // A new surface means ports may have mounted or gone, so the agent's `tools/list` is
+  // stale. Telling the bridge turns that into a `tools/list_changed` on the MCP client —
+  // the difference between a tool list that describes the tab and one that describes the
+  // tab as it was when somebody attached (§V338's shape, applied to the roster).
+  useEffect(() => {
+    bridgeRef.current?.toolsChanged();
+  }, [surface]);
 
   const subscribe = useCallback((listener: () => void) => registry.subscribe(listener), [registry]);
   const snapshot = useCallback(() => registry.snapshot(), [registry]);

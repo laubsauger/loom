@@ -36,11 +36,14 @@
  *  - `webmcp` — `navigator.modelContext`, the standards-track in-page API (`webmcp.ts`).
  *  - `relay` — the webmcp.dev loopback relay, which the page connects OUT to so an
  *    external MCP client drives THIS tab (`relay-client.ts`, T453).
+ *  - `bridge` — OUR own loopback bridge (T451): the SAME node process the user's MCP client
+ *    already spawns also listens, and the page connects OUT to it with a pairing code. No
+ *    third party, no token in a URL, and the owner's client config does not change.
  *
  * `relay` exists here because the protocol was READ, not guessed — see the note at the
  * foot of this file, and §V378 for why the previous verdict was wrong.
  */
-export type McpTransportKind = "webmcp" | "relay";
+export type McpTransportKind = "webmcp" | "relay" | "bridge";
 
 export type McpTransportState =
   /** The host provides no such transport. `detail` says which capability is missing. */
@@ -106,10 +109,17 @@ export interface McpTransportRegistry {
 export const TRANSPORT_LABEL: Readonly<Record<McpTransportKind, string>> = {
   webmcp: "In-page (WebMCP)",
   relay: "Relay (webmcp.dev)",
+  bridge: "Shaderloom bridge (stdio MCP server)",
 };
 
 /** Row order in the panel, and the set §V338 insists always has a row. */
 const DECLARED: ReadonlyArray<{ kind: McpTransportKind; detail: string }> = [
+  // The bridge is FIRST because it is the one we ship and the one that needs no third party
+  // (T451); order in this array is the order the panel renders.
+  {
+    kind: "bridge",
+    detail: "Not detected yet.",
+  },
   {
     kind: "webmcp",
     detail: "Not detected yet.",

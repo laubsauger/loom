@@ -78,6 +78,20 @@ class FakeRelaySocket {
   }
 }
 
+/**
+ * One transport's row in the connections panel.
+ *
+ * Scoped rather than global: the panel declares a row per transport (§V338 — an absent row
+ * and a forgotten row are the same pixels), so "Connect" and "Disconnect" are ambiguous by
+ * design and a test that clicks the first one it finds is clicking whichever row happens to
+ * come first today.
+ */
+function transportRow(kind: string): HTMLElement {
+  const row = screen.getByTestId("mcp-connection-panel").querySelector(`[data-transport="${kind}"]`);
+  if (row === null) throw new Error(`No connections row for transport "${kind}".`);
+  return row as HTMLElement;
+}
+
 const NO_WEBGPU: GpuStatus = { kind: "unavailable", reason: "No WebGPU in this environment." };
 
 const CAPABILITIES: BackendCapabilities = {
@@ -1065,7 +1079,7 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
       const token = btoa(JSON.stringify({ server: "ws://localhost:4899", token: "reg-token" }));
       await act(async () => {
         fireEvent.change(screen.getByTestId("mcp-token-relay"), { target: { value: token } });
-        fireEvent.click(screen.getByText("Connect"));
+        fireEvent.click(within(transportRow("relay")).getByText("Connect"));
       });
 
       // Step 2-3 of the handshake, played by this test as the relay would.
@@ -1098,10 +1112,101 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
 
       // And it is revocable from the same row, which is the consent half of §V338.
       await act(async () => {
-        fireEvent.click(screen.getByText("Disconnect"));
+        fireEvent.click(within(transportRow("relay")).getByText("Disconnect"));
       });
       expect(channel?.closed).toBe(true);
       expect(screen.getByTestId("mcp-state-relay").textContent).toBe("Disconnected");
+    } finally {
+      (globalThis as Record<string, unknown>)["WebSocket"] = previous;
+    }
+  });
+
+  /**
+   * T451/§V220: THE BRIDGE, THROUGH THE APP THE USER OPERATES.
+   *
+   * The shape §V220 keeps catching is a transport that is built, unit-tested and reachable
+   * from nothing. So nothing here is handed to a panel: `App` builds its own surface, its own
+   * registry and its own bridge client; this test types a pairing code into the field a user
+   * types into, clicks the button in THAT row, and then plays the part of the bridge on the
+   * other end of the socket the app itself opened. The node at the end is in the app's own
+   * document, reached only through that path.
+   *
+   * §V339, stated not glossed: jsdom paints nothing, so this proves MOUNTED and CONNECTED,
+   * not visible. §V382, stated too: the WebSocket here is a fake, so this asserts "the app
+   * opened this URL and sent these frames" — the frames themselves, and the whole chain
+   * through a real listener into a real store, are in `mcp/bridge.test.ts`, which stubs
+   * nothing between the two halves.
+   */
+  it("T451: attaching the bridge from the panel lets the stdio agent edit THIS document", async () => {
+    const opened: FakeRelaySocket[] = [];
+    const previous = (globalThis as Record<string, unknown>)["WebSocket"];
+    (globalThis as Record<string, unknown>)["WebSocket"] = class {
+      constructor(url: string) {
+        const socket = new FakeRelaySocket(url);
+        opened.push(socket);
+        return socket as unknown as WebSocket;
+      }
+    };
+
+    try {
+      const { runtime } = await mountApp({ status: READY });
+      expect(await screen.findByTestId("mcp-state-bridge")).toBeDefined();
+      // Idle, and nothing dialled: no auto-connect on load, ever.
+      expect(screen.getByTestId("mcp-state-bridge").textContent).toBe("Disconnected");
+      expect(opened).toHaveLength(0);
+
+      await act(async () => {
+        fireEvent.change(screen.getByTestId("mcp-token-bridge"), { target: { value: "abc-def" } });
+        fireEvent.click(within(transportRow("bridge")).getByText("Connect"));
+      });
+
+      const socket = opened[0];
+      // T398's finding, asserted rather than promised: the credential is NOT in the URL.
+      expect(socket?.url).toBe("ws://127.0.0.1:43919");
+      expect(socket?.url).not.toContain("?");
+      await act(async () => {
+        socket?.onopen?.();
+      });
+      // It is in the first MESSAGE, normalised the way a person retypes it.
+      expect(JSON.parse(socket?.sent[0] ?? "{}")).toMatchObject({ type: "attach", code: "ABCDEF" });
+
+      // Connecting is not connected: the row only says Connected once the bridge confirms.
+      expect(screen.getByTestId("mcp-state-bridge").textContent).toBe("Connecting…");
+
+      await act(async () => {
+        socket?.emit({ type: "listTools", id: 1 });
+      });
+      const listing = JSON.parse(socket?.sent[1] ?? "{}") as {
+        type: string;
+        tools: Array<{ name: string }>;
+      };
+      expect(listing.type).toBe("listToolsResult");
+      expect(listing.tools.map((tool) => tool.name)).toContain("add_node");
+
+      await act(async () => {
+        socket?.emit({ type: "attached", serverInfo: "shaderloom-bridge" });
+      });
+      expect(screen.getByTestId("mcp-state-bridge").textContent).toBe("Connected");
+      expect(screen.getByTestId("mcp-consent").textContent).toBe("Attached agents can edit this document.");
+
+      // The payoff: a tool call off the bridge lands in the app's live document.
+      expect(Object.values(runtime.bus.store.getGraph().nodes)).toHaveLength(0);
+      await act(async () => {
+        socket?.emit({ type: "callTool", id: 2, tool: "add_node", arguments: { type: "solid" } });
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(Object.values(runtime.bus.store.getGraph().nodes)).toHaveLength(1);
+      });
+      expect(Object.values(runtime.bus.store.getGraph().nodes)[0]?.type).toBe("solid");
+      expect(screen.getByTestId("mcp-last-bridge").textContent).toContain("add_node");
+
+      // And it is revocable from the same row, which is the consent half of §V338.
+      await act(async () => {
+        fireEvent.click(within(transportRow("bridge")).getByText("Disconnect"));
+      });
+      expect(socket?.closed).toBe(true);
+      expect(screen.getByTestId("mcp-state-bridge").textContent).toBe("Disconnected");
     } finally {
       (globalThis as Record<string, unknown>)["WebSocket"] = previous;
     }
