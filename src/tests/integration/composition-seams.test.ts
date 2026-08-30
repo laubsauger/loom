@@ -344,3 +344,156 @@ describe("§V205 — every seam the app is supposed to construct, enumerated (T3
     expect({ stale, vanished }).toEqual({ stale: [], vanished: [] });
   });
 });
+
+/**
+ * PANES (T330, §V241).
+ *
+ * §V193's enumeration covers agent tools; T306's covers `create*` factories. B34 was
+ * neither: an unmounted COMPONENT, invisible to both, shipping a poorer viewer than the one
+ * the tree contained. The lesson §V241 draws is that the unwired thing takes a new shape
+ * each time, so the guard grows with them — NARROWLY, where the set is closed.
+ *
+ * A pane is such a set. The shell declares its slots in `AppShellProps`, so "a pane module
+ * nothing renders" is a finding, where "an exported component nothing renders" would drown
+ * in buttons, rows and badges.
+ *
+ * ## Why this resolves imports instead of matching names
+ *
+ * `ViewerPane` existed TWICE, with different capability. A name-only check sees the mounted
+ * one referenced and calls both live — it would have passed through B34 without a murmur.
+ * So a pane counts as rendered only when a reachable module imports THAT NAME FROM THAT
+ * MODULE, following re-exports through barrels, which is how the app actually reaches one.
+ */
+
+const PANE_NAME = /(?:Pane|Panel)$/;
+
+/** Panes deliberately not rendered, with the reason. Same both-directions rule as above. */
+const NOT_RENDERED: ReadonlyArray<{ name: string; reason: string }> = [
+  {
+    name: "Pane",
+    reason:
+      "A chrome PRIMITIVE (title + actions + scroll box), not a shell slot — the naming convention catches it and the registry does not contain it. Its module is live: `PaneEmpty` beside it is what `app-shell` and `dock-zone` render. The component itself has no caller and is a candidate for deletion, not a slot to fill.",
+  },
+  {
+    name: "ShaderEditorPanel",
+    reason:
+      "FOUND BY THIS GUARD, the same day it was built, and the same shape as B34: a second shader pane that nothing renders. The app fills the shell's `shaderEditor` slot with `ShaderPane` (dock-panes.tsx, wrapping `ShaderEditor`) and `problems` with `ProblemsPanel` — while `editor/shader-editor/index.ts` states in its own docblock that the app fills both slots with `ShaderEditorPanel`. Which pane the app should mount is a product decision (§V242), so this is reported rather than folded. The line comes out when it is rendered or removed.",
+  },
+];
+
+/** Where `name` is really defined, following `export { name } from "..."` through barrels. */
+function exportOrigin(file: string, name: string, seen = new Set<string>()): string | null {
+  const key = `${file}#${name}`;
+  if (seen.has(key)) return null;
+  seen.add(key);
+  const source = sourceFile(file);
+
+  for (const statement of source.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return file;
+    if (ts.isClassDeclaration(statement) && statement.name?.text === name) return file;
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === name) return file;
+      }
+    }
+  }
+
+  for (const statement of source.statements) {
+    if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier === undefined) continue;
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const target = resolveSpecifier(statement.moduleSpecifier.text, file);
+    if (target === null) continue;
+    const clause = statement.exportClause;
+    if (clause === undefined) {
+      const through = exportOrigin(target, name, seen);
+      if (through !== null) return through;
+      continue;
+    }
+    if (!ts.isNamedExports(clause)) continue;
+    for (const element of clause.elements) {
+      if (element.name.text !== name) continue;
+      const original = element.propertyName?.text ?? name;
+      const through = exportOrigin(target, original, seen);
+      if (through !== null) return through;
+    }
+  }
+  return null;
+}
+
+/** Every exported `*Pane` / `*Panel` component, by name and defining module. */
+function collectPanes(): Array<{ name: string; file: string }> {
+  const panes: Array<{ name: string; file: string }> = [];
+  for (const path of sources) {
+    if (isTestFile(path) || !path.endsWith(".tsx")) continue;
+    for (const statement of sourceFile(path).statements) {
+      const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+      const exported =
+        modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+      if (!exported) continue;
+      if (ts.isFunctionDeclaration(statement) && statement.name !== undefined) {
+        if (PANE_NAME.test(statement.name.text)) panes.push({ name: statement.name.text, file: path });
+      }
+      if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          if (ts.isIdentifier(declaration.name) && PANE_NAME.test(declaration.name.text)) {
+            panes.push({ name: declaration.name.text, file: path });
+          }
+        }
+      }
+    }
+  }
+  return panes.sort((a, b) => a.name.localeCompare(b.name) || a.file.localeCompare(b.file));
+}
+
+/** Does a reachable module import THIS pane from THIS module, and use it? */
+function isRendered(pane: { name: string; file: string }): boolean {
+  for (const path of sources) {
+    if (path === pane.file || isTestFile(path) || !reachable.has(path)) continue;
+    if (!(referencesByFile.get(path)?.has(pane.name) ?? false)) continue;
+    for (const statement of sourceFile(path).statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
+      const imported = bindings.elements.find((element) => element.name.text === pane.name);
+      if (imported === undefined) continue;
+      const target = resolveSpecifier(statement.moduleSpecifier.text, path);
+      if (target === null) continue;
+      const origin = exportOrigin(target, imported.propertyName?.text ?? pane.name);
+      if (origin === pane.file) return true;
+    }
+  }
+  return false;
+}
+
+const panes = collectPanes();
+const unrendered = panes.filter((pane) => !isRendered(pane));
+const excusedPanes = new Map(NOT_RENDERED.map((entry) => [entry.name, entry.reason]));
+
+describe("§V241 — every pane module is rendered by the app (T330)", () => {
+  it("finds real panes, or it is measuring nothing", () => {
+    expect(panes.length).toBeGreaterThan(4);
+    // The shell's own slots are the registry this is enumerated against.
+    expect(panes.some((pane) => pane.name === "ViewerPane")).toBe(true);
+  });
+
+  it("renders every pane, or says in writing why it does not", () => {
+    const surprises = unrendered.filter((pane) => !excusedPanes.has(pane.name));
+    if (surprises.length > 0) {
+      const listed = surprises
+        .map((pane) => `  ${pane.name}  (${relative(ROOT, pane.file)})`)
+        .join("\n");
+      throw new Error(
+        `${surprises.length} pane module${surprises.length === 1 ? " is" : "s are"} not rendered by ` +
+          `anything the app reaches (§V241). B34 was exactly this: two panes named ViewerPane, and the ` +
+          `app shipped the poorer one. Render it, or add it to NOT_RENDERED with the reason:\n${listed}`,
+      );
+    }
+    expect(surprises).toEqual([]);
+  });
+
+  it("has no stale excuse", () => {
+    const stillUnrendered = new Set(unrendered.map((pane) => pane.name));
+    const stale = [...excusedPanes.keys()].filter((name) => !stillUnrendered.has(name));
+    expect(stale).toEqual([]);
+  });
+});
