@@ -36,6 +36,27 @@ export type ExpressionAst =
 
 export type ExpressionScope = Readonly<Record<string, number>>;
 
+/**
+ * How `op('name').par.key` is READ (T316, §V148, §V61).
+ *
+ * A callback rather than a lookup table, because resolving another node's parameter is a
+ * recursive resolve — the referenced parameter may itself be an expression, a bind or a
+ * driven channel — and it is the caller that owns the graph, the schema and the cycle
+ * guard. This module stays what §V71 says it is: a grammar and an evaluator over numbers,
+ * with no idea what a node is.
+ *
+ * Returns a RESULT, not a bare number, so a failure arrives with a reason a human can act
+ * on. "That node does not exist", "that parameter is not a number" and "this reference is
+ * a cycle" are three different problems and a silent `undefined` is none of them (§V148
+ * wants a cross-node reference that fails to fail LOUDLY, with the name in the message).
+ */
+export type NodeReferenceResult = { ok: true; value: number } | { ok: false; reason: string };
+
+export type NodeReferenceReader = (
+  name: string,
+  path: readonly string[],
+) => NodeReferenceResult;
+
 export type ParseResult = { ok: true; ast: ExpressionAst } | { ok: false; reason: string };
 export type EvaluateResult = { ok: true; value: number } | { ok: false; reason: string };
 
@@ -292,9 +313,13 @@ export function parseExpression(input: string): ParseResult {
 }
 
 /** Parse-once, evaluate-per-frame: bound parameters keep the AST and call this each frame. */
-export function evaluateAst(ast: ExpressionAst, scope: ExpressionScope = {}): EvaluateResult {
+export function evaluateAst(
+  ast: ExpressionAst,
+  scope: ExpressionScope = {},
+  readNode?: NodeReferenceReader,
+): EvaluateResult {
   try {
-    const value = evaluateNode(ast, scope);
+    const value = evaluateNode(ast, scope, readNode);
     if (!Number.isFinite(value)) return { ok: false, reason: "result is not a finite number" };
     return { ok: true, value };
   } catch (thrown) {
@@ -303,7 +328,11 @@ export function evaluateAst(ast: ExpressionAst, scope: ExpressionScope = {}): Ev
   }
 }
 
-function evaluateNode(ast: ExpressionAst, scope: ExpressionScope): number {
+function evaluateNode(
+  ast: ExpressionAst,
+  scope: ExpressionScope,
+  readNode: NodeReferenceReader | undefined,
+): number {
   switch (ast.kind) {
     case "number":
       return ast.value;
@@ -315,18 +344,30 @@ function evaluateNode(ast: ExpressionAst, scope: ExpressionScope): number {
       }
       return value;
     }
-    case "opRef":
-      // Parseable today so it can be stored and rename-rewritten (§V128); readable when
-      // the cross-node value path lands. The resolver turns this into the §V108 fallback.
-      fail(`node references are not readable yet (op('${ast.name}'))`);
-    // eslint-disable-next-line no-fallthrough -- fail() never returns
+    case "opRef": {
+      /**
+       * T316 — the cross-node read, completing §V148's round trip.
+       *
+       * A caller with no reader is one that cannot resolve a graph: a bare
+       * `evaluateExpression` in a test, the completion probe, a preview of an expression
+       * typed into a field before it is attached to anything. That case keeps saying so
+       * rather than inventing a value, because the alternative — resolving to 0 — is a
+       * number that looks like an answer.
+       */
+      if (readNode === undefined) {
+        fail(`node references need a graph to read (op('${ast.name}'))`);
+      }
+      const read = readNode(ast.name, ast.path);
+      if (!read.ok) fail(read.reason);
+      return read.value;
+    }
     case "unary": {
-      const operand = evaluateNode(ast.operand, scope);
+      const operand = evaluateNode(ast.operand, scope, readNode);
       return ast.operator === "-" ? -operand : operand;
     }
     case "binary": {
-      const left = evaluateNode(ast.left, scope);
-      const right = evaluateNode(ast.right, scope);
+      const left = evaluateNode(ast.left, scope, readNode);
+      const right = evaluateNode(ast.right, scope, readNode);
       switch (ast.operator) {
         case "+":
           return left + right;
@@ -346,8 +387,12 @@ function evaluateNode(ast: ExpressionAst, scope: ExpressionScope): number {
 }
 
 /** One-shot convenience for text entry: parse and evaluate in a single call. */
-export function evaluateExpression(input: string, scope: ExpressionScope = {}): EvaluateResult {
+export function evaluateExpression(
+  input: string,
+  scope: ExpressionScope = {},
+  readNode?: NodeReferenceReader,
+): EvaluateResult {
   const parsed = parseExpression(input);
   if (!parsed.ok) return parsed;
-  return evaluateAst(parsed.ast, scope);
+  return evaluateAst(parsed.ast, scope, readNode);
 }

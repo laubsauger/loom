@@ -14,6 +14,7 @@ import { groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import { resolveParameters } from "./parameter-resolver.ts";
+import { createNodeReferenceReader } from "@domain/parameters/index.ts";
 import { resolveNodeFormat, resolveNodeSize } from "./resolution.ts";
 import type { FormatContext, InputResolution, ResolutionContext } from "./resolution.ts";
 import styles from "./inspector.module.css";
@@ -137,7 +138,21 @@ export function Inspector({
     );
   }
 
-  const resolved = resolveParameters(node, definition);
+  /**
+   * T316/§V148/§V61 — the panel reads `op('other').par.key` through the SAME reader the
+   * compiler uses, built from the same document.
+   *
+   * Not an enhancement: without it the plan would carry the referenced value and this
+   * panel would show §V108's fallback for the same parameter. That is B8 exactly, with
+   * the sides swapped — and B8 is on record as having cost a day precisely because both
+   * halves looked correct in isolation.
+   */
+  const resolved = resolveParameters(node, definition, {
+    nodes: createNodeReferenceReader({
+      graph,
+      schemaOf: (target) => bus.registry.get(target.type)?.parameters,
+    }),
+  });
   const groups = groupParameters(resolved.entries);
 
   const inputs: readonly InputResolution[] =

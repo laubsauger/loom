@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { resolveParameterSchema } from "../parameters/resolve.ts";
+import { createNodeReferenceReader } from "../parameters/node-references.ts";
+import type { GraphNode } from "../types/graph.ts";
 import { validateStoredParameter } from "../parameters/validate.ts";
 import type { PulseParameter } from "../types/parameters.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
@@ -412,18 +414,27 @@ describe("copy → paste → the value is the source's (§V148)", () => {
   });
 
   /**
-   * The half that is NOT complete, asserted so it stays loud instead of becoming folklore.
+   * §V148's round trip, COMPLETE across nodes (T316).
    *
-   * A cross-node reference is STORED correctly (it parses, and §V128 rewrites it on
-   * rename), but the evaluator does not read `op()` yet — `evaluate.ts` says so in as
-   * many words. So the parameter falls back per §V108 and reports why. That is the
-   * opposite of §V148's failure mode (a plausible string that quietly resolves to
-   * something else), but it is not yet the round trip the invariant asks for.
+   * This test used to assert the opposite — that a cross-node reference stored correctly
+   * and then failed loudly, because `evaluate.ts` could not read `op()` yet. The loud
+   * failure was the right behaviour to have while the read path did not exist (§V148
+   * narrowed the claim rather than pretending), and it is the wrong behaviour now: the
+   * invariant asks for copy → paste → evaluate == the source's value, and that is what
+   * is asserted here.
    */
-  it("stores a cross-node reference and reports, loudly, that it cannot read it yet", async () => {
+  it("copies a reference across nodes and reads the source's value back (§V148, T316)", async () => {
     const harness = createMenuHarness();
     const source = await named(harness.bus, "blur1");
     const target = await named(harness.bus, "blur2");
+
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId: source, parameters: { radius: 17 } },
+      ]),
+      context,
+    );
 
     await harness.bus.execute("parameter.copyReference", { nodeId: source, parameterKey: "radius" }, context);
     await harness.bus.execute("parameter.paste", { nodeId: target, parameterKey: "amount" }, context);
@@ -434,11 +445,36 @@ describe("copy → paste → the value is the source's (§V148)", () => {
       bindings: { expression: { source: "op('blur1').par.radius" } },
     });
 
-    const node = harness.bus.store.getGraph().nodes[target];
+    const graph = harness.bus.store.getGraph();
+    const node = graph.nodes[target];
     if (node === undefined) throw new Error("the node vanished");
-    const resolved = resolveParameterSchema(node, menuNode.parameters);
-    expect(resolved.get("amount")?.diagnostic?.code).toBe("parameter.expression");
-    expect(resolved.get("amount")?.diagnostic?.message).toContain("node references are not readable yet");
+
+    // The reader is the seam (§V61): resolving WITHOUT one still reports, because a
+    // caller that cannot see the graph must not invent a number.
+    const unreadable = resolveParameterSchema(node, menuNode.parameters);
+    expect(unreadable.get("amount")?.diagnostic?.code).toBe("parameter.expression");
+
+    // With it, the round trip closes: the pasted reference is worth what it points at.
+    const resolved = resolveParameterSchema(node, menuNode.parameters, {
+      nodes: createNodeReferenceReader({ graph, schemaOf: () => menuNode.parameters }),
+    });
+    expect(resolved.get("amount")?.diagnostic).toBeNull();
+    expect(resolved.get("amount")?.value).toBe(17);
+
+    // ...and it TRACKS the source rather than having copied it: editing `blur1` moves
+    // `blur2`, which is the difference between a reference and a paste of a value.
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId: source, parameters: { radius: 4 } },
+      ]),
+      context,
+    );
+    const after = harness.bus.store.getGraph();
+    const moved = resolveParameterSchema(after.nodes[target] as GraphNode, menuNode.parameters, {
+      nodes: createNodeReferenceReader({ graph: after, schemaOf: () => menuNode.parameters }),
+    });
+    expect(moved.get("amount")?.value).toBe(4);
   });
 });
 

@@ -10,7 +10,12 @@ import type {
   ParameterValue,
   StoredParameter,
 } from "../types/parameters.ts";
-import { evaluateExpression, scopeFromFrame, type ExpressionScope } from "../expressions/index.ts";
+import {
+  evaluateExpression,
+  scopeFromFrame,
+  type ExpressionScope,
+  type NodeReferenceReader,
+} from "../expressions/index.ts";
 import {
   componentDefinition,
   componentKey,
@@ -150,6 +155,17 @@ export interface ResolveParametersOptions {
    * report "sibling schema unavailable" rather than guessing.
    */
   schema?: ParameterSchema | undefined;
+  /**
+   * Reads `op('name').par.key` — another node's parameter (T316, §V148, §V127).
+   *
+   * Absent, a cross-node reference reports and falls back to §V108's retained value, as
+   * it did for the whole time the read path did not exist. THAT is the state to be
+   * careful about: a caller that omits this while another supplies it makes the same
+   * document resolve to two different numbers, which is B8's exact shape. The compiler
+   * builds one from the graph it is compiling and the inspector builds one from the graph
+   * it is showing, so the two agree by construction rather than by discipline.
+   */
+  nodes?: NodeReferenceReader | undefined;
 }
 
 export interface ResolvedParameters {
@@ -431,7 +447,11 @@ function resolveStored(
     }
 
     case "expression": {
-      const evaluated = evaluateExpression(binding.source, expressionScope(context.options));
+      const evaluated = evaluateExpression(
+        binding.source,
+        expressionScope(context.options),
+        context.options.nodes,
+      );
       if (!evaluated.ok) {
         return fallback(
           node,

@@ -6,5 +6,7 @@ export {
   type EvaluateResult,
   type ExpressionAst,
   type ExpressionScope,
+  type NodeReferenceReader,
+  type NodeReferenceResult,
   type ParseResult,
 } from "./evaluate.ts";

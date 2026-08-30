@@ -6,6 +6,7 @@ import type { ParameterSchema, ParameterValue } from "../domain/types/parameters
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
 import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
+import { createNodeReferenceReader } from "../domain/parameters/node-references.ts";
 import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
 import { isComponentKeyOf } from "../domain/parameters/slots.ts";
@@ -31,7 +32,7 @@ import type { CompileEdge } from "./types.ts";
  * topology, same resources — so the resulting plan differs only in its uniform VALUES,
  * which is what makes the update path `updateUniforms` rather than a recompile (§V5).
  */
-export type ParameterResolution = Pick<ResolveParametersOptions, "frame" | "channels">;
+export type ParameterResolution = Pick<ResolveParametersOptions, "frame" | "channels" | "nodes">;
 
 export interface ResolvedNode {
   readonly node: GraphNode;
@@ -153,6 +154,32 @@ export function validateGraph(
   const diagnostics: RuntimeDiagnostic[] = [];
   const nodes = new Map<NodeId, ResolvedNode>();
 
+  /**
+   * T316/§V148 — the cross-node read path, supplied HERE rather than by each caller.
+   *
+   * `op('noise1').par.gain` resolves against the graph being compiled, and this function
+   * is the one place that has it: every compiler entry point comes through here, so
+   * building the reader once means the plan's uniforms carry referenced values without a
+   * single `compileGraph` caller having to know the seam exists. A caller MAY pass its
+   * own (`options.nodes`) — the flattener does, so an instance's internals read against
+   * the flattened graph they actually live in — and its choice wins.
+   *
+   * §V61 in one line: the compiler and the inspector read through the same resolver with
+   * the same reader, so a reference cannot mean one thing on screen and another on the
+   * GPU. That divergence is B8, and it cost this project a day.
+   */
+  const resolution: ParameterResolution = {
+    ...options,
+    nodes:
+      options.nodes ??
+      createNodeReferenceReader({
+        graph,
+        schemaOf: (node) => registry.get(node.type)?.parameters,
+        base: { ...(options.frame === undefined ? {} : { frame: options.frame }),
+                ...(options.channels === undefined ? {} : { channels: options.channels }) },
+      }),
+  };
+
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
     if (node === undefined) continue;
@@ -188,7 +215,7 @@ export function validateGraph(
         definition.parameters,
         definition.type,
         diagnostics,
-        options,
+        resolution,
       ),
     });
   }
