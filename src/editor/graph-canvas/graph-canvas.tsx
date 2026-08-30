@@ -546,8 +546,14 @@ export function GraphCanvas({
           selectionOnDrag
           selectionMode={SelectionMode.Partial}
           zoomOnDoubleClick={false}
-          minZoom={0.2}
-          maxZoom={2.5}
+          /*
+            Wide on purpose. 0.2 could not frame a large patch and 2.5 stopped short of
+            inspecting a preview — the owner reported both ends as capped early. Node
+            previews sharpen with zoom up to their own ladder cap (T490), so the top end is
+            useful rather than decorative.
+          */
+          minZoom={0.05}
+          maxZoom={8}
           fitView
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--line)" />

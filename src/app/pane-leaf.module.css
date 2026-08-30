@@ -33,6 +33,12 @@
 
 .menuTrigger {
   align-self: center;
+  /* A glyph sized to its button, not to the header's label scale — see top-bar `.glyph`. */
+  font-size: var(--fs-body);
+  line-height: 1;
+  /* NEVER cut off: the tab strip may shrink to nothing, these may not. `flex: 0 0 auto`
+     stops them being the flex item that gives way, which is what clipped them. */
+  flex: 0 0 auto;
 }
 
 .menu {

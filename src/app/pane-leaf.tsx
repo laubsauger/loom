@@ -242,8 +242,13 @@ function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAs
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button className={styles.menuTrigger} aria-label={`Move ${tab.title}`}>
-          move
+        <Button className={styles.menuTrigger} aria-label={`Move ${tab.title}`} title={`Move ${tab.title}`}>
+          {/* Glyphs, not words: the header is the tightest row in the shell and these two
+              were the first things cut off. `aria-label` carries the meaning — and the two
+              must differ in SILHOUETTE, not just in shape: a grip and a boxed plus were
+              both dense squares and read as the same button at 11px. Thin arrows against a
+              striped block are told apart without being read. */}
+          ⇄
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end">
@@ -295,8 +300,12 @@ function LeafMenu({ leafId, canClose, onSplit, onClose }: LeafMenuProps) {
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
-        <Button className={styles.menuTrigger} aria-label="Split or close this pane area">
-          split
+        <Button
+          className={styles.menuTrigger}
+          aria-label="Split or close this pane area"
+          title="Split or close this pane area"
+        >
+          ▤
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end">

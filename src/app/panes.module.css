@@ -335,3 +335,13 @@
   border-radius: 50%;
   background: var(--warn);
 }
+
+/*
+  A glyph is sized to its BUTTON, not to the label scale around it — at `--fs-meta` these
+  read as specks in a `--control-h` control. Matches top-bar `.glyph`.
+*/
+.glyph {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1;
+}

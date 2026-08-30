@@ -45,7 +45,12 @@
 
 .glyph {
   font-family: var(--font-mono);
-  font-size: var(--fs-meta);
+  /*
+    A glyph is not text: at `--fs-meta` these read as specks inside a `--control-h` button
+    (the owner reported reset, loop and fullscreen all as too tiny). A glyph is sized to
+    its BUTTON rather than to the label scale around it.
+  */
+  font-size: var(--fs-body);
   line-height: 1;
 }
 

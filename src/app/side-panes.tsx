@@ -584,7 +584,7 @@ export function ViewerPane({
             data-testid="viewer-fullscreen"
             onClick={toggleFullscreen}
           >
-            <span aria-hidden="true">{fullscreen ? "⤡" : "⤢"}</span>
+            <span className={styles.glyph} aria-hidden="true">{fullscreen ? "⤡" : "⤢"}</span>
           </Button>
         </Tooltip>
       </div>
