@@ -1,4 +1,4 @@
-import { SRGB_TRANSFER_WGSL } from "../../domain/color/display.ts";
+import { SRGB_TRANSFER_WGSL, TONE_MAP_WGSL } from "../../domain/color/display.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { PreviewModeKind } from "./types.ts";
 
@@ -64,13 +64,7 @@ fn exposed(c: vec3f) -> vec3f {
   return c * params.exposure;
 }
 
-/** ACES-derived filmic curve. Applied AFTER exposure, never before. */
-fn tonemapFilmic(c: vec3f) -> vec3f {
-  let x = max(c, vec3f(0.0));
-  let numerator = x * ((x * 2.51) + vec3f(0.03));
-  let denominator = (x * ((x * 2.43) + vec3f(0.59))) + vec3f(0.14);
-  return clamp(numerator / denominator, vec3f(0.0), vec3f(1.0));
-}
+${TONE_MAP_WGSL}
 
 fn maybeTonemap(c: vec3f) -> vec3f {
   return select(c, tonemapFilmic(c), params.tonemap > 0.5);

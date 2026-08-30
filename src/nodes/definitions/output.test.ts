@@ -110,6 +110,102 @@ describe("Output node (T15)", () => {
     expect((srgb.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
   });
 
+  /**
+   * T474 — THE TONE MAP §V56 NAMED AND NOBODY BUILT.
+   *
+   * These assert the two things that can go wrong without any pixel moving: the wrong
+   * curve reaching the shader, and a curve reaching a target that must not have one. The
+   * byte-level statement — a known HDR value in, known bytes out — is the Dawn gate in
+   * `output-tonemap.gpu.test.ts`; this is the structural half.
+   */
+  describe("tone map (T474, §V56)", () => {
+    const srgbPolicy = { workingSpace: "linear", displayTransform: "srgb" } as const;
+    const shaderOf = (compiled: { passes: readonly unknown[] }): string =>
+      (compiled.passes[0] as { shader: string }).shader;
+
+    it("defaults to `none`, so no project that exists today changes shader at all", () => {
+      // Not "produces the same picture" — the same STRING. `parameters: {}` is what every
+      // shipped `.loom.json` carries, and the default must not move their pixels.
+      const declared = outputNode.parameters?.["toneMap"];
+      expect(declared?.type).toBe("enum");
+      expect(declared?.type === "enum" ? declared.default : undefined).toBe("none");
+      expect(shaderOf(outputNode.compile(contextFor({ colorPolicy: srgbPolicy })))).toBe(
+        OUTPUT_DISPLAY_ENCODE_WGSL,
+      );
+      expect(
+        shaderOf(outputNode.compile(contextFor({ colorPolicy: srgbPolicy, parameters: { toneMap: "none" } }))),
+      ).toBe(OUTPUT_DISPLAY_ENCODE_WGSL);
+    });
+
+    it("puts the curve BEFORE the encode, because a curve on encoded values is wrong maths", () => {
+      const filmic = shaderOf(
+        outputNode.compile(contextFor({ colorPolicy: srgbPolicy, parameters: { toneMap: "filmic" } })),
+      );
+      expect(filmic).toContain("encodeDisplay(tonemapFilmic(source.rgb))");
+      expect(filmic).not.toContain("tonemapFilmic(encodeDisplay");
+
+      const reinhard = shaderOf(
+        outputNode.compile(contextFor({ colorPolicy: srgbPolicy, parameters: { toneMap: "reinhard" } })),
+      );
+      expect(reinhard).toContain("encodeDisplay(tonemapReinhard(source.rgb))");
+    });
+
+    it("still tone maps an -srgb target, which the hardware encodes but does not curve", () => {
+      // The asymmetry that makes the two halves ONE decision: `encode` is off here because
+      // the hardware applies the transfer function on write, and a transfer function does
+      // nothing whatever about a value of 4.0. Answering these two questions in separate
+      // places is how this target would have silently lost its roll-off.
+      const shader = shaderOf(
+        outputNode.compile(
+          contextFor({ colorPolicy: srgbPolicy, format: "rgba8unorm-srgb", parameters: { toneMap: "filmic" } }),
+        ),
+      );
+      expect(shader).toContain("tonemapFilmic(source.rgb)");
+      expect(shader).not.toContain("encodeDisplay(");
+    });
+
+    it("refuses BY NAME when a switch outranks the curve, rather than looking applied (§V288)", () => {
+      const rawValues = outputNode.compile(
+        contextFor({
+          colorPolicy: { workingSpace: "linear", displayTransform: "none" },
+          parameters: { toneMap: "filmic" },
+        }),
+      );
+      expect(shaderOf(rawValues)).toBe(OUTPUT_PASSTHROUGH_WGSL);
+      expect(rawValues.diagnostics?.[0]?.code).toBe("output.toneMapInactive");
+      expect(rawValues.diagnostics?.[0]?.message).toContain("filmic");
+
+      const data = outputNode.compile(
+        contextFor({ colorPolicy: srgbPolicy, space: "data", parameters: { toneMap: "reinhard" } }),
+      );
+      expect(shaderOf(data)).toBe(OUTPUT_PASSTHROUGH_WGSL);
+      expect(data.diagnostics?.[0]?.code).toBe("output.toneMapInactive");
+      expect(data.diagnostics?.[0]?.message).toContain("data");
+    });
+
+    it("says nothing when the curve IS applied, and nothing when nobody asked for one", () => {
+      // The other direction: a diagnostic that fires on the happy path is noise, and noise
+      // is how a real refusal stops being read.
+      expect(
+        outputNode.compile(contextFor({ colorPolicy: srgbPolicy, parameters: { toneMap: "filmic" } }))
+          .diagnostics ?? [],
+      ).toEqual([]);
+      expect(
+        outputNode.compile(contextFor({ colorPolicy: { workingSpace: "linear", displayTransform: "none" } }))
+          .diagnostics ?? [],
+      ).toEqual([]);
+    });
+
+    it("keys the pass on the curve, so switching it rebuilds the pipeline (§V5)", () => {
+      const idOf = (toneMap: string): string =>
+        (outputNode.compile(contextFor({ colorPolicy: srgbPolicy, parameters: { toneMap } }))
+          .passes[0] as { id: string }).id;
+      expect(idOf("none")).not.toBe(idOf("filmic"));
+      expect(idOf("filmic")).not.toBe(idOf("reinhard"));
+      expect(outputNode.parameters?.["toneMap"]?.compileTime).toBe(true);
+    });
+  });
+
   it("reports a diagnostic instead of a malformed pass when it has no assigned render target", () => {
     const compiled = outputNode.compile(contextFor({ target: undefined }));
     expect(compiled.passes).toEqual([]);
