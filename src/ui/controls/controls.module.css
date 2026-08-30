@@ -552,6 +552,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* The NAME has priority; the caveat gives way, then truncates. Without `min-width: 0`
+     on the name a flex item refuses to shrink below its content and the row overflows —
+     which is what put "choose…" and the caveat outside the pane. */
+  min-width: 0;
   height: var(--control-h);
   padding: 0 var(--space-3);
   border: var(--hairline) dashed var(--line);
@@ -852,4 +856,26 @@
 .rowInactive .control:focus-within,
 .rowInactive:hover .control {
   opacity: 1;
+}
+
+.assetName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset > button {
+  flex: 0 0 auto;
+}
+
+/* The caveat is TRUE and secondary: it survives while there is room and gets out of the
+   way when there is not. The row's `title` carries it at every width. */
+.assetCaveat {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

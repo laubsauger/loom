@@ -93,8 +93,24 @@ function assetDisplayName(value: string): string {
 export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
   const input = useRef<HTMLInputElement | null>(null);
   return (
-    <div className={cx(styles.asset, "nodrag")} aria-label={label} role="group">
-      <span>{value === null || value === "" ? `no ${kind} bound` : assetDisplayName(value)}</span>
+    <div
+      className={cx(styles.asset, "nodrag")}
+      aria-label={label}
+      role="group"
+      /*
+        The full name AND the session-only caveat live here, because the row cannot show
+        both at any width a sidebar actually is. Nothing is lost when the caption is the
+        first thing to give way.
+      */
+      title={
+        value === null || value === ""
+          ? `No ${kind} bound. A picked file lasts for this session only.`
+          : `${assetDisplayName(value)} — this session only`
+      }
+    >
+      <span className={styles.assetName}>
+        {value === null || value === "" ? `no ${kind} bound` : assetDisplayName(value)}
+      </span>
       {onPick === undefined ? (
         <span className={styles.meta}>· read-only</span>
       ) : (
@@ -106,7 +122,7 @@ export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
           >
             choose…
           </button>
-          <span className={styles.meta}>· this session only</span>
+          <span className={cx(styles.meta, styles.assetCaveat)}>· this session only</span>
           <input
             ref={input}
             type="file"

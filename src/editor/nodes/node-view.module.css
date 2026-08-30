@@ -289,13 +289,15 @@
 .preview {
   aspect-ratio: 16 / 9;
   /*
-    A preview's CONTENT is frequently pure black (an unlit render, a node with no signal),
-    which is darker than every surface behind it — so without an edge the tile, the node
-    body and the canvas ground collapse into one shape. The inset hairline draws the
-    tile's boundary from the INSIDE, so it survives a black frame.
+    SEPARATION BY TONE, NOT BY A DRAWN LINE.
+    A preview's content is frequently pure black, so the slot must read as its own well
+    even when nothing is in it. An inset ring did that and drew a SECOND edge inside the
+    slot's own bottom border — a visible doubled line, which is what the owner reported.
+    Three tone steps do the job with no lines at all: node body `--bg-raise`, slot
+    `--bg-sunken` (darker), letterboxed tile black. The canvas ground was lifted to
+    #10141d in the same pass, which is what made the ring redundant.
   */
   border-bottom: var(--border-hairline);
-  box-shadow: inset 0 0 0 1px var(--line);
   background: var(--bg-sunken);
   overflow: hidden;
 }
