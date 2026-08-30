@@ -11,6 +11,7 @@ import { compositeNodes } from "./composite.ts";
 import { temporalNodes } from "./feedback.ts";
 import { pointNodeDefinitions } from "./points.ts";
 import { nullNode } from "./null-node.ts";
+import { switchNode } from "./switch.ts";
 import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
 import { mediaNodeDefinitions } from "./media.ts";
@@ -19,6 +20,7 @@ import { pointGeneratorDefinitions } from "./point-generators.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
+export { switchNode, resolveSwitchIndex } from "./switch.ts";
 export { pointSetInfoFor } from "./points.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
 export { analyzeNode, ANALYZE_RESULT_KEY } from "./analyze.ts";
@@ -47,7 +49,7 @@ export {
 export { customWgslNode } from "./custom-wgsl.ts";
 export { outputNode } from "./output.ts";
 export { isSinkNode, SINK_TAG } from "./sink.ts";
-export { RGBA_TEXTURE } from "./common-ports.ts";
+export { RGBA_TEXTURE, MAX_TEXTURE_INPUTS } from "./common-ports.ts";
 export type { NodeCompileInputs } from "./compile-context.ts";
 export { readCompileInputs, missingCompileResource } from "./compile-context.ts";
 
@@ -128,6 +130,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...temporalNodes,
   ...pointNodeDefinitions,
   nullNode,
+  switchNode,
   ...valueNodeDefinitions,
   analyzeNode,
   ...mediaNodeDefinitions,

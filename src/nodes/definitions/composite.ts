@@ -1,6 +1,6 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
-import { RGBA_TEXTURE } from "./common-ports.ts";
+import { MAX_TEXTURE_INPUTS, RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
@@ -35,15 +35,12 @@ import {
  */
 
 /**
- * How many layers one Composite folds (T226).
+ * How many layers one Composite folds (T226) — the shared texture-binding budget.
  *
- * Every layer is a texture binding, and WebGPU only guarantees 16 sampled textures per
- * shader stage. Eight back layers plus the front one is half that budget — room for the
- * shared frame block and whatever a later pass wants — and past eight layers in ONE node a
- * graph is easier to read as two composites anyway. Exceeded, the node reports and emits
- * nothing: silently folding the first eight would drop a layer the user can see wired.
+ * Exceeded, the node reports and emits nothing: silently folding the first eight would
+ * drop a layer the user can see wired.
  */
-export const MAX_COMPOSITE_LAYERS = 8;
+export const MAX_COMPOSITE_LAYERS = MAX_TEXTURE_INPUTS;
 
 /**
  * The operation menu for the Composite node. Order is presentation only — the shader is

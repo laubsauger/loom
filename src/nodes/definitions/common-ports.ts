@@ -7,3 +7,14 @@ import type { PortType } from "../../domain/types/ports.ts";
  * literal (T15 established pattern, §P wave 3 note "K reuses I paths").
  */
 export const RGBA_TEXTURE: PortType = { kind: "texture2d", sample: "float", channels: 4 };
+
+/**
+ * How many texture inputs one node's shader may bind (T226, T235).
+ *
+ * WebGPU guarantees only 16 sampled textures per shader stage, and a variadic node binds
+ * one per connected edge. Eight leaves half that budget for the shared frame block and for
+ * whatever a pass needs alongside its inputs — and past eight inputs on a single node, a
+ * graph reads better as two nodes anyway. Shared so the two variadic nodes cannot drift
+ * into disagreeing about the same hardware limit.
+ */
+export const MAX_TEXTURE_INPUTS = 8;

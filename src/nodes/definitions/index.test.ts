@@ -67,6 +67,7 @@ describe("core catalogue (T70, T40)", () => {
       "textureToAttribute",
       "renderPoints",
       "null",
+      "switch",
       "lfo",
       "constant",
       "timer",
