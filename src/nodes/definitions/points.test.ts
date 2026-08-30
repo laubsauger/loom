@@ -405,3 +405,57 @@ describe("sizePixels in map mode — pscale (T286)", () => {
     expect(pass.uniforms["sizePixels"]).toBe(4);
   });
 });
+
+describe("color in map mode — per-point colour on the compound head (T364)", () => {
+  const edge = {
+    points: {
+      pairs: {
+        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
+        tint: { pair: "scratch:sim:tint", half: "write" as const, type: "vec4f" },
+        size: { pair: "scratch:sim:size", half: "write" as const, type: "f32" },
+      },
+      capacity: 64,
+      topology: "points",
+    },
+  };
+  const compile = (maps: Record<string, { attribute: string; channel?: string }>) =>
+    renderPointsNode.compile(
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "sim" },
+        pointsets: edge,
+        parameters: { count: 64 },
+        parameterMaps: maps,
+      }),
+    );
+
+  it("binds the vec4f attribute; colour leaves the uniform block", () => {
+    const result = compile({ color: { attribute: "tint" } });
+    expect(result.diagnostics ?? []).toEqual([]);
+    const pass = result.passes[0] as {
+      shader: string;
+      buffers: Array<{ binding: string; resourceId: string }>;
+      uniforms?: Record<string, unknown>;
+    };
+    expect(pass.shader).toContain("mapColors: array<vec4f>");
+    expect(pass.uniforms).toEqual({ sizePixels: 4 });
+    expect(pass.buffers).toContainEqual({ binding: "mapColors", resourceId: "scratch:sim:tint", half: "write" });
+  });
+
+  it("BOTH mapped: the uniform block vanishes with its struct", () => {
+    const result = compile({ color: { attribute: "tint" }, sizePixels: { attribute: "size" } });
+    expect(result.diagnostics ?? []).toEqual([]);
+    const pass = result.passes[0] as { shader: string; uniforms?: unknown; uniformBinding?: unknown };
+    expect(pass.shader).not.toContain("SpriteParams");
+    expect(pass.uniforms).toBeUndefined();
+    expect(pass.uniformBinding).toBeUndefined();
+  });
+
+  it("refuses a channel on the head, and a non-vec4f attribute, by name", () => {
+    const channelled = compile({ color: { attribute: "tint", channel: "r" } });
+    expect(channelled.diagnostics?.[0]?.message).toContain("component slot");
+    const wrongType = compile({ color: { attribute: "size" } });
+    expect(wrongType.diagnostics?.[0]?.message).toContain('"size" is f32');
+  });
+});

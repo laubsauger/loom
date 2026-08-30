@@ -31,31 +31,44 @@ export const DEFAULT_POINT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Poin
  * the size is a PER-POINT attribute read straight off the SoA pair, swizzled by the
  * attribute's declared type — the pscale that turns copies into a medium.
  */
-export function spriteRenderWgsl(sizeMap?: { type: string; channel?: string }): string {
-  const sizeField = sizeMap === undefined ? "  sizePixels: f32,\n" : "";
+export function spriteRenderWgsl(options?: {
+  sizeMap?: { type: string; channel?: string };
+  /** T364: per-point colour — a vec4f attribute, LINEAR by convention (attributes are data, §V56). */
+  colorMap?: boolean;
+}): string {
+  const sizeMap = options?.sizeMap;
+  const colorMap = options?.colorMap === true;
+  const fields = `${colorMap ? "" : "  color: vec4f,\n"}${sizeMap === undefined ? "  sizePixels: f32,\n" : ""}`;
+  // Both mapped = an EMPTY struct, which WGSL refuses: the block vanishes entirely
+  // and the pass carries no uniforms (the sweep skips uniform-less passes).
+  const structBlock =
+    fields === ""
+      ? ""
+      : `struct SpriteParams {
+${fields}};
+
+`;
+  const paramsBinding = fields === "" ? "" : "@group(0) @binding(1) var<uniform> params: SpriteParams;\n";
   const sizeBinding =
     sizeMap === undefined
       ? ""
       : `@group(0) @binding(3) var<storage, read> mapSizes: array<${sizeMap.type}>;\n`;
+  const colorBinding = colorMap ? "@group(0) @binding(4) var<storage, read> mapColors: array<vec4f>;\n" : "";
   const sizeExpr =
     sizeMap === undefined
       ? "params.sizePixels"
       : sizeMap.channel === undefined
         ? "mapSizes[instance]"
         : `mapSizes[instance].${sizeMap.channel}`;
+  const colorExpr = colorMap ? "input.color" : "params.color";
   return `${SHARED_UNIFORMS_WGSL}
-struct SpriteParams {
-  color: vec4f,
-${sizeField}};
-
-@group(0) @binding(0) var<uniform> frameU: SharedFrame;
-@group(0) @binding(1) var<uniform> params: SpriteParams;
-@group(0) @binding(2) var<storage, read> positions: array<vec3f>;
-${sizeBinding}
+${structBlock}@group(0) @binding(0) var<uniform> frameU: SharedFrame;
+${paramsBinding}@group(0) @binding(2) var<storage, read> positions: array<vec3f>;
+${sizeBinding}${colorBinding}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) corner: vec2f,
-};
+${colorMap ? "  @location(1) color: vec4f,\n" : ""}};
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
@@ -71,7 +84,7 @@ fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32
   var out: VertexOut;
   out.position = vec4f(center.xy + corner * sizeClip * 0.5, 0.0, 1.0);
   out.corner = corner;
-  return out;
+${colorMap ? "  out.color = mapColors[instance];\n" : ""}  return out;
 }
 
 @fragment
@@ -82,7 +95,7 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
     discard;
   }
   let falloff = 1.0 - distance * distance;
-  return vec4f(params.color.rgb, params.color.a * falloff);
+  return vec4f(${colorExpr}.rgb, ${colorExpr}.a * falloff);
 }`;
 }
 

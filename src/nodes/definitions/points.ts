@@ -394,66 +394,98 @@ export const renderPointsNode: NodeDefinition = {
 
     const blend = parameters["blend"] === "alpha" ? ("alpha" as const) : ("additive" as const);
 
-    // T286 (§V288): sizePixels in map mode — pscale. The mapping either resolves
-    // against the EDGE (attribute present, type coherent) or fails by name, saying
-    // what the pointset does provide; it never silently falls back to the static.
-    const sizeMap = parameterMaps["sizePixels"];
-    let mappedSize: { entry: { pair: string; half: "read" | "write" }; type: string; channel?: string } | undefined;
-    if (sizeMap !== undefined) {
-      const refuse = (message: string, suggestion?: string): CompiledNodeDescription => ({
-        passes: [],
-        diagnostics: [
-          {
-            severity: "error",
-            code: "node.parameter.map",
-            message: `Node "${nodeId}": ${message}`,
-            nodeId,
-            ...(suggestion === undefined ? {} : { suggestion }),
-          },
-        ],
-      });
+    // T286/T364 (§V288): map-mode parameters resolve against the EDGE — attribute
+    // present, type coherent — or fail by name, saying what the pointset provides.
+    // Never a silent fall-back to the retained static.
+    const refuseMap = (message: string, suggestion?: string): CompiledNodeDescription => ({
+      passes: [],
+      diagnostics: [
+        {
+          severity: "error",
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+    });
+    type MapEntry = { pair: string; half: "read" | "write"; type?: string };
+    const lookupMap = (
+      key: string,
+      binding: { attribute: string; channel?: string; port?: string },
+    ): { entry: MapEntry; type: string } | CompiledNodeDescription => {
       // §V306: `port` names the pointset input when there are several; this node has
       // exactly one, so a port that is not it is a mistake said out loud.
-      if (sizeMap.port !== undefined && sizeMap.port !== "points") {
-        return refuse(`sizePixels maps port "${sizeMap.port}", but the only pointset input is "points".`);
+      if (binding.port !== undefined && binding.port !== "points") {
+        return refuseMap(`${key} maps port "${binding.port}", but the only pointset input is "points".`);
       }
       const available = Object.keys(points.pointset?.pairs ?? {}).sort();
-      const entry = points.pointset?.pairs[sizeMap.attribute];
+      const entry = points.pointset?.pairs[binding.attribute];
       if (entry === undefined) {
-        return refuse(
-          `sizePixels maps attribute "${sizeMap.attribute}", which the incoming pointset does not carry.`,
+        return refuseMap(
+          `${key} maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
           available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
         );
       }
-      const attributeType = entry.type;
-      if (attributeType === undefined) {
-        return refuse(
-          `sizePixels maps "${sizeMap.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
+      if (entry.type === undefined) {
+        return refuseMap(
+          `${key} maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
         );
       }
+      return { entry, type: entry.type };
+    };
+    const isRefusal = (value: { entry: MapEntry } | CompiledNodeDescription): value is CompiledNodeDescription =>
+      "passes" in value;
+
+    const sizeMap = parameterMaps["sizePixels"];
+    let mappedSize: { entry: MapEntry; type: string; channel?: string } | undefined;
+    if (sizeMap !== undefined) {
+      const found = lookupMap("sizePixels", sizeMap);
+      if (isRefusal(found)) return found;
       const vectorChannels: Record<string, readonly string[]> = {
         vec2f: ["x", "y"],
         vec3f: ["x", "y", "z"],
         vec4f: ["x", "y", "z", "w"],
       };
-      if (attributeType === "f32") {
+      if (found.type === "f32") {
         if (sizeMap.channel !== undefined) {
-          return refuse(`sizePixels maps f32 attribute "${sizeMap.attribute}" with a channel; an f32 has none.`);
+          return refuseMap(`sizePixels maps f32 attribute "${sizeMap.attribute}" with a channel; an f32 has none.`);
         }
-        mappedSize = { entry, type: attributeType };
-      } else if (vectorChannels[attributeType] !== undefined) {
-        const channels = vectorChannels[attributeType] as readonly string[];
+        mappedSize = found;
+      } else if (vectorChannels[found.type] !== undefined) {
+        const channels = vectorChannels[found.type] as readonly string[];
         if (sizeMap.channel === undefined || !channels.includes(sizeMap.channel)) {
-          return refuse(
-            `sizePixels maps ${attributeType} attribute "${sizeMap.attribute}" and needs a channel (${channels.join("/")}).`,
+          return refuseMap(
+            `sizePixels maps ${found.type} attribute "${sizeMap.attribute}" and needs a channel (${channels.join("/")}).`,
           );
         }
-        mappedSize = { entry, type: attributeType, channel: sizeMap.channel };
+        mappedSize = { ...found, channel: sizeMap.channel };
       } else {
-        return refuse(
-          `sizePixels cannot map "${sizeMap.attribute}" of type "${attributeType}"; a size needs f32 or a float vector channel.`,
+        return refuseMap(
+          `sizePixels cannot map "${sizeMap.attribute}" of type "${found.type}"; a size needs f32 or a float vector channel.`,
         );
       }
+    }
+
+    // T364 (§V195 as amended): a map on the COMPOUND HEAD, type-matched — a vec4f
+    // attribute drives the whole colour. LINEAR by convention: attributes are data
+    // (§V56/§V57); nothing display-decodes a per-point value.
+    const colorMap = parameterMaps["color"];
+    let mappedColor: { entry: MapEntry } | undefined;
+    if (colorMap !== undefined) {
+      const found = lookupMap("color", colorMap);
+      if (isRefusal(found)) return found;
+      if (colorMap.channel !== undefined) {
+        return refuseMap(
+          `color maps the whole compound; a channel belongs on a component slot ("color.r"), not the head.`,
+        );
+      }
+      if (found.type !== "vec4f") {
+        return refuseMap(
+          `color needs a vec4f attribute to map the whole compound; "${colorMap.attribute}" is ${found.type}.`,
+        );
+      }
+      mappedColor = found;
     }
     // T322: a counted edge draws INDIRECTLY — the live count is GPU-resident, so a
     // tiny pass converts it to draw arguments and the draw reads them. A static edge
@@ -466,9 +498,19 @@ export const renderPointsNode: NodeDefinition = {
       kind: "draw",
       id: `${nodeId}:sprites`,
       shader:
-        mappedSize === undefined
+        mappedSize === undefined && mappedColor === undefined
           ? SPRITE_RENDER_WGSL
-          : spriteRenderWgsl({ type: mappedSize.type, ...(mappedSize.channel === undefined ? {} : { channel: mappedSize.channel }) }),
+          : spriteRenderWgsl({
+              ...(mappedSize === undefined
+                ? {}
+                : {
+                    sizeMap: {
+                      type: mappedSize.type,
+                      ...(mappedSize.channel === undefined ? {} : { channel: mappedSize.channel }),
+                    },
+                  }),
+              ...(mappedColor === undefined ? {} : { colorMap: true }),
+            }),
       target,
       topology: "triangle-list",
       // T296: instances = the EDGE's capacity, clamped by the count param — the user
@@ -494,14 +536,22 @@ export const renderPointsNode: NodeDefinition = {
         ...(mappedSize === undefined
           ? []
           : [{ binding: "mapSizes", resourceId: mappedSize.entry.pair, half: mappedSize.entry.half }]),
+        ...(mappedColor === undefined
+          ? []
+          : [{ binding: "mapColors", resourceId: mappedColor.entry.pair, half: mappedColor.entry.half }]),
       ],
-      uniforms: {
-        color: readColor(parameters, "color", [1, 1, 1, 1]),
-        // Mapped, the size LEAVES the uniform block entirely — the struct and the
-        // record must keep matching exactly (the catalogue sweep pins that).
-        ...(mappedSize === undefined ? { sizePixels: readNumber(parameters, "sizePixels", 4) } : {}),
-      },
-      uniformBinding: "params",
+      // Mapped values LEAVE the uniform block entirely — the struct and the record
+      // must keep matching exactly (the catalogue sweep pins that). Both mapped, the
+      // block vanishes with the struct.
+      ...(mappedSize !== undefined && mappedColor !== undefined
+        ? {}
+        : {
+            uniforms: {
+              ...(mappedColor === undefined ? { color: readColor(parameters, "color", [1, 1, 1, 1]) } : {}),
+              ...(mappedSize === undefined ? { sizePixels: readNumber(parameters, "sizePixels", 4) } : {}),
+            },
+            uniformBinding: "params",
+          }),
       sharedBinding: "frameU",
       blend,
       clear: parameters["accumulate"] !== true,

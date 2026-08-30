@@ -491,3 +491,30 @@ describe("the map mode resolves as data, not a value (T286/§V287)", () => {
     expect(resolved.values["sizePixels"]).toBe(9);
   });
 });
+
+describe("map on a COMPOUND HEAD (T364, §V195 as amended)", () => {
+  it("a slot at the bare compound key collects into maps and evaluation keeps the tuple", () => {
+    const node = {
+      id: "n1",
+      type: "renderPoints",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: {
+        color: {
+          mode: "map",
+          bindings: {
+            static: { kind: "static", value: [1, 0, 0, 1] },
+            map: { kind: "map", attribute: "tint" },
+          },
+        },
+      },
+    } as never;
+    const resolved = resolveParameterSchema(node, {
+      color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
+    });
+    expect(resolved.maps).toEqual({ color: { attribute: "tint" } });
+    // The retained tuple still resolves for the inspector and the zero-frame compile.
+    expect(Array.isArray(resolved.values["color"])).toBe(true);
+    expect(resolved.get("color")?.mode).toBe("map");
+  });
+});
