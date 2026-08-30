@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
+import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
+import type { CompiledExecutionPlan, FrameInputs } from "@domain/types/backend.ts";
+import type { GpuStatus } from "./gpu-status.ts";
+import { App } from "./app.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -33,6 +38,10 @@ import { useGraphCompile } from "./use-graph-compile.ts";
  * B25 again, one layer down, and invisible to any test that does not assert a VALUE.
  */
 
+beforeAll(() => {
+  installDomStubs();
+  installFlowStubs();
+});
 afterEach(cleanup);
 
 const CAPABILITIES: BackendCapabilities = {
@@ -300,6 +309,107 @@ describe("T305 — the Analyze resolver is merged in FRONT of the graph resolver
     // value, so the assertion above is about the merge and not about the default.
     expect(brightnessOf(without.result.current.compiled)).not.toBe(3);
 
+    runtime.dispose();
+  });
+});
+
+
+/**
+ * THE OBSERVER SEAM ITSELF (T305, §V205).
+ *
+ * `useFrameLoop` takes seven positional parameters, three of them optional, and `observe`
+ * is the last. Adding a parameter ahead of it silently rebinds every call site that has
+ * not been updated — and the riders on that seam (the pulse watcher, this readback) then
+ * stop running with nothing failing, because both are fire-and-forget by design.
+ *
+ * That is the same shape as B25 with a different cause: not "never wired" but "quietly
+ * unwired". A hook test cannot see it, because a hook test supplies the argument itself.
+ * So this mounts the real App and asserts a rendered frame produces a real readback.
+ */
+describe("T305 — a frame in the COMPOSED app produces a readback", () => {
+  it("reaches Analyze through the frame observer the app actually passes", async () => {
+    const runtime = newRuntime();
+    let analyzeNodeId = "";
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$meter", type: "analyze", position: { x: 240, y: 0 } },
+        {
+          op: "connect",
+          source: { nodeId: "$noise", portId: "out" },
+          target: { nodeId: "$meter", portId: "input" },
+        },
+      ]);
+      expect(result.status).toBe("applied");
+      analyzeNodeId = result.output.createdIds["$meter"] ?? "";
+    });
+    expect(analyzeNodeId).not.toBe("");
+
+    const reads: string[] = [];
+    let tick: ((inputs?: unknown) => void) | null = null;
+    const backend = {
+      status: {
+        initialized: true,
+        disposed: false,
+        halted: false,
+        deviceGeneration: 1,
+        temporalResets: 0,
+        resourceBuilds: 0,
+        framesSubmitted: 0,
+        readbacks: 0,
+        stale: false,
+        estimatedResourceBytes: 0,
+      },
+      initialize: () => Promise.resolve(CAPABILITIES),
+      compile: (plan: unknown) => Promise.resolve({ id: "fixture", logical: plan } as CompiledExecutionPlan),
+      render() {},
+      resize() {},
+      readOutput: () => Promise.reject(new Error("no GPU")),
+      onDiagnostic: () => () => {},
+      dispose() {},
+      // Captures the driver's tick instead of scheduling it: the test decides when a
+      // frame happens, which is the only way to assert what one frame caused.
+      loop: (onFrame: () => void) => {
+        tick = onFrame;
+        return { stop() {} };
+      },
+      updateUniforms() {},
+      resetTemporalHistory() {},
+      recover: () => Promise.resolve(),
+      present: (_canvas: unknown, options: { outputId: string }) => ({
+        id: "p",
+        outputId: options.outputId,
+        setOutput() {},
+        dispose() {},
+      }),
+      previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
+      onGpuTimings: () => () => {},
+      compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
+      readBuffer: (resourceId: string) => {
+        reads.push(resourceId);
+        return Promise.resolve(Float32Array.from([0.5, 0.5, 0.5, 1]).buffer);
+      },
+      registerMediaSource: () => () => {},
+      setCookPolicy() {},
+    } as unknown as ShaderloomBackend;
+
+    const status: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend };
+    await act(async () => {
+      render(
+        <App runtime={runtime} storage={createMemoryStorage()} gpuProbe={() => Promise.resolve(status)} />,
+      );
+    });
+
+    // One frame, driven by hand through the loop the app registered.
+    await act(async () => {
+      expect(tick).not.toBeNull();
+      (tick as unknown as (inputs?: FrameInputs) => void)();
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+
+    // The assertion that survives a signature change: a rendered frame READ SOMETHING.
+    expect(reads).toContain(scratchResourceId(analyzeNodeId, "result"));
     runtime.dispose();
   });
 });
