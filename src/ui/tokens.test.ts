@@ -93,7 +93,10 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
 
   it("defines the §C palette exactly", () => {
     const palette: Record<string, string> = {
-      "--bg-void": "#0b0e14",
+      // Lifted from #0b0e14 (2096a6f): a preview tile's content is often pure black, so
+      // the tile, the node body and the canvas ground collapsed into one shape. This test
+      // is the reason the palette cannot drift silently — it caught that commit.
+      "--bg-void": "#10141d",
       "--bg-panel": "#12161f",
       "--bg-raise": "#1a202c",
       "--line": "#232a38",
