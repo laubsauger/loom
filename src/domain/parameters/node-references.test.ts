@@ -70,9 +70,9 @@ describe("reading op('name').par.key (T316)", () => {
   });
 
   it("names the LOOP rather than overflowing the stack (§V152)", () => {
-    // Nothing refuses this at authoring time yet — `bindCycleDiagnostics` covers `bind`
-    // mode only — so a document can carry it in from a file and this guard is the only
-    // thing between it and infinite recursion.
+    // T331 refuses this at authoring time (`referenceCyclesThrough`), so a document that
+    // went through the bus never holds it. A hand-edited file still can, and this guard
+    // is what stands between that file and infinite recursion.
     const a = node("n1", "a", { gain: expression("op('b').par.gain") });
     const b = node("n2", "b", { gain: expression("op('a').par.gain") });
     const resolved = resolve(graphOf(a, b), a);

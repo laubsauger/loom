@@ -25,6 +25,7 @@ import {
 } from "../graph/names.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
+import { referenceCyclesThrough } from "../graph/reference-cycles.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
 import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 
@@ -606,6 +607,16 @@ function executeOperation(
       const cycles = bindCycleDiagnostics(node, definition.parameters);
       if (cycles.length > 0) {
         run.diagnostics.push(...cycles);
+        throw new PatchAbort();
+      }
+      // §V152/§V244: the same rule for a CROSS-NODE reference. `op('a').par.x` closes a
+      // loop no bind check and no texture topo sort can see, and the runtime guard that
+      // names it is a mitigation, not the gate — a document should never hold the cycle
+      // in the first place. Scoped to this node: a loop elsewhere in a file someone
+      // hand-edited is the compiler's report, not a reason to refuse an unrelated edit.
+      const referenceCycles = referenceCyclesThrough(draft, node.id);
+      if (referenceCycles.length > 0) {
+        run.diagnostics.push(...referenceCycles);
         throw new PatchAbort();
       }
       return;

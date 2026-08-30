@@ -878,6 +878,58 @@ describe("graph.applyPatch — bind cycles refused at write time (T205, §V110)"
   });
 });
 
+describe("graph.applyPatch — op() reference cycles refused at write time (T331, §V152)", () => {
+  const expression = (source: string) => ({
+    mode: "expression",
+    bindings: { expression: { kind: "expression", source } },
+  });
+
+  /** Two named solids, `solid1` and `solid2`. */
+  async function twoNodes(): Promise<[string, string]> {
+    const seed = await apply([addSolid("$a"), addSolid("$b", 100)]);
+    return [seed.output.createdIds["$a"] as string, seed.output.createdIds["$b"] as string];
+  }
+
+  it("refuses the patch that CLOSES a cross-node loop, and names the path", async () => {
+    const [a, b] = await twoNodes();
+    // One direction is fine on its own: `solid1` reading `solid2` is a normal reference.
+    const first = await apply([
+      { op: "setParameters", nodeId: a, parameters: { amount: expression("op('solid2').par.amount") } as never },
+    ]);
+    expect(first.status).toBe("applied");
+
+    const snapshot = graph();
+    const second = await apply([
+      { op: "setParameters", nodeId: b, parameters: { amount: expression("op('solid1').par.amount") } as never },
+    ]);
+
+    expect(second.status).toBe("rejected");
+    const cycle = second.diagnostics.find((d) => d.code === "parameter.referenceCycle");
+    expect(cycle?.message).toContain("solid2.amount → solid1.amount → solid2");
+    // §V32: the draft is discarded whole, so the document never holds the cycle. This is
+    // the point of the gate — the runtime guard that NAMES the loop is a mitigation, and
+    // §V244 says a mitigation must not become the reason the gate never gets built.
+    expect(graph()).toBe(snapshot);
+  });
+
+  it("refuses a node that references ITSELF through op()", async () => {
+    const [a] = await twoNodes();
+    const result = await apply([
+      { op: "setParameters", nodeId: a, parameters: { amount: expression("op('solid1').par.amount") } as never },
+    ]);
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.some((d) => d.code === "parameter.referenceCycle")).toBe(true);
+  });
+
+  it("still accepts an acyclic cross-node reference", async () => {
+    const [, b] = await twoNodes();
+    const result = await apply([
+      { op: "setParameters", nodeId: b, parameters: { amount: expression("op('solid1').par.amount * 2") } as never },
+    ]);
+    expect(result.status).toBe("applied");
+  });
+});
+
 describe("graph.applyPatch — names as identifiers (T221/T222, §V128/§V129)", () => {
   it("auto-names created nodes uniquely, in patch order", async () => {
     const result = await apply([addSolid("$a"), addSolid("$b", 100)]);

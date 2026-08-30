@@ -9,6 +9,7 @@ import { resolveParameterSchema } from "../domain/parameters/resolve.ts";
 import { createNodeReferenceReader } from "../domain/parameters/node-references.ts";
 import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
+import { referenceCycleDiagnostics } from "../domain/graph/reference-cycles.ts";
 import { isComponentKeyOf } from "../domain/parameters/slots.ts";
 import type { ResolvedParameters } from "../domain/parameters/resolve.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -153,6 +154,14 @@ export function validateGraph(
 ): ValidatedGraph {
   const diagnostics: RuntimeDiagnostic[] = [];
   const nodes = new Map<NodeId, ResolvedNode>();
+
+  /**
+   * §V152 belt-and-braces, the cross-node half. The patch gate refuses an `op()` cycle at
+   * write time (`referenceCyclesThrough`), but a document can arrive from a file — and a
+   * cycle spans NODES, so unlike a bind cycle it has no per-node home in
+   * `resolveNodeParameters`. Reported once for the graph, before any resolution runs.
+   */
+  diagnostics.push(...referenceCycleDiagnostics(graph));
 
   /**
    * T316/§V148 — the cross-node read path, supplied HERE rather than by each caller.

@@ -30,13 +30,18 @@ import { resolveParameterSchema, type ResolveParametersOptions } from "./resolve
  * expression reading `op('b').par.y`. So a read is a resolve, and a chain of references
  * is a chain of resolves. Which means it can close a loop.
  *
- * §V152 wants that rejected at authoring time with the path named, and today nothing
- * does: `bindCycleDiagnostics` covers `bind` mode only, so an `op()` cycle can be written
- * into a document and arrive from a file. Until the authoring gate exists this is the
- * only thing standing between such a document and an infinite recursion, so it is not a
- * belt-and-braces measure here — it is the whole seatbelt. It names the loop rather than
- * reporting a stack overflow, because a user who typed the cycle needs to be told which
- * two nodes they joined.
+ * §V152 wants that rejected at authoring time with the path named, and since T331 it is:
+ * `referenceCyclesThrough` refuses the patch that closes the loop, and
+ * `referenceCycleDiagnostics` reports one that arrived from a file. This guard is the
+ * last line rather than the only one — §V244's point being that a runtime mitigation must
+ * not become the reason the gate never gets built. It stays because a `.loom.json` can
+ * still be hand-edited, and it names the loop rather than reporting a stack overflow,
+ * because a user who typed the cycle needs to be told which two nodes they joined.
+ *
+ * The visited set is keyed by NODE, and the gate is keyed the same way on purpose: a read
+ * resolves the target's whole schema, so `a.x → b.y` plus `b.z → a.w` really does recurse
+ * even though the two parameter chains never touch. Making either half finer without the
+ * other would accept documents the other refuses.
  */
 
 /** A path this reader understands. `par` is the only namespace v1 exposes. */
