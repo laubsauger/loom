@@ -204,8 +204,13 @@ describe("§V142 — a camera move costs no allocation (B13)", () => {
     // sink previews the picture it presents — each sized from the node's preview area
     // (160 CSS px -> the 192 ladder step) rather than from the on-screen rect, which at
     // this zoom would be ~62.
-    expect(counters.surfaceRegistrations).toBe(1);
-    const installed = counters.programs[counters.programs.length - 1];
+    // TWO hosts since T463: the tile overlay and the graph-background canvas, each
+    // attached ONCE at mount. The claim under test is unchanged — the baseline below
+    // proves neither re-registers on a camera move.
+    expect(counters.surfaceRegistrations).toBe(2);
+    // The background host installs an EMPTY program (nothing is flagged); the tile
+    // host's program is the one whose shape this pins.
+    const installed = [...counters.programs].reverse().find((program) => program.passes.length > 0);
     expect(installed?.passes).toHaveLength(2);
     expect(
       installed?.resources.filter((resource) => resource.kind === "target"),
