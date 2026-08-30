@@ -30,14 +30,9 @@ import { requireExample } from "./runner.ts";
 const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
   {
     doc: "E24-Audio-Reaction-Diffusion.md",
-    type: "audioFileIn",
-    reason:
-      "an INSTRUCTION to the reader, not a claim about the graph: the example ships a synthetic audioPattern (§V363) and the doc tells you which node to swap in to drive it from a real track.",
-  },
-  {
-    doc: "E24-Audio-Reaction-Diffusion.md",
     type: "audioIn",
-    reason: "the microphone half of the same instruction.",
+    reason:
+      "T504: `audioFileIn` is now genuinely IN this graph (branch 1 of the Switch) so its exemption is gone, but the microphone is still only an instruction — a shipped `audioIn` opens the device on load, which an example must not do. The doc says how to add it as branch 2.",
   },
   {
     doc: "E27-Relief.md",

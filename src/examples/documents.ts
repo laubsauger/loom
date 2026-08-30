@@ -1743,16 +1743,42 @@ const audioRdDocument = document(
   settings({ outputResolution: { width: 512, height: 512 } }),
   graph(
     [
-      // ---- the sound ------------------------------------------------------------
+      // ---- the sound: two sources, one SWITCH, never both ------------------------
       /*
-       * T442 (B74, §V363): the flagship PLAYS on first open. Assets are session-only,
-       * so no example can ship a bound audio file — and an audio-reactive graph whose
-       * null state is indistinguishable from a broken one demos nothing. The pattern
-       * node is the deterministic stand-in: swap this ONE node for an audioFileIn or
-       * audioIn (keep the label) and every mapping downstream drives from real sound.
+       * T442 (B74, §V363): the flagship PLAYS on first open. Assets are session-only, so
+       * no example can ship a bound audio file — and an audio-reactive graph whose null
+       * state is indistinguishable from a broken one demos nothing.
+       *
+       * T504 — AND YOUR OWN TRACK IS ONE DROP AWAY. Both sources are wired, permanently,
+       * into `source1`, and the Switch's `index` picks: 0 is the deterministic pattern,
+       * 1 is whatever file you drop on `track1`. Nothing downstream changes, because
+       * everything downstream reads `source1`.
+       *
+       * IT HAS TO BE A SWITCH AND IT CANNOT BE A WIRE. Two value sources landing on ONE
+       * port MERGE — `{...prior, ...next}` over sorted edge ids (§V457) — and both of
+       * these publish the same channel names, so the later edge would win outright and
+       * the other source would silently vanish. That is not "mixing them together", it
+       * is worse: it is one of them disappearing with the graph still looking right.
+       * `valueSwitch` (T508) is exclusive by construction — the unselected branch is not
+       * read into the output at all.
        */
-      node("music", "audioPattern", [-1460, 420], { bpm: 112, amount: 1 }, { label: "music1" }),
-      node("env", "valueLag", [-1220, 420], { lag: 0.12 }, { label: "env1" }),
+      node("music", "audioPattern", [-2000, 300], { bpm: 112, amount: 1 }, { label: "music1" }),
+      /*
+       * THE DROP TARGET, and it is placed where you would look for it: directly under the
+       * pattern it replaces, wired into the same box, with an empty File parameter waiting.
+       * Nothing about the graph has to be read to see where a track goes.
+       * T493 gave this node a transport (play mode, speed, cue, trim, volume) — all on its
+       * defaults here, which is a timeline-anchored playhead, so bar one of your track
+       * lands on the in point and an offline render of it reproduces.
+       */
+      node("track", "audioFileIn", [-2000, 640], { monitor: true }, { label: "track1" }),
+      node("source", "valueSwitch", [-1720, 460], {
+        /* 0 = the pattern, 1 = the file. The ORDER is the port order (in1, in2), not an
+           edge tiebreak — value ports are named, so this is unambiguous by construction
+           in a way the texture Switch's variadic port is not (§V131). */
+        index: 0,
+      }, { label: "source1" }),
+      node("env", "valueLag", [-1440, 460], { lag: 0.12 }, { label: "env1" }),
       // Substeps: low band, scaled 0..20 over a base of 14, fenced 1..34.
       node("sgain", "valueMath", [-980, 340], { operation: "multiply", operand: 20 }, { label: "sgain1" }),
       node("sbase", "valueMath", [-740, 340], { operation: "add", operand: 14 }, { label: "sbase1" }),
@@ -1763,7 +1789,7 @@ const audioRdDocument = document(
       node("wbase", "valueMath", [-740, 540], { operation: "add", operand: 0.64 }, { label: "wbase1" }),
       node("wcap", "valueLimit", [-500, 540], { minimum: 0.62, maximum: 0.8 }, { label: "wlevel1" }),
       // Kick: onset EVENTS through Trigger, then Lag makes each pulse a decaying bump.
-      node("trig", "valueTrigger", [-1220, 600], { threshold: 0.5 }, { label: "trig1" }),
+      node("trig", "valueTrigger", [-1440, 740], { threshold: 0.5 }, { label: "trig1" }),
       node("kick", "valueLag", [-980, 740], { lag: 0.35 }, { label: "kick1" }),
       node("kgain", "valueMath", [-740, 740], { operation: "multiply", operand: 0.9 }, { label: "kgain1" }),
       node("kscale", "valueMath", [-500, 740], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
@@ -1844,15 +1870,17 @@ const audioRdDocument = document(
       node("out", "output", [1080, 440]),
     ],
     [
-      // sound
-      edge("e-music-env", ["music", "out"], ["env", "in"]),
+      // sound. BOTH sources reach the Switch; exactly one leaves it.
+      edge("e-music-source", ["music", "out"], ["source", "in1"]),
+      edge("e-track-source", ["track", "out"], ["source", "in2"]),
+      edge("e-source-env", ["source", "out"], ["env", "in"]),
       edge("e-env-sgain", ["env", "out"], ["sgain", "a"]),
       edge("e-sgain-sbase", ["sgain", "out"], ["sbase", "a"]),
       edge("e-sbase-scap", ["sbase", "out"], ["scap", "in"]),
       edge("e-env-wgain", ["env", "out"], ["wgain", "a"]),
       edge("e-wgain-wbase", ["wgain", "out"], ["wbase", "a"]),
       edge("e-wbase-wcap", ["wbase", "out"], ["wcap", "in"]),
-      edge("e-music-trig", ["music", "out"], ["trig", "in"]),
+      edge("e-source-trig", ["source", "out"], ["trig", "in"]),
       edge("e-trig-kick", ["trig", "out"], ["kick", "in"]),
       edge("e-kick-kgain", ["kick", "out"], ["kgain", "a"]),
       edge("e-kgain-kscale", ["kgain", "out"], ["kscale", "a"]),

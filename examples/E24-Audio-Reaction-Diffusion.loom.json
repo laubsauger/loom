@@ -91,26 +91,15 @@
           "portId": "a"
         }
       },
-      "e-music-env": {
-        "id": "e-music-env",
+      "e-music-source": {
+        "id": "e-music-source",
         "source": {
           "nodeId": "music",
           "portId": "out"
         },
         "target": {
-          "nodeId": "env",
-          "portId": "in"
-        }
-      },
-      "e-music-trig": {
-        "id": "e-music-trig",
-        "source": {
-          "nodeId": "music",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "trig",
-          "portId": "in"
+          "nodeId": "source",
+          "portId": "in1"
         }
       },
       "e-palette-tint": {
@@ -177,6 +166,28 @@
         "target": {
           "nodeId": "pack",
           "portId": "in2"
+        }
+      },
+      "e-source-env": {
+        "id": "e-source-env",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-source-trig": {
+        "id": "e-source-trig",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trig",
+          "portId": "in"
         }
       },
       "e-state-wind": {
@@ -254,6 +265,17 @@
         "target": {
           "nodeId": "tapR",
           "portId": "input"
+        }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in2"
         }
       },
       "e-trig-kick": {
@@ -392,8 +414,8 @@
           "lag": 0.12
         },
         "position": {
-          "x": -1220,
-          "y": 420
+          "x": -1440,
+          "y": 460
         },
         "type": "valueLag"
       },
@@ -479,8 +501,8 @@
           "bpm": 112
         },
         "position": {
-          "x": -1460,
-          "y": 420
+          "x": -2000,
+          "y": 300
         },
         "type": "audioPattern"
       },
@@ -657,6 +679,19 @@
         },
         "type": "level"
       },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1720,
+          "y": 460
+        },
+        "type": "valueSwitch"
+      },
       "state": {
         "definitionVersion": 1,
         "format": {
@@ -783,6 +818,19 @@
         },
         "type": "lookup"
       },
+      "track": {
+        "definitionVersion": 1,
+        "id": "track",
+        "label": "track1",
+        "parameters": {
+          "monitor": true
+        },
+        "position": {
+          "x": -2000,
+          "y": 640
+        },
+        "type": "audioFileIn"
+      },
       "trig": {
         "definitionVersion": 1,
         "id": "trig",
@@ -791,8 +839,8 @@
           "threshold": 0.5
         },
         "position": {
-          "x": -1220,
-          "y": 600
+          "x": -1440,
+          "y": 740
         },
         "type": "valueTrigger"
       },

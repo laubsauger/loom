@@ -4,9 +4,11 @@ E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. 
 music source is a deterministic beat pattern (`audioPattern`, 112 bpm): the bass makes
 the pattern grow FASTER — not brighter, faster — the mids steer which chemistry the
 dish runs, each kick pulses the palette warm, and motion fringes into a genuinely
-temporal RGB delay. To play it with REAL sound, replace the one `music1` node with an
-`audioFileIn` (choose a file) or `audioIn` (microphone) and KEEP THE LABEL — every
-mapping downstream drives from whatever wears the name `music1`.
+temporal RGB delay.
+
+**To play it with your own track: drop a file on `track1` and set `source1.index` to 1.**
+Both sources are already wired. Nothing else in the graph changes, because everything
+downstream reads `source1`.
 
 Why a synthetic source ships (§V363): assets are session-only, so no example can carry
 a bound track, and an audio-reactive graph whose null state looks finished demos
@@ -17,9 +19,10 @@ involved.
 ## Graph
 
 ```
-music1(audioPattern) ─► env1(lag) ─► sgain1·sbase1·steps1 ┄┄drives┄┄► state1.substeps
-                              └───► wgain1·wbase1·wlevel1 ┄┄drives┄┄► shape1.whitelevel
-music1 ─► trig1(trigger: onsetCount) ─► kick1(lag) ─► kgain1·kscale1 ┄┄drives┄┄► tint1.scale
+music1(audioPattern 112bpm) ─┐
+                             ├─► source1(valueSwitch, index 0) ─┬─► env1(lag) ─► sgain1·sbase1·steps1 ┄► state1.substeps
+track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file    │                └► wgain1·wbase1·wlevel1 ┄► shape1.whitelevel
+        YOUR TRACK HERE)                                        └─► trig1(trigger: onsetCount) ─► kick1 ─► kgain1·kscale1 ┄► tint1.scale
 
 broad1 ─► warp1 ◄─ detail1        state1(feedback, source: pack1)
               │                        │
@@ -30,6 +33,48 @@ tint1 ─► tapr1 ─► fringerg1 ─► fringe1 ─► out1
      └─► tapg1 ──────┘             │
      └─► tapb1 ────────────────────┘
 ```
+
+## The source is a SWITCH, and it could not have been a wire (T504, T508)
+
+The owner's ask was "quickly drop in an audio file instead of a pattern... so it's easy to
+switch around between the two **without mixing them together**". The last four words are the
+whole design.
+
+**Wiring both sources into one value port does not mix them — it makes one of them
+disappear.** The value graph merges every edge landing on one port, `{...prior, ...next}`
+over sorted edge ids (§V457). That merge is deliberate and useful: it lets a multi-wire input
+compose bags of *different* channels. But `audioPattern` and `audioFileIn` publish the
+*same* names — `level`, `low`, `lowMid`, `highMid`, `high`, `onset`, `onsetCount`,
+`onsetMax` — so on that port the later edge wins outright and the earlier source is simply
+gone, with the graph still looking correct. (Since T509 it at least warns.)
+
+So exclusivity has to come from a node, and `valueSwitch` (T508 — TD's Switch CHOP) is it:
+the unselected branch is not read into the output at all. There is no blend setting, because
+a crossfade between two unrelated tracks' band energies is not a thing anyone wants; it is
+just a quieter version of both.
+
+**Why it reads at a glance.** `track1` sits directly beneath the pattern it replaces, wired
+into the same box, with an empty File parameter waiting. The port order *is* the branch
+order — value ports are named, so `in1`/`in2` is unambiguous by construction, unlike the
+texture Switch's variadic port where the order has to be declared on the edges (§V131, and
+E27 shipped opening on a black webcam because of it).
+
+**A third branch is free, and deliberately not taken.** `valueSwitch` has four ports; wiring
+an `audioIn` into `in3` would make index 2 the microphone. It is not shipped that way because
+the first `audioIn` in a graph OPENS THE MICROPHONE on load, and an example that asks for
+device permission the moment you click it is not a demo, it is an ambush. Add the node
+yourself and index 2 is live input.
+
+**With nothing bound, index 1 is honest silence, not a broken frame** (§V329): an unbound
+`audioFileIn` projects all-zero channels, so the substeps rest at their base and the
+chemistry sits mid-band. The picture keeps animating on its own LFO either way.
+
+T493 gave `audioFileIn` a real transport — play mode, speed, cue, trim, volume — and it is
+on its defaults here, which is a **timeline-anchored** playhead: bar one of your track lands
+on the in point, a scrub finds the same second, and an offline render reproduces (§V436,
+§V45). Once T493's transport UI is exercised, driving `cue` from the graph would let the
+track be re-triggered as part of a performance; that is the obvious next thing this example
+should show and it is not shown yet.
 
 ## The mappings, and why each is shaped the way it is
 
