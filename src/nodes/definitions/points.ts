@@ -122,7 +122,20 @@ export const pointKernelNode: NodeDefinition = {
   description:
     "Runs a per-point WGSL kernel over a GPU point set every frame. The POP-style custom operator.",
   tags: ["points", "particles", "compute", "simulation"],
-  inputs: [],
+  inputs: [
+    {
+      // T401 (B57): the PROCESSOR port. Optional, so every existing kernel-as-source
+      // graph keeps compiling byte-identically (§V309); connected, the kernel reads the
+      // upstream pointset's attributes instead of its own last frame — torus in,
+      // displaced torus out, the SOP-chain shape the catalogue was missing.
+      id: "in",
+      label: "Points In",
+      optional: true,
+      type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
+      description:
+        "Optional upstream point set. Attributes the schema shares with it are read from upstream; the rest keep this node's own state.",
+    },
+  ],
   outputs: [
     {
       id: "out",
@@ -181,7 +194,7 @@ export const pointKernelNode: NodeDefinition = {
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: POINT_KERNEL_CONTRACT_VERSION,
   compile(context): CompiledNodeDescription {
-    const { nodeId, parameters } = readCompileInputs(context);
+    const { nodeId, parameters, inputs } = readCompileInputs(context);
 
     const capacity = Math.max(1, Math.round(readNumber(parameters, "capacity", 4096)));
     const { attributes, error } = parseAttributes(parameters["attributes"]);
@@ -192,6 +205,64 @@ export const pointKernelNode: NodeDefinition = {
           { severity: "error", code: "node.points.attributes", message: `Node "${nodeId}": ${error}`, nodeId },
         ],
       };
+    }
+
+    /*
+     * T401 (B57): the incoming pointset, when the processor port is wired.
+     *
+     * The chain contract, decided here and pinned by test:
+     *  - CAPACITY must MATCH the node's own, refused by name otherwise — never adopted
+     *    silently. The parameter also sizes this node's pairs and its dispatch, so a
+     *    silent adoption would make the inspector's number a lie, and a three-node
+     *    chain would truncate or over-read wherever the numbers first disagreed.
+     *  - a COUNTED upstream (GPU live count) is refused: this kernel processes a fixed
+     *    capacity, and splatting the dead tail through `process()` would resurrect it.
+     *  - a shared attribute with a DIFFERENT (or undeclared) type is refused. Falling
+     *    back to this node's own state would quietly feed defaults where the user
+     *    wired data — the silent-wrong §V288 exists to prevent.
+     * Every refusal names what the incoming pointset DOES carry, because the whole
+     * error class here is a typo'd or absent attribute.
+     */
+    const incoming = inputs["in"]?.pointset;
+    const refuse = (message: string, suggestion?: string): CompiledNodeDescription => ({
+      passes: [],
+      diagnostics: [
+        {
+          severity: "error" as const,
+          code: "node.points.input",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+    });
+    if (incoming !== undefined) {
+      const carried = Object.entries(incoming.pairs)
+        .map(([name, entry]) => `${name}: ${entry.type ?? "untyped"}`)
+        .sort()
+        .join(", ");
+      if (incoming.count !== undefined) {
+        return refuse(
+          `the incoming pointset carries a GPU live count, and this kernel processes a fixed capacity — running process() over the dead tail would resurrect it (carries: ${carried}).`,
+          "Chain after a static producer, or do this work inside the advanced kernel itself.",
+        );
+      }
+      if (incoming.capacity !== capacity) {
+        return refuse(
+          `capacity ${capacity} does not match the incoming pointset's ${incoming.capacity} (carries: ${carried}).`,
+          `Set capacity to ${incoming.capacity}.`,
+        );
+      }
+      for (const attribute of attributes) {
+        const upstream = incoming.pairs[attribute.name];
+        if (upstream === undefined) continue; // starts from this node's own state, by design
+        if (upstream.type !== attribute.type) {
+          return refuse(
+            `attribute "${attribute.name}" is ${upstream.type ?? "untyped"} on the incoming pointset but ${attribute.type} in this kernel's schema (carries: ${carried}).`,
+            "Match the attribute's type, or rename one of the two.",
+          );
+        }
+      }
     }
 
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
@@ -222,14 +293,25 @@ export const pointKernelNode: NodeDefinition = {
       shader: module.wgsl,
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / module.workgroupSize), 1, 1],
-      buffers: module.buffers.map((binding) => ({
-        binding: binding.variable,
-        resourceId: pointPairId(nodeId, binding.attribute),
-        // The generated module reads pre-frame values from `in_*` and writes post-frame
-        // values to `out_*`; the pair's swap (after all consumers, §V22) makes this
-        // frame's writes next frame's reads.
-        half: binding.role === "in" ? ("read" as const) : ("write" as const),
-      })),
+      buffers: module.buffers.map((binding) => {
+        // T401: a shared attribute READS the upstream pair (the half holding this
+        // frame's data, per the edge map) instead of this node's own last frame —
+        // that is the entire processor mechanism, and codegen never knows. Binding
+        // the upstream pair also makes this pass one of its consumers, so the §V22
+        // swap lands after it (T297). Writes stay on this node's own pairs.
+        const upstream = binding.role === "in" ? incoming?.pairs[binding.attribute] : undefined;
+        if (upstream !== undefined) {
+          return { binding: binding.variable, resourceId: upstream.pair, half: upstream.half };
+        }
+        return {
+          binding: binding.variable,
+          resourceId: pointPairId(nodeId, binding.attribute),
+          // The generated module reads pre-frame values from `in_*` and writes post-frame
+          // values to `out_*`; the pair's swap (after all consumers, §V22) makes this
+          // frame's writes next frame's reads.
+          half: binding.role === "in" ? ("read" as const) : ("write" as const),
+        };
+      }),
       uniforms: {
         timeSeconds: 0,
         deltaSeconds: 0,
@@ -259,17 +341,32 @@ export const pointKernelNode: NodeDefinition = {
       // so every pair in the map is its own (§V197's "if you write it, you own it").
       pointsets: {
         out: {
-          pairs: Object.fromEntries(
-            attributes.map((attribute) => [
-              attribute.name,
-              // §V168 through §V231: the kernel writes every pair this frame, so the
-              // payload names each write half. `type` rides along for mapped
-              // parameters (T286) — a consumer swizzles from it, never from a guess.
-              { pair: pointPairId(nodeId, attribute.name), half: "write" as const, type: attribute.type },
-            ]),
-          ),
+          pairs: {
+            // T401, §V197's narrowing verbatim: an attribute the incoming pointset
+            // carries that this kernel's schema does NOT declare is UNMODIFIED — it
+            // passes downstream BY REFERENCE, still the upstream's pair. The kernel
+            // owns only what it writes; capacities are equal by the refusal above, so
+            // the reference is coherent, and T297's binder-scan swap ownership makes
+            // whoever binds it a consumer.
+            ...Object.fromEntries(
+              Object.entries(incoming?.pairs ?? {}).filter(
+                ([name]) => !attributes.some((attribute) => attribute.name === name),
+              ),
+            ),
+            ...Object.fromEntries(
+              attributes.map((attribute) => [
+                attribute.name,
+                // §V168 through §V231: the kernel writes every pair this frame, so the
+                // payload names each write half. `type` rides along for mapped
+                // parameters (T286) — a consumer swizzles from it, never from a guess.
+                { pair: pointPairId(nodeId, attribute.name), half: "write" as const, type: attribute.type },
+              ]),
+            ),
+          },
           capacity,
-          topology: "points",
+          // Displacing positions never changes CONNECTIVITY: a torus grid through a
+          // kernel is still a grid, so the upstream topology rides through (T401).
+          topology: incoming?.topology ?? "points",
         },
       },
     };
