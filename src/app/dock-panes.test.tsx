@@ -139,6 +139,58 @@ const shaderDiagnostic = (
   message: string,
 ): RuntimeDiagnostic => ({ severity, code: "shader.test", message, nodeId: "n1" });
 
+/**
+ * T505 — expressions are code too. A slot in expression mode becomes a pane SUBJECT
+ * beside the declared code parameters, edited with the same editor, and the commit
+ * writes back INTO the mode envelope with every other binding kept (§V108).
+ */
+describe("ShaderPane — expression subjects (T505)", () => {
+  it("shows a slot in expression mode as a subject and commits into its envelope", async () => {
+    const runtime = fakeRuntime();
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        operations: [
+          {
+            op: "setParameters",
+            nodeId: "n1",
+            parameters: {
+              amount: {
+                mode: "expression",
+                bindings: {
+                  static: { kind: "static", value: 1 },
+                  expression: { kind: "expression", source: "sin(time)" },
+                },
+              },
+            },
+          },
+        ],
+      },
+      runtime.invocation,
+    );
+    render(<Harness runtime={runtime} />);
+
+    // Two subjects: the declared source parameter, and the expression-mode slot.
+    fireEvent.click(screen.getByRole("tab", { name: "amount expr" }));
+    const editor = screen.getByLabelText(/amount expr for n1/i);
+    expect((editor as HTMLTextAreaElement).value).toBe("sin(time)");
+
+    fireEvent.change(editor, { target: { value: "abstime * 0.5" } });
+    fireEvent.blur(editor);
+    await vi.waitFor(() => {
+      const stored = runtime.bus.store.getGraph().nodes["n1"]?.parameters["amount"] as {
+        mode: string;
+        bindings: Record<string, { kind: string; source?: string; value?: number }>;
+      };
+      expect(stored.bindings["expression"]?.source).toBe("abstime * 0.5");
+      // §V108: the retained static binding SURVIVED the payload edit.
+      expect(stored.bindings["static"]?.value).toBe(1);
+      expect(stored.mode).toBe("expression");
+    });
+  });
+});
+
 describe("ShaderPane — the status strip (§V9, §V27)", () => {
   it("says the output is stale, and says why, when the backend retained a program", () => {
     // §V9: the render did not stop and did not go black — it is still running the last

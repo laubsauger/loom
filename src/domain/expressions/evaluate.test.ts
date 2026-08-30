@@ -26,6 +26,29 @@ const frame: FrameEvaluationInput = {
   randomSeed: 7,
 };
 
+import {
+  FREE_RUNNING_CLOCK_NAMES,
+  WRAPPING_CLOCK_NAMES,
+} from "./evaluate.ts";
+
+/**
+ * T505 — the exported clock families ARE the scope's clock keys, in both directions.
+ * The highlighter derives from these lists; a clock added to `scopeFromFrame` without
+ * joining a family would be invisibly unpainted, and a name in a family that the scope
+ * does not supply would paint a variable that evaluates to an error.
+ */
+describe("clock families match the scope (T505)", () => {
+  it("the two lists are disjoint and together are EXACTLY the bare scope's keys", () => {
+    const frame = { timeSeconds: 1, deltaSeconds: 1 / 60, frameIndex: 60, mode: "realtime", randomSeed: 0 } as never;
+    const keys = Object.keys(scopeFromFrame(frame)).sort();
+    const union = [...WRAPPING_CLOCK_NAMES, ...FREE_RUNNING_CLOCK_NAMES].sort();
+    expect(union).toEqual(keys);
+    for (const name of WRAPPING_CLOCK_NAMES) {
+      expect(FREE_RUNNING_CLOCK_NAMES).not.toContain(name);
+    }
+  });
+});
+
 describe("variables resolve only from the provided scope", () => {
   it("evaluates frame-driven expressions", () => {
     const scope = scopeFromFrame(frame);

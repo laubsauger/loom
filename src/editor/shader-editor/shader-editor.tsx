@@ -19,13 +19,14 @@ import { cx } from "@ui/cx.ts";
 import type { ShaderEditorMarker } from "./compile-types.ts";
 import { wgsl } from "./wgsl-language.ts";
 import { json } from "./json-language.ts";
+import { expression } from "./expression-language.ts";
 import { shaderEditorHighlighting } from "./theme.ts";
 import styles from "./shader-editor.module.css";
 
 export interface ShaderEditorProps {
   value: string;
   /** T492: highlighting follows the parameter's declared language. Default WGSL. */
-  language?: "wgsl" | "json" | undefined;
+  language?: "wgsl" | "json" | "expression" | undefined;
   onChange?: ((value: string) => void) | undefined;
   /** Fired when focus leaves the editor — the natural moment to commit and compile. */
   onBlur?: (() => void) | undefined;
@@ -92,7 +93,7 @@ export function ShaderEditor({
           search(),
           highlightSelectionMatches(),
           lintGutter(),
-          language === "json" ? json() : wgsl(),
+          language === "json" ? json() : language === "expression" ? expression() : wgsl(),
           shaderEditorHighlighting,
           // History first: mod+z must reach the text history before anything else can
           // claim it (§V53).

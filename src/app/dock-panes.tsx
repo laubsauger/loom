@@ -10,6 +10,7 @@ import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { codeParametersOf } from "@domain/parameters/index.ts";
+import { isParameterSlot } from "@domain/parameters/slots.ts";
 import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
 import type { McpTransportsView } from "./use-mcp-transports.ts";
@@ -65,10 +66,44 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
    * strip below switches between them and the buffer machinery treats (node, parameter)
    * as the subject where it used to treat the node alone.
    */
-  const codeParameters = useMemo(
-    () => (definition === undefined ? [] : codeParametersOf(definition.parameters)),
-    [definition],
-  );
+  const codeParameters = useMemo(() => {
+    const declared =
+      definition === undefined
+        ? []
+        : codeParametersOf(definition.parameters).map((entry) => ({
+            key: entry.key,
+            label: entry.definition.label,
+            language: entry.definition.language as "wgsl" | "json" | "expression",
+            defaultText: entry.definition.default,
+            kind: "parameter" as const,
+          }));
+    /**
+     * T505: expressions are code too. An expression lives in a slot's MODE, not as a
+     * parameter, so the census cannot see it (and must not be forced to — a mode is
+     * not a parameter). The pane derives a second subject family from the NODE: every
+     * slot currently in expression mode, edited with the same editor, committed back
+     * into its envelope with every other binding kept (§V108: mode payloads survive).
+     */
+    const expressions =
+      node === undefined
+        ? []
+        : Object.entries(node.parameters)
+            .filter(
+              (entry): entry is [string, { mode: "expression"; bindings: Record<string, unknown> }] =>
+                isParameterSlot(entry[1]) &&
+                entry[1].mode === "expression" &&
+                entry[1].bindings.expression !== undefined,
+            )
+            .map(([key]) => ({
+              key: `expr:${key}`,
+              label: `${key} expr`,
+              language: "expression" as const,
+              defaultText: "",
+              kind: "expression" as const,
+            }))
+            .sort((a, b) => (a.key < b.key ? -1 : 1));
+    return [...declared, ...expressions];
+  }, [definition, node]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const activeKey =
     selectedKey !== null && codeParameters.some((entry) => entry.key === selectedKey)
@@ -79,9 +114,17 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
 
   const committed = useMemo(() => {
     if (!authorable) return "";
+    if (active.kind === "expression") {
+      const stored = node.parameters[active.key.slice("expr:".length)];
+      if (isParameterSlot(stored)) {
+        const binding = stored.bindings.expression;
+        if (binding?.kind === "expression") return binding.source;
+      }
+      return "";
+    }
     const value = node.parameters[active.key];
     if (typeof value === "string") return value;
-    return active.definition.default;
+    return active.defaultText;
   }, [authorable, node, active]);
 
   const [draft, setDraft] = useState(committed);
@@ -98,6 +141,35 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
    */
   const commitCode = useCallback(
     (subjectNode: NodeId, key: string, source: string) => {
+      if (key.startsWith("expr:")) {
+        // T505: write the source back INTO the mode envelope, other bindings kept
+        // (§V108 — a mode switch, and by extension a payload edit, is never
+        // destructive of the neighbours).
+        const parameterKey = key.slice("expr:".length);
+        const stored = bus.store.getGraph().nodes[subjectNode]?.parameters[parameterKey];
+        if (!isParameterSlot(stored)) return;
+        void bus.execute(
+          "graph.applyPatch",
+          {
+            baseRevision: bus.store.getRevision(),
+            operations: [
+              {
+                op: "setParameters",
+                nodeId: subjectNode,
+                parameters: {
+                  [parameterKey]: {
+                    ...stored,
+                    bindings: { ...stored.bindings, expression: { kind: "expression", source } },
+                  },
+                },
+              },
+            ],
+            label: `edit ${parameterKey} expression`,
+          },
+          invocation,
+        );
+        return;
+      }
       if (key === SHADER_SOURCE_PARAMETER) {
         void commitShaderSource({
           bus,
@@ -207,7 +279,7 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
                 className={entry.key === activeKey ? styles.codeSubjectActive : styles.codeSubject}
                 onClick={() => setSelectedKey(entry.key)}
               >
-                {entry.definition.label}
+                {entry.label}
               </button>
             ))}
           </span>
@@ -242,18 +314,20 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
           </span>
         </span>
         <span className={styles.note}>
-          {active.definition.language === "wgsl"
+          {active.language === "wgsl"
             ? "WGSL is checked when the graph compiles on a device; there is no standalone shader compile yet."
-            : "JSON is checked when the graph compiles; a schema that does not parse refuses by name."}
+            : active.language === "json"
+              ? "JSON is checked when the graph compiles; a schema that does not parse refuses by name."
+              : "Expressions are checked as you commit; an unparseable one refuses with its reason."}
         </span>
       </div>
       <ShaderEditor
         value={draft}
-        language={active.definition.language}
+        language={active.language}
         onChange={setDraft}
         onBlur={commit}
         markers={markers}
-        label={`${active.definition.label} for ${nodeId}`}
+        label={`${active.label} for ${nodeId}`}
       />
     </div>
   );

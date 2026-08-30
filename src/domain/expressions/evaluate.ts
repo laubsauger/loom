@@ -157,6 +157,16 @@ export type ParseResult = { ok: true; ast: ExpressionAst } | { ok: false; reason
 export type EvaluateResult = { ok: true; value: number } | { ok: false; reason: string };
 
 /** Names an expression may read when evaluated against a frame (§I.frame). */
+/**
+ * T505: the two clock families, EXPORTED so the expression highlighter derives from the
+ * evaluator rather than remembering names (§V150). The distinction is the one that has
+ * bitten this project four times: `time`/`frame`/`delta` WRAP with the timeline once it
+ * is bounded; the free-running names keep counting through a loop. A test pins both
+ * lists against `scopeFromFrame`'s actual keys, in both directions.
+ */
+export const WRAPPING_CLOCK_NAMES = ["time", "delta", "frame"] as const;
+export const FREE_RUNNING_CLOCK_NAMES = ["walltime", "walldelta", "abstime", "absframe"] as const;
+
 export function scopeFromFrame(
   frame: FrameEvaluationInput,
   nodeContext: ExpressionScope = {},

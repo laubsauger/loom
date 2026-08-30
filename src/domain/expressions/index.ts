@@ -1,6 +1,8 @@
 export {
   evaluateAst,
   evaluateExpression,
+  FREE_RUNNING_CLOCK_NAMES,
+  WRAPPING_CLOCK_NAMES,
   functionNames,
   functionSignature,
   parseExpression,

@@ -6,7 +6,7 @@ export interface CodeFieldProps {
   id: string;
   label: string;
   value: string;
-  language: "wgsl" | "json";
+  language: "wgsl" | "json" | "expression";
   disabled: boolean;
   onCommit: (next: string) => void;
 }
