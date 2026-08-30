@@ -69,27 +69,27 @@ describe("verified TouchDesigner network-editor bindings", () => {
   });
 
   it("distinguishes case: uppercase acts on all, lowercase on the selection", () => {
+    // The convention survives `h` being unbound (T430): `F`/`f` still carry it, and `H`
+    // still reads as the uppercase "acts on everything" member of the pair — it is the
+    // LOWERCASE half that has no meaning here, not the convention.
     expect(normalizeKeys(find("view.home").keys)).toBe("shift+h");
-    expect(normalizeKeys(find("view.homeSelected").keys)).toBe("h");
     expect(normalizeKeys(find("view.frame").keys)).toBe("shift+f");
     expect(normalizeKeys(find("view.frameSelected").keys)).toBe("f");
-    expect(find("view.homeSelected").when).toBe("hasSelection");
     expect(find("view.frameSelected").when).toBe("hasSelection");
   });
 
   it("binds the verified table", () => {
-    // `graph.find` (`mod+f`) is DELIBERATELY absent (T443, §V354). TouchDesigner has it and
-    // this table is otherwise TD-verified, so its absence is the kind of thing a future
-    // reader would "restore" — it is unbound because no find surface exists, and a key
-    // that does nothing while the graph is visibly right there reads as broken rather than
-    // unbuilt. The assertion below that nothing binds it is what keeps that a decision.
+    // THREE TD keys are deliberately absent from this otherwise TD-verified table, which
+    // makes them exactly the kind of thing a future reader would "restore": `mod+f` (no
+    // find surface exists), `h` (home-selected has no meaning beside a `H` that is about
+    // scale) and `o` (TD's overview is a separate pane this app does not have). The loop
+    // at the end of this test is what keeps each one a decision rather than an omission.
     const expected: Record<string, string> = {
       "graph.addOperator": "tab",
       "node.toggleBypass": "b",
       "node.toggleDisplay": "d",
       "node.toggleRender": "r",
       "node.openViewer": "v",
-      "view.overview": "o",
       "graph.diveIn": "i",
       "graph.jumpUp": "u",
       "graph.diveIn.enter": "enter",
@@ -106,12 +106,16 @@ describe("verified TouchDesigner network-editor bindings", () => {
       expect(normalizeKeys(find(id).keys), id).toBe(normalizeKeys(keys));
     }
 
-    // T443: unbound until the surface ships, and rebinding it without a surface has to be
-    // a visible edit to this line rather than a quiet re-add to the table.
-    expect(
-      DEFAULT_BINDINGS.filter((binding) => binding.command === "ui.findInGraph"),
-      "`mod+f` is unbound until a find surface exists (T443, §V354)",
-    ).toEqual([]);
+    // T443/T430: unbound until each has a meaning or a surface, and rebinding one has to
+    // be a visible edit to this line rather than a quiet re-add to the table above.
+    // `mod+f` — no find surface exists. `h`/`o` — "home selected" has no meaning beside a
+    // `H` that is about SCALE, and TD's overview is a separate pane this app lacks.
+    for (const command of ["ui.findInGraph", "view.homeSelected", "view.overview"]) {
+      expect(
+        DEFAULT_BINDINGS.filter((binding) => binding.command === command),
+        `${command} is deliberately unbound (T430/T443, §V354)`,
+      ).toEqual([]);
+    }
   });
 
   it("does not ship the shortcuts that turned out not to be TouchDesigner's", () => {
@@ -142,12 +146,16 @@ describe("our app-level bindings", () => {
       expect(normalizeKeys(find(id).keys), id).toBe(normalizeKeys(keys));
     }
 
-    // T443: unbound until the surface ships, and rebinding it without a surface has to be
-    // a visible edit to this line rather than a quiet re-add to the table.
-    expect(
-      DEFAULT_BINDINGS.filter((binding) => binding.command === "ui.findInGraph"),
-      "`mod+f` is unbound until a find surface exists (T443, §V354)",
-    ).toEqual([]);
+    // T443/T430: unbound until each has a meaning or a surface, and rebinding one has to
+    // be a visible edit to this line rather than a quiet re-add to the table above.
+    // `mod+f` — no find surface exists. `h`/`o` — "home selected" has no meaning beside a
+    // `H` that is about SCALE, and TD's overview is a separate pane this app lacks.
+    for (const command of ["ui.findInGraph", "view.homeSelected", "view.overview"]) {
+      expect(
+        DEFAULT_BINDINGS.filter((binding) => binding.command === command),
+        `${command} is deliberately unbound (T430/T443, §V354)`,
+      ).toEqual([]);
+    }
   });
 
   it("passes static input where the command needs it", () => {

@@ -50,20 +50,20 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     description: "Open the node search at the cursor.",
   },
   {
+    // OURS, not a transcription (T430). §I read TD's `H` as "default view", which could
+    // equally have meant fit-all — and fit-all is already `F`. Here it means 1:1 zoom
+    // centred on the content: the one thing fit cannot give you, because fit picks
+    // whatever zoom fills the window and so hides how big the graph actually is.
+    //
+    // `h` (home selected) and `o` (overview) are DELIBERATELY absent beside it. "Home
+    // selected" has no meaning once `H` is about scale rather than extent, and TD's
+    // overview is a separate PANE this app does not have. A key taught a wrong meaning
+    // costs more to un-teach than an absent one costs to add (T430, §V354).
     id: "view.home",
     keys: "H",
     context: "graph",
     command: "view.home",
-    label: "Home — default view",
-  },
-  {
-    id: "view.homeSelected",
-    keys: "h",
-    context: "graph",
-    command: "view.homeSelected",
-    when: "hasSelection",
-    inputFrom: { from: "selection", as: "nodeIds" },
-    label: "Home selected",
+    label: "Home — 1:1 zoom",
   },
   {
     id: "view.frame",
@@ -116,13 +116,6 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     when: "hasSelection",
     inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
     label: "Open viewer",
-  },
-  {
-    id: "view.overview",
-    keys: "o",
-    context: "graph",
-    command: "view.overview",
-    label: "Overview",
   },
   {
     id: "graph.diveIn",

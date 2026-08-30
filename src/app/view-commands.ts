@@ -15,15 +15,23 @@ import type { ShaderloomBus } from "@domain/commands/bus.ts";
  * make an undo entry: §V34 groups an EDIT, and Cmd+Z after a glance has to undo the edit
  * before it, not the glance.
  *
- * ## Why only FRAME, and not `H`/`h`/`o`
+ * ## `H` is OURS, and says so
  *
- * "Fit these nodes in the window" has exactly one meaning, and React Flow's `fitView`
- * already is it. Home and Overview do not: §I transcribes them from TouchDesigner as
- * "default view" and "overview", and against a real TD install `H` may reset the zoom to
- * 1:1, or fit-all — which would make it a duplicate of `F` — and Overview may be a
- * zoomed-out fit or TD's separate navigation pane. Guessing would put a wrong meaning on
- * a key that then has to be un-taught. They stay planned, and the note is in `defaults.ts`
- * beside the bindings.
+ * `view.home` is "back to a known SCALE": 1:1 zoom, centred on the content. That is this
+ * app's definition, chosen rather than transcribed — §I read it from TouchDesigner as
+ * "default view", which could equally have meant fit-all, and fit-all would have made `H`
+ * a duplicate of `F`. Stating it as ours is the point: a binding table that presents a
+ * guess as a transcription is the thing nobody can later correct with confidence.
+ *
+ * It is deliberately the one thing `fitView` cannot give you. Fit chooses whatever zoom
+ * makes the content fill the window, so at a glance you cannot tell a small graph from a
+ * large one; 1:1 is the scale at which node sizes mean something again.
+ *
+ * `view.homeSelected` (`h`) and `view.overview` (`o`) are UNBOUND, not implemented here.
+ * "Home selected" is meaningless beside a `H` that is about scale rather than extent, and
+ * TD's overview is a separate PANE this app does not have, so there is no meaning to
+ * transcribe. Un-teaching a key that was given a wrong meaning costs far more than an
+ * absent binding (§V354's reasoning, applied the other way round).
  */
 declare module "@domain/types/commands.ts" {
   interface CommandMap {
@@ -31,6 +39,8 @@ declare module "@domain/types/commands.ts" {
     "view.frameAll": { input: Record<string, never>; output: { framed: number } };
     /** Fit the given nodes. Reports how many of them the canvas actually holds. */
     "view.frameSelected": { input: { nodeIds: readonly string[] }; output: { framed: number } };
+    /** Back to 1:1 zoom, centred on the content. Reports how many nodes it centred on. */
+    "view.home": { input: Record<string, never>; output: { framed: number } };
   }
 }
 
@@ -41,6 +51,8 @@ export interface ViewHandlers {
    * move that did not happen (§V123).
    */
   frame(nodeIds: readonly string[] | null): number;
+  /** 1:1 zoom centred on the content. Returns the number of nodes it centred on. */
+  home(): number;
 }
 
 export interface ViewHolder {
@@ -121,6 +133,35 @@ export function registerViewCommands(bus: ShaderloomBus): ViewHolder {
                 input.nodeIds.length === 0
                   ? "Nothing is selected, so there is nothing to frame."
                   : `The canvas holds none of ${[...input.nodeIds].sort().join(", ")}.`,
+            },
+          ],
+          output: { framed: 0 },
+        };
+      }
+      return { status: "applied", revision, output: { framed } };
+    },
+    rejectionOutput: () => ({ framed: 0 }),
+  });
+
+  bus.registerCommand({
+    name: "view.home",
+    description: "Return the view to 1:1 zoom, centred on the graph.",
+    handler: (_input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) {
+        return { status: "rejected", revision, diagnostics: [NO_CANVAS], output: { framed: 0 } };
+      }
+      if (context.dryRun) return { status: "validated", revision, output: { framed: 0 } };
+      const framed = holder.current.home();
+      if (framed === 0) {
+        return {
+          status: "rejected",
+          revision,
+          diagnostics: [
+            {
+              severity: "info" as const,
+              code: "view.nothingToFrame",
+              message: "The graph is empty, so there is nothing to centre on.",
             },
           ],
           output: { framed: 0 },

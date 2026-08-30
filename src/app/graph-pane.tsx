@@ -299,6 +299,15 @@ function GraphPaneInner({
         void flow.fitView({ nodes: present.map((node) => ({ id: node.id })) });
         return present.length;
       },
+      home: (): number => {
+        const all = flow.getNodes();
+        if (all.length === 0) return 0;
+        // 1:1 on the CONTENT's centre, not on the origin: an empty corner of the canvas
+        // is a known scale showing nothing, which is not what "home" means to anyone.
+        const bounds = flow.getNodesBounds(all);
+        void flow.setCenter(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { zoom: 1 });
+        return all.length;
+      },
     };
     holder.current = handlers;
     return () => {

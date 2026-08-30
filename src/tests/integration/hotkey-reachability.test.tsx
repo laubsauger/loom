@@ -64,13 +64,13 @@ function newRuntime(): AppRuntime {
   });
 }
 
-async function mountWithNodes(count: number, type = "solid") {
+async function mountWithNodes(count: number, type = "solid", originX = 0) {
   const runtime = newRuntime();
   const operations: GraphPatchOperation[] = Array.from({ length: count }, (_unused, index) => ({
     op: "addNode",
     ref: `$n${String(index)}`,
     type,
-    position: { x: index * 220, y: 0 },
+    position: { x: originX + index * 220, y: 0 },
   }));
   await runtime.bus.execute(
     "graph.applyPatch",
@@ -603,6 +603,66 @@ describe("T430/§V354 — `F` frames the graph and `f` frames the selection", ()
         "`f` left the camera on the whole graph — it framed everything, or nothing",
       ).not.toBe(frameAll);
     });
+  });
+
+  it("returns to 1:1 zoom on the content when `H` is pressed, which is NOT what `F` does", async () => {
+    // `H` is ours (T430): a known SCALE, deliberately the one thing fit cannot give you.
+    // Asserting it differs from `F` is the whole point — had it been defined as fit-all,
+    // it would be a duplicate key, and this is what says so.
+    const { container } = await mountWithNodes(3);
+    await waitFor(() => {
+      expect(transformOf(container)).not.toBe("none");
+    });
+    const frameAll = transformOf(container);
+    // Non-vacuity: `F`'s fit is NOT already at 1:1, so "went to 1:1" is a real move.
+    expect(frameAll, "the fit was already 1:1 — this test would prove nothing").not.toContain(
+      "scale(1)",
+    );
+
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "h", shiftKey: true });
+    });
+
+    await waitFor(() => {
+      expect(
+        transformOf(container),
+        "`H` did not return the view to 1:1 zoom",
+      ).toContain("scale(1)");
+    });
+    expect(transformOf(container), "`H` landed on `F`'s fit — it is a duplicate key").not.toBe(
+      frameAll,
+    );
+  });
+
+  it("centres `H` on the CONTENT, not on the canvas origin", async () => {
+    // Two graphs, identical but for where they sit. A `H` that centred on the origin
+    // would hand both the same transform — and would leave you at a known scale looking
+    // at an empty corner, which is not what anyone means by "home".
+    const near = await mountWithNodes(2);
+    await clickBackgroundOf(near.container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "h", shiftKey: true });
+    });
+    await waitFor(() => {
+      expect(transformOf(near.container)).toContain("scale(1)");
+    });
+    const atOrigin = transformOf(near.container);
+    cleanup();
+
+    const far = await mountWithNodes(2, "solid", 5000);
+    await clickBackgroundOf(far.container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "h", shiftKey: true });
+    });
+    await waitFor(() => {
+      expect(transformOf(far.container)).toContain("scale(1)");
+    });
+
+    expect(
+      transformOf(far.container),
+      "`H` gave a graph 5000 units away the same view as one at the origin — it centres on the origin, not the content",
+    ).not.toBe(atOrigin);
   });
 
   it("names the ids it does not hold rather than reporting a move it did not make", async () => {

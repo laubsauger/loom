@@ -115,10 +115,7 @@ export type PlannedCommandName =
   | "node.openColorPalette"
   | "ui.cancel"
   | "ui.openNodeSearch"
-  | "ui.openShaderEditor"
-  | "view.home"
-  | "view.homeSelected"
-  | "view.overview";
+  | "ui.openShaderEditor";
 
 export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.diveIn",
@@ -131,9 +128,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "ui.cancel",
   "ui.openNodeSearch",
   "ui.openShaderEditor",
-  "view.home",
-  "view.homeSelected",
-  "view.overview",
 ];
 
 export type CommandInput<T extends CommandName> = CommandMap[T]["input"];
