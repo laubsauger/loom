@@ -5,7 +5,7 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
 /**
- * Media inputs (T263, §V135, §V167): Movie File In and Webcam.
+ * Media inputs (T263, §V135, §V167): Movie File In, Webcam — and Text (T243).
  *
  * Per the T231 shaping, a file player, a webcam and a screen capture are the SAME
  * `MediaSource` — pull-based frames on the source's own schedule. So these two nodes
@@ -20,6 +20,19 @@ import { readCompileInputs } from "./compile-context.ts";
  *
  * A node whose source is not registered (file not picked yet, camera denied) shows
  * black and keeps working — the T264 half turns the denial into a diagnostic.
+ *
+ * TEXT LIVES HERE, which looks odd for a generator and is the point. A Text node's pixels
+ * come from the browser rasterizing a string into a canvas, which is a CPU-supplied
+ * texture arriving on its own schedule — the same seam a video frame arrives through, and
+ * the reason T243 waited for T262. Its graph side is byte-for-byte the media one: declare
+ * an external scratch, blit it. What differs is only what the app registers behind the
+ * sourceId, which is the sentence this whole module is built around.
+ *
+ * WHY THE STRING IS RASTERIZED WHOLE rather than assembled from a glyph atlas: the browser
+ * already does shaping, kerning, bidi, font fallback and emoji, and we have no per-glyph
+ * quad path. Reimplementing text layout on the GPU to avoid one canvas would be inventing
+ * a worse HarfBuzz — and TD's Text TOP is a full-frame layer with alignment rather than a
+ * tight bounding box, so per-glyph granularity buys nothing this node wants.
  */
 
 export const MEDIA_TEXTURE_KEY = "media";
@@ -94,4 +107,95 @@ export const webcamNode: NodeDefinition = {
   compile: compileMedia,
 };
 
-export const mediaNodeDefinitions: readonly NodeDefinition[] = [movieFileInNode, webcamNode];
+const TEXT_ALIGN_OPTIONS = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+] as const;
+
+const TEXT_VALIGN_OPTIONS = [
+  { value: "top", label: "Top" },
+  { value: "middle", label: "Middle" },
+  { value: "bottom", label: "Bottom" },
+] as const;
+
+const TEXT_WHITE: readonly [number, number, number, number] = [1, 1, 1, 1];
+const TEXT_TRANSPARENT: readonly [number, number, number, number] = [0, 0, 0, 0];
+
+/**
+ * Text — a string as a texture (T243). TD's Text TOP.
+ *
+ * NONE OF THESE PARAMETERS IS A UNIFORM, which is the thing to understand about this node.
+ * They describe what the CPU rasterizes; the pass is a blit of the result. So changing the
+ * string is not a §V5 uniform write — it is a new frame from the source, exactly as a video
+ * advancing is, and it uploads only when something actually changed (§V136).
+ *
+ * COLOUR (§V56): the two colours are `space: "display"` like every other picker-driven
+ * parameter, and the app reads them in THAT space (`ResolvedParameter.value`) because a
+ * canvas paints in sRGB. The decode to the linear working space happens exactly once, in
+ * hardware, when the shader samples the `rgba8unorm-srgb` external texture. No curve is
+ * applied in JS, and none is applied in WGSL.
+ *
+ * SIZE IS IN PIXELS OF THE OUTPUT, so a Text node resized to a different resolution
+ * rescales its text the way a Blur's radius rescales — the same trade, stated in the same
+ * place. The rasterizer draws at the node's RESOLVED size (T312), never the project's:
+ * `copyExternalImageToTexture` asserts matching extents, so a per-node override that the
+ * canvas did not know about would fail the upload rather than scale.
+ */
+export const textNode: NodeDefinition = {
+  type: "text",
+  version: 1,
+  // A generator, not an input: it makes pixels from parameters and is reproducible from
+  // the document alone. The browser's font stack is the one thing it does not carry — a
+  // missing family falls back rather than failing, which is why this is not "input".
+  category: "generator",
+  title: "Text",
+  description:
+    "Draws a string, laid out by the browser and uploaded as a texture. Font size is in output pixels.",
+  tags: ["text", "type", "generator"],
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE, description: "Linear-space colour." }],
+  parameters: {
+    // Defaults to the word "Text": a freshly dropped node has to show that it works.
+    // Blank would be indistinguishable from a node that failed to rasterize.
+    text: { type: "string", label: "Text", default: "Text", multiline: true },
+    font: {
+      type: "string",
+      label: "Font",
+      default: "sans-serif",
+      description: "Any CSS family. Generic families always resolve; a missing one falls back.",
+    },
+    size: { type: "number", label: "Size", default: 96, min: 1, max: 1024, unit: "px" },
+    color: { type: "color", label: "Color", default: TEXT_WHITE, space: "display" },
+    bgcolor: {
+      type: "color",
+      label: "Background",
+      default: TEXT_TRANSPARENT,
+      space: "display",
+      description: "Transparent by default, so text composites over what is underneath.",
+    },
+    align: { type: "enum", label: "Align", default: "center", options: [...TEXT_ALIGN_OPTIONS] },
+    valign: {
+      type: "enum",
+      label: "Vertical Align",
+      default: "middle",
+      options: [...TEXT_VALIGN_OPTIONS],
+    },
+    linespacing: {
+      type: "number",
+      label: "Line Spacing",
+      default: 1.2,
+      min: 0.1,
+      max: 8,
+      description: "Multiple of the font size between lines.",
+    },
+  },
+  resolutionPolicy: { kind: "project" },
+  compile: compileMedia,
+};
+
+export const mediaNodeDefinitions: readonly NodeDefinition[] = [
+  movieFileInNode,
+  webcamNode,
+  textNode,
+];

@@ -8,7 +8,8 @@ import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import { createVideoMediaSource } from "./media-sources.ts";
 import type { MediaElement } from "./media-sources.ts";
-import type { MediaEnvironment } from "./use-media-sources.ts";
+import type { TextMediaSource, TextRaster } from "./text-source.ts";
+import type { MediaEnvironment, ResolvedSizeSource } from "./use-media-sources.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 
 /**
@@ -90,15 +91,18 @@ function Harness({
   backend,
   graph,
   environment,
+  resolved,
   onDiagnostics,
 }: {
   runtime: AppRuntime;
   backend: ShaderloomBackend | null;
   graph: GraphDocument;
   environment: MediaEnvironment;
+  /** Resolved output sizes (T312). Omitted where the test is only about video wiring. */
+  resolved?: ResolvedSizeSource | null;
   onDiagnostics?: (messages: readonly string[]) => void;
 }) {
-  const media = useMediaSources(runtime, backend, graph, environment);
+  const media = useMediaSources(runtime, backend, graph, resolved ?? null, environment);
   onDiagnostics?.(media.diagnostics.map((entry) => entry.message));
   return null;
 }
@@ -322,5 +326,170 @@ describe("a video media source only reports a new frame when there is one", () =
     media.dispose();
     expect(element.listenerCount("timeupdate")).toBe(0);
     expect(element.listenerCount("ended")).toBe(0);
+  });
+});
+
+
+/**
+ * Text reaches the backend the same way a camera does (T243, T312, §V193).
+ *
+ * The node half declares an external texture and the backend uploads whatever is
+ * registered under its sourceId — which is exactly the shape that shipped twice before
+ * with nothing registering anything. So what is asserted here is the WIRING: that a Text
+ * node in the document produces a registration under the key the compiler emits, that the
+ * string and the colour reach the rasterizer, and that the size it draws at is the node's
+ * RESOLVED size rather than the project's.
+ */
+describe("text sources reach the backend (T243)", () => {
+  /** A text source that records what it was asked to draw, needing no canvas. */
+  function recordingTextSource() {
+    const updates: TextRaster[] = [];
+    let disposed = false;
+    const source: TextMediaSource = {
+      source: { currentFrame: () => undefined },
+      update(raster) {
+        updates.push(raster);
+      },
+      dispose() {
+        disposed = true;
+      },
+    };
+    return { source, updates, wasDisposed: () => disposed };
+  }
+
+  const noMedia = (createTextSource: () => TextMediaSource): MediaEnvironment => ({
+    openFile: () => Promise.reject(new Error("not used")),
+    openCamera: () => Promise.reject(new Error("not used")),
+    createTextSource,
+  });
+
+  it("registers under the compiler's key and draws at the node's RESOLVED size", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const recorder = recordingTextSource();
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            title: { type: "text", parameters: { text: "Hi", color: [1, 0, 0, 1] } },
+          })}
+          // Deliberately NOT the project resolution: T312's whole point is that a
+          // generated source draws at the node's target extent, because
+          // `copyExternalImageToTexture` asserts matching extents and a per-node
+          // resolution override would otherwise fail the upload instead of scaling.
+          resolved={{ outputs: [{ nodeId: "title", size: [320, 200] }] }}
+          environment={noMedia(() => recorder.source)}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("title"))).toBe(true);
+    });
+    const last = recorder.updates.at(-1);
+    expect(last?.text).toBe("Hi");
+    expect([last?.width, last?.height]).toEqual([320, 200]);
+    // Display space, straight from the picker: the decode to linear is the -srgb texture's
+    // job at sample time, not this path's (§V56).
+    expect(last?.color).toEqual([1, 0, 0, 1]);
+  });
+
+  it("draws nothing until the node has a resolved size", async () => {
+    // Not compiled yet, or pruned. A node that renders nothing is exactly what a pruned
+    // node should look like — and guessing the project resolution would produce a canvas
+    // the target does not accept.
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const recorder = recordingTextSource();
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ title: { type: "text", parameters: { text: "Hi" } } })}
+          resolved={null}
+          environment={noMedia(() => recorder.source)}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("title"))).toBe(true);
+    });
+    expect(recorder.updates).toEqual([]);
+  });
+
+  it("pushes an edited string without re-registering the source", async () => {
+    // Typing changes content many times a second. Re-opening the source on every keystroke
+    // would be the video path's cost model applied to the one node that does not need it —
+    // and would drop a frame of black between every character.
+    const runtime = newRuntime();
+    const { backend, registered, unregistered } = fakeBackend();
+    const recorder = recordingTextSource();
+    const environment = noMedia(() => recorder.source);
+    const resolved: ResolvedSizeSource = { outputs: [{ nodeId: "title", size: [320, 200] }] };
+
+    const view = render(
+      <Harness
+        runtime={runtime}
+        backend={backend}
+        graph={graphWith({ title: { type: "text", parameters: { text: "a" } } })}
+        resolved={resolved}
+        environment={environment}
+      />,
+    );
+    await waitFor(() => expect(registered.size).toBe(1));
+
+    await act(async () => {
+      view.rerender(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ title: { type: "text", parameters: { text: "ab" } } })}
+          resolved={resolved}
+          environment={environment}
+        />,
+      );
+    });
+
+    expect(recorder.updates.map((update) => update.text)).toEqual(["a", "ab"]);
+    expect(unregistered).toEqual([]);
+  });
+
+  it("unregisters and disposes when the node goes away", async () => {
+    const runtime = newRuntime();
+    const { backend, registered, unregistered } = fakeBackend();
+    const recorder = recordingTextSource();
+
+    const view = render(
+      <Harness
+        runtime={runtime}
+        backend={backend}
+        graph={graphWith({ title: { type: "text" } })}
+        resolved={{ outputs: [{ nodeId: "title", size: [64, 64] }] }}
+        environment={noMedia(() => recorder.source)}
+      />,
+    );
+    await waitFor(() => expect(registered.size).toBe(1));
+
+    await act(async () => {
+      view.rerender(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({})}
+          resolved={{ outputs: [] }}
+          environment={noMedia(() => recorder.source)}
+        />,
+      );
+    });
+
+    expect(registered.size).toBe(0);
+    expect(unregistered).toEqual([mediaSourceIdFor("title")]);
+    expect(recorder.wasDisposed()).toBe(true);
   });
 });

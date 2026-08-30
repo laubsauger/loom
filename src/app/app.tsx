@@ -228,7 +228,9 @@ export function App({
    * source behind it. This is that something; the node contract already says a node with
    * no source shows black, and a denied camera reports rather than throwing.
    */
-  const media = useMediaSources(runtime, backend ?? null, compile.graph);
+  // T312: the resolved sizes, so a generated source (Text) draws at the node's target
+  // extent rather than the project resolution.
+  const media = useMediaSources(runtime, backend ?? null, compile.graph, compile.compiled);
 
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
