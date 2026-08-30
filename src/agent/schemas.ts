@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 import {
-  nodeFormatOverrideSchema,
-  nodeResolutionOverrideSchema,
+  graphPatchOperationSchema as domainGraphPatchOperationSchema,
   parameterValueSchema,
 } from "@domain/types/schemas.ts";
 
@@ -11,10 +10,19 @@ import {
  *
  * Everything an agent sends is untrusted input at a process boundary, so it is validated
  * structurally BEFORE it reaches the bus: a malformed patch comes back as a diagnostic,
- * never as a raw throw or an unhandled rejection (§V66). `src/domain` has no zod schema
- * for `GraphPatchOperation` today, so the operation schema below is this boundary's own;
- * it mirrors `@domain/types/patch.ts` exactly and must be updated with it. Lifting it
- * into `src/domain/types/schemas.ts` would let the bus validate for every caller.
+ * never as a raw throw or an unhandled rejection (§V66).
+ *
+ * The patch-operation SHAPE is no longer this boundary's own. It used to be — with a
+ * comment saying it "mirrors `@domain/types/patch.ts` exactly and must be updated with
+ * it" — and it did not: six operations from four separate tasks landed in the domain
+ * union and never arrived here, so `setNodeSize`, `reorderEdges` and the whole group and
+ * viewport family existed in the document and were unreachable for an agent. A mirror
+ * maintained by remembering is a mirror that drifts, and nothing failed when it did.
+ * `graphPatchOperationSchema` in `src/domain/types/schemas.ts` is now the one shape, and
+ * `patch-ops.test.ts` proves it covers the TypeScript union exactly.
+ *
+ * What stays here is POLICY, which is a different thing from shape and is the reason
+ * this file still has an opinion at all — see the refinement below.
  *
  * Every object is `.strict()`. An unknown key is a caller mistake worth reporting — and
  * it is also how a fabricated `capabilities` field gets refused instead of ignored
@@ -33,47 +41,21 @@ const portRef = z.object({ nodeId: nodeRef, portId }).strict();
 
 const parameters = z.record(parameterValueSchema);
 
-export const graphPatchOperationSchema = z.discriminatedUnion("op", [
-  z
-    .object({
-      op: z.literal("addNode"),
-      /** Patch-local `$temp` id, resolved and returned in `createdIds` (§V35). */
-      ref: z.string().regex(/^\$/, "A patch-local ref must start with `$`."),
-      type: z.string().min(1),
-      position,
-      parameters: parameters.optional(),
-    })
-    .strict(),
-  z.object({ op: z.literal("removeNodes"), nodeIds: z.array(z.string().min(1)) }).strict(),
-  z
-    .object({
-      op: z.literal("connect"),
-      ref: z.string().regex(/^\$/).optional(),
-      source: portRef,
-      target: portRef,
-    })
-    .strict(),
-  z.object({ op: z.literal("disconnect"), edgeIds: z.array(z.string().min(1)) }).strict(),
-  z.object({ op: z.literal("setParameters"), nodeId: nodeRef, parameters }).strict(),
-  z.object({ op: z.literal("setShaderSource"), nodeId: nodeRef, source: z.string() }).strict(),
-  z.object({ op: z.literal("moveNodes"), positions: z.record(position) }).strict(),
-  z.object({ op: z.literal("setNodeUi"), nodeId: nodeRef, ui: z.record(z.unknown()) }).strict(),
-  z.object({ op: z.literal("setNodeLabel"), nodeId: nodeRef, label: z.string().nullable() }).strict(),
-  z
-    .object({
-      op: z.literal("setNodeResolution"),
-      nodeId: nodeRef,
-      resolution: nodeResolutionOverrideSchema.nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal("setNodeFormat"),
-      nodeId: nodeRef,
-      format: nodeFormatOverrideSchema.nullable(),
-    })
-    .strict(),
-]);
+/**
+ * The domain's operation shape, plus the one rule that is specific to an AGENT.
+ *
+ * §V35: a `$temp` ref is minted by `applyGraphPatch` and handed back in `createdIds`. A
+ * bare ref means "create this exact id", which the domain permits — a migration or a
+ * fixture legitimately restores known ids. An agent must not: choosing its own ids lets
+ * it collide with, or impersonate, entities it did not create. The domain schema is the
+ * shape; this refinement is the boundary's policy, stated once and testable, rather than
+ * a divergence hidden inside a second copy of seventeen operations.
+ */
+export const graphPatchOperationSchema = domainGraphPatchOperationSchema.refine(
+  (operation) =>
+    (operation.op !== "addNode" && operation.op !== "addGroup") || operation.ref.startsWith("$"),
+  { message: "A patch-local ref must start with `$`.", path: ["ref"] },
+);
 
 /**
  * `baseRevision` is REQUIRED here, unlike on the single-edit convenience tools.
