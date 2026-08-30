@@ -32,7 +32,7 @@ export const VALUE_HISTORY_TICK_MS = 100;
 
 export interface ValueHistoryStore extends ValueHistorySource {
   /** One node's channels for one frame. Call once per frame, per node. */
-  push(nodeId: NodeId, channels: Readonly<Record<string, number>>): void;
+  push(nodeId: NodeId, channels: Readonly<Record<string, number>>, timeSeconds?: number): void;
   /** Drops every node's window. Transport reset and backward seek (§V181, §V170). */
   clear(): void;
   /** Forgets nodes that are no longer in the graph, so a deleted node frees its ring. */
@@ -56,6 +56,8 @@ interface Ring {
   /** Index of the next write. */
   cursor: number;
   latest: Record<string, number> | null;
+  /** Timeline seconds of the newest sample — the function plot's playhead reads it. */
+  time: number | null;
   /** Cached projection handed to React; nulled on write, rebuilt on read. */
   view: ValueHistory | null;
 }
@@ -98,13 +100,13 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
   }
 
   return {
-    push(nodeId, channels) {
+    push(nodeId, channels, timeSeconds) {
       // Publication order is the node's own; the cap keeps a bag of twenty channels from
       // turning a 2cm plot into a smear (see `MAX_PLOTTED_CHANNELS`).
       const names = Object.keys(channels).slice(0, MAX_PLOTTED_CHANNELS);
       let ring = rings.get(nodeId);
       if (ring === undefined) {
-        ring = { channels: [], buffers: [], length: 0, cursor: 0, latest: null, view: null };
+        ring = { channels: [], buffers: [], length: 0, cursor: 0, latest: null, time: null, view: null };
         rings.set(nodeId, ring);
       }
       const sameShape =
@@ -122,6 +124,7 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
       ring.cursor = (ring.cursor + 1) % frames;
       if (ring.length < frames) ring.length += 1;
       ring.latest = { ...channels };
+      ring.time = timeSeconds ?? null;
       ring.view = null;
       schedule(nodeId);
     },
@@ -140,7 +143,7 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
         }
         return out;
       });
-      ring.view = { channels: [...ring.channels], series, latest: ring.latest };
+      ring.view = { channels: [...ring.channels], series, latest: ring.latest, timeSeconds: ring.time };
       return ring.view;
     },
 
@@ -159,6 +162,7 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
         ring.length = 0;
         ring.cursor = 0;
         ring.latest = null;
+        ring.time = null;
         ring.view = null;
         schedule(nodeId);
       }

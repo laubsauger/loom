@@ -186,9 +186,15 @@ describe("T344 — a value node shows its signal in the composed app", () => {
     const gpu = fixture();
     await mount(runtime, gpu.backend);
 
-    // Before any frame the node has produced nothing, and says so rather than drawing a
-    // flat line at a value it never emitted.
-    expect(screen.getByTestId(`value-plot-${lfo}`).textContent).toContain("no signal yet");
+    // Before any frame: the CURVE is drawn and the NUMBER is not (T459). These are
+    // different claims. "This LFO makes a sine at 4 Hz" is true of a pure function whether
+    // or not a frame has rendered; "its value is 0.5" is a claim about something it
+    // produced, and it has produced nothing. The original form of this assertion —
+    // "no signal yet" — was the history plot's answer to BOTH, and it is still the answer
+    // for a stateful node, which is asserted in `value-function-plot.test.tsx`.
+    const before = screen.getByTestId(`value-plot-${lfo}`);
+    expect(before.querySelectorAll("path").length).toBeGreaterThan(0);
+    expect(before.textContent).not.toMatch(/\d/);
 
     await act(async () => {
       for (let frame = 0; frame < 40; frame += 1) gpu.tick();

@@ -107,6 +107,19 @@ export const lfoNode: NodeDefinition = {
     phase: { type: "number", label: "Phase", default: 0, min: 0, max: 1 },
   },
   valueChannel: lfoValue,
+  /**
+   * One cycle is `1/frequency` (T459). Zero or negative frequency has no cycle — the
+   * output is a constant — and null is what says so, rather than an infinite period the
+   * plot would try to draw.
+   *
+   * `noise` is sample-and-hold: it IS periodic in the sense that matters here, one held
+   * value per cycle, so a period-long window shows exactly one step. That is the honest
+   * picture of what it does, and it is what the aliased history could never show.
+   */
+  plotPeriod: (values) => {
+    const frequency = num(values["frequency"], 1);
+    return Number.isFinite(frequency) && frequency > 0 ? 1 / frequency : null;
+  },
   compile: noPasses,
 };
 

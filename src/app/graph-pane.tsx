@@ -5,6 +5,7 @@ import type { CommandResult } from "@domain/types/commands.ts";
 import type { ShaderloomBus } from "@domain/commands/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
+import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
@@ -15,6 +16,7 @@ import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
 import { NodePreviewSlot, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
+import { plotValues } from "@editor/nodes/value-function.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
@@ -109,7 +111,7 @@ function GraphPaneInner({
   previewSinks,
   valueHistory,
 }: GraphPaneProps) {
-  const { bus, invocation, nodeRuntime, registry } = useAppRuntime();
+  const { bus, invocation, nodeRuntime, registry, settings } = useAppRuntime();
   const flow = useReactFlow();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -154,10 +156,24 @@ function GraphPaneInner({
     (nodeId: NodeId) => {
       const type = graph.nodes[nodeId]?.type;
       const definition = type === undefined ? undefined : registry.get(type);
-      if (definition?.category === "value") {
-        return valueHistory === undefined ? null : (
-          <ValuePlot nodeId={nodeId} history={valueHistory} />
-        );
+      // T438 (§V316): the DECLARED channel, not the category shelf — audio moved to
+      // "input" and must keep its plot; a camera never earns one.
+      if (definition !== undefined && publishesValueChannels(definition)) {
+        if (valueHistory === undefined) return null;
+        // T459: hand the plot what the node IS and let `sampleValueFunction` decide
+        // whether it has a curve. The pure/stateful split lives THERE, in one place, so
+        // there is exactly one thing to get right and one thing to test — a second copy
+        // of the condition here would be redundant and, being redundant, untested.
+        const node = graph.nodes[nodeId];
+        const source =
+          node === undefined
+            ? null
+            : {
+                definition,
+                values: plotValues(definition, node.parameters),
+                randomSeed: settings.randomSeed,
+              };
+        return <ValuePlot nodeId={nodeId} history={valueHistory} source={source} />;
       }
       return (
         <NodePreviewSlot
@@ -168,7 +184,7 @@ function GraphPaneInner({
         />
       );
     },
-    [graph, nodeRuntime, previewBounds, previewViews, registry, valueHistory],
+    [graph, nodeRuntime, previewBounds, previewViews, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(

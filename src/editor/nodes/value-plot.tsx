@@ -3,6 +3,10 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { stickyRange } from "./plot-range.ts";
 import type { PlotRange } from "./plot-range.ts";
 import type { ValueHistory, ValueHistorySource } from "./value-history.ts";
+import { sampleValueFunction } from "./value-function.ts";
+import type { ValueFunctionPlot } from "./value-function.ts";
+import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import type { ParameterValue } from "@domain/types/parameters.ts";
 import styles from "./value-plot.module.css";
 
 /**
@@ -36,6 +40,20 @@ import styles from "./value-plot.module.css";
  * followed, and the wave expanded and contracted while the signal did not. The range now
  * holds exactly still until the signal leaves it.
  *
+ * ## The FUNCTION, where there is one (T459)
+ *
+ * A pure `valueChannel` node is a function of the frame, so the plot evaluates it across
+ * one whole cycle and draws the real waveform instead of the sampled tail. That fixes two
+ * complaints at once: a fast LFO no longer ALIASES into a polygon (the resolution stops
+ * depending on the frame rate), and the shape is legible at a glance because a whole
+ * cycle is on screen rather than whatever the last two seconds happened to contain.
+ *
+ * A playhead marks the current phase. It is what keeps this a live instrument rather than
+ * a diagram, and it is the only part that moves — the curve deliberately holds still.
+ *
+ * Stateful nodes keep the history plot, and for them that is the truthful picture: a Lag's
+ * output is a function of everything that came before, so where it has been IS what it is.
+ *
  * ## No history is not zero
  *
  * A node that has not been sampled yet renders the empty state, never a flat line at
@@ -46,6 +64,25 @@ import styles from "./value-plot.module.css";
 export interface ValuePlotProps {
   readonly nodeId: NodeId;
   readonly history: ValueHistorySource;
+  /**
+   * What this node IS, so the plot can draw its curve rather than its tail (T459).
+   *
+   * The sampling happens HERE rather than in the caller because the playhead has to
+   * advance: the phase comes from the newest sample's frame time, which arrives on this
+   * component's own history subscription. A caller computing the curve once per graph
+   * render would draw a playhead frozen wherever it happened to be.
+   *
+   * Absent, or not a pure periodic source, and the plot falls back to history.
+   */
+  readonly source?: ValuePlotSource | null;
+}
+
+export interface ValuePlotSource {
+  readonly definition: NodeDefinition;
+  /** Effective values for plotting — see `plotValues`. */
+  readonly values: Readonly<Record<string, ParameterValue>>;
+  /** §V45: reaches sample-and-hold shapes, so the plot matches what renders. */
+  readonly randomSeed: number;
 }
 
 /** Viewbox units. The plot scales to its box; these only set the sampling resolution. */
@@ -92,7 +129,7 @@ function rangeOf(history: ValueHistory): PlotRange {
   return { low, high };
 }
 
-export function ValuePlot({ nodeId, history }: ValuePlotProps) {
+export function ValuePlot({ nodeId, history, source = null }: ValuePlotProps) {
   const subscribe = useCallback(
     (listener: () => void) => history.subscribe(nodeId, listener),
     [history, nodeId],
@@ -102,6 +139,18 @@ export function ValuePlot({ nodeId, history }: ValuePlotProps) {
   // Held across renders, per node, because the whole point is that it does NOT follow
   // every window. Declared above the empty-state return so the hook order is fixed.
   const heldRange = useRef<PlotRange | null>(null);
+
+  // Re-sampled per tick rather than memoised: 96 evaluations of a pure arithmetic
+  // function, ten times a second, is beneath measurement, and a memo keyed on a fresh
+  // values object would not hold anyway.
+  const fn =
+    source === null
+      ? null
+      : sampleValueFunction(source.definition, source.values, {
+          timeSeconds: value.timeSeconds ?? 0,
+          randomSeed: source.randomSeed,
+        });
+  if (fn !== null) return <FunctionPlot nodeId={nodeId} fn={fn} latest={value.latest} />;
 
   if (value.latest === null || value.series.length === 0) {
     // Named state, not a zeroed plot (§V91): this node has produced nothing yet, which is
@@ -143,6 +192,102 @@ export function ValuePlot({ nodeId, history }: ValuePlotProps) {
             <dd className={styles.number}>{formatValue(value.latest?.[channel] ?? 0)}</dd>
           </div>
         ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * One cycle of a pure node's curve, with the playhead on it (T459).
+ *
+ * Its own component so the hook order stays fixed and the sticky range is held PER MODE —
+ * a node that switched between function and history would otherwise carry a range fitted
+ * to the other picture.
+ *
+ * ## Ranging: the same rule as history, deliberately
+ *
+ * The function's range is exact and known, so ranging it is easier than ranging a sliding
+ * window and it would be tempting to just use min/max directly. It uses `stickyRange`
+ * anyway, for the reason T352 exists: two plots in one graph must agree about what full
+ * height MEANS, or a user comparing an LFO against the Lag it feeds reads two different
+ * scales as if they were one. Consistency beats the easier rule. It costs nothing here —
+ * the samples only change when a parameter does, so the range holds perfectly still and
+ * §V296's breathing cannot recur.
+ */
+function FunctionPlot({
+  nodeId,
+  fn,
+  latest,
+}: {
+  readonly nodeId: NodeId;
+  readonly fn: ValueFunctionPlot;
+  readonly latest: Readonly<Record<string, number>> | null;
+}) {
+  const heldRange = useRef<PlotRange | null>(null);
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (const sample of fn.series) {
+    if (sample < low) low = sample;
+    if (sample > high) high = sample;
+  }
+  const measured: PlotRange =
+    Number.isFinite(low) && Number.isFinite(high) ? { low, high } : { low: 0, high: 0 };
+  const range = stickyRange(heldRange.current, measured);
+  heldRange.current = range;
+  const span = range.high - range.low;
+
+  const playX = fn.phase === null ? 0 : fn.phase * WIDTH;
+  const index =
+    fn.phase === null ? 0 : Math.min(fn.series.length - 1, Math.round(fn.phase * fn.series.length));
+  const current = fn.series[index] ?? 0;
+  const unit = span === 0 ? 0.5 : (current - range.low) / span;
+  const playY = HEIGHT - unit * HEIGHT;
+  /*
+   * The CURVE is drawn before the graph has ever run, and the NUMBER is not.
+   *
+   * They are different claims. "This node makes a sine at 2 Hz" is true of a pure
+   * function whether or not a frame has been rendered — it is what the node IS — so
+   * drawing it immediately is honest and is the whole point of showing the shape at a
+   * glance. "This node's value is 0.500" is a claim about something it PRODUCED, and
+   * before the first sample it has produced nothing. §V91's rule survives intact by
+   * applying it to the half it was actually about.
+   */
+  const reading = latest === null ? null : latest["value"] ?? current;
+
+  return (
+    <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+      <svg
+        className={styles.canvas}
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path
+          className={CHANNEL_CLASS[0]}
+          d={project(fn.series, range.low, span)}
+          fill="none"
+          vectorEffect="non-scaling-stroke"
+        />
+        {fn.phase === null ? null : (
+          <line
+          className={styles.playhead}
+          data-testid={`value-playhead-${nodeId}`}
+          x1={playX.toFixed(2)}
+          y1={0}
+          x2={playX.toFixed(2)}
+          y2={HEIGHT}
+          vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {fn.phase === null ? null : (
+          <circle className={styles.playdot} cx={playX.toFixed(2)} cy={playY.toFixed(2)} r={1.6} />
+        )}
+      </svg>
+      <dl className={styles.values} aria-label={`Channels of ${nodeId}`}>
+        <div className={styles.reading}>
+          <dt className={cxChannel(0)}>value</dt>
+          <dd className={styles.number}>{reading === null ? "—" : formatValue(reading)}</dd>
+        </div>
       </dl>
     </div>
   );

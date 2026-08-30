@@ -22,12 +22,21 @@ export interface ValueHistory {
   readonly series: ReadonlyArray<readonly number[]>;
   /** The most recent sample per channel, or null before the first. */
   readonly latest: Readonly<Record<string, number>> | null;
+  /**
+   * Timeline seconds of the most recent sample, or null before the first (T459).
+   *
+   * The FUNCTION plot's playhead needs to know where in the cycle the graph is, and the
+   * only honest source for that is the frame the sample came from — not a wall clock,
+   * which would drift from the render the moment the transport paused (§V143, §V44).
+   */
+  readonly timeSeconds: number | null;
 }
 
 export const EMPTY_VALUE_HISTORY: ValueHistory = Object.freeze({
   channels: [],
   series: [],
   latest: null,
+  timeSeconds: null,
 });
 
 export interface ValueHistorySource {

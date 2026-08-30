@@ -99,3 +99,22 @@
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
 }
+
+/*
+ * T459: the playhead, marking where in the cycle the graph is RIGHT NOW.
+ *
+ * Without it the function plot is a static diagram — correct, complete, and giving no
+ * sense that anything is running (§V147's shape: a picture that never moves passes any
+ * "does it draw?" check). Dim on purpose: the CURVE is the content and the playhead is
+ * the index finger, so it must not compete with the signal it is pointing at.
+ */
+.playhead {
+  stroke: var(--text-dim);
+  stroke-width: 1px;
+  opacity: 0.75;
+}
+
+/* The dot where the playhead crosses the curve — the actual current value, located. */
+.playdot {
+  fill: var(--signal);
+}
