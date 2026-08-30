@@ -131,6 +131,23 @@ function compileSafely(
       settings: runtime.settings,
       registry: runtime.registry,
       capabilities,
+      /**
+       * B29 — the component catalogue, which this call did not pass for the whole life of
+       * the feature.
+       *
+       * `compileGraph` flattens ONLY when this field is supplied (§V82), and nothing in
+       * `src/` supplied it. So every component instance fell through to the manifest's
+       * `component.notFlattened` tripwire and contributed no passes: the starter set
+       * (Bloom, FeedbackEcho, Kaleidoscope, DisplacementStack, MediaGrade) was visible in
+       * the library, instantiable from it, and produced a graph that did not compile.
+       * Measured on a Bloom instance wired between a Solid and an Output — before:
+       * `error:component.notFlattened`, 2 passes; after: no errors, 7.
+       *
+       * `registry` is the component-AWARE node view, so an instance already typed and
+       * connected correctly (§V13) — which is exactly why this was invisible until
+       * someone tried to render one.
+       */
+      components: runtime.components.view(),
       // T252 (§V158, B18): the scheduler's KEPT set when a store is wired — the
       // partition that stops every off-screen node rendering every frame. The old
       // every-texture-node fallback stands only where no scheduler exists (tests,
@@ -193,6 +210,38 @@ function publishNodeStatus(
   return new Set(byNode.keys());
 }
 
+/**
+ * §V210(c) — a component-catalogue edit is a structural trigger with NO document edit.
+ *
+ * Editing a component's internal graph changes what flattening produces for every host
+ * that instantiates it, while the host document is untouched: same nodes, same edges,
+ * same revision. A gate keyed on the document (T308) would classify that as "nothing
+ * changed" and keep serving a plan built from the old internals — and it would do it
+ * silently, because the host looks exactly the same before and after.
+ *
+ * This was harmless in the only sense that matters least: it was harmless while components
+ * never reached the compiler at all (B29). Fixing that is what makes this necessary, so
+ * the two halves land together.
+ *
+ * The registry notifies but keeps no revision of its own, so one is counted here. A
+ * counter rather than `all()`: `useSyncExternalStore` demands a snapshot that is stable
+ * when nothing has changed, and `all()` builds a fresh array on every call — which would
+ * spin the render loop rather than fix anything.
+ */
+function useCatalogueRevision(components: AppRuntime["components"]): number {
+  const revision = useRef(0);
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      components.subscribe(() => {
+        revision.current += 1;
+        onChange();
+      }),
+    [components],
+  );
+  const snapshot = useCallback(() => revision.current, []);
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
 export function useGraphCompile(
   runtime: AppRuntime,
   capabilities: BackendCapabilities | null,
@@ -222,6 +271,7 @@ export function useGraphCompile(
     previewSinks?.get ?? NO_STORE.get,
     previewSinks?.get ?? NO_STORE.get,
   );
+  const catalogueRevision = useCatalogueRevision(runtime.components);
 
   // Cache for `project.compile`, keyed by the revision it was produced from. Only a
   // compile that actually ran is cached: "no device report" must stay a live answer, not
@@ -261,7 +311,7 @@ export function useGraphCompile(
     if (capabilities === null || !hasAnimatedParameters(graph)) return null;
     return (frame: FrameEvaluationInput): CompiledGraph | null =>
       compileSafely(graph, runtime, capabilities, { frame, channels }).compiled;
-  }, [capabilities, channels, graph, runtime]);
+  }, [capabilities, channels, graph, runtime, catalogueRevision]);
 
   /**
    * The inputs of the LAST compile, for classifying the next one (T308).
@@ -293,6 +343,7 @@ export function useGraphCompile(
     sinks: unknown;
     capabilities: BackendCapabilities | null;
     settings: AppRuntime["settings"];
+    catalogue: number;
   } | null>(null);
 
   const result = useMemo<GraphCompileResult>(() => {
@@ -304,7 +355,8 @@ export function useGraphCompile(
       previous !== null &&
       previous.sinks === scheduledPreviews &&
       previous.capabilities === capabilities &&
-      previous.settings === runtime.settings;
+      previous.settings === runtime.settings &&
+      previous.catalogue === catalogueRevision;
     const valuesOnly =
       sameInputs && isValuesOnly(classifyGraphChange(previous.graph, graph, runtime.registry));
 
@@ -321,6 +373,7 @@ export function useGraphCompile(
       sinks: scheduledPreviews,
       capabilities,
       settings: runtime.settings,
+      catalogue: catalogueRevision,
     };
     return {
       graph,
@@ -330,7 +383,7 @@ export function useGraphCompile(
       animate,
       valuesOnly,
     };
-  }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews]);
+  }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 
   const capabilitiesRef = useRef(capabilities);
   capabilitiesRef.current = capabilities;
