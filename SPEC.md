@@ -1280,7 +1280,16 @@ T62|~|**Phase1 agent exit**: agent adds 3 nodes + wires them in 1 patch, compile
 wave = barrier. tracks ∈ wave run concurrent. track owns disjoint paths → ⊥ write collision.
 rule: track ⊥ edit file outside owned paths. shared contract frozen @ wave 0.
 cross-track need → raise, ⊥ patch other track path.
-**⊥ `git add -A` | `git add .` | `git commit -a` while tracks live.** explicit paths ONLY. a track swept 7 files of another session's uncommitted work into its commit; repaired w/ `git restore --staged` (index only, ⊥ worktree) & disclosed. `-A` is ⊥ a convenience here, it is a cross-session data hazard — the sweeping track cannot know what it took. HAPPENED TWICE: the 2nd time a `commit -a` swept another track's STAGED diff into an unrelated spec commit. stage explicit paths, ∀ time.
+****THE INDEX IS SHARED. `git add <path> && git commit` is ⊥ SAFE.**
+`git add` ADDS to an index other sessions are also staging into; `git commit` then commits
+the WHOLE index. staging explicitly protects nothing — the sweep happens on the COMMITTER's
+side & takes whatever anyone else left staged.
+! `git commit -- <paths>` (| `git commit <paths>`): commits ONLY those paths, whatever else
+sits ∈ the index.
+3 incidents ∈ 1 session. the 3rd was MINE, & my own rule was the insufficient one: I wrote
+"explicit paths ∈ `git add`" & then swept 968 lines of a track's staged work into a SPEC
+commit while following it. a rule that names the wrong command trains people to feel safe.
+⊥ `git add -A` | `git add .` | `git commit -a` while tracks live.** explicit paths ONLY. a track swept 7 files of another session's uncommitted work into its commit; repaired w/ `git restore --staged` (index only, ⊥ worktree) & disclosed. `-A` is ⊥ a convenience here, it is a cross-session data hazard — the sweeping track cannot know what it took. HAPPENED TWICE: the 2nd time a `commit -a` swept another track's STAGED diff into an unrelated spec commit. stage explicit paths, ∀ time.
 
 **GATES THAT LIE — ! know which command actually checks:**
 - bare `tsc --noEmit` @ root checks NOTHING & exits 0 (references-only tsconfig, `files: []`). ! `pnpm typecheck`.
