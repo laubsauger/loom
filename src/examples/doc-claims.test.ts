@@ -1,0 +1,87 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+import { EXAMPLES_DIR, listExamples } from "./catalogue.ts";
+import { allNodeDefinitions } from "../nodes/definitions/index.ts";
+import { requireExample } from "./runner.ts";
+
+/**
+ * B83/§V332 — a concept doc must not name a NODE TYPE its graph does not contain.
+ *
+ * B83 is the instance: `E20-Gooeyball.md` named `renderSurface` three times while the
+ * shipped `.json` contained it zero times. The T446/T447 ports→references redirect had
+ * rewritten the graph onto `geometry` + `render`, and the doc — written before the
+ * convention changed — kept looking authoritative. §V332's whole point is that this is a
+ * CLASS, not an accident: the doc written next gets it right and every doc written before
+ * keeps the old claim. So it is gated rather than corrected, and the sweep that found B83
+ * (§V186b: grep the claim, not the file) is now the sweep that runs on every commit.
+ *
+ * SCOPED TO camelCase TYPES on purpose. `render`, `light`, `edge`, `mirror`, `cross` are
+ * ordinary English and appear in every doc legitimately; `renderSurface`, `audioFileIn`,
+ * `pointTopology` cannot be anything but a claim about a node. That is the whole set worth
+ * gating, and a looser filter would be noise nobody reads.
+ *
+ * A doc that names a node it does not USE, on purpose, says so here with its reason — the
+ * `NOT_CONSTRUCTED` convention from the composition-seams gate. Two exist today and both
+ * are deliberate: an instruction to the reader, and a note about a sibling node.
+ */
+
+const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
+  {
+    doc: "E24-Audio-Reaction-Diffusion.md",
+    type: "audioFileIn",
+    reason:
+      "an INSTRUCTION to the reader, not a claim about the graph: the example ships a synthetic audioPattern (§V363) and the doc tells you which node to swap in to drive it from a real track.",
+  },
+  {
+    doc: "E24-Audio-Reaction-Diffusion.md",
+    type: "audioIn",
+    reason: "the microphone half of the same instruction.",
+  },
+  {
+    doc: "E13-Prism.md",
+    type: "renderInstances",
+    reason:
+      "a struck-through limitation note about a SIBLING renderer (T369 closed it), explicitly contrasted with the renderPoints this example does use.",
+  },
+];
+
+describe("concept docs name only nodes their graphs contain (B83, §V332)", () => {
+  const camelTypes = allNodeDefinitions.map((definition) => definition.type).filter((type) => /[A-Z]/.test(type));
+
+  it("has a camelCase type set worth gating", () => {
+    // A guard on the guard: if the catalogue ever renamed every compound type to a single
+    // word, this whole file would pass by having nothing to check (§V337).
+    expect(camelTypes.length).toBeGreaterThan(10);
+    expect(camelTypes).toContain("renderSurface");
+  });
+
+  it.each(listExamples().map((file) => file.fileName))("%s", (fileName) => {
+    const { document } = requireExample(
+      listExamples().find((file) => file.fileName === fileName) as ReturnType<typeof listExamples>[number],
+    );
+    const present = new Set(Object.values(document.graph.nodes).map((node) => node.type));
+    const docName = fileName.replace(/\.loom\.json$/, ".md");
+    const prose = readFileSync(join(EXAMPLES_DIR, docName), "utf8");
+    const excused = new Set(DELIBERATE.filter((entry) => entry.doc === docName).map((entry) => entry.type));
+
+    const claimed = camelTypes.filter(
+      (type) => new RegExp(`\\b${type}\\b`).test(prose) && !present.has(type) && !excused.has(type),
+    );
+    expect(
+      claimed,
+      `${docName} names ${claimed.join(", ")}, which its graph does not contain. Fix the prose, or add it to DELIBERATE with the reason.`,
+    ).toEqual([]);
+  });
+
+  it("excuses nothing that is no longer needed", () => {
+    // An excuse that has gone stale is the same lie one level up: it says a doc names a
+    // node deliberately when the doc stopped naming it at all.
+    for (const entry of DELIBERATE) {
+      const prose = readFileSync(join(EXAMPLES_DIR, entry.doc), "utf8");
+      expect(new RegExp(`\\b${entry.type}\\b`).test(prose), `${entry.doc} no longer names ${entry.type}`).toBe(true);
+      expect(entry.reason.length).toBeGreaterThan(20);
+    }
+  });
+});

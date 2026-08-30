@@ -9,14 +9,20 @@ literal in five point nodes.
 
 ```
 noise1 ──────────────────────► sample1.texture
-grid1(pointGrid) ─► ball1(pointKernel) ─► sample1(textureToAttribute) ─► goo1(pointKernel) ─► topology1(pointTopology) ─► surface1(renderSurface) ─► out1
+grid1(pointGrid) ─► ball1(pointKernel) ─► sample1(textureToAttribute) ─► goo1(pointKernel) ─► topology1(pointTopology) ─► body1(geometry) ─► shot1(render) ─► out1
+
+body1.material ◄── gooskin1(materialPhong)     shot1.camera ◄── cam1     shot1.lights ◄── key1, fill1
 ```
+
+The last three links are NAMES, not wires (T446/T447): `body1` names its material,
+`shot1` names its camera, its lights and its scene. The editor draws them as reference
+lines; the compiler synthesises the edges.
 
 | Node | Type | Doing |
 | --- | --- | --- |
 | `noise1` | `noise` | animated perlin4d — the goo's source, continuous in uv AND time |
 | `grid1` | `pointGrid` | a 64×64 index sheet; its plane positions are scaffolding |
-| `ball1` | `pointKernel` | maps each index to a UV sphere: `u = col/COLS`, `v = row/(ROWS-1)` |
+| `ball1` | `pointKernel` | maps each index to a UV sphere: `u = i/cols`, `v = j/(rows-1)` — both off `ctx.dim` |
 | `sample1` | `textureToAttribute` | samples the noise at each point's position, writes `sample` |
 | `goo1` | `pointKernel` | pushes each point along the surface NORMAL by `sample.r − 0.5` |
 | `topology1` | `pointTopology` | re-claims the edge as `grid:64x64:wrapU` — the seam CELL |
@@ -44,12 +50,18 @@ same shader, one property lost. Continuity in TIME is what makes it goo rather t
 sequence of unrelated dents: the noise is 4D with `speed` set, so the deformation crawls
 (B14: on a 2D type, `speed` silently does nothing).
 
-**The seam is a topology claim, not geometry.** The ball kernel maps `u = col/COLS` — not
-`cols−1` — so column 0 and a hypothetical column 64 coincide in space. What actually
+**The seam is a topology claim, not geometry.** The ball kernel maps `u = i/cols` — not
+`cols−1` — so column 0 and a hypothetical column `cols` coincide in space. What actually
 closes the ring is `topology1`'s `wrapU`: one seam CELL stitching the last column back to
 the first (T302). Delete that node and every point stays exactly where it was, but the
 ball shows a slit. Connectivity is authored on the EDGE, and this node is the proof that
 it is a claim about the same points, not a change to them.
+
+Note which divisor that is, because it is why `ctx.dim` hands over `cols` and `rows` and
+never a ready-made `u`. The right divisor here targets a claim made DOWNSTREAM — `grid1`
+itself publishes an UNWRAPPED `grid:64x64`, and dividing by its own seam count (`cols−1`)
+would fold column 63 onto column 0 and turn the seam cell into a duplicated column. The
+numbers are a fact the edge can supply; the normalisation is the author's choice.
 
 The poles close themselves: every point of row 0 maps to the same position (the north
 pole), so each polar cell has two coincident corners — one degenerate triangle, one real
@@ -80,12 +92,27 @@ pair bindings. Five nodes, one buffer per attribute, zero copies.
 
 **Topology flows and is re-claimable (T296/T302).** The grid's claim rides through both
 kernels and the bridge by passthrough; `topology1` then REPLACES it with the wrapped
-claim. `renderSurface` never learns who authored what — it reads the edge.
+claim. `body1` never learns who authored what — it reads the edge, and `shot1` draws
+whatever surface it finds there.
+
+**A kernel can read the grid it is running over (T472).** `ball1`'s WGSL contains no
+dimension at all: `ctx.dim` carries `cols`, `rows` and this point's cell `i`/`j`, taken
+from the topology string `grid1` publishes on the edge. Turn `grid1`'s Columns knob and
+the sphere re-parametrises correctly, which is precisely what the previous version could
+not do — it had `64u` typed into the shader twice while `cols: 64` sat in the inspector,
+so the visible control LIED (B85, §V349). The member is DETECTED, not declared: a kernel
+that never says `ctx.dim` compiles to exactly the text it compiled to before T472 existed
+(§V309), and a kernel that says it over a point set with no grid is refused by name.
 
 ## Regression signatures
 
-- A visible vertical slit on the ball → `wrapU` stopped reaching `renderSurface` (the
+- A visible vertical slit on the ball → `wrapU` stopped reaching the scene render (the
   claim is lost in passthrough, or the seam cell count regressed — T301/T302).
+- A DOUBLED column, or a hairline crease one cell wide, at the seam → `ball1`'s `u`
+  divisor became `cols−1` (T472: `ctx.dim` gives numbers, not a normalisation — this
+  kernel divides by `cols` on purpose, targeting `topology1`'s claim).
+- The ball goes lumpy or collapses when `grid1`'s Columns/Rows change → the kernel is
+  reading a grid that is not the one it runs over (B85's original shape, back).
 - Spikes instead of goo → someone made the sampled field discontinuous (nearest-texel
   jumps, a non-continuous noise type, or `sample` no longer binding the bridge's pair).
 - The ball deforms but the deformation never moves → the noise lost its time dimension
