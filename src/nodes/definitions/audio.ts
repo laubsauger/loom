@@ -34,42 +34,65 @@ export const audioInNode: NodeDefinition = {
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     /*
-     * Capture configuration, read by the APP's capture hook — never by compile. The
-     * session has ONE audio input (like it has one pointer); when several audioIn
-     * nodes exist, the first by node id configures the capture and all of them read
-     * the same features.
+     * T434: capture configuration, read by the APP's capture hook — never by compile.
+     * The session has ONE audio capture (like it has one pointer): an `audioFileIn`
+     * with a file bound takes precedence (a bound file is deliberate authoring);
+     * otherwise the first `audioIn` by node id opens the microphone, and every audio
+     * node reads the same features.
      */
-    source: {
-      type: "enum",
-      label: "Source",
-      default: "mic",
-      options: [
-        { value: "mic", label: "Microphone" },
-        { value: "file", label: "File / URL" },
-      ],
-    },
-    url: {
+    device: {
       type: "string",
-      label: "URL",
+      label: "Device",
       default: "",
-      inactiveWhen: (values) => (values["source"] === "mic" ? "The microphone needs no URL." : null),
-      description: "Audio file to play and analyse. Loops.",
-    },
-    monitor: {
-      type: "boolean",
-      label: "Monitor",
-      default: true,
-      inactiveWhen: (values) => (values["source"] === "mic" ? "Monitoring a live microphone would feed back." : null),
-      description: "Play the file audibly while analysing it.",
+      description:
+        "Microphone device id, from the inspector's device picker. Empty = the system default. Device names are hidden by the browser until microphone access is granted.",
     },
   },
-  valueEvaluate: ({ audio }) => ({
+  valueEvaluate: ({ audio }) => projectFeatures(audio),
+  compile: (): CompiledNodeDescription => ({ passes: [] }),
+};
+
+/** Both audio nodes publish the SAME channels: the session has one feature record. */
+function projectFeatures(audio: { level: number; low: number; lowMid: number; highMid: number; high: number; onset: number } | undefined) {
+  return {
     level: audio?.level ?? 0,
     low: audio?.low ?? 0,
     lowMid: audio?.lowMid ?? 0,
     highMid: audio?.highMid ?? 0,
     high: audio?.high ?? 0,
     onset: audio?.onset ?? 0,
-  }),
+  };
+}
+
+/**
+ * T434 — Audio File In: the `movieFileIn` analog for sound.
+ *
+ * Same shape as the movie node on purpose (§V7-family: a user who learned one should
+ * recognise the other): one `asset` parameter holding the file, resolved by the app's
+ * capture hook the same tolerant way media sources read theirs. The file loops, plays
+ * audibly when `monitor` is on, and its analysis lands in the SAME per-frame feature
+ * record every audio node projects — so a bound file takes over the session's one
+ * capture, and `audioIn` nodes read the file too (documented on both).
+ */
+export const audioFileInNode: NodeDefinition = {
+  type: "audioFileIn",
+  version: 1,
+  title: "Audio File In",
+  category: "value",
+  description:
+    "Plays an audio file and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture.",
+  tags: ["value", "input", "audio", "music", "file", "fft"],
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    file: { type: "asset", label: "File", kind: "audio" },
+    monitor: {
+      type: "boolean",
+      label: "Monitor",
+      default: true,
+      description: "Play the file audibly while analysing it.",
+    },
+  },
+  valueEvaluate: ({ audio }) => projectFeatures(audio),
   compile: (): CompiledNodeDescription => ({ passes: [] }),
 };

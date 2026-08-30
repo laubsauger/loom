@@ -36,32 +36,61 @@ export interface AudioInputSource {
   readonly status: () => AudioInputStatus;
 }
 
-interface CaptureConfig {
+export interface CaptureConfig {
   readonly source: "mic" | "file";
+  /** File URL for `source: "file"`; microphone deviceId (or "") for `source: "mic"`. */
   readonly url: string;
+  readonly device: string;
   readonly monitor: boolean;
 }
 
-function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
-  const nodeIds = Object.keys(graph.nodes)
-    .filter((nodeId) => graph.nodes[nodeId]?.type === "audioIn")
-    .sort();
-  const first = nodeIds[0];
-  if (first === undefined) return null;
-  const node = graph.nodes[first] as GraphNode;
-  const raw = (key: string): unknown => {
-    const stored = node.parameters[key];
-    // Static values only: capture config is identity-like, not animatable.
-    if (typeof stored === "object" && stored !== null && "bindings" in stored) {
-      const slot = stored as { bindings?: { static?: { value?: unknown } } };
-      return slot.bindings?.static?.value;
-    }
-    return stored;
+/** Static parameter value, mode-envelope tolerant. Capture config never animates. */
+function staticValueOf(node: GraphNode, key: string): unknown {
+  const stored = node.parameters[key];
+  if (typeof stored === "object" && stored !== null && "bindings" in stored) {
+    const slot = stored as { bindings?: { static?: { value?: unknown } } };
+    return slot.bindings?.static?.value;
+  }
+  return stored;
+}
+
+/** An asset parameter's URL: a plain string, or `{ url }` — the media-sources tolerance. */
+function urlOf(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    const url = (value as { url?: unknown }).url;
+    if (typeof url === "string") return url;
+  }
+  return "";
+}
+
+/**
+ * T434: which capture the session runs. An `audioFileIn` with a file BOUND takes
+ * precedence — a bound file is deliberate authoring, where a mic node is often just
+ * present — otherwise the first `audioIn` by node id opens the microphone with its
+ * device selection. Exported pure so the precedence is pinned by test.
+ */
+export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
+  const nodesOf = (type: string): GraphNode[] =>
+    Object.keys(graph.nodes)
+      .filter((nodeId) => graph.nodes[nodeId]?.type === type)
+      .sort()
+      .map((nodeId) => graph.nodes[nodeId] as GraphNode);
+
+  for (const node of nodesOf("audioFileIn")) {
+    const url = urlOf(staticValueOf(node, "file"));
+    if (url.trim() === "") continue;
+    return { source: "file", url, device: "", monitor: staticValueOf(node, "monitor") !== false };
+  }
+  const mic = nodesOf("audioIn")[0];
+  if (mic === undefined) return null;
+  const device = staticValueOf(mic, "device");
+  return {
+    source: "mic",
+    url: "",
+    device: typeof device === "string" ? device : "",
+    monitor: false,
   };
-  const source = raw("source") === "file" ? "file" : "mic";
-  const url = typeof raw("url") === "string" ? (raw("url") as string) : "";
-  const monitor = raw("monitor") !== false;
-  return { source, url, monitor };
 }
 
 interface LiveCapture {
@@ -100,7 +129,29 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
 
       try {
         if (config.source === "mic") {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          /*
+           * T434: an exact deviceId when one is chosen. A device that vanished
+           * mid-session (unplugged) throws OverconstrainedError; falling back to the
+           * default silently would leave the picker lying about what is live, so the
+           * fallback is taken AND the status names it.
+           */
+          let stream: MediaStream;
+          if (config.device.trim() === "") {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } else {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                audio: { deviceId: { exact: config.device } },
+              });
+            } catch (constrained) {
+              if ((constrained as { name?: string }).name !== "OverconstrainedError") throw constrained;
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              statusRef.current = {
+                kind: "live",
+                message: "The selected device is unavailable; using the system default.",
+              };
+            }
+          }
           if (cancelled) {
             for (const track of stream.getTracks()) track.stop();
             void context.close();
@@ -145,7 +196,7 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
             },
           };
         }
-        statusRef.current = { kind: "live" };
+        if (statusRef.current.kind !== "live") statusRef.current = { kind: "live" };
       } catch (error) {
         void context.close();
         statusRef.current = {
@@ -162,7 +213,7 @@ export function useAudioInput(getGraph: () => GraphDocument): AudioInputSource {
      */
     const interval = setInterval(() => {
       const config = captureConfigOf(getGraphRef.current());
-      const key = config === null ? "" : `${config.source}|${config.url}|${config.monitor}`;
+      const key = config === null ? "" : `${config.source}|${config.url}|${config.device}|${config.monitor}`;
       if (key === configKeyRef.current) return;
       configKeyRef.current = key;
       teardown();

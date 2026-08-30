@@ -128,8 +128,8 @@ describe("audioIn (T414)", () => {
     // channels rather than inventing an audio binding.
     const session = createValueGraphSession(registry);
     const result = session.evaluate(audioGraph(), frame(0), { audio: FEATURES });
-    expect(result.resolver("audio1:low")).toBe(0.9);
-    expect(result.resolver("audio1:onset")).toBe(0.75);
+    expect(result.resolver("audio1:low", { frame: frame(0) } as never)).toBe(0.9);
+    expect(result.resolver("audio1:onset", { frame: frame(0) } as never)).toBe(0.75);
   });
 
   it("says what onset IS in the one place users read — and never claims 'beat'", () => {
@@ -144,5 +144,30 @@ describe("audioIn (T414)", () => {
       state: {},
     });
     expect(Object.keys(channels ?? {})).not.toContain("beat");
+  });
+});
+
+describe("audioFileIn (T434)", () => {
+  it("projects the same channel set as audioIn — one feature record, two doors", () => {
+    const definition = registry.get("audioFileIn");
+    const channels = definition?.valueEvaluate?.({
+      inputs: {},
+      values: {},
+      frame: frame(0),
+      audio: FEATURES,
+      state: {},
+    });
+    expect(channels).toEqual({
+      level: 0.5,
+      low: 0.9,
+      lowMid: 0.4,
+      highMid: 0.2,
+      high: 0.05,
+      onset: 0.75,
+    });
+    // The movieFileIn analogy is the CONTRACT: one asset parameter, kind "audio".
+    const file = definition?.parameters["file"];
+    expect(file?.type).toBe("asset");
+    expect((file as { kind?: string }).kind).toBe("audio");
   });
 });
