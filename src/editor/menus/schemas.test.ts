@@ -4,6 +4,7 @@ import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
 import type { ParameterMode } from "@domain/types/parameters.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 import type { MenuEntry, MenuItem, MenuSchema } from "@domain/types/menus.ts";
+import { hasMenuInputBuilder } from "./input.ts";
 import { isMenuSeparator } from "@domain/types/menus.ts";
 import { isMenuGuardName } from "./guards.ts";
 import { PLANNED_COMMANDS, TOGGLE_GUARD, addNodeSubmenu, menuSchemaFor } from "./schemas.ts";
@@ -190,6 +191,27 @@ describe("add node here", () => {
     for (const leaf of leaves) {
       expect(leaf.command).toBe("graph.applyPatch");
       expect((leaf.input as { type: string }).type).toBeTypeOf("string");
+    }
+  });
+});
+
+/**
+ * B87's standing gate: a registered, guarded, labelled command can still dispatch
+ * NOTHING — if the input-builder table lacks it, the menu sends the item's static
+ * input (empty for a toggle) and the command rejects "no target" while every suite
+ * stays green. The pair below is the checkable form of the enumerate-the-right-set
+ * rule: TOGGLE_GUARD's domain ⊆ the builder table ⊆ registered-or-planned commands.
+ */
+describe("every guarded toggle can actually dispatch (B87)", () => {
+  it("each TOGGLE_GUARD command has a menu input builder", () => {
+    for (const command of Object.keys(TOGGLE_GUARD)) {
+      expect(hasMenuInputBuilder(command), `${command} has no input builder — it will dispatch empty input`).toBe(true);
+    }
+  });
+
+  it("each TOGGLE_GUARD command is registered on the bus", () => {
+    for (const command of Object.keys(TOGGLE_GUARD)) {
+      expect(bus.hasCommand(command), `${command} is guarded but nothing registers it`).toBe(true);
     }
   });
 });

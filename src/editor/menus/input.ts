@@ -149,6 +149,20 @@ const BUILDERS: Record<string, InputBuilder> = {
   "component.publishParameter": parameterRef,
 };
 
+/**
+ * B87's gate (V423's family): a command whose input must carry a TARGET but has no
+ * builder dispatches its static input — empty — and rejects with "no target" while
+ * every unit suite stays green. The graph-background toggle shipped exactly that way.
+ * Exported so the seam test can assert the pair: every toggle the menus guard has a
+ * builder here.
+ */
+export function hasMenuInputBuilder(command: string): boolean {
+  return (
+    BUILDERS[command] !== undefined ||
+    Object.keys(BUILDERS).some((key) => key.endsWith(`:${command}`))
+  );
+}
+
 export function resolveMenuInput(
   item: MenuItem,
   target: MenuTarget,
