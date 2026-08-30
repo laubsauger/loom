@@ -90,6 +90,7 @@ describe("core catalogue (T70, T40)", () => {
       "pointTube",
       "pointTorus",
       "renderInstances",
+      "renderSurface",
     ]);
   });
 

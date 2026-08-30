@@ -13,8 +13,11 @@ import { pointPairId } from "./points.ts";
  * name. ONE implementation (V140's Composite/Over convention): the presets share the
  * generic node's compile with the shape forced and the irrelevant knobs hidden, so a
  * fix lands in all seven nodes at once and the plan never knows which spelling built
- * it. Shape is a UNIFORM, not compileTime: switching presets or scrubbing the menu
- * re-uploads one integer (§V5), never a pipeline.
+ * it. Shape reaches the KERNEL as a uniform — switching never swaps a pipeline (§V5)
+ * — but the parameter is compileTime anyway, because shape also decides the published
+ * topology string (T296) and an edge payload is structural for whoever consumes it
+ * (T301's vertex count derives from it). The recompile is a V62b cache hit: same
+ * module, same resources, new edge payload.
  *
  * A generator writes `position` — so it OWNS the position pair (§V197) — publishes the
  * T296 edge map, and emits `topology` for the surface renderer to come (T301):
@@ -57,11 +60,15 @@ function generatorParameters(fixedShape: GeneratorShape | null): ParameterSchema
             label: "Shape",
             default: "grid",
             options: GENERATOR_SHAPES.map((value) => ({ value, label: value[0]?.toUpperCase() + value.slice(1) })),
+            // Not for the kernel's sake (shape stays a uniform there) — shape decides
+            // the PUBLISHED topology string on the edge (T296), and anything that feeds
+            // an edge payload is structural: a consumer's vertex count derives from it.
+            compileTime: true,
           },
         }),
     count: { type: "number", label: "Count", default: 4096, min: 1, max: 1_000_000, step: 1, compileTime: true },
-    cols: { type: "number", label: "Columns", default: 64, min: 1, max: 4096, step: 1, inactiveWhen: usedBy("cols") },
-    rows: { type: "number", label: "Rows", default: 64, min: 1, max: 4096, step: 1, inactiveWhen: usedBy("rows") },
+    cols: { type: "number", label: "Columns", default: 64, min: 1, max: 4096, step: 1, compileTime: true, inactiveWhen: usedBy("cols") },
+    rows: { type: "number", label: "Rows", default: 64, min: 1, max: 4096, step: 1, compileTime: true, inactiveWhen: usedBy("rows") },
     sizeX: { type: "number", label: "Size X", default: 2, min: 0, inactiveWhen: usedBy("sizeX") },
     sizeY: { type: "number", label: "Size Y", default: 2, min: 0, inactiveWhen: usedBy("sizeY") },
     sizeZ: { type: "number", label: "Size Z", default: 2, min: 0, inactiveWhen: usedBy("sizeZ") },

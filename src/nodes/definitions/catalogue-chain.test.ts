@@ -399,9 +399,11 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
   definition.inputs.forEach((port, index) => {
     const feedId = `feed${index}`;
     // Feeders match the port FAMILY: textures come from a checker, pointsets from a
-    // point kernel (T121) — wiring a texture into a pointset port is exactly the §V13
-    // mismatch this sweep would otherwise report as a false failure.
-    nodes[feedId] = node(feedId, port.type.kind === "pointset" ? "pointKernel" : "checker");
+    // point GRID (T298) — wiring a texture into a pointset port is exactly the §V13
+    // mismatch this sweep would otherwise report as a false failure. The grid rather
+    // than a kernel because it publishes analytic topology on the edge (T296), which
+    // renderSurface (T301) REQUIRES and every other pointset consumer ignores.
+    nodes[feedId] = node(feedId, port.type.kind === "pointset" ? "pointGrid" : "checker");
     edges[`in${index}`] = edge(`in${index}`, [feedId, "out"], ["subject", port.id]);
   });
 

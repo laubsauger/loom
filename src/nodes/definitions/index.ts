@@ -18,6 +18,7 @@ import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 import { pointGeneratorDefinitions } from "./point-generators.ts";
 import { renderInstancesNode } from "./render-instances.ts";
+import { renderSurfaceNode } from "./render-surface.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -36,6 +37,7 @@ export {
   pointGeneratorDefinitions,
 } from "./point-generators.ts";
 export { renderInstancesNode, INSTANCE_SHAPES } from "./render-instances.ts";
+export { renderSurfaceNode } from "./render-surface.ts";
 export {
   movieFileInNode,
   webcamNode,
@@ -146,6 +148,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...valueGraphNodeDefinitions,
   ...pointGeneratorDefinitions,
   renderInstancesNode,
+  renderSurfaceNode,
 ];
 
 /**

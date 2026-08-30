@@ -28,6 +28,10 @@ export interface ContextOptions {
   readonly inputs?: ReadonlyArray<PortId>;
   /** Producer node id per input port, for pointset consumers (T122). */
   readonly sources?: Readonly<Record<PortId, string>>;
+  /** T296 edge payload per input port, for consumers that read pairs/capacity/topology. */
+  readonly pointsets?: Readonly<
+    Record<PortId, { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string }>
+  >;
   /** Output port ids to materialize. Defaults to `["out"]`. */
   readonly outputs?: ReadonlyArray<PortId>;
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
@@ -63,9 +67,19 @@ export function outputResourceId(portId: PortId): string {
  */
 export function compileContext(options: ContextOptions = {}): NodeCompileContext {
   const outputPorts = options.outputs ?? ["out"];
-  const inputs: Record<string, ReadonlyArray<{ resourceId: string; sampler: string; sourceNodeId?: string; sourcePortId?: string }>> = {};
+  const inputs: Record<
+    string,
+    ReadonlyArray<{
+      resourceId: string;
+      sampler: string;
+      sourceNodeId?: string;
+      sourcePortId?: string;
+      pointset?: { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string };
+    }>
+  > = {};
   for (const portId of options.inputs ?? []) {
     const sourceNodeId = options.sources?.[portId];
+    const pointset = options.pointsets?.[portId];
     const existing = inputs[portId] ?? [];
     inputs[portId] = [
       ...existing,
@@ -73,6 +87,7 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
         resourceId: inputResourceId(portId, existing.length),
         sampler: TEST_SAMPLER_ID,
         ...(sourceNodeId === undefined ? {} : { sourceNodeId, sourcePortId: "out" }),
+        ...(pointset === undefined ? {} : { pointset }),
       },
     ];
   }
