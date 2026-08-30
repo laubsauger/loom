@@ -17,8 +17,9 @@ import type { PreviewRequest, PreviewSystem } from "@runtime/previews/index.ts";
  * next to React Flow's own Background, in the same negative-z stacking slot). Marking
  * a node IS watching it, so the refs join T252's preview-sink set: one materialization
  * shared with any tile or viewer already watching, zero cost when nothing is flagged.
- * The DIM is CSS opacity on the canvas — per-person chrome, never touching the pixels
- * an export or viewer sees.
+ * Full brightness, the owner's call — TD does not dim its network background either;
+ * if a dim ever returns it is CSS opacity on the canvas (per-person chrome), never a
+ * touch on the pixels an export or viewer sees.
  *
  * The image letterboxes into the pane (§V118: never stretch — a background that
  * misrepresents aspect is worse than bars). Several marked nodes stack in document

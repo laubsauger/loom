@@ -54,15 +54,16 @@
 
 /* T463: the graph BACKGROUND surface — React Flow's negative-z slot, after the dot
    Background in the DOM, so it paints above the dots and beneath every node and edge.
-   The DIM is here, as opacity: per-person chrome over the picture, never in the pixels
-   a viewer or export sees. Well below 1 on purpose — the point is to work ON TOP of it. */
+   FULL brightness on the owner's call — TouchDesigner does not dim its network
+   background either, and the node chrome carries its own contrast. If a dim ever
+   returns it belongs here, as opacity: per-person chrome over the picture, never in
+   the pixels a viewer or export sees. */
 .graphBackground {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   z-index: -1;
-  opacity: 0.25;
   pointer-events: none;
 }
 
