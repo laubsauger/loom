@@ -352,3 +352,25 @@ describe("lifecycle", () => {
     expect(notifications).toBe(0);
   });
 });
+
+describe("noteFrame's ran set (T255, §V85)", () => {
+  it("marks ONLY the nodes that actually ran; absent means the whole plan did", () => {
+    const hub = createTelemetryHub({ now });
+    hub.setPlan(
+      telemetryPlan(
+        planOf([
+          { id: "a#p", nodeId: "a" },
+          { id: "b#p", nodeId: "b" },
+        ]),
+      ),
+    );
+
+    hub.noteFrame(1, new Set(["a"]));
+    expect(hub.nodeTelemetry("a").renderedThisFrame).toBe(true);
+    // The gated node is NOT lied about — this is the seam T254's cook gate feeds.
+    expect(hub.nodeTelemetry("b").renderedThisFrame).toBe(false);
+
+    hub.noteFrame(2);
+    expect(hub.nodeTelemetry("b").renderedThisFrame).toBe(true); // absent = all ran
+  });
+});

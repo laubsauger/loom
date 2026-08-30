@@ -120,7 +120,14 @@ export interface TelemetryHub extends TelemetrySource {
    */
   attachTimingSource(source: PassTimingSource): () => void;
   /** One rendered frame. Counters only — no allocation, no listener call (§V16). */
-  noteFrame(frameIndex: number): void;
+  /**
+   * One rendered frame (T255, §V85). `ran` is the set of node ids whose passes were
+   * actually ENCODED this frame — the cook gate's answer once T254 lands. Absent means
+   * "everything in the plan ran", which is the truth today (no gating exists) and
+   * becomes a lie the moment it does; the parameter is the seam that keeps the popup's
+   * "cooking every frame?" honest through that transition.
+   */
+  noteFrame(frameIndex: number, ran?: ReadonlySet<NodeId>): void;
   /** Component aggregate over flattened source paths (T146, §V87). */
   componentTiming(instanceId: NodeId): ComponentTiming;
   /** Plain-node aggregate: own passes only. */
@@ -324,10 +331,11 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       return () => detachTiming?.();
     },
 
-    noteFrame(frameIndex) {
+    noteFrame(frameIndex, ran) {
       framesRendered += 1;
       lastFrameIndex = frameIndex;
-      for (const nodeId of activeNodes) {
+      for (const nodeId of ran ?? activeNodes) {
+        if (!activeNodes.has(nodeId)) continue; // a stale caller set never invents nodes
         const entry = counters.get(nodeId);
         if (entry === undefined) counters.set(nodeId, { framesRendered: 1, lastRenderedFrame: frameIndex });
         else {

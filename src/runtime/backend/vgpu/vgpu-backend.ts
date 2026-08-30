@@ -109,6 +109,8 @@ interface Program {
   /** Latest uniform values per pass, including live updates. Survives a device rebuild. */
   readonly liveUniforms: Map<string, UniformValues>;
   resources: ResourceSet;
+  /** externalTexture resource ids whose contents changed THIS frame (T253, §V136). */
+  mediaDirty?: ReadonlySet<string>;
 }
 
 interface LoopRegistration {
@@ -700,10 +702,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
    * frame samples what was just written. No source registered, or no frame yet, or the
    * source ended: the texture keeps its contents (black until the first frame).
    */
-  function uploadExternalTextures(active: Program): void {
-    if (!session || active.resources.externalTextures.size === 0) return;
+  function uploadExternalTextures(active: Program): ReadonlySet<string> {
+    // T253 (§V136): the CHANGED set is the return value, not a discard — the cook gate
+    // (T254) reads it, so a 30fps source in a 60fps graph dirties its downstream 30
+    // times, not 60. Computed here because this is the one place that knows whether an
+    // upload actually happened.
+    const changed = new Set<string>();
+    if (!session || active.resources.externalTextures.size === 0) return changed;
     const queue = session.gpu.device.queue.gpu;
-    for (const entry of active.resources.externalTextures.values()) {
+    for (const [resourceId, entry] of active.resources.externalTextures) {
       const source = mediaSources.get(entry.sourceId);
       if (source === undefined) continue;
       const mediaFrame = source.currentFrame();
@@ -728,6 +735,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           continue; // No payload this device can take; leave the cursor so a usable frame retries.
         }
         entry.lastFrameId = mediaFrame.frameId;
+        changed.add(resourceId);
       } catch (error) {
         hub.report(
           backendDiagnostic(
@@ -740,6 +748,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         entry.lastFrameId = mediaFrame.frameId;
       }
     }
+    return changed;
   }
 
   function lookupTargets(outputId: string): ReadonlyArray<Target> {
@@ -1213,7 +1222,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       rebindDynamicTextures(active);
-      uploadExternalTextures(active);
+      active.mediaDirty = uploadExternalTextures(active);
 
       const open = currentFrame;
       if (open) {
