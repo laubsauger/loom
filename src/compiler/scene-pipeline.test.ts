@@ -355,3 +355,111 @@ describe("the point renderers take a camera by NAME (T457, V387)", () => {
     expect(refused.diagnostics.some((d) => d.severity === "error" && d.message.includes('"ghost1"'))).toBe(true);
   });
 });
+
+describe("per-point colour and counted sets reach the SCENE (T478)", () => {
+  const tintMapped = {
+    mode: "map",
+    value: [1, 1, 1, 1],
+    bindings: { map: { kind: "map", attribute: "color" } },
+  };
+
+  const colouredGraph = (mode: "surface" | "instances", tint: unknown): GraphDocument => {
+    const graph = sceneGraph();
+    // The grid's allocation follows its count parameter, not its cols×rows (§V50).
+    ((graph.nodes["grid"] as GraphNode).parameters as Record<string, unknown>)["count"] = 64;
+    (graph.nodes as Record<string, GraphNode>)["paint"] = node(
+      "paint",
+      "pointKernel",
+      {
+        capacity: 64,
+        attributes: JSON.stringify([
+          { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+          { name: "color", type: "vec4f", default: [1, 0, 0, 1] },
+        ]),
+        kernel:
+          "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.color = vec4f(1.0, 0.0, 0.0, 1.0);\n  return q;\n}",
+      },
+      "paint1",
+    ) as never;
+    (graph.edges as Record<string, unknown>)["e3"] = {
+      id: "e3",
+      source: { nodeId: "grid", portId: "out" },
+      target: { nodeId: "paint", portId: "in" },
+    };
+    (graph.edges as Record<string, unknown>)["e1"] = {
+      id: "e1",
+      source: { nodeId: "paint", portId: "out" },
+      target: { nodeId: "geo", portId: "points" },
+    };
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["mode"] = mode;
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["tint"] = tint;
+    return graph;
+  };
+
+  it("a mapped tint binds the attribute pair into BOTH scene draw shapes", () => {
+    for (const mode of ["surface", "instances"] as const) {
+      const compiled = compile(colouredGraph(mode, tintMapped));
+      expect(compiled.diagnostics.filter((d) => d.severity === "error"), mode).toEqual([]);
+      const draw = drawOf(compiled);
+      const colors = draw.buffers?.find((binding) => binding.binding === "pointColors");
+      expect(colors, mode).toBeDefined();
+      expect(colors?.resourceId).toContain("color");
+      expect(draw.shader).toContain("pointColors");
+      // The material's own base colour STAYS in the uniforms: the map multiplies, it
+      // never replaces — no half of the material goes silently dead (V349).
+      expect(draw.uniforms?.["baseColor"]).toBeDefined();
+    }
+  });
+
+  it("a STATIC tint keeps its old meaning and binds nothing (V361's cut)", () => {
+    const compiled = compile(colouredGraph("instances", [1, 1, 1, 1]));
+    const draw = drawOf(compiled);
+    expect(draw.buffers?.some((binding) => binding.binding === "pointColors")).toBe(false);
+    expect(draw.shader).not.toContain("pointColors");
+  });
+
+  it("geometry refuses a map on anything but tint, BY NAME (§V288)", () => {
+    const graph = colouredGraph("instances", tintMapped);
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["scale"] = {
+      mode: "map",
+      value: 0.05,
+      bindings: { map: { kind: "map", attribute: "color" } },
+    };
+    const compiled = compile(graph);
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.parameter.map");
+    expect(refusal?.message).toContain("scale");
+  });
+
+  const countedGraph = (mode: "surface" | "instances"): GraphDocument => {
+    const graph = sceneGraph();
+    (graph.nodes as Record<string, GraphNode>)["sim"] = node("sim", "pointKernelAdvanced", {}, "sim1") as never;
+    delete (graph.nodes as Record<string, unknown>)["grid"];
+    (graph.edges as Record<string, unknown>)["e1"] = {
+      id: "e1",
+      source: { nodeId: "sim", portId: "out" },
+      target: { nodeId: "geo", portId: "points" },
+    };
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["mode"] = mode;
+    return graph;
+  };
+
+  it("a counted set renders as INSTANCES, drawn indirectly off the live count (T322)", () => {
+    const compiled = compile(countedGraph("instances"));
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    // Indirect draw: the instance count is the GPU-resident args buffer, never the
+    // capacity — a dead tail cannot be resurrected into the scene.
+    expect(draw.instances).toEqual({ indirect: "scratch:shot:drawArgs0" });
+    const args = compiled.passes.find(
+      (pass) => pass.kind === "dispatch" && String(pass.id).includes("drawArgs"),
+    );
+    expect(args).toBeDefined();
+  });
+
+  it("a counted SURFACE still refuses by name — topology over dead points is a lie", () => {
+    const compiled = compile(countedGraph("surface"));
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.scene.geometry");
+    expect(refusal?.message).toContain("live count");
+    expect(refusal?.message).toContain("instances");
+  });
+});

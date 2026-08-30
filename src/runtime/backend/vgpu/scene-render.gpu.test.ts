@@ -175,3 +175,90 @@ describe("phong specular is exact on the axis (T428, §V147)", () => {
   }, 120_000);
 });
 
+
+describe("per-point colour reaches the lit scene exactly (T478, §V147, §V361)", () => {
+  it("a mapped tint paints the instance red to the byte; unmapped stays white", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+
+    const render = async (tint: unknown): Promise<Uint8Array> => {
+      const graph = sceneGraph("sun1");
+      const nodes = graph.nodes as Record<string, { parameters: Record<string, unknown> }>;
+      nodes["grid"]!.parameters["count"] = 64;
+      (graph.nodes as Record<string, unknown>)["paint"] = {
+        id: "paint",
+        type: "pointKernel",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {
+          capacity: 64,
+          attributes: JSON.stringify([
+            { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            { name: "color", type: "vec4f", default: [1, 0, 0, 1] },
+          ]),
+          kernel:
+            "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.color = vec4f(1.0, 0.0, 0.0, 1.0);\n  return q;\n}",
+        },
+        label: "paint1",
+      };
+      (graph.edges as Record<string, unknown>)["e1"] = {
+        id: "e1",
+        source: { nodeId: "grid", portId: "out" },
+        target: { nodeId: "paint", portId: "in" },
+      };
+      (graph.edges as Record<string, unknown>)["e3"] = {
+        id: "e3",
+        source: { nodeId: "paint", portId: "out" },
+        target: { nodeId: "geo", portId: "points" },
+      };
+      // Instances big enough that one box face covers the centre texel flat-on.
+      nodes["geo"]!.parameters["mode"] = "instances";
+      nodes["geo"]!.parameters["scale"] = 0.5;
+      nodes["geo"]!.parameters["tint"] = tint;
+
+      const plan = compileGraph({
+        graph,
+        settings: SETTINGS,
+        registry,
+        capabilities: {
+          tier: "B",
+          features: [],
+          formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+          timestampQuery: false,
+          limits: { maxTextureDimension2D: 8192 },
+        } as never,
+      });
+      expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const backend = createVgpuBackend({ host: nodeGpuHost() });
+      try {
+        await backend.initialize({});
+        const compiled = await backend.compile(plan);
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        const image = await backend.readOutput("target:shot:out");
+        return image.bytes;
+      } finally {
+        backend.dispose();
+      }
+    };
+
+    const centre = (32 * 64 + 32) * 4;
+    // A +z box face straight at the camera under a light straight down the axis:
+    // |N·L| = 1 exactly, so the texel is base 0.8 × pointColour × (0.12 + 1).
+    const lit = Math.round(0.8 * 1.12 * 255);
+    const mapped = await render({
+      mode: "map",
+      value: [1, 1, 1, 1],
+      bindings: { map: { kind: "map", attribute: "color" } },
+    });
+    expect([mapped[centre], mapped[centre + 1], mapped[centre + 2]]).toEqual([lit, 0, 0]);
+
+    // §V361's cut: the SAME graph with a static tint — white, all three channels.
+    const flat = await render([1, 1, 1, 1]);
+    expect([flat[centre], flat[centre + 1], flat[centre + 2]]).toEqual([lit, lit, lit]);
+  }, 120_000);
+});

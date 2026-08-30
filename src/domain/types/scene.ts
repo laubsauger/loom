@@ -55,6 +55,21 @@ export interface GeometryPayload {
   /** Instances mode: the primitive worn per point (T428b). */
   readonly instance?: { readonly shape: "quad" | "box" | "octahedron"; readonly scale: number };
   /**
+   * T478: per-point colour — the geometry's `tint` in MAP mode, resolved to a vec4f
+   * attribute pair. It MULTIPLIES the material's base colour per point, exactly as the
+   * static tint multiplies it per object: the material stays fully live (specular,
+   * roughness, maps), white = inherit holds pointwise, and no half of the material is
+   * silently ignored (V349's lesson).
+   */
+  readonly colorAttribute?: ScenePairRef;
+  /**
+   * T478: the GPU-resident live count, when the producer spawns and kills (T322).
+   * Instances draw INDIRECTLY off it (countedDrawSupport), so a dead tail is never
+   * resurrected. A counted SURFACE stays refused: grid topology addresses fixed
+   * points, and a claim over points that may be dead is a lie (§V13).
+   */
+  readonly count?: { readonly buffer: string };
+  /**
    * The resolved material, EMBEDDED: the geometry node composes its referenced
    * material with its own per-object overrides (T449), so the render sees one
    * finished material per object and never resolves the pairing itself.

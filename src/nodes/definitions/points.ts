@@ -1,11 +1,18 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import {
   ATTRIBUTE_STRIDES,
   validateAttributes,
   type PointAttributeSchema,
 } from "../../points/attributes.ts";
-import { POINT_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
+import {
+  POINT_KERNEL_CONTRACT_VERSION,
+  POINT_KERNEL_VALUE_SLOTS,
+  generateKernelModule,
+  kernelReadsValueSlot,
+  pointKernelValueKey,
+} from "../../points/codegen.ts";
 import { parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
@@ -115,6 +122,63 @@ export function pointKernelResources(
   }));
 }
 
+/**
+ * T479 — the VALUE-GRAPH slots, defined ONCE for both kernel nodes (§V109: two nodes
+ * wording the same idea differently is two answers to one question).
+ *
+ * Each slot is an ordinary drivable number. That is the whole design decision: the
+ * channel NAME (`lfo1`, `mouse1:x`) lives in a `driven` binding on the parameter, which
+ * rename already rewrites (§V128 kind 2, B40's fix) and which liveness, the reference
+ * lines and the dangling-name diagnostics already understand. A name written inside the
+ * kernel's WGSL would be a fifth reference currency that all five of those consumers
+ * would have to learn — and wiring four of five is exactly how B40 happened.
+ *
+ * NOT `compileTime`: a slot changing is a uniform write, never a rebuild (§V5) — which is
+ * the entire point, since the kernel text is compileTime and the slot is how live values
+ * get past that.
+ *
+ * `inactiveWhen` asks the SAME reader codegen asks (`kernelReadsValueSlot`), so the
+ * inspector shows exactly the slots this kernel reads and NAMES why the others are
+ * inactive — never a knob that is present and does nothing (§V220/§V360).
+ */
+export function pointKernelValueParameters(sourceKeys: ReadonlyArray<string>): ParameterSchema {
+  const entries = Array.from({ length: POINT_KERNEL_VALUE_SLOTS }, (_unused, index) => {
+    const slot = index + 1;
+    const key = pointKernelValueKey(slot);
+    return [
+      key,
+      {
+        type: "number" as const,
+        label: `Value ${slot}`,
+        default: 0,
+        description:
+          `Reaches the kernel as ctx.value${slot}. Put it in Driven mode and an LFO, the mouse or an ` +
+          `audio channel changes what the kernel DOES, not just what it is scaled by (T479).`,
+        inactiveWhen: (values: Readonly<Record<string, ParameterValue>>) =>
+          kernelReadsValueSlot(slot, ...sourceKeys.map((sourceKey) => String(values[sourceKey] ?? "")))
+            ? null
+            : `This kernel does not read ctx.value${slot}.`,
+      },
+    ] as const;
+  });
+  return Object.fromEntries(entries);
+}
+
+/**
+ * T479: the uniform mirror, defined beside the schema it must match. vgpu writes uniform
+ * values BY NAME into the reflected layout, so a member with no value silently reads zero
+ * and a value with no member is silently dropped — the hazard `KernelModule.usesPointer`
+ * documents, now with four more names to keep in step.
+ */
+export function pointKernelValueUniforms(
+  slots: ReadonlyArray<number>,
+  parameters: Readonly<Record<string, ParameterValue>>,
+): Record<string, number> {
+  return Object.fromEntries(
+    slots.map((slot) => [pointKernelValueKey(slot), readNumber(parameters, pointKernelValueKey(slot), 0)]),
+  );
+}
+
 export const pointKernelNode: NodeDefinition = {
   type: "pointKernel",
   version: 1,
@@ -181,7 +245,7 @@ export const pointKernelNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons) and dim (cols, rows, i, j — the grid off the incoming edge, T472) for a kernel that names them. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -191,6 +255,9 @@ export const pointKernelNode: NodeDefinition = {
       description:
         "T300: WGSL predicate over (p, ctx) — e.g. p.position.y > 0.0. Only matching points run the kernel; the rest pass through unchanged. Empty = all.",
     },
+    // T479: the live channel. Both texts are scanned, because a group predicate reads the
+    // same ctx the kernel does.
+    ...pointKernelValueParameters(["kernel", "group"]),
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: POINT_KERNEL_CONTRACT_VERSION,
@@ -333,6 +400,11 @@ export const pointKernelNode: NodeDefinition = {
         // overwrites it every frame from the SAME value the shared block gets (§V182);
         // this entry only reserves the name, because vgpu matches uniforms by name.
         ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+        // T479: one entry per slot the module declared, and the value is the RESOLVED
+        // parameter — a driven slot arrives already channel-resolved, so the per-frame
+        // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
+        // new machinery at all.
+        ...pointKernelValueUniforms(module.usesValues, parameters),
       },
       uniformBinding: "kernelFrame",
       nodeId,
@@ -474,6 +546,7 @@ export function resolveColorMap(
     | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
     | undefined,
   pointsPort: string,
+  label: string = "color",
 ):
   | { map: { pair: string; half: "read" | "write" } | undefined }
   | { refusal: CompiledNodeDescription } {
@@ -493,29 +566,29 @@ export function resolveColorMap(
     },
   });
   if (binding.port !== undefined && binding.port !== pointsPort) {
-    return refuse(`color maps port "${binding.port}", but the only pointset input is "${pointsPort}".`);
+    return refuse(`${label} maps port "${binding.port}", but the only pointset input is "${pointsPort}".`);
   }
   if (binding.channel !== undefined) {
     return refuse(
-      `color maps the whole compound; a channel belongs on a component slot ("color.r"), not the head.`,
+      `${label} maps the whole compound; a channel belongs on a component slot ("${label}.r"), not the head.`,
     );
   }
   const available = Object.keys(pointset?.pairs ?? {}).sort();
   const entry = pointset?.pairs[binding.attribute];
   if (entry === undefined) {
     return refuse(
-      `color maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
+      `${label} maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
       available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
     );
   }
   if (entry.type === undefined) {
     return refuse(
-      `color maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
+      `${label} maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
     );
   }
   if (entry.type !== "vec4f") {
     return refuse(
-      `color needs a vec4f attribute to map the whole compound; "${binding.attribute}" is ${entry.type}.`,
+      `${label} needs a vec4f attribute to map the whole compound; "${binding.attribute}" is ${entry.type}.`,
     );
   }
   return { map: { pair: entry.pair, half: entry.half } };
@@ -524,7 +597,13 @@ export function resolveColorMap(
 export function countedDrawSupport(
   nodeId: string,
   pointset: { count?: { buffer: string } } | undefined,
-  options: { vertexCount: number; maxInstances: number },
+  options: {
+    vertexCount: number;
+    maxInstances: number;
+    /** T478: distinct key per draw when ONE node owns several counted draws (a render
+     *  with two counted geometries) — the scratch id is `scratch:{nodeId}:{key}`. */
+    argsKey?: string;
+  },
 ):
   | {
       instances: { indirect: string };
@@ -534,12 +613,13 @@ export function countedDrawSupport(
   | undefined {
   const count = pointset?.count;
   if (count === undefined) return undefined;
-  const argsId = pointPairId(nodeId, "drawArgs");
+  const argsKey = options.argsKey ?? "drawArgs";
+  const argsId = pointPairId(nodeId, argsKey);
   return {
     instances: { indirect: argsId },
     argsPass: {
       kind: "dispatch",
-      id: `${nodeId}:drawArgs`,
+      id: `${nodeId}:${argsKey}`,
       shader: drawArgsWgsl(),
       entryPoint: "main",
       workgroups: [1, 1, 1],
@@ -551,7 +631,7 @@ export function countedDrawSupport(
       uniformBinding: "params",
       nodeId,
     },
-    scratch: { kind: "buffer", key: "drawArgs", stride: 4, capacity: 4, usage: "indirect" },
+    scratch: { kind: "buffer", key: argsKey, stride: 4, capacity: 4, usage: "indirect" },
   };
 }
 

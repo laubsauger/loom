@@ -19,10 +19,13 @@ export interface SceneShadingOptions {
   /** Lights the shader is compiled for. 0 is legal: ambient floor only. */
   readonly lightCount: number;
   readonly maps?: { readonly albedo?: boolean; readonly roughness?: boolean };
+  /** T478: a vec4f attribute multiplies the base colour per point (the mapped tint). */
+  readonly pointColor?: boolean;
 }
 
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
+  const pointColor = options.pointColor === true;
   const albedoMap = options.maps?.albedo === true;
   const roughnessMap = options.maps?.roughness === true;
 
@@ -45,7 +48,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const mapLoad = (name: string): string =>
     `textureLoad(${name}, vec2i(clamp(input.uv, vec2f(0.0), vec2f(1.0)) * (vec2f(textureDimensions(${name})) - vec2f(1.0))), 0)`;
 
-  const albedoExpr = albedoMap ? `params.baseColor * ${mapLoad("albedoMap")}` : "params.baseColor";
+  const albedoExpr = `${albedoMap ? `params.baseColor * ${mapLoad("albedoMap")}` : "params.baseColor"}${pointColor ? " * input.tint" : ""}`;
   const roughnessExpr = roughnessMap
     ? `clamp(params.material.y * ${mapLoad("roughnessMap")}.r, 0.04, 1.0)`
     : "params.material.y";
@@ -103,12 +106,13 @@ ${lightField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${mapBindings}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) world: vec3f,
   @location(2) uv: vec2f,
+  @location(3) tint: vec4f,
 };
 
 fn cellCorner(v: u32) -> vec2u {
@@ -158,6 +162,10 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
   out.world = world;
   /* The grid coordinate IS the uv — free, and what material maps sample by. */
   out.uv = vec2f(f32(gx) / max(params.grid.x - 1.0, 1.0), f32(gy) / max(params.grid.y - 1.0, 1.0));
+  /* Same modular indexing as the position read, so the seam vertex wears column 0's tint. */
+  out.tint = ${pointColor
+    ? "pointColors[select(gy, gy % rows, wrapV) * cols + select(gx, gx % cols, wrapU)]"
+    : "vec4f(1.0)"};
   return out;
 }
 
@@ -178,7 +186,13 @@ ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = r
  * Render only. Maps are refused upstream for instances (no uv yet), so this generator
  * takes no map options.
  */
-export function sceneInstancesWgsl(options: { model: "unlit" | "lambert" | "phong"; lightCount: number }): string {
+export function sceneInstancesWgsl(options: {
+  model: "unlit" | "lambert" | "phong";
+  lightCount: number;
+  /** T478: a vec4f attribute multiplies the base colour per point (the geometry's mapped tint). */
+  pointColor?: boolean;
+}): string {
+  const pointColor = options.pointColor === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const lightField = Array.from({ length: lightCount }, (_, index) =>
     `  light${index}Meta: vec4f,\n  light${index}Color: vec4f,\n  light${index}Vector: vec4f,\n`,
@@ -234,11 +248,12 @@ ${lightField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) world: vec3f,
+  @location(2) tint: vec4f,
 };
 
 fn quadCorner(v: u32) -> vec2f {
@@ -314,13 +329,14 @@ fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32
   out.position = params.viewProjection * vec4f(world, 1.0);
   out.normal = shapeNormal(shape, v);
   out.world = world;
+  out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
   return out;
 }
 
 @fragment
 fn fs(input: VertexOut) -> @location(0) vec4f {
   let normal = normalize(input.normal);
-  let albedo = params.baseColor;
+  let albedo = params.baseColor * input.tint;
 ${shading}
 }`;
 }

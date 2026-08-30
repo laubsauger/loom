@@ -1,5 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
-import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
+import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
 import { cameraPayloadMatrix } from "../../domain/geometry/camera.ts";
@@ -7,6 +7,7 @@ import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topo
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
+import { countedDrawSupport, resolveColorMap } from "./points.ts";
 import { sceneInstancesWgsl, sceneSurfaceWgsl } from "../shaders/scene-render.wgsl.ts";
 
 /**
@@ -199,11 +200,12 @@ export const geometryNode: NodeDefinition = {
       label: "Tint",
       default: [1, 1, 1, 1],
       space: "display",
-      description: "Per-object multiplier on the material's base colour. White = inherit.",
+      description:
+        "Multiplier on the material's base colour: per object as a value, PER POINT in Map mode (a vec4f attribute — T478). White = inherit, either way.",
     },
   },
   compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, parameters } = readCompileInputs(context);
+    const { nodeId, inputs, parameters, parameterMaps } = readCompileInputs(context);
     const points = inputs["points"];
     if (points === undefined) {
       return { passes: [], diagnostics: [missingCompileResource(nodeId, 'input port "points"')] };
@@ -237,26 +239,49 @@ export const geometryNode: NodeDefinition = {
         ],
       };
     }
+    // §V288: a map this stage cannot honour refuses BY NAME rather than drawing the
+    // retained static. `tint` is the one mappable parameter (T478).
+    const unhonoured = Object.keys(parameterMaps).filter((key) => key !== "tint").sort();
+    if (unhonoured.length > 0) {
+      return {
+        passes: [],
+        diagnostics: unhonoured.map((key) => ({
+          severity: "error" as const,
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${key} is in map mode, but geometry maps only "tint".`,
+          nodeId,
+          suggestion: "Switch it back to Constant, or drive it through the value graph instead.",
+        })),
+      };
+    }
+    // T478: tint in MAP mode — a vec4f attribute drives the multiplier per point.
+    const resolvedTint = resolveColorMap(nodeId, parameterMaps["tint"], pointset, "points", "tint");
+    if ("refusal" in resolvedTint) return resolvedTint.refusal;
+    const tintMap = resolvedTint.map;
+
     const base: MaterialPayload = materialBinding ?? DEFAULT_MATERIAL;
     const tint = readColor(parameters, "tint", [1, 1, 1, 1]);
-    const material: MaterialPayload = {
-      ...base,
-      baseColor: [
-        (base.baseColor[0] ?? 1) * (tint[0] ?? 1),
-        (base.baseColor[1] ?? 1) * (tint[1] ?? 1),
-        (base.baseColor[2] ?? 1) * (tint[2] ?? 1),
-        (base.baseColor[3] ?? 1) * (tint[3] ?? 1),
-      ],
-    };
+    const material: MaterialPayload =
+      tintMap !== undefined
+        ? base // per-point tint multiplies in the shader; the static value is retained, not applied
+        : {
+            ...base,
+            baseColor: [
+              (base.baseColor[0] ?? 1) * (tint[0] ?? 1),
+              (base.baseColor[1] ?? 1) * (tint[1] ?? 1),
+              (base.baseColor[2] ?? 1) * (tint[2] ?? 1),
+              (base.baseColor[3] ?? 1) * (tint[3] ?? 1),
+            ],
+          };
     const mode = parameters["mode"] === "instances" ? "instances" : parameters["mode"] === "points" ? "points" : "surface";
-    if (pointset.count !== undefined) {
+    if (pointset.count !== undefined && mode !== "instances") {
       return {
         passes: [],
         diagnostics: [
           {
             severity: "error",
             code: "node.scene.geometry",
-            message: `Node "${nodeId}": the point set carries a GPU live count; scene geometry draws a fixed capacity. Draw counted sets through renderPoints/renderInstances for now.`,
+            message: `Node "${nodeId}": the point set carries a GPU live count, and a ${mode} draw addresses a fixed capacity — dead points would be resurrected. Counted sets render as instances (T478), which draw indirectly off the live count.`,
             nodeId,
           },
         ],
@@ -277,6 +302,8 @@ export const geometryNode: NodeDefinition = {
             },
           }
         : {}),
+      ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
+      ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
       material,
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
@@ -396,7 +423,9 @@ export const renderNode: NodeDefinition = {
 
     const diagnostics: NonNullable<CompiledNodeDescription["diagnostics"]> = [];
     const background = readColor(parameters, "background", [0, 0, 0, 1]);
-    const passes: DrawPassDescriptor[] = [];
+    const passes: Array<DrawPassDescriptor | DispatchPassDescriptor> = [];
+    /** T478: one indirect-args scratch buffer per COUNTED geometry. */
+    const scratch: Array<NonNullable<ReturnType<typeof countedDrawSupport>>["scratch"]> = [];
     /*
      * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
      * so a render used as a material map is a PICTURE with a stage behind it rather
@@ -479,16 +508,46 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             : material.specularColor;
         const shininess = material.model === "pbr" ? 96 : material.shininess;
         const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+        /*
+         * T478: a COUNTED geometry draws INDIRECTLY off its GPU-resident live count —
+         * T322's machinery verbatim, so a spawning/killing producer's dead tail is
+         * never resurrected into the scene. The args id is scoped per geometry so two
+         * counted objects in one render cannot collide.
+         */
+        const counted = countedDrawSupport(nodeId, payload, {
+          vertexCount: 36,
+          maxInstances: Math.max(1, payload.capacity),
+          argsKey: `drawArgs${index}`,
+        });
+        if (counted !== undefined) {
+          passes.push(counted.argsPass);
+          scratch.push(counted.scratch);
+        }
         passes.push({
           kind: "draw",
           id: `${nodeId}:scene:${index}`,
           nodeId,
-          shader: sceneInstancesWgsl({ model, lightCount: lights.length }),
+          shader: sceneInstancesWgsl({
+            model,
+            lightCount: lights.length,
+            ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+          }),
           target,
           topology: "triangle-list",
-          instances: payload.capacity,
+          instances: counted?.instances ?? payload.capacity,
           vertexCount: 36,
-          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          buffers: [
+            { binding: "positions", resourceId: position.pair, half: position.half },
+            ...(payload.colorAttribute === undefined
+              ? []
+              : [
+                  {
+                    binding: "pointColors",
+                    resourceId: payload.colorAttribute.pair,
+                    half: payload.colorAttribute.half,
+                  },
+                ]),
+          ],
           uniforms: {
             viewProjection: Array.from(viewProjectionMatrix),
             eye: [camera.eye[0], camera.eye[1], camera.eye[2], 0],
@@ -576,12 +635,28 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
         kind: "draw",
         id: `${nodeId}:scene:${index}`,
         nodeId,
-        shader: sceneSurfaceWgsl({ model, lightCount: lights.length, maps }),
+        shader: sceneSurfaceWgsl({
+          model,
+          lightCount: lights.length,
+          maps,
+          ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+        }),
         target,
         topology: "triangle-list",
         instances: 1,
         vertexCount: cellsU * cellsV * 6,
-        buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+        buffers: [
+          { binding: "positions", resourceId: position.pair, half: position.half },
+          ...(payload.colorAttribute === undefined
+            ? []
+            : [
+                {
+                  binding: "pointColors",
+                  resourceId: payload.colorAttribute.pair,
+                  half: payload.colorAttribute.half,
+                },
+              ]),
+        ],
         ...(material.maps.albedo === undefined && material.maps.roughness === undefined
           ? {}
           : {
@@ -618,7 +693,11 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
     if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
       return { passes: [], diagnostics };
     }
-    return { passes, ...(diagnostics.length === 0 ? {} : { diagnostics }) };
+    return {
+      passes,
+      ...(scratch.length === 0 ? {} : { scratch }),
+      ...(diagnostics.length === 0 ? {} : { diagnostics }),
+    };
   },
 };
 
