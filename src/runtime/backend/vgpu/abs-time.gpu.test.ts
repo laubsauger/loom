@@ -89,7 +89,7 @@ describe("absTime reaches WGSL and keeps growing (T468, §V147)", () => {
           timeSeconds: 0, // the timeline just lapped…
           deltaSeconds: 1 / 60,
           frameIndex: 0,
-          mode: "live",
+          mode: "realtime",
           randomSeed: 7,
           absFrameIndex: 6000,
           absTimeSeconds: 100, // …and the show keeps counting.

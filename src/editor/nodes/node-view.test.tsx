@@ -451,12 +451,14 @@ describe("preview slot (§V28b) — visible texture-producing node previews by d
 describe("T457 (V387) — reference-fed inputs render NO socket", () => {
   const catalogue = createNodeRegistry(allNodeDefinitions).view();
 
-  it("a render node shows no input sockets at all — its whole left side is names", () => {
+  it("a render node's only socket is the one REAL wire — every name is invisible", () => {
     const { container } = mountNode("render", { graph: graphWith("render"), registry: catalogue });
-    // scenes/camera/lights are all reference-fed plumbing: a socket here invites a
-    // wire that apply-patch refuses (port.sourceReference), so none is drawn.
+    // scenes/camera/lights are reference-fed plumbing: a socket there invites a wire
+    // that apply-patch refuses (port.sourceReference), so none is drawn. The
+    // environment (T482) is a genuine texture wire — pixels are data (V372) — and its
+    // socket is exactly what remains.
     const inputs = [...container.querySelectorAll('[data-handlepos="left"]')];
-    expect(inputs).toEqual([]);
+    expect(inputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["environment"]);
     // The output socket is real and stays.
     const outputs = [...container.querySelectorAll('[data-handlepos="right"]')];
     expect(outputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["out"]);

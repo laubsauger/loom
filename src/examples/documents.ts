@@ -2113,7 +2113,7 @@ const stageDocument = document(
         attributes: '[{"name":"position","type":"vec3f","semantic":"position","default":[0,0,0]}]',
         kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the xy plane lies down: y becomes depth, the floor sits under the screen */\n  q.position = vec3f(p.position.x, -1.15, p.position.y - 0.6);\n  return q;\n}",
       }, { label: "floorkernel1" }),
-      node("matFloor", "materialPhong", [-410, 420], {
+      node("matFloor", "materialPhong", [-410, 450], {
         color: [0.25, 0.28, 0.38, 1], specular: [0.6, 0.7, 1, 1], shininess: 24, roughness: 0.7,
       }, { label: "matfloor1" }),
       node("floor", "geometry", [-200, 240], {
