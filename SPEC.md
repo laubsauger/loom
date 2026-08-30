@@ -820,6 +820,8 @@ V210: the compile gate has SEVERAL independent structural triggers & the documen
  (b) BACKEND CAPABILITIES on device recovery — a plan compiled against tier-B needs recompiling if the recovered adapter differs. covered today: the recovery path rebuilds from the retained plan.
  (c) COMPONENT CATALOGUE edits (V82) — editing a component's INTERNAL graph changes what flattening produces WITHOUT touching the host document. live-ness depends on how component edits reach the store; ⊥ assumed either way, ! be checked.
  (d) `project.setSettings` (T272) — settings are COMPILE INPUT. presumably a document revision, but presumption is the failure mode this invariant exists for.
+V213: where a value is COERCED @ runtime, ⊥ ALSO reject it @ write time — 2 answers to 1 question. Switch's index WRAPS, so a declared min|max would refuse a static `9` (V66) while an expression producing 9 wrapped happily. pick the coercion | pick the validation; shipping both means the same number is legal ∈ 1 mode & illegal ∈ another.
+V214: RANGE HANDLING is a product decision, ⊥ a default. Switch WRAPS rather than clamps: clamping turns "cycle through my sources" into "stop on the last one", fixable only by typing a modulo into every driving expression — whereas wrapping leaves clamping available upstream. choose the one the USER can undo.
 V211: OBSERVING something ⊥ require the graph to be ANIMATING. T311's preview retry runs BEFORE the idle-skip gate ∴ a fully static plan under `auto` still heals its previews. same spirit as V142 (the camera is free): the cost of LOOKING is ⊥ allowed to depend on whether anything is moving.
 V212: a repair that ALLOCATES ⊥ run inside an open frame — the V8 guard refuses allocation once `duringFrame` begins, so a retry placed there trades a blackout for a per-frame THROW. repairs go @ frame ENTRY, before the frame opens.
 V207: citation-grep is a LEAD, ⊥ a verdict. audit found 40 of 222 uncited ∈ `src/`, 5 claimed done by a §T row — & the 2 I then checked BY HAND (V62a, V98) are both fully implemented, paraphrased ∈ prose w/o their number. so the metric's false-positive rate is high & a report from it ! be verified before it is believed. what it IS good for: a shortlist. B26 (the unwired classifier) is the shape it hunts, & was found by asking "what CALLS this?" — which is the question worth automating, ⊥ "is the number mentioned".
@@ -1083,7 +1085,7 @@ T218|x|fix B10: live parameter values ∀ gesture — find why the composed app 
 T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
 T220|x|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
-T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
+T225|x|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
 T271|x|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
 T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: new `stops` param type = `{position, color}[]` + `space` (V196), static-as-a-whole (V195). compile → capped uniform array (16) + count, diagnostic beyond. stop editor UI: add|remove|reorder|position|swatch, 1 patch per gesture (V114)|V175,V195,V196,V56 N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
@@ -1154,7 +1156,7 @@ T245|x|param applicability predicates + inactive rendering ∈ ∀ controls (B14
 T244|x|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
-T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
+T235|x|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
 T236|~|**Analyze** node — GPU half done, CPU half UNWIRED (B25/T305) — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|.|**Cache / Time Machine** — TRAP: needs a 3D-texture resource kind we ⊥ have, & ~1 GB for 60 frames @ 1080p rgba16float. cost the resource kind BEFORE the node — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
 T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
@@ -1162,9 +1164,10 @@ T239|x|**Constant/Value** node — named scalar channels, 1 place to park number
 T240|x|**Timer** node — ramp 0..1 over a length, w/ cycle + pulse reset (T214/T216)|V143
 T241|x|Edge + Convolve (arbitrary kernel) filters|-
 T242|x|Rectangle SDF generator (Circle exists, Rect ⊥) + Flip/Mirror|-
-T243|.|Text generator — glyph atlas → texture. DEPENDS ON T262: text is a media node ∈ disguise (the atlas is an external texture)|T262
+T243|.|**Text generator — RASTERIZE THE STRING, ⊥ a glyph atlas.** AMENDED: the browser canvas already does shaping, kerning, bidi & font fallback, & we have ⊥ per-glyph quad route; reimplementing layout on the GPU is inventing a worse HarfBuzz. TD's Text TOP is a full-frame LAYER w/ alignment, ⊥ a tight bbox, so per-glyph granularity buys nothing. the seam is unchanged — external texture, media node ∈ disguise (T262) — only the atlas GRANULARITY changes. BOTH HALVES or neither (V193)|T262,V193
+T312|.|plumb the node's RESOLVED size to the media-source hook. `copyExternalImageToTexture` asserts matching extents ∴ a rasterizer ! draw @ resolved size, ⊥ project size, or a per-node resolution override breaks the upload. video sidesteps this by adopting the INTRINSIC size; text has none worth adopting|T243,T264,V167
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
-T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
+T226|x|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
 T221|x|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
 T222|x|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
