@@ -22,8 +22,9 @@ export const PORT_FAMILY_VAR: Readonly<Record<PortKind, string>> = {
   transform3d: "--port-transform3d",
   event: "--port-event",
   audioFeatures: "--port-audioFeatures",
-  // The CHOP wire (T273): scalar-family hue — it carries numbers, not pixels.
-  value: "--port-scalar",
+  // The CHOP wire (T273): number-family, one tier lighter than scalar so a value
+  // chain reads as its own layer across the canvas.
+  value: "--port-value",
 };
 
 /** `var(--port-*)` for a port kind. Never a literal color (V17). */

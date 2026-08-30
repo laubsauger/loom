@@ -59,6 +59,7 @@
   --port-material: #fb923c; /* orange-400 — warm surface, clear of amber matrix */
   --port-light: #fde047; /* yellow-300 — one tier lighter on purpose, to separate from matrix */
   --port-transform3d: #a3e635; /* lime-400 — the one wide-open hue gap in the set */
+  --port-value: #cbd5e1; /* slate-300 — the CHOP wire: number-family like scalar, one tier lighter so a value chain reads as its own layer */
   --port-unknown: var(--text-dim);
 
   /* ---- type ---------------------------------------------------------
