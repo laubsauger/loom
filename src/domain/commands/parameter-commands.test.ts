@@ -686,6 +686,21 @@ describe("switching modes from the menu (§V107, §V108)", () => {
     expect(result.output.diagnostics[0]?.code).toBe("parameter.mode.payload");
   });
 
+  it("refuses Map BY NAME — a named refusal teaches what the mode needs, a missing item nothing (B45, §V288)", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.setMode",
+      { nodeId, parameterKey: "radius", mode: "map" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    const diagnostic = result.output.diagnostics[0];
+    expect(diagnostic?.code).toBe("parameter.mode.payload");
+    // The refusal names the mode — this is the menu's fifth item doing its teaching.
+    expect(diagnostic?.message).toContain("map");
+  });
+
   it("keeps the payload of the mode it left (§V108)", async () => {
     const harness = createMenuHarness();
     const nodeId = await named(harness.bus, "blur1");

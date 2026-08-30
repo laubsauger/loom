@@ -28,7 +28,22 @@ import type {
  * STORAGE and BINDING concern and never appear in `ResolvedParameters.values`.
  */
 
-export const PARAMETER_MODES = ["static", "expression", "bind", "driven", "map"] as const;
+/**
+ * Every mode, pinned to the union in BOTH directions (§V316, B45): the Record forces a
+ * key per `ParameterMode`, so adding a sixth binding kind breaks this line at compile
+ * time instead of leaving every list derived from it — the mode panel, the parameter
+ * menu, `isParameterSlot` — silently one short, which is exactly how `map` went missing
+ * from the menu. Key order is the display order.
+ */
+const MODE_ENUMERATION: Readonly<Record<ParameterMode, true>> = {
+  static: true,
+  expression: true,
+  bind: true,
+  driven: true,
+  map: true,
+};
+
+export const PARAMETER_MODES = Object.keys(MODE_ENUMERATION) as readonly ParameterMode[];
 
 const MODE_SET: ReadonlySet<string> = new Set(PARAMETER_MODES);
 
