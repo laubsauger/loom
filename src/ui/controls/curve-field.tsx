@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { cx } from "../cx.ts";
 import styles from "./controls.module.css";
 
@@ -63,13 +64,64 @@ export interface AssetFieldProps {
   label: string;
   value: string | null;
   kind: string;
+  /** Absent = read-only display (the pre-T434 stub behaviour). */
+  onPick?: (url: string, fileName: string) => void;
 }
 
-export function AssetField({ label, value, kind }: AssetFieldProps) {
+const ASSET_ACCEPT: Readonly<Record<string, string>> = {
+  audio: "audio/*",
+  video: "video/*",
+  image: "image/*",
+};
+
+/** A bound object URL's display name: the picked file's name survives in the fragment. */
+function assetDisplayName(value: string): string {
+  const hash = value.indexOf("#");
+  if (hash >= 0 && hash < value.length - 1) return decodeURIComponent(value.slice(hash + 1));
+  return value.length > 42 ? `…${value.slice(-40)}` : value;
+}
+
+/**
+ * T434: a REAL file picker — `movieFileIn` and `audioFileIn` share it.
+ *
+ * The picked file becomes an object URL, session-scoped: it plays now and dies with the
+ * page, and the meta line SAYS so instead of letting a reloaded project fail mysteriously
+ * (§V288). Durable assets are still their own phase; the picker existing does not
+ * pretend otherwise. The file's name rides the URL fragment so the field can display
+ * something a human recognises.
+ */
+export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
+  const input = useRef<HTMLInputElement | null>(null);
   return (
     <div className={cx(styles.asset, "nodrag")} aria-label={label} role="group">
-      <span>{value ?? `no ${kind} bound`}</span>
-      <span className={styles.meta}>· assets land in Phase 2</span>
+      <span>{value === null || value === "" ? `no ${kind} bound` : assetDisplayName(value)}</span>
+      {onPick === undefined ? (
+        <span className={styles.meta}>· read-only</span>
+      ) : (
+        <>
+          <button
+            type="button"
+            className={styles.meta}
+            onClick={() => input.current?.click()}
+          >
+            choose…
+          </button>
+          <span className={styles.meta}>· this session only</span>
+          <input
+            ref={input}
+            type="file"
+            accept={ASSET_ACCEPT[kind] ?? undefined}
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file === undefined) return;
+              const url = `${URL.createObjectURL(file)}#${encodeURIComponent(file.name)}`;
+              onPick(url, file.name);
+              event.currentTarget.value = "";
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
+import { AudioSection } from "./audio-section.tsx";
 import { groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
@@ -69,6 +70,11 @@ export interface InspectorProps {
   inputResolutions?: readonly InputResolution[];
   /** Injectable for tests; otherwise the pane owns its editor. */
   editor?: ParameterEditor;
+  /**
+   * T434(b)/T432: the session's audio capture status, for the Audio section shown on
+   * audio nodes. Absent = no session capture wiring (tests, embeds) — section hidden.
+   */
+  audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
   variant?: ControlVariant;
   /**
    * The channel resolver a `driven` parameter reads through (B46, T374, §V61).
@@ -98,6 +104,7 @@ export function Inspector({
   editor: providedEditor,
   variant = "inspector",
   channels,
+  audioStatus,
 }: InspectorProps) {
   const graph = useSyncExternalStore<GraphDocument>(
     bus.store.subscribe,
@@ -225,6 +232,21 @@ export function Inspector({
     />
   );
 
+  /*
+   * T434(b)/T432: the audio nodes get a capture section — status plus, for the mic
+   * node, the device picker. Keyed on the node TYPE the capture hook itself keys on.
+   */
+  const audioSection =
+    audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn") ? (
+      <AudioSection
+        nodeId={node.id}
+        nodeType={node.type}
+        device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
+        status={audioStatus()}
+        editor={editor}
+      />
+    ) : null;
+
   const parameterSections =
     groups.length === 0 ? (
       // §V91: name the STATE, not the pane's purpose. A node with no parameters is a
@@ -297,6 +319,7 @@ export function Inspector({
         {header}
         {unknownNotice}
         {parameterSections}
+        {audioSection}
         {commonSection}
       </div>
     );
@@ -313,6 +336,7 @@ export function Inspector({
         </TabsList>
         <TabsContent className={cx(styles.page, styles.page)} value="parameters">
           {parameterSections}
+          {audioSection}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
           {commonSection}

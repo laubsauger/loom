@@ -749,6 +749,7 @@ export function App({
               channels={compile.channels}
               status={status}
               unknownParameters={runtime.unknownParameters}
+              audioStatus={audioInput.status}
             />
           }
           viewer={

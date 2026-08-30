@@ -93,7 +93,8 @@ export interface InspectorPaneProps {
   channels?: ChannelResolver;
   status: GpuStatus;
   /** Values the open file carried that this build cannot read (§V68, §V69). */
-  unknownParameters?: readonly UnknownParameter[];
+  unknownParameters?: readonly UnknownParameter[];  /** T434(b)/T432: the session audio capture's status, for the Inspector's Audio section. */
+  audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
 }
 
 /**
@@ -141,6 +142,7 @@ export function InspectorPane({
   channels,
   status,
   unknownParameters = [],
+  audioStatus,
 }: InspectorPaneProps) {
   const { bus, invocation, registry, settings } = useAppRuntime();
 
@@ -201,6 +203,7 @@ export function InspectorPane({
           capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
           inputResolutions={inputResolutions}
           {...(channels === undefined ? {} : { channels })}
+          {...(audioStatus === undefined ? {} : { audioStatus })}
         />
       </div>
     </ContextMenuHost>

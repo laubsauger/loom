@@ -339,6 +339,9 @@ export function ParameterControl({
           label={label}
           value={typeof resolved === "string" ? resolved : null}
           kind={definition.kind}
+          // T434: the picked object URL is the stored value — one commit, one undo step,
+          // like every other control (§V114). Session-scoped; the field says so.
+          onPick={(url) => emit(url, "commit")}
         />,
         { hint: definition.kind },
       );
