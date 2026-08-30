@@ -573,7 +573,10 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
     // the bridge's clip→uv mapping verbatim (T262 — one mapping for one idea, §V349).
     const last = module.buffers[module.buffers.length - 1]?.binding ?? 0;
     expect(module.wgsl).toContain(`@group(0) @binding(${last + 1}) var fieldTexture`);
-    expect(module.wgsl).toContain("position.xy * 0.5 + vec2f(0.5)");
+    // T512: y INVERTED — world +y is up, texel row 0 is the picture's top. The old
+    // same-sign mapping mirrored every bridge read and survived because both sites
+    // agreed with each other; the pin now names the corrected form.
+    expect(module.wgsl).toContain("vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5)");
     expect(module.wgsl).toContain("fn fieldAt(position: vec3f) -> vec4f");
   });
 

@@ -65,7 +65,7 @@ const parser = {
       return "punctuation";
     }
     if (/[-0-9]/.test(ch)) {
-      stream.eatWhile(/[0-9eE+.\-]/);
+      stream.eatWhile(/[0-9eE+.-]/);
       return "number";
     }
     if (/[a-z]/.test(ch)) {

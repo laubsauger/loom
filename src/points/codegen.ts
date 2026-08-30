@@ -477,10 +477,13 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
       ? `@group(0) @binding(${nextBinding}) var fieldTexture: texture_2d<f32>;
 
 /* T477: sample the wired field at a point's position — the SAME mapping
-   Texture To Attribute uses (T262), so the bridge and this read agree texel for texel. */
+   Texture To Attribute uses (T262/T512), so the bridge and this read agree texel for
+   texel. y INVERTED (T512): world +y is up, texel row 0 is the picture's top, so
+   +1 maps to uv.y = 0 — the two sites moved together, or §V349's two-mappings bug
+   returns wearing this fix. */
 fn fieldAt(position: vec3f) -> vec4f {
   let dims = vec2f(textureDimensions(fieldTexture, 0));
-  let uv = clamp(position.xy * 0.5 + vec2f(0.5), vec2f(0.0), vec2f(1.0));
+  let uv = clamp(vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5), vec2f(0.0), vec2f(1.0));
   return textureLoad(fieldTexture, vec2i(uv * (dims - vec2f(1.0))), 0);
 }
 

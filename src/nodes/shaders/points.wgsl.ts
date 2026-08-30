@@ -171,9 +171,14 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
      kernel writes only what it owns (sample). The old position copy existed for an
      id-derivation convention, not a physical need. */
   let position = in_position[index];
-  /* Clip space [-1,1] -> uv [0,1] -> texel. Clamped so off-screen points still sample. */
+  /* Clip space [-1,1] -> uv [0,1] -> texel, y INVERTED (T512): world +y is UP and
+     texel row 0 is the TOP of the picture, so position.y = +1 must reach uv.y = 0.
+     The old same-sign mapping read every texture upside down — a webcam through this
+     bridge rendered the user's face inverted — and survived since T262 because it
+     agreed with fieldAt's identical mistake and every test image was symmetric.
+     Clamped so off-screen points still sample. */
   let dims = vec2f(textureDimensions(sourceTexture, 0));
-  let uv = clamp(position.xy * 0.5 + vec2f(0.5), vec2f(0.0), vec2f(1.0));
+  let uv = clamp(vec2f(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5), vec2f(0.0), vec2f(1.0));
   let texel = vec2i(uv * (dims - vec2f(1.0)));
   out_sample[index] = textureLoad(sourceTexture, texel, 0);
 }`;
