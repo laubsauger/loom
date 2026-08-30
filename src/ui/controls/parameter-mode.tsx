@@ -195,11 +195,17 @@ export function ParameterModePanel({
    * not beside the value: the panel only exists once the parameter's name is clicked, so
    * this is help on demand, and it disappears the moment the expression is fixed.
    */
+  // Keyed on the BOUNDS, not on the object carrying them: the caller builds a fresh
+  // `{min, max}` every render, and memoising on it would re-run the probe on every
+  // render of an open panel rather than on every edit of the expression.
+  const rangeMin = range?.min ?? null;
+  const rangeMax = range?.max ?? null;
   const forecast = useMemo(() => {
-    if (active !== "expression" || range === null || text.trim() === "") return null;
-    const found = forecastClamp(text, range);
+    if (active !== "expression" || (rangeMin === null && rangeMax === null)) return null;
+    if (text.trim() === "") return null;
+    const found = forecastClamp(text, { min: rangeMin, max: rangeMax });
     return found === null ? null : describeForecast(found);
-  }, [active, range, text]);
+  }, [active, rangeMin, rangeMax, text]);
 
   const message = problem ?? diagnostic?.message ?? forecast;
 
