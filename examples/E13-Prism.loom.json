@@ -1,0 +1,658 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-backdrop-field": {
+        "id": "e-backdrop-field",
+        "source": {
+          "nodeId": "backdrop",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in2"
+        }
+      },
+      "e-bendB-prism": {
+        "id": "e-bendB-prism",
+        "source": {
+          "nodeId": "bendB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "prism",
+          "portId": "in2"
+        }
+      },
+      "e-bendG-fuse": {
+        "id": "e-bendG-fuse",
+        "source": {
+          "nodeId": "bendG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fuse",
+          "portId": "in2"
+        }
+      },
+      "e-bendR-fuse": {
+        "id": "e-bendR-fuse",
+        "source": {
+          "nodeId": "bendR",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fuse",
+          "portId": "in1"
+        }
+      },
+      "e-field-bendB": {
+        "id": "e-field-bendB",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendB",
+          "portId": "source"
+        }
+      },
+      "e-field-bendG": {
+        "id": "e-field-bendG",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendG",
+          "portId": "source"
+        }
+      },
+      "e-field-bendR": {
+        "id": "e-field-bendR",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendR",
+          "portId": "source"
+        }
+      },
+      "e-fuse-prism": {
+        "id": "e-fuse-prism",
+        "source": {
+          "nodeId": "fuse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "prism",
+          "portId": "in1"
+        }
+      },
+      "e-lens-normals": {
+        "id": "e-lens-normals",
+        "source": {
+          "nodeId": "lens",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "normals",
+          "portId": "input"
+        }
+      },
+      "e-mouse-follow": {
+        "id": "e-mouse-follow",
+        "source": {
+          "nodeId": "mouse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "follow",
+          "portId": "in"
+        }
+      },
+      "e-normals-bendB": {
+        "id": "e-normals-bendB",
+        "source": {
+          "nodeId": "normals",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendB",
+          "portId": "disp"
+        }
+      },
+      "e-normals-bendG": {
+        "id": "e-normals-bendG",
+        "source": {
+          "nodeId": "normals",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendG",
+          "portId": "disp"
+        }
+      },
+      "e-normals-bendR": {
+        "id": "e-normals-bendR",
+        "source": {
+          "nodeId": "normals",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bendR",
+          "portId": "disp"
+        }
+      },
+      "e-prism-out": {
+        "id": "e-prism-out",
+        "source": {
+          "nodeId": "prism",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-pulse-ease": {
+        "id": "e-pulse-ease",
+        "source": {
+          "nodeId": "pulse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ease",
+          "portId": "in"
+        }
+      },
+      "e-roll-field": {
+        "id": "e-roll-field",
+        "source": {
+          "nodeId": "roll",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in1"
+        }
+      },
+      "e-sparks-roll": {
+        "id": "e-sparks-roll",
+        "source": {
+          "nodeId": "sparks",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "roll",
+          "portId": "input"
+        }
+      },
+      "e-swarm-sparks": {
+        "id": "e-swarm-sparks",
+        "source": {
+          "nodeId": "swarm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sparks",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "backdrop": {
+        "definitionVersion": 2,
+        "id": "backdrop",
+        "label": "backdrop1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.13,
+                0.08,
+                0.3,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.05,
+                0.04,
+                0.13,
+                1
+              ],
+              "position": 0.55
+            },
+            {
+              "color": [
+                0.01,
+                0.01,
+                0.04,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "radial"
+        },
+        "position": {
+          "x": -880,
+          "y": -140
+        },
+        "type": "ramp"
+      },
+      "bendB": {
+        "definitionVersion": 1,
+        "id": "bendB",
+        "label": "bendB1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            -1.4,
+            -1.4
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": 180
+        },
+        "type": "displace"
+      },
+      "bendG": {
+        "definitionVersion": 1,
+        "id": "bendG",
+        "label": "bendG1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            -1.05,
+            -1.05
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": -20
+        },
+        "type": "displace"
+      },
+      "bendR": {
+        "definitionVersion": 1,
+        "id": "bendR",
+        "label": "bendR1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            -0.75,
+            -0.75
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": -220
+        },
+        "type": "displace"
+      },
+      "ease": {
+        "definitionVersion": 1,
+        "id": "ease",
+        "label": "ease1",
+        "parameters": {
+          "lag": 0.45
+        },
+        "position": {
+          "x": -940,
+          "y": 580
+        },
+        "type": "valueLag"
+      },
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "field1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -300,
+          "y": 0
+        },
+        "type": "over"
+      },
+      "follow": {
+        "definitionVersion": 1,
+        "id": "follow",
+        "label": "follow1",
+        "parameters": {
+          "lag": 0.14
+        },
+        "position": {
+          "x": -940,
+          "y": 420
+        },
+        "type": "valueLag"
+      },
+      "fuse": {
+        "definitionVersion": 1,
+        "id": "fuse",
+        "label": "fuse1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in1b",
+          "outg": "in2g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 300,
+          "y": -120
+        },
+        "type": "reorder"
+      },
+      "lens": {
+        "definitionVersion": 1,
+        "id": "lens",
+        "label": "lens1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "follow1:x",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "follow1:y",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius.x": {
+            "bindings": {
+              "driven": {
+                "channel": "ease1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.32
+              }
+            },
+            "mode": "driven"
+          },
+          "radius.y": {
+            "bindings": {
+              "driven": {
+                "channel": "ease1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.32
+              }
+            },
+            "mode": "driven"
+          },
+          "softness": 0.62
+        },
+        "position": {
+          "x": -580,
+          "y": -320
+        },
+        "type": "circle"
+      },
+      "mouse": {
+        "definitionVersion": 1,
+        "id": "mouse",
+        "label": "mouse1",
+        "parameters": {},
+        "position": {
+          "x": -1180,
+          "y": 420
+        },
+        "type": "mouse"
+      },
+      "normals": {
+        "definitionVersion": 1,
+        "id": "normals",
+        "label": "normals1",
+        "parameters": {
+          "angle": 45,
+          "channel": "luminance",
+          "extend": "hold",
+          "mode": "normal",
+          "strength": 20,
+          "zeropoint": 0.5
+        },
+        "position": {
+          "x": -300,
+          "y": -320
+        },
+        "type": "slope"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 820,
+          "y": -20
+        },
+        "type": "output"
+      },
+      "prism": {
+        "definitionVersion": 1,
+        "id": "prism",
+        "label": "prism1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in2b",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 560,
+          "y": -20
+        },
+        "type": "reorder"
+      },
+      "pulse": {
+        "definitionVersion": 1,
+        "id": "pulse",
+        "label": "pulse1",
+        "parameters": {
+          "amplitude": 0.14,
+          "frequency": 0.22,
+          "offset": 0.32,
+          "phase": 0,
+          "shape": "square"
+        },
+        "position": {
+          "x": -1180,
+          "y": 580
+        },
+        "type": "lfo"
+      },
+      "roll": {
+        "definitionVersion": 1,
+        "id": "roll",
+        "label": "roll1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "time * 7 % 360"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "s": [
+            1,
+            1
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -580,
+          "y": 100
+        },
+        "type": "transform"
+      },
+      "sparks": {
+        "definitionVersion": 1,
+        "id": "sparks",
+        "label": "sparks1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "count": 2400,
+          "sizePixels": {
+            "bindings": {
+              "map": {
+                "attribute": "pscale",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 4
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -880,
+          "y": 100
+        },
+        "type": "renderPoints"
+      },
+      "swarm": {
+        "definitionVersion": 1,
+        "id": "swarm",
+        "label": "swarm1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"pscale\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[3]}]",
+          "capacity": 2400,
+          "group": "",
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so\n    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */\nfn spectrum(t: f32) -> vec3f {\n  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */\n  q.id = ctx.index;\n  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);\n\n  /* Three interleaved lobes, breathing — a woven band rather than a plain ring. */\n  let angle = (t * TAU * 3.0) + (ctx.time * 0.22);\n  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.time * 0.55));\n  let radius = 0.56 + breathe;\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);\n\n  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */\n  q.tint = vec4f(spectrum(t + (ctx.time * 0.04)), 1.0);\n  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */\n  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);\n  return q;\n}",
+          "seed": 23
+        },
+        "position": {
+          "x": -1180,
+          "y": 100
+        },
+        "type": "pointKernel"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E13 Prism",
+  "projectId": "example-e13-prism",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 23,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

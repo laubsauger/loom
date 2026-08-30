@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
-import { documentLiveness } from "../domain/graph/liveness.ts";
+import { documentLiveness, isValueSourceDefinition } from "../domain/graph/liveness.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { listExamples } from "./catalogue.ts";
@@ -43,6 +43,8 @@ describe("examples: the gate", () => {
       "E1-Feedback-Echo.loom.json",
       "E10-Instanced-Torus.loom.json",
       "E11-Gradient-Remap.loom.json",
+      "E12-Fluid.loom.json",
+      "E13-Prism.loom.json",
       "E2-Reaction-Diffusion.loom.json",
       "E3-Animated-Noise-Field.loom.json",
       "E4-Bloom.loom.json",
@@ -113,7 +115,13 @@ describe.each(examples)("example $fileName", (file) => {
     const expectedOrder = Object.keys(document.graph.nodes)
       .filter((id) => {
         const node = document.graph.nodes[id];
-        return node === undefined || registry.get(node.type)?.valueChannel === undefined;
+        // `isValueSourceDefinition`, not a local `valueChannel === undefined` test. The
+        // narrower spelling was right while the LFO/Constant/Timer trio were the only
+        // value nodes in any example, and it silently became wrong the moment one shipped
+        // a Mouse or a Lag: those declare `valueEvaluate` and no `valueChannel`, so this
+        // filter kept them and demanded the compiler put a portless CPU node into the GPU
+        // plan's order. §V173 already names the whole class — one spelling, one answer.
+        return node === undefined || !isValueSourceDefinition(registry.get(node.type));
       })
       .sort();
     expect([...plan.order].sort()).toEqual(expectedOrder);
