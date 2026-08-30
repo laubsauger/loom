@@ -24,6 +24,7 @@ import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
 import { OPEN_SETTINGS_COMMAND, ProjectSettingsHost } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
+import { projectFps } from "@domain/types/graph.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -47,6 +48,7 @@ import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
 import { useAudioInput } from "./use-audio-input.ts";
+import { useAudioTrack } from "./use-audio-track.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
@@ -396,10 +398,18 @@ export function App({
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
   const audioInput = useAudioInput(() => runtime.bus.store.getGraph());
+  // T452: the recorder WRAPS that read, so the track holds what the engine actually saw.
+  const audioTrack = useAudioTrack({
+    bus: runtime.bus,
+    source: audioInput.read,
+    hasSource: () => audioInput.status().kind === "live",
+    fps: projectFps(runtime.settings),
+    name: () => project.fileName ?? runtime.project.name,
+  });
   const frameLoop = useFrameLoop({
     bus: runtime.bus,
     backend: backend ?? null,
-    audio: audioInput.read,
+    audio: audioTrack.read,
     compiled: compile.compiled,
     settings: runtime.settings,
     animate: compile.animate,
@@ -440,6 +450,17 @@ export function App({
     [runtime],
   );
   const onResetTime = useCallback(() => onSeek(0), [onSeek]);
+  // T452/§V307: the button is a caller of the command, exactly like play and step. The
+  // refusals — no live capture, nothing recorded yet — reach the problems panel through
+  // the same `reportRefusal` every other route uses.
+  const onToggleAudioTrack = useCallback(() => {
+    void runtime.bus
+      .execute("audio.toggleTrackRecording", {}, runtime.invocation)
+      .then(reportRefusal);
+  }, [reportRefusal, runtime]);
+  const onSaveAudioTrack = useCallback(() => {
+    void runtime.bus.execute("audio.saveTrack", {}, runtime.invocation).then(reportRefusal);
+  }, [reportRefusal, runtime]);
 
   // ---- persistence ------------------------------------------------------------------
   const autosave = useAutosave(
@@ -707,6 +728,10 @@ export function App({
               onPlayPause={onPlayPause}
               onStep={onStepFrame}
               onResetTime={onResetTime}
+              onToggleAudioTrack={onToggleAudioTrack}
+              onSaveAudioTrack={onSaveAudioTrack}
+              recordingAudioTrack={audioTrack.recording}
+              audioTrackFrames={audioTrack.frames}
               timeline={
                 <TimelineReadout latestFrame={frameLoop.latestFrame} onSeek={onSeek} />
               }

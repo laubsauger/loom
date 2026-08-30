@@ -84,12 +84,12 @@ function describe(error: unknown): string {
 export interface WriteProjectOptions {
   /** Test seam. Defaults to the real pickers / a real anchor click. */
   readonly globals?: FilePickerGlobals;
-  readonly download?: (file: ProjectFile) => void;
+  readonly download?: (file: WritableTextFile) => void;
 }
 
 /** Downloads the bytes. The last resort, and the only path Firefox and Safari have. */
-function downloadProjectFile(file: ProjectFile): void {
-  const blob = new Blob([file.text], { type: PROJECT_FILE_MIME });
+function downloadTextFile(file: WritableTextFile): void {
+  const blob = new Blob([file.text], { type: file.mime });
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");
@@ -106,8 +106,32 @@ function downloadProjectFile(file: ProjectFile): void {
   }
 }
 
-export async function writeProjectFile(
-  file: ProjectFile,
+/**
+ * A named blob of text destined for the user's disk. `ProjectFile` is one; T452's audio
+ * feature track is another, and a rendered sequence will be a third.
+ */
+export interface WritableTextFile {
+  readonly fileName: string;
+  readonly text: string;
+  readonly mime: string;
+  /** What the save picker offers to filter by. */
+  readonly pickerTypes: readonly FilePickerTypeSpec[];
+}
+
+export const PROJECT_PICKER_TYPES = PICKER_TYPES;
+
+/**
+ * The ONE way a file leaves this app (T452 ruling (c)).
+ *
+ * Everything above is about `.loom.json` because that was the only file there was. It is
+ * not: a recorded feature track is an artifact of the same kind as a saved project and a
+ * rendered sequence, and giving each its own save path is how three of them end up with
+ * three different behaviours on Safari. So the picker-then-download ladder, the
+ * cancel-is-not-a-failure rule and the never-throw rule live HERE, once, and
+ * `writeProjectFile` is the first caller rather than the owner.
+ */
+export async function writeTextFile(
+  file: WritableTextFile,
   options: WriteProjectOptions = {},
 ): Promise<SaveOutcome> {
   const globals = options.globals ?? pickers();
@@ -117,7 +141,7 @@ export async function writeProjectFile(
     try {
       const handle = await showSaveFilePicker({
         suggestedName: file.fileName,
-        types: PICKER_TYPES,
+        types: file.pickerTypes,
       });
       const writable = await handle.createWritable();
       await writable.write(file.text);
@@ -134,12 +158,22 @@ export async function writeProjectFile(
   return downloadFallback(file, options, null);
 }
 
-function downloadFallback(
+export async function writeProjectFile(
   file: ProjectFile,
+  options: WriteProjectOptions = {},
+): Promise<SaveOutcome> {
+  return writeTextFile(
+    { fileName: file.fileName, text: file.text, mime: PROJECT_FILE_MIME, pickerTypes: PICKER_TYPES },
+    options,
+  );
+}
+
+function downloadFallback(
+  file: WritableTextFile,
   options: WriteProjectOptions,
   pickerError: string | null,
 ): SaveOutcome {
-  const download = options.download ?? downloadProjectFile;
+  const download = options.download ?? downloadTextFile;
   try {
     download(file);
     return { kind: "saved", fileName: file.fileName, method: "download" };

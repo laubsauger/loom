@@ -12,6 +12,16 @@ export interface TopBarProps {
   onPlayPause?: (() => void) | undefined;
   onStep?: (() => void) | undefined;
   onResetTime?: (() => void) | undefined;
+  /**
+   * T452: audio feature capture. Arming is a deliberate act the user takes, never
+   * always-on — so it needs a control, and this is where a user looks for "capture what
+   * is playing". Omitted, no button renders: a session with no audio to record must not
+   * grow a control that can only refuse.
+   */
+  onToggleAudioTrack?: (() => void) | undefined;
+  onSaveAudioTrack?: (() => void) | undefined;
+  recordingAudioTrack?: boolean;
+  audioTrackFrames?: number;
   /** Metrics arrive from the telemetry pipe, never from the document store (V16). */
   fps?: number | null;
   gpuMs?: number | null;
@@ -46,6 +56,10 @@ export function TopBar({
   onPlayPause,
   onStep,
   onResetTime,
+  onToggleAudioTrack,
+  onSaveAudioTrack,
+  recordingAudioTrack = false,
+  audioTrackFrames = 0,
   fps = null,
   gpuMs = null,
   tier = null,
@@ -86,6 +100,34 @@ export function TopBar({
             </span>
           </Button>
         </Tooltip>
+        {onToggleAudioTrack === undefined ? null : (
+          <Tooltip
+            label={
+              recordingAudioTrack
+                ? `Stop recording audio features — ${String(audioTrackFrames)} frames`
+                : "Record audio features to a track"
+            }
+          >
+            <Button
+              aria-label={recordingAudioTrack ? "Stop recording audio features" : "Record audio features"}
+              aria-pressed={recordingAudioTrack}
+              onClick={onToggleAudioTrack}
+            >
+              <span className={cx(styles.glyph, recordingAudioTrack && styles.dotLive)} aria-hidden="true">
+                ●
+              </span>
+            </Button>
+          </Tooltip>
+        )}
+        {onSaveAudioTrack === undefined || audioTrackFrames === 0 ? null : (
+          <Tooltip label={`Save the recorded track — ${String(audioTrackFrames)} frames`}>
+            <Button aria-label="Save audio track" onClick={onSaveAudioTrack}>
+              <span className={styles.glyph} aria-hidden="true">
+                ⤓
+              </span>
+            </Button>
+          </Tooltip>
+        )}
         <span className={styles.state}>
           <span className={cx(styles.dot, playing && styles.dotLive)} aria-hidden="true" />
           {playing ? "live" : "idle"}
