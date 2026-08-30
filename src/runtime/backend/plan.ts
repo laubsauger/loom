@@ -24,6 +24,12 @@ export interface TargetResourceDescriptor {
   readonly id: string;
   readonly size: readonly [number, number];
   readonly format: TextureFormat;
+  /**
+   * T295: attach a depth buffer (depth24plus). Structural — a target gaining or losing
+   * depth is a different render signature. Draw passes into a depth target get vgpu's
+   * default depth state (write, less-equal); passes into a plain target are unchanged.
+   */
+  readonly depth?: boolean;
   readonly label?: string;
 }
 
@@ -315,9 +321,11 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
     const label = value["label"];
     const base = { id, size: value["size"], format: value["format"] } as const;
     const withLabel = typeof label === "string" ? { ...base, label } : base;
-    return kind === "target"
-      ? { kind: "target", ...withLabel }
-      : { kind: "pingPong", ...withLabel };
+    if (kind === "target") {
+      const depth = value["depth"];
+      return { kind: "target", ...withLabel, ...(depth === true ? { depth: true } : {}) };
+    }
+    return { kind: "pingPong", ...withLabel };
   }
 
   if (kind === "externalTexture") {
@@ -678,6 +686,7 @@ export function resourceStructureKey(resource: ResourceDescriptor): string {
     case "sampler":
       return JSON.stringify(["sampler", resource.id, resource.filter ?? "nearest", resource.addressMode ?? "clamp-to-edge"]);
     case "target":
+      return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format, resource.depth === true]);
     case "pingPong":
       return JSON.stringify([resource.kind, resource.id, resource.size[0], resource.size[1], resource.format]);
     case "buffer":
@@ -789,6 +798,9 @@ export function estimateResourceBytes(resources: ReadonlyArray<ResourceDescripto
     if (resource.kind !== "target" && resource.kind !== "pingPong" && resource.kind !== "externalTexture") continue;
     const bytesPerPixel = BYTES_PER_PIXEL[resource.format] ?? 4;
     total += resource.size[0] * resource.size[1] * bytesPerPixel * (resource.kind === "pingPong" ? 2 : 1);
+    if (resource.kind === "target" && resource.depth === true) {
+      total += resource.size[0] * resource.size[1] * 4; // depth24plus
+    }
   }
   return total;
 }

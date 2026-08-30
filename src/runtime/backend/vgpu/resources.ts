@@ -196,6 +196,9 @@ export function buildResources(
           target(gpu, {
             size: resource.size,
             format: resource.format as GPUTextureFormat,
+            // T295: depth24plus attachment; draws into this target depth-test by
+            // vgpu's default (write, less-equal) with no per-pass plumbing.
+            ...(resource.depth === true ? { depth: true } : {}),
             label: resource.label ?? resource.id,
           }),
         );
