@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import "./xyflow-theme.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import {
   Background,
@@ -38,6 +38,9 @@ import {
   createEdgeGeometry,
 } from "@editor/edges/edge-geometry.ts";
 import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
+import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
+import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { parameterDependencies } from "@domain/graph/parameter-dependencies.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
@@ -108,6 +111,27 @@ export function GraphCanvas({
   const fallbackRuntime = useMemo(() => createNodeRuntimeStore(), []);
   useEffect(() => () => fallbackRuntime.dispose(), [fallbackRuntime]);
   const runtimeSource = runtime ?? fallbackRuntime;
+
+  /**
+   * §V151/§V153 — the reference lines are DERIVED here and drawn as a picture.
+   *
+   * Derived from the document on every revision, exactly like the node and edge
+   * projections above, and deliberately NOT projected into `viewEdges`: an entry there is
+   * selectable, deletable and a drop target, and `onEdgesChange` would hand a removed
+   * reference line to `graph.disconnect` — which has nothing to disconnect, because the
+   * dependency lives in a parameter. Keeping them out of the array is the invariant made
+   * structural instead of promised.
+   *
+   * Computed only while they are SHOWN: a hidden line costs one boolean, not a walk of
+   * every expression in the document on every revision.
+   */
+  const referenceLines = useMemo(() => registerReferenceLinesCommand(bus), [bus]);
+  const showReferenceLines = useSyncExternalStore(referenceLines.subscribe, referenceLines.get);
+  const domainGraph = useStore(bus.store, (state) => state.graph);
+  const dependencies = useMemo(
+    () => (showReferenceLines ? [...parameterDependencies(domainGraph).values()].flat() : []),
+    [showReferenceLines, domainGraph],
+  );
 
   const [viewNodes, setViewNodes] = useState<LoomNode[]>(() => projectNodes(domainNodes));
   const [viewEdges, setViewEdges] = useState<LoomEdge[]>(() =>
@@ -492,6 +516,7 @@ export function GraphCanvas({
           fitView
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--line)" />
+          <ReferenceLines dependencies={dependencies} />
         </ReactFlow>
       </div>
     </GraphCanvasContext.Provider>

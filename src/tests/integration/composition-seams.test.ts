@@ -99,6 +99,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `previewViewStoreFor` in the SAME module — the bus-keyed accessor the graph pane, the node info popup and the preview slot all resolve, so all three share one lens store (T336). The product path is `usePreviewViews` in `graph-pane.tsx`; `use-node-previews.test.ts` asserts a lens set on this store reaches the preview pass's uniforms.",
   },
   {
+    name: "createReferenceLinesStore",
+    reason:
+      "Composed by `referenceLinesStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (the floated graph pane, \u00a7V97) agree about what they are drawing (T248). The product path is `registerReferenceLinesCommand` in `graph-canvas.tsx`; `graph-canvas/reference-lines.test.tsx` toggles it through the bus command and asserts the lines leave the DOM.",
+  },
+  {
     name: "createRng",
     reason:
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",

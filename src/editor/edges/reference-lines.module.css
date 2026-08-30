@@ -1,0 +1,37 @@
+/*
+ * Reference lines (T248, §V151). Colour arrives from the component as an inline stroke,
+ * chosen from the design tokens — this file names no colour of its own, exactly like
+ * `signal-edge.module.css` beside it.
+ */
+
+/*
+ * One SVG at the flow origin with `overflow: visible`, so the children can carry raw
+ * flow coordinates and be drawn anywhere on the canvas. Zero-sized on purpose: it is a
+ * coordinate space, not a box.
+ */
+.layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  /*
+   * §V151 — a reference line is a VIEW of a dependency, never a target: nothing here can
+   * be clicked, hovered, selected or dropped on. `pointer-events: none` lives INLINE on
+   * the element (see the component) so the guarantee is one source of truth and can be
+   * asserted; it is deliberately not repeated here.
+   */
+  /* Behind the nodes: the line explains the network, the nodes ARE the network. */
+  z-index: 0;
+}
+
+.line {
+  /* Quieter than a data edge at rest (0.45): a relationship, not a signal. */
+  opacity: 0.55;
+  stroke-linecap: round;
+}
+
+.arrow {
+  opacity: 0.75;
+}
