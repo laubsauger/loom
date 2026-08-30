@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { scopeFromFrame } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
-import type { CommandResult } from "@domain/types/commands.ts";
+import type { CommandResult, CommandStatus } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { LoadProjectSuccess, SnapshotStore } from "@domain/project/index.ts";
 import { HelpHost, OPEN_HELP_COMMAND } from "@editor/help/index.ts";
 import { NodeInfoHost } from "@editor/inspect/index.ts";
 import { KeymapProvider } from "@editor/keymap/index.ts";
+import type { KeymapDispatch } from "@editor/keymap/index.ts";
 import type { KeymapEnvironment } from "@editor/keymap/index.ts";
 import { ComponentLibrary, ExampleLibrary, useDocumentDirty } from "@editor/library/index.ts";
 import { CommandPalette } from "@editor/palette/index.ts";
@@ -178,6 +179,33 @@ export function App({
     // A shared empty array, so a stream of successful edits does not churn state.
     setRejection(result.status === "applied" ? NO_DIAGNOSTICS : result.diagnostics);
   }, []);
+
+  /**
+   * The same promise, for every OTHER route to the bus (§V288, B48/T392).
+   *
+   * `onPatchResult` has said this for the canvas since T51, and nothing said it for a
+   * KEY or a BUTTON: the command rejected with a named diagnostic and the promise was
+   * dropped on the floor. That is what made B48 read as a broken app rather than an
+   * unavailable feature — `space` on a machine with no WebGPU refuses for a good reason,
+   * stated in the handler, and the user never saw a word of it.
+   *
+   * Deliberately generic. Every hotkey refusal lands here, not just transport's: the
+   * fullscreen command already refuses when the browser has no Fullscreen API, and
+   * `runtime.resetFeedback` when there is no backend, and both were equally silent.
+   */
+  const reportRefusal = useCallback((result: { status: CommandStatus; diagnostics: RuntimeDiagnostic[] } | null) => {
+    if (result === null || result.status === "applied" || result.status === "validated") return;
+    if (result.diagnostics.length === 0) return;
+    setRejection(result.diagnostics);
+  }, []);
+
+  const onKeyDispatch = useCallback(
+    (dispatch: KeymapDispatch) => {
+      if (dispatch.status !== "dispatched") return;
+      void dispatch.run.then(reportRefusal);
+    },
+    [reportRefusal],
+  );
 
   // ---- device, compile, diagnostics -------------------------------------------------
   const probe = gpuProbe ?? sharedGpuProbe;
@@ -396,11 +424,13 @@ export function App({
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
   // the button and the hotkey cannot drift into two different code paths for one action.
   const onPlayPause = useCallback(() => {
-    void runtime.bus.execute("transport.togglePlay", {}, runtime.invocation);
-  }, [runtime]);
+    void runtime.bus.execute("transport.togglePlay", {}, runtime.invocation).then(reportRefusal);
+  }, [reportRefusal, runtime]);
   const onStepFrame = useCallback(() => {
-    void runtime.bus.execute("transport.stepFrame", { frames: 1 }, runtime.invocation);
-  }, [runtime]);
+    void runtime.bus
+      .execute("transport.stepFrame", { frames: 1 }, runtime.invocation)
+      .then(reportRefusal);
+  }, [reportRefusal, runtime]);
   // T265/§V170 — the readout's frame field and the bar's reset button are the same
   // command, and it replays rather than jumping a counter.
   const onSeek = useCallback(
@@ -661,6 +691,7 @@ export function App({
         bus={runtime.bus}
         invocationContext={runtime.invocation}
         environment={environment}
+        onDispatch={onKeyDispatch}
       >
         <AppShell
           {...(storage === undefined ? {} : { storage })}

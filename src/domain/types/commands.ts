@@ -113,7 +113,6 @@ export type PlannedCommandName =
   | "graph.layoutAll"
   | "graph.rerouteEdge"
   | "node.openColorPalette"
-  | "node.openViewer"
   | "ui.cancel"
   | "ui.findInGraph"
   | "ui.openNodeSearch"
@@ -132,7 +131,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.layoutAll",
   "graph.rerouteEdge",
   "node.openColorPalette",
-  "node.openViewer",
   "ui.cancel",
   "ui.findInGraph",
   "ui.openNodeSearch",

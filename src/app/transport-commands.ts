@@ -66,10 +66,21 @@ export function transportHolderFor(bus: ShaderloomBus): TransportHolder {
   return holder;
 }
 
+/**
+ * The refusal `space`, `.` and the top bar's buttons all land on when there is nothing to
+ * drive (§V288, B48).
+ *
+ * A warning rather than info, and it names the cause rather than the symptom: "no frame
+ * loop" on its own reads as a timing accident, when on a machine with no WebGPU it is the
+ * permanent truth for the whole session. Silence was the old behaviour and it is what
+ * made B48 look like a broken app instead of an unavailable feature.
+ */
 const NO_LOOP_DIAGNOSTIC = {
-  severity: "info" as const,
+  severity: "warning" as const,
   code: "transport.noLoop",
-  message: "No frame loop is mounted yet.",
+  message: "No frame loop is attached, so there is nothing to play, step or seek.",
+  suggestion:
+    "The loop is created with the GPU device — a build with no WebGPU has no transport to run.",
 };
 
 export function registerTransportCommands(bus: ShaderloomBus): TransportHolder {

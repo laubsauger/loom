@@ -221,3 +221,57 @@ describe("T329 — the mounted viewer inspects pixels (T36, §V7, §V48)", () =>
     runtime.dispose();
   });
 });
+
+/**
+ * T440/§V354 — `v` puts the selected node on this pane.
+ *
+ * The happy path lives HERE rather than in `hotkey-reachability.test.tsx` for one
+ * environmental reason, stated rather than worked around: `useGraphCompile` needs GPU
+ * capabilities, so a GPU-less mount has no `compiled.outputs` and the viewer has nothing
+ * to pin. This file already mounts the composed `App` against a fixture backend with a
+ * real plan, so it is the only place the assertion can be about a PICTURE.
+ *
+ * The other half — that pressing `v` at the canvas reaches this command at all, and
+ * refuses by name when the node has no output — is asserted at the composed surface in
+ * `hotkey-reachability.test.tsx`. Neither half is worth much alone.
+ */
+describe("T440/§V354 — `v` shows the selected node in the viewer", () => {
+  it("pins the viewer to the node the key acted on, not to the declared sink", async () => {
+    const runtime = newRuntime();
+    await seedTwoOutputs(runtime);
+    const gpu = fixture();
+    await mountViewer(runtime, gpu.backend);
+
+    const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
+    // The default is the DECLARED sink. `v` has to move it somewhere else, or this
+    // passes on a viewer that ignored the key entirely.
+    const sinkValue = select.value;
+    const noise = [...document.querySelectorAll<HTMLElement>(".react-flow__node")].find(
+      (element) => (element.textContent ?? "").startsWith("noise1"),
+    );
+    expect(noise, "expected the seeded Noise node to render").toBeDefined();
+    if (noise === undefined) return;
+    const noiseId = noise.getAttribute("data-id") ?? "";
+
+    await act(async () => {
+      fireEvent.pointerDown(noise, { button: 0, isPrimary: true });
+      fireEvent.click(noise);
+    });
+    // Pressed where a user leaves focus, not on a element the test chose (§V351).
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "v" });
+    });
+
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("viewer-output-select") as HTMLSelectElement).value,
+        "`v` did not move the viewer onto the selected node",
+      ).toContain(noiseId);
+    });
+    expect(select.value).not.toBe(sinkValue);
+
+    // Same §V70 promise the selector makes: repoint, never re-attach.
+    expect(gpu.presented.some((entry) => entry.startsWith("setOutput:"))).toBe(true);
+    runtime.dispose();
+  });
+});

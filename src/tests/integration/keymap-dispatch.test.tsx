@@ -246,16 +246,16 @@ describe("§V307/T365 — every shipped binding reaches a command on the mounted
    * the reason, and the both-directions check below fails if one becomes registrable here
    * — so this cannot quietly grow into the place dead keys go to hide.
    */
-  const NEEDS_A_BACKEND = [
-    // `space` and `.`. `registerTransportCommands` is called from the frame loop's effect,
-    // which returns early when `backend` is null — and there is no WebGPU in jsdom, so
-    // this mount has none. Their registrar IS reachable and called, which is what
-    // `composition-seams.test.ts` checks; what this mount cannot show is the call
-    // happening. A REAL consequence, worth stating: on a machine with no WebGPU these two
-    // keys, and the top bar's play/step buttons that name the same commands, do nothing.
-    "transport.togglePlay",
-    "transport.stepFrame",
-  ];
+  const NEEDS_A_BACKEND: string[] = [
+    // EMPTY, and that is the point (B48/T392). `transport.togglePlay` and
+    // `transport.stepFrame` lived here with a written reason: their registrar sat inside
+    // the frame loop's effect, past its `backend === null` early return, so a GPU-less
+    // mount never reached it. The excuse was honest and the BEHAVIOUR was not — `space`,
+    // `.` and the top bar's play and step buttons all did nothing on such a machine.
+    // Transport is TIME, not GPU: it registers unconditionally now and the handler
+    // refuses by name (§V288). The stale-excuse check below is what forced this line to
+    // be deleted rather than left to rot.
+  ]
 
   it("registers every bound command that is not declared planned", async () => {
     const { runtime } = await mountWithNode();
@@ -264,10 +264,11 @@ describe("§V307/T365 — every shipped binding reaches a command on the mounted
       .filter((command) => !excused.has(command))
       .sort();
 
-    // Non-vacuity: 18 of the 35 bound commands must be live at a GPU-less mount. An empty
-    // list would mean the table stopped being read, and this would pass having asked
-    // nothing of anything.
-    expect(shouldBeLive.length).toBeGreaterThan(15);
+    // Non-vacuity: 20 of the 35 bound commands must be live at a GPU-less mount — two
+    // more than before T392, which is B48's fix showing up as a number. An empty list
+    // would mean the table stopped being read, and this would pass having asked nothing
+    // of anything.
+    expect(shouldBeLive.length).toBeGreaterThan(17);
 
     const dead = shouldBeLive.filter((command) => !runtime.bus.hasCommand(command));
     expect(

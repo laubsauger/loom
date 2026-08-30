@@ -12,7 +12,7 @@ import { createFrameDriver, createPointerSource } from "@runtime/execution/index
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { createUniformAnimator } from "./animate-parameters.ts";
-import { registerTransportCommands } from "./transport-commands.ts";
+import { registerTransportCommands, transportHolderFor } from "./transport-commands.ts";
 
 /**
  * Drives the compiled plan every display frame (T184).
@@ -234,9 +234,30 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     );
   }, [backend]);
 
+  /**
+   * B48/T392 — TRANSPORT IS TIME, NOT GPU, so its commands register UNCONDITIONALLY.
+   *
+   * They used to register inside the effect below, past its `backend === null` early
+   * return. On a machine with no WebGPU that return fires, so `transport.togglePlay` and
+   * `transport.stepFrame` were never on the bus: `space` and `.` reported `unresolved`
+   * and the top bar's play and step buttons — which name the same two commands — did
+   * nothing at all, with nothing on screen saying why.
+   *
+   * The handlers were always ready for this. Every one of them refuses by name when the
+   * holder is empty (§V288), exactly as `view.toggleFullscreen` and
+   * `runtime.resetFeedback` already do. Only the REGISTRATION was behind the gate, so a
+   * refusal that was written to be visible was replaced by silence.
+   */
+  useEffect(() => {
+    registerTransportCommands(bus);
+  }, [bus]);
+
   useEffect(() => {
     if (backend === null || backend === undefined) {
       driverRef.current = null;
+      // No driver means no transport: leave the holder empty so the commands refuse by
+      // name rather than driving a loop that is gone.
+      transportHolderFor(bus).current = null;
       setPlaying(false);
       return;
     }
@@ -286,7 +307,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // §V52/§V55 — the top bar's play/pause and step buttons, and `space`/`.` from the
     // keymap, all run through these two bus commands (`transport-commands.ts`) rather
     // than calling this closure directly, so the button and the hotkey cannot drift.
-    const holder = registerTransportCommands(bus);
+    const holder = transportHolderFor(bus);
     holder.current = {
       isPlaying: () => driverRef.current?.running ?? false,
       togglePlay: () => {

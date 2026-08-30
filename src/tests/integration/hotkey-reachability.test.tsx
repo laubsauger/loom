@@ -391,3 +391,133 @@ describe("§V20/T439 — taking focus for the inspector context does not disturb
     ).toBe(before);
   });
 });
+
+/**
+ * B48/T392 — the last dead key, and what "dead" actually cost.
+ *
+ * `transport.togglePlay` and `transport.stepFrame` registered inside the frame loop's
+ * effect, past its `backend === null` early return. On a machine with no WebGPU that
+ * return fires, so the two commands were never on the bus: `space` and `.` reported
+ * `unresolved`, and the top bar's play and step buttons — which name the SAME two
+ * commands — did nothing either. Four dead controls, no message.
+ *
+ * Registration alone would not be enough to close it, and asserting registration is the
+ * §V350 mistake this whole task exists to avoid: a registered command that refuses in
+ * silence is the same broken app. So the assertion is that the user is TOLD, from the key
+ * and from the button, by the same named diagnostic the handler was always written to
+ * return.
+ *
+ * §V339's limit, stated rather than papered over: jsdom paints nothing, so this proves
+ * the refusal reaches the rendered tree and not that a human sees pixels. What it does
+ * rule out is the actual bug, which was silence.
+ */
+describe("B48/T392 — transport refuses out loud on a machine with no GPU", () => {
+  const REFUSAL = "No frame loop is attached";
+
+  it("registers both transport commands without a backend, because transport is time", async () => {
+    const { runtime } = await mountWithNodes(1);
+    expect(runtime.bus.hasCommand("transport.togglePlay")).toBe(true);
+    expect(runtime.bus.hasCommand("transport.stepFrame")).toBe(true);
+  });
+
+  it("says why when `space` is pressed at the canvas", async () => {
+    const { container } = await mountWithNodes(1);
+    expect(container.textContent ?? "").not.toContain(REFUSAL);
+
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: " " });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      container.textContent ?? "",
+      "`space` did nothing and said nothing — the dead key B48 named",
+    ).toContain(REFUSAL);
+  });
+
+  it("says why when the top bar's play button is clicked", async () => {
+    // The button names the same command, so it had the same defect and needs the same
+    // proof: one path, asserted at both doors (§V78).
+    const { container } = await mountWithNodes(1);
+    const play = container.querySelector('button[aria-label="Play"]');
+    expect(play, "the top bar renders no play button").not.toBeNull();
+    if (play === null) return;
+
+    await act(async () => {
+      fireEvent.click(play);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      container.textContent ?? "",
+      "the play button did nothing and said nothing",
+    ).toContain(REFUSAL);
+  });
+
+  it("names the cause, not just the symptom", async () => {
+    const { container } = await mountWithNodes(1);
+    await clickBackgroundOf(container, ".react-flow__pane");
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: " " });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // §V288: "no frame loop" alone reads as a timing accident. The reason it is missing
+    // is the thing worth saying.
+    expect(container.textContent ?? "").toContain("no WebGPU");
+  });
+});
+
+/**
+ * T440/§V354 — `v`, the first of the three keys that named a surface already on screen.
+ *
+ * `node.openViewer` sat in `PLANNED_COMMANDS` since T77: the palette rendered it
+ * unavailable, the gate called that honest, and the viewer pane was visible the whole
+ * time with a selector that does exactly this. §V354 is the correction — "honest-absent"
+ * stops being honest once the user can SEE the thing the key names.
+ *
+ * What this mount can prove is the half that matters here: the key REACHES the command
+ * and the refusal is on screen. It cannot prove the picture changes, and the reason is
+ * environmental rather than a choice — `useGraphCompile` needs GPU capabilities, so a
+ * GPU-less mount has no `compiled.outputs` for the viewer to pin. That half is asserted
+ * against a fixture backend with a real plan in `src/app/viewer-readout.test.tsx`, beside
+ * the pane's other output-selector tests. Neither half is worth much alone, so they name
+ * each other.
+ */
+describe("T440/§V354 — `v` reaches the viewer command and says why when it cannot", () => {
+  it("refuses by name instead of doing nothing, and names the node", async () => {
+    const { runtime, container } = await mountWithNodes(1);
+    const node = container.querySelector(".react-flow__node");
+    if (node === null) throw new Error("expected a node to render");
+    const nodeId = Object.keys(runtime.bus.store.getGraph().nodes)[0] ?? "";
+
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "v" });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const text = container.textContent ?? "";
+    expect(text, "`v` did nothing and said nothing — the dead key §V354 is about").toContain(
+      "no output the current plan can show",
+    );
+    // The node, by name: a refusal that does not say WHICH node is barely a refusal.
+    expect(text).toContain(nodeId);
+  });
+
+  it("is no longer a planned command, so the palette stops calling it unavailable", async () => {
+    const { runtime } = await mountWithNodes(1);
+    expect(runtime.bus.hasCommand("node.openViewer")).toBe(true);
+  });
+});

@@ -24,6 +24,7 @@ import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { useAppRuntime } from "./app-context.ts";
 import { useFullscreenSurface } from "./fullscreen-commands.ts";
+import { registerViewerCommands } from "./viewer-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -347,6 +348,33 @@ export function ViewerPane({
     }
     return sink;
   }, [outputs, pinnedKey, sink]);
+
+  /**
+   * T440/§V354 — `v` points the viewer here.
+   *
+   * The pane owns `pinnedKey`, so the pane registers the command and fills the holder
+   * while it is mounted, exactly as the canvas does for `graph.selectAll`. Reading
+   * `outputs` through a ref keeps the handler stable: `compiled.outputs` is a fresh array
+   * after every compile, and re-registering on each one would churn the holder for no
+   * reason.
+   */
+  const outputsRef = useRef(outputs);
+  outputsRef.current = outputs;
+  useEffect(() => {
+    const holder = registerViewerCommands(bus);
+    const handlers = {
+      show: (nodeId: string): string | null => {
+        const match = outputsRef.current.find((output) => output.nodeId === nodeId);
+        if (match === undefined) return null;
+        setPinnedKey(outputKey(match));
+        return match.portId;
+      },
+    };
+    holder.current = handlers;
+    return () => {
+      if (holder.current === handlers) holder.current = null;
+    };
+  }, [bus]);
 
   const { canvasRef } = useOutputPresentation(backend, selected?.resourceId ?? null);
   /**
