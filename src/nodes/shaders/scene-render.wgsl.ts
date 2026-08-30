@@ -35,20 +35,19 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     `  light${index}Meta: vec4f,\n  light${index}Color: vec4f,\n  light${index}Vector: vec4f,\n`,
   ).join("");
 
+  /* Maps read with textureLoad (the T262 bridge's precedent): draw passes carry no
+     sampler slot, and a texel fetch keeps unfilterable formats working on Tier B. */
   const mapBindings = [
-    albedoMap
-      ? `@group(0) @binding(3) var albedoMap: texture_2d<f32>;\n@group(0) @binding(4) var mapSampler: sampler;\n`
-      : "",
-    roughnessMap
-      ? `@group(0) @binding(${albedoMap ? 5 : 3}) var roughnessMap: texture_2d<f32>;\n${albedoMap ? "" : "@group(0) @binding(4) var mapSampler: sampler;\n"}`
-      : "",
+    albedoMap ? `@group(0) @binding(3) var albedoMap: texture_2d<f32>;\n` : "",
+    roughnessMap ? `@group(0) @binding(${albedoMap ? 4 : 3}) var roughnessMap: texture_2d<f32>;\n` : "",
   ].join("");
 
-  const albedoExpr = albedoMap
-    ? "params.baseColor * textureSampleLevel(albedoMap, mapSampler, input.uv, 0.0)"
-    : "params.baseColor";
+  const mapLoad = (name: string): string =>
+    `textureLoad(${name}, vec2i(clamp(input.uv, vec2f(0.0), vec2f(1.0)) * (vec2f(textureDimensions(${name})) - vec2f(1.0))), 0)`;
+
+  const albedoExpr = albedoMap ? `params.baseColor * ${mapLoad("albedoMap")}` : "params.baseColor";
   const roughnessExpr = roughnessMap
-    ? "clamp(params.material.y * textureSampleLevel(roughnessMap, mapSampler, input.uv, 0.0).r, 0.04, 1.0)"
+    ? `clamp(params.material.y * ${mapLoad("roughnessMap")}.r, 0.04, 1.0)`
     : "params.material.y";
 
   const lightBlock = (index: number): string => `  {

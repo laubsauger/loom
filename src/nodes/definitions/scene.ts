@@ -415,22 +415,53 @@ export const renderNode: NodeDefinition = {
       }
       const { cellsU, cellsV } = gridCellCounts(topology);
       const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+      /*
+       * T428: PBR through the Blinn-Phong path, honestly — metallic tints the
+       * highlight toward the base colour (a metal's reflection is its own colour),
+       * roughness dulls it via the generator's gloss. Stated in the node description;
+       * environment reflections arrive with the environment input.
+       */
+      const specularColor =
+        material.model === "pbr"
+          ? ([
+              1 + (material.baseColor[0] - 1) * material.metallic,
+              1 + (material.baseColor[1] - 1) * material.metallic,
+              1 + (material.baseColor[2] - 1) * material.metallic,
+            ] as const)
+          : material.specularColor;
+      const shininess = material.model === "pbr" ? 96 : material.shininess;
+      const maps = {
+        ...(material.maps.albedo === undefined ? {} : { albedo: true }),
+        ...(material.maps.roughness === undefined ? {} : { roughness: true }),
+      };
       passes.push({
         kind: "draw",
         id: `${nodeId}:scene:${index}`,
         nodeId,
-        shader: sceneSurfaceWgsl({ model, lightCount: lights.length }),
+        shader: sceneSurfaceWgsl({ model, lightCount: lights.length, maps }),
         target,
         topology: "triangle-list",
         instances: 1,
         vertexCount: cellsU * cellsV * 6,
         buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+        ...(material.maps.albedo === undefined && material.maps.roughness === undefined
+          ? {}
+          : {
+              textures: [
+                ...(material.maps.albedo === undefined
+                  ? []
+                  : [{ binding: "albedoMap", resourceId: material.maps.albedo, sampled: "unfiltered" as const }]),
+                ...(material.maps.roughness === undefined
+                  ? []
+                  : [{ binding: "roughnessMap", resourceId: material.maps.roughness, sampled: "unfiltered" as const }]),
+              ],
+            }),
         uniforms: {
           viewProjection: Array.from(viewProjectionMatrix),
           eye: [camera.eye[0], camera.eye[1], camera.eye[2], 0],
           ambientColor: [ambient[0] ?? 1, ambient[1] ?? 1, ambient[2] ?? 1, ambientIntensity],
           baseColor: [...material.baseColor],
-          specular: [...material.specularColor, material.shininess],
+          specular: [...specularColor, shininess],
           material: [material.metallic, material.roughness, 0, 0],
           grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
           ...Object.fromEntries(
@@ -453,4 +484,113 @@ export const renderNode: NodeDefinition = {
   },
 };
 
-export const sceneNodeDefinitions: readonly NodeDefinition[] = [cameraNode, lightNode, geometryNode, renderNode];
+/**
+ * T428 — the MATERIAL family. Each material is a THING geometries reference by name;
+ * its MAP slots are ordinary texture INPUT wires (V372: pixels are data), which is the
+ * T444 load-bearing wire — a render's output texture feeds a material's albedo by a
+ * plain edge, and the virtual screen exists.
+ *
+ * Normal maps are DEFERRED WITH NO INERT PORT (V368): surfaces get analytic normals,
+ * instances need tangent frames, and a port that binds nothing teaches nothing.
+ */
+function materialCompile(model: MaterialPayload["model"]) {
+  return (context: Parameters<NodeDefinition["compile"]>[0]): CompiledNodeDescription => {
+    const { parameters, inputs } = readCompileInputs(context);
+    const base = readColor(parameters, "color", [0.8, 0.8, 0.8, 1]);
+    const specular = readColor(parameters, "specular", [1, 1, 1, 1]);
+    const albedoMap = inputs["albedo"]?.resource;
+    const roughnessMap = inputs["roughness"]?.resource;
+    const payload: MaterialPayload = {
+      kind: "material",
+      model,
+      baseColor: [base[0] ?? 0.8, base[1] ?? 0.8, base[2] ?? 0.8, base[3] ?? 1],
+      specularColor: [specular[0] ?? 1, specular[1] ?? 1, specular[2] ?? 1],
+      shininess: readNumber(parameters, "shininess", 32),
+      metallic: readNumber(parameters, "metallic", 0),
+      roughness: readNumber(parameters, "roughness", 0.5),
+      maps: {
+        ...(albedoMap === undefined ? {} : { albedo: albedoMap }),
+        ...(roughnessMap === undefined ? {} : { roughness: roughnessMap }),
+      },
+    };
+    return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
+  };
+}
+
+const MATERIAL_OUT = { id: "out", label: "Out", type: { kind: "material", model: "custom" } as const };
+const ALBEDO_IN = {
+  id: "albedo",
+  label: "Albedo Map",
+  optional: true,
+  type: RGBA_TEXTURE,
+  description: "Multiplies the base colour, sampled by the surface's grid uv. A render output plugs in here (E25).",
+};
+const ROUGHNESS_IN = {
+  id: "roughness",
+  label: "Roughness Map",
+  optional: true,
+  type: RGBA_TEXTURE,
+  description: "Red channel multiplies roughness, sampled by the surface's grid uv.",
+};
+
+export const materialUnlitNode: NodeDefinition = {
+  type: "materialUnlit",
+  version: 1,
+  title: "Material · Unlit",
+  category: "value",
+  description: "A constant-colour material — no lights, no shading. Geometries reference it by name; the albedo map input tints per-texel.",
+  tags: ["3d", "material", "unlit", "scene"],
+  inputs: [ALBEDO_IN],
+  outputs: [MATERIAL_OUT],
+  parameters: {
+    color: { type: "color", label: "Color", default: [0.8, 0.8, 0.8, 1], space: "display" },
+  },
+  compile: materialCompile("unlit"),
+};
+
+export const materialPhongNode: NodeDefinition = {
+  type: "materialPhong",
+  version: 1,
+  title: "Material · Phong",
+  category: "value",
+  description:
+    "Blinn-Phong: diffuse colour, specular colour and shininess, with albedo and roughness map inputs (roughness dulls the highlight). Geometries reference it by name.",
+  tags: ["3d", "material", "phong", "specular", "scene"],
+  inputs: [ALBEDO_IN, ROUGHNESS_IN],
+  outputs: [MATERIAL_OUT],
+  parameters: {
+    color: { type: "color", label: "Diffuse", default: [0.8, 0.8, 0.8, 1], space: "display" },
+    specular: { type: "color", label: "Specular", default: [1, 1, 1, 1], space: "display" },
+    shininess: { type: "number", label: "Shininess", default: 48, min: 2, max: 512 },
+    roughness: { type: "number", label: "Roughness", default: 0.35, min: 0, max: 1 },
+  },
+  compile: materialCompile("phong"),
+};
+
+export const materialPbrNode: NodeDefinition = {
+  type: "materialPbr",
+  version: 1,
+  title: "Material · PBR",
+  category: "value",
+  description:
+    "Metallic-roughness material with albedo and roughness map inputs. This build shades it through the Blinn-Phong path (roughness drives the highlight; metallic tints it toward the base colour) — an honest approximation, stated rather than hidden; environment reflections land with the environment input.",
+  tags: ["3d", "material", "pbr", "metallic", "roughness", "scene"],
+  inputs: [ALBEDO_IN, ROUGHNESS_IN],
+  outputs: [MATERIAL_OUT],
+  parameters: {
+    color: { type: "color", label: "Base Color", default: [0.8, 0.8, 0.8, 1], space: "display" },
+    metallic: { type: "number", label: "Metallic", default: 0, min: 0, max: 1 },
+    roughness: { type: "number", label: "Roughness", default: 0.5, min: 0, max: 1 },
+  },
+  compile: materialCompile("pbr"),
+};
+
+export const sceneNodeDefinitions: readonly NodeDefinition[] = [
+  cameraNode,
+  lightNode,
+  geometryNode,
+  renderNode,
+  materialUnlitNode,
+  materialPhongNode,
+  materialPbrNode,
+];

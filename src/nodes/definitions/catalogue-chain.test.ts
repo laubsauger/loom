@@ -73,7 +73,7 @@ function errorsOf(diagnostics: ReadonlyArray<{ severity: string; message: string
  * claim rewrite (T302), and the scene THINGS (T447): a camera, a light or a geometry
  * publishes resolved CPU values the Render consumes; the render pass is the Render's.
  */
-const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "geometry"]);
+const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "geometry", "materialUnlit", "materialPhong", "materialPbr"]);
 
 describe("the catalogue compiles through the real compiler", () => {
   it("registers the whole catalogue in one registry with no type collisions", () => {
@@ -519,7 +519,12 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
       nodes["observe"] = node("observe", "renderPoints");
       edges["observe-in"] = edge("observe-in", ["subject", firstOutput.id], ["observe", "points"]);
       edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
-    } else if (firstOutput.type.kind === "camera" || firstOutput.type.kind === "light" || firstOutput.type.kind === "scene") {
+    } else if (
+      firstOutput.type.kind === "camera" ||
+      firstOutput.type.kind === "light" ||
+      firstOutput.type.kind === "scene" ||
+      firstOutput.type.kind === "material"
+    ) {
       // T447: a scene THING is observed by rendering with it — assembled by NAME, the
       // only way scene assembly travels (V372).
       nodes["obsgrid"] = node("obsgrid", "pointGrid");
@@ -527,6 +532,9 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
       edges["obsgeo-in"] = edge("obsgeo-in", ["obsgrid", "out"], ["obsgeo", "points"]);
       nodes["obscam"] = { ...node("obscam", "camera"), label: "obscam1" };
       nodes["obslight"] = { ...node("obslight", "light"), label: "obslight1" };
+      if (firstOutput.type.kind === "material") {
+        nodes["obsgeo"] = { ...(nodes["obsgeo"] as GraphNode), parameters: { material: "subject1" } };
+      }
       const scenes = firstOutput.type.kind === "scene" ? "subject1" : "obsgeo1";
       const camera = firstOutput.type.kind === "camera" ? "subject1" : "obscam1";
       const lights = firstOutput.type.kind === "light" ? "subject1" : "obslight1";

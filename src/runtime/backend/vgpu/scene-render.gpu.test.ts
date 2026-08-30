@@ -112,3 +112,66 @@ describe("the scene render lights exactly (T377, §V147, §V361)", () => {
     expect(litExpected).not.toBe(floorExpected);
   }, 120_000);
 });
+
+describe("phong specular is exact on the axis (T428, §V147)", () => {
+  it("centre texel adds exactly the specular term when the material goes phong", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const graph = sceneGraph("sun1");
+    (graph.nodes as Record<string, { parameters: Record<string, unknown>; label?: string }>)["gold"] = {
+      id: "gold",
+      type: "materialPhong",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      // 0/1 fixed points of the display decode, and roughness 0 so gloss is pure
+      // shininess; on the axis N·L = N·H = 1, so highlight = 1 whatever the gloss.
+      parameters: { color: [1, 1, 1, 1], specular: [0, 0, 0, 1], shininess: 64, roughness: 0 },
+      label: "gold1",
+    } as never;
+    (graph.nodes["geo"] as { parameters: Record<string, unknown> }).parameters["material"] = "gold1";
+    // Specular alpha channel is unused; use a dim white via intensity instead: set the
+    // light to 0.5 so diffuse = 1 × (0.12 + 0.5) and specular = 0 adds nothing — then
+    // flip specular to prove the ADDITION, exactly.
+    (graph.nodes["sun"] as { parameters: Record<string, unknown> }).parameters["intensity"] = 0.5;
+
+    const plan = compileGraph({
+      graph,
+      settings: SETTINGS,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      const renderOnce = async (): Promise<number> => {
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        const image = await backend.readOutput("target:shot:out");
+        return image.bytes[(32 * 64 + 32) * 4] ?? -1;
+      };
+      // Black specular: pure diffuse — 1 × (0.12 + 0.5) = 0.62.
+      expect(await renderOnce()).toBe(Math.round(0.62 * 255));
+      // White specular, via the VALUE path (§V5): + 1 × 0.5 highlight = 1.12, clamped.
+      backend.updateUniforms({
+        passId: plan.passes.find((pass) => pass.kind === "draw")?.id ?? "",
+        values: { specular: [1, 1, 1, 64] },
+      });
+      expect(await renderOnce()).toBe(255);
+    } finally {
+      backend.dispose();
+    }
+  }, 120_000);
+});
+

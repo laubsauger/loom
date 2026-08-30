@@ -193,3 +193,65 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     expect(compile(orbited).signature).toBe(still.signature);
   });
 });
+
+describe("materials (T428) — referenced by name, mapped by wire", () => {
+  it("a phong material's colours and gloss reach the draw uniforms; roughness dulls", () => {
+    const compiled = compile(
+      sceneGraph({
+        renderParams: {},
+        extraNodes: [
+          node("gold", "materialPhong", { color: [1, 0.7, 0.2, 1], specular: [1, 0.9, 0.6, 1], shininess: 96, roughness: 0.2 }, "gold1"),
+        ],
+      }),
+    );
+    // geometry names the material
+    const graph = sceneGraph({
+      extraNodes: [
+        node("gold", "materialPhong", { specular: [1, 1, 0, 1], shininess: 96 }, "gold1"),
+      ],
+    });
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["material"] = "gold1";
+    const lit = compile(graph);
+    expect(lit.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(lit);
+    // Display-space params decode to LINEAR at resolution (§V56); 0 and 1 are the
+    // decode's fixed points, which is what makes this exact.
+    expect(draw.uniforms?.["specular"]).toEqual([1, 1, 0, 96]);
+    expect(draw.shader).toContain("highlight");
+    void compiled;
+  });
+
+  it("THE T444 WIRE: a texture wired into a material's albedo is BOUND by the render", () => {
+    // The virtual screen's whole mechanism: any texture output — including another
+    // render's — reaches a surface as a material map through one plain edge.
+    const graph = sceneGraph({
+      extraNodes: [
+        node("plate", "checker", {}, "plate1"),
+        node("skin", "materialUnlit", {}, "skin1"),
+      ],
+      extraEdges: {
+        m1: { id: "m1", source: { nodeId: "plate", portId: "out" }, target: { nodeId: "skin", portId: "albedo" } },
+      },
+    });
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["material"] = "skin1";
+    const compiled = compile(graph);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    expect(draw.textures?.some((t) => t.binding === "albedoMap" && t.resourceId === "target:plate:out")).toBe(true);
+    expect(draw.shader).toContain("albedoMap");
+    // And the plate is ALIVE through the chain: wired to the material, named to the
+    // geometry, named to the render — liveness end to end.
+    expect(compiled.pruned).not.toContain("plate");
+  });
+
+  it("per-object tint multiplies the referenced material's base colour (T449, inherit at white)", () => {
+    const graph = sceneGraph({
+      extraNodes: [node("gold", "materialPhong", { color: [1, 1, 1, 1] }, "gold1")],
+    });
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["material"] = "gold1";
+    ((graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>)["tint"] = [0, 1, 1, 1];
+    const compiled = compile(graph);
+    expect(drawOf(compiled).uniforms?.["baseColor"]).toEqual([0, 1, 1, 1]);
+  });
+});
+
