@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SOURCE_REFERENCE_PARAMETERS } from "../../domain/graph/source-references.ts";
+import { publishesValueChannels } from "../../domain/types/node-definition.ts";
 
 import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions, coreNodeDefinitions, spikeNodeDefinitions } from "./index.ts";
@@ -130,6 +131,11 @@ describe("core catalogue (T70, T40)", () => {
         "points",
         "utility",
         "value",
+        // T438: the scene family — camera, light, material, geometry, render. These
+        // lived on the "value" shelf, which was never true: they publish PAYLOADS, not
+        // channels, and the shelf name was doubling as the plot gate (§V316's exact
+        // failure). Rendering is its own aisle now, and the gate keys on declarations.
+        "render",
       ]),
     );
   });
@@ -221,6 +227,43 @@ describe("source references: the table and the declarations agree (T350)", () =>
     expect(Object.keys(SOURCE_REFERENCE_PARAMETERS).sort()).toEqual([...declared.keys()].sort());
     for (const [type, specs] of Object.entries(SOURCE_REFERENCE_PARAMETERS)) {
       expect(declared.get(type), type).toEqual(specs);
+    }
+  });
+});
+
+describe("T438 (§V316) — the channel publishers are DECLARED, not a category", () => {
+  it("publishesValueChannels answers from ports/hooks/measuredChannel, exactly", () => {
+    // The exact publisher set. This pin is what makes a category move SAFE: recategorize
+    // any of these (audio → input, T438) and this list does not move; drop one's
+    // declaration and this fails loudly instead of its plot silently vanishing.
+    const publishers = coreNodeDefinitions
+      .filter((definition) => publishesValueChannels(definition))
+      .map((definition) => definition.type)
+      .sort();
+    expect(publishers).toEqual(
+      [
+        "analyze", // measuredChannel: the one publisher with no port and no hook
+        "audioFileIn",
+        "audioIn",
+        "audioPattern",
+        "constant",
+        "lfo",
+        "mouse",
+        "timer",
+        "valueFilter",
+        "valueLag",
+        "valueLimit",
+        "valueMath",
+        "valueSlope",
+        "valueTrigger",
+      ].sort(),
+    );
+    // And the shape that caused T438: a scene node is NOT a publisher, whatever shelf
+    // it sits on — offering a camera a value plot is how "no signal yet" shipped.
+    for (const type of ["camera", "light", "geometry", "materialPhong", "render"]) {
+      const definition = coreNodeDefinitions.find((entry) => entry.type === type);
+      expect(definition, type).toBeDefined();
+      expect(publishesValueChannels(definition), type).toBe(false);
     }
   });
 });

@@ -33,7 +33,7 @@ export const cameraNode: NodeDefinition = {
   type: "camera",
   version: 1,
   title: "Camera",
-  category: "value",
+  category: "render",
   description:
     "A camera other nodes reference by NAME: Render, Render Surface and Render Instances all name it in their camera parameter, so one camera frames them together. Every parameter is drivable — an orbiting camera is a uniform write, never a rebuild.",
   tags: ["3d", "scene", "camera", "view"],
@@ -75,7 +75,7 @@ export const lightNode: NodeDefinition = {
   type: "light",
   version: 1,
   title: "Light",
-  category: "value",
+  category: "render",
   description:
     "A light other nodes reference by NAME — a Render lists any number in its lights parameter (list order is light order). Directional lights travel along Direction; point lights sit at Position with distance falloff. Colour, intensity and placement are all drivable.",
   tags: ["3d", "scene", "light", "shading"],
@@ -135,7 +135,7 @@ export const geometryNode: NodeDefinition = {
   type: "geometry",
   version: 1,
   title: "Geometry",
-  category: "value",
+  category: "render",
   description:
     "Binds a point set and a material into one nameable renderable object — a Render lists geometries by name. Tint multiplies the material's base colour per object (1,1,1,1 = inherit, visibly).",
   tags: ["3d", "scene", "geometry", "material", "surface"],
@@ -291,7 +291,7 @@ export const renderNode: NodeDefinition = {
   type: "render",
   version: 1,
   title: "Render",
-  category: "generator",
+  category: "render",
   description:
     "Renders named geometries through a named camera under named lights, into a depth-tested texture. scenes and lights take space-separated name lists — list order is draw and light order. Any number of lights; count changes recompile, movement animates.",
   tags: ["3d", "scene", "render", "camera", "light"],
@@ -675,7 +675,7 @@ export const materialUnlitNode: NodeDefinition = {
   type: "materialUnlit",
   version: 1,
   title: "Material · Unlit",
-  category: "value",
+  category: "render",
   description: "A constant-colour material — no lights, no shading. Geometries reference it by name; the albedo map input tints per-texel.",
   tags: ["3d", "material", "unlit", "scene"],
   inputs: [ALBEDO_IN],
@@ -690,7 +690,7 @@ export const materialPhongNode: NodeDefinition = {
   type: "materialPhong",
   version: 1,
   title: "Material · Phong",
-  category: "value",
+  category: "render",
   description:
     "Blinn-Phong: diffuse colour, specular colour and shininess, with albedo and roughness map inputs (roughness dulls the highlight). Geometries reference it by name.",
   tags: ["3d", "material", "phong", "specular", "scene"],
@@ -709,7 +709,7 @@ export const materialPbrNode: NodeDefinition = {
   type: "materialPbr",
   version: 1,
   title: "Material · PBR",
-  category: "value",
+  category: "render",
   description:
     "Metallic-roughness material with albedo and roughness map inputs. This build shades it through the Blinn-Phong path (roughness drives the highlight; metallic tints it toward the base colour) — an honest approximation, stated rather than hidden; environment reflections land with the environment input.",
   tags: ["3d", "material", "pbr", "metallic", "roughness", "scene"],

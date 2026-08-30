@@ -26,7 +26,7 @@ export const audioInNode: NodeDefinition = {
   type: "audioIn",
   version: 1,
   title: "Audio In",
-  category: "value",
+  category: "input",
   description:
     "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. Silent (all zeros) when no audio input is live.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
@@ -83,7 +83,7 @@ export const audioFileInNode: NodeDefinition = {
   type: "audioFileIn",
   version: 1,
   title: "Audio File In",
-  category: "value",
+  category: "input",
   description:
     "Plays an audio file and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture.",
   tags: ["value", "input", "audio", "music", "file", "fft"],
