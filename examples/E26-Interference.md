@@ -1,10 +1,10 @@
 # E26 — Interference
 
-Fine concentric rings, and a second copy of the same rings 16% larger and drifting
-slowly across them. What you actually look at is neither: enormous spiral rosettes and
-hyperbolic fans, dozens of times larger than any ring and moving far slower than
-anything in the graph, sweeping through the frame and recomposing themselves
-completely every few seconds.
+Fine concentric rings on a near-black violet ground, and a second copy of the same
+rings 16% larger drifting slowly across them. What you actually look at is neither:
+enormous glowing spiral rosettes and hyperbolic fans, dozens of times larger than any
+ring and moving far slower than anything in the graph, sweeping through the frame and
+recomposing themselves completely every few seconds.
 
 There is no shader in this file, no simulation, no state and no temporal boundary. Nine
 nodes and two oscillators running at 0.05 Hz.
@@ -18,17 +18,17 @@ rings1(circle: distance) ─► gain1(level) ─► wrap1(limit: zigzag) ─┬�
                                              │  t.x ┄ driftx1, t.y ┄ drifty1
                                              └────────────────────────────► beat1.in2
 
-beat1(difference) ─► tint1(lookup) ◄─ palette1(ramp, 5 stops) ─► out1
+beat1(difference) ─► tint1(lookup) ◄─ palette1(ramp, 6 stops) ─► out1
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
 | `rings1` | `circle` | `distance` mode — the signed distance from the centre, in red, unclamped, over the whole frame |
-| `gain1` | `level` | the ring COUNT: `whitelevel` 0.007 is a gain of ~143 |
+| `gain1` | `level` | the ring COUNT: `whitelevel` 0.011 is a gain of ~91 |
 | `wrap1` | `limit` | `zigzag` folds that ramp into a continuous triangle wave — the rings |
 | `warp1` | `transform` | the same rings, 16% larger, drifting; `t.x`/`t.y` driven |
 | `beat1` | `difference` | the two readings, subtracted. This is the entire effect |
-| `palette1` → `tint1` | `ramp` → `lookup` | indigo through teal to a warm highlight, indexed on RED |
+| `palette1` → `tint1` | `ramp` → `lookup` | six stops, half of them FLOOR: indigo → violet → coral → gold, indexed on RED |
 | `driftx1`, `drifty1` | `lfo` | 0.05 Hz and 0.031 Hz — incommensurate on purpose |
 
 ## What it proves
@@ -56,10 +56,11 @@ small nodes, each doing one legible thing, and the chain reads as what it is: *h
 from the centre, wrapped*.
 
 **Zigzag, not loop, and it is the anti-aliasing.** `loop` gives a sawtooth with a
-discontinuity on every ring, and at an ~18px pitch those edges crawl and shimmer under the
-drift. `zigzag` is `abs(fract(v/2) * 2 − 1)`: continuous everywhere, so the fine structure
-resolves cleanly. This was the risk the pitch flagged as the one that decides whether the
-example is good or is a screen door, and the triangle wave is the answer to it.
+discontinuity on every ring, and those edges crawl and shimmer under the drift. `zigzag` is
+`abs(fract(v/2) * 2 − 1)`: continuous everywhere, so the fine structure resolves cleanly.
+This was the risk the pitch flagged as the one that decides whether the example is good or
+is a screen door, and the triangle wave is half the answer to it. The other half is the
+ring PITCH — see below.
 
 ## The thing that would have made this a black frame
 
@@ -83,6 +84,28 @@ first render, invisible to every assertion in this file. `0.5/1.16 + 0.05 = 0.48
 ~2% margin on all four edges, so the extend mode is never reached and the frame is clean
 corner to corner.
 
+## The two numbers the look pass changed, and why beauty is a gate (§V420)
+
+Both of these were wired, gated, animated and correct before they were changed. Neither
+would have failed a test.
+
+**The ring pitch.** The first build ran at `whitelevel: 0.007` — an ~18px ring. It is
+legible and it is wrong: at that pitch the fine structure reads as *corduroy* across the
+entire frame and competes with the beat instead of carrying it. At 0.011 (~28px) the rings
+become engraved lines and the rosettes become the subject.
+
+**The palette shape, which is where this example was actually won.** The difference field
+puts most of its pixels in the upper half of the range, so a gradient that travels evenly
+from 0 to 1 spends its whole journey inside the busy part, and the result is a uniform
+woven texture — correct, animated, and dull. Holding `0..0.46` near black gives the image
+somewhere to REST, so the beat reads as luminous filaments standing on a dark ground. The
+colour then travels indigo → violet → coral → gold across the top third, where the pixels
+actually are.
+
+Five palettes were rendered on Dawn and looked at side by side. The shipped one won on
+having both a real dark and a real hue journey; the two that were only one or the other
+(electric blue with depth, magenta with travel) each read as a test pattern.
+
 ## No tone map, deliberately
 
 The peak channel value in a shipped frame is 0.9995 — nothing here exceeds 1.0, so there is
@@ -96,6 +119,9 @@ bright, additive-looking image, and it is not an over-range one.
   parameter's own default. Everything still compiles.
 - **A flat single-colour frame** → the Transform went to identity, or `beat1.in2` was
   rewired to something that is not `warp1`. This is the failure the control catches.
+- **The frame is a uniform weave with no dark anywhere** → the palette lost its floor.
+  This is a beauty regression, not a correctness one, and it is the one this example is
+  most likely to suffer.
 - **The image is dimmer and the contrast is gone, but it is still a moiré** → `tint1`
   went back to indexing `luminance`. The chain carries its value in red with green and
   blue at zero, so a luminance index reads the beat at 0.2126× strength.
@@ -109,8 +135,17 @@ bright, additive-looking image, and it is not an over-range one.
 
 Rendered on Dawn at 1280×720 and inspected at frames 0, 60, 300 and 600 (§V383).
 
-Frame 0 opens on a symmetric cardioid of rings — clean, centred, immediately legible as a
-picture rather than as a test pattern, which is what §V363 asks of a file the moment it
-opens. By frame 300 the composition is a large off-centre spiral; by 600 it is a different
-one again. The first pass found the mirror seam described above, which no test would have
-caught; the second pass is clean edge to edge. Verdict: **ships.**
+**Correctness.** Frame 0 opens on a symmetric cardioid — centred, clean, immediately
+legible as a picture rather than as a test pattern, which is what §V363 asks of a file the
+moment it opens. By frame 300 the composition is a large off-centre spiral; by 600 a
+different one again. The first pass found the mirror seam described above, which no test
+would have caught. The second pass is clean edge to edge.
+
+**Beauty (§V420), stated separately and honestly.** The second pass was correct, moved,
+and I would not have shared it: an even blue-to-warm gradient over ~18px rings filled the
+frame edge to edge at one density with no dark, no rest and no focal point. Verdict at that
+point was *correct and dull*, which is a fail. The third pass changed two numbers — the
+ring pitch and the palette's floor — and nothing else. It now reads as glowing violet and
+coral filigree on a dark ground, and the rosettes are the subject rather than a texture.
+
+Verdict: **ships**, on the third pass.

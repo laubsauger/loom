@@ -2213,11 +2213,19 @@ const interferenceDocument = document(
         "level",
         [-900, 0],
         {
-          // THE RING COUNT LIVES HERE. whitelevel is the divisor in (v - black)/(white -
-          // black), so 0.007 is a gain of ~143 and the distance field crosses ~29 full
-          // triangle periods between the centre and a corner: an ~18px ring at 720p.
+          /**
+           * THE RING COUNT LIVES HERE. whitelevel is the divisor in
+           * `(v - black)/(white - black)`, so 0.011 is a gain of ~91 and the distance
+           * field crosses ~18 full triangle periods between the centre and a corner: an
+           * ~28px ring at 720p.
+           *
+           * 0.007 (~18px) was the first number and the look pass rejected it: at that
+           * pitch the fine structure reads as corduroy across the whole frame and
+           * competes with the beat rather than carrying it. Wider rings let the rosettes
+           * be the subject.
+           */
           blacklevel: 0,
-          whitelevel: 0.007,
+          whitelevel: 0.011,
           invert: 0,
           gamma1: 1,
           contrast: 1,
@@ -2283,15 +2291,28 @@ const interferenceDocument = document(
           interp: "smooth",
           phase: 0,
           period: 1,
-          // Dark blue where the two readings agree, through teal, to a warm highlight
-          // where they are maximally out of phase. Display space, decoded per entry
-          // (§V196).
+          /**
+           * THE PALETTE IS WHERE THIS EXAMPLE WAS WON OR LOST (V420), and the shape of it
+           * is the finding: nearly half the range is FLOOR.
+           *
+           * The difference field puts most of its pixels in the upper half, so a palette
+           * that travels evenly from 0 to 1 spends its whole journey inside the busy part
+           * and the frame comes out as a uniform woven texture — correct, animated, and
+           * dull. Holding 0..0.46 near black gives the image somewhere to REST, so the
+           * beat reads as luminous filaments standing on a dark ground instead of as
+           * corduroy. The colour then travels indigo → violet → coral → gold in the top
+           * third, where the pixels actually are.
+           *
+           * Five candidates were rendered and looked at; this one won on having both a
+           * real dark and a real hue journey. Display space, decoded per entry (§V196).
+           */
           stops: [
-            { position: 0, color: [0.02, 0.02, 0.07, 1] },
-            { position: 0.3, color: [0.06, 0.14, 0.44, 1] },
-            { position: 0.58, color: [0.12, 0.56, 0.7, 1] },
-            { position: 0.82, color: [0.92, 0.5, 0.26, 1] },
-            { position: 1, color: [1, 0.96, 0.84, 1] },
+            { position: 0, color: [0.01, 0.01, 0.04, 1] },
+            { position: 0.46, color: [0.06, 0.03, 0.22, 1] },
+            { position: 0.68, color: [0.42, 0.09, 0.5, 1] },
+            { position: 0.83, color: [0.92, 0.25, 0.36, 1] },
+            { position: 0.93, color: [1, 0.66, 0.28, 1] },
+            { position: 1, color: [1, 0.97, 0.85, 1] },
           ],
         },
         { label: "palette1", definitionVersion: 2 },

@@ -344,8 +344,8 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
  * slots, the two LFO rates — is equally true of a graph whose drift never reaches the
  * Transform's uniform. §V147 says a claim about the picture is tested on the picture, so
  * this renders through the real value graph (`animate`) and counts pixels that CHANGED
- * between two frames four seconds apart. Measured on Dawn while writing this: 889,405 of
- * 921,600 — 96.5% of the frame. A still image scores approximately zero.
+ * between two frames four seconds apart. Measured on Dawn while writing this: 841,412 of
+ * 921,600 — 91.3% of the frame. A still image scores approximately zero.
  *
  * THE CONTROL, and it is the stronger half. Neutralise the Transform — scale to 1, drift
  * to 0 — and the two branches of the difference become the SAME image, so `beat` outputs
@@ -402,7 +402,7 @@ describe("E26 is interference, and it moves", () => {
       const delta = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
       if (delta > 0.02) moved += 1;
     }
-    // Measured 0.9651. Half the frame is an enormous margin and still fails outright the
+    // Measured 0.9130. Half the frame is an enormous margin and still fails outright the
     // moment the drift stops reaching the Transform.
     expect(moved / pixels).toBeGreaterThan(0.5);
 
