@@ -7,12 +7,17 @@ to show what makes such a cycle legal.
 ## Graph
 
 ```
-circle ──────────────────────────────► over.in1 ─► over ─┬─► output
-                                                         │
-        echo(feedback) ─► drift(transform) ─► soften(blur) ─► decay(level) ─► over.in2
-              ▲                                          │
-              └──────────────── echo.in ◄────────────────┘
+source(circle) ───────────────────────────────────────────────────► over.in1
+echo(feedback) ─► drift(transform) ─► soften(blur) ─► decay(level) ─► over.in2
+over(over) ─► out(output)
+     ╰┄┄┄┄┄┄┄┄┄┄┄┄┄┄ echo.source: "over1" ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╯
 ```
+
+The dashed line is not an edge. Since T350 (§V285) a Feedback **names** the node it
+records — `echo.source` is `"over1"` — so `edges` stays a DAG and nothing is wired into
+`echo.in`. That port still exists for legacy documents; the editor only ever writes the
+reference, and this file uses the reference. Read the loop as "echo replays over1's last
+frame", not as a back-edge you could follow with your finger.
 
 | Node | Type | Doing |
 | --- | --- | --- |
@@ -25,10 +30,11 @@ circle ────────────────────────�
 
 ## What it proves
 
-- **§V4** — the current-frame graph is a DAG. This graph has a cycle
-  (`over → echo → drift → soften → decay → over`) and it is legal because exactly one edge
-  in it leaves `echo.out`, which the Feedback manifest declares temporal. Delete the
-  Feedback node and reconnect the two ends directly and the compiler must refuse the graph.
+- **§V4** — the current-frame graph is a DAG, and here it literally is one: the loop
+  `over → echo → drift → soften → decay → over` closes through `echo.source`, not through
+  an edge. What makes the cycle legal is that the only thing crossing it is `echo.out`,
+  which the Feedback manifest declares temporal. Remove the Feedback node and wire the two
+  ends together as real edges and the compiler must refuse the graph.
 - **§V22** — the temporal output is backed by a **stable ping-pong pair**, allocated once,
   with its swap encoded after every current-frame consumer. Swapping early is the classic
   feedback bug and it does not crash — the loop just reads the half it is currently writing.

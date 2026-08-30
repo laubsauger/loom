@@ -746,8 +746,13 @@ const particleFountainDocument = document(
  * topology on the edge (T296), renderInstances binds the position pair BY PAYLOAD and
  * puts a lit primitive on every point through the §V198 camera. An LFO drives
  * `rotate.y` in `driven` mode — the E7 mechanism, on one COMPONENT of a compound
- * parameter (§V113), spinning the whole formation without a recompile (§V5: rotation
- * is sixteen uniform floats and one integer away from any other frame).
+ * parameter (§V113), without a recompile (§V5: rotation is sixteen uniform floats and
+ * one integer away from any other frame).
+ *
+ * What that ROTATES is each box about its own centre, not the ring: §V198 composes
+ * `rotate` INSIDE the translate to the point, so the torus stands still while 1152
+ * primitives tumble in unison. The doc said "spinning the whole formation" for months
+ * and listed the absence of that non-existent behaviour as a regression signature (B43).
  */
 const instancedTorusDocument = document(
   "e10-instanced-torus",

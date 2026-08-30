@@ -468,7 +468,12 @@ describe("E10 Instanced Torus", () => {
 
   /**
    * E7's mechanism on one COMPONENT of a compound (§V113): rotate.y is driven while
-   * its siblings stay static, so the formation spins with no recompile anywhere.
+   * its siblings stay static, so each box tumbles about its own centre with no recompile
+   * anywhere. NOT the formation — §V198 composes `rotate` inside the translate to the
+   * point, so the ring never moves (B43; the doc claimed otherwise until T366).
+   *
+   * This asserts the SLOT in the document, which is all a plan-level test can see: it
+   * would still pass if the resolver silently ignored the drive and the boxes sat still.
    */
   it("drives rotate.y through a component slot", () => {
     const draw = document.graph.nodes["draw"] as GraphNode;

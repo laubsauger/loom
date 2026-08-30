@@ -7,9 +7,13 @@ whole thing is three nodes.
 ## Graph
 
 ```
-state(feedback) ─► kernel(customWgsl, Gray-Scott) ─┬─► state.in
-                                                   └─► output
+state(feedback) ─► kernel(customWgsl, Gray-Scott) ─► out(output)
+     ╰┄┄┄┄┄┄┄┄┄┄┄┄ state.source: "kernel1" ┄┄┄┄┄┄┄┄╯
 ```
+
+The dashed line is not an edge. Since T350 (§V285) a Feedback **names** the node it
+records, so `edges` is a DAG and nothing is wired into `state.in`; the kernel's single
+output is presented, and `state` replays it next frame because it names it.
 
 | Node | Type | Doing |
 | --- | --- | --- |
