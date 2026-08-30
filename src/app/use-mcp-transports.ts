@@ -5,7 +5,6 @@ import type { McpToolDetail } from "@editor/agent/index.ts";
 import { createMcpTransportRegistry } from "../mcp/connections.ts";
 import type { McpTransportStatus } from "../mcp/connections.ts";
 import { registerWebMcp } from "../mcp/webmcp.ts";
-import { createRelayClient } from "../mcp/relay-client.ts";
 import { createBridgeClient, type BridgeClient } from "../mcp/bridge-client.ts";
 import { zodToJsonSchema } from "../mcp/json-schema.ts";
 
@@ -46,50 +45,28 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
   }, [surface, registry]);
 
   /**
-   * The relay (T453). CONSTRUCTING it opens nothing: it publishes its idle row, which
-   * carries the `connect` the panel renders a field for, and no socket exists until the
-   * user submits a token. That distinction is the whole security posture — an agent
-   * cannot attach to a tab whose owner did not attach it — so the construction lives
-   * here, on mount, and the dialling lives behind a human action in the panel.
+   * The surface is read through a REF, never a dependency.
    *
-   * ## Why `surface` is NOT a dependency
-   *
-   * MEASURED against a real relay and a real tab: the app mints a new surface whenever
-   * the runtime identity changes, so an effect keyed on `surface` re-ran mid-session,
-   * disconnected the attached agent and rebuilt an idle client — about every thirty
-   * seconds, with no error anywhere, because a deliberate disconnect looks exactly like
-   * a deliberate disconnect. The surface is read through a ref instead, so the client
-   * always calls the CURRENT one and the socket outlives the object.
-   *
-   * Unmount still disconnects, so a closed tab never leaves a live socket publishing the
-   * document's tools to a relay nobody is watching.
+   * MEASURED against a real transport and a real tab (B76): the app mints a new surface
+   * whenever the runtime identity changes, so an effect keyed on `surface` re-ran
+   * mid-session, disconnected the attached agent and rebuilt an idle client — about every
+   * thirty seconds, with no error anywhere, because an accidental teardown looks exactly
+   * like a deliberate one. The transport asks for the CURRENT surface instead, so the
+   * socket outlives any one surface object.
    */
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
-  useEffect(() => {
-    const relay = createRelayClient({
-      surface: () => surfaceRef.current,
-      registry,
-      host: globalThis.location?.host ?? "",
-    });
-    return () => {
-      relay.disconnect();
-    };
-  }, [registry]);
 
   /**
    * THE BRIDGE (T451) — the transport we ship, with no third party in it.
    *
    * Constructed on mount and dialling nothing: it publishes its idle row with the `connect`
    * the panel renders a field for, and no socket exists until a human types the pairing code
-   * the MCP server printed. Same rule as the relay, same reason — attaching hands an outside
-   * model write access to the open document, so it is an explicit act with a visible result,
-   * never a side effect of opening a tab.
+   * the MCP server printed. Attaching hands an outside model write access to the open
+   * document, so it is an explicit act with a visible result, never a side effect of
+   * opening a tab.
    *
-   * Keyed on `registry` alone for B76's reason, recorded on `BridgeClientOptions.surface`:
-   * an effect keyed on the surface tore down a live attachment every time autosave ticked
-   * the runtime identity, and an accidental teardown is indistinguishable from a deliberate
-   * one. The surface is read through the ref, so the socket outlives any one surface object.
+   * Keyed on `registry` alone, for the reason recorded above the ref (B76).
    */
   const bridgeRef = useRef<BridgeClient | null>(null);
   useEffect(() => {

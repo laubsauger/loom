@@ -166,18 +166,20 @@ interface ConnectFormProps {
 }
 
 /**
- * ATTACHING, BY HAND (T453).
+ * ATTACHING, BY HAND (T451).
  *
- * Rendered only for a transport that reports a `connect` — the relay does, because it
- * dials OUT and needs the user's token; WebMCP does not, because it publishes on load
- * and has nothing to start. That is why the affordance is a nullable callback on the
- * status rather than a prop on the panel: the transport that can be attached says so,
- * and this file never decides which one that is.
+ * Rendered only for a transport that reports a `connect` — the bridge does, because it
+ * dials OUT and needs the pairing code the server printed; WebMCP does not, because it
+ * publishes on load and has nothing to start. That is why the affordance is a nullable
+ * callback on the status rather than a prop on the panel: the transport that can be
+ * attached says so, and this file never decides which one that is.
  *
- * The field is a password field. The pasted string is a credential that authorises an
- * outside model to rewrite the open document, and shoulder-legible credentials in a
- * screen-shared pro tool are a real cost for no benefit. It is never read back out, and
- * the panel keeps no copy after submit.
+ * The field is PLAIN TEXT, and it used to be a password field. That was right for the
+ * deleted relay, whose pasted token was a long-lived credential; it is wrong for a
+ * six-character pairing code that the user READS off one surface and TYPES into this one.
+ * Masking a transcribed code hides the typo it exists to prevent, and hides nothing worth
+ * hiding — the same code is printed in the server log the user is reading it from. The
+ * panel still keeps no copy after submit.
  */
 function ConnectForm({ kind, onConnect }: ConnectFormProps) {
   const [token, setToken] = useState("");
@@ -191,11 +193,11 @@ function ConnectForm({ kind, onConnect }: ConnectFormProps) {
       }}
     >
       <input
-        type="password"
+        type="text"
         className={styles.tokenField}
         value={token}
-        placeholder="Connection token"
-        aria-label="Connection token"
+        placeholder="Pairing code"
+        aria-label="Pairing code"
         spellCheck={false}
         autoComplete="off"
         data-testid={`mcp-token-${kind}`}

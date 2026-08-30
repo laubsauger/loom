@@ -34,16 +34,15 @@
  * The pipes this build can speak. One row each, always.
  *
  *  - `webmcp` — `navigator.modelContext`, the standards-track in-page API (`webmcp.ts`).
- *  - `relay` — the webmcp.dev loopback relay, which the page connects OUT to so an
- *    external MCP client drives THIS tab (`relay-client.ts`, T453).
  *  - `bridge` — OUR own loopback bridge (T451): the SAME node process the user's MCP client
  *    already spawns also listens, and the page connects OUT to it with a pairing code. No
  *    third party, no token in a URL, and the owner's client config does not change.
  *
- * `relay` exists here because the protocol was READ, not guessed — see the note at the
- * foot of this file, and §V378 for why the previous verdict was wrong.
+ * A third row, `relay`, spoke the webmcp.dev protocol (T453) and is gone — see the note at
+ * the foot of this file for what it was and why it was removed rather than kept as an
+ * alternative.
  */
-export type McpTransportKind = "webmcp" | "relay" | "bridge";
+export type McpTransportKind = "webmcp" | "bridge";
 
 export type McpTransportState =
   /** The host provides no such transport. `detail` says which capability is missing. */
@@ -83,11 +82,11 @@ export interface McpTransportStatus {
    * nothing to start, so it reports `null` rather than offering a button that means
    * nothing (§V90: a control that does nothing is worse than no control).
    *
-   * Present ONLY so a human can start it. T453's rule, and the reason the relay does not
-   * dial on load: attaching hands an outside model write access to the open document, so
-   * it is an explicit act with a visible result, never a side effect of opening a tab.
+   * Present ONLY so a human can start it, and the reason the bridge does not dial on load:
+   * attaching hands an outside model write access to the open document, so it is an
+   * explicit act with a visible result, never a side effect of opening a tab (T451).
    */
-  readonly connect: ((token: string) => void) | null;
+  readonly connect: ((secret: string) => void) | null;
   /** Revokes the publication. `null` when the transport genuinely cannot be revoked. */
   readonly disconnect: (() => void) | null;
 }
@@ -108,7 +107,6 @@ export interface McpTransportRegistry {
  */
 export const TRANSPORT_LABEL: Readonly<Record<McpTransportKind, string>> = {
   webmcp: "In-page (WebMCP)",
-  relay: "Relay (webmcp.dev)",
   bridge: "Shaderloom bridge (stdio MCP server)",
 };
 
@@ -122,10 +120,6 @@ const DECLARED: ReadonlyArray<{ kind: McpTransportKind; detail: string }> = [
   },
   {
     kind: "webmcp",
-    detail: "Not detected yet.",
-  },
-  {
-    kind: "relay",
     detail: "Not detected yet.",
   },
 ];
@@ -181,36 +175,28 @@ export function createMcpTransportRegistry(options: { now?: () => number } = {})
 }
 
 /**
- * THE RELAY ROW, AND THE VERDICT THAT HAD TO BE WITHDRAWN (T453, §V378).
+ * THE RELAY ROW, AND WHY IT IS GONE (T451, T453, T458, §V378).
  *
- * T398 researched this transport from primary sources and concluded it could not be
- * built. Every fact in that research held up: `@jason.today/webmcp` (webmcp.dev) carries
- * its author's own deprecation notice, its last release is 0.1.13 from 2025-03-22, its
- * session token really does travel as a WebSocket QUERY PARAMETER, the maintained fork
- * (MCP-B) really has no credential at all, and MCP's transport specification really does
- * define only stdio and HTTP.
+ * A third transport lived here: the page connected OUT to the webmcp.dev relay
+ * (`@jason.today/webmcp`) so the owner's existing MCP client could drive this tab. It
+ * WORKED, and it is worth writing down that T398's research was right about every fact and
+ * wrong in its verdict — "the paste-token flow does not exist" was disproved by the owner
+ * running it, which is what §V378 records.
  *
- * The CONCLUSION drawn from those facts — "the paste-token flow does not exist" — was
- * wrong, and the owner disproved it by running it. Deprecated is not non-functional, and
- * a release date is not a measurement. §V378 records that against the verdict, not
- * against the research.
+ * It is deleted for two reasons, in this order:
  *
- * So the protocol is not a guess any more. `relay-client.ts` implements the page half of
- * it, READ OFF the published client (`src/webmcp.js` in the package) rather than
- * reconstructed from behaviour, and this registry declares the row it publishes into.
+ *  1. **The owner removed it from their MCP client**, in their words: "we dont want to
+ *     attach to their mcp any more." A transport nobody is connected to is not an
+ *     alternative, it is a second path to keep working.
+ *  2. **T458 measured what it does.** It binds the WILDCARD address (`lsof`: `TCP *:4797`),
+ *     not loopback; it does not isolate channels, so any second page on the same relay can
+ *     invoke Shaderloom's document-mutating tools by `<channel>-<name>`; and its session
+ *     token travels in the socket URL, which is the specific mistake `bridge-protocol.ts`
+ *     is built not to repeat.
  *
- * ## What is deliberately NOT copied from the reference client
- *
- *  - Its session token in the channel URL is inherent to the relay's own handshake and
- *    cannot be avoided from the page side. It is stated in the row's `detail` instead of
- *    being hidden, because a user who can see the cost can decide about it (§V288).
- *  - Its `sessionStorage` persistence and silent reconnect on page load. Attaching hands
- *    an outside model write access to the open document; that is an explicit act every
- *    time, never a thing a reload restores.
- *  - Its floating widget. The state belongs in the one panel that already answers "what
- *    is attached", beside every other transport (§V338).
- *
- * The stdio path (`serve.ts`, `client-config.ts`) is unaffected and remains the way to
- * drive a HEADLESS Shaderloom. This row is the way to drive the tab the user is looking
- * at, which is a different product question with the same tools behind it.
+ * `bridge` replaces it with strictly less trust: our own process, loopback-bound, a pairing
+ * code the page cannot guess, one attachment at a time, and no third party in the path. The
+ * deletion happened AFTER the bridge was proven end to end — a Chrome tab attached to a
+ * spawned `serve.ts`, with a stdio `tools/call` landing on the visible canvas — because
+ * removing the working path first would have left the owner with nothing.
  */

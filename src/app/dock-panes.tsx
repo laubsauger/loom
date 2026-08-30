@@ -307,9 +307,9 @@ function GpuStatusCard({ status }: { status: GpuStatus }) {
  * that same agent is doing right now. Settings is where you go to change something and
  * leave; a state you have to keep an eye on does not belong behind a modal you closed.
  *
- * The half that WOULD have been configuration — a pasted relay token — does not exist to
- * be configured (see the note at the foot of `mcp/connections.ts`), so the split that
- * argument was protecting never arises.
+ * The half that LOOKS like configuration — the bridge's pairing code — is not configured
+ * either: it is minted per server process, typed once, and never stored (T451), so the
+ * split that argument was protecting never arises.
  */
 export interface AgentPaneProps {
   readonly surface: AgentToolSurface;

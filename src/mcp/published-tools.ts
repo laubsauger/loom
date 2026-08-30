@@ -6,8 +6,8 @@ import type { McpToolListing } from "./server.ts";
 /**
  * WHAT A TRANSPORT PUBLISHES, IN ONE PLACE (T453, §V39).
  *
- * Two in-page transports now hand the same tool surface to an outside model —
- * `navigator.modelContext` (`webmcp.ts`) and the webmcp.dev relay (`relay-client.ts`) —
+ * Two in-page transports hand the same tool surface to an outside model —
+ * `navigator.modelContext` (`webmcp.ts`) and our own loopback bridge (`bridge-client.ts`) —
  * and a third describes it for the panel. Each of them needs {name, description, JSON
  * Schema} derived from the SAME pair, `toolInputSchema` + `zodToJsonSchema`.
  *

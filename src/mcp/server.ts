@@ -119,8 +119,9 @@ export type McpContent =
  * shows the picture inline — the agent literally looks at the node — and the base64 is
  * lifted out of the JSON text so the pixels are never paid for twice.
  *
- * Exported because the relay transport (T453) hands results to the same MCP client
- * through a different pipe and must not invent a second envelope (§V39).
+ * Exported because the bridge (T451) hands a result that was produced in ANOTHER PROCESS
+ * to the same MCP client through this same pipe, and must not invent a second envelope
+ * (§V39): the page returns the raw `ToolResult` and this is the one place it is wrapped.
  */
 export function toolResultContent(result: unknown): McpContent[] {
   const image = imageContentOf(result);
