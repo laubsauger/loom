@@ -12,8 +12,9 @@
  *  - `<KeymapProvider bus … invocationContext … environment …>` — mount once, around
  *    the app. `environment` carries the selection and hovered node that `when` guards
  *    and selection-resolved inputs read.
- *  - `KEYMAP_CONTEXT_ATTRIBUTE` — put `data-keymap-context="graph"` on a pane's root and
- *    every key pressed inside it resolves in that context (§V53).
+ *  - `useKeymapPane("graph", ref)` — spread on a pane's root: every key pressed inside it
+ *    resolves in that context (§V53), AND the pane can hold focus, which is what makes
+ *    the context reachable at all (§V351, B66/B67). Do not write the attribute by hand.
  *
  * There is no rebinding pane here. T360 put the EDITOR on the help panel's shortcuts tab,
  * which was already a projection of the resolved keymap, so the list a user reads and the
@@ -57,6 +58,9 @@ export {
   paneContextFromTarget,
 } from "./context.ts";
 export { isEditingStroke } from "./editing-keys.ts";
+
+export type { KeymapPaneProps } from "./pane.ts";
+export { useKeymapPane } from "./pane.ts";
 
 export type {
   KeymapConflict,

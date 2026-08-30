@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
@@ -64,12 +64,12 @@ function newRuntime(): AppRuntime {
   });
 }
 
-async function mountWithNodes(count: number) {
+async function mountWithNodes(count: number, type = "solid") {
   const runtime = newRuntime();
   const operations: GraphPatchOperation[] = Array.from({ length: count }, (_unused, index) => ({
     op: "addNode",
     ref: `$n${String(index)}`,
-    type: "solid",
+    type,
     position: { x: index * 220, y: 0 },
   }));
   await runtime.bus.execute(
@@ -184,19 +184,28 @@ describe("§V53 — taking focus for the graph context does not steal it from a 
   });
 });
 
-describe("§V351/T430 — every context a binding names is reachable by a user's click", () => {
+describe("§V351/T430 — every context declared in the app is reachable by a user's click", () => {
   /**
-   * `text` is excluded on purpose: it is derived from the event target (an `<input>`,
-   * a `<textarea>`, a contenteditable), not from a container that has to hold focus.
+   * Derived from BOTH directions, because each catches what the other cannot.
+   *
+   * From the binding table: a binding naming a context no mounted pane declares is dead
+   * and nothing else would say so. From the composed DOM: a pane that declares a context
+   * it cannot hold focus for is B66 all over again, and it is LATENT until somebody binds
+   * a key to it — which is exactly the state `inspector` and `viewer` were in.
+   *
+   * `text` is excluded on purpose: it is derived from the event target (an `<input>`, a
+   * `<textarea>`, a contenteditable), not from a container that has to hold focus.
    * `global` needs no container at all — it is the fallback.
    */
-  const SCOPED_CONTEXTS: KeyContext[] = [
-    ...new Set(
-      DEFAULT_BINDINGS.map((binding) => binding.context).filter(
-        (context) => context !== "global" && context !== "text",
-      ),
-    ),
-  ].sort();
+  function scopedContexts(container: Element): KeyContext[] {
+    const declared = [...container.querySelectorAll(`[${KEYMAP_CONTEXT_ATTRIBUTE}]`)].map(
+      (element) => element.getAttribute(KEYMAP_CONTEXT_ATTRIBUTE),
+    );
+    const bound = DEFAULT_BINDINGS.map((binding) => binding.context as string);
+    return [...new Set([...declared, ...bound])]
+      .filter((context): context is KeyContext => context !== null && context !== "global" && context !== "text")
+      .sort();
+  }
 
   /**
    * Where a user's pointer lands inside each pane when they are not aiming at a widget.
@@ -206,15 +215,18 @@ describe("§V351/T430 — every context a binding names is reachable by a user's
   const BACKGROUND: Record<string, string> = { graph: ".react-flow__pane" };
 
   it("is reading the real binding table, or it is measuring nothing", () => {
-    expect(SCOPED_CONTEXTS).toContain("graph");
-    const scoped = DEFAULT_BINDINGS.filter((binding) => SCOPED_CONTEXTS.includes(binding.context));
-    expect(scoped.length).toBeGreaterThan(20);
+    const bound = new Set(DEFAULT_BINDINGS.map((binding) => binding.context));
+    expect(bound).toContain("graph");
+    expect(DEFAULT_BINDINGS.filter((binding) => binding.context === "graph").length).toBeGreaterThan(20);
   });
 
   it("resolves to that context after a click on the pane's background", async () => {
     const { container } = await mountWithNodes(1);
+    const contextsToCheck = scopedContexts(container);
+    // Non-vacuity: all three panes are on screen at a default mount.
+    expect(contextsToCheck).toEqual(["graph", "inspector", "viewer"]);
 
-    for (const context of SCOPED_CONTEXTS) {
+    for (const context of contextsToCheck) {
       const pane = container.querySelector(`[${KEYMAP_CONTEXT_ATTRIBUTE}="${context}"]`);
       expect(pane, `no mounted surface declares the \`${context}\` keymap context`).not.toBeNull();
 
@@ -228,5 +240,154 @@ describe("§V351/T430 — every context a binding names is reachable by a user's
         `after clicking the ${context} pane's background, focus is on <${focusTarget().tagName.toLowerCase()}> and the \`${context}\` context does not resolve — every ${context} binding is dead`,
       ).toContain(context);
     }
+  });
+});
+
+/**
+ * B67 — FOCUS STICKINESS, and the reason it is filed as a bug rather than a nicety.
+ *
+ * `delete` and `backspace` are `graph`-context bindings. While the graph was the only
+ * pane that could hold focus, focus stayed PARKED on it: click the canvas, then click the
+ * inspector, and the next Backspace still deleted the selected node — a destructive key
+ * firing while the user believes they are somewhere else, with nothing on screen saying
+ * otherwise. B66's fix widened the parked case from "clicked a node" to "clicked anywhere
+ * in the canvas", which is why the two land together.
+ *
+ * The assertion is the destructive one on purpose (§V350): not "the context changed" —
+ * that is the handoff — but "the node is still there".
+ */
+describe("B67 — a graph binding stops firing once the user clicks into another pane", () => {
+  it("does not delete the selected node when Backspace is pressed with the inspector clicked", async () => {
+    const { runtime, container } = await mountWithNodes(2);
+    const node = container.querySelector(".react-flow__node");
+    if (node === null) throw new Error("expected a node to render");
+
+    // Select something deletable, from the canvas, the way a user would.
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+    await clickBackgroundOf(container, ".react-flow__pane");
+    const before = Object.keys(runtime.bus.store.getGraph().nodes).length;
+    expect(before).toBe(2);
+
+    // Attention moves to the inspector — a press on its chrome, not on a control.
+    await clickBackgroundOf(container, '[data-keymap-context="inspector"]');
+
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "Backspace" });
+    });
+    expect(
+      Object.keys(runtime.bus.store.getGraph().nodes).length,
+      "Backspace deleted a node while the user's attention was in the inspector",
+    ).toBe(before);
+  });
+
+  it("still deletes when Backspace is pressed with the canvas clicked", async () => {
+    // The other direction, or the test above passes by breaking delete everywhere.
+    const { runtime, container } = await mountWithNodes(2);
+    const node = container.querySelector(".react-flow__node");
+    if (node === null) throw new Error("expected a node to render");
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+    await clickBackgroundOf(container, ".react-flow__pane");
+
+    await act(async () => {
+      fireEvent.keyDown(focusTarget(), { key: "Backspace" });
+    });
+    await waitFor(() => {
+      expect(Object.keys(runtime.bus.store.getGraph().nodes)).toHaveLength(1);
+    });
+  });
+});
+
+/**
+ * The risk T439 was warned about, tested rather than assumed.
+ *
+ * The inspector is dense with controls that commit on blur. A pane that grabs focus on
+ * pointer-down can blur a field mid-edit, and a numeric field that silently commits a
+ * half-typed value because the pane moved first is worse than the bug being fixed.
+ *
+ * It does not happen, and the reason is structural rather than lucky: §V20 already
+ * requires a control's pointer gesture to be the control's own, so `number-field` stops
+ * propagation on pointer-down in BOTH its states — while typing (the pointer belongs to
+ * the caret) and while idle (the pointer belongs to the drag). The pane handler never
+ * sees either. These assert that, because the guarantee lives in a file this change does
+ * not own and nothing else would notice it being dropped.
+ */
+describe("§V20/T439 — taking focus for the inspector context does not disturb a parameter", () => {
+  async function firstNumberField(): Promise<HTMLInputElement> {
+    const field = document.querySelector<HTMLInputElement>('input[role="spinbutton"]');
+    if (field === null) throw new Error("expected the inspector to render a number field");
+    return field;
+  }
+
+  it("does not commit anything when a field is clicked into", async () => {
+    // `noise`, because `solid`'s only parameter is a colour — this needs a number field.
+    const { runtime, container } = await mountWithNodes(1, "noise");
+    const node = container.querySelector(".react-flow__node");
+    if (node === null) throw new Error("expected a node to render");
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+
+    const field = await firstNumberField();
+    const wrapper = field.parentElement;
+    if (wrapper === null) throw new Error("expected the number field to have its host");
+    const before = runtime.bus.store.getRevision();
+
+    // Press and release without moving: `number-field` reads that as click-to-type.
+    await act(async () => {
+      fireEvent.pointerDown(wrapper, { button: 0, isPrimary: true, pointerId: 1, clientX: 10 });
+      fireEvent.pointerUp(wrapper, { button: 0, isPrimary: true, pointerId: 1, clientX: 10 });
+    });
+
+    expect(field.readOnly, "clicking the field did not hand it to the keyboard").toBe(false);
+    expect(document.activeElement, "the inspector pane took the focus meant for the field").toBe(field);
+    expect(
+      runtime.bus.store.getRevision(),
+      "clicking into a parameter field committed a value",
+    ).toBe(before);
+  });
+
+  it("does not blur-commit a half-typed value when the field is clicked again", async () => {
+    const { runtime, container } = await mountWithNodes(1, "noise");
+    const node = container.querySelector(".react-flow__node");
+    if (node === null) throw new Error("expected a node to render");
+    await act(async () => {
+      fireEvent.pointerDown(node, { button: 0, isPrimary: true });
+      fireEvent.click(node);
+    });
+
+    const field = await firstNumberField();
+    const wrapper = field.parentElement;
+    if (wrapper === null) throw new Error("expected the number field to have its host");
+    await act(async () => {
+      fireEvent.pointerDown(wrapper, { button: 0, isPrimary: true, pointerId: 1, clientX: 10 });
+      fireEvent.pointerUp(wrapper, { button: 0, isPrimary: true, pointerId: 1, clientX: 10 });
+    });
+
+    // Half-typed on purpose: "0." is what a user has in the box on the way to "0.5".
+    await act(async () => {
+      fireEvent.change(field, { target: { value: "0." } });
+    });
+    const before = runtime.bus.store.getRevision();
+
+    // Clicking the field again is a caret move, not an edit. If the pane grabbed focus
+    // here, the field would blur and commit "0." on the way past.
+    await act(async () => {
+      fireEvent.pointerDown(wrapper, { button: 0, isPrimary: true, pointerId: 2, clientX: 10 });
+    });
+
+    expect(document.activeElement, "the inspector pane took focus away from a field being typed in").toBe(
+      field,
+    );
+    expect(
+      runtime.bus.store.getRevision(),
+      "clicking a field mid-edit committed the half-typed value",
+    ).toBe(before);
   });
 });

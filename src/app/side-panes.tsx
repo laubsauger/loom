@@ -10,7 +10,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { Inspector } from "@editor/inspector/index.ts";
 import type { InputResolution } from "@editor/inspector/index.ts";
-import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
+import { useKeymapPane } from "@editor/keymap/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
@@ -145,6 +145,10 @@ export function InspectorPane({
   audioStatus,
 }: InspectorPaneProps) {
   const { bus, invocation, registry, settings } = useAppRuntime();
+  // §V351/B67: the pane that declares a context must be able to hold focus, or clicking
+  // it leaves the GRAPH holding the keys — including `delete`.
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  const paneProps = useKeymapPane<HTMLDivElement>("inspector", paneRef);
 
   const node = nodeId === null ? undefined : graph.nodes[nodeId];
   const definition = node === undefined ? undefined : registry.get(node.type);
@@ -165,11 +169,7 @@ export function InspectorPane({
 
   if (unknownHere.length > 0 && nodeId !== null) {
     return (
-      <div
-        className={styles.scrollFill}
-        data-testid="inspector-scroll"
-        {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
-      >
+      <div {...paneProps} className={styles.scrollFill} data-testid="inspector-scroll">
         <FutureParameters nodeId={nodeId} unknown={unknownHere} />
       </div>
     );
@@ -189,11 +189,7 @@ export function InspectorPane({
    */
   return (
     <ContextMenuHost bus={bus}>
-      <div
-        className={styles.scrollFill}
-        data-testid="inspector-scroll"
-        {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
-      >
+      <div {...paneProps} className={styles.scrollFill} data-testid="inspector-scroll">
         <Inspector
           bus={bus}
           context={invocation}
@@ -497,6 +493,11 @@ export function ViewerPane({
   const surface = useCallback(() => surfaceRef.current, []);
   useFullscreenSurface(bus, surface);
 
+  // §V351/B67. A separate ref from `surfaceRef`: that one is the picture the Fullscreen
+  // API is pointed at, this one is the pane the keymap resolves against.
+  const viewerPaneRef = useRef<HTMLDivElement | null>(null);
+  const viewerPaneProps = useKeymapPane<HTMLDivElement>("viewer", viewerPaneRef);
+
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
     const element = surfaceRef.current;
@@ -519,7 +520,7 @@ export function ViewerPane({
   }, [bus, invocation]);
 
   return (
-    <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
+    <div {...viewerPaneProps} className={styles.viewer}>
       <div className={styles.bar}>
         <label className={styles.barLabel} htmlFor="viewer-output">
           output
