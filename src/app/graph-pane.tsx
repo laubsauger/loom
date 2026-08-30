@@ -342,7 +342,13 @@ function GraphMenuHost({
 }
 
 /** Separator that cannot appear inside a handle id or a node id. */
-const SEPARATOR = " ";
+/*
+ * Written as an ESCAPE, not as a raw NUL byte. The byte itself makes the whole FILE
+ * read as binary to `grep`, `rg` and anything that sniffs content, so every repo-wide
+ * search silently SKIPS this module — which is how someone concludes that
+ * `NodePreviewSlot` or `renderPreview` has no caller when both are right here.
+ */
+const SEPARATOR = "\u0000";
 
 /**
  * Publishes the in-flight connection.
