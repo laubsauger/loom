@@ -44,6 +44,7 @@ import { useFrameLoop } from "./use-frame-loop.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
+import { useValueGraph } from "./use-value-graph.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useProject } from "./use-project.ts";
 
@@ -189,8 +190,29 @@ export function App({
    * the backend through a ref so a device-loss rebuild does not lose the latest values.
    */
   const analyze = useAnalyzeChannels(backend, runtime.registry);
-  const analyzeChannels = useMemo(() => [analyze.resolver], [analyze.resolver]);
-  const compile = useGraphCompile(runtime, capabilities, previewSinks, analyzeChannels);
+
+  /**
+   * B27/T305 — the value graph, constructed. `createValueGraphSession` had no caller, so
+   * value EDGES, `valueEvaluate` and every stateful stage were dead in the product:
+   * `mouse1 → lag1 → param` did nothing and the `stateful.reset` declarations pointed at
+   * nothing. (T238's single-channel shorthand WAS live, so an LFO always worked — the bug
+   * is smaller than "the value graph does nothing" and still real.)
+   */
+  const valueGraph = useValueGraph(runtime);
+
+  /**
+   * The channel ladder, in order (first non-undefined wins).
+   *
+   * Analyze is a MEASUREMENT of the running program; the value graph is a computation
+   * about it; `graphChannelResolver`, inside `useGraphCompile`, is the shorthand behind
+   * both. Names are unique per document (§V129/T221) so they never actually collide —
+   * the order states which KIND of answer outranks which, not a tiebreak.
+   */
+  const driverChannels = useMemo(
+    () => [analyze.resolver, valueGraph.resolver],
+    [analyze.resolver, valueGraph.resolver],
+  );
+  const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
 
   // The tracked set is a function of the DOCUMENT (which nodes are Analyze) and of the
@@ -257,7 +279,10 @@ export function App({
     compiled: compile.compiled,
     settings: runtime.settings,
     animate: compile.animate,
+    // Before `animate` reads the channels, every rendered frame (§V179, §V155).
+    advanceChannels: valueGraph.evaluate,
     observe: observeFrame,
+    onReset: valueGraph.reset,
     valuesOnly: compile.valuesOnly,
   });
 
@@ -371,6 +396,7 @@ export function App({
     }
     list.push(
       ...compile.diagnostics,
+      ...valueGraph.diagnostics,
       ...media.diagnostics,
       ...rejection,
       ...autosave.diagnostics,
@@ -383,6 +409,7 @@ export function App({
     autosave.diagnostics,
     compile.diagnostics,
     frameLoop.diagnostics,
+    valueGraph.diagnostics,
     media.diagnostics,
     project.diagnostics,
     recovery.diagnostics,

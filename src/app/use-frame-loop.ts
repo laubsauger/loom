@@ -94,6 +94,28 @@ export interface FrameLoopOptions {
    */
   readonly observe?: ((frame: FrameEvaluationInput) => void) | null | undefined;
   /**
+   * Advances per-frame CHANNEL SOURCES before this frame's parameters are resolved (B27).
+   *
+   * The value graph rides here and not on `observe`, and the difference is one line of
+   * ordering with a visible consequence: `observe` runs after `animate` has already asked
+   * the resolver for this frame's numbers, so a channel advanced there would be a frame
+   * behind — every Mouse-driven parameter trailing the cursor by 16ms for no reason.
+   * §V179 puts the value graph before the plan, and this is that position.
+   *
+   * §V155 is why it is unconditional: a stateful stage that is skipped does not go stale
+   * and self-correct, its trajectory diverges. So this runs on every rendered frame, even
+   * when `animate` is null and nothing will read the result.
+   */
+  readonly advanceChannels?: ((inputs: FrameInputs) => void) | null | undefined;
+  /**
+   * Clears per-frame state that is NOT a function of frame index (§V181, §V170).
+   *
+   * Called by `seek` beside `backend.resetTemporalHistory()`, for the same reason: a
+   * replay that starts from a state belonging to a different history is a scrub that looks
+   * like it works and is a lie.
+   */
+  readonly onReset?: (() => void) | null | undefined;
+  /**
    * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
    *
    * A SUGGESTION, never an instruction — the compile effect below verifies it against the
@@ -106,6 +128,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const { bus, backend, compiled, settings } = options;
   const animate = options.animate ?? null;
   const observe = options.observe ?? null;
+  const advanceChannels = options.advanceChannels ?? null;
+  const onReset = options.onReset ?? null;
   const valuesOnly = options.valuesOnly ?? false;
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
@@ -118,6 +142,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   animateRef.current = animate;
   const observeRef = useRef<((frame: FrameEvaluationInput) => void) | null>(observe);
   observeRef.current = observe;
+  const advanceChannelsRef = useRef<((inputs: FrameInputs) => void) | null>(advanceChannels);
+  advanceChannelsRef.current = advanceChannels;
+  const onResetRef = useRef<(() => void) | null>(onReset);
+  onResetRef.current = onReset;
   // Read, not depended on: it changes in lockstep with `compiled`, and putting it in the
   // effect's dependency list would re-run the compile effect for a value that only ever
   // accompanies one.
@@ -210,6 +238,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       // A ref, not state: this runs on every rendered frame (§V16).
       onFrame: (inputs) => {
         latestFrameRef.current = inputs;
+        // ORDER IS THE CONTRACT. Channels advance first so `animate` resolves this frame's
+        // parameters against this frame's numbers (§V179); the push applies them to the
+        // frame just encoded; observers run last, on a frame that is already decided.
+        advanceChannelsRef.current?.(inputs);
         pushAnimatedValues(inputs);
         observeRef.current?.(inputs.frame);
       },
@@ -252,6 +284,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         if (wasRunning) live.stop();
         transport.reset();
         backend.resetTemporalHistory();
+        // §V181: the CPU half of the same rule. GPU temporal history and value-graph state
+        // are both "not a function of frame index", so both are cleared before the replay
+        // or the replayed frames carry a trajectory from the history just abandoned.
+        onResetRef.current?.();
         let last = null;
         for (let index = 0; index <= frameIndex; index += 1) last = live.step();
         latestFrameRef.current = last;

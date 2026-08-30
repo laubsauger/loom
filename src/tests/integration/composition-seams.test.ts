@@ -113,11 +113,6 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Live pixel inspection is reachable through the agent's `describe_output`; the standalone probe has no separate mount.",
   },
   {
-    name: "createValueGraphSession",
-    reason:
-      "B26 — the value graph (T273-T277) is NOT mounted in the app, so Lag, Trigger, Slope and Filter compute nothing in the product. `src/nodes/definitions/index.test.ts` already records the same fact per node. Reported, not excused: this line comes out when the session is mounted.",
-  },
-  {
     name: "createShaderCompilePipeline",
     reason:
       "B27 — the shader editor's debounced compile pipeline is exported from its own index and constructed only by its unit test. The panel validates on the graph compile instead, so WGSL errors appear later than the pipeline was built to show them.",
