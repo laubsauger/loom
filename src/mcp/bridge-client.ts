@@ -50,9 +50,15 @@ import { toolListings } from "./published-tools.ts";
  * path uses, so there is exactly one MCP envelope in the repo (§V39).
  */
 
-/** The idle row's sentence: the state, and where the code comes from (§V90/§V91/§V288). */
+/**
+ * The idle row's sentence: the state, HOW TO START, and what an agent talks to until
+ * then (§V90/§V91/§V288, T533). The owner tried Claude Desktop and "didn't really get
+ * how that is supposed to work" — because the only place that named the door was a
+ * terminal log. This row is the signpost now: the command, the code, and the §V338
+ * honesty that an unattached stdio agent is editing a HEADLESS copy, not this tab.
+ */
 const BRIDGE_IDLE_DETAIL =
-  `Not attached. Enter the pairing code your Shaderloom MCP server printed — ask the agent for it, or read it from the server's log — to let it drive this tab instead of a headless copy. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
+  `Not attached — a desktop client (Claude Desktop, any stdio MCP client) drives THIS tab through the bridge: run \`pnpm mcp:serve\` in the project, read the pairing code it prints, and enter it here. Until a tab attaches, that server answers from a headless copy of the project — an agent can build a graph there that this tab never shows. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
 
 /**
  * The socket shape this module needs.

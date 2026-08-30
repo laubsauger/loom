@@ -298,6 +298,25 @@ describe("bridge, attached to a live page (T451, §V382)", () => {
  * what it drew. Nothing proved that end to end before this test; "attach gives the full
  * set" was the promise the owner was relying on.
  */
+/**
+ * T533 — the door is named where the user is, not only in a terminal log. The owner
+ * tried Claude Desktop and could not find the path; the idle row is the signpost now:
+ * the COMMAND to run, and the §V338 honesty that until a tab attaches, a stdio agent
+ * edits a HEADLESS copy this tab never shows.
+ */
+describe("the idle bridge row is a signpost (T533, §V338)", () => {
+  it("names the command and says what an unattached agent is talking to", () => {
+    const registry = createMcpTransportRegistry();
+    const client = createBridgeClient({ surface: () => pageHarness().surface, registry, client: "t533" });
+    cleanups.push(() => client.disconnect());
+    const row = registry.snapshot().find((transport) => transport.kind === "bridge");
+    expect(row?.state).toBe("disconnected");
+    expect(row?.detail).toContain("pnpm mcp:serve");
+    expect(row?.detail).toContain("headless copy");
+    expect(row?.detail).toContain("pairing code");
+  });
+});
+
 describe("bridge union (V432, T451)", () => {
   it("a page-only port answers a stdio call: render_preview runs the TAB's exporter", async () => {
     const harness = await bridgedServer();

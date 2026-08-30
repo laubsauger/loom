@@ -82,6 +82,15 @@ export interface RegisterWebMcpOptions {
  * cure B76 applied to the bridge — and a duplicate registration is tolerated, because
  * the first registration's tools are already live against the current surface.
  */
+/**
+ * T525: hosts this page already published to via `registerTool`. A re-run (StrictMode's
+ * probe, a surface re-mint) would throw one caught "Duplicate tool name" per tool — 28
+ * exceptions flooding the console on every load, harmless but indistinguishable from a
+ * real failure at a glance. Skipping the whole loop for a known host says the same
+ * thing silently; the standing registration keeps answering through the provider (B93).
+ */
+const registeredHosts = new WeakSet<object>();
+
 export function registerWebMcp(
   surface: AgentToolSurface | (() => AgentToolSurface),
   options: RegisterWebMcpOptions = {},
@@ -128,7 +137,8 @@ export function registerWebMcp(
   const provide = context.provideContext;
   if (typeof provide === "function") {
     provide({ tools });
-  } else {
+  } else if (!registeredHosts.has(context)) {
+    registeredHosts.add(context);
     for (const tool of tools) {
       try {
         context.registerTool?.(tool);
@@ -148,7 +158,8 @@ export function registerWebMcp(
     kind: "webmcp",
     label: TRANSPORT_LABEL.webmcp,
     state: "connected",
-    detail: "An in-page model can call these tools, which edit this document.",
+    detail:
+      "In-page agents (a browser's built-in model, an extension) connect here automatically and edit this document. Desktop clients use the bridge below instead.",
     toolNames: tools.map((tool) => tool.name),
     lastInvocation: null,
     connect: null,
