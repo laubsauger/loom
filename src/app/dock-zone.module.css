@@ -85,18 +85,25 @@
   color: var(--text);
 }
 
+/* The bands mirror T426's geometry: the right sidebar's two bands run the FULL height
+   and the bottom band stops short of them, so where a pane lands matches what you see. */
 .left {
-  inset: 0 auto 0 0;
+  inset: 0 auto 28% 0;
   width: 18%;
 }
 
 .right {
-  inset: 0 0 0 auto;
+  inset: 0 0 50% auto;
+  width: 18%;
+}
+
+.rightBottom {
+  inset: 50% 0 0 auto;
   width: 18%;
 }
 
 .bottom {
-  inset: auto 18% 0 18%;
+  inset: auto 18% 0 0;
   height: 28%;
 }
 

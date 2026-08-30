@@ -100,6 +100,88 @@
   min-width: 200px;
 }
 
+/* Named layouts (T436). The list names the layouts and nothing else — the verbs are one
+   row underneath, so the menu does not grow a control per saved layout (§V90). */
+.layoutList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 40vh;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.layoutEntry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-none);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+}
+
+.layoutEntry:hover {
+  background: var(--bg-raise);
+  color: var(--text);
+}
+
+.layoutEntry:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.layoutEntryCurrent {
+  border-color: var(--line-hot);
+  color: var(--text);
+}
+
+.layoutName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layoutModified {
+  flex: 0 0 auto;
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.layoutActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-hairline);
+}
+
+.layoutInput {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-none);
+  background: var(--bg-void);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+
+.layoutInput:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 0;
+}
+
 .layoutRow {
   display: flex;
   align-items: center;

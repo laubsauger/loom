@@ -7,13 +7,30 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { AppShell } from "./app-shell.tsx";
 import { TopBar } from "./top-bar.tsx";
 import type { PaneWindow } from "./pane-window.tsx";
-import { DEFAULT_SHELL_LAYOUT, LAYOUT_STORAGE_KEY, readLayout, zoneOf } from "./layout-storage.ts";
+import {
+  DEFAULT_SHELL_LAYOUT,
+  LAYOUT_STORAGE_KEY,
+  readLayout,
+  readLayoutStore,
+  zoneOf,
+} from "./layout-storage.ts";
+import type { ShellLayout } from "./layout-storage.ts";
 
 beforeAll(installDomStubs);
 afterEach(cleanup);
 
 function panelSize(id: string): string | null {
   return document.querySelector(`[data-panel-id="${id}"]`)?.getAttribute("data-panel-size") ?? null;
+}
+
+/** A v3 store entry holding one layout, which is what the shell mounts from. */
+function storedLayout(overrides: Partial<ShellLayout> = {}): string {
+  return JSON.stringify({
+    version: 3,
+    currentId: null,
+    layouts: [],
+    current: { ...DEFAULT_SHELL_LAYOUT, ...overrides },
+  });
 }
 
 function zoneElement(zone: string): HTMLElement {
@@ -61,8 +78,8 @@ describe("app shell layout (§I.ui)", () => {
   it("gives every divider a focusable separator with a name", () => {
     render(<AppShell storage={createMemoryStorage()} />);
     const separators = screen.getAllByRole("separator");
-    // left | centre, centre | right, and main | bottom.
-    expect(separators.length).toBe(3);
+    // left | centre, centre | bottom, work | sidebar, and the sidebar's own split (T426).
+    expect(separators.length).toBe(4);
     for (const separator of separators) {
       expect(separator.getAttribute("tabindex")).toBe("0");
       expect(separator.getAttribute("aria-label")).toBeTruthy();
@@ -85,24 +102,27 @@ describe("V18 — layout persistence", () => {
 
   it("restores stored pane sizes on mount", () => {
     const storage = createMemoryStorage({
-      [LAYOUT_STORAGE_KEY]: JSON.stringify({
-        ...DEFAULT_SHELL_LAYOUT,
-        columns: [30, 40, 30],
+      [LAYOUT_STORAGE_KEY]: storedLayout({
+        columns: [70, 30],
+        mainColumns: [30, 70],
         rows: [60, 40],
+        rightRows: [35, 65],
       }),
     });
 
     render(<AppShell storage={storage} />);
 
     expect(panelSize("shell-left")).toBe("30.0");
-    expect(panelSize("shell-center")).toBe("40.0");
+    expect(panelSize("shell-center")).toBe("70.0");
     expect(panelSize("shell-bottom")).toBe("40.0");
+    expect(panelSize("shell-right")).toBe("30.0");
+    expect(panelSize("shell-right-top")).toBe("35.0");
+    expect(panelSize("shell-right-bottom")).toBe("65.0");
   });
 
   it("restores the stored active tab of a zone", () => {
     const storage = createMemoryStorage({
-      [LAYOUT_STORAGE_KEY]: JSON.stringify({
-        ...DEFAULT_SHELL_LAYOUT,
+      [LAYOUT_STORAGE_KEY]: storedLayout({
         active: { ...DEFAULT_SHELL_LAYOUT.active, bottom: "performance" },
       }),
     });
@@ -130,7 +150,7 @@ describe("V18 — layout persistence", () => {
 
   it("double-clicking a divider resets that group to its default split", () => {
     const storage = createMemoryStorage({
-      [LAYOUT_STORAGE_KEY]: JSON.stringify({ ...DEFAULT_SHELL_LAYOUT, columns: [30, 40, 30] }),
+      [LAYOUT_STORAGE_KEY]: storedLayout({ mainColumns: [30, 70] }),
     });
     render(<AppShell storage={storage} />);
     expect(panelSize("shell-left")).toBe("30.0");
@@ -140,27 +160,29 @@ describe("V18 — layout persistence", () => {
     // The stored split is the assertion that matters: it is what survives a
     // reload. Applying it to the live group needs a measured layout, which
     // jsdom cannot provide.
-    expect(readLayout(storage).columns).toEqual(DEFAULT_SHELL_LAYOUT.columns);
+    expect(readLayout(storage).mainColumns).toEqual(DEFAULT_SHELL_LAYOUT.mainColumns);
   });
 
   it("resets sizes and the arrangement from the layout menu", async () => {
     const user = userEvent.setup();
     const storage = createMemoryStorage({
-      [LAYOUT_STORAGE_KEY]: JSON.stringify({
-        ...DEFAULT_SHELL_LAYOUT,
-        columns: [30, 40, 30],
+      [LAYOUT_STORAGE_KEY]: storedLayout({
+        columns: [60, 40],
         rows: [50, 50],
         zones: { ...DEFAULT_SHELL_LAYOUT.zones, left: [], center: ["graph", "library"] },
       }),
     });
     render(<AppShell storage={storage} />);
 
+    // "Reset layout" is now the Default PRESET: restoring it is the same operation, and
+    // one control does the job of two (§V90).
     await user.click(screen.getByRole("button", { name: "Layout" }));
-    await user.click(screen.getByRole("button", { name: "Reset layout" }));
+    await user.click(screen.getByRole("button", { name: /^Default/ }));
 
     const stored = readLayout(storage);
     expect(stored.rows).toEqual(DEFAULT_SHELL_LAYOUT.rows);
     expect(stored.columns).toEqual(DEFAULT_SHELL_LAYOUT.columns);
+    expect(stored.rightRows).toEqual(DEFAULT_SHELL_LAYOUT.rightRows);
     expect(stored.zones).toEqual(DEFAULT_SHELL_LAYOUT.zones);
   });
 });
@@ -245,7 +267,7 @@ describe("V96 — moving a pane never remounts it", () => {
     await user.type(input, "unsaved work");
     expect(mounts).toBe(1);
 
-    await movePaneVia(user, "shader editor", "Right");
+    await movePaneVia(user, "shader editor", "Right top");
 
     // Identity: the very same element, still carrying what was typed into it. A
     // remount would produce a NEW element with an empty value and mounts === 2.
@@ -477,7 +499,7 @@ describe("V19 — keyboard reachability", () => {
 
     const toggle = screen.getByRole("button", { name: "Bottom dock" });
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Reset layout" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Save as…" })).toBeDefined();
   });
 
   it("moves a pane between zones with the keyboard alone (§V19)", async () => {
@@ -489,7 +511,7 @@ describe("V19 — keyboard reachability", () => {
     const trigger = screen.getByRole("button", { name: "Move shader editor" });
     trigger.focus();
     await user.keyboard("{Enter}");
-    const target = screen.getByRole("button", { name: "Right" });
+    const target = screen.getByRole("button", { name: "Right top" });
     target.focus();
     await user.keyboard("{Enter}");
 
@@ -518,5 +540,269 @@ describe("V19 — keyboard reachability", () => {
 
     await user.keyboard("{ArrowUp}");
     expect(document.activeElement).toBe(separator);
+  });
+});
+
+/**
+ * T426 — the right sidebar runs the FULL height of the window.
+ *
+ * ## What this suite does NOT prove (§V339)
+ *
+ * jsdom paints nothing and computes no layout, so nothing here can show that the sidebar
+ * is taller than it used to be. `getBoundingClientRect` is all zeroes and a "full height"
+ * assertion against it would be green on a completely broken shell — that is exactly the
+ * failure §B54 shipped for months.
+ *
+ * What IS checkable here is the STRUCTURE that produces the height: the sidebar is a
+ * sibling of the whole work area rather than a child of the row above the bottom dock, so
+ * there is nothing in the tree that could cut it short. The pixels are asserted in
+ * `src/tests/e2e/layout.spec.ts`, in a real browser, by measuring boxes.
+ */
+describe("T426 — the right sidebar is a full-height column", () => {
+  function panel(id: string): HTMLElement {
+    const element = document.querySelector<HTMLElement>(`[data-panel-id="${id}"]`);
+    if (element === null) throw new Error(`no ${id} panel rendered`);
+    return element;
+  }
+
+  it("hangs the sidebar off the ROOT split, not off the row the bottom dock truncates", () => {
+    render(<AppShell storage={createMemoryStorage()} />);
+
+    const work = panel("shell-work");
+    // The bottom dock lives inside the work area…
+    expect(work.contains(panel("shell-bottom"))).toBe(true);
+    // …and the sidebar does not, which is the whole of T426.
+    expect(work.contains(panel("shell-right"))).toBe(false);
+  });
+
+  it("splits the sidebar horizontally, viewer above inspector", () => {
+    render(
+      <AppShell
+        storage={createMemoryStorage()}
+        viewer={<div>viewer slot</div>}
+        inspector={<div>inspector slot</div>}
+      />,
+    );
+
+    expect(zoneElement("right").contains(screen.getByText("viewer slot"))).toBe(true);
+    expect(zoneElement("rightBottom").contains(screen.getByText("inspector slot"))).toBe(true);
+    // Two sections of one column: both are inside the sidebar panel, stacked.
+    expect(panel("shell-right").contains(zoneElement("right"))).toBe(true);
+    expect(panel("shell-right").contains(zoneElement("rightBottom"))).toBe(true);
+  });
+
+  it("leaves the bottom dock spanning the left and centre columns", () => {
+    render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
+    // The shader editor keeps the width it had; narrowing it was never asked for.
+    const work = panel("shell-work");
+    expect(work.contains(zoneElement("left"))).toBe(true);
+    expect(work.contains(zoneElement("bottom"))).toBe(true);
+  });
+
+  it("gives the sidebar's own divider a name, so it can be resized from the keyboard", () => {
+    render(<AppShell storage={createMemoryStorage()} />);
+    const separator = screen.getByRole("separator", { name: "Resize sidebar split" });
+    expect(separator.getAttribute("tabindex")).toBe("0");
+  });
+});
+
+/**
+ * T436 — named layouts: save, name, update, restore, delete.
+ *
+ * The assertion that carries the task is UPDATE ≠ SAVE AS. An "update" that appends is
+ * how a layout list becomes forty near-duplicates, so the test that matters is the one
+ * counting entries after an update.
+ */
+describe("T436 — named layouts", () => {
+  /** Idempotent: the trigger TOGGLES, and clicking an entry leaves the menu open. */
+  async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+    if (screen.queryByRole("button", { name: "Save as…" }) !== null) return;
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+  }
+
+  async function saveAs(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(screen.getByRole("button", { name: "Save as…" }));
+    await user.type(screen.getByRole("textbox", { name: "New layout name" }), name);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+  }
+
+  it("lists the built-in presets, with T426's arrangement selected on a fresh install", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+    await openMenu(user);
+
+    expect(screen.getByRole("button", { name: /^Default/ }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Classic/ })).toBeDefined();
+  });
+
+  it("saves the live arrangement under a name and persists it across a reload", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const { unmount } = render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
+
+    await movePaneVia(user, "shader editor", "Centre");
+    await openMenu(user);
+    await saveAs(user, "Shader work");
+
+    expect(readLayoutStore(storage).layouts.map((entry) => entry.name)).toEqual(["Shader work"]);
+
+    unmount();
+    render(<AppShell storage={storage} />);
+    await openMenu(user);
+    expect(screen.getByRole("button", { name: /^Shader work/ })).toBeDefined();
+  });
+
+  it("UPDATE overwrites the selected layout and does not add a second entry", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
+
+    await openMenu(user);
+    await saveAs(user, "Mine");
+    // Rearrange, then update: the entry changes, the list does not grow.
+    await movePaneVia(user, "shader editor", "Left");
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    const saved = readLayoutStore(storage).layouts;
+    expect(saved, "Update appended instead of overwriting").toHaveLength(1);
+    expect(saved[0]?.layout.zones.left).toContain("shader");
+  });
+
+  it("offers UPDATE only once the live arrangement has actually drifted", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
+
+    await openMenu(user);
+    await saveAs(user, "Mine");
+    await openMenu(user);
+    // Nothing has changed since the save, so there is nothing to update.
+    expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await movePaneVia(user, "shader editor", "Left");
+    await openMenu(user);
+    expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("cannot update, rename or delete a PRESET — a built-in is never lost", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Classic/ }));
+    await openMenu(user);
+
+    for (const verb of ["Update", "Rename", "Delete"]) {
+      expect(
+        screen.getByRole("button", { name: verb }).hasAttribute("disabled"),
+        `${verb} is offered for a preset`,
+      ).toBe(true);
+    }
+  });
+
+  it("renames a saved layout in place", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} />);
+
+    await openMenu(user);
+    await saveAs(user, "First");
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.clear(screen.getByRole("textbox", { name: "Layout name" }));
+    await user.type(screen.getByRole("textbox", { name: "Layout name" }), "Second");
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    const saved = readLayoutStore(storage).layouts;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.name).toBe("Second");
+  });
+
+  it("deletes a saved layout without rearranging the shell", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
+
+    await movePaneVia(user, "shader editor", "Left");
+    await openMenu(user);
+    await saveAs(user, "Doomed");
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(readLayoutStore(storage).layouts).toEqual([]);
+    // The room is unchanged; only the bookmark went.
+    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
+  });
+
+  it("restores a saved layout, putting the panes back where that layout had them", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
+
+    await movePaneVia(user, "shader editor", "Left");
+    await openMenu(user);
+    await saveAs(user, "Editor left");
+    await movePaneVia(user, "shader editor", "Centre");
+    expect(zoneElement("center").contains(screen.getByText("editor slot"))).toBe(true);
+
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Editor left/ }));
+
+    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
+  });
+
+  it("restoring the Classic preset puts the inspector and viewer back to being tabs", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(
+      <AppShell
+        storage={storage}
+        viewer={<div>viewer slot</div>}
+        inspector={<div>inspector slot</div>}
+      />,
+    );
+
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Classic/ }));
+
+    expect(zoneElement("right").contains(screen.getByText("inspector slot"))).toBe(true);
+    expect(zoneElement("right").contains(screen.getByText("viewer slot"))).toBe(true);
+    expect(readLayoutStore(storage).current.zones.rightBottom).toEqual([]);
+  });
+});
+
+/**
+ * V311 — an existing user's arrangement survives the reshape.
+ *
+ * This is the migration seen from the shell rather than from the record: the app boots
+ * against a v2 entry and what is on screen is what they left there.
+ */
+describe("V311 — a v2 layout still opens on what the user arranged", () => {
+  it("mounts a customised v2 arrangement and keeps it as a named layout", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage({
+      "shaderloom.shell.layout.v2": JSON.stringify({
+        rows: [50, 50],
+        columns: [20, 50, 30],
+        zones: {
+          left: ["library", "components", "shader"],
+          center: ["graph"],
+          right: ["inspector", "viewer"],
+          bottom: ["problems", "performance", "examples", "agent"],
+        },
+        active: { left: "shader", center: "graph", right: "viewer", bottom: "problems" },
+        floating: [],
+      }),
+    });
+
+    render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
+
+    // Where they left it, not where this build's default would put it.
+    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Layout" }));
+    expect(screen.getByRole("button", { name: /^Saved layout/ })).toBeDefined();
+    // And v2's key is gone, so one key holds the layout.
+    expect(storage.keys()).toEqual([LAYOUT_STORAGE_KEY]);
   });
 });

@@ -142,7 +142,8 @@ export function DockZoneView({
 const ZONE_LABELS: Readonly<Record<DockZone, string>> = {
   left: "Left",
   center: "Centre",
-  right: "Right",
+  right: "Right top",
+  rightBottom: "Right bottom",
   bottom: "Bottom",
 };
 
@@ -191,9 +192,11 @@ export interface DropZoneOverlayProps {
 /**
  * Where a dragged tab can land.
  *
- * Four bands over the body rather than the zones themselves, because a zone that is
- * empty or collapsed has no area to drop on — and the zone you most want to drag a pane
- * back into is exactly the one you just emptied.
+ * One band per zone over the body rather than the zones themselves, because a zone that
+ * is empty or collapsed has no area to drop on — and the zone you most want to drag a
+ * pane back into is exactly the one you just emptied. The bands mirror T426's geometry:
+ * the two right bands run down the full height, and the bottom band stops where the
+ * right sidebar starts.
  */
 export function DropZoneOverlay({ onDrop }: DropZoneOverlayProps) {
   return (
