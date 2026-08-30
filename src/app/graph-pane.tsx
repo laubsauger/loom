@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
+import type {
+  DragEvent as ReactDragEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  RefObject,
+} from "react";
 import { ReactFlowProvider, useConnection, useReactFlow } from "@xyflow/react";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { ShaderloomBus } from "@domain/commands/index.ts";
@@ -9,7 +14,7 @@ import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import { GraphCanvas } from "@editor/graph-canvas/index.ts";
-import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
+import { KEYMAP_CONTEXT_ATTRIBUTE, isTextEntryTarget } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
@@ -274,6 +279,36 @@ function GraphPaneInner({
     };
   }, [bus, flow]);
 
+  /**
+   * B66 (§V351): the `graph` context is derived from `data-keymap-context` on the
+   * container below, via `event.target.closest(...)`. A container that cannot hold focus
+   * is never on that path — clicking the empty canvas left `document.activeElement` on
+   * `<body>`, `closest` returned null, the fallback was `global`, and every `graph`
+   * binding (`mod+a`, `b`, `f`, delete…) was unreachable.
+   *
+   * So the surface takes focus when the pointer goes down on it. Explicitly, rather than
+   * leaning on the browser's implicit "focus the nearest focusable ancestor on click":
+   * that is the behaviour React Flow's own d3 handlers are in a position to suppress, and
+   * it is not something a test can observe without simulating the browser's half.
+   *
+   * `tabIndex={-1}`, never 0: focusable by pointer and by script, never a tab stop, so
+   * this does not put a large silent container into the keyboard tab order.
+   *
+   * One guard, and it is the §V53 one: a text entry target keeps its focus. The node's
+   * inline name editor lives inside this surface, and grabbing focus out from under the
+   * pointer-down that was going to land in it is precisely how "typing in a field fires a
+   * single-key graph binding" gets reintroduced. It is a SECOND lock today — `node-view`
+   * already stops propagation on that editor's pointer-down, so nothing currently reaches
+   * this line with a text target and no test can make its removal go red. Kept anyway:
+   * the promise must not rest on one component remembering to stop an event.
+   */
+  const focusSurface = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const surface = surfaceRef.current;
+    if (surface === null) return;
+    if (isTextEntryTarget(event.target)) return;
+    surface.focus({ preventScroll: true });
+  }, []);
+
   const onDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     // Without this the browser refuses the drop and the library drag does nothing.
     event.preventDefault();
@@ -302,7 +337,11 @@ function GraphPaneInner({
       className={styles.graph}
       // §V53: every key pressed in here resolves in the `graph` context, so the
       // single-key TD bindings (b, d, r, f…) work on the canvas and nowhere else.
+      // §V351/B66: and it can HOLD FOCUS, or that resolution never runs — see
+      // `focusSurface`.
       {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "graph" }}
+      tabIndex={-1}
+      onPointerDown={focusSurface}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
