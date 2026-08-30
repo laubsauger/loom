@@ -1037,19 +1037,19 @@ T194|x|compiler deltas for point passes: dispatch/draw emittable, bufferPair scr
 T217|x|fix B9: await pipeline creation | `pushErrorScope`/`popErrorScope` BEFORE installing the program; route the failure to `onDiagnostic` + set `stale`; keep the previous program. AND make the mock reject the way Dawn does, else the test stays greener than the product|V9,V27
 T218|x|fix B10: live parameter values ∀ gesture — find why the composed app swallows them (suspect editor lifecycle ∈ `inspector.tsx`). add a test @ the COMPOSED level, ⊥ only per-module|V15,V5
 T219|x|fix B11 (DATA LOSS): commit the shader edit before unmount; ⊥ report "saved" when nothing was|V9,V29
-T220|.|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
+T220|x|wire `createAgentToolSurface` into the composition root + inject its ports|V39,B12
 T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001…100), pick, then drag @ that decade. modifiers still ±1 decade; typed entry unchanged; value stays on the decade grid|V133,V134,V20
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
-T271|.|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
+T271|x|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
 T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
 T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
-T265|.|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
-T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, cycle rejection, ∀ frame pre-render)|V179,V19,V152
-T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
-T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
-T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
+T265|x|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
+T273|x|`value` port type + value EDGES + CPU value-graph evaluator (topo order, cycle rejection, ∀ frame pre-render)|V179,V19,V152
+T274|x|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
+T275|x|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
+T276|x|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
 T292|.|**enumerate-the-surface** test: ∀ tool ∈ the agent surface has a live port ∈ the composed app (V193). the guard B12/B23 needed|V193
 T293|.|`read_points` port ∈ `useAgentPorts` — plan→schema mapping. portless in-app today (same shape as B23, caught before it bit)|V193
 T294|.|MCP `tools/list_changed` notification when grants|ports change; wire backend diagnostics to the existing notification channel (needs a headless backend)|V192
@@ -1067,20 +1067,20 @@ T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampl
 T286|.|POP **Map page** — a per-point attribute as a PARAMETER MODE (5th `ParameterBinding` kind). decide the shape while the union is cheap to grow|V107,V69
 T287|.|POP **attribute qualifiers** (Color/Direction/Quaternion) — declares how a transform ! treat an attribute. our spec is type-only; encoding this ∈ magic names later is "index as identity" again|V75
 T278|.|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
-T277|.|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
+T277|x|CHOP smoothing family: **Lag** (attack/release) + **Filter** (window). STATEFUL ∴ reset + V155|V181,V155
 T272|.|`ProjectSettings.fps` (default 60, 1..240) + `project.setSettings` taking a PARTIAL patch validated by `projectSettingsSchema.partial()` (V37/V68) + per-field classifier (V178) + `AppRuntime.settings` as live view|V177,V178,V29,V37
 T266|.|project settings UI: resolution, TARGET FPS, seed, working format. fps is ⊥ cosmetic — it's the DENOMINATOR of timeline time (V176) ∴ changing it changes the animation timebase, & the readout ! agree. + component resolution, showing INHERITED vs AUTHORED @ each level|V171,V21
-T262|.|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
-T263|.|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
-T264|.|app side: file picker → `MediaSource`, `getUserMedia` → `MediaSource`, both → `registerMediaSource`. permission denial is a DIAGNOSTIC ⊥ a crash|V167,V136
-T261|.|**New** button beside Open/Save + `project.new` command. confirm-when-dirty w/ Save as primary|V165,V166,V93,V29
+T262|x|`ScratchRequest` gains an `external` kind + compiler materializes → `ExternalTextureResourceDescriptor`. the missing seam that makes T229 reachable|V167,V135
+T263|x|**Movie/Image File In** node (T210) + **Webcam** node (T231) — decl external, `sourceId` per node|V167,V135,V136
+T264|x|app side: file picker → `MediaSource`, `getUserMedia` → `MediaSource`, both → `registerMediaSource`. permission denial is a DIAGNOSTIC ⊥ a crash|V167,V136
+T261|x|**New** button beside Open/Save + `project.new` command. confirm-when-dirty w/ Save as primary|V165,V166,V93,V29
 T260|.|dev-only distinct preview clear colour — "drew nothing" ⊥ look like "drew black" (V164). ⊥ ship ∈ prod builds|V164,V106
-T259|.|**per-frame driven/expression push** ∈ composition root — gate on `hasAnimatedParameters`, re-resolve, values-only update (isUniformOnlyChange → updateUniforms). THE last inch of "something moves"|V163,V5,V143
-T257|.|**preview-side carry-over** ∈ `buildPreviewHost` — reuse T143's mechanism. w/o it V142 holds only below the 48-tile pool; above it a camera move still blanks everything|V162,V142
-T258|.|preview host resilience: 1 unresolvable binding currently blanks the WHOLE host (`buildPreviewHost` catches → `h.set` unusable). ⊥ let 1 bad node black out ∀ previews. widens w/ T252|V162,V28
-T249|.|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
+T259|x|**per-frame driven/expression push** ∈ composition root — gate on `hasAnimatedParameters`, re-resolve, values-only update (isUniformOnlyChange → updateUniforms). THE last inch of "something moves"|V163,V5,V143
+T257|x|**preview-side carry-over** ∈ `buildPreviewHost` — reuse T143's mechanism. w/o it V142 holds only below the 48-tile pool; above it a camera move still blanks everything|V162,V142
+T258|x|preview host resilience: 1 unresolvable binding currently blanks the WHOLE host (`buildPreviewHost` catches → `h.set` unusable). ⊥ let 1 bad node black out ∀ previews. widens w/ T252|V162,V28
+T249|x|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
 T250|x|**fix bypass/mute** — `ui.bypassed`/`ui.muted` are UI-ONLY; `compile.ts` ⊥ reads them (B16)|V25
-T251|.|dependency graph = edges ∪ param refs, applied to `pruneToActiveSinks()` FIRST|V154,V152
+T251|x|dependency graph = edges ∪ param refs, applied to `pruneToActiveSinks()` FIRST|V154,V152
 T252|.|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` declaring EVERY texture node a sink (B18)|V158,V25
 T253|.|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
 T254|.|per-node cook gate ∈ `encode()` + dirty set on `Program` + pure clock-free `runtime/execution/cook.ts` policy|V155,V156,V159,V157
@@ -1094,7 +1094,7 @@ T244|x|lint rule for V145 — ⊥ implicit global-named type|V145
 T233|x|**flicker on pan/zoom** — find the shared cause (B13), fix, regression test @ composed level|V142
 T234|x|**Cross** node — lerp 2 inputs by a factor. the one blend that ISN'T ∈ the composite op list because its param, ⊥ its mode, is the point|V140
 T235|.|**Switch** node — select 1 of N inputs by index. variadic (T225/T226 ordering) + index is expression-drivable (V107)|V131,V107
-T236|.|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
+T236|x|**Analyze** node — texture → scalar (max/min/avg/sum/count) readable by expressions. closes image→parameter loop|V144,V107
 T237|.|**Cache / Time Machine** — TRAP: needs a 3D-texture resource kind we ⊥ have, & ~1 GB for 60 frames @ 1080p rgba16float. cost the resource kind BEFORE the node — hold N frames, read frame `t-n`. trails & time-displacement w/o hand-rolled feedback|V135
 T238|x|**LFO** node — sin/tri/saw/square/noise over time, phase+freq+amp. THE animation source|V143
 T239|x|**Constant/Value** node — named scalar channels, 1 place to park numbers many params reference (TD Constant CHOP)|V107
@@ -1105,14 +1105,14 @@ T243|.|Text generator — glyph atlas → texture. DEPENDS ON T262: text is a me
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|.|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
 T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
-T221|.|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
-T222|.|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
-T223|.|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
+T221|x|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
+T222|x|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
+T223|x|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
 T224|x|move the Common block below the node's parameters (or behind a fold) — today it sits above them|V130,V90
 T214|.|`pulse` parameter type + control (momentary, ⊥ serialized, audited ⊥ undoable) + expression-fireable|V123,V124,V125,V107
-T215|.|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
+T215|x|per-resource temporal reset so a pulse clears ONE node's history, ⊥ every pair. unblocks `runtime.resetFeedback`|V126,V62,V22
 T216|.|expose Reset on nodes declaring `stateful.reset`: Feedback (+ hold toggle, TD pairs both), Noise reseed, accumulator, point sim|V123,V46
-T229|.|`externalTexture` resource kind + runtime media-source registry + upload-on-frame-ready. BLOCKS T211 — media cannot exist without it|V135,V136,V63,V58
+T229|x|`externalTexture` resource kind + runtime media-source registry + upload-on-frame-ready. BLOCKS T211 — media cannot exist without it|V135,V136,V63,V58
 T231|.|**DeviceIn** node — device enumeration + pick, permission flow, live indicator, negotiated-vs-requested resolution, ∀ interruption states as node status. rides T229's registry|V137,V138,V139,V38
 T230|.|asset registry: resolve `AssetReference` → a decoded source; File System Access + drag-drop + relink flow for unresolved|V121,V10
 T210|.|**MovieFileOut** node — texture in → encoded file out, `sink: true`, drives T111 exact-frame capture, capability-gated (recording + localFile, V38). several may run at once|V119,V120,V48,V38
@@ -1130,13 +1130,13 @@ T205|x|bind cycle detection @ authoring time, ⊥ @ evaluation|V110
 T200|x|help panel (mod+/ or ?): shortcuts ← keymap, node reference ← manifests, expression guide ← evaluator whitelist. on-demand, ⊥ ambient (V90)|V105,V55,V90
 T201|x|expression authoring surfaced @ the parameter — how to drive e.g. noise translate from `time`, which vars + fns exist, live-evaluated preview of the result|V105,V71,V61
 T198|x|node badges (P/B/M) dispatch `node.toggle*` w/ the SELECTION, ⊥ a raw single-node patch. today `node-view.tsx:47` bypasses the command ∴ badge ≠ key ≠ menu|V101,V102,V29,V52
-T199|.|wire `read_points`: `createPointsReadback({ readBuffer, pointSetInfo, now })` — clock ! be INJECTED (the export boundary test caught a `Date.now` default)|V48,V16
+T199|x|wire `read_points`: `createPointsReadback({ readBuffer, pointSetInfo, now })` — clock ! be INJECTED (the export boundary test caught a `Date.now` default)|V48,V16
 T197|x|preview OFF renders the node's resolved size/format/space, ⊥ a black box (V100). preview ON but not yet rendered = a distinct state, ⊥ the same blank|V100,V91
 T196|x|move `GpuStatusCard` out of the viewer → performance panel (beside est. bytes, lastBuild, per-pass ms). viewer empty state = "No output" per V91; drop the implementation prose entirely|V91,V92a
 T195|x|standalone WGSL compile — today WGSL is only checked when the GRAPH compiles on a device ∴ a shader error ⊥ surface until the whole graph is wired + rendering|V9,V27
-T191|.|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
-T192|.|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
-T193|.|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
+T191|x|dockable pane system: zones (left\|right\|bottom\|center), drag a pane between them, persisted arrangement, ∀ pane not just the shader editor|V95,V18
+T192|x|float / pop-out a pane into its own window, sharing ONE bus + store + runtime. shares the multi-window transport w/ T110 perform mode|V97,V64,V70,V29
+T193|x|relocation preserves content — portal|reparent so CodeMirror & previews survive a move w/o remount|V96
 T188|x|component library browser — shipped + user, instantiate linked\|detached, version + upgrade shown, save-selection-as-component surfaced|V93,V94,V79,V84
 T189|x|example library browser — open project, confirm when dirty, reads the 6 shipped `.loom.json`|V93,V88
 T190|.|ship the starter component set: FeedbackEcho, Bloom, DisplacementStack, MediaGrade, Kaleidoscope — as real saved components, ⊥ a privileged format|V94,V79
