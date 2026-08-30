@@ -28,8 +28,9 @@ import {
  *
  * ALPHA is straight (non-premultiplied) throughout, matching TD. (An earlier note here
  * justified that by "TD's separate Premultiply TOP"; a catalogue survey of all 149 TOPs
- * found no such operator — TD exposes premultiply/unpremultiply as a Math TOP mode. The
- * convention is still right; the evidence cited for it was not.) Over does coverage-aware
+ * found no such operator — TD exposes premultiply/unpremultiply as Math TOP operations,
+ * "Multiply RGB by Alpha" and "Divide RGB by Alpha". The convention is still right; the
+ * evidence cited for it was not. Ours is the Premultiply node, T281.) Over does coverage-aware
  * source-over; the arithmetic operators work per channel across RGBA, as TD's Composite
  * TOP does, so adding two images adds their alpha too.
  *

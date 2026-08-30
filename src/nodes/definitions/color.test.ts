@@ -8,6 +8,7 @@ import {
   levelNode,
   limitNode,
   lookupNode,
+  premultiplyNode,
   reorderNode,
   REORDER_SOURCE_OPTIONS,
   thresholdNode,
@@ -37,6 +38,7 @@ describe("colour nodes (T40)", () => {
       "level",
       "limit",
       "lookup",
+      "premultiply",
       "reorder",
       "threshold",
     ]);
@@ -242,5 +244,41 @@ describe("Reorder (T280)", () => {
           : `case ${index}u: { return`;
       expect(shader, option.value).toContain(branch);
     });
+  });
+});
+
+/** Premultiply (T281) — the decisions that are arguments rather than code. */
+describe("Premultiply (T281)", () => {
+  it("returns zero colour where coverage is zero rather than dividing by an epsilon", () => {
+    // `rgb / a` has no answer at a = 0 — nothing was covered, so there is no colour to
+    // recover. Dividing by a small epsilon instead (the obvious guard) turns any stray
+    // value into a number in the millions: invisible in the node's own preview, and it
+    // blows out the frame the first time the result is composited or blurred.
+    const shader = firstPass(premultiplyNode, { mode: "unpremultiply" }).shader;
+    expect(shader).toContain("select(vec3f(0.0), recovered, source.a > 1e-6)");
+  });
+
+  it("never modifies alpha, in either direction", () => {
+    // What is being converted is the convention for COLOUR; coverage is unchanged by both
+    // modes and neither clamps it. That is what makes the pair an exact inverse wherever
+    // alpha is non-zero — and the pair has to be exact, because the reason the node exists
+    // is the sandwich (premultiply -> blur -> unpremultiply). A round trip that shifted
+    // the picture would corrupt the very case it was added to fix.
+    const shader = firstPass(premultiplyNode).shader;
+    expect(shader).toContain("return vec4f(source.rgb * source.a, source.a);");
+    expect(shader).toContain(
+      "return vec4f(select(vec3f(0.0), recovered, source.a > 1e-6), source.a);",
+    );
+    expect(shader).not.toContain("clamp(source.a");
+  });
+
+  it("switches direction with a uniform, not a second shader (§V5)", () => {
+    // Both ends of the sandwich are the same pass with one number changed, so flipping a
+    // Premultiply to an Unpremultiply never rebuilds a pipeline.
+    const forward = firstPass(premultiplyNode);
+    const back = firstPass(premultiplyNode, { mode: "unpremultiply" });
+    expect(forward.uniforms?.["mode"]).toBe(0);
+    expect(back.uniforms?.["mode"]).toBe(1);
+    expect(back.shader).toBe(forward.shader);
   });
 });

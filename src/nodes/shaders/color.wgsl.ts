@@ -266,3 +266,47 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     reorderPick(a, b, params.outa),
   );
 }`;
+
+/**
+ * Premultiply / Unpremultiply (T281).
+ *
+ * WHAT IT IS FOR. The catalogue's alpha is STRAIGHT everywhere (§V56): colour channels
+ * carry colour at full strength, alpha carries coverage, and the two meet only in a
+ * composite. That convention keeps colour valid where coverage is partial — but every
+ * neighbourhood filter breaks on it. A Blur over a cutout averages the colour of pixels
+ * that are not there, so a white shape on a transparent field grows a halo of whatever
+ * garbage the transparent pixels happened to hold. Premultiplying first makes the
+ * uncovered pixels contribute nothing, and unpremultiplying afterwards puts the colour
+ * back on the straight-alpha footing the rest of the catalogue expects.
+ *
+ * ZERO COVERAGE RETURNS ZERO on the way back. `rgb / a` has no answer where a is 0 — there
+ * was no colour there to recover — and dividing by a small epsilon instead would turn a
+ * stray value into a number in the millions, invisible until it is composited and blows
+ * out the frame. Returning black is the one answer that stays finite and composites to
+ * nothing, which is what "not covered" means.
+ *
+ * ALPHA IS NEVER TOUCHED, by either mode, and neither is clamped. Coverage is not what is
+ * being converted here — the convention for COLOUR is — and leaving alpha exactly as it
+ * arrived is what makes the pair an exact inverse wherever alpha is non-zero. That matters
+ * because the intended use is a sandwich: premultiply, blur, unpremultiply. If the round
+ * trip were not the identity, the sandwich would change the picture in the very case it
+ * exists to fix.
+ */
+export const PREMULTIPLY_FRAGMENT_WGSL = `struct Params {
+  mode: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let source = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  if (params.mode > 0.5) {
+    // Unpremultiply. Where coverage is zero there is no colour to recover, so the answer
+    // is zero rather than an epsilon-divided number in the millions.
+    let recovered = source.rgb / max(source.a, 1e-6);
+    return vec4f(select(vec3f(0.0), recovered, source.a > 1e-6), source.a);
+  }
+  return vec4f(source.rgb * source.a, source.a);
+}`;

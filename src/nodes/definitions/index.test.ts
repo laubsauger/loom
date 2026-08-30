@@ -47,6 +47,7 @@ describe("core catalogue (T70, T40)", () => {
       "limit",
       "lookup",
       "reorder",
+      "premultiply",
       "blur",
       "edge",
       "convolve",

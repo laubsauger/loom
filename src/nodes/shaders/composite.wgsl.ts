@@ -6,9 +6,11 @@ import { WGSL_CHANNEL } from "./common.wgsl.ts";
  *
  * ALPHA CONVENTION, decided once for the whole catalogue: STRAIGHT (non-premultiplied)
  * alpha. Colour channels carry colour, alpha carries coverage, and the two are combined
- * only when compositing. TouchDesigner makes the same choice — it has an explicit
- * Premultiply TOP, which only makes sense if the default is not premultiplied. Every node
- * in this catalogue that writes alpha writes it straight.
+ * only when compositing. TouchDesigner makes the same choice, and offers the conversion
+ * as an operation on its Math TOP ("Multiply RGB by Alpha" / "Divide RGB by Alpha") rather
+ * than as the default. (An earlier version of this note cited a "Premultiply TOP", which
+ * a survey of all 149 TOPs found does not exist — §V186. Our equivalent is the Premultiply
+ * node, T281.) Every node in this catalogue that writes alpha writes it straight.
  *
  * COLOUR (§V56): all six operate on LINEAR working-space values. Adding or multiplying
  * encoded values would give a different (and wrong) picture, which is the practical reason

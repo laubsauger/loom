@@ -8,6 +8,7 @@ import {
   HSV_FRAGMENT_WGSL,
   LEVEL_FRAGMENT_WGSL,
   LOOKUP_FRAGMENT_WGSL,
+  PREMULTIPLY_FRAGMENT_WGSL,
   REORDER_FRAGMENT_WGSL,
   THRESHOLD_FRAGMENT_WGSL,
 } from "../shaders/color.wgsl.ts";
@@ -559,6 +560,81 @@ export const reorderNode: NodeDefinition = {
   },
 };
 
+/** Which way the conversion runs. Index order is what the shader branches on. */
+const PREMULTIPLY_MODE_OPTIONS = [
+  { value: "premultiply", label: "Premultiply (RGB x Alpha)" },
+  { value: "unpremultiply", label: "Unpremultiply (RGB / Alpha)" },
+] as const;
+
+/**
+ * Premultiply — convert between straight and premultiplied alpha (T281).
+ *
+ * WHY IT EXISTS. The catalogue is straight-alpha everywhere (§V56), which is the right
+ * default and has one sharp edge: every neighbourhood filter breaks on it. Blur a white
+ * cutout on a transparent field and the kernel averages in the colour of pixels that are
+ * not there, so the shape grows a halo. We took TD's straight-alpha convention without
+ * taking its escape hatch, and until now nothing in the catalogue could fix the result.
+ * The fix is a sandwich: Premultiply -> Blur -> Unpremultiply.
+ *
+ * WHERE IT LIVES, and why it is a node here rather than a mode somewhere. TD hangs these
+ * off its Math TOP (verified: the Math TOP's Operation menu carries "Multiply RGB by
+ * Alpha" and "Divide RGB by Alpha"). We have no Math TOP, and the nearest thing — Level —
+ * is a grade node whose whole predictability rests on the rule that colour is light, alpha
+ * is coverage, and the two never mix; its `opacity` touches alpha and nothing else. This
+ * operation exists precisely to VIOLATE that separation, deliberately, for the length of a
+ * filter sandwich. Hiding it inside the node whose contract it contradicts would make both
+ * harder to reason about, so it is its own node, named for the word people search for.
+ *
+ * It is one node with two modes rather than two nodes because the two are inverses used in
+ * pairs: seeing both ends of the sandwich named by the same node is what makes an
+ * unbalanced one obvious in a graph.
+ */
+export const premultiplyNode: NodeDefinition = {
+  type: "premultiply",
+  version: 1,
+  title: "Premultiply",
+  category: "color",
+  description:
+    "Multiplies RGB by alpha, or divides it back out. Wrap a blur in the pair to stop a cutout haloing.",
+  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    mode: {
+      type: "enum",
+      label: "Mode",
+      default: "premultiply",
+      options: [...PREMULTIPLY_MODE_OPTIONS],
+      description: "Premultiply on the way into a filter, unpremultiply on the way out.",
+    },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:premultiply`,
+      shader: PREMULTIPLY_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        mode: readEnumIndex(parameters, "mode", PREMULTIPLY_MODE_OPTIONS, "premultiply"),
+      },
+      nodeId,
+      label: "Premultiply",
+    };
+    return { passes: [pass] };
+  },
+};
+
 export const colorNodes: readonly NodeDefinition[] = [
   levelNode,
   hsvNode,
@@ -566,4 +642,5 @@ export const colorNodes: readonly NodeDefinition[] = [
   limitNode,
   lookupNode,
   reorderNode,
+  premultiplyNode,
 ];

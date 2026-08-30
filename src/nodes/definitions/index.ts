@@ -65,6 +65,7 @@ export {
   lookupNode,
   reorderNode,
   REORDER_SOURCE_OPTIONS,
+  premultiplyNode,
   colorNodes,
 } from "./color.ts";
 export {
