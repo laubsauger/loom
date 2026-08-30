@@ -312,7 +312,7 @@ export const mirrorNode: NodeDefinition = {
       default: 0,
       min: -180,
       max: 180,
-      unit: "deg",
+      unit: "degrees",
       description: "Angle of the fold line. Off-axis is what makes a kaleidoscope.",
     },
     extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
