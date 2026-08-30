@@ -38,12 +38,6 @@ export interface McpTransportsView {
 export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
   const registry = useMemo(() => createMcpTransportRegistry(), []);
 
-  // Publication is a side effect with a report, not a render value: it must happen once
-  // per surface, and the row it writes is what the panel subscribes to.
-  useEffect(() => {
-    registerWebMcp(surface, { registry });
-  }, [surface, registry]);
-
   /**
    * The surface is read through a REF, never a dependency.
    *
@@ -56,6 +50,17 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
    */
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
+
+  // Publication is a side effect with a report, not a render value — registered ONCE per
+  // registry, against the ref. B93 measured what keying this on `surface` did: the first
+  // run captured a surface whose ports were still `{}` (the backend had not arrived), and
+  // every re-run threw `InvalidStateError: Duplicate tool name` out of the host's
+  // `registerTool`, so the in-page agent kept the portless tools forever — able to draw,
+  // never to see. Same disease as B76, same cure: the transport outlives any one surface
+  // object and asks for the current one at call time.
+  useEffect(() => {
+    registerWebMcp(() => surfaceRef.current, { registry });
+  }, [registry]);
 
   /**
    * THE BRIDGE (T451) — the transport we ship, with no third party in it.

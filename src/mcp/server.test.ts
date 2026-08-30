@@ -7,6 +7,7 @@ import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createAgentToolSurface } from "../agent/surface.ts";
 import { createMcpConnection } from "./server.ts";
 import { registerWebMcp } from "./webmcp.ts";
+import { toolListings } from "./published-tools.ts";
 import { createMcpTransportRegistry } from "./connections.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
 import { layoutGraphInput } from "../agent/schemas.ts";
@@ -193,6 +194,74 @@ describe("WebMCP reports what it found (T397, §V338)", () => {
 
     expect(row(registry).state).toBe("connected");
     expect(row(registry).disconnect).toBeNull();
+  });
+});
+
+/**
+ * B93 — the SAME agent surface had DIFFERENT capabilities by TRANSPORT, which §V39
+ * forbids. Cause, measured in a live tab: the in-page registration CAPTURED the surface
+ * minted before the backend arrived (ports `{}`), and every re-registration after the
+ * real one existed threw `InvalidStateError: Duplicate tool name` out of the host's
+ * `registerTool` — so the model context kept the portless tools for the life of the
+ * page, and the agent could draw but never see. These pin the cure and the invariant.
+ */
+describe("WebMCP answers from the CURRENT surface (B93)", () => {
+  it("a call lands on the surface the provider returns NOW, not the one registration saw", async () => {
+    const first = harness();
+    const second = harness();
+    let live = first.surface;
+    const provided: Array<{ tools: Array<{ name: string; execute: (args: unknown) => Promise<unknown> }> }> = [];
+    const host = { navigator: { modelContext: { provideContext: (ctx: never) => provided.push(ctx) } } };
+    registerWebMcp(() => live, { host });
+
+    // The swap is the app's reality: the backend arrives, the surface is re-minted.
+    live = second.surface;
+    const addNode = provided[0]?.tools.find((tool) => tool.name === "add_node");
+    const result = (await addNode?.execute({ type: "solid", baseRevision: 0 })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(result.content[0]?.text ?? "{}").status).toBe("ok");
+    // The node landed in the CURRENT store; the captured-at-registration one stays empty.
+    expect(Object.keys(second.store.view.getGraph().nodes)).toHaveLength(1);
+    expect(Object.keys(first.store.view.getGraph().nodes)).toHaveLength(0);
+  });
+
+  it("tolerates a registerTool host that throws Duplicate on re-registration", async () => {
+    const { surface, store } = harness();
+    const registered = new Map<string, { execute: (args: unknown) => Promise<unknown> }>();
+    const host = {
+      navigator: {
+        modelContext: {
+          registerTool: (tool: { name: string; execute: (args: unknown) => Promise<unknown> }) => {
+            if (registered.has(tool.name)) throw new Error("InvalidStateError: Duplicate tool name");
+            registered.set(tool.name, tool);
+          },
+        },
+      },
+    };
+    registerWebMcp(() => surface, { host });
+    // The re-run React StrictMode and a surface re-mint both produce. Before the fix this
+    // threw out of the effect on the first tool and published nothing new either way.
+    expect(() => registerWebMcp(() => surface, { host })).not.toThrow();
+    expect(registered.size).toBe(surface.listTools().length);
+    const result = (await registered.get("add_node")?.execute({ type: "solid", baseRevision: 0 })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(JSON.parse(result.content[0]?.text ?? "{}").status).toBe("ok");
+    expect(Object.keys(store.view.getGraph().nodes)).toHaveLength(1);
+  });
+
+  it("V39 made mechanical: both transports publish the SAME names from one surface", () => {
+    const { surface } = harness();
+    const provided: Array<{ tools: Array<{ name: string }> }> = [];
+    const host = { navigator: { modelContext: { provideContext: (ctx: never) => provided.push(ctx) } } };
+    registerWebMcp(() => surface, { host });
+    const webmcpNames = provided[0]?.tools.map((tool) => tool.name);
+    // The bridge's wire listing (what stdio's tools/list serves when this tab attaches)
+    // and the in-page publication must be two spellings of surface.listTools() — a
+    // capability that depends on which pipe you arrived down is a bug, not a design.
+    expect(webmcpNames).toEqual(toolListings(surface).map((tool) => tool.name));
+    expect(webmcpNames).toEqual(surface.listTools().map((tool) => tool.name));
   });
 });
 

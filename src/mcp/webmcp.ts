@@ -67,11 +67,27 @@ export interface RegisterWebMcpOptions {
   readonly registry?: McpTransportRegistry;
 }
 
+/**
+ * B93: the surface may arrive as a PROVIDER, and in the app it must.
+ *
+ * Measured live (the reproduction the B93 report handed us): the app publishes its
+ * tools while the backend is still initialising, so a registration that CAPTURES the
+ * surface captures one whose ports are `{}` — and every re-registration after the real
+ * surface exists throws `InvalidStateError: Duplicate tool name` from the host's
+ * `registerTool` (140 of them in one session's console). The result was an in-page
+ * agent that could mutate the graph but never see what it drew: `render_preview`
+ * refused with "needs a read source that is not attached: preview" forever.
+ *
+ * So the execute path reads the surface AT CALL TIME through the provider — the same
+ * cure B76 applied to the bridge — and a duplicate registration is tolerated, because
+ * the first registration's tools are already live against the current surface.
+ */
 export function registerWebMcp(
-  surface: AgentToolSurface,
+  surface: AgentToolSurface | (() => AgentToolSurface),
   options: RegisterWebMcpOptions = {},
 ): WebMcpRegistration {
   const { registry } = options;
+  const current = typeof surface === "function" ? surface : () => surface;
   const context = detectModelContext(options.host ?? globalThis);
   if (context === null) {
     // §V338: the negative result is REPORTED, not merely returned. "This browser has no
@@ -91,7 +107,7 @@ export function registerWebMcp(
     return { registered: false, toolCount: 0 };
   }
 
-  const tools: WebMcpToolDescriptor[] = publishedTools(surface).map((tool) => {
+  const tools: WebMcpToolDescriptor[] = publishedTools(current()).map((tool) => {
     return {
       name: tool.name,
       description: tool.description,
@@ -101,7 +117,9 @@ export function registerWebMcp(
         // agent reached for — §V42's visibility is about what is happening, not only
         // about what finished.
         registry?.noteInvocation("webmcp", tool.name);
-        const result = await surface.callTool(tool.name, args ?? {});
+        // B93: the CURRENT surface, not the one registration captured — the ports the
+        // backend mounted after publication are the whole point of asking again.
+        const result = await current().callTool(tool.name, args ?? {});
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     };
@@ -111,7 +129,19 @@ export function registerWebMcp(
   if (typeof provide === "function") {
     provide({ tools });
   } else {
-    for (const tool of tools) context.registerTool?.(tool);
+    for (const tool of tools) {
+      try {
+        context.registerTool?.(tool);
+      } catch (error) {
+        // "Duplicate tool name": this page already registered it, and `registerTool`
+        // has no replace or unregister in the proposal. Harmless BECAUSE execute goes
+        // through the provider — the standing registration already answers from the
+        // current surface, so there is nothing stale to replace (B93). Anything ELSE
+        // stays loud: a swallowed schema rejection would be a tool that silently
+        // never existed.
+        if (!String(error).toLowerCase().includes("duplicate")) throw error;
+      }
+    }
   }
 
   registry?.publish({
