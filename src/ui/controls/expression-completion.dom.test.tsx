@@ -15,13 +15,13 @@ const EXPRESSION_SLOT: ParameterSlot = {
   bindings: { expression: { kind: "expression", source: "" } },
 };
 
-function renderPanel(onChange = vi.fn()) {
+function renderPanel(onChange = vi.fn(), withScope = true) {
   render(
     <ParameterModePanel
       label="Rotate"
       slot={EXPRESSION_SLOT}
       value={0}
-      scope={SCOPE}
+      {...(withScope ? { scope: SCOPE } : {})}
       nodeNames={["noise1", "lfo1"]}
       onChange={onChange}
     />,
@@ -71,5 +71,30 @@ describe("completion menu", () => {
     expect(slot.bindings.expression?.kind === "expression" && slot.bindings.expression.source).toBe(
       "time",
     );
+  });
+});
+
+describe("completion without a live scope (B37)", () => {
+  it("still offers the variable names when no scope is supplied", async () => {
+    // The bug: `scope` was an optional prop, the panel returned null without it, and
+    // nothing in the app ever passed one — so the menu could not appear at all, in any
+    // parameter, ever. An absent scope means "no live values to show", never "no
+    // completion". Rendered here EXACTLY as the app renders it: no scope prop.
+    const field = renderPanel(vi.fn(), false);
+    await userEvent.click(field);
+    await userEvent.type(field, "w");
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("walltime")]),
+    );
+  });
+
+  it("completes on Tab with no scope, so the feature is whole without wiring", async () => {
+    const field = renderPanel(vi.fn(), false);
+    await userEvent.click(field);
+    await userEvent.type(field, "walld");
+    await userEvent.tab();
+    expect((field as HTMLInputElement).value).toBe("walldelta");
   });
 });

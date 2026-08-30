@@ -1,4 +1,4 @@
-import { evaluateExpression } from "./evaluate.ts";
+import { evaluateExpression, scopeFromFrame } from "./evaluate.ts";
 
 /**
  * What the expression grammar ACCEPTS, discovered by asking it (§V150, §V105).
@@ -58,4 +58,24 @@ export function acceptedFunctions(): readonly string[] {
     if (calls.some((call) => evaluateExpression(call).ok)) accepted.push(name);
   }
   return accepted;
+}
+
+/**
+ * The variable names an expression may read, derived by ASKING `scopeFromFrame` rather than
+ * listing them (§V150 again — a hand-kept copy drifts the moment someone adds a clock).
+ *
+ * Names, not values: a completion menu can be useful before anything is running, and the
+ * caller supplies a live scope when it has one so the current value can be shown beside
+ * each name. Offering the names unconditionally is the difference between a menu that
+ * works and a menu that waits for wiring that may never arrive.
+ */
+export function frameVariableNames(): readonly string[] {
+  const zeroFrame = {
+    timeSeconds: 0,
+    deltaSeconds: 0,
+    frameIndex: 0,
+    mode: "realtime" as const,
+    randomSeed: 0,
+  };
+  return Object.keys(scopeFromFrame(zeroFrame)).sort();
 }

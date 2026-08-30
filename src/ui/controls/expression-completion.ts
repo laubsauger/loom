@@ -1,4 +1,4 @@
-import { acceptedFunctions } from "@domain/expressions/reference.ts";
+import { acceptedFunctions, frameVariableNames } from "@domain/expressions/reference.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 
 /**
@@ -48,7 +48,13 @@ function formatValue(value: number): string {
 export function completionAt(
   source: string,
   caret: number,
-  scope: ExpressionScope,
+  /**
+   * A LIVE scope shows each variable's current value beside its name. Omitting it still
+   * offers the names — derived from `scopeFromFrame`, never hand-kept — because a menu
+   * that waits for wiring is a menu that ships dead. That is not hypothetical: this
+   * completion shipped with `scope` optional and unwired, so it could never appear.
+   */
+  scope?: ExpressionScope,
   nodeNames: readonly string[] = [],
 ): CompletionState | null {
   const clamped = Math.max(0, Math.min(caret, source.length));
@@ -69,14 +75,18 @@ export function completionAt(
 
   const match = IDENTIFIER_BEFORE.exec(before);
   const prefix = match?.[0] ?? "";
+  const variables: CompletionCandidate[] =
+    scope === undefined
+      ? frameVariableNames().map((text) => ({ text, kind: "variable" as const }))
+      : Object.entries(scope)
+          .filter(([, value]) => typeof value === "number")
+          .map(([name, value]) => ({
+            text: name,
+            kind: "variable" as const,
+            detail: formatValue(value as number),
+          }));
   const candidates: CompletionCandidate[] = [
-    ...Object.entries(scope)
-      .filter(([, value]) => typeof value === "number")
-      .map(([name, value]) => ({
-        text: name,
-        kind: "variable" as const,
-        detail: formatValue(value as number),
-      })),
+    ...variables,
     ...acceptedFunctions().map((name) => ({
       text: name,
       kind: "function" as const,

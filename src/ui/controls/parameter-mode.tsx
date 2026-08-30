@@ -119,7 +119,10 @@ export function ParameterModePanel({
    * channel name would be worse than suggesting nothing.
    */
   const completion = useMemo(() => {
-    if (active !== "expression" || draft === null || scope === undefined) return null;
+    // NOT gated on `scope`: an absent scope means "no live values to show", never "no
+    // completion". Gating on it is how this shipped dead — the prop was optional, nothing
+    // supplied it, and the menu could not appear (§V272).
+    if (active !== "expression" || draft === null) return null;
     return completionAt(draft, caret, scope, nodeNames ?? []);
   }, [active, draft, caret, scope, nodeNames]);
   const text = draft ?? payloadText(slot.bindings[active]);
