@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   graphPatchOperationSchema as domainGraphPatchOperationSchema,
-  parameterValueSchema,
+  storedParameterSchema,
 } from "@domain/types/schemas.ts";
 
 /**
@@ -39,7 +39,17 @@ const portId = z.string().min(1);
 
 const portRef = z.object({ nodeId: nodeRef, portId }).strict();
 
-const parameters = z.record(parameterValueSchema);
+/**
+ * What a parameter may be SET to, through the single-edit tools (T314, §V107, §V215).
+ *
+ * `StoredParameter`, not `ParameterValue`: a parameter is a mode envelope as well as a
+ * value, and it has been since T202. This took a bare value until now, so an agent could
+ * write a NUMBER and could not write the EXPRESSION that produces one — through the tool
+ * named for setting parameters, while `apply_graph_patch` (which shares the document's
+ * own operation schema) accepted both. A mode V107 promises every parameter has was
+ * reachable by one agent route and not the other, which is a difference nobody chose.
+ */
+const parameters = z.record(storedParameterSchema);
 
 /**
  * The domain's operation shape, plus the one rule that is specific to an AGENT.

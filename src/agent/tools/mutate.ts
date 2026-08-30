@@ -1,5 +1,5 @@
 import type { GraphPatchOperation, TempId } from "@domain/types/patch.ts";
-import type { ParameterValue } from "@domain/types/parameters.ts";
+import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { layoutGraph, placeRelative } from "@domain/graph/layout.ts";
@@ -121,7 +121,9 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
 function operationsForAdd(
   input: {
     type: string;
-    parameters?: Record<string, ParameterValue> | undefined;
+    // T314: `StoredParameter`, so an agent can create a node with a parameter already in
+    // expression|bind|driven mode — the same envelope the document stores (§V107).
+    parameters?: Record<string, StoredParameter> | undefined;
   },
   position: { x: number; y: number },
 ): GraphPatchOperation {

@@ -115,6 +115,48 @@ describe("the agent patch schema is the domain schema (T309)", () => {
     expect(store.view.getGraph().nodes[nodeId]?.size).toEqual({ width: 320, height: 240 });
   });
 
+  it("lets `set_parameters` set a MODE, not only a value (T314, §V107, §V215)", async () => {
+    // The asymmetry T309 left behind: `apply_graph_patch` shares the document's operation
+    // schema and took the mode envelope, while the tool actually NAMED for setting
+    // parameters took a bare value. So an agent could write a number, and could not write
+    // the expression that produces one, depending on which door it used.
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("n"),
+      now: () => "2026-08-30T00:00:00.000Z",
+    });
+    const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
+    const surface: AgentToolSurface = createAgentToolSurface({
+      bus,
+      actor: { kind: "agent", id: "claude" } satisfies Actor,
+      projectId: "project-1",
+      now: () => 1_000,
+    });
+
+    const added = await surface.callTool("add_node", { type: "test.blur" });
+    expect(added.status).toBe("ok");
+    const nodeId = Object.keys(store.view.getGraph().nodes)[0] as string;
+
+    const set = await surface.callTool("set_parameters", {
+      nodeId,
+      parameters: {
+        radius: {
+          mode: "expression",
+          bindings: { expression: { kind: "expression", source: "time * 2" } },
+        },
+      },
+    });
+    expect(set.status).toBe("ok");
+    expect(store.view.getGraph().nodes[nodeId]?.parameters["radius"]).toEqual({
+      mode: "expression",
+      bindings: { expression: { kind: "expression", source: "time * 2" } },
+    });
+
+    // A bare value still works — this widened the envelope, it did not replace it.
+    const plain = await surface.callTool("set_parameters", { nodeId, parameters: { radius: 12 } });
+    expect(plain.status).toBe("ok");
+    expect(store.view.getGraph().nodes[nodeId]?.parameters["radius"]).toBe(12);
+  });
+
   it("cannot move the human's camera without a grant (T315, §V38)", async () => {
     // T309 made `setViewport` reachable for an agent along with the rest of the union,
     // and flagged that as a decision rather than a conclusion. This is the answer: the
