@@ -200,6 +200,17 @@ export const pointKernelNode: NodeDefinition = {
       description:
         "Optional upstream point set. Attributes the schema shares with it are read from upstream; the rest keep this node's own state.",
     },
+    {
+      // T477: the advection FIELD — sparks carried by a fluid, the 2D↔3D crossing.
+      // Optional and use-detected: an unwired field costs nothing, and a kernel that
+      // calls fieldAt with nothing wired is refused by name (§V288/§V309).
+      id: "field",
+      label: "Field",
+      optional: true,
+      type: RGBA_TEXTURE,
+      description:
+        "Optional texture the kernel samples with fieldAt(position) — clip-space xy mapped to uv, exactly as Texture To Attribute maps it. Read with textureLoad, so data fields work on Tier B (§V57).",
+    },
   ],
   outputs: [
     {
@@ -245,7 +256,7 @@ export const pointKernelNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
     },
     group: {
       type: "string",
@@ -343,6 +354,7 @@ export const pointKernelNode: NodeDefinition = {
        non-grid (or absent) topology supplies nothing, and codegen refuses by name only if
        the kernel asks (§V288/§V309: costing nothing when unused is the whole point). */
     const incomingTopology = parseTopology(incoming?.topology);
+    const fieldTexture = inputs["field"];
     const module = generateKernelModule({
       attributes,
       reads: names,
@@ -352,6 +364,7 @@ export const pointKernelNode: NodeDefinition = {
       ...(incomingTopology?.kind === "grid"
         ? { dim: { cols: incomingTopology.cols, rows: incomingTopology.rows } }
         : {}),
+      ...(fieldTexture === undefined ? {} : { field: true }),
     });
     if (!module.ok) {
       return {
@@ -406,6 +419,11 @@ export const pointKernelNode: NodeDefinition = {
         // new machinery at all.
         ...pointKernelValueUniforms(module.usesValues, parameters),
       },
+      // T477: exactly when the module declared the texture (§V288's mirror hazard —
+      // vgpu binds by name, and a declared texture with no binding fails loudly).
+      ...(module.usesField && fieldTexture !== undefined
+        ? { textures: [{ binding: "fieldTexture", resourceId: fieldTexture.resource, sampled: "unfiltered" as const }] }
+        : {}),
       uniformBinding: "kernelFrame",
       nodeId,
     };

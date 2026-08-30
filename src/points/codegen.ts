@@ -37,6 +37,14 @@ import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
  * LIED). The grid is already travelling — the topology string rides the pointset edge
  * (T296/T302) — it was simply not reachable from inside a kernel. Same detection, same
  * zero cost when unused.
+ *
+ * `ctx.value1` … `ctx.value4` (T479) are the third, and they close the last absent
+ * channel: `kernel`, `attributes` and `group` are all `compileTime`, so before this every
+ * point animation's SHAPE lived in WGSL rather than in the graph — an LFO could drive a
+ * kernel's uniforms but never its behaviour. Each slot is an ordinary DRIVABLE parameter
+ * on the node, so the channel reference is stored where the value graph already stores
+ * one and is rewritten by rename like every other (§V128/§V316, kind 2). See
+ * `VALUE_REFERENCE` for why the name is NOT written inside the WGSL.
  */
 
 /** Bumped when the generated Point/PointCtx/process signature changes shape (§V77). */
@@ -119,6 +127,13 @@ export interface KernelModuleRequest {
    * rather than handed zeros (§V288).
    */
   readonly dim?: { readonly cols: number; readonly rows: number };
+  /**
+   * T477: a texture FIELD is wired to the kernel node. When the kernel calls
+   * `fieldAt(position)`, the module declares the texture binding and the helper; a
+   * kernel that calls it with NO field wired is refused by name (§V288), and a wired
+   * field an incurious kernel never samples costs nothing (§V309).
+   */
+  readonly field?: boolean;
 }
 
 export interface KernelModule {
@@ -136,6 +151,18 @@ export interface KernelModule {
    * dropped (the catalogue's uniform sweep is what holds the two together).
    */
   readonly usesPointer: boolean;
+  /**
+   * T479: the value slots this module declared, ascending. The emitting node MUST mirror
+   * exactly these into the pass's `uniforms` record — same hazard as `usesPointer`, since
+   * vgpu matches by name and a member with no value reads zero in silence.
+   */
+  readonly usesValues: ReadonlyArray<number>;
+  /**
+   * T477: the kernel samples `fieldAt(...)` and a field is wired. The emitting node
+   * MUST bind the texture as `fieldTexture` exactly when this is true — vgpu matches
+   * by name, and a declared texture with no binding fails loudly at pass build.
+   */
+  readonly usesField: boolean;
 }
 
 export interface KernelModuleFailure {
@@ -165,6 +192,14 @@ const PROCESS_SIGNATURE = /fn\s+process\s*\(\s*\w+\s*:\s*Point\s*,\s*\w+\s*:\s*P
 const POINTER_REFERENCE = /\.\s*pointer\b/;
 
 /**
+ * T477: the advection FIELD, detected the way the pointer and the grid are — by use.
+ * `fieldAt(p.position)` samples the wired texture with the SAME clip→uv mapping
+ * `textureToAttribute` uses (T262/T417), so the bridge and the in-kernel read of one
+ * field agree texel for texel; two mappings for one idea would be §V349's bug.
+ */
+const FIELD_REFERENCE = /\bfieldAt\s*\(/;
+
+/**
  * T472 (§V309, §V349): the GRID, detected exactly the way the pointer is, for exactly
  * the same reason — an unconditional member would rewrite the ctx struct and the ctx
  * constructor of every point graph ever saved.
@@ -186,6 +221,68 @@ const POINTER_REFERENCE = /\.\s*pointer\b/;
  * to refuse. The kernel author writes the division; `ctx.dim` supplies the numbers.
  */
 const DIM_REFERENCE = /\.\s*dim\b/;
+
+/**
+ * T479: how many live value-graph slots a point kernel can reach. Four is a judgement,
+ * and it is stated rather than defaulted: one (the `customWgsl` precedent) is a wall for
+ * anything with more than a single knob, and a dozen is inspector clutter on every kernel
+ * in the catalogue. Unused slots cost nothing in the WGSL (§V309, per-slot) and are
+ * `inactiveWhen`-hidden in the inspector by the SAME detection, so the visible surface is
+ * exactly what the kernel asked for.
+ */
+export const POINT_KERNEL_VALUE_SLOTS = 4;
+
+/**
+ * T479 (§V309, §V316, B40) — the VALUE GRAPH in `PointCtx`, detected like the other two.
+ *
+ * THE DESIGN QUESTION, ANSWERED WHERE IT LIVES: how does a kernel NAME a channel?
+ *
+ * It does not, and that is the point. The name (`lfo1`, `mouse1:x`) is stored in an
+ * ordinary DRIVEN parameter slot on the node — `value1` … `value4` — and the kernel reads
+ * the slot, not the name. A name written inside the kernel's WGSL would be a FIFTH
+ * reference currency (§V316), and the currency has five consumers today, not one: the
+ * rename rewrite, the strand count on a label clear, `documentLiveness`'s producer walk
+ * (B63), the editor's reference lines (T248), and the dangling-name refusal. Wiring four
+ * of five is precisely B40 — where `driven` channels were a reference nobody rewrote, and
+ * a rename silently froze every parameter naming the node, with no diagnostic because an
+ * unattached channel is deliberately info-severity (§V317).
+ *
+ * A driven slot is already wired into all five. So the reference stays in the parameter,
+ * where rename can reach it, and the WGSL holds an ORDINAL that no rename can orphan.
+ *
+ * The cost is honest and worth naming: the slot names carry no meaning, so a kernel's
+ * comment has to say what `value2` is. The alternative buys that meaning with a class of
+ * silent breakage we spent this morning removing.
+ */
+const VALUE_REFERENCE = /\.\s*value(\d+)\b/g;
+
+/** Slot ordinals a kernel actually reads, ascending. Out-of-range ordinals come back too. */
+function referencedValueSlots(...sources: ReadonlyArray<string>): number[] {
+  const found = new Set<number>();
+  for (const source of sources) {
+    VALUE_REFERENCE.lastIndex = 0;
+    for (const match of source.matchAll(VALUE_REFERENCE)) found.add(Number(match[1]));
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+/**
+ * The parameter key for slot `n`, and the only place the spelling is written. The node
+ * manifest, the uniform mirror and the inspector's applicability all call this, so
+ * `value1` cannot come to mean two different things.
+ */
+export function pointKernelValueKey(slot: number): string {
+  return `value${slot}`;
+}
+
+/**
+ * Whether a kernel/group/hook text reads slot `n` — exported because the node's
+ * `inactiveWhen` must answer it with the SAME reader codegen uses. A second regex here
+ * would be a parameter that looks active and is not, or vice versa (§V288).
+ */
+export function kernelReadsValueSlot(slot: number, ...sources: ReadonlyArray<string>): boolean {
+  return referencedValueSlots(...sources).includes(slot);
+}
 
 /**
  * PCG-based hash, the deterministic core of §V74. Everything about it is fixed on
@@ -261,6 +358,29 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
     errors.push(`ctx.dim needs whole positive dimensions; the edge published ${dim.cols}×${dim.rows}`);
   }
 
+  /* T477: the kernel samples a field nothing supplies. Refuse BY NAME — a helper that
+     silently returned zeros would advect every point nowhere, which is a picture, and a
+     plausible one (§V288). */
+  const usesField = FIELD_REFERENCE.test(kernel) || FIELD_REFERENCE.test(groupSource);
+  if (usesField && request.field !== true) {
+    errors.push(
+      "kernel calls fieldAt(...), but nothing is wired to the field input — " +
+        "fieldAt samples that texture at a position, clip-space xy mapped to uv exactly as " +
+        "Texture To Attribute maps it (T262). Wire a texture to the field input.",
+    );
+  }
+
+  /* T479: an ordinal outside the declared slots is refused BY NAME here rather than left
+     to arrive as Dawn's "struct PointCtx has no member named 'value9'" (§V288). */
+  const valueSlots = referencedValueSlots(kernel, groupSource);
+  const outOfRange = valueSlots.filter((slot) => slot < 1 || slot > POINT_KERNEL_VALUE_SLOTS);
+  if (outOfRange.length > 0) {
+    errors.push(
+      `kernel reads ctx.value${outOfRange.join(", ctx.value")}, but a point kernel has ${POINT_KERNEL_VALUE_SLOTS} value slots — ` +
+        `ctx.value1 through ctx.value${POINT_KERNEL_VALUE_SLOTS}, each a drivable parameter on this node (T479).`,
+    );
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   // The Point struct carries every attribute the kernel touches — reads, plus writes
@@ -307,7 +427,26 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
       access: "read",
       role: "live",
     });
+    nextBinding += 1;
   }
+
+  /* T477: the field texture takes the next slot AFTER every storage binding, and the
+     helper mirrors the bridge's mapping verbatim — clip [-1,1] → uv [0,1] → texel,
+     clamped so an off-screen point still samples the edge. */
+  const fieldDeclarations =
+    usesField && request.field === true
+      ? `@group(0) @binding(${nextBinding}) var fieldTexture: texture_2d<f32>;
+
+/* T477: sample the wired field at a point's position — the SAME mapping
+   Texture To Attribute uses (T262), so the bridge and this read agree texel for texel. */
+fn fieldAt(position: vec3f) -> vec4f {
+  let dims = vec2f(textureDimensions(fieldTexture, 0));
+  let uv = clamp(position.xy * 0.5 + vec2f(0.5), vec2f(0.0), vec2f(1.0));
+  return textureLoad(fieldTexture, vec2i(uv * (dims - vec2f(1.0))), 0);
+}
+
+`
+      : "";
 
   const structFields = touched
     .map((attribute) =>
@@ -413,13 +552,25 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
       ? `, PointDim(${dim.cols}u, ${dim.rows}u, index % ${dim.cols}u, index / ${dim.cols}u)`
       : "";
 
+  /* T479: one f32 per slot the kernel actually named, appended last for the same reason
+     the pointer was — nothing that existed before this moves. Per-SLOT, so a kernel
+     reading only `ctx.value3` carries one member, not four (§V309 at its finest grain). */
+  const frameValues = valueSlots.map((slot) => `\n  value${slot}: f32,`).join("");
+  const ctxValues =
+    valueSlots.length === 0
+      ? ""
+      : `\n  /* T479: live value-graph slots — each is a DRIVABLE parameter on this node, so\n     an LFO, the mouse or an audio channel changes what the kernel DOES, not just what\n     it is scaled by. The channel NAME lives in the parameter, where rename reaches it. */${valueSlots
+          .map((slot) => `\n  value${slot}: f32,`)
+          .join("")}`;
+  const valueArguments = valueSlots.map((slot) => `, kernelFrame.value${slot}`).join("");
+
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
   timeSeconds: f32,
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${framePointer}
+  count: u32,${framePointer}${frameValues}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -436,12 +587,12 @@ ${dimStruct}struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${ctxPointer}${ctxDim}
+  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}
 };
 
 ${RNG_WGSL}
 
-${kernel}
+${fieldDeclarations}${kernel}
 ${groupFunction}
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -449,7 +600,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument});
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments});
 ${invoke}
 ${stores}
 }
@@ -462,6 +613,8 @@ ${stores}
     contractVersion: lifecycle === undefined ? POINT_KERNEL_CONTRACT_VERSION : ADVANCED_KERNEL_CONTRACT_VERSION,
     workgroupSize,
     usesPointer,
+    usesValues: valueSlots,
+    usesField: usesField && request.field === true,
   };
 }
 
@@ -509,6 +662,15 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
         "born and killed, so there are no fixed cols×rows to index (T472).",
     );
   }
+  /* T479: the hook is a second pass on the SAME node, so it reaches the same four slots —
+     which is what makes "spawn with the speed the LFO says" expressible at all. */
+  const hookValueSlots = referencedValueSlots(request.hook);
+  const hookOutOfRange = hookValueSlots.filter((slot) => slot < 1 || slot > POINT_KERNEL_VALUE_SLOTS);
+  if (hookOutOfRange.length > 0) {
+    errors.push(
+      `spawn hook reads ctx.value${hookOutOfRange.join(", ctx.value")}, but a point kernel has ${POINT_KERNEL_VALUE_SLOTS} value slots (T479).`,
+    );
+  }
   const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
   if (errors.length > 0) return { ok: false, errors };
 
@@ -535,7 +697,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}
+  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -558,7 +720,7 @@ struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}
+  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}${hookValueSlots.length === 0 ? "" : `\n  /* T479: the same live value slots the kernel reads, on the same node. */${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}`}
 };
 
 ${RNG_WGSL}
@@ -577,13 +739,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   var p: Point;
 ${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
-  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""});
+  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")});
   let q = spawn(p, ctx);
 ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
 }
 `;
 
-  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer };
+  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesField: false };
 }
 
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */

@@ -235,3 +235,56 @@ describe("pointKernel as a processor (T401, B57)", () => {
     });
   });
 });
+
+describe("the field input reaches the kernel's pass (T477)", () => {
+  const advect = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position += fieldAt(p.position).xyz * ctx.delta;
+  return q;
+}`;
+  const attrs = JSON.stringify([
+    { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  ]);
+
+  it("a wired field binds as the pass's texture; the plan compiles end to end", () => {
+    const compiled = compile(
+      chainGraph(
+        [
+          node("flow", "noise", {}),
+          node("sim", "pointKernel", { capacity: 64, attributes: attrs, kernel: advect }),
+          node("draw", "renderPoints", { count: 64 }),
+          node("out", "output", {}),
+        ],
+        [
+          ["flow", "out", "sim", "field"],
+          ["sim", "out", "draw", "points"],
+          ["draw", "out", "out", "input"],
+        ],
+      ),
+    );
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const pass = kernelPass(compiled, "sim");
+    const texture = pass.textures?.find((entry) => entry.binding === "fieldTexture");
+    expect(texture).toBeDefined();
+    expect(texture?.resourceId).toContain("flow");
+  });
+
+  it("the same kernel with no field wired refuses by name — never zeros (§V288)", () => {
+    const compiled = compile(
+      chainGraph(
+        [
+          node("sim", "pointKernel", { capacity: 64, attributes: attrs, kernel: advect }),
+          node("draw", "renderPoints", { count: 64 }),
+          node("out", "output", {}),
+        ],
+        [
+          ["sim", "out", "draw", "points"],
+          ["draw", "out", "out", "input"],
+        ],
+      ),
+    );
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.points.kernel");
+    expect(refusal?.message).toContain("fieldAt");
+    expect(refusal?.message).toContain("field input");
+  });
+});

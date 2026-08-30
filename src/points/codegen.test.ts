@@ -7,7 +7,13 @@ import {
   validateAttributes,
   type PointAttributeSchema,
 } from "./attributes.ts";
-import { generateKernelModule, POINT_KERNEL_CONTRACT_VERSION } from "./codegen.ts";
+import {
+  generateKernelModule,
+  generateSpawnHookModule,
+  kernelReadsValueSlot,
+  POINT_KERNEL_CONTRACT_VERSION,
+  POINT_KERNEL_VALUE_SLOTS,
+} from "./codegen.ts";
 
 /**
  * T117 — the attribute→WGSL codegen module, tested as the separate unit the spec made
@@ -414,5 +420,186 @@ describe("the grid in PointCtx (T472)", () => {
     expect(module.wgsl).toContain("  count: u32,\n  pointer: vec4f,\n};");
     expect(module.wgsl).not.toContain("dim: vec2u");
     expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.pointer, PointDim(16u, 4u,");
+  });
+});
+
+/**
+ * T479 — the VALUE GRAPH in `PointCtx` (§V309, §V143).
+ *
+ * The gap: `kernel`, `attributes` and `group` are all `compileTime`, so every point
+ * animation's SHAPE lived in WGSL rather than in the graph. An LFO could scale a kernel's
+ * uniforms; it could not change what the kernel DID. This is T367's counterpart — the
+ * pointer was one absent channel and the value graph was the other.
+ *
+ * The slots are ORDINALS, not names, and that is the design (see `VALUE_REFERENCE`): the
+ * channel name lives in a drivable parameter, where §V128's rename rewrite already reaches
+ * it, so no rename can orphan a reference buried in a shader blob (B40's family).
+ */
+describe("the value graph in PointCtx (T479)", () => {
+  const request = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position", "velocity"],
+    kernel: GRAVITY_KERNEL,
+  };
+
+  const VALUE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* The SHAPE of the motion is the live value, not a constant compiled into the text. */
+  q.velocity += vec3f(0.0, -ctx.value2, 0.0) * ctx.delta;
+  q.position += q.velocity * ctx.delta;
+  return q;
+}`;
+
+  it("declares only the slots the kernel names, in both structs and the constructor", () => {
+    const module = generateKernelModule({ ...request, kernel: VALUE_KERNEL });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    // PER-SLOT, not all four: a kernel reading one slot carries one f32.
+    expect(module.usesValues).toEqual([2]);
+    expect(module.wgsl).toContain("  count: u32,\n  value2: f32,\n};");
+    expect(module.wgsl).toContain("  value2: f32,\n};");
+    expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.value2);");
+    expect(module.wgsl).not.toContain("value1");
+    expect(module.wgsl).not.toContain("value3");
+  });
+
+  it("collects several slots in ascending order, however the kernel spells them", () => {
+    const many = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position += vec3f(ctx.value3, ctx.value1, ctx.value3) * ctx.value4;
+  return q;
+}`;
+    const module = generateKernelModule({ ...request, kernel: many });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesValues).toEqual([1, 3, 4]);
+    expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.value1, kernelFrame.value3, kernelFrame.value4);");
+  });
+
+  it("a GROUP predicate over a slot brings it in on its own", () => {
+    const module = generateKernelModule({ ...request, group: "p.position.y > ctx.value1" });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesValues).toEqual([1]);
+    expect(module.wgsl).toContain("value1: f32,");
+  });
+
+  it("REFUSES an ordinal outside the declared slots by name, not by Dawn (§V288)", () => {
+    const module = generateKernelModule({
+      ...request,
+      kernel: VALUE_KERNEL.replace("ctx.value2", "ctx.value9"),
+    });
+    expect(module.ok).toBe(false);
+    if (module.ok) throw new Error("expected a refusal");
+    expect(module.errors.join(" ")).toContain("ctx.value9");
+    expect(module.errors.join(" ")).toContain(`ctx.value${POINT_KERNEL_VALUE_SLOTS}`);
+  });
+
+  it("generates EXACTLY the pre-T479 text for a kernel that names no slot (§V309)", () => {
+    const module = generateKernelModule(request);
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesValues).toEqual([]);
+    // Not a bare "value" — the RNG helper's own parameter is called that. The claim is
+    // that no SLOT member exists.
+    expect(module.wgsl).not.toMatch(/\bvalue\d\b/);
+    expect(module.wgsl).toContain(`struct KernelFrame {
+  timeSeconds: f32,
+  deltaSeconds: f32,
+  frameIndex: u32,
+  seed: u32,
+  count: u32,
+};`);
+    expect(module.wgsl).toContain(
+      "  let ctx = PointCtx(index, kernelFrame.count, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);",
+    );
+  });
+
+  it("`kernelReadsValueSlot` is the reader the inspector shares, so a knob cannot lie", () => {
+    // The applicability rule and the codegen emission MUST agree — an active knob the
+    // module never declared writes a uniform nothing reads, and an inactive one hides a
+    // slot the kernel is really using (§V220/§V360).
+    for (let slot = 1; slot <= POINT_KERNEL_VALUE_SLOTS; slot += 1) {
+      const module = generateKernelModule({ ...request, kernel: VALUE_KERNEL });
+      if (!module.ok) throw new Error(module.errors.join("; "));
+      expect(kernelReadsValueSlot(slot, VALUE_KERNEL, ""), `slot ${slot}`).toBe(
+        module.usesValues.includes(slot),
+      );
+    }
+  });
+
+  it("the SPAWN HOOK reaches the same slots — it is a second pass on the same node", () => {
+    const hook = `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  q.velocity = q.velocity * ctx.value4;
+  return q;
+}`;
+    const module = generateSpawnHookModule({
+      attributes: [...SCHEMA, { name: "flags", type: "u32", default: [1] }],
+      flagsAttribute: "flags",
+      hook,
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesValues).toEqual([4]);
+    expect(module.wgsl).toContain("value4: f32,");
+    expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.value4);");
+
+    const plain = generateSpawnHookModule({
+      attributes: [...SCHEMA, { name: "flags", type: "u32", default: [1] }],
+      flagsAttribute: "flags",
+      hook: hook.replace("* ctx.value4", "* 2.0"),
+    });
+    if (!plain.ok) throw new Error(plain.errors.join("; "));
+    expect(plain.usesValues).toEqual([]);
+    expect(plain.wgsl).not.toMatch(/\bvalue\d\b/);
+  });
+});
+
+describe("the advection FIELD (T477, §V288/§V309)", () => {
+  const fieldKernel = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position += fieldAt(p.position).xyz * ctx.delta;
+  return q;
+}`;
+
+  it("a kernel that samples fieldAt with a field wired gets the binding and the helper", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position", "velocity"],
+      kernel: fieldKernel,
+      field: true,
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesField).toBe(true);
+    // The texture takes the slot AFTER every storage binding, and the helper mirrors
+    // the bridge's clip→uv mapping verbatim (T262 — one mapping for one idea, §V349).
+    const last = module.buffers[module.buffers.length - 1]?.binding ?? 0;
+    expect(module.wgsl).toContain(`@group(0) @binding(${last + 1}) var fieldTexture`);
+    expect(module.wgsl).toContain("position.xy * 0.5 + vec2f(0.5)");
+    expect(module.wgsl).toContain("fn fieldAt(position: vec3f) -> vec4f");
+  });
+
+  it("a kernel that samples fieldAt with NOTHING wired is refused by name", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position", "velocity"],
+      kernel: fieldKernel,
+    });
+    expect(module.ok).toBe(false);
+    if (module.ok) return;
+    expect(module.errors.join(" ")).toContain("fieldAt");
+    expect(module.errors.join(" ")).toContain("field input");
+  });
+
+  it("a wired field an incurious kernel never samples costs nothing (§V309)", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position", "velocity"],
+      kernel: GRAVITY_KERNEL,
+      field: true,
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesField).toBe(false);
+    expect(module.wgsl).not.toContain("fieldTexture");
   });
 });
