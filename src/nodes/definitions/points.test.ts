@@ -459,3 +459,57 @@ describe("color in map mode — per-point colour on the compound head (T364)", (
     expect(wrongType.diagnostics?.[0]?.message).toContain('"size" is f32');
   });
 });
+
+describe("the draw-time group (T333)", () => {
+  const edge = {
+    points: {
+      pairs: {
+        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
+        life: { pair: "scratch:sim:life", half: "write" as const, type: "f32" },
+      },
+      capacity: 64,
+      topology: "points",
+    },
+  };
+  const compile = (group: string) =>
+    renderPointsNode.compile(
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "sim" },
+        pointsets: edge,
+        parameters: { count: 64, group },
+      }),
+    );
+
+  it("binds exactly the attributes the predicate references, typed from the edge", () => {
+    const result = compile("p.life < 0.5 && p.position.y > 0.0");
+    expect(result.diagnostics ?? []).toEqual([]);
+    const pass = result.passes[0] as { shader: string; buffers: Array<{ binding: string; resourceId: string }> };
+    expect(pass.shader).toContain("group_life: array<f32>");
+    expect(pass.shader).toContain("group_position: array<vec3f>");
+    expect(pass.shader).toContain("return (p.life < 0.5 && p.position.y > 0.0)");
+    expect(pass.buffers).toContainEqual({ binding: "group_life", resourceId: "scratch:sim:life", half: "write" });
+  });
+
+  it("refuses an unknown attribute by name, listing what the pointset provides", () => {
+    const result = compile("p.age > 1.0");
+    expect(result.passes).toEqual([]);
+    expect(result.diagnostics?.[0]?.code).toBe("node.points.group");
+    expect(result.diagnostics?.[0]?.suggestion).toContain("life, position");
+  });
+
+  it("refuses a predicate that references nothing — it would gate on a constant", () => {
+    const result = compile("1.0 > 0.5");
+    expect(result.diagnostics?.[0]?.message).toContain("references no attribute");
+  });
+
+  it("empty group leaves the shipped shader byte-identical (§V309, fifth stage)", () => {
+    const result = renderPointsNode.compile(
+      compileContext({ nodeId: "draw", inputs: ["points"], sources: { points: "sim" }, pointsets: edge, parameters: { count: 64 } }),
+    );
+    const pass = result.passes[0] as { shader: string };
+    expect(pass.shader).not.toContain("groupMatch");
+    expect(pass.shader).not.toContain("GroupPoint");
+  });
+});

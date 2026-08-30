@@ -1,11 +1,11 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import { viewProjection } from "../../domain/geometry/camera.ts";
-import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL } from "../shaders/render-instances.wgsl.ts";
+import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL, renderInstancesWgsl } from "../shaders/render-instances.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { countedDrawSupport, pointPairId } from "./points.ts";
+import { countedDrawSupport, pointPairId, resolveGroupPredicate } from "./points.ts";
 
 /**
  * RenderInstances (T299): a procedural primitive on every point — Houdini's copy-to-
@@ -79,6 +79,14 @@ export const renderInstancesNode: NodeDefinition = {
     fov: { type: "number", label: "FOV", default: 60, min: 1, max: 179, unit: "degrees" },
     near: { type: "number", label: "Near", default: 0.1, min: 0.001 },
     far: { type: "number", label: "Far", default: 100, min: 0.01 },
+    group: {
+      type: "string",
+      label: "Group",
+      default: "",
+      compileTime: true,
+      description:
+        "T333: draw only matching points — a WGSL predicate over p.<attribute>. Referenced attributes bind on demand from the edge. Empty = all.",
+    },
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
@@ -115,6 +123,17 @@ export const renderInstancesNode: NodeDefinition = {
       far: readNumber(parameters, "far", 100),
     });
 
+    // T333: the draw-time group. Excluded instances collapse to zero-area primitives.
+    const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
+    let groupPredicate:
+      | { expression: string; binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }> }
+      | undefined;
+    if (groupSource !== "") {
+      const resolvedGroup = resolveGroupPredicate(nodeId, groupSource, points.pointset);
+      if ("refusal" in resolvedGroup) return resolvedGroup.refusal;
+      groupPredicate = resolvedGroup;
+    }
+
     // T322: a counted edge draws indirectly off the GPU-resident live count.
     const counted = countedDrawSupport(nodeId, points.pointset, {
       vertexCount: INSTANCE_VERTEX_COUNT,
@@ -123,7 +142,15 @@ export const renderInstancesNode: NodeDefinition = {
     const pass: DrawPassDescriptor = {
       kind: "draw",
       id: `${nodeId}:instances`,
-      shader: RENDER_INSTANCES_WGSL,
+      shader:
+        groupPredicate === undefined
+          ? RENDER_INSTANCES_WGSL
+          : renderInstancesWgsl({
+              group: {
+                expression: groupPredicate.expression,
+                binds: groupPredicate.binds.map(({ attribute, type }) => ({ attribute, type })),
+              },
+            }),
       target,
       topology: "triangle-list",
       instances:
@@ -144,6 +171,13 @@ export const renderInstancesNode: NodeDefinition = {
           resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
           half: points.pointset?.pairs["position"]?.half ?? "write",
         },
+        ...(groupPredicate === undefined
+          ? []
+          : groupPredicate.binds.map((bind) => ({
+              binding: `group_${bind.attribute}`,
+              resourceId: bind.pair,
+              half: bind.half,
+            }))),
       ],
       uniforms: {
         viewProjection: Array.from(matrix),

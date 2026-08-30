@@ -18,7 +18,46 @@
  */
 export const INSTANCE_VERTEX_COUNT = 36;
 
-export const RENDER_INSTANCES_WGSL = `struct InstanceParams {
+export function renderInstancesWgsl(options?: {
+  /** T333: draw-time group over `p.<attribute>` — binds resolved from the typed edge (§V308). */
+  group?: { expression: string; binds: ReadonlyArray<{ attribute: string; type: string }> };
+}): string {
+  const group = options?.group;
+  const groupBindings =
+    group === undefined
+      ? ""
+      : group.binds
+          .map(
+            (bind, index) =>
+              `@group(0) @binding(${5 + index}) var<storage, read> group_${bind.attribute}: array<${bind.type}>;\n`,
+          )
+          .join("");
+  const groupFunction =
+    group === undefined
+      ? ""
+      : `
+struct GroupPoint {
+${group.binds.map((bind) => `  ${bind.attribute}: ${bind.type},`).join("\n")}
+};
+
+fn groupMatch(p: GroupPoint) -> bool {
+  return (${group.expression});
+}
+`;
+  const groupGate =
+    group === undefined
+      ? ""
+      : `  var gp: GroupPoint;
+${group.binds.map((bind) => `  gp.${bind.attribute} = group_${bind.attribute}[instance];`).join("\n")}
+  if (!groupMatch(gp)) {
+    /* Excluded: every vertex lands on one point — a zero-area primitive (§V219). */
+    var gated: VertexOut;
+    gated.position = vec4f(2.0, 2.0, 0.0, 1.0);
+    gated.normal = vec3f(0.0, 0.0, 1.0);
+    return gated;
+  }
+`;
+  return `struct InstanceParams {
   viewProjection: mat4x4f,
   color: vec4f,
   rotate: vec3f,       // radians; applied X then Y then Z (published order)
@@ -28,7 +67,7 @@ export const RENDER_INSTANCES_WGSL = `struct InstanceParams {
 
 @group(0) @binding(0) var<uniform> params: InstanceParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-
+${groupBindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -100,7 +139,7 @@ fn shapeNormal(shape: u32, v: u32) -> vec3f {
   return boxNormal(v);
 }
 
-fn rotationMatrix(r: vec3f) -> mat3x3f {
+${groupFunction}fn rotationMatrix(r: vec3f) -> mat3x3f {
   let cx = cos(r.x); let sx = sin(r.x);
   let cy = cos(r.y); let sy = sin(r.y);
   let cz = cos(r.z); let sz = sin(r.z);
@@ -113,7 +152,7 @@ fn rotationMatrix(r: vec3f) -> mat3x3f {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
-  let count = shapeVertexCount(params.shape);
+${groupGate}  let count = shapeVertexCount(params.shape);
   let v = min(vertex, count - 1u);
   let rotation = rotationMatrix(params.rotate);
   let local = rotation * (shapeVertex(params.shape, v) * params.scale);
@@ -134,3 +173,7 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
   let shade = AMBIENT + (1.0 - AMBIENT) * lambert;
   return vec4f(params.color.rgb * shade, params.color.a);
 }`;
+}
+
+/** The ungrouped spelling, kept as the constant its consumers always imported (§V309). */
+export const RENDER_INSTANCES_WGSL = renderInstancesWgsl();

@@ -279,6 +279,66 @@ export const pointKernelNode: NodeDefinition = {
  * buffer, and the `instances: { indirect }` value. Undefined for a static edge — the
  * caller keeps its literal count and this feature costs nothing.
  */
+
+/**
+ * T333: resolves a draw-time group predicate against the TYPED edge payload (§V308).
+ *
+ * The predicate references attributes as `p.<name>`; every referenced attribute is
+ * bound on demand — WHICH dissolves the narrowness that originally excluded renderers
+ * from T300: with types on the edge, a renderer's predicate language equals the
+ * kernel's over stored attributes, no longer just "whatever this renderer binds".
+ * Failures are §V288-shaped: by name, saying what the pointset provides.
+ */
+export function resolveGroupPredicate(
+  nodeId: string,
+  expression: string,
+  pointset:
+    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
+    | undefined,
+):
+  | {
+      expression: string;
+      binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }>;
+    }
+  | { refusal: CompiledNodeDescription } {
+  const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
+    refusal: {
+      passes: [],
+      diagnostics: [
+        {
+          severity: "error",
+          code: "node.points.group",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+    },
+  });
+  const referenced = [...new Set([...expression.matchAll(/\bp\.([A-Za-z_]\w*)/g)].map((m) => m[1] as string))].sort();
+  if (referenced.length === 0) {
+    return refuse(
+      `the group predicate references no attribute — write it over p.<attribute>, e.g. p.position.y > 0.0.`,
+    );
+  }
+  const available = Object.keys(pointset?.pairs ?? {}).sort();
+  const binds: Array<{ attribute: string; type: string; pair: string; half: "read" | "write" }> = [];
+  for (const attribute of referenced) {
+    const entry = pointset?.pairs[attribute];
+    if (entry === undefined) {
+      return refuse(
+        `the group predicate reads "p.${attribute}", which the incoming pointset does not carry.`,
+        available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
+      );
+    }
+    if (entry.type === undefined) {
+      return refuse(`the group predicate reads "p.${attribute}", but the edge does not declare its type.`);
+    }
+    binds.push({ attribute, type: entry.type, pair: entry.pair, half: entry.half });
+  }
+  return { expression, binds };
+}
+
 export function countedDrawSupport(
   nodeId: string,
   pointset: { count?: { buffer: string } } | undefined,
@@ -367,6 +427,14 @@ export const renderPointsNode: NodeDefinition = {
       compileTime: true,
       description: "Skip the clear each frame — sprites pile up into trails (T180).",
     },
+    group: {
+      type: "string",
+      label: "Group",
+      default: "",
+      compileTime: true,
+      description:
+        "T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.position.y > 0.0. Referenced attributes bind on demand from the edge. Empty = all.",
+    },
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
@@ -437,6 +505,17 @@ export const renderPointsNode: NodeDefinition = {
     const isRefusal = (value: { entry: MapEntry } | CompiledNodeDescription): value is CompiledNodeDescription =>
       "passes" in value;
 
+    // T333: the draw-time group. Excluded instances collapse to zero-area quads.
+    const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
+    let groupPredicate:
+      | { expression: string; binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }> }
+      | undefined;
+    if (groupSource !== "") {
+      const resolvedGroup = resolveGroupPredicate(nodeId, groupSource, points.pointset);
+      if ("refusal" in resolvedGroup) return resolvedGroup.refusal;
+      groupPredicate = resolvedGroup;
+    }
+
     const sizeMap = parameterMaps["sizePixels"];
     let mappedSize: { entry: MapEntry; type: string; channel?: string } | undefined;
     if (sizeMap !== undefined) {
@@ -498,7 +577,7 @@ export const renderPointsNode: NodeDefinition = {
       kind: "draw",
       id: `${nodeId}:sprites`,
       shader:
-        mappedSize === undefined && mappedColor === undefined
+        mappedSize === undefined && mappedColor === undefined && groupPredicate === undefined
           ? SPRITE_RENDER_WGSL
           : spriteRenderWgsl({
               ...(mappedSize === undefined
@@ -510,6 +589,14 @@ export const renderPointsNode: NodeDefinition = {
                     },
                   }),
               ...(mappedColor === undefined ? {} : { colorMap: true }),
+              ...(groupPredicate === undefined
+                ? {}
+                : {
+                    group: {
+                      expression: groupPredicate.expression,
+                      binds: groupPredicate.binds.map(({ attribute, type }) => ({ attribute, type })),
+                    },
+                  }),
             }),
       target,
       topology: "triangle-list",
@@ -539,6 +626,13 @@ export const renderPointsNode: NodeDefinition = {
         ...(mappedColor === undefined
           ? []
           : [{ binding: "mapColors", resourceId: mappedColor.entry.pair, half: mappedColor.entry.half }]),
+        ...(groupPredicate === undefined
+          ? []
+          : groupPredicate.binds.map((bind) => ({
+              binding: `group_${bind.attribute}`,
+              resourceId: bind.pair,
+              half: bind.half,
+            }))),
       ],
       // Mapped values LEAVE the uniform block entirely — the struct and the record
       // must keep matching exactly (the catalogue sweep pins that). Both mapped, the
