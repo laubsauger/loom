@@ -66,6 +66,7 @@ export {
   valueTriggerNode,
   valueLagNode,
   valueFilterNode,
+  valueSwitchNode,
   valueGraphNodeDefinitions,
 } from "./value-graph-nodes.ts";
 export { customWgslNode } from "./custom-wgsl.ts";

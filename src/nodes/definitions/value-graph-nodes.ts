@@ -6,6 +6,7 @@ import type {
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
 import { VALUE_PORT } from "./common-ports.ts";
+import { resolveSwitchIndex } from "./switch.ts";
 
 /**
  * The CHOP set (T275-T277, §V179): value-graph stages, wired `mouse1 → lag1 → param`.
@@ -260,6 +261,80 @@ export const valueFilterNode: NodeDefinition = {
   compile: noPasses,
 };
 
+/**
+ * T508 — Switch: ONE source, chosen by index. TD's Switch CHOP, and the value-graph twin
+ * of the texture Switch (T235).
+ *
+ * WHY IT HAS TO EXIST AS A NODE. `value-graph.ts` merges every edge landing on one value
+ * port — `{...prior, ...next}` over sorted edge ids (§V457) — so two sources wired to the
+ * same port do not blend, they CLOBBER: the later edge's `level` wins outright and the
+ * other source vanishes with no diagnostic. That merge is deliberate (it lets a multi-wire
+ * input compose bags of DIFFERENT channels), which is exactly why exclusivity cannot come
+ * from wiring and has to come from a node. T504's owner ask was "switch around between the
+ * two without mixing them together"; without this node the honest answers were a
+ * multiply-and-add crossfade (a blend wearing a switch's hat) or nothing.
+ *
+ * FOUR NAMED PORTS, NOT A VARIADIC ONE, and that is forced rather than chosen. The
+ * evaluator keys `inputs` by PORT and merges within a port, so a variadic value port could
+ * not present its edges separately without changing the merge §V457 pins. Four rather than
+ * the two E24 needs, because the node is public catalogue surface: `in1`/`in2` matches the
+ * composite family's naming, and going from two to three later would change a shipped
+ * node's shape in front of users for no gain today.
+ *
+ * THE INDEX COUNTS CONNECTED INPUTS, in port order, and it WRAPS — `resolveSwitchIndex` is
+ * imported from the texture Switch rather than reimplemented, so "what does index 9 of 3
+ * mean" has exactly one definition in the repo. A gap (in1 and in3 wired, in2 empty) is
+ * two inputs, not three: an unconnected port is not a branch you can cut to.
+ *
+ * EXCLUSIVE BY CONSTRUCTION: the chosen bag is returned as its own copy and no other input
+ * is read into the result at all. There is no merge step to get wrong.
+ *
+ * CLOCKLESS (§V436/§V453): it selects. It reads no clock, holds no state and has no phase,
+ * so a timeline lap cannot reach it — whatever the selected input does across a loop, this
+ * does. Stated here because §V453 makes the classification a decision the author owes,
+ * and "it obviously reads nothing" is how `lfo` ended up on the wrong clock (B98).
+ */
+export const valueSwitchNode: NodeDefinition = {
+  type: "valueSwitch",
+  version: 1,
+  title: "Switch",
+  category: "value",
+  description:
+    "Passes ONE of its inputs through, chosen by index — the others contribute nothing. Drive the index to cut between sources. The index counts the CONNECTED inputs in port order and wraps, so -1 is the last. TD Switch CHOP. CLOCKLESS (§V436): it selects and reads no clock, so a timeline loop passes straight through it.",
+  tags: ["value", "switch", "select", "route", "chop"],
+  inputs: [
+    { id: "in1", label: "In 1", type: VALUE_PORT, optional: true },
+    { id: "in2", label: "In 2", type: VALUE_PORT, optional: true },
+    { id: "in3", label: "In 3", type: VALUE_PORT, optional: true },
+    { id: "in4", label: "In 4", type: VALUE_PORT, optional: true },
+  ],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    index: {
+      type: "number",
+      label: "Index",
+      default: 0,
+      step: 1,
+      // No min/max, for the texture Switch's reason (T235): out of range is the NORMAL
+      // case for a driven index, and the node's answer is to wrap it. A declared range
+      // would make §V66 reject a static 3 while an expression producing 3 wrapped happily.
+      description: "Which connected input to pass, 0-based. Out of range wraps, so -1 is the last.",
+    },
+  },
+  valueEvaluate: ({ inputs, values }) => {
+    // Port order is the branch order, and only CONNECTED ports are branches: an absent
+    // input is not a black frame to cut to, it is not a branch at all.
+    const connected = (["in1", "in2", "in3", "in4"] as const)
+      .map((port) => inputs[port])
+      .filter((bag): bag is ValueChannels => bag !== undefined);
+    const chosen = connected[resolveSwitchIndex(num(values["index"], 0), connected.length)];
+    // A copy, never the input object: the evaluator caches bags by node id and a shared
+    // reference would let a downstream stage's mutation reach back into its source.
+    return chosen === undefined ? {} : { ...chosen };
+  },
+  compile: noPasses,
+};
+
 export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
   valueMathNode,
@@ -268,4 +343,5 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   valueTriggerNode,
   valueLagNode,
   valueFilterNode,
+  valueSwitchNode,
 ];

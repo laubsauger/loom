@@ -5,6 +5,46 @@ import { publishesValueChannels } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions, coreNodeDefinitions, spikeNodeDefinitions } from "./index.ts";
 
+import { codeParametersOf } from "../../domain/parameters/code.ts";
+
+/**
+ * T492 (§V437): code-valued parameters are a DECLARED KIND, and this is the census.
+ *
+ * Pinned by NAME, not by count: parameter #9 of a code kind must fail this list by
+ * naming itself, so the author updating the pin is deciding "yes, this is code and the
+ * editor serves it" — never hunting for which of nine a bare count meant. Everything
+ * downstream — the inspector's control, the code pane's subject strip, per-language
+ * highlighting — derives from `codeParametersOf`, so appearing here IS being served;
+ * there is no second roster to also join.
+ */
+describe("the code-parameter census (T492)", () => {
+  it("every code-valued parameter, by name and language", () => {
+    const census = allNodeDefinitions
+      .flatMap((definition) =>
+        codeParametersOf(definition.parameters).map(
+          (entry) => `${definition.type}.${entry.key}:${entry.definition.language}`,
+        ),
+      )
+      .sort();
+    expect(census).toEqual([
+      "customWgsl.source:wgsl",
+      "pointKernel.attributes:json",
+      "pointKernel.group:wgsl",
+      "pointKernel.kernel:wgsl",
+      "pointKernelAdvanced.attributes:json",
+      "pointKernelAdvanced.group:wgsl",
+      "pointKernelAdvanced.kernel:wgsl",
+      "pointKernelAdvanced.spawn:wgsl",
+    ]);
+  });
+
+  it("prose stays prose: media text is a multiline STRING, the counter-example (T506)", () => {
+    const text = allNodeDefinitions.find((definition) => definition.type === "text");
+    const parameter = text?.parameters["text"];
+    expect(parameter?.type).toBe("string");
+  });
+});
+
 describe("Phase 0 spike catalogue (T15)", () => {
   it("registers all three definitions together in one registry with no collisions", () => {
     const registry = createNodeRegistry(spikeNodeDefinitions);
@@ -87,6 +127,9 @@ describe("core catalogue (T70, T40)", () => {
       "valueTrigger",
       "valueLag",
       "valueFilter",
+      // T508: the value-graph twin of the texture Switch, and the only EXCLUSIVE join in
+      // the CHOP set — wiring two sources to one port clobbers (§V457), by design.
+      "valueSwitch",
       // T414: sound as channels — the value family's third input source after Mouse
       // and the trio. Deliberately named for what it IS, not a TD analog.
       "audioIn",
@@ -257,6 +300,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueLimit",
         "valueMath",
         "valueSlope",
+        "valueSwitch",
         "valueTrigger",
       ].sort(),
     );

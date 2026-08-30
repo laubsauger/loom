@@ -7,6 +7,14 @@ import { resolveParameters } from "../parameters/resolve.ts";
 import { dispatchFrameUniforms, sharedUniformsFromFrame, SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { generateKernelModule, generateSpawnHookModule } from "../../points/codegen.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
+import {
+  MEDIA_TRANSPORT_KEYS,
+  MEDIA_TRANSPORT_PARAMETERS,
+  createMediaClock,
+  hasMediaTransport,
+  mediaPlayhead,
+  type MediaTransportValues,
+} from "../media/transport.ts";
 import { absFrameIndexOf, absTimeSecondsOf, type FrameEvaluationInput } from "../types/frame.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import type { GraphNode } from "../types/graph.ts";
@@ -254,6 +262,9 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   valueMath: "clockless",
   valueLimit: "clockless",
   valueTrigger: "clockless",
+  // T508: a Switch selects. It has no phase and no state, so a lap cannot reach it —
+  // whatever the SELECTED input does across a loop boundary, the Switch does.
+  valueSwitch: "clockless",
   audioIn: "clockless",
   audioFileIn: "clockless",
 };
@@ -262,6 +273,36 @@ function valueNodes(): readonly NodeDefinition[] {
   return allNodeDefinitions.filter(
     (definition) => definition.valueChannel !== undefined || definition.valueEvaluate !== undefined,
   );
+}
+
+/**
+ * §V453 EXTENDED TO A SECOND CATEGORY (T493), and structured as a CLAUSE PER KIND rather
+ * than a special case — which is §V316's own rule, stated over exactly this failure: an
+ * invariant written for one member silently narrows when member #2 appears.
+ *
+ * A MEDIA TRANSPORT is a clock owner that is not a value node. `movieFileIn` publishes no
+ * channel at all, so `valueNodes()` never saw it, and it could have shipped a playhead on
+ * any clock it liked without this file noticing. Its position is now the single most
+ * clock-sensitive thing in the catalogue: put it on a free-running clock and a scrub finds
+ * a different frame every time and an offline render stops reproducing (§V45/§V47).
+ *
+ * Note `audioFileIn` is in BOTH tables, with DIFFERENT answers, and that is the point
+ * rather than a wart: its CHANNELS are clockless (what the analyser heard this frame) and
+ * its PLAYHEAD is timeline-anchored (where the track is in the piece). One entry per node
+ * would have forced one of those two true statements to be dropped.
+ *
+ * Derived from `hasMediaTransport`, which asks the node's own parameter schema — so media
+ * node N+1 fails here until its author decides, with nothing to remember to update.
+ */
+const TRANSPORT_CLOCK_OWNERSHIP: Readonly<
+  Record<string, "free-running" | "timeline-anchored" | "delta-driven" | "clockless">
+> = {
+  movieFileIn: "timeline-anchored",
+  audioFileIn: "timeline-anchored",
+};
+
+function mediaTransportNodes(): readonly NodeDefinition[] {
+  return allNodeDefinitions.filter((definition) => hasMediaTransport(definition));
 }
 
 /** Frames either side of a lap, from a real transport rather than hand-built objects. */
@@ -373,6 +414,124 @@ describe("T489 — a surface cannot be added without declaring its clock", () =>
       if (CLOCK_OWNERSHIP[definition.type] !== "timeline-anchored") continue;
       expect((definition.description ?? "").toLowerCase(), `${definition.type}`).toContain("timeline-anchored");
     }
+  });
+
+  /* T493 — the same three assertions over the media-transport category (§V453, §V316). */
+
+  it("every media-transport node in the registry is classified against §V436", () => {
+    const unclassified = mediaTransportNodes()
+      .map((definition) => definition.type)
+      .filter((type) => TRANSPORT_CLOCK_OWNERSHIP[type] === undefined);
+    expect(
+      unclassified,
+      "a node grew a media transport without deciding which clock its PLAYHEAD reads " +
+        "(§V436). Add it to TRANSPORT_CLOCK_OWNERSHIP and say why in its description — a " +
+        "free-running playhead cannot be scrubbed and cannot be rendered offline.",
+    ).toEqual([]);
+  });
+
+  it("TRANSPORT_CLOCK_OWNERSHIP names no node that has stopped carrying a transport", () => {
+    const live = new Set(mediaTransportNodes().map((definition) => definition.type));
+    const stale = Object.keys(TRANSPORT_CLOCK_OWNERSHIP).filter((type) => !live.has(type));
+    expect(stale, "the classification has rotted past the catalogue (§V421)").toEqual([]);
+  });
+
+  it("both media doors carry the SAME transport, so learning one teaches the other", () => {
+    // The anti-drift assertion: T493's whole shape is one vocabulary behind two nodes, and
+    // the way that decays is one door quietly gaining a key the other never gets.
+    const types = mediaTransportNodes().map((definition) => definition.type);
+    expect(types).toContain("movieFileIn");
+    expect(types).toContain("audioFileIn");
+    for (const definition of mediaTransportNodes()) {
+      for (const key of MEDIA_TRANSPORT_KEYS) {
+        expect(definition.parameters?.[key], `${definition.type}.${key}`).toBe(
+          MEDIA_TRANSPORT_PARAMETERS[key],
+        );
+      }
+    }
+  });
+
+  it("every media-transport node classified timeline-anchored states it where the user reads it", () => {
+    for (const definition of mediaTransportNodes()) {
+      if (TRANSPORT_CLOCK_OWNERSHIP[definition.type] !== "timeline-anchored") continue;
+      expect((definition.description ?? "").toLowerCase(), `${definition.type}`).toContain(
+        "timeline-anchored",
+      );
+    }
+  });
+});
+
+/**
+ * T493 — THE MEDIA PLAYHEAD ACROSS A LAP, on real transports.
+ *
+ * A timeline-anchored playhead is SUPPOSED to wrap: that is what anchoring means, and
+ * asserting monotonicity here would be asserting the opposite bug (see "What is
+ * deliberately NOT asserted" above). What the lap must not do is make the position depend
+ * on HOW you got there — so the assertion is REPRODUCIBILITY: the frame after the lap sees
+ * exactly the position the same timeline frame saw the first time round, while the
+ * absolute clock underneath keeps counting (§V449).
+ */
+describe("T493 — the media playhead wraps with the timeline and reproduces exactly", () => {
+  const LOOPING: MediaTransportValues = {
+    playMode: "timeline",
+    play: true,
+    speed: 1,
+    cue: false,
+    cuePoint: 0,
+    trimStart: 0,
+    trimEnd: 0,
+    extend: "loop",
+  };
+
+  for (const [transportName, make] of [
+    ["liveClock", () => liveClock({ fps: 60, now: () => 0 })],
+    ["offlineTransport", () => offlineTransport({ fps: 60 })],
+  ] as const) {
+    it(`a lap replays the same positions on ${transportName}, and abstime does not rewind`, () => {
+      const { before, after } = framesAcrossLap(make() as ReturnType<typeof liveClock>);
+      // The window is 4s and the lap is at frame 8 of a 60fps clock, so the wrap happens
+      // nowhere near a window boundary — the case a "just make it divide" answer cannot
+      // handle (§V435's mistake, restated for media).
+      const positionAt = (frame: FrameEvaluationInput) =>
+        mediaPlayhead(LOOPING, frame.timeSeconds, 4).position;
+
+      // Guard against the vacuous version: the lap really happened.
+      expect(after[0]?.frameIndex).toBeLessThan(before[before.length - 1]?.frameIndex ?? -1);
+
+      for (let index = 0; index < after.length; index += 1) {
+        const replayed = after[index] as FrameEvaluationInput;
+        const original = before[index] as FrameEvaluationInput;
+        expect(replayed.frameIndex).toBe(original.frameIndex);
+        // EXACT, not close: the position is arithmetic on the frame, with no accumulator
+        // anywhere for a rounding difference to creep into.
+        expect(positionAt(replayed)).toBe(positionAt(original));
+        // ...and the thing §V449 protects kept going while the media rewound.
+        expect(absFrameIndexOf(replayed)).toBeGreaterThan(absFrameIndexOf(original));
+      }
+    });
+  }
+
+  it("a FREE-RUN playhead does NOT come back — which is the determinism it costs you", () => {
+    // The counter-example that proves the default is doing work. Same lap, same window;
+    // the free-run clock accumulates across it, so the position after the lap is somewhere
+    // the first pass never was.
+    const freeRun: MediaTransportValues = { ...LOOPING, playMode: "freeRun" };
+    const clock = createMediaClock();
+    const { before, after } = framesAcrossLap(liveClock({ fps: 60, now: () => 0 }));
+    const positions: number[] = [];
+    for (const frame of [...before, ...after]) {
+      positions.push(
+        mediaPlayhead(freeRun, clock.advance(freeRun, frame.deltaSeconds, frame.timeSeconds), 4)
+          .position,
+      );
+    }
+    const firstPass = positions.slice(0, before.length);
+    const afterLap = positions.slice(before.length);
+    for (let index = 0; index < afterLap.length; index += 1) {
+      expect(afterLap[index], `free-run position at lap frame ${index}`).not.toBe(firstPass[index]);
+    }
+    // And it is strictly ahead, not merely different.
+    expect(afterLap[0]).toBeGreaterThan(firstPass[firstPass.length - 1] as number);
   });
 });
 
