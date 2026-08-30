@@ -8,6 +8,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { Inspector } from "@editor/inspector/index.ts";
 import type { InputResolution } from "@editor/inspector/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
+import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
@@ -144,22 +145,33 @@ export function InspectorPane({
   // `scrollFill`, not `fill`: a node with twenty parameters is taller than the right dock,
   // and a pane that grows past its dock has its overflow clipped rather than scrolled —
   // the parameters below the fold simply cannot be reached. See `panes.module.css`.
+  /**
+   * T246 — the parameter menu is mounted HERE, and nowhere else.
+   *
+   * §V78 asks for ONE root per surface with the target resolved from the event, which is
+   * exactly what `ContextMenuHost` does; it had no mount anywhere in the app, so every
+   * menu the menus track built was unreachable (the shape of B12/B23, §V193). No
+   * `fallbackSurface`: a right-click on the pane's chrome rather than on a parameter row
+   * should open nothing at all, not a menu for a parameter nobody clicked.
+   */
   return (
-    <div
-      className={styles.scrollFill}
-      data-testid="inspector-scroll"
-      {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
-    >
-      <Inspector
-        bus={bus}
-        context={invocation}
-        nodeId={nodeId}
-        settings={settings}
-        diagnostics={diagnostics}
-        capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
-        inputResolutions={inputResolutions}
-      />
-    </div>
+    <ContextMenuHost bus={bus}>
+      <div
+        className={styles.scrollFill}
+        data-testid="inspector-scroll"
+        {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "inspector" }}
+      >
+        <Inspector
+          bus={bus}
+          context={invocation}
+          nodeId={nodeId}
+          settings={settings}
+          diagnostics={diagnostics}
+          capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
+          inputResolutions={inputResolutions}
+        />
+      </div>
+    </ContextMenuHost>
   );
 }
 

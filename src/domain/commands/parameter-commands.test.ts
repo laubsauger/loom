@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { resolveParameterSchema } from "../parameters/resolve.ts";
 import { validateStoredParameter } from "../parameters/validate.ts";
 import type { PulseParameter } from "../types/parameters.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
@@ -225,5 +226,446 @@ describe("a fresh node stores no pulse at all (§V124)", () => {
     const nodeId = await addNode(harness.bus, "test.feedback");
     const stored = harness.bus.store.getGraph().nodes[nodeId]?.parameters ?? {};
     expect(Object.keys(stored).sort()).toEqual(["decay", "reset"]);
+  });
+});
+
+/* ====================================================================================
+ * The parameter context menu's commands (T246, §V148, §V149)
+ * ================================================================================= */
+
+const menuNode: NodeDefinition = {
+  type: "test.menu",
+  version: 1,
+  title: "Menu",
+  category: "test",
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: rgba }],
+  parameters: {
+    radius: { type: "number", label: "Radius", default: 4, min: 0, max: 64 },
+    amount: { type: "number", label: "Amount", default: 1, min: 0, max: 64 },
+    tint: { type: "color", label: "Tint", default: [1, 1, 1, 1], space: "display" },
+    title: { type: "string", label: "Title", default: "" },
+  },
+  compile: () => ({ passes: [] }),
+};
+
+function createMenuHarness(copied: string[] = []): Harness {
+  const store = createGraphStore({
+    ids: createSequentialIdFactory("m"),
+    now: () => "2026-08-30T00:00:00.000Z",
+  });
+  const { bus } = createDomainBus({
+    store,
+    registry: createNodeRegistry([menuNode]).view(),
+    clipboard: (text) => copied.push(text),
+  });
+  return { bus, store };
+}
+
+async function named(bus: ShaderloomBus, name: string): Promise<string> {
+  const nodeId = await addNode(bus, "test.menu");
+  await bus.execute(
+    "graph.applyPatch",
+    patch(bus.store.getRevision(), [{ op: "setNodeLabel", nodeId, label: name }]),
+    context,
+  );
+  return nodeId;
+}
+
+function storedOf(harness: Harness, nodeId: string, key: string): unknown {
+  return harness.bus.store.getGraph().nodes[nodeId]?.parameters[key];
+}
+
+describe("copy (T246)", () => {
+  it("copies the EFFECTIVE value, which is what the user can see", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        {
+          op: "setParameters",
+          nodeId,
+          parameters: {
+            radius: {
+              mode: "expression",
+              bindings: { expression: { kind: "expression", source: "3 + 4" } },
+            },
+          },
+        },
+      ]),
+      context,
+    );
+
+    const result = await harness.bus.execute(
+      "parameter.copyValue",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    // 7, not the stored expression text: copying off a driven parameter is only ever
+    // done to get the number.
+    expect(result.output.text).toBe("7");
+  });
+
+  it("mirrors what it copied to the system clipboard, when one was supplied (§V148)", async () => {
+    const copied: string[] = [];
+    const harness = createMenuHarness(copied);
+    const nodeId = await named(harness.bus, "blur1");
+
+    await harness.bus.execute("parameter.copyReference", { nodeId, parameterKey: "radius" }, context);
+
+    // The string has to be able to LEAVE the app, or it can never reach an expression field.
+    expect(copied).toEqual(["op('blur1').par.radius"]);
+  });
+
+  it("refuses to reference an unnamed node rather than inventing a name (§V127)", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await addNode(harness.bus, "test.menu");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [{ op: "setNodeLabel", nodeId, label: null }]),
+      context,
+    );
+
+    const result = await harness.bus.execute(
+      "parameter.copyReference",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics[0]?.code).toBe("parameter.reference.unnamed");
+  });
+});
+
+describe("copy → paste → the value is the source's (§V148)", () => {
+  /**
+   * The round trip the invariant asks for, run all the way through the resolver — which
+   * is what a control shows AND what the compiler reads (§V61). A same-node reference
+   * becomes a `bind`, and a bind resolves everywhere today.
+   */
+  it("a reference pasted onto a sibling resolves to the source parameter's value", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 12 } },
+      ]),
+      context,
+    );
+
+    const copied = await harness.bus.execute(
+      "parameter.copyReference",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    const pasted = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount" },
+      context,
+    );
+    expect(pasted.status).toBe("applied");
+
+    const node = harness.bus.store.getGraph().nodes[nodeId];
+    if (node === undefined) throw new Error("the node vanished");
+    const resolved = resolveParameterSchema(node, menuNode.parameters);
+    expect(resolved.get("amount")?.value).toBe(12);
+    // And the source value MOVES with it: this is a reference, not a copy of a number.
+    expect(copied.output.text).toBe("op('blur1').par.radius");
+  });
+
+  it("the reference reaches the same value when pasted as TEXT, not through the bus", async () => {
+    // The other door §V148 cares about: a string that went out to the system clipboard
+    // and came back through a paste has to be read by the same command.
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 9 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", text: " op('blur1').par.radius " },
+      context,
+    );
+
+    const node = harness.bus.store.getGraph().nodes[nodeId];
+    if (node === undefined) throw new Error("the node vanished");
+    expect(resolveParameterSchema(node, menuNode.parameters).get("amount")?.value).toBe(9);
+  });
+
+  it("refuses a self-reference instead of storing a cycle", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute("parameter.copyReference", { nodeId, parameterKey: "radius" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.reference.self");
+  });
+
+  /**
+   * The half that is NOT complete, asserted so it stays loud instead of becoming folklore.
+   *
+   * A cross-node reference is STORED correctly (it parses, and §V128 rewrites it on
+   * rename), but the evaluator does not read `op()` yet — `evaluate.ts` says so in as
+   * many words. So the parameter falls back per §V108 and reports why. That is the
+   * opposite of §V148's failure mode (a plausible string that quietly resolves to
+   * something else), but it is not yet the round trip the invariant asks for.
+   */
+  it("stores a cross-node reference and reports, loudly, that it cannot read it yet", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+
+    await harness.bus.execute("parameter.copyReference", { nodeId: source, parameterKey: "radius" }, context);
+    await harness.bus.execute("parameter.paste", { nodeId: target, parameterKey: "amount" }, context);
+
+    const stored = storedOf(harness, target, "amount");
+    expect(stored).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { source: "op('blur1').par.radius" } },
+    });
+
+    const node = harness.bus.store.getGraph().nodes[target];
+    if (node === undefined) throw new Error("the node vanished");
+    const resolved = resolveParameterSchema(node, menuNode.parameters);
+    expect(resolved.get("amount")?.diagnostic?.code).toBe("parameter.expression");
+    expect(resolved.get("amount")?.diagnostic?.message).toContain("node references are not readable yet");
+  });
+});
+
+describe("paste a value (T246)", () => {
+  it("lands the copied number on another parameter", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 21 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute("parameter.copyValue", { nodeId, parameterKey: "radius" }, context);
+    await harness.bus.execute("parameter.paste", { nodeId, parameterKey: "amount" }, context);
+
+    expect(storedOf(harness, nodeId, "amount")).toBe(21);
+  });
+
+  it("refuses a value the target's manifest does not accept, rather than coercing it", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute("parameter.copyValue", { nodeId, parameterKey: "tint" }, context);
+
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    // Pasting a colour onto a number must say so, not quietly land the red channel.
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.type");
+  });
+
+  it("says the clipboard is empty rather than doing nothing", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.clipboard.empty");
+  });
+});
+
+describe("reset restores value AND mode (§V149)", () => {
+  async function withExpression(harness: Harness, nodeId: string): Promise<void> {
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        {
+          op: "setParameters",
+          nodeId,
+          parameters: {
+            radius: {
+              mode: "expression",
+              bindings: {
+                expression: { kind: "expression", source: "8" },
+                static: { kind: "static", value: 30 },
+              },
+            },
+          },
+        },
+      ]),
+      context,
+    );
+  }
+
+  it("puts the value back AND the mode back to Constant", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await withExpression(harness, nodeId);
+
+    const result = await harness.bus.execute(
+      "parameter.reset",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+
+    expect(result.status).toBe("applied");
+    expect(storedOf(harness, nodeId, "radius")).toMatchObject({
+      mode: "static",
+      bindings: { static: { value: 4 } },
+    });
+  });
+
+  it("SAYS what it cleared instead of silently dropping authored work", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await withExpression(harness, nodeId);
+
+    const result = await harness.bus.execute(
+      "parameter.reset",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+
+    expect(result.output.clearedMode).toBe("expression");
+    const said = result.diagnostics.find((entry) => entry.code === "parameter.reset.cleared");
+    expect(said?.message).toContain("expression");
+  });
+
+  it("KEEPS the retained expression — clearing the mode is not clearing its memory", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await withExpression(harness, nodeId);
+
+    await harness.bus.execute("parameter.reset", { nodeId, parameterKey: "radius" }, context);
+
+    // §V108's corner mark promises the expression is still on its own button. A reset
+    // that wiped it would make that mark a lie exactly where a user most needs it.
+    expect(storedOf(harness, nodeId, "radius")).toMatchObject({
+      bindings: { expression: { source: "8" } },
+    });
+  });
+
+  it("says nothing when there was nothing to clear", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 12 } },
+      ]),
+      context,
+    );
+
+    const result = await harness.bus.execute(
+      "parameter.reset",
+      { nodeId, parameterKey: "radius" },
+      context,
+    );
+    expect(result.output.clearedMode).toBeNull();
+    expect(storedOf(harness, nodeId, "radius")).toBe(4);
+  });
+
+  it("resets every CHANNEL of a compound in ONE patch (§V113, §V114)", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        {
+          op: "setParameters",
+          nodeId,
+          parameters: {
+            tint: [0.2, 0.2, 0.2, 1],
+            "tint.g": {
+              mode: "expression",
+              bindings: { expression: { kind: "expression", source: "0.5" } },
+            },
+          },
+        },
+      ]),
+      context,
+    );
+    const before = harness.bus.store.getRevision();
+
+    await harness.bus.execute("parameter.reset", { nodeId, parameterKey: "tint" }, context);
+
+    // One revision bump: a colour reset is one undo entry, not five.
+    expect(harness.bus.store.getRevision()).toBe(before + 1);
+    expect(storedOf(harness, nodeId, "tint")).toEqual([1, 1, 1, 1]);
+    // The channel that was driving itself is Constant again — otherwise the swatch would
+    // still not show the default and the user would have "reset" twice.
+    expect(storedOf(harness, nodeId, "tint.g")).toMatchObject({ mode: "static" });
+  });
+});
+
+describe("switching modes from the menu (§V107, §V108)", () => {
+  it("switches to Expression, seeded with the value you were looking at", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 12 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute(
+      "parameter.setMode",
+      { nodeId, parameterKey: "radius", mode: "expression" },
+      context,
+    );
+
+    expect(storedOf(harness, nodeId, "radius")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { source: "12" }, static: { value: 12 } },
+    });
+  });
+
+  it("refuses Bind from a menu, because a menu cannot ask for the ref", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.setMode",
+      { nodeId, parameterKey: "radius", mode: "bind" },
+      context,
+    );
+    // An empty bind ref is refused at write time, so seeding one would make the menu
+    // item silently inert — the failure T204's buttons already learned the hard way.
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.mode.payload");
+  });
+
+  it("keeps the payload of the mode it left (§V108)", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "parameter.setMode",
+      { nodeId, parameterKey: "radius", mode: "expression" },
+      context,
+    );
+    await harness.bus.execute(
+      "parameter.setMode",
+      { nodeId, parameterKey: "radius", mode: "static" },
+      context,
+    );
+    expect(storedOf(harness, nodeId, "radius")).toMatchObject({
+      mode: "static",
+      bindings: { expression: { source: "4" } },
+    });
   });
 });

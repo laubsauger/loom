@@ -39,7 +39,16 @@ export type {
 export { registerGraphCommands } from "./graph-commands.ts";
 export { registerNodeOutputCommands } from "./node-output-commands.ts";
 export { registerParameterCommands } from "./parameter-commands.ts";
-export type { PulseInput, PulseOutput } from "./parameter-commands.ts";
+export type {
+  ParameterCommandOptions,
+  ParameterCopyOutput,
+  ParameterPasteInput,
+  ParameterRef,
+  ParameterResetOutput,
+  ParameterSetModeInput,
+  PulseInput,
+  PulseOutput,
+} from "./parameter-commands.ts";
 export type {
   HistoryCommandOutput,
   HistoryGroupSummary,
@@ -72,6 +81,12 @@ export interface DomainBusOptions extends GraphStoreOptions {
   store?: GraphStore;
   /** Bus-owned capability grant store (T90, §V38). Created empty when not supplied. */
   grants?: CapabilityGrantStore;
+  /**
+   * Where a copied parameter string is mirrored so it can leave the app (§V148). The
+   * browser composition root supplies `navigator.clipboard`; a headless bus supplies
+   * nothing and keeps working.
+   */
+  clipboard?: ((text: string) => void) | undefined;
 }
 
 /**
@@ -80,7 +95,7 @@ export interface DomainBusOptions extends GraphStoreOptions {
  * returned bus rather than building their own (§V29, §V39).
  */
 export function createDomainBus(options: DomainBusOptions = {}): { bus: ShaderloomBus; store: GraphStore } {
-  const { registry, store: providedStore, grants, ...storeOptions } = options;
+  const { registry, store: providedStore, grants, clipboard, ...storeOptions } = options;
   const store = providedStore ?? createGraphStore(storeOptions);
   const bus = createCommandBus({
     store,
@@ -90,7 +105,7 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus);
-  registerParameterCommands(bus);
+  registerParameterCommands(bus, { ...(clipboard === undefined ? {} : { writeClipboard: clipboard }) });
   registerValidateCommand(bus);
   return { bus, store };
 }

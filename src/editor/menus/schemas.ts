@@ -39,7 +39,6 @@ export type PlannedCommandName =
   | "graph.diveIn"
   | "graph.insertConversion"
   | "graph.rerouteEdge"
-  | "parameter.copyPath"
   | "component.publishParameter";
 
 export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
@@ -50,7 +49,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.diveIn",
   "graph.insertConversion",
   "graph.rerouteEdge",
-  "parameter.copyPath",
   "component.publishParameter",
 ];
 
@@ -148,11 +146,41 @@ export const EDGE_MENU: MenuSchema = {
   ],
 };
 
+/**
+ * The parameter menu (T246). TouchDesigner's right-click on a parameter, as data.
+ *
+ * Every entry names a REGISTERED command (§V78) — the same ones the mode panel and an
+ * agent use — so this is a view of the command set rather than a second implementation
+ * of copy, paste, reset and mode switching. That is the whole reason `parameter.copyPath`
+ * left `PLANNED_COMMANDS`: it was a promise, and `parameter.copyReference` is the thing.
+ *
+ * Paste carries no `when` guard on purpose. The only honest guard would ask the BUS what
+ * is on its parameter clipboard, and `MenuContext` is a document snapshot with no bus in
+ * it; inventing a fourth source of truth for a greyed-out item is worse than an item that
+ * refuses with a reason when you use it.
+ */
 export const PARAMETER_MENU: MenuSchema = {
   surface: "parameter",
   entries: [
-    { command: "graph.applyPatch", label: "Reset to default", when: "isOverridden" },
-    { command: planned("parameter.copyPath"), label: "Copy parameter path" },
+    { command: "parameter.copyValue", label: "Copy value" },
+    // §V148: a string that pastes back into an expression and resolves to this parameter.
+    { command: "parameter.copyReference", label: "Copy reference" },
+    { command: "parameter.paste", label: "Paste" },
+    { separator: true },
+    { command: "parameter.reset", label: "Reset to default", when: "isOverridden" },
+    { separator: true },
+    {
+      // §V107: every parameter takes every mode, so the switch belongs on every
+      // parameter's menu — not only on the ones whose panel someone thought to open.
+      label: "Mode",
+      submenu: [
+        { command: "parameter.setMode", input: { mode: "static" }, label: "Constant" },
+        { command: "parameter.setMode", input: { mode: "expression" }, label: "Expression" },
+        { command: "parameter.setMode", input: { mode: "bind" }, label: "Bind" },
+        { command: "parameter.setMode", input: { mode: "driven" }, label: "Driven" },
+      ],
+    },
+    { separator: true },
     { command: planned("component.publishParameter"), label: "Publish to component" },
   ],
 };

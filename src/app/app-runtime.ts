@@ -185,6 +185,13 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   const { bus } = createDomainBus({
     registry,
     ...(initialGraph === undefined ? {} : { initialGraph }),
+    // §V148: "copy reference" is only worth anything if the string can be pasted into an
+    // expression field, which means it has to reach the system clipboard. Best effort —
+    // the write is asynchronous and permission-gated, and a refusal costs the trip
+    // through a text field, not the copy itself (the bus clipboard still holds it).
+    clipboard: (text) => {
+      void globalThis.navigator?.clipboard?.writeText(text).catch(() => undefined);
+    },
   });
   registerComponentCommands(bus, { components });
   registerProjectCommands(bus);

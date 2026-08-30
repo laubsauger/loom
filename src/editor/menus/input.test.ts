@@ -131,7 +131,12 @@ describe("disconnecting", () => {
 describe("parameters", () => {
   const parameter: MenuTarget = { surface: "parameter", nodeId: "", parameterKey: "radius" };
 
-  it("resets to the definition's declared default", async () => {
+  /**
+   * T246: reset is `parameter.reset`, not a menu-built patch. The command owns the
+   * §V149 rules (mode restored too, retained payloads kept, and it says what it cleared)
+   * and a patch assembled here could only ever implement half of them.
+   */
+  it("resets through the command that owns the rules", async () => {
     const target = { ...parameter, nodeId: fixture.blur };
     await fixture.bus.execute(
       "graph.applyPatch",
@@ -143,22 +148,31 @@ describe("parameters", () => {
       contextFor(alice),
     );
 
-    const resolved = resolveMenuInput(item("graph.applyPatch"), target, fixture.context());
+    const resolved = resolveMenuInput(item("parameter.reset"), target, fixture.context());
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
-    await fixture.bus.execute("graph.applyPatch", resolved.input as never, contextFor(alice));
+    await fixture.bus.execute("parameter.reset", resolved.input as never, contextFor(alice));
     expect(fixture.bus.store.getGraph().nodes[fixture.blur]?.parameters["radius"]).toBe(4);
   });
 
   it("passes the node and key to the commands that only need a reference", () => {
     const target = { ...parameter, nodeId: fixture.blur };
-    expect(resolveMenuInput(item("parameter.copyPath"), target, fixture.context())).toEqual({
+    expect(resolveMenuInput(item("parameter.copyReference"), target, fixture.context())).toEqual({
       ok: true,
       input: { nodeId: fixture.blur, parameterKey: "radius" },
     });
     expect(resolveMenuInput(item("component.publishParameter"), target, fixture.context())).toEqual({
       ok: true,
       input: { nodeId: fixture.blur, parameterKey: "radius" },
+    });
+  });
+
+  it("merges the mode submenu's static input onto the parameter reference", () => {
+    const target = { ...parameter, nodeId: fixture.blur };
+    const modeItem = { command: "parameter.setMode" as never, input: { mode: "expression" }, label: "Expression" };
+    expect(resolveMenuInput(modeItem, target, fixture.context())).toEqual({
+      ok: true,
+      input: { nodeId: fixture.blur, parameterKey: "radius", mode: "expression" },
     });
   });
 });

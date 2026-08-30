@@ -1,7 +1,7 @@
 import type { MenuItem, MenuTarget } from "@domain/types/menus.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { MenuContext } from "./guards.ts";
-import { edgesForTarget, parameterDefault } from "./guards.ts";
+import { edgesForTarget } from "./guards.ts";
 
 /**
  * Turning a target into command input (T126).
@@ -91,18 +91,14 @@ const disconnect: InputBuilder = (_item, target, context) => {
   ]);
 };
 
-const resetParameter: InputBuilder = (_item, target, context) => {
-  const { nodeId, parameterKey } = target;
-  if (nodeId === undefined || parameterKey === undefined) {
-    return { ok: false, reason: "No parameter under the cursor." };
-  }
-  const fallback = parameterDefault(target, context);
-  if (fallback === undefined) {
-    return { ok: false, reason: "This parameter has no declared default." };
-  }
-  return patch(context, "Reset parameter", [
-    { op: "setParameters", nodeId, parameters: { [parameterKey]: fallback } },
-  ]);
+/**
+ * A parameter item that also carries static input — the mode submenu's four leaves,
+ * which differ only by which mode they name (T246).
+ */
+const parameterRefWith: InputBuilder = (item, target) => {
+  const base = parameterRef(item, target, undefined as never);
+  if (!base.ok) return base;
+  return { ok: true, input: { ...base.input, ...((item.input as Record<string, unknown>) ?? {}) } };
 };
 
 /**
@@ -116,7 +112,6 @@ const BUILDERS: Record<string, InputBuilder> = {
   "canvas:ui.openNodeSearch": cursorPosition,
   "port:graph.applyPatch": disconnect,
   "edge:graph.applyPatch": disconnect,
-  "parameter:graph.applyPatch": resetParameter,
 
   "graph.removeNodes": nodeIds,
   "graph.copySelection": nodeIds,
@@ -133,7 +128,11 @@ const BUILDERS: Record<string, InputBuilder> = {
   "graph.insertConversion": portRef,
   "graph.rerouteEdge": edgeRef,
 
-  "parameter.copyPath": parameterRef,
+  "parameter.copyValue": parameterRef,
+  "parameter.copyReference": parameterRef,
+  "parameter.paste": parameterRef,
+  "parameter.reset": parameterRef,
+  "parameter.setMode": parameterRefWith,
   "component.publishParameter": parameterRef,
 };
 

@@ -89,7 +89,12 @@ describe("command bus — registration surface (§V39)", () => {
       "node.toggleBypass",
       "node.toggleDisplay",
       "node.toggleRender",
+      "parameter.copyReference",
+      "parameter.copyValue",
+      "parameter.paste",
       "parameter.pulse",
+      "parameter.reset",
+      "parameter.setMode",
       "project.validate",
     ]);
     // T175: `selection.get`, `diagnostics.get`, `runtime.metrics` and `project.get` are

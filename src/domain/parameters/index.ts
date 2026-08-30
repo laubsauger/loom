@@ -14,12 +14,23 @@ export {
   isComponentKeyOf,
   isParameterSlot,
   parseComponentKey,
+  bindingFromText,
+  holdsRetainedValue,
+  numericLiteralFor,
+  payloadText,
+  seedBinding,
   slotFromValue,
+  withBinding,
+  withMode,
+  withStaticValue,
   staticBindingValue,
   storedStaticValue,
 } from "./slots.ts";
 
 export { bindCycleDiagnostics } from "./bind-cycles.ts";
+
+export { parameterReference, parseParameterReference } from "./reference.ts";
+export type { ParsedParameterReference } from "./reference.ts";
 
 export {
   PULSE_NODE_TOKEN,

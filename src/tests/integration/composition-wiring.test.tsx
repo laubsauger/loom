@@ -1176,3 +1176,50 @@ describe("New replaces the project, and asks first when work is unsaved", () => 
     expect(await screen.findByTestId("unsaved-changes-dialog")).toBeDefined();
   });
 });
+
+/**
+ * T246 — the parameter menu, at the seam.
+ *
+ * `ContextMenuHost` had no mount anywhere in `src/app` while the whole menus track was
+ * green: every menu it could build was unreachable from the running product. That is the
+ * fourth instance of the shape this file exists for (§V193), so the assertion is not
+ * "the schema is right" — the menus suite covers that — but "a right-click on a real
+ * parameter row in the real pane opens the real menu".
+ */
+describe("the parameter context menu is reachable (T246, §V78, §V193)", () => {
+  it("opens on a right-click over a parameter row, naming registered commands", async () => {
+    const { runtime, element } = await mountWithNode();
+    await select(element);
+
+    const row = document.querySelector("[data-parameter-key]");
+    expect(row, "the inspector must mark its parameter rows for the menu to resolve").not.toBeNull();
+    if (row === null) return;
+
+    await act(async () => {
+      fireEvent.contextMenu(row, { bubbles: true });
+    });
+
+    const menu = await screen.findByLabelText("parameter menu");
+    expect(menu).toBeDefined();
+
+    // Every command the menu names is LIVE — the point of §V78 is that the menu is a
+    // view of the command set, not a list of intentions.
+    for (const name of ["parameter.copyValue", "parameter.copyReference", "parameter.paste", "parameter.reset", "parameter.setMode"]) {
+      expect(runtime.bus.hasCommand(name), name).toBe(true);
+    }
+  });
+
+  it("opens nothing when the right-click lands on the pane rather than a parameter", async () => {
+    const { element } = await mountWithNode();
+    await select(element);
+
+    const pane = screen.getByTestId("inspector-scroll");
+    await act(async () => {
+      fireEvent.contextMenu(pane, { bubbles: true });
+    });
+
+    // No `fallbackSurface`: a menu for a parameter nobody clicked would act on whatever
+    // the previous target happened to be.
+    expect(screen.queryByLabelText("parameter menu")).toBeNull();
+  });
+});
