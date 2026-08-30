@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isComponentNodeType } from "@domain/components/component-type.ts";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
@@ -38,7 +39,20 @@ export interface LibraryPaneProps {
 
 export function LibraryPane({ portDrag, onClearPortDrag, actions }: LibraryPaneProps) {
   const { registry } = useAppRuntime();
-  const definitions = useMemo(() => [...registry.list()], [registry]);
+  /*
+   * Components are DELIBERATELY absent from the node library.
+   *
+   * Installing a component registers it as a node definition — that is how an instance
+   * is created at all — so `registry.list()` returns it alongside the built-ins and the
+   * library showed every component TWICE: once here and once in the Components tab,
+   * which owns them and offers save/copy/upgrade that this pane cannot. The structural
+   * test is `isComponentNodeType` (`component:<id>@<version>`), not a category string
+   * somebody has to remember to set.
+   */
+  const definitions = useMemo(
+    () => registry.list().filter((definition) => !isComponentNodeType(definition.type)),
+    [registry],
+  );
 
   // The library filters on the port TYPE and the end being dragged; which node the drag
   // started from is the canvas's business (§V13).
