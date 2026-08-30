@@ -81,7 +81,12 @@ export interface TextSourceOptions {
   readonly createCanvas?: (width: number, height: number) => TextCanvas | null;
 }
 
-/** 0..1 display-space rgba to a CSS colour. The canvas paints sRGB; so does this. */
+/**
+ * 0..1 display-space rgba to a CSS colour. The canvas paints sRGB; so does this.
+ *
+ * v17-allow-dynamic-color: paints the user's colour PARAMETER, not theme chrome — the
+ * value comes from the document and there is no token that could stand in for it.
+ */
 export function cssColor(rgba: readonly [number, number, number, number]): string {
   const channel = (value: number): number =>
     Math.max(0, Math.min(255, Math.round((Number.isFinite(value) ? value : 0) * 255)));

@@ -103,7 +103,7 @@ function number(value: ParameterValue | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function rgba(
+function colorValue(
   value: ParameterValue | undefined,
   fallback: readonly [number, number, number, number],
 ): readonly [number, number, number, number] {
@@ -145,8 +145,8 @@ function textRasterFor(
     text: text(read("text"), ""),
     font: text(read("font"), "sans-serif"),
     size: number(read("size"), 96),
-    color: rgba(read("color"), [1, 1, 1, 1]),
-    background: rgba(read("bgcolor"), [0, 0, 0, 0]),
+    color: colorValue(read("color"), [1, 1, 1, 1]),
+    background: colorValue(read("bgcolor"), [0, 0, 0, 0]),
     align: (TEXT_ALIGNS.has(align) ? align : "center") as TextAlign,
     valign: (TEXT_VALIGNS.has(valign) ? valign : "middle") as TextVerticalAlign,
     lineSpacing: number(read("linespacing"), 1.2),
