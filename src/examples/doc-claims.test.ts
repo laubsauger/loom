@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -63,7 +63,13 @@ describe("concept docs name only nodes their graphs contain (B83, §V332)", () =
     );
     const present = new Set(Object.values(document.graph.nodes).map((node) => node.type));
     const docName = fileName.replace(/\.loom\.json$/, ".md");
-    const prose = readFileSync(join(EXAMPLES_DIR, docName), "utf8");
+    const docPath = join(EXAMPLES_DIR, docName);
+    // A shipped example with no concept doc yet makes no claims to check. It is NOT
+    // silently fine — `readme.test.ts` (T349) fails it by name for exactly this — and
+    // duplicating that red here would be two failures for one cause (§V350: gate the
+    // outermost observable, once). A doc that exists is always checked.
+    if (!existsSync(docPath)) return;
+    const prose = readFileSync(docPath, "utf8");
     const excused = new Set(DELIBERATE.filter((entry) => entry.doc === docName).map((entry) => entry.type));
 
     const claimed = camelTypes.filter(
