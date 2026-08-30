@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
-import { colorNodes, hsvNode, levelNode, lookupNode, thresholdNode } from "./color.ts";
+import { colorNodes, hsvNode, levelNode, limitNode, lookupNode, thresholdNode } from "./color.ts";
 import { CHANNEL_OPTIONS } from "./parameter-readers.ts";
 import { WGSL_CHANNEL, WGSL_LUMA } from "../shaders/common.wgsl.ts";
 import { compileContext, inputResourceId, readNodePlan } from "./test-support.ts";
@@ -26,6 +26,7 @@ describe("colour nodes (T40)", () => {
     expect(createNodeRegistry(colorNodes).list().map((d) => d.type)).toEqual([
       "hsv",
       "level",
+      "limit",
       "lookup",
       "threshold",
     ]);
@@ -146,5 +147,29 @@ describe("colour nodes (T40)", () => {
       expect(compiled.passes).toEqual([]);
       expect(compiled.diagnostics?.[0]?.message).toContain('input port "lookup"');
     });
+  });
+});
+
+/** Limit (T283) — the decisions that are arguments rather than code. */
+describe("Limit (T283)", () => {
+  it("quantizes to LEVELS, with the top step reaching the maximum", () => {
+    // `steps - 1` divisions, not `steps`. Dividing by the step COUNT leaves the brightest
+    // level permanently unreachable, which reads as a washed-out posterise and is the
+    // classic off-by-one in this operator.
+    const shader = firstPass(limitNode, { mode: "quantize" }).shader;
+    expect(shader).toContain("levels - 1.0");
+  });
+
+  it("leaves alpha alone", () => {
+    // Limiting COVERAGE is a different intent from limiting colour, and quantizing alpha
+    // turns a soft edge into a stair — never what someone posterising an image asked for.
+    expect(firstPass(limitNode).shader).toContain("vec4f(rgb, source.a)");
+  });
+
+  it("defaults to clamp, the mode that cannot surprise anyone", () => {
+    // Loop and zigzag change the picture dramatically; a node that did either on being
+    // dropped would look broken rather than useful.
+    const uniforms = firstPass(limitNode).uniforms as Record<string, unknown>;
+    expect(uniforms["mode"]).toBe(0);
   });
 });

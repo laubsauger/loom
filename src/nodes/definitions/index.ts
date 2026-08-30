@@ -18,6 +18,7 @@ import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
+export { pointSetInfoFor } from "./points.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
 export { analyzeNode, ANALYZE_RESULT_KEY } from "./analyze.ts";
 export { movieFileInNode, webcamNode, mediaSourceIdFor, mediaNodeDefinitions } from "./media.ts";
@@ -25,7 +26,7 @@ export {
   VALUE_PORT,
   mouseNode,
   valueMathNode,
-  limitNode,
+  valueLimitNode,
   slopeNode,
   triggerNode,
   lagNode,
@@ -56,7 +57,14 @@ export {
   tileNode,
   transformNodes,
 } from "./transforms.ts";
-export { levelNode, hsvNode, thresholdNode, lookupNode, colorNodes } from "./color.ts";
+export {
+  levelNode,
+  hsvNode,
+  thresholdNode,
+  limitNode,
+  lookupNode,
+  colorNodes,
+} from "./color.ts";
 export { blurNode, edgeNode, convolveNode, displaceNode, filterNodes } from "./filters.ts";
 export {
   compositeNode,

@@ -137,3 +137,65 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let coord = vec2f(clamp(index, 0.0, 1.0), clamp(params.row, 0.0, 1.0));
   return textureSampleLevel(lookupTexture, inputSampler, coord, 0.0);
 }`;
+
+/**
+ * Limit — bound a value, or step it (T283). TD's Limit TOP.
+ *
+ * Four ways to deal with a value outside a range, and the difference between them is what
+ * happens to the EXCESS. Clamp throws it away, loop wraps it, zigzag reflects it, and
+ * quantize keeps the value in range but coarsens it. TD ships the same four for the same
+ * reason: "out of range" has no single right answer, and the choices produce visibly
+ * different pictures rather than being variations on a theme.
+ *
+ * Quantize is the one people arrive for without knowing its name: stepping a colour channel
+ * IS posterisation. The step count is expressed as STEPS rather than as a step size because
+ * "8 levels" is what someone means, and dividing 1.0 by it here rather than in the inspector
+ * keeps the parameter honest at any range.
+ *
+ * Alpha is left alone. Limiting coverage is a different intent from limiting colour, and
+ * quantizing alpha turns a soft edge into a stair — which is never what someone posterising
+ * an image was asking for.
+ */
+export const LIMIT_FRAGMENT_WGSL = `struct Params {
+  mode: f32,
+  low: f32,
+  high: f32,
+  steps: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+
+fn limitChannel(value: f32, mode: u32, lo: f32, hi: f32, steps: f32) -> f32 {
+  let span = max(hi - lo, 1e-6);
+  if (mode == 1u) {
+    // Loop: the value wraps, so a ramp becomes a sawtooth.
+    return lo + (fract((value - lo) / span) * span);
+  }
+  if (mode == 2u) {
+    // Zigzag: reflect on every other period, so the result is continuous where loop jumps.
+    let t = abs(fract((value - lo) / (span * 2.0)) * 2.0 - 1.0);
+    return lo + ((1.0 - t) * span);
+  }
+  if (mode == 3u) {
+    // Quantize: floor to the nearest step, then rescale. Dividing by steps - 1 puts the
+    // top step exactly at the maximum; dividing by steps would leave the brightest level
+    // permanently unreachable, which reads as a washed-out posterise.
+    let levels = max(floor(steps), 2.0);
+    let t = clamp((value - lo) / span, 0.0, 1.0);
+    return lo + (floor(t * (levels - 1.0) + 0.5) / (levels - 1.0)) * span;
+  }
+  return clamp(value, lo, hi);
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let source = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  let mode = u32(params.mode + 0.5);
+  let rgb = vec3f(
+    limitChannel(source.r, mode, params.low, params.high, params.steps),
+    limitChannel(source.g, mode, params.low, params.high, params.steps),
+    limitChannel(source.b, mode, params.low, params.high, params.steps),
+  );
+  return vec4f(rgb, source.a);
+}`;

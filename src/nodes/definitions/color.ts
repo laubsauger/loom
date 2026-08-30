@@ -4,6 +4,7 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
+  LIMIT_FRAGMENT_WGSL,
   HSV_FRAGMENT_WGSL,
   LEVEL_FRAGMENT_WGSL,
   LOOKUP_FRAGMENT_WGSL,
@@ -349,9 +350,83 @@ export const lookupNode: NodeDefinition = {
 };
 
 /** The colour group, in library order. */
+/** How a value outside the range is dealt with. Order is the index the shader switches on. */
+const LIMIT_MODE_OPTIONS = [
+  { value: "clamp", label: "Clamp" },
+  { value: "loop", label: "Loop" },
+  { value: "zigzag", label: "Zigzag" },
+  { value: "quantize", label: "Quantize" },
+] as const;
+
+/**
+ * Limit — bound a value, or step it (T283). TD's Limit TOP.
+ *
+ * The four modes differ in what happens to the EXCESS: clamp discards it, loop wraps it,
+ * zigzag reflects it, quantize keeps it in range and coarsens it. Quantize is the one people
+ * arrive for without knowing its name, because stepping a colour channel is posterisation.
+ *
+ * Alpha is untouched: limiting coverage is a different intent from limiting colour, and
+ * quantizing alpha turns a soft edge into a stair, which is never what someone posterising
+ * an image asked for.
+ */
+export const limitNode: NodeDefinition = {
+  type: "limit",
+  version: 1,
+  title: "Limit",
+  category: "color",
+  description: "Clamps, loops, zigzags or quantizes channel values. TD Limit TOP.",
+  inputs: [
+    { id: "input", label: "Input", type: RGBA_TEXTURE, description: "Linear-space colour." },
+  ],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    mode: { type: "enum", label: "Mode", default: "clamp", options: [...LIMIT_MODE_OPTIONS] },
+    low: { type: "number", label: "Minimum", default: 0, min: -4, max: 4 },
+    high: { type: "number", label: "Maximum", default: 1, min: -4, max: 4 },
+    steps: {
+      type: "number",
+      label: "Steps",
+      default: 4,
+      min: 2,
+      max: 256,
+      description: "Quantize mode only. Levels, not step size — 8 means eight of them.",
+    },
+  },
+  resolutionPolicy: { kind: "inherit", input: "input" },
+  formatPolicy: { kind: "inherit", input: "input" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["input"];
+    if (target === undefined || source === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "input"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:limit`,
+      shader: LIMIT_FRAGMENT_WGSL,
+      target,
+      textures: [{ binding: "inputTexture", resourceId: source.resource }],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        mode: readEnumIndex(parameters, "mode", LIMIT_MODE_OPTIONS, "clamp"),
+        low: readNumber(parameters, "low", 0),
+        high: readNumber(parameters, "high", 1),
+        steps: readNumber(parameters, "steps", 4),
+      },
+      nodeId,
+      label: "Limit",
+    };
+    return { passes: [pass] };
+  },
+};
+
 export const colorNodes: readonly NodeDefinition[] = [
   levelNode,
   hsvNode,
   thresholdNode,
+  limitNode,
   lookupNode,
 ];
