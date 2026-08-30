@@ -95,6 +95,8 @@ export interface ScratchTargetRequest {
   scale?: number;
   /** Omitted = the node's resolved output format. */
   format?: TextureFormat;
+  /** T481: attach a depth buffer, exactly as an output target may (T295). Structural. */
+  depth?: boolean;
 }
 
 /**

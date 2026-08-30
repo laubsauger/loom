@@ -34,6 +34,19 @@ export interface LightPayload {
     /** Direction the light TRAVELS (directional). Normalised by the consumer. */
     readonly direction: readonly [number, number, number];
     readonly position: readonly [number, number, number];
+    /**
+     * T481: this light CASTS — one extra scene pass per render, stated on the
+     * parameter. Directional only in this build; a casting point light refuses by
+     * name at the render (six faces is a different feature).
+     */
+    readonly shadows: boolean;
+    /**
+     * T481 (V426): the world-units half-extent of the ortho shadow volume around the
+     * origin. EXPLICIT, never auto-fit — payloads carry no scene bounds, and a derived
+     * box would silently crop the shadow plausibly-wrong. A number the user can see
+     * beats a guess they cannot.
+     */
+    readonly shadowExtent: number;
   };
 }
 

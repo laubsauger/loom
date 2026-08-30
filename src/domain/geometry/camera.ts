@@ -154,3 +154,26 @@ export function cameraPayloadMatrix(
     : perspective((camera.fovDeg * Math.PI) / 180, aspect, camera.near, camera.far);
   return multiply(projection, view);
 }
+
+/**
+ * T481: the CASTING matrix for a directional light — an orthographic camera looking
+ * along the light's travel, framed by an EXPLICIT half-extent around the origin (V426:
+ * payloads carry no scene bounds, so a derived box would crop shadows plausibly-wrong).
+ * Coverage is at least `extent` on BOTH map axes whatever the map's aspect; a direction
+ * parallel to world-up swaps the up vector rather than degenerating.
+ */
+export function directionalShadowMatrix(
+  direction: readonly [number, number, number],
+  extent: number,
+  aspect: number,
+): Mat4 {
+  const length = Math.hypot(direction[0], direction[1], direction[2]) || 1;
+  const d: [number, number, number] = [direction[0] / length, direction[1] / length, direction[2] / length];
+  const eye: [number, number, number] = [-d[0] * extent, -d[1] * extent, -d[2] * extent];
+  const up: [number, number, number] = Math.abs(d[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
+  const safeAspect = Math.max(aspect, 1e-6);
+  const height = 2 * extent * Math.max(1, 1 / safeAspect);
+  const view = lookAt(eye, [0, 0, 0], up);
+  const projection = orthographic(height, safeAspect, 0.01, 3 * extent);
+  return multiply(projection, view);
+}

@@ -463,3 +463,57 @@ describe("per-point colour and counted sets reach the SCENE (T478)", () => {
     expect(refusal?.message).toContain("instances");
   });
 });
+
+describe("shadows are opt-in per light, priced in the open (T481, §V309)", () => {
+  const shadowGraph = (lightParams: Record<string, unknown>): GraphDocument =>
+    sceneGraph({ extraNodes: [], renderParams: {} }) as GraphDocument;
+
+  it("a casting directional light adds named shadow passes BEFORE the lit draws", () => {
+    const graph = sceneGraph();
+    ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = true;
+    const compiled = compile(graph);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const ids = compiled.passes.map((pass) => String((pass as { id: string }).id));
+    const clearAt = ids.findIndex((id) => id.includes(":shadow:0:clear"));
+    const shadowAt = ids.findIndex((id) => id.includes(":shadow:0:0"));
+    const litAt = ids.findIndex((id) => id.includes(":scene:0"));
+    // The map renders before anything reads it, and each pass is named per light so
+    // the performance panel can attribute the casting cost.
+    expect(clearAt).toBeGreaterThanOrEqual(0);
+    expect(shadowAt).toBeGreaterThan(clearAt);
+    expect(litAt).toBeGreaterThan(shadowAt);
+
+    // The map itself: r32float, depth-attached, twice the output size.
+    const map = compiled.resources.find((resource) => resource.id === "scratch:shot:shadow0");
+    expect(map).toMatchObject({ kind: "target", format: "r32float", depth: true, size: [128, 128] });
+
+    // The lit draw binds the map and carries the light's matrix as a NAMED member.
+    const lit = drawOf(compiled);
+    expect(lit.textures?.map((texture) => texture.binding) ?? [], "lit textures").toContain("shadowMap0");
+    expect(Array.isArray(lit.uniforms?.["shadow0Matrix"])).toBe(true);
+    expect(lit.shader).toContain("shadowMap0");
+  });
+
+  it("§V309: no casting light — passes and shaders byte-identical to the shadowless build", () => {
+    const off = compile(sceneGraph());
+    const explicit = ((): ReturnType<typeof compile> => {
+      const graph = sceneGraph();
+      ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = false;
+      return compile(graph);
+    })();
+    expect(explicit.passSignatures).toEqual(off.passSignatures);
+    expect(drawOf(off).shader).not.toContain("shadowMap");
+    expect(off.passes.some((pass) => String((pass as { id: string }).id).includes(":shadow:"))).toBe(false);
+  });
+
+  it("a casting POINT light refuses by name — six faces is a different feature", () => {
+    const graph = sceneGraph();
+    ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["kind"] = "point";
+    ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = true;
+    const compiled = compile(graph);
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.scene.shadow");
+    expect(refusal?.message).toContain("POINT");
+    expect(refusal?.suggestion).toContain("Directional");
+  });
+});

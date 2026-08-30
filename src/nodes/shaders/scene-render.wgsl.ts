@@ -21,6 +21,12 @@ export interface SceneShadingOptions {
   readonly maps?: { readonly albedo?: boolean; readonly roughness?: boolean };
   /** T478: a vec4f attribute multiplies the base colour per point (the mapped tint). */
   readonly pointColor?: boolean;
+  /**
+   * T481: the LIGHT INDICES that cast, in casting order. Slot s of this list owns
+   * `shadow{s}Matrix` (a named mat4 member, V380) and the `shadowMap{s}` texture at
+   * binding 5+s. Empty or absent emits byte-identical text (§V309).
+   */
+  readonly shadows?: ReadonlyArray<number>;
 }
 
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
@@ -28,6 +34,31 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const pointColor = options.pointColor === true;
   const albedoMap = options.maps?.albedo === true;
   const roughnessMap = options.maps?.roughness === true;
+  const shadows = options.shadows ?? [];
+  const shadowSlotOf = (index: number): number => shadows.indexOf(index);
+  const shadowFields = shadows.map((_, slot) => `  shadow${slot}Matrix: mat4x4f,\n`).join("");
+  const shadowBindings = shadows
+    .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
+    .join("");
+  /* One textureLoad, constant bias, hard edge — PCF is a stated follow-up, not a
+     silent absence. Outside the volume (uv or depth out of range) means UNSHADOWED:
+     the volume is explicit (V426), and beyond it the light simply shines. */
+  const shadowFactor = (index: number): string => {
+    const slot = shadowSlotOf(index);
+    if (slot < 0) return "";
+    return `    var shadow = 1.0;
+    {
+      let sc = params.shadow${slot}Matrix * vec4f(input.world, 1.0);
+      let suv = vec2f(sc.x * 0.5 + 0.5, 0.5 - sc.y * 0.5);
+      if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
+        let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
+        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
+        if (sc.z - 0.002 > stored) { shadow = 0.0; }
+      }
+    }
+`;
+  };
+
 
   /* Lights as GENERATED SCALAR MEMBERS — three vec4 rows per light (meta / colour /
      vector) with the index in the NAME. The count is structural anyway (a new light
@@ -69,7 +100,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     }
     /* Two-sided lambert: a surface has no wrong side (T301's rule, kept). */
     let lambert = abs(dot(normal, toLight));
-    let radiance = lightColor.rgb * lightMeta.y * attenuation;
+${shadowFactor(index)}    let radiance = lightColor.rgb * lightMeta.y * attenuation${shadowSlotOf(index) >= 0 ? " * shadow" : ""};
     lit += albedo.rgb * radiance * lambert;
 ${
   options.model === "phong"
@@ -102,11 +133,11 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,          // rgb specular colour, w = shininess
   material: vec4f,          // x = metallic, y = roughness, zw reserved
   grid: vec4f,              // cols, rows, wrapU, wrapV
-${lightField}};
+${lightField}${shadowFields}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -191,9 +222,32 @@ export function sceneInstancesWgsl(options: {
   lightCount: number;
   /** T478: a vec4f attribute multiplies the base colour per point (the geometry's mapped tint). */
   pointColor?: boolean;
+  /** T481: casting light indices — see SceneShadingOptions.shadows. */
+  shadows?: ReadonlyArray<number>;
 }): string {
   const pointColor = options.pointColor === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
+  const shadows = options.shadows ?? [];
+  const shadowSlotOf = (index: number): number => shadows.indexOf(index);
+  const shadowFields = shadows.map((_, slot) => `  shadow${slot}Matrix: mat4x4f,\n`).join("");
+  const shadowBindings = shadows
+    .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
+    .join("");
+  const shadowFactor = (index: number): string => {
+    const slot = shadowSlotOf(index);
+    if (slot < 0) return "";
+    return `    var shadow = 1.0;
+    {
+      let sc = params.shadow${slot}Matrix * vec4f(input.world, 1.0);
+      let suv = vec2f(sc.x * 0.5 + 0.5, 0.5 - sc.y * 0.5);
+      if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
+        let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
+        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
+        if (sc.z - 0.002 > stored) { shadow = 0.0; }
+      }
+    }
+`;
+  };
   const lightField = Array.from({ length: lightCount }, (_, index) =>
     `  light${index}Meta: vec4f,\n  light${index}Color: vec4f,\n  light${index}Vector: vec4f,\n`,
   ).join("");
@@ -212,7 +266,7 @@ export function sceneInstancesWgsl(options: {
       attenuation = 1.0 / (1.0 + distance * distance);
     }
     let lambert = abs(dot(normal, toLight));
-    let radiance = lightColor.rgb * lightMeta.y * attenuation;
+${shadowFactor(index)}    let radiance = lightColor.rgb * lightMeta.y * attenuation${shadowSlotOf(index) >= 0 ? " * shadow" : ""};
     lit += albedo.rgb * radiance * lambert;
 ${
   options.model === "phong"
@@ -244,11 +298,11 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,
   material: vec4f,
   instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
-${lightField}};
+${lightField}${shadowFields}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -341,3 +395,153 @@ ${shading}
 }`;
 }
 
+
+/**
+ * T481: the SHADOW pass shaders — the scene's own analytic vertex generation with the
+ * shading stripped, drawing LIGHT-SPACE CLIP DEPTH into an r32float colour target.
+ * Not the depth aspect: binding one as a texture would be new resource plumbing, and
+ * r32float is renderable everywhere with the float32-filterable compile gate already
+ * standing (we read it with textureLoad, so even that gate never fires).
+ *
+ * The far plate (`SHADOW_CLEAR_WGSL`) paints depth 1.0 across the target first, the
+ * same way the render's backdrop paints its background (T444): a cleared shadow map
+ * must read "nothing here", and the target's own clear colour is not ours to choose.
+ */
+export const SHADOW_CLEAR_WGSL = `@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.9999, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }`;
+
+/** The surface mesh from the light's view — grid arithmetic identical to the lit draw. */
+export function shadowSurfaceWgsl(): string {
+  return `struct ShadowParams {
+  lightViewProjection: mat4x4f,
+  grid: vec4f,              // cols, rows, wrapU, wrapV
+};
+
+@group(0) @binding(0) var<uniform> params: ShadowParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+
+fn cellCorner(v: u32) -> vec2u {
+  var corners = array<vec2u, 6>(
+    vec2u(0u, 0u), vec2u(1u, 0u), vec2u(0u, 1u),
+    vec2u(0u, 1u), vec2u(1u, 0u), vec2u(1u, 1u),
+  );
+  return corners[v];
+}
+
+fn gridPosition(gx: u32, gy: u32) -> vec3f {
+  let cols = u32(params.grid.x);
+  let rows = u32(params.grid.y);
+  let px = select(gx, gx % cols, params.grid.z > 0.5);
+  let py = select(gy, gy % rows, params.grid.w > 0.5);
+  return positions[py * cols + px];
+}
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) depth: f32,
+};
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
+  let cols = u32(params.grid.x);
+  let wrapU = params.grid.z > 0.5;
+  let cellsU = select(cols - 1u, cols, wrapU);
+  let quad = vertex / 6u;
+  let corner = cellCorner(vertex % 6u);
+  let gx = (quad % cellsU) + corner.x;
+  let gy = (quad / cellsU) + corner.y;
+  let clip = params.lightViewProjection * vec4f(gridPosition(gx, gy), 1.0);
+  var out: VertexOut;
+  out.position = clip;
+  out.depth = clip.z;
+  return out;
+}
+
+@fragment
+fn fs(input: VertexOut) -> @location(0) vec4f {
+  return vec4f(input.depth, 0.0, 0.0, 1.0);
+}`;
+}
+
+/** The instance primitives from the light's view — shapes identical to the lit draw. */
+export function shadowInstancesWgsl(): string {
+  return `struct ShadowParams {
+  lightViewProjection: mat4x4f,
+  instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
+};
+
+@group(0) @binding(0) var<uniform> params: ShadowParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+
+fn quadCorner(v: u32) -> vec2f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return corners[v];
+}
+
+fn shapeVertexCount(shape: u32) -> u32 {
+  if (shape == 0u) { return 6u; }
+  if (shape == 2u) { return 24u; }
+  return 36u;
+}
+
+fn boxVertex(v: u32) -> vec3f {
+  let face = v / 6u;
+  let corner = quadCorner(v % 6u);
+  let flip = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
+  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
+  return vec3f(corner.x * flip, corner.y, flip);
+}
+
+fn octaVertex(v: u32) -> vec3f {
+  let face = v / 3u;
+  let sx = f32(face & 1u) * 2.0 - 1.0;
+  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+  let corner = v % 3u;
+  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
+  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
+  return vec3f(0.0, 0.0, sz);
+}
+
+fn shapeVertex(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
+  if (shape == 2u) { return octaVertex(v); }
+  return boxVertex(v);
+}
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) depth: f32,
+};
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
+  let shape = u32(params.instance.y);
+  let count = shapeVertexCount(shape);
+  let v = min(vertex, count - 1u);
+  let world = shapeVertex(shape, v) * params.instance.x + positions[instance];
+  let clip = params.lightViewProjection * vec4f(world, 1.0);
+  var out: VertexOut;
+  out.position = clip;
+  out.depth = clip.z;
+  return out;
+}
+
+@fragment
+fn fs(input: VertexOut) -> @location(0) vec4f {
+  return vec4f(input.depth, 0.0, 0.0, 1.0);
+}`;
+}

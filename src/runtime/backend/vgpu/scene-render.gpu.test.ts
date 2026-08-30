@@ -6,6 +6,13 @@ import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
+import { cameraPayloadMatrix, transformPoint } from "../../../domain/geometry/camera.ts";
+import { encodePng } from "../../export/png.ts";
+import { writeFileSync } from "node:fs";
+
+const savePng = (name: string, bytes: Uint8Array): void => {
+  writeFileSync(`test-results/${name}`, encodePng({ width: 64, height: 64, data: bytes }).bytes);
+};
 
 /**
  * T377 on a REAL device, with §V147 exact values: one directional light straight down
@@ -260,5 +267,132 @@ describe("per-point colour reaches the lit scene exactly (T478, §V147, §V361)"
     // §V361's cut: the SAME graph with a static tint — white, all three channels.
     const flat = await render([1, 1, 1, 1]);
     expect([flat[centre], flat[centre + 1], flat[centre + 2]]).toEqual([lit, lit, lit]);
+  }, 120_000);
+});
+
+describe("shadows land exactly (T481, §V147, §V361)", () => {
+  it("under the box the ground is the ambient floor; beside it, fully lit — to the byte", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+
+    const buildGraph = (shadows: boolean): GraphDocument => {
+      const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({
+        id,
+        type,
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters,
+        label,
+      });
+      return {
+        revision: 1,
+        nodes: Object.fromEntries(
+          [
+            // The ground: a 16×16 grid mapped onto the xz plane, ±4 world units.
+            node("grid", "pointGrid", { cols: 16, rows: 16, count: 256 }, "grid1"),
+            node("flatten", "pointKernel", {
+              capacity: 256,
+              attributes: JSON.stringify([
+                { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+              ]),
+              kernel:
+                "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = vec3f(p.position.x * 4.0, 0.0, p.position.y * 4.0);\n  return q;\n}",
+            }, "flatten1"),
+            node("ground", "geometry", { mode: "surface" }, "ground1"),
+            // The caster: one box floating a unit above the origin.
+            node("dot", "pointGrid", { cols: 1, rows: 1, count: 1 }, "dot1"),
+            node("lift", "pointKernel", {
+              capacity: 1,
+              attributes: JSON.stringify([
+                { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+              ]),
+              kernel:
+                "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = vec3f(0.0, 1.0, 0.0);\n  return q;\n}",
+            }, "lift1"),
+            node("box", "geometry", { mode: "instances", shape: "box", scale: 0.5 }, "box1"),
+            node("cam", "camera", { eye: [0, 2, 4], lookAt: [0, 0, 0] }, "cam1"),
+            // Straight down, so |N·L| = 1 on the ground: shadowed = ambient floor
+            // EXACTLY, lit = ambient + intensity EXACTLY. The up-vector swap for a
+            // direction parallel to world-up is exercised for free.
+            node("sun", "light", { kind: "directional", direction: [0, -1, 0], intensity: 1, shadows }, "sun1"),
+            node(
+              "shot",
+              "render",
+              { scenes: "ground1 box1", camera: "cam1", lights: "sun1", ambientColor: [1, 1, 1, 1], ambientIntensity: 0.12 },
+              "shot1",
+            ),
+            node("out", "output", {}, "out1"),
+          ].map((entry) => [entry.id, entry]),
+        ),
+        edges: {
+          e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "flatten", portId: "in" } },
+          e2: { id: "e2", source: { nodeId: "flatten", portId: "out" }, target: { nodeId: "ground", portId: "points" } },
+          e3: { id: "e3", source: { nodeId: "dot", portId: "out" }, target: { nodeId: "lift", portId: "in" } },
+          e4: { id: "e4", source: { nodeId: "lift", portId: "out" }, target: { nodeId: "box", portId: "points" } },
+          e5: { id: "e5", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+        },
+        groups: {},
+      } as never;
+    };
+
+    const render = async (shadows: boolean): Promise<Uint8Array> => {
+      const plan = compileGraph({
+        graph: buildGraph(shadows),
+        settings: SETTINGS,
+        registry,
+        capabilities: {
+          tier: "B",
+          features: [],
+          formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+          timestampQuery: false,
+          limits: { maxTextureDimension2D: 8192 },
+        } as never,
+      });
+      expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const backend = createVgpuBackend({ host: nodeGpuHost() });
+      try {
+        await backend.initialize({});
+        const compiled = await backend.compile(plan);
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        const image = await backend.readOutput("target:shot:out");
+        return image.bytes;
+      } finally {
+        backend.dispose();
+      }
+    };
+
+    // Project world points through the SAME camera the render composes, so the texels
+    // sampled are exact by construction rather than eyeballed.
+    const matrix = cameraPayloadMatrix(
+      { eye: [0, 2, 4], lookAt: [0, 0, 0], fovDeg: 55, near: 0.1, far: 100, ortho: false, orthoHeight: 2 },
+      1,
+    );
+    const texelOf = (world: readonly [number, number, number]): number => {
+      const clip = transformPoint(matrix, world);
+      const x = Math.round(((clip[0] / clip[3]) * 0.5 + 0.5) * 64);
+      const y = Math.round((0.5 - (clip[1] / clip[3]) * 0.5) * 64);
+      return (y * 64 + x) * 4;
+    };
+    const inShadow = texelOf([0.3, 0, 0.3]); // under the box's footprint, visible past its face
+    const inLight = texelOf([0, 0, 2]); // open ground
+
+    const shadowed = await render(true);
+    const floor = Math.round(0.8 * 0.12 * 255); // albedo × ambient — the light is blocked
+    const lit = Math.round(0.8 * (0.12 + 1) * 255); // albedo × (ambient + |N·L| = 1)
+    expect(shadowed[inShadow]).toBe(floor);
+    expect(shadowed[inLight]).toBe(lit);
+
+    // §V361: the same graph with casting OFF — the "shadowed" texel is fully lit.
+    const cut = await render(false);
+    expect(cut[inShadow]).toBe(lit);
+    expect(cut[inLight]).toBe(lit);
+
+    savePng("scene-shadow-on.png", shadowed);
+    savePng("scene-shadow-off.png", cut);
   }, 120_000);
 });

@@ -1083,7 +1083,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         );
       }
       for (const raw of entries) {
-        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown; sourceId?: unknown; frames?: unknown; swap?: unknown; usage?: unknown };
+        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown; sourceId?: unknown; frames?: unknown; swap?: unknown; usage?: unknown; depth?: unknown };
         const key = typeof entry.key === "string" && entry.key !== "" ? entry.key : undefined;
         // T121/T176: a bufferPair scratch entry — SoA point storage. One identity per
         // attribute; the compiler appends its swap after all consumers (§V22), and T143
@@ -1270,6 +1270,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             Math.max(1, Math.round(baseSize[1] * scale)),
           ],
           format: scratchFormat,
+          // T481: a scratch target may carry a depth attachment (structural, T295) —
+          // the shadow map's draws are depth-tested like any scene draw.
+          ...(entry.depth === true ? { depth: true } : {}),
           label: `${nodeId} scratch ${key}`,
         });
       }

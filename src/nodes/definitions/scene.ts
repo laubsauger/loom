@@ -2,13 +2,19 @@ import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
-import { cameraPayloadMatrix } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, directionalShadowMatrix } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap } from "./points.ts";
-import { sceneInstancesWgsl, sceneSurfaceWgsl } from "../shaders/scene-render.wgsl.ts";
+import {
+  SHADOW_CLEAR_WGSL,
+  sceneInstancesWgsl,
+  sceneSurfaceWgsl,
+  shadowInstancesWgsl,
+  shadowSurfaceWgsl,
+} from "../shaders/scene-render.wgsl.ts";
 
 /**
  * The 3D pipeline (T376/T377/T447): camera, light and geometry are THINGS, and a
@@ -108,6 +114,23 @@ export const lightNode: NodeDefinition = {
       default: [1, 2, 1.5],
       inactiveWhen: (values) => (values["kind"] === "directional" ? "A directional light is infinitely far." : null),
     },
+    shadows: {
+      type: "boolean",
+      label: "Cast Shadows",
+      default: false,
+      compileTime: true,
+      description:
+        "T481: this light casts — ADDS ONE FULL SCENE PASS per render that lists it. Directional only in this build; the pass is named per light in the performance panel so its cost is visible.",
+    },
+    shadowExtent: {
+      type: "number",
+      label: "Shadow Extent",
+      default: 8,
+      min: 0.1,
+      description:
+        "World-units half-extent of the shadow volume around the origin. Explicit on purpose: nothing knows your scene's bounds, and a guessed box would crop shadows plausibly-wrong (V426).",
+      inactiveWhen: (values) => (values["shadows"] === true ? null : "Only a casting light frames a shadow volume."),
+    },
   },
   compile(context): CompiledNodeDescription {
     const { parameters } = readCompileInputs(context);
@@ -120,6 +143,8 @@ export const lightNode: NodeDefinition = {
         intensity: readNumber(parameters, "intensity", 1),
         direction: vec3(parameters, "direction", [-0.4, -0.8, -0.45]),
         position: vec3(parameters, "position", [1, 2, 1.5]),
+        shadows: parameters["shadows"] === true,
+        shadowExtent: readNumber(parameters, "shadowExtent", 8),
       },
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
@@ -418,6 +443,29 @@ export const renderNode: NodeDefinition = {
     const aspect = resolution[0] / Math.max(resolution[1], 1);
     const viewProjectionMatrix = cameraPayloadMatrix(camera, aspect);
 
+    /*
+     * T481 — SHADOWS, opt-in per light and priced in the open: each casting light adds
+     * one full scene pass, named per light so the performance panel attributes its GPU
+     * ms. Directional only in this build: a casting point light needs six faces, which
+     * is a different feature, so it refuses by name rather than shipping half.
+     */
+    const casting = lights
+      .map((light, index) => ({ light, index }))
+      .filter(({ light }) => light.shadows);
+    const castingPoint = casting.find(({ light }) => light.type === "point");
+    if (castingPoint !== undefined) {
+      return refuse(
+        "node.scene.shadow",
+        `light ${castingPoint.index + 1} is a POINT light with Cast Shadows on — directional lights cast in this build (a point caster needs six faces).`,
+        "Switch the light to Directional, or turn its Cast Shadows off.",
+      );
+    }
+    const shadowMatrices = casting.map(({ light }) =>
+      directionalShadowMatrix(light.direction, Math.max(0.1, light.shadowExtent), aspect),
+    );
+    const shadowTargetOf = (slot: number): string => `scratch:${nodeId}:shadow${casting[slot]?.index ?? slot}`;
+    const castingIndices = casting.map(({ index }) => index);
+
     const ambient = readColor(parameters, "ambientColor", [1, 1, 1, 1]);
     const ambientIntensity = readNumber(parameters, "ambientIntensity", 0.12);
 
@@ -425,7 +473,97 @@ export const renderNode: NodeDefinition = {
     const background = readColor(parameters, "background", [0, 0, 0, 1]);
     const passes: Array<DrawPassDescriptor | DispatchPassDescriptor> = [];
     /** T478: one indirect-args scratch buffer per COUNTED geometry. */
-    const scratch: Array<NonNullable<ReturnType<typeof countedDrawSupport>>["scratch"]> = [];
+    const scratch: Array<
+      | NonNullable<ReturnType<typeof countedDrawSupport>>["scratch"]
+      | { key: string; scale: number; format: "r32float"; depth: true }
+    > = [];
+    /** T481: counted draw support emitted once (in the shadow phase when one exists),
+     *  shared by the shadow and the lit draw of the same geometry. */
+    const countedByIndex = new Map<number, NonNullable<ReturnType<typeof countedDrawSupport>>>();
+
+    /* T481: the shadow phase — every map is rendered BEFORE the lit draws that read it.
+       Zero casting lights emits nothing here and nothing below changes: §V309 holds as
+       byte-identical passes and shaders. */
+    const emitShadowPasses = (): void => {
+      casting.forEach(({ index: lightIndex }, slot) => {
+        scratch.push({ key: `shadow${lightIndex}`, scale: 2, format: "r32float", depth: true });
+        const shadowTarget = shadowTargetOf(slot);
+        // The far plate: depth 1.0 everywhere first, the backdrop pattern (T444) —
+        // a cleared map must read "nothing here" and the clear colour is not ours.
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:shadow:${lightIndex}:clear`,
+          nodeId,
+          shader: SHADOW_CLEAR_WGSL,
+          target: shadowTarget,
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 6,
+          clear: true,
+        } as DrawPassDescriptor);
+        geometries.forEach(({ payload }, geometryIndex) => {
+          const position = payload.pairs["position"];
+          if (position === undefined) return; // the lit loop refuses this by name
+          if (payload.mode === "instances") {
+            let counted = countedByIndex.get(geometryIndex);
+            if (counted === undefined && payload.count !== undefined) {
+              const support = countedDrawSupport(nodeId, payload, {
+                vertexCount: 36,
+                maxInstances: Math.max(1, payload.capacity),
+                argsKey: `drawArgs${geometryIndex}`,
+              });
+              if (support !== undefined) {
+                counted = support;
+                countedByIndex.set(geometryIndex, support);
+                passes.push(support.argsPass);
+                scratch.push(support.scratch);
+              }
+            }
+            const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+            passes.push({
+              kind: "draw",
+              id: `${nodeId}:shadow:${lightIndex}:${geometryIndex}`,
+              nodeId,
+              shader: shadowInstancesWgsl(),
+              target: shadowTarget,
+              topology: "triangle-list",
+              instances: counted?.instances ?? payload.capacity,
+              vertexCount: 36,
+              buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+              uniforms: {
+                lightViewProjection: Array.from(shadowMatrices[slot] ?? []),
+                instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+              },
+              uniformBinding: "params",
+              clear: false,
+            });
+            return;
+          }
+          const topology = typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
+          if (topology === null || topology.kind !== "grid") return; // lit loop refuses
+          if (gridPointCount(topology) > payload.capacity) return;
+          const { cellsU, cellsV } = gridCellCounts(topology);
+          passes.push({
+            kind: "draw",
+            id: `${nodeId}:shadow:${lightIndex}:${geometryIndex}`,
+            nodeId,
+            shader: shadowSurfaceWgsl(),
+            target: shadowTarget,
+            topology: "triangle-list",
+            instances: 1,
+            vertexCount: cellsU * cellsV * 6,
+            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+            uniforms: {
+              lightViewProjection: Array.from(shadowMatrices[slot] ?? []),
+              grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
+            },
+            uniformBinding: "params",
+            clear: false,
+          });
+        });
+      });
+    };
+    emitShadowPasses();
     /*
      * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
      * so a render used as a material map is a PICTURE with a stage behind it rather
@@ -512,16 +650,21 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
          * T478: a COUNTED geometry draws INDIRECTLY off its GPU-resident live count —
          * T322's machinery verbatim, so a spawning/killing producer's dead tail is
          * never resurrected into the scene. The args id is scoped per geometry so two
-         * counted objects in one render cannot collide.
+         * counted objects in one render cannot collide — and when a shadow phase ran
+         * first, its args dispatch is REUSED, not duplicated (T481).
          */
-        const counted = countedDrawSupport(nodeId, payload, {
-          vertexCount: 36,
-          maxInstances: Math.max(1, payload.capacity),
-          argsKey: `drawArgs${index}`,
-        });
-        if (counted !== undefined) {
-          passes.push(counted.argsPass);
-          scratch.push(counted.scratch);
+        let counted = countedByIndex.get(index);
+        if (counted === undefined) {
+          counted = countedDrawSupport(nodeId, payload, {
+            vertexCount: 36,
+            maxInstances: Math.max(1, payload.capacity),
+            argsKey: `drawArgs${index}`,
+          });
+          if (counted !== undefined) {
+            countedByIndex.set(index, counted);
+            passes.push(counted.argsPass);
+            scratch.push(counted.scratch);
+          }
         }
         passes.push({
           kind: "draw",
@@ -531,6 +674,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             model,
             lightCount: lights.length,
             ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+            ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
           }),
           target,
           topology: "triangle-list",
@@ -563,7 +707,19 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                 [`light${lightIndex}Vector`, [...(light.type === "point" ? light.position : light.direction), 0]],
               ]),
             ),
+            ...Object.fromEntries(
+              shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
+            ),
           },
+          ...(casting.length === 0
+            ? {}
+            : {
+                textures: casting.map((_, slot) => ({
+                  binding: `shadowMap${slot}`,
+                  resourceId: shadowTargetOf(slot),
+                  sampled: "unfiltered" as const,
+                })),
+              }),
           uniformBinding: "params",
           clear: false,
         });
@@ -640,6 +796,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
           lightCount: lights.length,
           maps,
           ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+          ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
         }),
         target,
         topology: "triangle-list",
@@ -657,7 +814,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                 },
               ]),
         ],
-        ...(material.maps.albedo === undefined && material.maps.roughness === undefined
+        ...(material.maps.albedo === undefined && material.maps.roughness === undefined && casting.length === 0
           ? {}
           : {
               textures: [
@@ -667,6 +824,11 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                 ...(material.maps.roughness === undefined
                   ? []
                   : [{ binding: "roughnessMap", resourceId: material.maps.roughness, sampled: "unfiltered" as const }]),
+                ...casting.map((_, slot) => ({
+                  binding: `shadowMap${slot}`,
+                  resourceId: shadowTargetOf(slot),
+                  sampled: "unfiltered" as const,
+                })),
               ],
             }),
         uniforms: {
@@ -683,6 +845,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
               [`light${lightIndex}Color`, [...light.color, 0]],
               [`light${lightIndex}Vector`, [...(light.type === "point" ? light.position : light.direction), 0]],
             ]),
+          ),
+          ...Object.fromEntries(
+            shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
           ),
         },
         uniformBinding: "params",
