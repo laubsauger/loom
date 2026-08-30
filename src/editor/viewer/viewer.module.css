@@ -26,6 +26,20 @@
 }
 
 /*
+ * §V303 — the state, then what the compiler resolved. The state reads first and brighter
+ * because it is the question the slot is answering: a covered tile and a live one differ
+ * only by this line, and "off" must never be mistaken for a picture that is still moving.
+ */
+.slotReason {
+  display: block;
+  color: var(--text);
+}
+
+.slotFacts {
+  display: block;
+}
+
+/*
  * Lens marker (T336). Present ONLY while a preview is being shown through something other
  * than the plain picture, so the quiet case stays quiet (§V90) and an altered one cannot be
  * mistaken for the node's real output (§V70a's reason, one level in).

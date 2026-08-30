@@ -300,9 +300,11 @@ describe("pruning after flattening (§V25)", () => {
   });
 
   it("follows a previewed instance into the flattening rather than pruning it away", () => {
-    // The instance feeds nothing; only its preview keeps it alive (§V28).
+    // The instance feeds nothing; only its pinned preview keeps it alive (§V28). The PIN
+    // rather than the switch since T353 (§V297): the switch is default-on, and reading it
+    // here would make every instance in every document an unconditional sink.
     const graph = graphOf(
-      [testNode("gen", "fx.generator"), instance("c1", "bloom", 1, { ui: { preview: true } }), testNode("out", "fx.output")],
+      [testNode("gen", "fx.generator"), instance("c1", "bloom", 1, { ui: { previewPinned: true } }), testNode("out", "fx.output")],
       {
         e0: testEdge("e0", ["gen", "out"], ["c1", "source"]),
         e1: testEdge("e1", ["gen", "out"], ["out", "source"]),

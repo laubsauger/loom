@@ -108,6 +108,9 @@ describe("shape", () => {
   it("gives the three node toggles a state guard, so each shows a checkmark", () => {
     const nodeItems = items(menuSchemaFor("node", registry).entries);
     const toggles = nodeItems.filter((item) => item.command !== undefined && TOGGLE_GUARD[item.command] !== undefined);
+    // "Pin preview" is `node.togglePin` since T353: the preview SWITCH left the menu when
+    // it stopped being a pin, because it has the `P` button and the `d` key and the item
+    // cap below has no room for both.
     expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Pin preview"]);
   });
 });

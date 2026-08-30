@@ -19,7 +19,14 @@ import styles from "./viewer.module.css";
 export type NodePreviewState =
   | { readonly kind: "live" }
   | { readonly kind: "suspended"; readonly reason: SuspendReason }
-  | { readonly kind: "idle" };
+  | { readonly kind: "idle" }
+  /**
+   * Switched off by the user (T353, §V297). Distinct from `suspended`, which the
+   * scheduler decides and undoes on its own, and from `idle`, which means the compiler
+   * has resolved nothing yet: this one is a choice, and it is the only state in which the
+   * node is deliberately costing nothing.
+   */
+  | { readonly kind: "off" };
 
 /** Resolved size/format (§V100) — a node's preview NEVER goes blank just because the
  *  tile isn't drawing right now; it shows what compiled, which is real data, not prose. */
@@ -80,10 +87,22 @@ export function NodePreview({ output, state, facts, lens }: NodePreviewProps) {
   const live = state.kind === "live";
   const marker = lensMarker(lens);
   const reason =
-    state.kind === "suspended" ? SUSPEND_LABELS[state.reason] : live ? "live" : "no signal";
-  // §V100/T197 — off does not mean empty: the compiler already resolved this output, so
-  // the slot shows it rather than the word for why the picture is not moving. The
-  // reason itself is not lost, only demoted to hover/focus (§V90).
+    state.kind === "suspended"
+      ? SUSPEND_LABELS[state.reason]
+      : state.kind === "off"
+        ? "preview off"
+        : live
+          ? "live"
+          : "no signal";
+  // §V100/T197 — not-live does not mean empty: the compiler already resolved this output,
+  // so the slot shows it rather than nothing.
+  //
+  // §V303 — but it shows the STATE as well, and that is not decoration. A canvas keeps its
+  // last presented pixels, so a tile that stops being scheduled leaves a frozen picture
+  // behind it that looks exactly like a live one. The slot's opaque background is what
+  // actually covers those pixels (`.slotLive` is the only transparent case); this line is
+  // what tells the reader WHY the picture is gone. Facts alone made "off", "off-screen"
+  // and "over budget" render the same sentence — three different states, one label.
   const factsText = facts === undefined ? null : `${facts.width} × ${facts.height} · ${facts.format}`;
   return (
     <div
@@ -94,7 +113,12 @@ export function NodePreview({ output, state, facts, lens }: NodePreviewProps) {
       aria-label={`Preview of ${previewKey(output)}: ${reason}${marker === null ? "" : ` — lens ${marker}`}`}
       title={live ? undefined : reason}
     >
-      {live ? null : <span className={styles.slotStatus}>{factsText ?? reason}</span>}
+      {live ? null : (
+        <span className={styles.slotStatus}>
+          <span className={styles.slotReason}>{reason}</span>
+          {factsText === null ? null : <span className={styles.slotFacts}>{factsText}</span>}
+        </span>
+      )}
       {marker === null ? null : (
         <span
           className={styles.lensMarker}

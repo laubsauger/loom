@@ -86,7 +86,22 @@ export interface GraphNode {
   state?: Record<string, unknown>;
   ui?: {
     collapsed?: boolean;
+    /**
+     * The preview SWITCH (T353, §V297). Absent means ON — a visible texture node previews
+     * by default (§V28b), so an untouched node and a deliberately-enabled one are the same
+     * document. `false` means OFF, and OFF is not "hidden": no tile is allocated, nothing
+     * is scheduled, and the node is not a preview sink, so the compiler prunes it and it
+     * costs no GPU work at all. That is the only way to make a node stop costing anything.
+     *
+     * This used to be the PIN, which is why pressing `P` appeared to do nothing: previews
+     * were on either way. The pin is `previewPinned` below.
+     */
     preview?: boolean;
+    /**
+     * Keep previewing while scrolled off screen (§V28b, §V28). The rarer need, so it lives
+     * in the context menu rather than on a button on every node.
+     */
+    previewPinned?: boolean;
     bypassed?: boolean;
     muted?: boolean;
     color?: string;

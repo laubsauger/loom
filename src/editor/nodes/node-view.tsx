@@ -72,9 +72,17 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
 
   const bypassed = node.ui?.bypassed === true;
   const muted = node.ui?.muted === true;
-  // §V28b: `ui.preview` is a PIN — keep previewing while scrolled off screen — not the
-  // on-switch. Whether the slot exists at all is decided below, from the definition.
-  const pinned = node.ui?.preview === true;
+  /**
+   * The preview SWITCH (T353, §V297, §V304), default ON.
+   *
+   * `ui.preview` used to be the pin, so pressing `P` changed nothing anyone could see —
+   * previews were on either way, and the button reported a state with no visible
+   * consequence. §V304: the control and the picture are now ONE fact. Off means off: no
+   * tile, nothing scheduled, no GPU work. Pinning — keep previewing while scrolled off
+   * screen — is the rarer need and lives in the context menu (§V78, §V90), so the node
+   * chrome does not grow a fourth button for it.
+   */
+  const previewOn = node.ui?.preview !== false;
   /**
    * What this node SHOWS in its body — a texture preview, or a value plot (T344).
    *
@@ -172,10 +180,10 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             {formatGpuMs(snapshot.gpuMs)}
           </span>
           <NodeToggle
-            label="Pin preview"
-            title="Pin — keep previewing when scrolled off screen"
+            label="Preview"
+            title="Preview — off costs no GPU work"
             short="P"
-            pressed={pinned}
+            pressed={previewOn}
             onToggle={() => toggle("node.toggleDisplay")}
           />
           <NodeToggle

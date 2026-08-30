@@ -82,17 +82,23 @@ export function resolveSinks(
     add(sink);
   }
 
-  // T159: the caller is authoritative about PREVIEW sinks. Only it knows which preview
-  // toggles are actually on screen (§V28 — the compiler has no DOM), so the document's
-  // `ui.preview` flags act as sinks only when NO explicit list was passed at all — the
-  // safe default for tests, validation and agent compiles. Manifest sinks are different:
-  // a declared sink is never pruned regardless of who is calling.
+  // T159: the caller is authoritative about PREVIEW sinks. Only it knows which previews
+  // are actually on screen (§V28 — the compiler has no DOM), so the document's own
+  // statement acts as a sink only when NO explicit list was passed at all — the safe
+  // default for tests, validation and agent compiles. Manifest sinks are different: a
+  // declared sink is never pruned regardless of who is calling.
+  //
+  // The document's statement is the PIN, not the switch (T353, §V297). `ui.preview` is
+  // now default-on, so reading it here would make every texture node in the document a
+  // sink and re-open B18 for every caller that has no DOM to narrow with; the pin says
+  // "this one matters even when nobody is looking at it", which is exactly the claim a
+  // headless compile can honour.
   const callerProvided = explicit !== undefined;
   for (const nodeId of [...nodes.keys()].sort()) {
     const resolved = nodes.get(nodeId);
     if (resolved === undefined) continue;
     if (isDeclaredSink(resolved.definition)) add({ nodeId, kind: "output" });
-    if (!callerProvided && resolved.node.ui?.preview === true) add({ nodeId, kind: "preview" });
+    if (!callerProvided && resolved.node.ui?.previewPinned === true) add({ nodeId, kind: "preview" });
   }
 
   const sinks = [...collected.values()].sort((a, b) => sinkKeyOf(a).localeCompare(sinkKeyOf(b)));

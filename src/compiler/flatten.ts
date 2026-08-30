@@ -404,9 +404,11 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
       instanceOutputs.set(flatId, child.outputs);
       changed = true;
 
-      // The instance node itself is gone, so a preview switched on for it has to become a
+      // The instance node itself is gone, so a preview PINNED on it has to become a
       // preview of what it produced — otherwise §V25 prunes the whole component away.
-      if (node.ui?.preview === true) {
+      // The pin, not the switch (T353, §V297): the switch is default-on and would make
+      // every instance an unconditional sink.
+      if (node.ui?.previewPinned === true) {
         const first = [...child.outputs.values()][0];
         if (first !== undefined) sinks.push({ nodeId: first.nodeId, portId: first.portId, kind: "preview" });
       }

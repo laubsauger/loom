@@ -33,7 +33,7 @@ export type MenuGuardName =
   | "canDisconnect"
   | "isBypassed"
   | "isMuted"
-  | "showsPreview"
+  | "pinsPreview"
   | "isOverridden";
 
 export function nodeForTarget(target: MenuTarget, context: MenuContext): GraphNode | undefined {
@@ -86,7 +86,11 @@ export function parameterDefault(
   return definition.default;
 }
 
-function flag(target: MenuTarget, context: MenuContext, key: "bypassed" | "muted" | "preview"): boolean {
+function flag(
+  target: MenuTarget,
+  context: MenuContext,
+  key: "bypassed" | "muted" | "previewPinned",
+): boolean {
   return nodeForTarget(target, context)?.ui?.[key] === true;
 }
 
@@ -95,7 +99,7 @@ const GUARDS: Record<MenuGuardName, (target: MenuTarget, context: MenuContext) =
   canDisconnect: (target, context) => edgesForTarget(target, context).length > 0,
   isBypassed: (target, context) => flag(target, context, "bypassed"),
   isMuted: (target, context) => flag(target, context, "muted"),
-  showsPreview: (target, context) => flag(target, context, "preview"),
+  pinsPreview: (target, context) => flag(target, context, "previewPinned"),
   isOverridden: (target, context) => {
     const node = nodeForTarget(target, context);
     if (node === undefined || target.parameterKey === undefined) return false;
@@ -115,7 +119,7 @@ const GUARD_REASON: Record<MenuGuardName, string> = {
   canDisconnect: "Nothing is connected here.",
   isBypassed: "This node is not bypassed.",
   isMuted: "This node is not muted.",
-  showsPreview: "This node has no preview showing.",
+  pinsPreview: "This node's preview is not pinned.",
   isOverridden: "Already at its default value.",
 };
 

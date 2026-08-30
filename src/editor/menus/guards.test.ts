@@ -44,7 +44,7 @@ describe("canDisconnect", () => {
 describe("node state guards", () => {
   const node = (nodeId: string): MenuTarget => ({ surface: "node", nodeId });
 
-  it("reads bypass, mute and preview off the node's own ui state", async () => {
+  it("reads bypass, mute and the preview pin off the node's own ui state", async () => {
     const target = node(fixture.solid);
     expect(menuGuardValue("isBypassed", target, fixture.context())).toBe(false);
 
@@ -58,7 +58,11 @@ describe("node state guards", () => {
     // to see the change — which is exactly what the host does on the next right-click.
     expect(menuGuardValue("isBypassed", target, fixture.context())).toBe(true);
     expect(menuGuardValue("isMuted", target, fixture.context())).toBe(false);
-    expect(menuGuardValue("showsPreview", target, fixture.context())).toBe(false);
+    // T353/§V297: the menu carries the PIN, not the switch — the switch has a button on
+    // the node and a key, and an untouched node is already previewing.
+    expect(menuGuardValue("pinsPreview", target, fixture.context())).toBe(false);
+    await fixture.bus.execute("node.togglePin", { nodeIds: [fixture.solid] }, contextFor(alice));
+    expect(menuGuardValue("pinsPreview", target, fixture.context())).toBe(true);
   });
 
   it("is false for a node that is no longer in the document", () => {

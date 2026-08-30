@@ -189,7 +189,7 @@
   },
   "name": "E6 Displacement Stack",
   "projectId": "example-displacement-stack",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

@@ -58,7 +58,7 @@ const planned = (name: PlannedCommandName): CommandName => name as CommandName;
 export const TOGGLE_GUARD: Readonly<Record<string, MenuGuardName>> = {
   "node.toggleBypass": "isBypassed",
   "node.toggleRender": "isMuted",
-  "node.toggleDisplay": "showsPreview",
+  "node.togglePin": "pinsPreview",
 };
 
 /**
@@ -114,7 +114,11 @@ export const NODE_MENU: MenuSchema = {
     { separator: true },
     { command: "node.toggleBypass", label: "Bypass" },
     { command: "node.toggleRender", label: "Mute" },
-    { command: "node.toggleDisplay", label: "Pin preview" },
+    // T353/§V297: the PIN lives here and the switch does not, which is the displacement
+    // the item cap asks for rather than a twelfth entry. The switch has the `P` button on
+    // every node and the `d` key; the pin had neither, and one of them had to be the one
+    // you can reach without knowing it exists.
+    { command: "node.togglePin", label: "Pin preview" },
     { separator: true },
     { command: planned("node.rename"), label: "Rename…" },
     { command: planned("node.openColorPalette"), label: "Set colour…" },

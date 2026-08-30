@@ -185,9 +185,25 @@ describe("node ui toggles", () => {
   it("writes the display flag the node view actually reads", async () => {
     const { bus, solid } = await harnessWithPair();
 
+    // T353/§V297: `ui.preview` is the SWITCH and it is default-ON, so the first toggle of
+    // an untouched node turns it OFF. Writing `true` here would be the button claiming to
+    // have enabled a preview that was already running (§V304).
     await bus.execute("node.toggleDisplay", { nodeIds: [solid] }, invocation);
+    expect(bus.store.getGraph().nodes[solid]?.ui?.preview).toBe(false);
 
+    await bus.execute("node.toggleDisplay", { nodeIds: [solid] }, invocation);
     expect(bus.store.getGraph().nodes[solid]?.ui?.preview).toBe(true);
+  });
+
+  it("pins separately from the switch, so one never moves the other", async () => {
+    const { bus, solid } = await harnessWithPair();
+
+    await bus.execute("node.togglePin", { nodeIds: [solid] }, invocation);
+
+    expect(bus.store.getGraph().nodes[solid]?.ui?.previewPinned).toBe(true);
+    // Two fields behind one control is how the button and the picture drifted apart in
+    // the first place (§V304); pinning must not switch anything off.
+    expect(bus.store.getGraph().nodes[solid]?.ui?.preview).toBeUndefined();
   });
 });
 

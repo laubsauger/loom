@@ -49,6 +49,7 @@ declare module "../types/commands.ts" {
     "node.toggleBypass": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `d` — node shows its preview. */
     "node.toggleDisplay": { input: NodeSelectionInput; output: GraphPatchResult };
+    "node.togglePin": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `r` — node does GPU work at all. */
     "node.toggleRender": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `n` — rename a node. `label: null` clears it back to the definition's title. */
@@ -209,7 +210,21 @@ function patchThrough(
   return applyGraphPatch({ baseRevision: context.graph.revision, label, operations }, context);
 }
 
-type UiFlag = "bypassed" | "preview" | "muted";
+type UiFlag = "bypassed" | "preview" | "previewPinned" | "muted";
+
+/**
+ * Flags whose ABSENT state means ON (T353, §V297).
+ *
+ * `preview` is the switch and previews are default-on (§V28b), so an untouched node is
+ * previewing and `undefined` has to read as `true` here. Reading absence as "off" would
+ * make the first press of `P` turn the preview ON for a node that was already showing
+ * one — the button lying about its own state on its very first use.
+ */
+const DEFAULT_ON: ReadonlySet<UiFlag> = new Set<UiFlag>(["preview"]);
+
+function flagIsOn(node: GraphNode, flag: UiFlag): boolean {
+  return DEFAULT_ON.has(flag) ? node.ui?.[flag] !== false : node.ui?.[flag] === true;
+}
 
 /**
  * Toggling a mixed selection turns the flag ON for everything unless it is already on
@@ -217,14 +232,14 @@ type UiFlag = "bypassed" | "preview" | "muted";
  * does not leave a selection half-toggled after a single keypress.
  */
 function toggleFlagOperations(nodes: readonly GraphNode[], flag: UiFlag): GraphPatchOperation[] {
-  const allOn = nodes.every((node) => node.ui?.[flag] === true);
+  const allOn = nodes.every((node) => flagIsOn(node, flag));
   const next = !allOn;
   return nodes.map((node) => ({ op: "setNodeUi", nodeId: node.id, ui: { [flag]: next } }));
 }
 
 function registerToggle(
   bus: ShaderloomBus,
-  name: "node.toggleBypass" | "node.toggleDisplay" | "node.toggleRender",
+  name: "node.toggleBypass" | "node.toggleDisplay" | "node.togglePin" | "node.toggleRender",
   flag: UiFlag,
   label: string,
 ): void {
@@ -358,8 +373,12 @@ export function registerEditorCommands(bus: ShaderloomBus): void {
   });
 
   registerToggle(bus, "node.toggleBypass", "bypassed", "Toggle bypass");
-  // TD's display flag is "show this operator's output"; ours is the node's preview tile.
-  registerToggle(bus, "node.toggleDisplay", "preview", "Toggle display");
+  // TD's display flag is "show this operator's output"; ours is the node's preview tile,
+  // and it is a SWITCH: off means no tile and no GPU work (T353, §V297).
+  registerToggle(bus, "node.toggleDisplay", "preview", "Toggle preview");
+  // Pinning is the rarer need — keep previewing while scrolled off screen — so it has no
+  // button on the node and lives in the context menu (§V78, §V90).
+  registerToggle(bus, "node.togglePin", "previewPinned", "Toggle preview pin");
   // TD's render flag is "does this operator cook at all"; ours is mute — the pass does
   // no GPU work and its edges stop flowing.
   registerToggle(bus, "node.toggleRender", "muted", "Toggle render");

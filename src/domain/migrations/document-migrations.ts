@@ -16,7 +16,53 @@ import type { AppliedMigration, DocumentMigration, RawDocument } from "./types.t
  * with a named reason rather than as a document that is half in one version and half in
  * the next.
  */
-export const DOCUMENT_MIGRATIONS: readonly DocumentMigration[] = [];
+
+/** Nodes of a raw document, or an empty object when the shape is not what we expect. */
+function rawNodes(document: RawDocument): Record<string, Record<string, unknown>> {
+  const graph = document["graph"];
+  if (typeof graph !== "object" || graph === null) return {};
+  const nodes = (graph as Record<string, unknown>)["nodes"];
+  if (typeof nodes !== "object" || nodes === null) return {};
+  return nodes as Record<string, Record<string, unknown>>;
+}
+
+/**
+ * 1 → 2: `ui.preview` was the PIN and is now the SWITCH (T353, §V297).
+ *
+ * The field kept its name and changed its meaning, which is the one shape a migration
+ * genuinely has to exist for. Read literally, an old document says the wrong thing in
+ * BOTH directions:
+ *
+ *  - `preview: true` meant "pinned — keep previewing when scrolled off". Read as the
+ *    switch it means "on", which is the default anyway, so the pin would be silently lost.
+ *  - `preview: false` meant "not pinned", which is also the default. Read as the switch it
+ *    means OFF — so every node the user ever pinned and unpinned would load with its
+ *    preview disabled, showing a dark slot for a choice nobody made. That is the failure
+ *    that would actually be reported, and it is why this cannot be left to "the new
+ *    default is fine".
+ *
+ * So: the truth moves to `previewPinned`, and the switch is left ABSENT, which is on. No
+ * document written before today has an opinion about the switch, and this refuses to
+ * invent one.
+ */
+const previewPinBecomesSwitch: DocumentMigration = {
+  from: 1,
+  to: 2,
+  description: "Node preview flag split: the old pin became `previewPinned`, and `preview` is now the on/off switch.",
+  migrate(document) {
+    for (const node of Object.values(rawNodes(document))) {
+      const ui = node["ui"];
+      if (typeof ui !== "object" || ui === null) continue;
+      const flags = ui as Record<string, unknown>;
+      if (!("preview" in flags)) continue;
+      if (flags["preview"] === true) flags["previewPinned"] = true;
+      delete flags["preview"];
+    }
+    return document;
+  },
+};
+
+export const DOCUMENT_MIGRATIONS: readonly DocumentMigration[] = [previewPinBecomesSwitch];
 
 export interface MigrateDocumentOptions {
   migrations?: readonly DocumentMigration[];

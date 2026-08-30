@@ -42,10 +42,14 @@ describe("isDeclaredSink (§V25)", () => {
 });
 
 describe("resolveSinks (T26)", () => {
-  it("defaults to the document's preview flags when the caller passes no list at all", () => {
+  it("defaults to the document's preview PINS when the caller passes no list at all", () => {
+    // T353/§V297: the PIN, not the switch. The switch is default-on, so reading it here
+    // would make every texture node in the document a sink and re-open B18 for every
+    // caller with no DOM to narrow with; the pin is the document saying "this one matters
+    // even when nobody is looking at it".
     const document = testGraph([
       testNode("out", "fx.output"),
-      testNode("peek", "fx.generator", { ui: { preview: true } }),
+      testNode("peek", "fx.generator", { ui: { previewPinned: true } }),
       testNode("quiet", "fx.generator"),
     ]);
     const validated = validateGraph(document, registry);
@@ -60,8 +64,8 @@ describe("resolveSinks (T26)", () => {
   it("honors an explicit list as authoritative for previews (T159, §V28)", () => {
     const document = testGraph([
       testNode("out", "fx.output"),
-      testNode("peek", "fx.generator", { ui: { preview: true } }),
-      testNode("also", "fx.generator", { ui: { preview: true } }),
+      testNode("peek", "fx.generator", { ui: { previewPinned: true } }),
+      testNode("also", "fx.generator", { ui: { previewPinned: true } }),
     ]);
     const validated = validateGraph(document, registry);
 

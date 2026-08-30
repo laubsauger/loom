@@ -216,7 +216,7 @@
   },
   "name": "E1 Feedback Echo",
   "projectId": "example-feedback-echo",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

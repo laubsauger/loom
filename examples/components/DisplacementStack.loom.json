@@ -306,7 +306,7 @@
   },
   "name": "DisplacementStack",
   "projectId": "component-displacementStack",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

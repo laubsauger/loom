@@ -77,8 +77,8 @@ export interface GraphCompileResult {
 /**
  * Every visible texture-producing node previews by default (§V28b) — TD parity: a
  * disconnected node shows its output rather than a blank box until it is wired to an
- * Output. VISIBILITY, not `ui.preview`, is what makes a node a preview sink; `ui.preview`
- * is an explicit PIN now (§V28b), not the on-switch, so it plays no part here.
+ * Output. VISIBILITY is what makes a node a preview sink; the DEFAULT is on, so this
+ * asks only whether someone has switched a node's preview off (T353, §V297).
  *
  * "Visible" at this layer means "exists in the graph with a texture output" — the
  * compiler has no notion of scroll position, and recompiling on every pan would defeat
@@ -95,6 +95,9 @@ function visiblePreviewSinks(graph: GraphDocument, registry: NodeRegistryView): 
     if (definition === undefined) continue;
     const texturePort = definition.outputs.find((port) => port.type.kind === "texture2d");
     if (texturePort === undefined) continue;
+    // OFF means off everywhere, including on the path that has no scheduler to ask
+    // (§V297): a node nobody is previewing must not be materialized for one.
+    if (node.ui?.preview === false) continue;
     sinks.push({ nodeId, portId: texturePort.id, kind: "preview" });
   }
   return sinks;

@@ -354,7 +354,7 @@
   },
   "name": "FeedbackEcho",
   "projectId": "component-feedbackEcho",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

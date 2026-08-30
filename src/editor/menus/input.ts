@@ -118,7 +118,7 @@ const BUILDERS: Record<string, InputBuilder> = {
   "graph.cutSelection": nodeIds,
   "graph.duplicateSelection": nodeIds,
   "node.toggleBypass": nodeIds,
-  "node.toggleDisplay": nodeIds,
+  "node.togglePin": nodeIds,
   "node.toggleRender": nodeIds,
 
   "node.rename": nodeRef,

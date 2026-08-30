@@ -67,7 +67,7 @@ import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 /** Parameter key a shader-authorable node exposes its WGSL through. */
 export const SHADER_SOURCE_PARAMETER = "source";
 
-const UI_KEYS = new Set(["collapsed", "preview", "bypassed", "muted", "color"]);
+const UI_KEYS = new Set(["collapsed", "preview", "previewPinned", "bypassed", "muted", "color"]);
 
 class PatchAbort extends Error {
   constructor() {

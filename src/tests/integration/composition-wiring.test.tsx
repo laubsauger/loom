@@ -17,6 +17,7 @@ import type { OpenPaneWindow } from "../../app/pane-window.tsx";
 import { createAppRuntime, newProjectDocument } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
 import type { GpuStatus } from "../../app/gpu-status.ts";
+import { SCHEMA_VERSION } from "@domain/types/schemas.ts";
 
 /**
  * The LAST MILE (T139 + wiring).
@@ -518,7 +519,7 @@ describe("a project round-trips through save and open (T43, §V10)", () => {
     });
 
     const text = written as unknown as string;
-    expect(JSON.parse(text)).toMatchObject({ schemaVersion: 1 });
+    expect(JSON.parse(text)).toMatchObject({ schemaVersion: SCHEMA_VERSION });
     cleanup();
 
     // A DIFFERENT session opens it. Nothing is shared but the bytes.

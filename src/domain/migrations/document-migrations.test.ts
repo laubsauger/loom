@@ -161,3 +161,46 @@ describe("§V68: a document from the future is carried through untouched", () =>
     expect(result.diagnostics[0]?.code).toBe("project.schema.newer");
   });
 });
+
+/**
+ * The first real rung on the ladder (T353, §V297).
+ *
+ * A field that keeps its NAME and changes its MEANING is the case the scaffolding was
+ * built for, and the dangerous half is not the pin that gets carried over — it is the
+ * `false` that used to mean "not pinned" and would now mean "preview off". Read literally,
+ * every node a user ever pinned and then unpinned would open with a dark slot.
+ */
+describe("1 → 2: the preview pin becomes the preview switch", () => {
+  const documentWith = (ui: Record<string, unknown>): RawDocument => ({
+    schemaVersion: 1,
+    graph: { nodes: { n1: { id: "n1", type: "solid", ui } } },
+  });
+
+  const uiAfter = (ui: Record<string, unknown>): Record<string, unknown> => {
+    const result = migrateProjectDocument(documentWith(ui));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    const nodes = (result.document["graph"] as { nodes: Record<string, { ui: Record<string, unknown> }> }).nodes;
+    return nodes["n1"]?.ui ?? {};
+  };
+
+  it("turns an old pin into `previewPinned` and leaves the switch alone", () => {
+    expect(uiAfter({ preview: true })).toEqual({ previewPinned: true });
+  });
+
+  it("DROPS an old `false` rather than reading it as 'preview off'", () => {
+    // It meant "not pinned", which is the default. Carrying it forward would disable a
+    // preview on the strength of a choice the user never made.
+    expect(uiAfter({ preview: false, bypassed: true })).toEqual({ bypassed: true });
+  });
+
+  it("leaves a document that never mentioned the flag untouched", () => {
+    expect(uiAfter({ collapsed: true })).toEqual({ collapsed: true });
+  });
+
+  it("survives a graph whose shape is not what it expects", () => {
+    for (const broken of [{ schemaVersion: 1 }, { schemaVersion: 1, graph: null }, { schemaVersion: 1, graph: { nodes: 7 } }]) {
+      expect(migrateProjectDocument(broken as RawDocument).ok).toBe(true);
+    }
+  });
+});

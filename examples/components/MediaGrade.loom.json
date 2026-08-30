@@ -286,7 +286,7 @@
   },
   "name": "MediaGrade",
   "projectId": "component-mediaGrade",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

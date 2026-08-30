@@ -93,7 +93,19 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views }: NodePreviewS
 
   return (
     <div ref={ref} style={{ width: "100%", height: "100%" }}>
-      {preview === null ? null : (
+      {preview === null ? (
+        /**
+         * §V303 — a slot with nothing published still has to COVER.
+         *
+         * The live slot is a hole through the node chrome and the shared surface
+         * composites the tile behind it; a canvas keeps its last presented pixels, so an
+         * empty `<div>` here is a window onto whatever was drawn in that spot last. That
+         * is the "shown anyway, just not updating" report: a frozen picture that reads as
+         * a live one. `NodePreview`'s opaque background is the cover, and the ONLY
+         * transparent case is `live`, so the rule holds with no exceptions.
+         */
+        <NodePreview output={{ nodeId, portId: "" }} state={{ kind: "idle" }} lens={lens} />
+      ) : (
         <NodePreview
           output={preview.output}
           state={preview.state}

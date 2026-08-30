@@ -93,7 +93,7 @@
   },
   "name": "E2 Reaction-Diffusion",
   "projectId": "example-reaction-diffusion",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "settings": {
     "limits": {
       "maxBufferBytes": 268435456,

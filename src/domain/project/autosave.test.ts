@@ -9,6 +9,7 @@ import {
 } from "./autosave.ts";
 import { parseProjectDocument, serializeProjectDocument } from "./serialize.ts";
 import { planRetention, type SnapshotMeta } from "./snapshot-ring.ts";
+import { SCHEMA_VERSION } from "../types/schemas.ts";
 
 /**
  * T101: autosave = same serialized document as a save (one serializer, §V10),
@@ -18,7 +19,7 @@ import { planRetention, type SnapshotMeta } from "./snapshot-ring.ts";
 
 function makeDocument(revision: number): ProjectDocument {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     projectId: "project-1",
     name: "Test",
     graph: { revision, nodes: {}, edges: {}, groups: {} },

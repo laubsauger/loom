@@ -347,3 +347,114 @@ describe("useNodePreviews previews the node that presents (§V25)", () => {
     expect(snapshot.preview).toBeNull();
   });
 });
+
+/**
+ * The preview SWITCH (T353, §V297).
+ *
+ * The owner: "there is no way to disable preview for a node right now, they are basically
+ * always on and P button is without function". So the assertion that matters is not that
+ * a flag was written — it is that writing it stops the WORK. A test that only checked the
+ * body's label would pass just as well against a hidden tile still being rendered every
+ * frame, which is precisely the thing being complained about.
+ */
+describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
+  function offGraph(preview: boolean | undefined): GraphDocument {
+    return {
+      revision: 1,
+      nodes: {
+        n1: {
+          id: "n1",
+          type: "test.blur",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: {},
+          ...(preview === undefined ? {} : { ui: { preview } }),
+        },
+      },
+      edges: {},
+      groups: {},
+    };
+  }
+
+  function run(graph: GraphDocument) {
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("n1", { x: 0, y: 0, width: 200, height: 120 });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+
+    const programs: PreviewProgram[] = [];
+    const backend = {
+      ...fakeBackend(),
+      previewHost: () => ({
+        setPreviewProgram: (program: PreviewProgram) => programs.push(program),
+        presentPreviews: () => {},
+        dispose: () => {},
+      }),
+    } as unknown as ShaderloomBackend;
+    const sinkSets: ReadonlyArray<{ nodeId: string; portId: string }>[] = [];
+
+    renderHook(() =>
+      useNodePreviews({
+        backend,
+        canvasRef: { current: canvas },
+        bounds,
+        graph,
+        registry,
+        compiledOutputs: [
+          {
+            nodeId: "n1",
+            portId: "out",
+            resourceId: "res:n1:out",
+            resourceKind: "target" as const,
+            size: [64, 64] as const,
+            format: "rgba8unorm" as const,
+            space: "linear" as const,
+            temporal: false,
+          },
+        ],
+        nodeRuntime,
+        previewSinks: { set: (refs) => sinkSets.push(refs) },
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+      }),
+    );
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    const snapshot = nodeRuntime.get("n1");
+    nodeRuntime.dispose();
+    return { snapshot, sinkSets, programs };
+  }
+
+  it("costs nothing when off: no tile, no schedule, no sink", () => {
+    const { snapshot, sinkSets, programs } = run(offGraph(false));
+
+    // No GPU work: whatever the host was handed, it has nothing to draw.
+    expect(programs.at(-1)?.passes ?? []).toHaveLength(0);
+    expect(programs.at(-1)?.resources ?? []).toHaveLength(0);
+    // Not a preview sink either, so the compiler is free to prune the node entirely —
+    // "off" that still materialized a target would be the hidden-tile bug wearing a label.
+    expect(sinkSets.flat()).toHaveLength(0);
+    // And the body says which state it is in (§V91), with what the compiler resolved
+    // still shown (§V100) because this node happens to render for something else.
+    expect(snapshot.preview?.state.kind).toBe("off");
+    expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
+  });
+
+  it("is ON when the document says nothing, so an untouched node previews (§V28b)", () => {
+    // NON-VACUITY for the test above: the same fixture with no flag does all the work.
+    const { snapshot, sinkSets, programs } = run(offGraph(undefined));
+
+    expect(programs.at(-1)?.passes ?? []).not.toHaveLength(0);
+    expect(sinkSets.flat().map((ref) => ref.nodeId)).toContain("n1");
+    expect(snapshot.preview?.state.kind).toBe("live");
+  });
+
+  it("treats an explicit true exactly like an untouched node", () => {
+    expect(run(offGraph(true)).snapshot.preview?.state.kind).toBe("live");
+  });
+});

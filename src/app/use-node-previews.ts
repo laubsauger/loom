@@ -88,21 +88,37 @@ export interface NodePreviewInputs {
  * built program, and a tile asking for it makes the preview host report an unresolvable
  * binding on every retry — a warning per second, forever, about a node whose real
  * problem (`compiler/input-missing`) is already on screen.
+ *
+ * `on` is the user's switch (T353, §V297), default ON. It is reported rather than
+ * filtered out because a switched-off node still has something to SAY in its body — it is
+ * off, not broken — while contributing no request, no tile and no sink, which is what
+ * makes OFF cost nothing. The two exclusions cannot fight: an unconnected sink drops out
+ * here whatever its switch says, and an off node never reaches the request path.
  */
+interface PreviewCandidate {
+  readonly nodeId: NodeId;
+  readonly portId: string;
+  readonly gated: boolean;
+  readonly on: boolean;
+}
+
 function previewCandidates(
   graph: GraphDocument,
   registry: NodeRegistryView,
-): ReadonlyArray<{ nodeId: NodeId; portId: string; gated: boolean }> {
-  const found: Array<{ nodeId: NodeId; portId: string; gated: boolean }> = [];
+): ReadonlyArray<PreviewCandidate> {
+  const found: PreviewCandidate[] = [];
   const fed = new Set<NodeId>();
   for (const edge of Object.values(graph.edges)) fed.add(edge.target.nodeId);
   for (const [nodeId, node] of Object.entries(graph.nodes)) {
     const definition = registry.get(node.type);
     if (definition === undefined) continue;
+    // Absent means ON: an untouched node previews, so an untouched document and one
+    // where somebody pressed P twice are the same document.
+    const on = node.ui?.preview !== false;
     const port = definition.outputs.find((candidate) => candidate.type.kind === "texture2d");
-    if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true });
+    if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true, on });
     else if (definition.sink === true && fed.has(nodeId)) {
-      found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false });
+      found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false, on });
     }
   }
   return found;
@@ -149,6 +165,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const requests: PreviewRequest[] = [];
       const idle: Array<{ nodeId: NodeId; portId: string }> = [];
       const visibleIdle: Array<{ nodeId: NodeId; portId: string }> = [];
+      /** Switched off (§V297): reported to the body, and nowhere else. */
+      const off: Array<{ nodeId: NodeId; portId: string }> = [];
       // §V100/T197 — a slot that is not live still shows what the compiler resolved for
       // it, never a blank box, so this is looked up regardless of live/suspended/idle.
       const facts = new Map<NodeId, { width: number; height: number; format: string }>();
@@ -156,7 +174,13 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         facts.set(output.nodeId, { width: output.size[0], height: output.size[1], format: output.format });
       }
 
-      for (const { nodeId, portId } of candidates) {
+      for (const { nodeId, portId, on } of candidates) {
+        // §V297 — OFF is not "hidden". No request means no tile, nothing scheduled and no
+        // preview sink, so the compiler prunes the node and it costs nothing at all.
+        if (!on) {
+          off.push({ nodeId, portId });
+          continue;
+        }
         const output = current.compiledOutputs.find((entry) => entry.nodeId === nodeId);
         // §V111: the offset within the node (never re-measured mid-drag). §V112: the
         // node's LIVE position, read fresh every tick — the two combine into the slot's
@@ -179,7 +203,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
               screen.x < surface.width && screen.y < surface.height && screen.x + screen.width > 0 && screen.y + screen.height > 0;
             if (
               !ungated.has(nodeId) &&
-              (onScreen || current.graph.nodes[nodeId]?.ui?.preview === true)
+              (onScreen || current.graph.nodes[nodeId]?.ui?.previewPinned === true)
             ) {
               visibleIdle.push({ nodeId, portId });
             }
@@ -211,7 +235,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           // than paying for bars nobody renders.
           area: { width: fitted.width, height: fitted.height },
           visible: true,
-          pinned: node?.ui?.preview === true,
+          // The PIN (§V28b, T353) — keep the tile alive while the node is scrolled off
+          // screen. Not the switch; the switch decided we are here at all.
+          pinned: node?.ui?.previewPinned === true,
           collapsed: false,
           occluded: false,
           // §V255/§V70a — the lens lives HERE, on the preview path, and nowhere near the
@@ -267,6 +293,19 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           preview: {
             output: { nodeId, portId },
             state: { kind: "idle" },
+            ...(found === undefined ? {} : { facts: found }),
+          },
+        });
+      }
+      // §V91/§V100 — a switched-off preview names its state rather than going blank, and
+      // still shows what the compiler resolved when the node renders for something else.
+      // Off with no facts is the honest picture of a node that is now costing nothing.
+      for (const { nodeId, portId } of off) {
+        const found = facts.get(nodeId);
+        current.nodeRuntime.publish(nodeId, {
+          preview: {
+            output: { nodeId, portId },
+            state: { kind: "off" },
             ...(found === undefined ? {} : { facts: found }),
           },
         });

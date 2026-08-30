@@ -274,7 +274,7 @@ describe("V20 — a drag on embedded node chrome never becomes a node drag", () 
 
     // React Flow refuses to start a drag or a pan when the pressed element is inside
     // `.nodrag` / `.nopan`. This is that predicate, evaluated the same way.
-    for (const name of ["Bypass", "Mute", "Pin preview"]) {
+    for (const name of ["Bypass", "Mute", "Preview"]) {
       const control = screen.getByRole("button", { name });
       expect(control.closest(".nodrag")).not.toBeNull();
       expect(control.closest(".nopan")).not.toBeNull();
@@ -409,19 +409,33 @@ describe("preview slot (§V28b) — visible texture-producing node previews by d
     expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();
   });
 
-  it("'Pin preview' toggles the pin (§V28b), not whether the slot exists", async () => {
+  /**
+   * T353/§V297 — `P` is the SWITCH, and it starts pressed.
+   *
+   * It used to toggle the pin, so the owner pressed it and nothing they could see
+   * changed: previews were on either way, and the button reported a state nobody could
+   * observe. The first press must now turn the preview OFF, which means the button has to
+   * read an absent flag as ON — an untouched node is previewing.
+   */
+  it("'P' starts on, and one press writes preview: false", async () => {
     const { bus } = mountNode("test.blur", {
       graph: graphWith("test.blur"),
       renderPreview: () => <div>tile</div>,
     });
     expect(bus.store.getGraph().nodes["n1"]?.ui?.preview).toBeUndefined();
+    const button = screen.getByRole("button", { name: "Preview" });
+    // Default ON, stated in the accessibility tree and not only in the pixels.
+    expect(button.getAttribute("aria-pressed")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pin preview" }));
+    fireEvent.click(button);
     await waitFor(() => {
-      expect(bus.store.getGraph().nodes["n1"]?.ui?.preview).toBe(true);
+      expect(bus.store.getGraph().nodes["n1"]?.ui?.preview).toBe(false);
     });
-    // Pinning does not add the slot — it was already there — it only keeps this
-    // preview live once the node scrolls off screen (§V28's "visible OR pinned").
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-pressed")).toBe("false");
+    });
+    // The SLOT survives: a switched-off preview says so in its body (§V91/§V100) rather
+    // than the node changing shape under the press.
     expect(screen.getByText("tile")).toBeDefined();
   });
 });

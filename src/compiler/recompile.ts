@@ -116,10 +116,10 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
           resetFeedback: false,
         };
       }
-      if (edit.fields.includes("preview")) {
+      if (edit.fields.includes("preview") || edit.fields.includes("previewPinned")) {
         return {
           work: "preview-plan",
-          reason: "Only visible or pinned previews are scheduled (§V28).",
+          reason: "Only visible, pinned and switched-on previews are scheduled (§V28, §V297).",
           nodes: [edit.nodeId],
           recreateTargets: false,
           resetFeedback: false,

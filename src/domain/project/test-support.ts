@@ -1,6 +1,7 @@
 import type { GraphDocument, ProjectDocument, ProjectSettings } from "../types/graph.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import type { NodeDefinitionSource } from "../migrations/index.ts";
+import { SCHEMA_VERSION } from "../types/schemas.ts";
 
 /** Fixtures shared by the project tests. Not part of the shipped surface. */
 
@@ -46,7 +47,9 @@ export function testDocument(overrides: Partial<ProjectDocument> = {}): ProjectD
     groups: {},
   };
   return {
-    schemaVersion: 1,
+    // The version this BUILD writes, never a literal: a fixture pinned to a number stops
+    // round-tripping the moment a migration lands, and the migration is not what broke.
+    schemaVersion: SCHEMA_VERSION,
     projectId: "project-1",
     name: "Test Project",
     graph,

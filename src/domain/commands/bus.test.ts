@@ -88,6 +88,8 @@ describe("command bus — registration surface (§V39)", () => {
       "node.setResolution",
       "node.toggleBypass",
       "node.toggleDisplay",
+      // T353: the preview PIN, split off from the switch when `P` started meaning on/off.
+      "node.togglePin",
       "node.toggleRender",
       "parameter.copyReference",
       "parameter.copyValue",
