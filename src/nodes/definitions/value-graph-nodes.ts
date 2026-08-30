@@ -5,7 +5,7 @@ import type {
   ValueChannels,
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
-import type { PortType } from "../../domain/types/ports.ts";
+import { VALUE_PORT } from "./common-ports.ts";
 
 /**
  * The CHOP set (T275-T277, §V179): value-graph stages, wired `mouse1 → lag1 → param`.
@@ -18,7 +18,7 @@ import type { PortType } from "../../domain/types/ports.ts";
  * x and y independently with nothing configured.
  */
 
-export const VALUE_PORT: PortType = { kind: "value" };
+export { VALUE_PORT } from "./common-ports.ts";
 
 const noPasses = (): CompiledNodeDescription => ({ passes: [] });
 

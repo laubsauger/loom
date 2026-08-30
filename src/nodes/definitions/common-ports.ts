@@ -9,6 +9,15 @@ import type { PortType } from "../../domain/types/ports.ts";
 export const RGBA_TEXTURE: PortType = { kind: "texture2d", sample: "float", channels: 4 };
 
 /**
+ * The value-graph port (§V179): a CPU-side channel bag, never a texture.
+ *
+ * Here rather than in one family's module because two now declare it — the CHOP set and
+ * the value SOURCES (T325) — and §V19 compares ports by shape. One constant is how the
+ * two families stay wirable to each other by construction instead of by coincidence.
+ */
+export const VALUE_PORT: PortType = { kind: "value" };
+
+/**
  * How many texture inputs one node's shader may bind (T226, T235).
  *
  * WebGPU guarantees only 16 sampled textures per shader stage, and a variadic node binds

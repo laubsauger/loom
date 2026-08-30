@@ -4,6 +4,7 @@ import type {
 } from "../../domain/types/node-definition.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { ParameterValue } from "../../domain/types/parameters.ts";
+import { VALUE_PORT } from "./common-ports.ts";
 
 /**
  * Value sources (T238-T240, §V143): the nodes that MAKE a value move.
@@ -17,6 +18,17 @@ import type { ParameterValue } from "../../domain/types/parameters.ts";
  * offline and live agree frame for frame (§V44/§V45). The LFO's noise shape uses a
  * counter-based hash seeded by the frame's randomSeed — deterministic per project seed,
  * per cycle, per machine.
+ *
+ * EACH ALSO HAS AN OUTPUT PORT (T325, §V237), which they shipped without. Being
+ * addressable by NAME and being reachable from an EDGE are two different reachabilities:
+ * `driven → lfo1` worked from the day these landed, and `lfo1 → lag1` could not be drawn,
+ * because a value edge needs a port to land on. T274's "single-channel is the degenerate
+ * case" was true of the addressing and silently false of the graph — which left Mouse as
+ * the only wirable source in the catalogue.
+ *
+ * The port carries the same single-channel bag the resolver already publishes: the
+ * evaluator wraps a `valueChannel` node's number as `{ value }`, and every stage
+ * downstream (Math's operand fallback, Lag, Filter) already reads that name.
  */
 
 const num = (value: ParameterValue | undefined, fallback: number): number =>
@@ -73,9 +85,9 @@ export const lfoNode: NodeDefinition = {
   title: "LFO",
   category: "value",
   description:
-    "A low-frequency oscillator: sine, triangle, square, saw or sample-and-hold noise of the frame clock. Its name is its channel — drive any parameter with it.",
+    "A low-frequency oscillator: sine, triangle, square, saw or sample-and-hold noise of the frame clock. Its name is its channel — drive any parameter with it, or wire it.",
   inputs: [],
-  outputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     shape: {
       type: "enum",
@@ -103,9 +115,9 @@ export const constantNode: NodeDefinition = {
   version: 1,
   title: "Constant",
   category: "value",
-  description: "A named number. The patch-level knob several parameters can share by driving from it.",
+  description: "A named number. The patch-level knob several parameters can share by driving from it, or wiring from it.",
   inputs: [],
-  outputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     value: { type: "number", label: "Value", default: 0 },
   },
@@ -120,7 +132,7 @@ export const timerNode: NodeDefinition = {
   category: "value",
   description: "The frame clock, scaled and delayed: max(0, time - delay) * speed. A ramp to build timelines on.",
   inputs: [],
-  outputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     speed: { type: "number", label: "Speed", default: 1 },
     delay: { type: "number", label: "Delay", default: 0, min: 0, unit: "seconds" },
