@@ -1898,14 +1898,54 @@ const gooeyballDocument = document(
         { connectivity: "grid", cols: GOOEY_COLS, rows: GOOEY_ROWS, wrapU: true, wrapV: false },
         { label: "topology1" },
       ),
-      node(
-        "skin",
-        "renderSurface",
-        [20, 0],
-        { color: [0.55, 0.85, 0.7, 1], eye: [0, 0.5, 2.6], lookAt: [0, 0, 0], fov: 55 },
-        { label: "surface1" },
-      ),
-      node("out", "output", [320, 0], {}, { label: "out1" }),
+      /*
+       * T429: the SKIN. The owner's complaint — "lame and kinda single colored" — and
+       * its fix in one clause: the SAME noise that displaces the ball also paints it.
+       * The field goes through a palette (lookup) into the material's ALBEDO map, and
+       * raw into its ROUGHNESS map, so bulges are coloured differently from hollows
+       * and shine differently too. One field, three uses.
+       */
+      node("palette", "ramp", [-880, -420], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0, color: [0.12, 0.07, 0.25, 1] },
+          { position: 0.4, color: [0.5, 0.12, 0.38, 1] },
+          { position: 0.7, color: [0.95, 0.45, 0.2, 1] },
+          { position: 1, color: [1, 0.9, 0.6, 1] },
+        ],
+      }, { label: "goopalette1", definitionVersion: 2 }),
+      node("paint", "lookup", [-580, -420], { channel: "red", row: 0.5, scale: 1, offset: 0 }, { label: "paint1" }),
+      node("gooskin", "materialPhong", [-280, -420], {
+        color: [1, 1, 1, 1], specular: [1, 0.9, 0.7, 1], shininess: 64, roughness: 0.45,
+      }, { label: "gooskin1" }),
+      node("body", "geometry", [20, -200], { mode: "surface", material: "gooskin1" }, { label: "body1" }),
+      node("cam", "camera", [20, -420], { eye: [0, 0.5, 2.6], lookAt: [0, 0, 0], fov: 55 }, { label: "cam1" }),
+      /*
+       * TWO lights, one of them MOVING — the first shipped example with an animated
+       * light: the warm key holds still, the cool fill ORBITS (its x/z driven by two
+       * LFOs in quadrature), and because a light is VALUES, the orbit never rebuilds
+       * anything (§V5).
+       */
+      node("key", "light", [340, -520], {
+        kind: "directional", color: [1, 0.9, 0.75, 1], intensity: 0.9, direction: [-0.5, -0.7, -0.5],
+      }, { label: "key1" }),
+      node("orbitx", "lfo", [340, -640], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0 }, { label: "orbitx1" }),
+      node("orbitz", "lfo", [340, -760], { shape: "sine", frequency: 0.11, amplitude: 2.2, offset: 0, phase: 0.25 }, { label: "orbitz1" }),
+      node("fill", "light", [340, -400], {
+        kind: "point", color: [0.35, 0.65, 1, 1], intensity: 1.6,
+      }, {
+        label: "fill1",
+        parameters: {
+          "position.x": drivenSlot("orbitx1", 2),
+          "position.y": 0.8,
+          "position.z": drivenSlot("orbitz1", 0.5),
+        },
+      }),
+      node("skin", "render", [340, -200], {
+        scenes: "body1", camera: "cam1", lights: "key1 fill1",
+        ambientColor: [0.4, 0.45, 0.6, 1], ambientIntensity: 0.22,
+      }, { label: "shot1" }),
+      node("out", "output", [620, -200], {}, { label: "out1" }),
     ],
     [
       edge("e-sheet-ball", ["sheet", "out"], ["ball", "in"]),
@@ -1913,7 +1953,11 @@ const gooeyballDocument = document(
       edge("e-wobble-bridge", ["wobble", "out"], ["bridge", "texture"]),
       edge("e-bridge-goo", ["bridge", "out"], ["goo", "in"]),
       edge("e-goo-claim", ["goo", "out"], ["claim", "points"]),
-      edge("e-claim-skin", ["claim", "out"], ["skin", "points"]),
+      edge("e-claim-body", ["claim", "out"], ["body", "points"]),
+      edge("e-wobble-paint", ["wobble", "out"], ["paint", "source"]),
+      edge("e-palette-paint", ["palette", "out"], ["paint", "lookup"]),
+      edge("e-paint-albedo", ["paint", "out"], ["gooskin", "albedo"]),
+      edge("e-wobble-rough", ["wobble", "out"], ["gooskin", "roughness"]),
       edge("e-skin-out", ["skin", "out"], ["out", "input"]),
     ],
   ),

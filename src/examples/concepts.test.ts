@@ -1185,11 +1185,36 @@ describe("E20 Gooeyball", () => {
    */
   it("closes the ring with a topology claim, not geometry", () => {
     expect(plan.passes.some((pass) => (pass as { nodeId?: string }).nodeId === "claim")).toBe(false);
+    // T429: the surface now draws through the scene Render, whose grid uniform packs
+    // cols/rows/wrapU/wrapV — the wrap still arrives from the claim, third slot.
     const draw = plan.passes.find((pass) => pass.kind === "draw") as {
       uniforms?: Record<string, unknown>;
     };
-    expect(draw.uniforms?.["wrapU"]).toBe(1);
-    expect(draw.uniforms?.["wrapV"]).toBe(0);
+    const grid = draw.uniforms?.["grid"] as number[];
+    expect(grid[2]).toBe(1); // wrapU: the seam cell
+    expect(grid[3]).toBe(0);
+  });
+
+  /**
+   * T429, the owner's complaint answered where tests can see it: the SAME field that
+   * displaces the ball paints it — the palette-looked-up noise is the material's albedo
+   * map, the raw noise its roughness map, and both arrive on the render's draw as bound
+   * textures. One field, three uses.
+   */
+  it("paints the ball with the displacement field: albedo and roughness maps bound", () => {
+    const draw = plan.passes.find((pass) => pass.kind === "draw") as {
+      textures?: ReadonlyArray<{ binding: string; resourceId: string }>;
+      shader: string;
+    };
+    expect(draw.textures?.some((t) => t.binding === "albedoMap" && t.resourceId === "target:paint:out")).toBe(true);
+    expect(draw.textures?.some((t) => t.binding === "roughnessMap" && t.resourceId === "target:wobble:out")).toBe(true);
+    expect(draw.shader).toContain("albedoMap");
+    // TWO lights reached the shader, one of them the orbiting fill.
+    expect(draw.shader).toContain("light1Meta");
+    const fill = document.graph.nodes["fill"] as GraphNode;
+    const slot = fill.parameters["position.x"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
+    expect(slot.mode).toBe("driven");
+    expect(slot.bindings?.driven?.channel).toBe("orbitx1");
   });
 
   /** B14's lesson, pinned again: animated goo needs a 4D noise with speed set. */

@@ -20,7 +20,11 @@ grid1(pointGrid) ─► ball1(pointKernel) ─► sample1(textureToAttribute) �
 | `sample1` | `textureToAttribute` | samples the noise at each point's position, writes `sample` |
 | `goo1` | `pointKernel` | pushes each point along the surface NORMAL by `sample.r − 0.5` |
 | `topology1` | `pointTopology` | re-claims the edge as `grid:64x64:wrapU` — the seam CELL |
-| `surface1` | `renderSurface` | shades the grid as a continuous, depth-tested surface |
+| `paint1`+`goopalette1` | `lookup`+`ramp` | the SAME noise, through a palette — the albedo map |
+| `gooskin1` | `materialPhong` | the skin: palette albedo, raw-noise roughness, warm specular |
+| `body1` | `geometry` | the ball as a nameable object wearing `gooskin1` |
+| `cam1`/`key1`/`fill1` | `camera`/`light` | the stage: a still warm key and a cool point fill ORBITING on two LFOs |
+| `shot1` | `render` | draws `body1` through `cam1` under both lights, depth-tested |
 
 ## Why the surface survives
 
@@ -50,6 +54,16 @@ it is a claim about the same points, not a change to them.
 The poles close themselves: every point of row 0 maps to the same position (the north
 pole), so each polar cell has two coincident corners — one degenerate triangle, one real
 one — which is the standard UV-sphere fan, for free.
+
+## One field, three uses (T429)
+
+The owner's own complaint about the first version — "lame and kinda single colored" —
+is answered by WIDENING the crossing, not by painting over it: the same noise that
+displaces the ball goes through a palette into the material's ALBEDO map and raw into
+its ROUGHNESS map. Bulges are coloured differently from hollows and shine differently
+too, so the goo reads as a substance rather than a shape. And the fill light ORBITS —
+its position is two LFOs in quadrature, and because a light is VALUES in the scene
+pipeline (T377), the orbit is a uniform write per frame, never a rebuild.
 
 ## What it proves
 

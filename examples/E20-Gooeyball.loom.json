@@ -25,14 +25,14 @@
           "portId": "in"
         }
       },
-      "e-claim-skin": {
-        "id": "e-claim-skin",
+      "e-claim-body": {
+        "id": "e-claim-body",
         "source": {
           "nodeId": "claim",
           "portId": "out"
         },
         "target": {
-          "nodeId": "skin",
+          "nodeId": "body",
           "portId": "points"
         }
       },
@@ -45,6 +45,28 @@
         "target": {
           "nodeId": "claim",
           "portId": "points"
+        }
+      },
+      "e-paint-albedo": {
+        "id": "e-paint-albedo",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gooskin",
+          "portId": "albedo"
+        }
+      },
+      "e-palette-paint": {
+        "id": "e-palette-paint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "lookup"
         }
       },
       "e-sheet-ball": {
@@ -79,6 +101,28 @@
           "nodeId": "bridge",
           "portId": "texture"
         }
+      },
+      "e-wobble-paint": {
+        "id": "e-wobble-paint",
+        "source": {
+          "nodeId": "wobble",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "source"
+        }
+      },
+      "e-wobble-rough": {
+        "id": "e-wobble-rough",
+        "source": {
+          "nodeId": "wobble",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gooskin",
+          "portId": "roughness"
+        }
       }
     },
     "groups": {},
@@ -99,6 +143,20 @@
         },
         "type": "pointKernel"
       },
+      "body": {
+        "definitionVersion": 1,
+        "id": "body",
+        "label": "body1",
+        "parameters": {
+          "material": "gooskin1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": 20,
+          "y": -200
+        },
+        "type": "geometry"
+      },
       "bridge": {
         "definitionVersion": 1,
         "id": "bridge",
@@ -111,6 +169,29 @@
           "y": 0
         },
         "type": "textureToAttribute"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {
+          "eye": [
+            0,
+            0.5,
+            2.6
+          ],
+          "fov": 55,
+          "lookAt": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 20,
+          "y": -420
+        },
+        "type": "camera"
       },
       "claim": {
         "definitionVersion": 1,
@@ -129,6 +210,53 @@
         },
         "type": "pointTopology"
       },
+      "fill": {
+        "definitionVersion": 1,
+        "id": "fill",
+        "label": "fill1",
+        "parameters": {
+          "color": [
+            0.35,
+            0.65,
+            1,
+            1
+          ],
+          "intensity": 1.6,
+          "kind": "point",
+          "position.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbitx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2
+              }
+            },
+            "mode": "driven"
+          },
+          "position.y": 0.8,
+          "position.z": {
+            "bindings": {
+              "driven": {
+                "channel": "orbitz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 340,
+          "y": -400
+        },
+        "type": "light"
+      },
       "goo": {
         "definitionVersion": 1,
         "id": "goo",
@@ -145,16 +273,171 @@
         },
         "type": "pointKernel"
       },
+      "gooskin": {
+        "definitionVersion": 1,
+        "id": "gooskin",
+        "label": "gooskin1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.45,
+          "shininess": 64,
+          "specular": [
+            1,
+            0.9,
+            0.7,
+            1
+          ]
+        },
+        "position": {
+          "x": -280,
+          "y": -420
+        },
+        "type": "materialPhong"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            1,
+            0.9,
+            0.75,
+            1
+          ],
+          "direction": [
+            -0.5,
+            -0.7,
+            -0.5
+          ],
+          "intensity": 0.9,
+          "kind": "directional"
+        },
+        "position": {
+          "x": 340,
+          "y": -520
+        },
+        "type": "light"
+      },
+      "orbitx": {
+        "definitionVersion": 1,
+        "id": "orbitx",
+        "label": "orbitx1",
+        "parameters": {
+          "amplitude": 2.2,
+          "frequency": 0.11,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 340,
+          "y": -640
+        },
+        "type": "lfo"
+      },
+      "orbitz": {
+        "definitionVersion": 1,
+        "id": "orbitz",
+        "label": "orbitz1",
+        "parameters": {
+          "amplitude": 2.2,
+          "frequency": 0.11,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 340,
+          "y": -760
+        },
+        "type": "lfo"
+      },
       "out": {
         "definitionVersion": 1,
         "id": "out",
         "label": "out1",
         "parameters": {},
         "position": {
-          "x": 320,
-          "y": 0
+          "x": 620,
+          "y": -200
         },
         "type": "output"
+      },
+      "paint": {
+        "definitionVersion": 1,
+        "id": "paint",
+        "label": "paint1",
+        "parameters": {
+          "channel": "red",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": -580,
+          "y": -420
+        },
+        "type": "lookup"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "goopalette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.12,
+                0.07,
+                0.25,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.5,
+                0.12,
+                0.38,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0.95,
+                0.45,
+                0.2,
+                1
+              ],
+              "position": 0.7
+            },
+            {
+              "color": [
+                1,
+                0.9,
+                0.6,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -880,
+          "y": -420
+        },
+        "type": "ramp"
       },
       "sheet": {
         "definitionVersion": 1,
@@ -173,31 +456,24 @@
       "skin": {
         "definitionVersion": 1,
         "id": "skin",
-        "label": "surface1",
+        "label": "shot1",
         "parameters": {
-          "color": [
-            0.55,
-            0.85,
-            0.7,
+          "ambientColor": [
+            0.4,
+            0.45,
+            0.6,
             1
           ],
-          "eye": [
-            0,
-            0.5,
-            2.6
-          ],
-          "fov": 55,
-          "lookAt": [
-            0,
-            0,
-            0
-          ]
+          "ambientIntensity": 0.22,
+          "camera": "cam1",
+          "lights": "key1 fill1",
+          "scenes": "body1"
         },
         "position": {
-          "x": 20,
-          "y": 0
+          "x": 340,
+          "y": -200
         },
-        "type": "renderSurface"
+        "type": "render"
       },
       "wobble": {
         "definitionVersion": 1,
