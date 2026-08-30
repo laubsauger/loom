@@ -79,8 +79,8 @@ describe("core catalogue (T70, T40)", () => {
       "valueMath",
       "valueLimit",
       "valueSlope",
-      "trigger",
-      "lag",
+      "valueTrigger",
+      "valueLag",
       "valueFilter",
       "pointGenerator",
       "pointGrid",
@@ -156,12 +156,10 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
     pointKernel: "point bufferPairs are not in the compiled feedback table",
     // The value graph's per-node state lives in `createValueGraphSession`, which has no
     // caller outside its own tests — there is no running session to reset.
-    // NOTE: `trigger` and `lag` are unprefixed, which §V194 says they should not be
-    // (`valueSlope` and `valueFilter` beside them are). Named as they actually are here
-    // so this list stays a true statement; the rename belongs to the value-graph track.
+    // (T318: the §V194 rename landed — `valueTrigger`/`valueLag` match their siblings.)
     valueSlope: "the value-graph session is not mounted in the app",
-    trigger: "the value-graph session is not mounted in the app",
-    lag: "the value-graph session is not mounted in the app",
+    valueTrigger: "the value-graph session is not mounted in the app",
+    valueLag: "the value-graph session is not mounted in the app",
     valueFilter: "the value-graph session is not mounted in the app",
   };
 

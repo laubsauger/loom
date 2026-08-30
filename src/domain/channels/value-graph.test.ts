@@ -101,7 +101,7 @@ describe("value graph evaluation (T273/T274)", () => {
 describe("stateful stages (T276/T277, §V181)", () => {
   it("lag eases toward the input across frames, and reset() clears the trajectory", () => {
     const graph = graphOf(
-      [node("mouse1", "mouse"), node("lag1", "lag", { parameters: { lag: 0.1 } })],
+      [node("mouse1", "mouse"), node("lag1", "valueLag", { parameters: { lag: 0.1 } })],
       [["mouse1", "out", "lag1", "in"]],
     );
     const session = createValueGraphSession(registry);
@@ -124,7 +124,7 @@ describe("stateful stages (T276/T277, §V181)", () => {
       [
         node("mouse1", "mouse"),
         node("slope1", "valueSlope"),
-        node("trig1", "trigger", { parameters: { threshold: 0.5 } }),
+        node("trig1", "valueTrigger", { parameters: { threshold: 0.5 } }),
       ],
       [
         ["mouse1", "out", "slope1", "in"],
@@ -144,7 +144,7 @@ describe("stateful stages (T276/T277, §V181)", () => {
 
   it("drops state for nodes that left the document — no inherited trajectories", () => {
     const withLag = graphOf(
-      [node("mouse1", "mouse"), node("lag1", "lag", { parameters: { lag: 1 } })],
+      [node("mouse1", "mouse"), node("lag1", "valueLag", { parameters: { lag: 1 } })],
       [["mouse1", "out", "lag1", "in"]],
     );
     const session = createValueGraphSession(registry);
@@ -167,7 +167,7 @@ describe("value nodes and the GPU plan (T273, §V179)", () => {
         node("gen", "solid"),
         node("sink", "output"),
         node("mouse1", "mouse"),
-        node("lag1", "lag"),
+        node("lag1", "valueLag"),
       ],
       [
         ["gen", "out", "sink", "input"],

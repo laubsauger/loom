@@ -168,8 +168,8 @@ export const valueSlopeNode: NodeDefinition = {
 };
 
 /** T276 — Trigger: 1 for the single frame a channel crosses the threshold upward. */
-export const triggerNode: NodeDefinition = {
-  type: "trigger",
+export const valueTriggerNode: NodeDefinition = {
+  type: "valueTrigger",
   version: 1,
   title: "Trigger",
   category: "value",
@@ -220,8 +220,8 @@ function smooth(
 }
 
 /** T277 — Lag: eases toward the input over `lag` seconds. */
-export const lagNode: NodeDefinition = {
-  type: "lag",
+export const valueLagNode: NodeDefinition = {
+  type: "valueLag",
   version: 1,
   title: "Lag",
   category: "value",
@@ -261,7 +261,7 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   valueMathNode,
   valueLimitNode,
   valueSlopeNode,
-  triggerNode,
-  lagNode,
+  valueTriggerNode,
+  valueLagNode,
   valueFilterNode,
 ];

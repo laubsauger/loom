@@ -52,8 +52,8 @@ export {
   valueMathNode,
   valueLimitNode,
   valueSlopeNode,
-  triggerNode,
-  lagNode,
+  valueTriggerNode,
+  valueLagNode,
   valueFilterNode,
   valueGraphNodeDefinitions,
 } from "./value-graph-nodes.ts";
