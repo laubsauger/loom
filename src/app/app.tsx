@@ -220,13 +220,16 @@ export function App({
    * and the backend sat on its `"always"` default forever — a gate that shipped, was
    * tested, and could not be entered.
    *
-   * It defaults to ALWAYS, and that is measured rather than cautious. §V157 requires
-   * "auto" to be byte-identical to "always" at EVERY frame index; today it is not. The
-   * uniform push runs in the frame callback, AFTER `render` has already asked the gate
-   * whether to skip, so the first frame of new motion is skipped and its value lands one
-   * frame late — the signature failure §V157 names. Making "auto" safe means pushing
-   * values before the encode they belong to, which is a driver-ordering change with its
-   * own risks and its own task. Until then this is a switch someone chooses.
+   * It defaults to ALWAYS, and the reason has CHANGED since this was written. The
+   * one-frame lag that made "auto" unsafe is fixed (T340): values are pushed before the
+   * encode that carries them, and `cook-parity.test.ts` holds §V157's real oracle — the
+   * value visible at every frame index, identical under both policies.
+   *
+   * What remains is not a defect but a DECISION. Turning the gate on for everyone changes
+   * what every project does per frame, and the evidence for it is the example census
+   * (T254: E1 13%, E2-E4 0%, E5 100%, E6 17%, E7 25%) rather than one measured graph. So
+   * the switch ships reachable and defaults to the behaviour the product already had;
+   * §V157 keeps it forever either way, as the bisect for "is it cooking?".
    */
   const [cookPolicy, setCookPolicy] = useState<CookPolicyValue>("always");
   useEffect(() => {

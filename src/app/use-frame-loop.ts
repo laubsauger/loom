@@ -185,10 +185,16 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   /**
    * §V163 — the whole of "the picture moves".
    *
-   * Runs inside the driver's frame callback, after `render` encoded this frame and before
-   * the loop submits it, so the values written here apply to the frame they were resolved
-   * for. `updateUniforms` carries no frame guard by design (§V5: values in, values only),
-   * which is what makes writing from inside an open frame legal.
+   * Runs BEFORE the plan is encoded (T340), so the values written here are in place for
+   * the frame they were resolved for rather than for the one after it. `updateUniforms`
+   * carries no frame guard by design (§V5: values in, values only) and no route to
+   * resource construction, which is what makes writing from outside the frame legal — and
+   * what makes it the cook gate's dirty mark (§V159).
+   *
+   * It used to run after `render`, which was harmless while `cookPolicy` was always
+   * "always" and wrong the moment it was not: `render` asks the gate whether to skip as
+   * its first act, so a mark set afterwards belongs to the next frame. `cook-parity.test.ts`
+   * holds both orderings side by side.
    *
    * Three ways this stays honest. It does nothing at all when `animate` is null — a static
    * document is not paying for a feature it is not using. It refuses to touch the GPU when
@@ -246,13 +252,19 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       },
       fps: fpsRef.current,
       // A ref, not state: this runs on every rendered frame (§V16).
-      onFrame: (inputs) => {
-        latestFrameRef.current = inputs;
-        // ORDER IS THE CONTRACT. Channels advance first so `animate` resolves this frame's
-        // parameters against this frame's numbers (§V179); the push applies them to the
-        // frame just encoded; observers run last, on a frame that is already decided.
+      // ORDER IS THE CONTRACT (T340). Channels advance first so `animate` resolves this
+      // frame's parameters against this frame's numbers (§V179), and the push lands
+      // BEFORE the encode that must carry them — `updateUniforms` is the cook gate's
+      // dirty mark (§V159), so a push after `render` marks a frame that has already
+      // decided to skip, and the value shows up one frame late (§V157).
+      onBeforeFrame: (inputs) => {
         advanceChannelsRef.current?.(inputs);
         pushAnimatedValues(inputs);
+      },
+      // Observers run last, on a frame that is already decided: a pulse is an event about
+      // the frame that just rendered, and the Analyze readback must not precede it.
+      onFrame: (inputs) => {
+        latestFrameRef.current = inputs;
         observeRef.current?.(inputs.frame);
       },
     });

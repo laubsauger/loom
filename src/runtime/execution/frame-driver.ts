@@ -23,6 +23,23 @@ export interface FrameDriverOptions {
   /** Output resolution in pixels; read per frame so a resize needs no driver restart. */
   readonly resolution: () => readonly [number, number];
   readonly fps?: number;
+  /**
+   * Runs BEFORE the plan is encoded, with this frame's inputs (T340, §V157, §V159).
+   *
+   * This is where a value that belongs to frame N has to be written, and the reason is
+   * the cook gate: `backend.render` asks "is anything dirty?" as its first act, and
+   * `updateUniforms` IS the dirty mark (§V159). A push that happens after `render` sets
+   * the mark too late for the encode it belongs to — the frame motion starts on gets
+   * skipped and its value appears one frame later, which is precisely the one-frame lag
+   * §V157 names as the signature failure of "auto".
+   *
+   * Measured before this seam existed, over eight frames of a static plan whose value
+   * starts moving at frame 3: `always` rendered every frame, `auto` skipped frame 3.
+   *
+   * §V8 is unaffected: this runs outside the frame, and `updateUniforms` is the
+   * values-only path with no route to resource construction.
+   */
+  readonly onBeforeFrame?: (inputs: FrameInputs) => void;
   /** Called with the inputs of every frame actually rendered (metrics, §V16). */
   readonly onFrame?: (inputs: FrameInputs) => void;
 }
@@ -52,6 +69,10 @@ export function createFrameDriver(options: FrameDriverOptions): FrameDriver {
       pointer: pointer.state,
       resolution: resolution(),
     };
+    // ORDER IS THE CONTRACT (T340). Values for THIS frame are written before the encode
+    // that must carry them, so the cook gate sees the dirty mark in time; observers run
+    // after, on a frame that is already decided.
+    options.onBeforeFrame?.(inputs);
     backend.render(plan, inputs);
     framesRendered += 1;
     options.onFrame?.(inputs);

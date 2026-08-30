@@ -281,14 +281,14 @@ export interface PerformanceViewProps {
  * bisect when someone suspects cooking in the wild — flip to "always" and the question
  * becomes "is it cooking?" instead of "is it something else?".
  *
- * It defaults to ALWAYS, and that is a measurement rather than caution. §V157 requires
- * "auto" to be byte-identical to "always" at EVERY frame index, and today it is not: the
- * uniform push runs in the frame callback, AFTER `render` has already asked the gate
- * whether to skip, so the first frame of any new motion is skipped and its value appears
- * one frame late. Measured on the real backend over eight frames of a static plan whose
- * brightness starts moving at frame 3 — always encodes 1,1,1,1,1,1,1; auto encodes
- * 0,0,0,1,1,1,1. A one-frame lag at motion onset is the signature failure §V157 names,
- * so "auto" stays a switch someone chooses rather than the default anyone gets.
+ * It defaults to ALWAYS. That was once because "auto" was incorrect — a one-frame lag at
+ * motion onset, §V157's signature failure — and since T340 it is not: values are pushed
+ * before the encode that carries them, and the parity oracle compares the value visible at
+ * every frame index rather than at the end, which is where the lag used to hide.
+ *
+ * The default stays because turning the gate on for everyone is a DECISION about what
+ * every project does per frame, not a bug fix. Its evidence is the example census, not one
+ * measured graph.
  */
 function CookPolicyControl({
   policy,

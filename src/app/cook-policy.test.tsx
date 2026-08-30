@@ -89,14 +89,14 @@ describe("T326 — the cook policy is set on the backend", () => {
     runtime.dispose();
   });
 
-  it("defaults to ALWAYS, because auto is not yet frame-identical (§V157)", async () => {
+  it("defaults to ALWAYS, the behaviour the product already had (§V157)", async () => {
     const runtime = newRuntime();
     const gpu = fixture();
     await mount(runtime, gpu.backend);
-    // Measured, not assumed: over eight frames of a static plan whose brightness starts
-    // moving at frame 3, `always` encodes 1,1,1,1,1,1,1 and `auto` encodes 0,0,0,1,1,1,1.
-    // The uniform push runs after `render` has already asked the gate, so the first frame
-    // of new motion is skipped and its value lands late — §V157's signature failure.
+    // Not because "auto" is unsafe — T340 fixed the lag that made it so, and
+    // `cook-parity.test.ts` compares the value visible at EVERY frame index. Turning the
+    // gate on for everyone is a decision about what every project does per frame, and its
+    // evidence is the example census rather than one measured graph.
     expect(gpu.policies[0]).toBe("always");
     runtime.dispose();
   });
