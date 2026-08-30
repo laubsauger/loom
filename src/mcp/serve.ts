@@ -52,6 +52,8 @@ export interface HeadlessMcpServer {
 
 export function createHeadlessMcpServer(options: {
   send: (message: Record<string, unknown>) => void;
+  /** T334: pixels/readbacks leave the process only when the INVOCATION said so. */
+  grantExport?: boolean;
 }): HeadlessMcpServer {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
@@ -73,12 +75,15 @@ export function createHeadlessMcpServer(options: {
     ports,
   });
 
-  // §V38's authority holds — grants live in the bus store and no TOOL CALL can write
-  // one. Out of process, the user's consent act is LAUNCHING this server: stdio has no
-  // confirm dialog, and an MCP host mediates tool use with its own approval flow. So
-  // export (pixels/readbacks leaving the process) is granted HERE, at startup, by the
-  // same hand that started the process — never from the wire.
-  bus.grants.grant({ kind: "agent", id: "mcp", label: "MCP client" }, "export");
+  // T334 (§V38): export — pixels and readbacks leaving the process — is granted only
+  // when the INVOCATION carried --grant-export. Default-OFF fails loudly (the refusal
+  // names the flag) where default-ON would fail silently; and with a webcam node in
+  // the catalogue, "pixels leave the process" can mean a camera. The authority model
+  // is intact either way: the grant lives in the bus store, nothing on the wire can
+  // write one, and the MCP host's own approval flow gates tool USE, not our grants.
+  if (options.grantExport === true) {
+    bus.grants.grant({ kind: "agent", id: "mcp", label: "MCP client" }, "export");
+  }
 
   const connection = createMcpConnection({ surface, send: options.send });
 
@@ -133,6 +138,16 @@ export function createHeadlessMcpServer(options: {
       ]);
       return;
     }
+    if (options.grantExport !== true) {
+      connection.notifyDiagnostics([
+        {
+          severity: "info",
+          code: "mcp/export-ungranted",
+          message:
+            "Pixel tools (render_preview, describe_output, read_points) are present but ungranted; start the server with --grant-export to enable them (T334).",
+        },
+      ]);
+    }
     const live = createVgpuBackend({ host: nodeGpuHost() });
     live.onDiagnostic((diagnostic) => {
       // T294: the backend's verdicts ride the EXISTING notification channel.
@@ -186,6 +201,7 @@ export function serveStdio(): void {
     send: (message) => {
       process.stdout.write(`${JSON.stringify(message)}\n`);
     },
+    grantExport: process.argv.includes("--grant-export"),
   });
 
   const lines = createInterface({ input: process.stdin });

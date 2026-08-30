@@ -17,7 +17,7 @@ describe("headless MCP server on Dawn (T294)", () => {
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const sent: Array<Record<string, unknown>> = [];
-    const server = createHeadlessMcpServer({ send: (message) => sent.push(message) });
+    const server = createHeadlessMcpServer({ send: (message) => sent.push(message), grantExport: true });
     await server.ready;
 
     let nextId = 1;
@@ -65,6 +65,28 @@ describe("headless MCP server on Dawn (T294)", () => {
     // Real pixels: a PNG of a red solid is comfortably past any header-only size.
     expect((image?.data ?? "").length).toBeGreaterThan(100);
 
+    server.dispose();
+  });
+
+  it("refuses pixel tools without --grant-export, naming the gap (T334)", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const server = createHeadlessMcpServer({ send: (message) => sent.push(message) });
+    await server.ready;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "render_preview", arguments: { nodeId: "anything" } },
+    });
+    const reply = sent.findLast((message) => message["id"] === 1) as {
+      result?: { content?: Array<{ text?: string }> };
+    };
+    const result = JSON.parse(reply.result?.content?.[0]?.text ?? "{}") as {
+      status?: string;
+      diagnostics?: Array<{ code?: string }>;
+    };
+    expect(result.status).toBe("denied");
+    expect(result.diagnostics?.[0]?.code).toBe("capability.denied");
     server.dispose();
   });
 });
