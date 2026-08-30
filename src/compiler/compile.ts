@@ -18,6 +18,9 @@ import {
   resourceStructureKey,
 } from "../runtime/backend/plan.ts";
 import { describeError } from "../runtime/backend/diagnostics.ts";
+// T502: the BASE tile every preview is guaranteed (§V454). A synthesized preview and the
+// tile it fills are one picture, so one constant sizes both halves.
+import { MAX_TILE_SCALE } from "../runtime/previews/geometry.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { declaredColorSpace } from "../domain/graph/port-compat.ts";
@@ -825,6 +828,34 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     const sinkPort = sink.portId ?? outputSlots(sinkDefinition)[0]?.portId;
     if (sinkPort !== undefined) previewSinkKeys.add(outputKey(sink.nodeId, sinkPort));
   }
+  /**
+   * T502 — the square edge, in device px, that a SYNTHESIZED preview renders at.
+   *
+   * ## Why this exists, and why it is a constant
+   *
+   * A texture preview's source is the node's own output, already at whatever resolution
+   * the user set (§V21) — so when T490 let a zoomed-in tile grow to 1152 device px, a
+   * texture preview had the pixels to answer with. A pointset has no texture anywhere in
+   * it; the compiler SYNTHESIZES a target and splats into it. That target was
+   * `previewLongEdge` — 192 — which is BELOW the base tile every preview is guaranteed
+   * (384 at dpr 2), so a point preview was upscaled at rest on every retina display and
+   * 6× upscaled when zoomed. The ladder was working; the picture it pointed at was not.
+   *
+   * The rule now is: A SYNTHESIZED PREVIEW RENDERS AT THE TILE IT IS GUARANTEED — the
+   * BASE (§V454's reserved floor), which is `previewLongEdge × MAX_TILE_SCALE`. That
+   * removes the upscale at rest entirely and halves it under a full boost.
+   *
+   * It is deliberately NOT the granted step, and that is §V142 holding rather than being
+   * forgotten. Sizing this from the boost means the sink set carries zoom, which means a
+   * ladder crossing RECOMPILES, which reallocates this target — and MEASURED in the
+   * running app (E16, zoomed to 4× with the transport paused): the point preview goes
+   * BLACK and stays black until playback resumes, because the splat pass lives in the
+   * main plan and the main plan does not run while paused. The preview program is
+   * transport-independent; the plan is not. Reaching the boost properly means moving
+   * synthesized previews INTO the preview program, which is a task of its own.
+   */
+  const previewTargetEdge = (): number =>
+    Math.max(1, Math.round(settings.previewLongEdge)) * MAX_TILE_SCALE;
   const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks);
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
 
@@ -1319,7 +1350,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       const info = pointsetInfoByOutput.get(key);
       const position = info?.pairs["position"];
       if (info === undefined || position === undefined) continue;
-      const edgePx = Math.max(1, Math.round(settings.previewLongEdge));
+      // T502: the base tile, not `previewLongEdge`. Measured on Dawn — 24 lit texels at
+      // edge 192 against 853 at 1152, the same fraction of area — so the target's size IS
+      // the content's resolution and a bigger one buys real detail, not a bigger blur.
+      const edgePx = previewTargetEdge();
       const previewId = pointsPreviewResourceId(nodeId, slot.portId);
       resources.push({
         kind: "target",
@@ -1383,7 +1417,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       if (!previewSinkKeys.has(key)) continue;
       const payload = sceneInfoByOutput.get(key);
       if (payload === undefined || payload.kind === "geometry") continue;
-      const edgePx = Math.max(1, Math.round(settings.previewLongEdge));
+      // T502: same rule, same helper — a camera, light or material preview is synthesized
+      // exactly like the splat, so it renders at the same size. This is the half of §V437
+      // that matters: the policy reaches the NEXT preview kind by construction.
+      const edgePx = previewTargetEdge();
       const previewId = scenePreviewResourceId(nodeId, port.id);
       resources.push({
         kind: "target",

@@ -77,9 +77,11 @@ describe("a watched point generator previews as its own splat (T373, §V85)", ()
     const target = compiled.resources.find((resource) => resource.id === pointsPreviewResourceId("torus", "out"));
     expect(target).toBeDefined();
     expect(target?.kind).toBe("target");
-    // Square, sized from the project's preview edge — the tile's own framing (§V85),
-    // never the downstream renderer's.
-    expect((target as unknown as { size: [number, number] }).size).toEqual([192, 192]);
+    // Square, sized from the BASE TILE this preview is guaranteed — `previewLongEdge`
+    // × MAX_TILE_SCALE (T502, §V454) — which is the tile's own framing (§V85), never the
+    // downstream renderer's. It read [192, 192] until T502, i.e. a 2× upscale into its
+    // own guaranteed tile before anyone zoomed.
+    expect((target as unknown as { size: [number, number] }).size).toEqual([384, 384]);
     expect((target as unknown as { format: string }).format).toBe("rgba8unorm");
 
     const pass = previewPassFor(compiled.passes, "torus");

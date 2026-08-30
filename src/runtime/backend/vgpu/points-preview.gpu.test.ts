@@ -19,7 +19,9 @@ import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
  * full-screen wash or a stuck clear both fail loudly.
  */
 
-const EDGE = 192;
+/** The synthesized target's edge: `previewLongEdge` × MAX_TILE_SCALE (T502, §V454). */
+const EDGE = 384;
+const PREVIEW_LONG_EDGE = 192;
 const POINT_SIZE = 0.03; // must match POINTS_PREVIEW_POINT_SIZE in compile.ts — pinned below
 
 describe("pointset preview splat on Dawn (T373)", () => {
@@ -47,7 +49,7 @@ describe("pointset preview splat on Dawn (T373)", () => {
         outputResolution: { width: 64, height: 64 },
         workingFormat: "rgba8unorm",
         randomSeed: 7,
-        previewLongEdge: EDGE,
+        previewLongEdge: PREVIEW_LONG_EDGE,
         previewFps: 20,
         limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
       },

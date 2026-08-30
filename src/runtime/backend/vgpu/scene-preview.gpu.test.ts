@@ -88,13 +88,21 @@ async function renderPreviews(
   }
 }
 
+/**
+ * The synthesized target's edge: `previewLongEdge` × MAX_TILE_SCALE (T502, §V454) — the
+ * base tile this preview is guaranteed, rather than the raw setting. Every coordinate
+ * below is derived from it, so the picture asserted is the same one at any size.
+ */
+const EDGE = 192 * 2;
+const CENTRE = EDGE / 2;
+
 const texel = (bytes: Uint8Array, x: number, y: number): [number, number, number] => {
-  const at = (y * 192 + x) * 4;
+  const at = (y * EDGE + x) * 4;
   return [bytes[at] ?? -1, bytes[at + 1] ?? -1, bytes[at + 2] ?? -1];
 };
 
 const savePng = (name: string, bytes: Uint8Array): void => {
-  const png = encodePng({ width: 192, height: 192, data: bytes });
+  const png = encodePng({ width: EDGE, height: EDGE, data: bytes });
   writeFileSync(`test-results/${name}`, png.bytes);
 };
 
@@ -108,7 +116,7 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
     );
     const bytes = images.get("skin")!;
     // 0/1 fixed points of the display decode (§V56): linear red exactly.
-    expect(texel(bytes, 96, 96)).toEqual([255, 0, 0]);
+    expect(texel(bytes, CENTRE, CENTRE)).toEqual([255, 0, 0]);
     // §V384 as bytes: the corner is the painted backdrop, not unrendered black.
     expect(texel(bytes, 2, 2)).toEqual([
       Math.round(0.055 * 255),
@@ -134,10 +142,10 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
       ],
     );
     const lit = images.get("sun")!;
-    expect(texel(lit, 96, 96)).toEqual([204, 204, 204]);
+    expect(texel(lit, CENTRE, CENTRE)).toEqual([204, 204, 204]);
     // Zero intensity: BLACK ball on the painted backdrop — true, and the point.
     const dark = images.get("dark")!;
-    expect(texel(dark, 96, 96)).toEqual([0, 0, 0]);
+    expect(texel(dark, CENTRE, CENTRE)).toEqual([0, 0, 0]);
     expect(texel(dark, 2, 2)).not.toEqual([0, 0, 0]);
     savePng("scene-preview-light.png", lit);
     savePng("scene-preview-light-zero.png", dark);
@@ -153,7 +161,7 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
     const bytes = images.get("cam")!;
     // The +z box face: flat [0.24, 0.42, 0.9] — no lighting in the stock scene. Each
     // channel quantizes from its f32 value (0.9 is 0.89999997… as f32, hence 229).
-    expect(texel(bytes, 96, 96)).toEqual(
+    expect(texel(bytes, CENTRE, CENTRE)).toEqual(
       [0.24, 0.42, 0.9].map((channel) => Math.round(Math.fround(channel) * 255)),
     );
     savePng("scene-preview-camera.png", bytes);
@@ -185,6 +193,6 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
     // and the mapped ball shows the checker (two sample points on the ball differ).
     expect(images.get("gold")).not.toEqual(images.get("chalk"));
     const mapped = images.get("mapped")!;
-    expect(texel(mapped, 96, 96)).not.toEqual(texel(mapped, 76, 96));
+    expect(texel(mapped, CENTRE, CENTRE)).not.toEqual(texel(mapped, CENTRE - 40, CENTRE));
   }, 120_000);
 });

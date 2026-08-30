@@ -100,7 +100,9 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
       (resource) => resource.id === "preview:scene:cam:out",
     ) as TargetResourceDescriptor;
     expect(target?.depth).toBe(true);
-    expect(target?.size).toEqual([192, 192]);
+    // T502: the base tile (`previewLongEdge` × MAX_TILE_SCALE), not the raw setting —
+    // the same rule the pointset splat takes, from the same helper.
+    expect(target?.size).toEqual([384, 384]);
     // The projection carries the row so the preview system can bind it.
     expect(compiled.outputs.some((output) => output.resourceId === "preview:scene:cam:out")).toBe(true);
   });
