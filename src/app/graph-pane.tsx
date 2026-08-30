@@ -23,6 +23,7 @@ import { useAppRuntime } from "./app-context.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
 import { registerViewCommands } from "./view-commands.ts";
 import { useNodePreviews } from "./use-node-previews.ts";
+import { useGraphBackground } from "./use-graph-background.ts";
 import styles from "./panes.module.css";
 
 /**
@@ -115,6 +116,7 @@ function GraphPaneInner({
   const flow = useReactFlow();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // One store per mounted pane: `NodePreviewSlot` writes each node's measured slot
   // rect, the preview tick below reads it every frame (T185, design note §3).
   const previewBounds = useMemo(() => createPreviewSlotBounds(), []);
@@ -127,6 +129,18 @@ function GraphPaneInner({
   // uncommitted in the document for its whole duration, and this is exactly the window
   // a preview must keep following the node through.
   const getNodePosition = useCallback((nodeId: NodeId) => flow.getNode(nodeId)?.position, [flow]);
+
+  // T463: nodes flagged as GRAPH BACKGROUND render behind the patch, dimmed — the
+  // preview machinery on a second canvas one z-layer down (see use-graph-background).
+  useGraphBackground({
+    backend: previewBackend,
+    canvasRef: backgroundCanvasRef,
+    graph,
+    compiledOutputs,
+    ...(previewSinks === undefined ? {} : { previewSinks }),
+    previewFps,
+    previewLongEdge,
+  });
 
   useNodePreviews({
     ...(previewSinks === undefined ? {} : { previewSinks }),
@@ -385,6 +399,9 @@ function GraphPaneInner({
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
           onPatchResult={onPatchResult}
+          underlay={
+            <canvas ref={backgroundCanvasRef} className={styles.graphBackground} aria-hidden="true" />
+          }
         />
       </GraphMenuHost>
       <PortDragBridge onChange={onPortDragChange} />

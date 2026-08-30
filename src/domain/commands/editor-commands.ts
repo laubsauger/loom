@@ -53,6 +53,8 @@ declare module "../types/commands.ts" {
     "node.togglePin": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `r` — node does GPU work at all. */
     "node.toggleRender": { input: NodeSelectionInput; output: GraphPatchResult };
+    /** T463 — node's output renders behind the patch, dimmed (TD's network background). */
+    "node.toggleBackground": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `n` — rename a node. `label: null` clears it back to the definition's title. */
     "node.rename": { input: RenameInput; output: GraphPatchResult };
   }
@@ -286,7 +288,7 @@ function patchThrough(
   return applyGraphPatch({ baseRevision: context.graph.revision, label, operations }, context);
 }
 
-type UiFlag = "bypassed" | "preview" | "previewPinned" | "muted";
+type UiFlag = "bypassed" | "preview" | "previewPinned" | "muted" | "background";
 
 /**
  * Flags whose ABSENT state means ON (T353, §V297).
@@ -315,7 +317,12 @@ function toggleFlagOperations(nodes: readonly GraphNode[], flag: UiFlag): GraphP
 
 function registerToggle(
   bus: ShaderloomBus,
-  name: "node.toggleBypass" | "node.toggleDisplay" | "node.togglePin" | "node.toggleRender",
+  name:
+    | "node.toggleBypass"
+    | "node.toggleDisplay"
+    | "node.togglePin"
+    | "node.toggleRender"
+    | "node.toggleBackground",
   flag: UiFlag,
   label: string,
 ): void {
@@ -458,4 +465,7 @@ export function registerEditorCommands(bus: ShaderloomBus): void {
   // TD's render flag is "does this operator cook at all"; ours is mute — the pass does
   // no GPU work and its edges stop flowing.
   registerToggle(bus, "node.toggleRender", "muted", "Toggle render");
+  // T463: TD's network background, as a flag — the graph pane renders every marked
+  // node's output behind the patch, dimmed, through the preview-sink machinery.
+  registerToggle(bus, "node.toggleBackground", "background", "Toggle graph background");
 }

@@ -104,6 +104,13 @@ export interface GraphNode {
     previewPinned?: boolean;
     bypassed?: boolean;
     muted?: boolean;
+    /**
+     * T463: this node's output renders as the GRAPH BACKGROUND — behind the patch,
+     * dimmed, TD's network-background way of working. Watching it routes through the
+     * same preview-sink set as a tile or viewer (T252), so a marked node costs one
+     * shared materialization and an unmarked document costs nothing.
+     */
+    background?: boolean;
     color?: string;
   };
 }

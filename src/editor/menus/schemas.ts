@@ -48,6 +48,7 @@ export const TOGGLE_GUARD: Readonly<Record<string, MenuGuardName>> = {
   "node.toggleBypass": "isBypassed",
   "node.toggleRender": "isMuted",
   "node.togglePin": "pinsPreview",
+  "node.toggleBackground": "showsBackground",
 };
 
 /**
@@ -116,13 +117,16 @@ export const NODE_MENU: MenuSchema = {
     // every node and the `d` key; the pin had neither, and one of them had to be the one
     // you can reach without knowing it exists.
     { command: "node.togglePin", label: "Pin preview" },
+    // T463: TD's network background — this node's output behind the patch, dimmed.
+    // It DISPLACED "Set colour…" per the item cap's own rule (a planned row, still
+    // reachable through its keymap binding and the palette when it lands).
+    { command: "node.toggleBackground", label: "Graph background" },
     { separator: true },
     // The ellipsis is a promise, and until T415 it was a lie: this named `node.rename`,
     // which needs a `label` no menu route could ever supply, so the item dispatched a
     // rename with no name (B60, §V342). It names the command that OPENS the inline editor
     // on the node's title; that editor is what runs `node.rename`.
     { command: BEGIN_RENAME_COMMAND, label: "Rename…" },
-    { command: planned("node.openColorPalette"), label: "Set colour…" },
     { command: planned("graph.diveIn"), label: "Dive in" },
     { separator: true },
     { command: "graph.copySelection", label: "Copy" },

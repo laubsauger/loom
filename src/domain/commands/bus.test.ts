@@ -86,6 +86,8 @@ describe("command bus — registration surface (§V39)", () => {
       "node.rename",
       "node.setFormat",
       "node.setResolution",
+      // T463: the graph-background flag — TD's network background as node ui state.
+      "node.toggleBackground",
       "node.toggleBypass",
       "node.toggleDisplay",
       // T353: the preview PIN, split off from the switch when `P` started meaning on/off.

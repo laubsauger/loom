@@ -110,7 +110,9 @@ describe("what the menus promise but nobody has built", () => {
     expect(missing.filter((command) => !declaredPlanned.has(command))).toEqual([]);
     // Non-vacuity: the menus really do name unimplemented commands, so an empty `missing`
     // would mean the walk broke rather than that the menus got finished.
-    expect(missing.length).toBeGreaterThan(5);
+    // T463 displaced the planned "Set colour…" row (still keymap-reachable), so the
+    // menus now promise five unbuilt commands rather than six.
+    expect(missing.length).toBeGreaterThan(4);
   });
 
   it("every command it treats as live is really on a bus", () => {
@@ -137,13 +139,15 @@ describe("shape", () => {
     for (const surface of SURFACES) expect(menuSchemaFor(surface, registry).surface).toBe(surface);
   });
 
-  it("gives the three node toggles a state guard, so each shows a checkmark", () => {
+  it("gives the four node toggles a state guard, so each shows a checkmark", () => {
     const nodeItems = items(menuSchemaFor("node", registry).entries);
     const toggles = nodeItems.filter((item) => item.command !== undefined && TOGGLE_GUARD[item.command] !== undefined);
     // "Pin preview" is `node.togglePin` since T353: the preview SWITCH left the menu when
     // it stopped being a pin, because it has the `P` button and the `d` key and the item
     // cap below has no room for both.
-    expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Pin preview"]);
+    // T463 added "Graph background", displacing the planned "Set colour…" row per the
+    // item cap's own instruction rather than raising the cap a second time.
+    expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Pin preview", "Graph background"]);
   });
 });
 

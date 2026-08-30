@@ -132,3 +132,15 @@ describe("authoring mistakes", () => {
     });
   });
 });
+
+describe("T463 — showsBackground reads the node's background flag", () => {
+  it("answers the ui flag through the toggle command, false for a missing node", async () => {
+    const target: MenuTarget = { surface: "node", nodeId: fixture.solid };
+    expect(menuGuardValue("showsBackground", target, fixture.context())).toBe(false);
+    await fixture.bus.execute("node.toggleBackground", { nodeIds: [fixture.solid] }, contextFor(alice));
+    expect(menuGuardValue("showsBackground", target, fixture.context())).toBe(true);
+    expect(
+      menuGuardValue("showsBackground", { surface: "node", nodeId: "ghost" }, fixture.context()),
+    ).toBe(false);
+  });
+});

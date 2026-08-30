@@ -90,6 +90,12 @@ export interface GraphCanvasProps {
    */
   onSelectionChange?: (nodeIds: readonly NodeId[]) => void;
   onHoveredNodeChange?: (nodeId: NodeId | null) => void;
+  /**
+   * T463: a surface rendered in React Flow's own negative-z slot — the same stacking
+   * layer as the dot Background, LATER in the DOM, so it paints above the dots and
+   * beneath every node and edge. The graph pane puts its background canvas here.
+   */
+  underlay?: ReactNode;
 }
 
 export function GraphCanvas({
@@ -100,6 +106,7 @@ export function GraphCanvas({
   renderControls,
   onPatchResult,
   onSelectionChange,
+  underlay,
   onHoveredNodeChange,
 }: GraphCanvasProps) {
   const registry = bus.registry;
@@ -544,6 +551,7 @@ export function GraphCanvas({
           fitView
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--line)" />
+          {underlay}
           <ReferenceLines dependencies={dependencies} />
         </ReactFlow>
       </div>

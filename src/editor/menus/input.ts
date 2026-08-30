@@ -129,6 +129,7 @@ const BUILDERS: Record<string, InputBuilder> = {
   "node.toggleBypass": nodeIds,
   "node.togglePin": nodeIds,
   "node.toggleRender": nodeIds,
+  "node.toggleBackground": nodeIds,
 
   // Rename is single-target by nature, so it takes the node under the CURSOR rather than
   // the whole selection: "rename these nine nodes" has no one answer, and picking one of
