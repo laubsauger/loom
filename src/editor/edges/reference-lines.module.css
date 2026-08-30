@@ -49,12 +49,12 @@
    * it and ignorable when you are not — it describes a relationship between two nodes and
    * must never out-shout the nodes themselves.
    */
-  opacity: 0.3;
+  opacity: 0.55;
   stroke-linecap: round;
 }
 
 .arrow {
   /* Direction still has to survive at low zoom, so the head is the one part kept a
      little above the line's own opacity — a shape this small reads as a smudge below it. */
-  opacity: 0.45;
+  opacity: 0.7;
 }

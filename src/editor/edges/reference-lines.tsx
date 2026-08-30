@@ -73,13 +73,18 @@ const KIND_COLOR: Record<ParameterDependencyKind, string> = {
  * Tighter and lighter than a data edge, and all four scale with zoom (T391).
  *
  * A data edge at rest is `stroke-width: 1.25` at opacity 0.45 (`signal-edge.module.css`).
+ *
+ * A reference line is subordinate by SHAPE — thinner, and dashed — NOT by being washed
+ * out. The first pass took it to 0.75/0.3, fainter than a data edge on both axes at once,
+ * and the owner could not see it. Dashes also cut the ink roughly in half (3 on, 3.5 off),
+ * so equal legibility needs MORE contrast per pixel than a solid edge, not less.
  * A reference must read as subordinate to that at every zoom, which is why the arrowhead
  * goes through `screenScale` exactly as the dash does: a fixed-size arrow on a thinning
  * line is what makes a line look wrong at one zoom and fine at another.
  */
 const DASH_PX = 3;
 const GAP_PX = 3.5;
-const STROKE_PX = 0.75;
+const STROKE_PX = 0.95;
 const ARROW_PX = 4.5;
 
 /** One line to draw: a node pair, a kind, and every parameter that put it there. */
