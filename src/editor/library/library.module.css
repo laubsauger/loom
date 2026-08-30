@@ -117,7 +117,13 @@
 
 .item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /*
+   * The TITLE has priority: it keeps a floor, the type meta gives way first.
+   * `minmax(0, …)` on both is load-bearing — a grid item defaults to
+   * `min-width: auto`, which refuses to shrink below its content, so the title's
+   * ellipsis never engages and it OVERLAPS the meta instead of truncating.
+   */
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(0, auto);
   align-items: baseline;
   gap: var(--space-2);
   width: 100%;
@@ -143,12 +149,18 @@
 }
 
 .itemTitle {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .itemMeta {
+  /* Truncates BEFORE the title does — it is the secondary label. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--line-hot);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
