@@ -1,5 +1,5 @@
 import { effect, frame, frameLoop, sampler, surface, timer } from "vgpu";
-import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer } from "vgpu";
+import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer, TimerSpan } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import type {
   BackendCapabilities,
@@ -33,6 +33,8 @@ import { createPacedGate } from "../frame-pacing.ts";
 import {
   bytesPerPixelFor,
   estimateResourceBytes,
+  expandLoops,
+  iterationSpanName,
   passStructureKey,
   planStructureSignature,
   resourceStructureKey,
@@ -106,6 +108,16 @@ interface Program {
   signature: string;
   resourceDescriptors: ReadonlyArray<ResourceDescriptor>;
   readonly passes: ReadonlyArray<PassDescriptor>;
+  /**
+   * T387: plan order with every substep region expanded — the order the ENCODER walks.
+   *
+   * Kept beside `passes` rather than replacing it, because the two answer different
+   * questions. `passes` is what EXISTS (one entry per pass; what resources are built from,
+   * what uniforms are flushed to, what the recompile classifier diffs). `encodePasses` is
+   * what HAPPENS this frame, and the same pass object appears in it once per iteration.
+   * Building resources from the expanded list would build the same pipeline fifty times.
+   */
+  readonly encodePasses: ReadonlyArray<PassDescriptor>;
   readonly compiled: CompiledExecutionPlan;
   /** Latest uniform values per pass, including live updates. Survives a device rebuild. */
   readonly liveUniforms: Map<string, UniformValues>;
@@ -666,11 +678,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   function encode(
     f: Frame,
     active: Program,
-    passes: ReadonlyArray<PassDescriptor> = active.passes,
+    passes: ReadonlyArray<PassDescriptor> = active.encodePasses,
     withPresentations = true,
   ): void {
     guard.duringFrame(() => {
+      /**
+       * T387: how many times each pass has already been encoded THIS call. Substeps make
+       * that more than one, and vgpu refuses a duplicate timer span name inside a frame —
+       * so the iterations are numbered rather than dropped, and `aggregate` sums them back
+       * onto the pass. Dropping them would report a 50-substep loop as costing one substep.
+       */
+      const iterations = new Map<string, number>();
+      const spanFor = (passId: string): TimerSpan | undefined => {
+        if (gpuTimer === undefined) return undefined;
+        const seen = iterations.get(passId) ?? 0;
+        iterations.set(passId, seen + 1);
+        return gpuTimer.span(iterationSpanName(passId, seen));
+      };
       for (const pass of passes) {
+        if (pass.kind === "loop") continue; // expanded away before we get here
         if (pass.kind === "swap") {
           active.resources.pingPongs.get(pass.resourceId)?.swap();
           active.resources.bufferPairs.get(pass.resourceId)?.swap();
@@ -678,6 +704,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           // rotation of a two-slot ring. One placement rule, one pass kind, one thing
           // the compiler has to get right.
           active.resources.rings.get(pass.resourceId)?.rotate();
+          // T387: a swap INSIDE the frame moves the halves under every binding that reads
+          // them, and the next iteration of a substep loop reads them immediately. The
+          // per-frame rebind (`rebindDynamicTextures`, before encoding) cannot see that, so
+          // a substepped loop without this reads its own first iteration fifty times — a
+          // picture that renders perfectly and never evolves, which is exactly the §V147
+          // failure this feature exists to fix. `set()` only, no allocation.
+          rebindResource(active, pass.resourceId);
           continue;
         }
         if (pass.kind === "dispatch") {
@@ -706,7 +739,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             // Literal draws encode through f.pass, which is what gives them a clear
             // knob (T180 - clear:false is the trails pattern) and a GPU timer span
             // (T181 - span name = pass id, like effects).
-            const span = gpuTimer?.span(pass.id);
+            const span = spanFor(pass.id);
             f.pass(
               {
                 target: resolve(),
@@ -726,7 +759,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         if (!drawable || !resolve) continue;
         const renderTarget: Target = resolve();
         // T163: span name = PASS ID — node and component timing attribution key on it.
-        const span = gpuTimer?.span(pass.id);
+        // T387: plus an iteration suffix from the second substep on, because vgpu allows
+        // one span per name per frame.
+        const span = spanFor(pass.id);
         f.pass(
           span === undefined
             ? { target: renderTarget, clear: pass.clear ?? true }
@@ -754,7 +789,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       | { kind: "dispatch"; pass: PassDescriptor & { kind: "dispatch" } };
     const segments: Segment[] = [];
     let current: PassDescriptor[] = [];
-    for (const pass of active.passes) {
+    // T387: the EXPANDED order — the offline/export path runs the same number of substeps
+    // the live path does, or the same project renders two different pictures (§V47).
+    for (const pass of active.encodePasses) {
       if (pass.kind === "dispatch") {
         if (current.length > 0) {
           segments.push({ kind: "frame", passes: current });
@@ -776,6 +813,57 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       const final = index === segments.length - 1;
       frame(gpu, (f) => encode(f, active, segment.passes, final));
     });
+  }
+
+  /**
+   * Re-points the bindings of ONE resource, mid-frame, after it swapped (T387).
+   *
+   * The per-frame `rebindDynamicTextures` runs before encoding and is right for a plan that
+   * swaps once at the end. A substep loop swaps inside the frame and reads the result on
+   * the very next pass, so the halves have to move under the bindings there and then.
+   * Scoped to the swapped resource because a substep loop does this on every iteration and
+   * walking every binding in the plan fifty times a frame is work with no reader.
+   */
+  function rebindResource(active: Program, resourceId: string): void {
+    const pair = active.resources.pingPongs.get(resourceId);
+    const ring = active.resources.rings.get(resourceId);
+    const bufferPair = active.resources.bufferPairs.get(resourceId);
+    if (!pair && !ring && !bufferPair) return;
+    const settableFor = (passId: string): { set(values: Record<string, unknown>): unknown } | undefined =>
+      active.resources.effects.get(passId) ??
+      active.resources.computes.get(passId) ??
+      active.resources.draws.get(passId);
+
+    if (pair || ring) {
+      for (const [passId, bindings] of active.resources.dynamicTextures) {
+        const matching = bindings.filter((binding) => binding.resourceId === resourceId);
+        if (matching.length === 0) continue;
+        const drawable = settableFor(passId);
+        if (!drawable) continue;
+        const values: Record<string, unknown> = {};
+        for (const binding of matching) {
+          if (pair) values[binding.binding] = pair.read.color;
+          else if (ring) {
+            values[binding.binding] =
+              binding.array === true ? ring.arrayView() : ring.tapView(binding.tap ?? 1);
+          }
+        }
+        drawable.set(values);
+      }
+    }
+    if (bufferPair) {
+      for (const [passId, bindings] of active.resources.dynamicBuffers) {
+        const matching = bindings.filter((binding) => binding.resourceId === resourceId);
+        if (matching.length === 0) continue;
+        const drawable = settableFor(passId);
+        if (!drawable) continue;
+        const values: Record<string, unknown> = {};
+        for (const binding of matching) {
+          values[binding.binding] = binding.half === "write" ? bufferPair.write : bufferPair.read;
+        }
+        drawable.set(values);
+      }
+    }
   }
 
   /** Re-points ping-pong texture and buffer-pair bindings after swaps. `set()` only — no allocation. */
@@ -1361,6 +1449,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         signature,
         resourceDescriptors: read.resources,
         passes: read.passes,
+        encodePasses: expandLoops(read.passes),
         compiled: { id, logical: plan },
         liveUniforms: new Map(planUniformValues(read.passes)),
         resources,
@@ -1429,7 +1518,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // view is one stable object; the head is a NUMBER, so it travels as uniform
       // VALUES (§V5) merged per frame exactly like the T172 frame fields.
       for (const pass of active.passes) {
-        if (pass.kind === "swap" || pass.kind === "counter") continue;
+        if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") continue;
         const arrayBinding = (pass.textures ?? []).find(
           (binding) => binding.array === true && active.resources.rings.has(binding.resourceId),
         );
@@ -1966,7 +2055,7 @@ function planRequiresEveryFrame(
   const evolving = (id: string | undefined): boolean =>
     id !== undefined && (kinds.get(id) === "pingPong" || kinds.get(id) === "bufferPair" || kinds.get(id) === "externalTexture");
   return passes.some((pass) => {
-    if (pass.kind === "swap" || pass.kind === "counter") return false;
+    if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") return false;
     if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) return true;
     if ((pass.kind === "effect" || pass.kind === "draw") && pass.sharedBinding !== undefined) return true;
     if (pass.kind === "effect" && /frameU|SharedFrame/.test(pass.shader) && pass.sharedBinding === undefined) {
@@ -2041,7 +2130,7 @@ function computeCarryOver(
   const draws = new Map<string, NonNullable<ReturnType<ResourceSet["draws"]["get"]>>>();
   const passUniforms = new Map<string, NonNullable<ReturnType<ResourceSet["passUniforms"]["get"]>>>();
   for (const pass of nextPasses) {
-    if (pass.kind === "swap" || pass.kind === "counter") continue;
+    if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") continue;
     if (oldPassKeys.get(pass.id) !== passStructureKey(pass)) continue;
 
     const bound: string[] = [];

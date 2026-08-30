@@ -50,6 +50,44 @@ describe("documentLiveness (T268, §V173b)", () => {
     expect(dead).toEqual(["orphan"]);
   });
 
+  it("source 4 — a SOURCE REFERENCE keeps the chain that reaches a loop only by name (T350)", () => {
+    /*
+     * T388 found this. A simulation loop whose result reaches its Feedback ONLY through
+     * the recorded name — no wire, because §V285 made the wire a name — had its entire
+     * upstream chain reported DEAD while it was driving the picture. The compiler was
+     * right (it walks the synthesized edge); this walk has no such edge and has to read
+     * the reference, exactly as it already reads driven channels and op() references.
+     */
+    const graph = graphOf(
+      [
+        node("gen", "solid"),
+        node("mix", "over", { label: "over1" }),
+        node("loop", "feedback", { parameters: { source: "over1" } as GraphNode["parameters"] }),
+        node("sink", "output"),
+      ],
+      [
+        ["gen", "out", "mix", "in1"],
+        ["loop", "out", "mix", "in2"],
+        ["loop", "out", "sink", "input"],
+      ],
+    );
+    const { alive, dead } = documentLiveness(graph, registry);
+    expect(dead).toEqual([]);
+    expect([...alive].sort()).toEqual(["gen", "loop", "mix", "sink"]);
+  });
+
+  it("source 4 — a source reference naming nothing confers no liveness", () => {
+    const graph = graphOf(
+      [
+        node("orphan", "solid", { label: "solid1" }),
+        node("loop", "feedback", { parameters: { source: "nosuchnode" } as GraphNode["parameters"] }),
+        node("sink", "output"),
+      ],
+      [["loop", "out", "sink", "input"]],
+    );
+    expect(documentLiveness(graph, registry).dead).toEqual(["orphan"]);
+  });
+
   it("source 2 — a driven slot on an ALIVE node keeps the value source alive", () => {
     const graph = graphOf(
       [

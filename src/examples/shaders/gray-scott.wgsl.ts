@@ -1,42 +1,85 @@
 /**
- * The Gray-Scott reaction-diffusion kernel carried by example E2 (T154).
+ * The Gray-Scott reaction step carried by example E2 (T154, T388).
  *
  * This is the `source` parameter of that example's CustomWGSL node. It lives here as a
  * TypeScript constant rather than only inside the `.loom.json` so the example can be
  * REGENERATED (`src/examples/build-examples.ts`) instead of hand-edited as escaped JSON —
  * the shipped file is still the artifact, and `sync.test.ts` fails if the two drift.
  *
- * CONTRACT (§I "custom WGSL node contract v1"): a CustomWGSL node is wired exactly two
- * bindings — `inputSampler` at 0 and `inputTexture` at 1. It is NOT given a uniform block
- * (the node's `compile()` sets no `uniformBinding`), so this kernel declares none and
- * reads its grid spacing from `textureDimensions` instead. Declaring a `params` block the
- * plan never fills would bind nothing at all on a real device.
+ * ## What is LEFT in here, and what moved out to the graph (T388)
  *
- * STATE PACKING: `r` is U, `g` is V, `b` is unused, `a` is the INITIALISED FLAG. That flag
- * is what makes a seeded start possible with one texture and no extra node: a ping-pong
- * pair that has just been cleared (project load, reset, resize, format change, device
- * loss — the Feedback node's whole `resetOn` list) reads back as `clearColor`, which this
- * example sets to transparent black. Alpha below 0.5 therefore means "history is gone",
- * and this kernel answers with the seeded initial condition rather than with a step of the
- * simulation. Reset really is re-seed, and it is the same code path on frame 0 as on the
- * frame after a reset.
+ * E2 used to be this kernel, a Feedback and an Output: three nodes, with the entire
+ * algorithm inside one blob. That is a shader wearing a graph's clothes, and it showed —
+ * the pattern was uniform everywhere, because a single pair of compile-time `FEED`/`KILL`
+ * constants is the same chemistry in every pixel, and the same chemistry everywhere is
+ * what "dead and uniform" looks like.
  *
- * DETERMINISM (§V45): the seed pattern is an integer hash of the cell coordinate and a
- * constant seed carried in the source itself. No `textureLoad` of noise, no wall clock, no
- * frame counter — the same seed produces the same start on any device, and the simulation
- * from there is a pure function of its own previous frame.
+ * What actually needed WGSL is the part below: a nine-tap Laplacian and two coupled rate
+ * equations, evaluated per pixel against its own neighbourhood. Everything else is a node.
+ * The animated fields, their interaction, the shaping of that into a chemistry map, the
+ * packing of it into the state texture and the colouring of the result are all in the
+ * graph, where they can be seen and changed without touching a shader. Same lesson as
+ * E12's advection turning out to be a Displace node.
  *
- * UNIFORM CONTROL FLOW: every `textureSample` is taken unconditionally at the top level
- * and the branch is a `select` over already-sampled values. WGSL forbids sampling inside
- * non-uniform control flow, and an `if` around the re-seed branch would be exactly that.
+ * ## The chemistry map — the whole reason this looks alive
+ *
+ * `state.b` is a 0..1 coordinate the GRAPH supplies per pixel, and it walks a straight line
+ * through the interesting corner of Gray-Scott's (feed, kill) plane. Feed and kill are
+ * famously sensitive — a thousandth in either direction is a different creature — so the
+ * BAND stays here as named constants while WHERE each pixel sits inside it is a texture.
+ * Neighbouring regions of the image therefore run different chemistries and grow into each
+ * other, which is the cell-structure look; a constant map reduces exactly to the old
+ * uniform behaviour, which is what the concept test pins.
+ *
+ * The endpoints are chosen, not tuned blindly: (0.030, 0.0580) is the chaotic-cell corner
+ * where fronts keep breaking up, and (0.058, 0.0635) is the coral band where they keep
+ * dividing instead of settling. Both ends stay ALIVE, so no region of the image goes
+ * static — a band with a dead end grows a still patch and reads as a bug.
+ *
+ * ## State packing
+ *
+ * `r` is U, `g` is V, `b` is the chemistry coordinate the graph writes, and `a` is the
+ * INITIALISED FLAG. That flag is what makes a seeded start possible with one texture and
+ * no extra node: a ping-pong pair that has just been cleared (project load, reset, resize,
+ * format change, device loss — the Feedback node's whole `resetOn` list) reads back as
+ * `clearColor`, which this example sets to transparent black. Alpha below 0.5 therefore
+ * means "history is gone", and this kernel answers with the seeded initial condition rather
+ * than with a step of the simulation. Reset really is re-seed, and it is the same code path
+ * on frame 0 as on the frame after a reset.
+ *
+ * `b` survives because the Reorder node downstream rewrites it every step from the noise
+ * chain; this kernel reads it and passes its own output's `b` on unused.
+ *
+ * ## Determinism (§V45)
+ *
+ * The seed pattern is an integer hash of the cell coordinate and a constant seed carried in
+ * the source itself. No `textureLoad` of noise, no wall clock, no frame counter — the same
+ * seed produces the same start on any device, and the simulation from there is a pure
+ * function of its own previous frame and the chemistry map handed to it.
+ *
+ * ## Uniform control flow
+ *
+ * Every `textureSample` is taken unconditionally at the top level and the branch is a
+ * `select` over already-sampled values. WGSL forbids sampling inside non-uniform control
+ * flow, and an `if` around the re-seed branch would be exactly that.
+ *
+ * ## Contract (§I "custom WGSL node contract v1")
+ *
+ * A CustomWGSL node is wired exactly two bindings — `inputSampler` at 0 and `inputTexture`
+ * at 1. It is NOT given a uniform block unless the source declares one, so this kernel
+ * declares none and reads its grid spacing from `textureDimensions`.
  */
 export const GRAY_SCOTT_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 
-// Coral-growth parameters. Feed/kill pairs are famously sensitive: these two sit in the
-// mitosis band, which keeps dividing rather than settling into a fixed pattern.
-const FEED: f32 = 0.0545;
-const KILL: f32 = 0.062;
+// The BAND the chemistry map walks. Feed/kill pairs are famously sensitive: these two
+// endpoints bracket the region where fronts keep breaking up and dividing rather than
+// settling into a fixed pattern, so no part of the image goes static.
+const FEED_LOW: f32 = 0.030;
+const KILL_LOW: f32 = 0.0580;
+const FEED_HIGH: f32 = 0.058;
+const KILL_HIGH: f32 = 0.0635;
+
 const DIFFUSE_U: f32 = 0.2097;
 const DIFFUSE_V: f32 = 0.105;
 
@@ -81,6 +124,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;
   let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;
 
+  // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it
+  // walks is the constants above. A constant map is the old uniform behaviour exactly.
+  let chemistry = clamp(centre.b, 0.0, 1.0);
+  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);
+  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);
+
   let state = centre.rg;
   let laplacian =
     ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;
@@ -88,8 +137,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let reaction = state.x * state.y * state.y;
   let stepped = clamp(
     vec2f(
-      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (FEED * (1.0 - state.x))),
-      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((KILL + FEED) * state.y)),
+      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),
+      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),
     ),
     vec2f(0.0),
     vec2f(1.0),

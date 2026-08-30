@@ -3,10 +3,87 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
-      "e-kernel-out": {
-        "id": "e-kernel-out",
+      "e-broad-warp": {
+        "id": "e-broad-warp",
         "source": {
-          "nodeId": "kernel",
+          "nodeId": "broad",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "source"
+        }
+      },
+      "e-detail-warp": {
+        "id": "e-detail-warp",
+        "source": {
+          "nodeId": "detail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "disp"
+        }
+      },
+      "e-palette-tint": {
+        "id": "e-palette-tint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "lookup"
+        }
+      },
+      "e-rd-pack": {
+        "id": "e-rd-pack",
+        "source": {
+          "nodeId": "rd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in1"
+        }
+      },
+      "e-rd-tint": {
+        "id": "e-rd-tint",
+        "source": {
+          "nodeId": "rd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "source"
+        }
+      },
+      "e-shape-pack": {
+        "id": "e-shape-pack",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
+        }
+      },
+      "e-state-rd": {
+        "id": "e-state-rd",
+        "source": {
+          "nodeId": "state",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd",
+          "portId": "input"
+        }
+      },
+      "e-tint-out": {
+        "id": "e-tint-out",
+        "source": {
+          "nodeId": "tint",
           "portId": "out"
         },
         "target": {
@@ -14,42 +91,208 @@
           "portId": "input"
         }
       },
-      "e-state-kernel": {
-        "id": "e-state-kernel",
+      "e-warp-shape": {
+        "id": "e-warp-shape",
         "source": {
-          "nodeId": "state",
+          "nodeId": "warp",
           "portId": "out"
         },
         "target": {
-          "nodeId": "kernel",
+          "nodeId": "shape",
           "portId": "input"
         }
       }
     },
     "groups": {},
     "nodes": {
-      "kernel": {
+      "broad": {
         "definitionVersion": 1,
-        "id": "kernel",
-        "label": "kernel1",
+        "id": "broad",
+        "label": "broad1",
         "parameters": {
-          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\n// Coral-growth parameters. Feed/kill pairs are famously sensitive: these two sit in the\n// mitosis band, which keeps dividing rather than settling into a fixed pattern.\nconst FEED: f32 = 0.0545;\nconst KILL: f32 = 0.062;\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (FEED * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((KILL + FEED) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": true,
+          "offset": 0,
+          "period": 0.55,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.05,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
         },
         "position": {
-          "x": 200,
-          "y": 0
+          "x": -900,
+          "y": -140
         },
-        "type": "customWgsl"
+        "type": "noise"
+      },
+      "cycle": {
+        "definitionVersion": 1,
+        "id": "cycle",
+        "label": "lfo1",
+        "parameters": {
+          "amplitude": 0.06,
+          "frequency": 0.05,
+          "offset": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 140,
+          "y": 520
+        },
+        "type": "lfo"
+      },
+      "detail": {
+        "definitionVersion": 1,
+        "id": "detail",
+        "label": "detail1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.13,
+          "rough": 0.6,
+          "s4d": 1,
+          "seed": 19,
+          "speed": 0.09,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -900,
+          "y": 100
+        },
+        "type": "noise"
       },
       "out": {
         "definitionVersion": 1,
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 460,
-          "y": 120
+          "x": 660,
+          "y": 380
         },
         "type": "output"
+      },
+      "pack": {
+        "definitionVersion": 1,
+        "id": "pack",
+        "label": "pack1",
+        "parameters": {
+          "outa": "in1a",
+          "outb": "in2lum",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 400,
+          "y": 120
+        },
+        "type": "reorder"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.02,
+                0.04,
+                0.08,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.05,
+                0.28,
+                0.36,
+                1
+              ],
+              "position": 0.35
+            },
+            {
+              "color": [
+                0.35,
+                0.62,
+                0.4,
+                1
+              ],
+              "position": 0.6
+            },
+            {
+              "color": [
+                0.95,
+                0.76,
+                0.3,
+                1
+              ],
+              "position": 0.82
+            },
+            {
+              "color": [
+                1,
+                0.97,
+                0.9,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": 140,
+          "y": 380
+        },
+        "type": "ramp"
+      },
+      "rd": {
+        "definitionVersion": 1,
+        "id": "rd",
+        "label": "rd1",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\n// The BAND the chemistry map walks. Feed/kill pairs are famously sensitive: these two\n// endpoints bracket the region where fronts keep breaking up and dividing rather than\n// settling into a fixed pattern, so no part of the image goes static.\nconst FEED_LOW: f32 = 0.030;\nconst KILL_LOW: f32 = 0.0580;\nconst FEED_HIGH: f32 = 0.058;\nconst KILL_HIGH: f32 = 0.0635;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it\n  // walks is the constants above. A constant map is the old uniform behaviour exactly.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": 140,
+          "y": 120
+        },
+        "type": "customWgsl"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "label": "shape1",
+        "parameters": {
+          "blacklevel": 0.28,
+          "brightness": 1,
+          "contrast": 1.6,
+          "gamma1": 1,
+          "whitelevel": 0.72
+        },
+        "position": {
+          "x": -380,
+          "y": -60
+        },
+        "type": "level"
       },
       "state": {
         "definitionVersion": 1,
@@ -66,11 +309,12 @@
             0
           ],
           "persistence": 1,
-          "source": "kernel1"
+          "source": "pack1",
+          "substeps": 20
         },
         "position": {
-          "x": -80,
-          "y": 0
+          "x": -120,
+          "y": 120
         },
         "resolution": {
           "height": 512,
@@ -78,6 +322,57 @@
           "width": 512
         },
         "type": "feedback"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "channel": "green",
+          "offset": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "row": 0.5,
+          "scale": 2.4
+        },
+        "position": {
+          "x": 400,
+          "y": 380
+        },
+        "type": "lookup"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "label": "warp1",
+        "parameters": {
+          "extend": "mirror",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.22,
+            0.22
+          ]
+        },
+        "position": {
+          "x": -620,
+          "y": -60
+        },
+        "type": "displace"
       }
     },
     "revision": 1

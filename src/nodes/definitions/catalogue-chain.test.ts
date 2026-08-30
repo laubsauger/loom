@@ -245,7 +245,8 @@ describe("the catalogue compiles through the real compiler", () => {
       expect(passes.length, definition.type).toBeGreaterThan(0);
 
       for (const pass of passes) {
-        if (pass.kind === "swap" || pass.kind === "counter" || pass.uniforms === undefined) continue;
+        if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") continue;
+        if (pass.uniforms === undefined) continue;
         const binding = pass.uniformBinding;
         expect(binding, definition.type).toBeTypeOf("string");
         const declared = uniformStructMembers(pass.shader, binding as string);

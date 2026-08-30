@@ -17,6 +17,7 @@ import type {
 import { NO_CPU_TIMING, NO_PASS_TIMING, emptyNodeTelemetry } from "./types.ts";
 import { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";
 import type { ComponentTiming } from "./aggregate.ts";
+import { spanBasePassId } from "../backend/plan.ts";
 import { EMPTY_READBACK_BUDGET, readbackPlanBudget } from "./readback.ts";
 import { categoryRollups, nodeCostRows } from "./cost.ts";
 import type { DeclaredReadback, ReadbackBudget, SizedResource } from "./readback.ts";
@@ -418,9 +419,21 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       timingSource = source;
       spans.clear();
       const off = source.onPassTimings((results: PassSpanResults) => {
-        for (const [passId, ms] of Object.entries(results)) {
-          if (Number.isFinite(ms)) spans.set(passId, ms);
+        /*
+         * T387: a substepped pass is encoded several times in one frame and reports one
+         * span per iteration (`pass`, `pass~1`, `pass~2`, …) because vgpu allows one span
+         * per name per frame. They are SUMMED onto the pass, which is what makes the cost
+         * of raising Substeps visible where someone would look for it: the node's own
+         * timing row. Keeping only the first would report a fifty-iteration loop as
+         * costing one iteration — a node that reads cheap and is not.
+         */
+        const total = new Map<string, number>();
+        for (const [spanName, ms] of Object.entries(results)) {
+          if (!Number.isFinite(ms)) continue;
+          const passId = spanBasePassId(spanName);
+          total.set(passId, (total.get(passId) ?? 0) + ms);
         }
+        for (const [passId, ms] of total) spans.set(passId, ms);
         schedule();
       });
       detachTiming = () => {

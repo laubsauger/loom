@@ -4,6 +4,7 @@ import type { StoredParameter } from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import { bindingTargets, channelTargetName, opReferenceNames } from "./parameter-dependencies.ts";
+import { sourceReferenceName } from "./source-references.ts";
 
 /**
  * THE liveness answer (T268, §V173b).
@@ -16,7 +17,14 @@ import { bindingTargets, channelTargetName, opReferenceNames } from "./parameter
  *  1. a DATA EDGE chain reaching an active sink (§V25's classic walk);
  *  2. a `driven` slot on an alive node naming a value source's channel (T238-T240);
  *  3. an `op('name')` reference in an alive node's expression (§V127/§V154 — the shape
- *     TD's documented dependency bug takes: parameter reads are dependencies too).
+ *     TD's documented dependency bug takes: parameter reads are dependencies too);
+ *  4. a SOURCE REFERENCE (T350, §V285) — a Feedback names the node it records instead of
+ *     taking a wired back-edge, and that name is a dependency exactly like the other two.
+ *     It was missing here until T388 built an example whose simulation reaches its
+ *     Feedback ONLY by reference: the whole chain feeding the loop read DEAD while it was
+ *     visibly driving the picture, because this walk followed `graph.edges` and the
+ *     reference is deliberately not one of them. Every other liveness source was already
+ *     a name; this one just never got added when the wire became a name.
  *
  * Liveness is about REPORTING and dependency truth, not the GPU plan: channel and
  * reference liveness are parameter reads, which need the node's DOCUMENT presence and
@@ -38,6 +46,12 @@ export interface LivenessNode {
   /** Non-plan-resident by design (valueChannel): never a candidate, never "dead". */
   readonly isValueSource: boolean;
   readonly isSink: boolean;
+  /**
+   * T350/§V285: the NAME this node records, when its type takes a source reference. The
+   * compiler's own walk sees the synthesized edge instead and may leave this undefined;
+   * a document-side caller has no such edge and must supply it.
+   */
+  readonly sourceName?: string | undefined;
 }
 
 export interface LivenessResult {
@@ -60,9 +74,12 @@ export interface LivenessResult {
  * value-graph resolver and nowhere else; it now has one spelling that both reach.
  */
 function referencedNames(node: LivenessNode): string[] {
-  return bindingTargets(node.parameters).map(({ kind, address }) =>
-    kind === "driven" ? channelTargetName(address) : address,
-  );
+  return [
+    ...bindingTargets(node.parameters).map(({ kind, address }) =>
+      kind === "driven" ? channelTargetName(address) : address,
+    ),
+    ...(node.sourceName === undefined ? [] : [node.sourceName]),
+  ];
 }
 
 export function computeLiveness(
@@ -110,6 +127,7 @@ export function documentLiveness(graph: GraphDocument, registry: NodeRegistryVie
       parameters: node.parameters,
       isValueSource: isValueSourceDefinition(definition),
       isSink: definition?.sink === true,
+      sourceName: sourceReferenceName(node.type, node.parameters),
     });
   }
   const producers = new Map<NodeId, NodeId[]>();

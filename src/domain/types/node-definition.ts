@@ -45,6 +45,22 @@ export type FormatPolicy =
 export interface TemporalDefinition {
   outputs: PortId[];
   resetOn: ReadonlyArray<"resolution" | "format" | "shader-interface" | "device" | "load">;
+  /**
+   * T387 — SUBSTEPS: the parameter key holding how many times this loop advances per
+   * DISPLAYED frame. Absent (every other temporal node) the loop advances once, exactly
+   * as it always has.
+   *
+   * DECLARED rather than assumed by name. The compiler needs to read a number out of a
+   * node whose parameters are otherwise its own business, and "there is a parameter called
+   * substeps" is the kind of convention that works until someone names one differently.
+   * Naming the key here is what lets the compiler read it without guessing, and what makes
+   * a node that has no such parameter structurally incapable of claiming substeps.
+   *
+   * The key it names MUST be `compileTime: true`: the count is a plan STRUCTURE fact
+   * (§V5) — it changes how many times the region is encoded, and no uniform write can
+   * express that.
+   */
+  substeps?: string;
 }
 
 export interface CapabilityRequirement {

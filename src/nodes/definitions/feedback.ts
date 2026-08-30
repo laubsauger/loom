@@ -1,5 +1,6 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
+import { MAX_SUBSTEPS } from "../../runtime/backend/plan.ts";
 import { FEEDBACK_FRAGMENT_WGSL } from "../shaders/feedback.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
@@ -96,6 +97,34 @@ export const feedbackNode: NodeDefinition = {
       default: false,
       description: "Holds the loop cleared to Clear Color for as long as it is on.",
     },
+    /**
+     * T387 — how many times the loop this node closes advances per DISPLAYED frame.
+     *
+     * 1 is what every feedback loop did before this existed: one iteration per frame, so
+     * the simulation runs at the display's rate. A Gray-Scott reaction-diffusion needs
+     * roughly 10-50 iterations per visible frame to evolve at a watchable speed, and until
+     * this parameter existed there was no number anywhere in the product that could buy
+     * them — the shipped E2 was structurally slow, not tuned wrong.
+     *
+     * COST IS THE POINT. 50 substeps is 50 times the loop's GPU work in the same 16 ms.
+     * The per-node timing row sums every iteration's span (T163, §V86), so raising this
+     * shows up as the frame time it actually costs rather than as a mysterious stutter.
+     *
+     * `compileTime` because the count is plan STRUCTURE (§V5) — a uniform write cannot
+     * express "encode this region 40 times". The feedback pair's own identity does not
+     * depend on it, so changing it does NOT wipe the history you are watching (T143).
+     */
+    substeps: {
+      type: "number",
+      label: "Substeps",
+      default: 1,
+      min: 1,
+      max: MAX_SUBSTEPS,
+      step: 1,
+      compileTime: true,
+      description:
+        "Iterations of this loop per displayed frame. 1 is one step per frame; a reaction-diffusion wants 10-50. Costs that many times the loop's GPU work.",
+    },
     resetPulse: {
       type: "pulse",
       label: "Reset Pulse",
@@ -112,6 +141,7 @@ export const feedbackNode: NodeDefinition = {
   temporal: {
     outputs: ["out"],
     resetOn: ["resolution", "format", "shader-interface", "device", "load"],
+    substeps: "substeps",
   },
   // §V46: replay from frame zero with the same inputs reproduces the same history;
   // there is no checkpointing yet, so seeking requires a reset and a re-run. §V123: the

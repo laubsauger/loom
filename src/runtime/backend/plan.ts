@@ -221,6 +221,54 @@ export interface SwapPassDescriptor {
 }
 
 /**
+ * SUBSTEPS (T387): the passes between `begin` and `end` are encoded `count` times inside
+ * ONE displayed frame.
+ *
+ * WHY THE PLAN CARRIES THIS AT ALL. A simulation that advances once per displayed frame
+ * advances at the display's rate, and Gray-Scott needs on the order of 10-50 iterations
+ * per visible frame to evolve at a watchable speed. Before this existed there was no
+ * parameter anywhere that could buy those iterations — the shipped reaction-diffusion was
+ * structurally slow, not tuned wrong.
+ *
+ * WHY MARKERS RATHER THAN N COPIES OF THE PASSES. A substepped loop allocates NOTHING: the
+ * ping-pong pair, the pipelines and the uniform buffers are the ones the single-step plan
+ * already built, and an iteration is one more encode of the same pass objects. Emitting N
+ * copies would instead make the substep count STRUCTURAL — every drag of the slider would
+ * rebuild N pipelines and, worse, reallocate the pair and wipe the simulation state the
+ * user was watching.
+ *
+ * WHY FLAT MARKERS RATHER THAN A NESTED BODY. Every consumer in the backend walks
+ * `plan.passes` to build its resources. A pass hidden inside a container would be invisible
+ * to all of them — built, never wired, which is this project's dominant failure mode
+ * (§V220). Flat markers keep every existing walker seeing every real pass; only the
+ * ENCODER, which calls `expandLoops`, knows a loop is there.
+ *
+ * WELL-FORMEDNESS, enforced by `readExecutionPlan` rather than trusted: one `begin` per
+ * `end`, matched by `loopId`, in order, never nested. A malformed loop is a refused plan,
+ * not a frame that silently runs its body once.
+ */
+export interface LoopPassDescriptor {
+  readonly kind: "loop";
+  readonly id: string;
+  readonly edge: "begin" | "end";
+  /** Links `begin` to its `end`. Unique within a plan. */
+  readonly loopId: string;
+  /** On `begin`: how many times the enclosed passes run. Integer in [1, MAX_SUBSTEPS]. */
+  readonly count?: number;
+  readonly nodeId?: NodeId;
+}
+
+/**
+ * The ceiling on one loop's iteration count.
+ *
+ * Not a performance opinion — 256 iterations of a 512² pass is a slideshow and the user is
+ * entitled to ask for it — but a bound on what one frame can encode. The GPU pass timer
+ * holds 2048 spans per frame (vgpu's query-set limit), so a loop body of a few passes stays
+ * inside it and the substep cost stays MEASURABLE, which is the point of the feature.
+ */
+export const MAX_SUBSTEPS = 256;
+
+/**
  * Compute dispatch. Declared now so scheduling, pruning and resource assignment are
  * written against the union rather than against a texture-only assumption (§V58) —
  * adding compute later would otherwise mean rewriting all three.
@@ -295,6 +343,7 @@ export interface CounterPassDescriptor {
 export type PassDescriptor =
   | EffectPassDescriptor
   | SwapPassDescriptor
+  | LoopPassDescriptor
   | DispatchPassDescriptor
   | DrawPassDescriptor
   | CounterPassDescriptor;
@@ -471,6 +520,31 @@ function readPass(value: unknown): PassDescriptor | undefined {
     const resourceId = value["resourceId"];
     if (typeof resourceId !== "string") return undefined;
     return { kind: "swap", id, resourceId };
+  }
+
+  if (kind === "loop") {
+    const edge = value["edge"];
+    const loopId = value["loopId"];
+    const count = value["count"];
+    const nodeId = value["nodeId"];
+    if (edge !== "begin" && edge !== "end") return undefined;
+    if (typeof loopId !== "string" || loopId.length === 0) return undefined;
+    // A count on the `end` marker would be a second place to state the same fact, and the
+    // two could disagree. The `begin` states it; the `end` only closes the region.
+    if (edge === "end" && count !== undefined) return undefined;
+    if (edge === "begin") {
+      if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > MAX_SUBSTEPS) {
+        return undefined;
+      }
+    }
+    return {
+      kind: "loop",
+      id,
+      edge,
+      loopId,
+      ...(edge === "begin" ? { count: count as number } : {}),
+      ...(typeof nodeId === "string" ? { nodeId: nodeId as NodeId } : {}),
+    };
   }
 
   if (kind === "dispatch") return readDispatchPass(id, value);
@@ -699,6 +773,9 @@ export function readExecutionPlan(plan: LogicalExecutionPlan): PlanReadResult {
     switch (pass.kind) {
       case "swap":
         return [pass.resourceId];
+      // T387: a loop marker names no resource — it delimits passes that name their own.
+      case "loop":
+        return [];
       case "effect":
         return [
           pass.target,
@@ -742,8 +819,118 @@ export function readExecutionPlan(plan: LogicalExecutionPlan): PlanReadResult {
     }
   }
 
+  diagnostics.push(...loopStructureDiagnostics(passes));
+
   const ok = diagnostics.every((diagnostic) => diagnostic.severity !== "error");
   return { resources, passes, diagnostics, ok };
+}
+
+/**
+ * T387: loop markers are well-formed, or the plan is refused.
+ *
+ * An unmatched or nested marker has exactly the failure mode §V147 is about — the frame
+ * still renders a plausible picture, with the substeps silently not happening. So it is an
+ * ERROR here rather than something `expandLoops` quietly tolerates.
+ */
+function loopStructureDiagnostics(passes: ReadonlyArray<PassDescriptor>): RuntimeDiagnostic[] {
+  const out: RuntimeDiagnostic[] = [];
+  let open: LoopPassDescriptor | undefined;
+  for (const pass of passes) {
+    if (pass.kind !== "loop") continue;
+    if (pass.edge === "begin") {
+      if (open !== undefined) {
+        out.push(
+          backendDiagnostic(
+            "error",
+            BackendDiagnosticCode.planInvalid,
+            `Loop "${pass.loopId}" opens inside loop "${open.loopId}"; substep regions do not nest.`,
+            { suggestion: "Emit one region per feedback pair, and never one inside another." },
+          ),
+        );
+      }
+      open = pass;
+      continue;
+    }
+    if (open === undefined || open.loopId !== pass.loopId) {
+      out.push(
+        backendDiagnostic(
+          "error",
+          BackendDiagnosticCode.planInvalid,
+          `Loop end "${pass.loopId}" closes nothing${open === undefined ? "" : ` (loop "${open.loopId}" is open)`}.`,
+        ),
+      );
+    }
+    open = undefined;
+  }
+  if (open !== undefined) {
+    out.push(
+      backendDiagnostic(
+        "error",
+        BackendDiagnosticCode.planInvalid,
+        `Loop "${open.loopId}" is never closed; its body would run once instead of ${open.count ?? 1} times.`,
+      ),
+    );
+  }
+  return out;
+}
+
+/**
+ * The order the ENCODER walks: every loop region repeated `count` times, markers dropped.
+ *
+ * Returns the SAME pass objects, repeated — that is what makes a substep free of new GPU
+ * objects: the pipeline, the uniform buffer and the render target for `pass.id` are looked
+ * up once and encoded again. A plan with no loops returns its own array, so the common case
+ * pays nothing.
+ */
+export function expandLoops(passes: ReadonlyArray<PassDescriptor>): ReadonlyArray<PassDescriptor> {
+  if (!passes.some((pass) => pass.kind === "loop")) return passes;
+  const out: PassDescriptor[] = [];
+  for (let index = 0; index < passes.length; index += 1) {
+    const pass = passes[index] as PassDescriptor;
+    if (pass.kind !== "loop") {
+      out.push(pass);
+      continue;
+    }
+    if (pass.edge === "end") continue;
+    let end = index + 1;
+    while (end < passes.length) {
+      const candidate = passes[end] as PassDescriptor;
+      if (candidate.kind === "loop" && candidate.edge === "end" && candidate.loopId === pass.loopId) break;
+      end += 1;
+    }
+    const body = passes.slice(index + 1, Math.min(end, passes.length));
+    for (let iteration = 0; iteration < (pass.count ?? 1); iteration += 1) out.push(...body);
+    index = end;
+  }
+  return out;
+}
+
+/**
+ * The GPU timer span name for the `iteration`-th encode of a pass (T387, T163, §V86).
+ *
+ * vgpu REFUSES a duplicate span name inside one frame, so the iterations cannot all be
+ * called `pass.id`. They are suffixed instead of dropped, because dropping them would make
+ * a 50-substep loop report the cost of one substep — a node that looks cheap and is not,
+ * which is the failure this feature is supposed to make visible. `aggregate` sums the
+ * suffixed spans back onto the base pass id.
+ */
+export function iterationSpanName(passId: string, iteration: number): string {
+  return iteration === 0 ? passId : `${passId}${SPAN_ITERATION_SEPARATOR}${iteration}`;
+}
+
+/** Separator between a pass id and its substep iteration index in a timer span name. */
+export const SPAN_ITERATION_SEPARATOR = "~";
+
+/** The base pass id a span name belongs to — the inverse of `iterationSpanName`. */
+export function spanBasePassId(spanName: string): string {
+  const at = spanName.lastIndexOf(SPAN_ITERATION_SEPARATOR);
+  if (at === -1) return spanName;
+  // Only a trailing all-digit suffix is an iteration index. A pass id that happens to
+  // contain the separator keeps its own name rather than being silently truncated onto a
+  // pass that does not exist.
+  const suffix = spanName.slice(at + 1);
+  if (suffix.length === 0 || !/^\d+$/.test(suffix)) return spanName;
+  return spanName.slice(0, at);
 }
 
 /**
@@ -801,6 +988,11 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
   switch (pass.kind) {
       case "swap":
         return ["swap", pass.id, pass.resourceId];
+      // T387: the COUNT belongs in the structure key. It is not a uniform value — nothing
+      // writes it into a buffer — it is how many times the region is encoded, and a plan
+      // that runs its body 4 times is a different plan from one that runs it 40 times.
+      case "loop":
+        return ["loop", pass.id, pass.edge, pass.loopId, pass.count ?? null];
       case "effect":
         return [
           "effect",

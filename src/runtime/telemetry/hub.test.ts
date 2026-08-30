@@ -167,6 +167,26 @@ describe("§V16 — telemetry never reaches the document store", () => {
     hub.dispose();
   });
 
+  it("sums a substepped pass's per-iteration spans onto the pass (T387, §V86)", () => {
+    // T387: a pass inside a substep loop is encoded once per iteration and reports one
+    // span per iteration, because vgpu refuses a duplicate span NAME inside a frame. The
+    // node's row has to show what the loop actually cost — keeping only the first span
+    // would report a 20-substep reaction-diffusion as costing one step, which is a node
+    // that reads cheap and is not, and the exact reason someone would raise Substeps
+    // without ever seeing the frame time they bought.
+    const published: Array<[NodeId, { gpuMs?: number | null }]> = [];
+    const sink: NodeMetricSink = { publish: (nodeId, patch) => published.push([nodeId, patch]) };
+    const hub = createTelemetryHub({ now, sink });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf([{ id: "rd:custom", nodeId: "rd" }])));
+    timing.emit({ "rd:custom": 0.5, "rd:custom~1": 0.5, "rd:custom~2": 0.5, "rd:custom~3": 0.5 });
+    advance(TELEMETRY_TICK_MS);
+
+    expect(published).toEqual([["rd", { gpuMs: 2 }]]);
+    hub.dispose();
+  });
+
   it("imports nothing from the domain command bus or graph store", async () => {
     const { readFileSync } = await import("node:fs");
     const { fileURLToPath } = await import("node:url");
