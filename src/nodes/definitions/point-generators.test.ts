@@ -65,7 +65,11 @@ describe("point generator family (T298)", () => {
       compileContext({ nodeId: "gen", outputs: [], parameters: { count: 500 } }),
     );
     expect(sphere.pointsets).toEqual({
-      out: { pairs: { position: pointPairId("gen", "position") }, capacity: 500, topology: "points" },
+      out: {
+        pairs: { position: { pair: pointPairId("gen", "position"), half: "write" } },
+        capacity: 500,
+        topology: "points",
+      },
     });
 
     const torus = pointTorusNode.compile(

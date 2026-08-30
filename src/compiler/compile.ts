@@ -679,6 +679,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const passes: Array<Record<string, unknown>> = [];
   /** BufferPair scratch ids emitted this compile; each gets a swap after all consumers (§V22). */
   const scratchPairIds: string[] = [];
+  /** Ring scratch ids (T237); each gets its rotation placed after its last reader. */
+  const scratchRingIds: string[] = [];
   /** T296: what each pointset OUTPUT resolved to, published by the producing node's compile. */
   const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
   for (const nodeId of topology.order) {
@@ -777,15 +779,26 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         if (!isRecord(rawInfo) || !isRecord(rawInfo["pairs"])) continue;
         const capacity = rawInfo["capacity"];
         if (!(Number.isInteger(capacity) && (capacity as number) >= 1)) continue;
-        const pairs: Record<string, string> = {};
-        for (const [attribute, pairId] of Object.entries(rawInfo["pairs"])) {
-          if (typeof pairId === "string" && pairId.length > 0) pairs[attribute] = pairId;
+        // T322 (§V231): each pair names the half holding this frame's data.
+        const pairs: Record<string, { pair: string; half: "read" | "write" }> = {};
+        for (const [attribute, entry] of Object.entries(rawInfo["pairs"])) {
+          if (!isRecord(entry)) continue;
+          const pair = entry["pair"];
+          const half = entry["half"];
+          if (typeof pair !== "string" || pair.length === 0) continue;
+          if (half !== "read" && half !== "write") continue;
+          pairs[attribute] = { pair, half };
         }
         const topology = rawInfo["topology"];
+        const countRaw = rawInfo["count"];
+        const countBuffer = isRecord(countRaw) ? countRaw["buffer"] : undefined;
         pointsetInfoByOutput.set(outputKey(nodeId, portId), {
           pairs,
           capacity: capacity as number,
           ...(typeof topology === "string" ? { topology } : {}),
+          ...(typeof countBuffer === "string" && countBuffer.length > 0
+            ? { count: { buffer: countBuffer } }
+            : {}),
         });
       }
     }
@@ -806,7 +819,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         );
       }
       for (const raw of entries) {
-        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown; sourceId?: unknown };
+        const entry = raw as { key?: unknown; scale?: unknown; format?: unknown; kind?: unknown; stride?: unknown; capacity?: unknown; sourceId?: unknown; frames?: unknown; swap?: unknown; usage?: unknown };
         const key = typeof entry.key === "string" && entry.key !== "" ? entry.key : undefined;
         // T121/T176: a bufferPair scratch entry — SoA point storage. One identity per
         // attribute; the compiler appends its swap after all consumers (§V22), and T143
@@ -833,7 +846,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           seenScratch.add(key);
           const pairId = scratchResourceId(nodeId, key);
           resources.push({ kind: "bufferPair", id: pairId, stride, capacity: bufferCapacity, label: `${nodeId} points ${key}` });
-          scratchPairIds.push(pairId);
+          // T322 (§V231): a compacted pair declares swap:false — this frame's data
+          // lands in the READ half by scatter, so the appended swap would hand next
+          // frame the stale half. The edge map names the half consumers bind.
+          if (entry.swap !== false) scratchPairIds.push(pairId);
           continue;
         }
         // T262 (§V135, §V167): a CPU-fed texture. The node names its media SOURCE; the
@@ -875,6 +891,56 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           });
           continue;
         }
+        // T237 (§V226): a frame ring — N slices, one written per frame, taps reading
+        // back. Sized like a target scratch (scale x the node's resolved size) because
+        // §V228 says the depth AND the resolution are the user's to spend.
+        if (entry.kind === "ring") {
+          const frames = entry.frames;
+          const ringScale =
+            entry.scale === undefined
+              ? 1
+              : typeof entry.scale === "number" && Number.isFinite(entry.scale) && entry.scale > 0
+                ? entry.scale
+                : undefined;
+          const ringFormat =
+            entry.format === undefined
+              ? (format ?? settings.workingFormat)
+              : typeof entry.format === "string" && (TEXTURE_FORMATS as readonly string[]).includes(entry.format)
+                ? (entry.format as TextureFormat)
+                : undefined;
+          if (
+            key === undefined ||
+            seenScratch.has(key) ||
+            ringScale === undefined ||
+            ringFormat === undefined ||
+            !(Number.isInteger(frames) && (frames as number) >= 2)
+          ) {
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.scratchInvalid,
+                `Node "${nodeId}" (${node.type}) declared an invalid or duplicate ring scratch entry ${JSON.stringify(raw)}.`,
+                { nodeId, suggestion: 'A ring entry is { key, kind: "ring", frames >= 2, scale?, format? }.' },
+              ),
+            );
+            continue;
+          }
+          seenScratch.add(key);
+          const ringId = scratchResourceId(nodeId, key);
+          resources.push({
+            kind: "ring",
+            id: ringId,
+            size: [
+              Math.max(1, Math.round(baseSize[0] * ringScale)),
+              Math.max(1, Math.round(baseSize[1] * ringScale)),
+            ],
+            format: ringFormat,
+            frames: frames as number,
+            label: `${nodeId} ring ${key}`,
+          });
+          scratchRingIds.push(ringId);
+          continue;
+        }
         // T236: a single storage buffer — a reduction result, a lookup table. No pair,
         // no swap; readable between frames via readBuffer (§V48).
         if (entry.kind === "buffer") {
@@ -902,7 +968,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             id: scratchResourceId(nodeId, key),
             stride,
             capacity: bufferCapacity,
-            usage: "storage",
+            // T322: "indirect" marks GPU-consumed dispatch/draw arguments.
+            usage: entry.usage === "indirect" ? "indirect" : "storage",
             label: `${nodeId} ${key}`,
           });
           continue;
@@ -984,11 +1051,32 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       if (typeof binding.resourceId === "string") lastBinder.set(binding.resourceId, index);
     }
   });
+  // T237: a ring rotates under the SAME rule, because it has the same hazard — rotate
+  // before a reader has run and its tap points one slice off, silently, for one frame per
+  // rotation. Only the bindings differ: a ring's consumers bind it as a TEXTURE and its
+  // producer names it as a render TARGET, where a buffer pair's do neither. The rule
+  // (last pass that touches it, found by what passes bind rather than by reachability)
+  // is the geometry track's, transferred rather than re-derived.
+  const lastRingUser = new Map<string, number>();
+  passes.forEach((pass, index) => {
+    const textures = (pass as { textures?: ReadonlyArray<{ resourceId?: unknown }> }).textures ?? [];
+    for (const binding of textures) {
+      if (typeof binding.resourceId === "string") lastRingUser.set(binding.resourceId, index);
+    }
+    const target = (pass as { target?: unknown }).target;
+    if (typeof target === "string") lastRingUser.set(target, index);
+  });
   const swapsAt = new Map<number, string[]>();
   for (const pairId of scratchPairIds) {
     const at = lastBinder.get(pairId) ?? passes.length - 1;
     const list = swapsAt.get(at) ?? [];
     list.push(pairId);
+    swapsAt.set(at, list);
+  }
+  for (const ringId of scratchRingIds) {
+    const at = lastRingUser.get(ringId) ?? passes.length - 1;
+    const list = swapsAt.get(at) ?? [];
+    list.push(ringId);
     swapsAt.set(at, list);
   }
   for (const index of [...swapsAt.keys()].sort((a, b) => b - a)) {

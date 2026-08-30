@@ -45,9 +45,12 @@ export interface NodeCompileInputs {
          * instead of deriving ids from a naming convention.
          */
         readonly pointset?: {
-          readonly pairs: Readonly<Record<string, string>>;
+          /** §V231/T322: each pair names the HALF holding this frame's data. */
+          readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write" }>>;
           readonly capacity: number;
           readonly topology?: string;
+          /** T322: GPU-resident live count, when the producer kills points. */
+          readonly count?: { readonly buffer: string };
         };
       }
     >
@@ -90,7 +93,7 @@ interface CompilerContextShape {
         sampler: string;
         sourceNodeId?: string;
         sourcePortId?: string;
-        pointset?: { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string };
+        pointset?: { pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>; capacity: number; topology?: string; count?: { buffer: string } };
       }>
     >
   >;

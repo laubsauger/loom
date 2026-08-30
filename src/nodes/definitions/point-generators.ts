@@ -115,7 +115,7 @@ function compileGenerator(fixedShape: GeneratorShape | null) {
       ],
       pointsets: {
         out: {
-          pairs: { position: pointPairId(nodeId, "position") },
+          pairs: { position: { pair: pointPairId(nodeId, "position"), half: "write" as const } },
           capacity,
           // T301's connectivity, in T302's vocabulary: a gridded shape publishes its
           // analytic topology, with the seams its parametrization actually closes.

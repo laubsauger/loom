@@ -92,6 +92,13 @@ export interface ScratchBufferPairRequest {
   /** Element stride in bytes — the attribute's WGSL type decides it. */
   stride: number;
   capacity: number;
+  /**
+   * T322: `false` suppresses the compiler's appended swap. A COMPACTED pair inverts
+   * the flow — scatter writes this frame's data into the READ half — so swapping
+   * would hand next frame the stale half. The edge map names the half consumers bind
+   * (§V231), so the inversion is invisible downstream.
+   */
+  swap?: boolean;
 }
 
 /** A single storage buffer a node's passes write — a reduction result, a lookup table. */
@@ -101,6 +108,8 @@ export interface ScratchBufferRequest {
   /** Element stride in bytes. */
   stride: number;
   capacity: number;
+  /** T322: "indirect" marks a buffer holding dispatch/draw arguments the GPU consumes. */
+  usage?: "indirect";
 }
 
 /**
@@ -119,11 +128,32 @@ export interface ScratchExternalTextureRequest {
   format?: TextureFormat;
 }
 
+/**
+ * A RING of N textures — one written per frame, older ones readable by tap (T237).
+ *
+ * §V226: `bufferPair`/`pingPong` generalised from two slots to N, so the compiler
+ * materializes it and appends the same swap pass, and carry-over, reset and no-allocation
+ * all apply unchanged. §V228: `frames` and `scale` are the node's to expose, because the
+ * memory IS the parameter — `size × bytesPerPixel × frames`, which the compiler's budget
+ * warning reports like any other resource.
+ */
+export interface ScratchRingRequest {
+  kind: "ring";
+  key: string;
+  /** Slice count, >= 2. The deepest readable tap is `frames - 1`. */
+  frames: number;
+  /** Fraction of the node's resolved size, as a target scratch takes. Default 1. */
+  scale?: number;
+  /** Omitted = the node's resolved format. */
+  format?: TextureFormat;
+}
+
 export type ScratchRequest =
   | ScratchTargetRequest
   | ScratchBufferPairRequest
   | ScratchBufferRequest
-  | ScratchExternalTextureRequest;
+  | ScratchExternalTextureRequest
+  | ScratchRingRequest;
 
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;
@@ -133,10 +163,20 @@ export interface CompiledNodeDescription {
    * T296 (§V197): what each pointset OUTPUT port resolved to — the attribute→pair map
    * (pairs another node may own, for by-reference attributes), capacity and topology.
    * The compiler forwards it along pointset edges; consumers bind these ids instead of
-   * deriving them from a naming convention.
+   * deriving them from a naming convention. §V231/T322: each pair names the HALF that
+   * holds this frame's data — a payload fact, never a convention — and a producer with
+   * a GPU-resident live count publishes its buffer under `count`.
    */
   pointsets?: Readonly<
-    Record<string, { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string }>
+    Record<
+      string,
+      {
+        pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>;
+        capacity: number;
+        topology?: string;
+        count?: { buffer: string };
+      }
+    >
   >;
   diagnostics?: RuntimeDiagnostic[];
 }

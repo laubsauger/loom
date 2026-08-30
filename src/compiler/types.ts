@@ -198,10 +198,22 @@ export interface CompileEdge {
  * whole schema — V197's 28.8 GB/s of memcpy at a million points simply never happens).
  */
 export interface PointsetEdgeInfo {
-  /** attribute name → bufferPair resource id. The pair another NODE may own. */
-  readonly pairs: Readonly<Record<string, string>>;
+  /**
+   * attribute name → the pair to bind AND the half holding this frame's data. The pair
+   * another NODE may own. §V231/T322: the half is a PAYLOAD FACT for every pair, not a
+   * convention — an ordinary producer names its write half (§V168), a compacted one
+   * names its read half (scatter lands there), and a consumer binds what the payload
+   * says without knowing which kind fed it.
+   */
+  readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write" }>>;
   readonly capacity: number;
   readonly topology?: string;
+  /**
+   * T322: present when the LIVE count is GPU-resident (an advanced kernel that kills).
+   * `capacity` stays the allocation bound; the buffer's first u32 is the count.
+   * Consumers that draw switch to indirect; consumers needing a static count refuse.
+   */
+  readonly count?: { readonly buffer: string };
 }
 
 export interface CompiledInputBinding {

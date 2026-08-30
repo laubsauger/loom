@@ -30,7 +30,15 @@ export interface ContextOptions {
   readonly sources?: Readonly<Record<PortId, string>>;
   /** T296 edge payload per input port, for consumers that read pairs/capacity/topology. */
   readonly pointsets?: Readonly<
-    Record<PortId, { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string }>
+    Record<
+      PortId,
+      {
+        pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>;
+        capacity: number;
+        topology?: string;
+        count?: { buffer: string };
+      }
+    >
   >;
   /** Output port ids to materialize. Defaults to `["out"]`. */
   readonly outputs?: ReadonlyArray<PortId>;
@@ -74,7 +82,12 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
       sampler: string;
       sourceNodeId?: string;
       sourcePortId?: string;
-      pointset?: { pairs: Readonly<Record<string, string>>; capacity: number; topology?: string };
+      pointset?: {
+        pairs: Readonly<Record<string, { pair: string; half: "read" | "write" }>>;
+        capacity: number;
+        topology?: string;
+        count?: { buffer: string };
+      };
     }>
   > = {};
   for (const portId of options.inputs ?? []) {

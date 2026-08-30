@@ -105,6 +105,11 @@ export const renderSurfaceNode: NodeDefinition = {
     if (positionPair === undefined) {
       return refuse("the edge map carries no position pair.");
     }
+    if (pointset.count !== undefined) {
+      // T322: static topology over a GPU-resident varying count is a lie — the claim
+      // addresses points that may be dead. Refuse loudly (§V13).
+      return refuse("a surface needs a static point count; this edge carries a GPU-resident live count.");
+    }
 
     const pass: DrawPassDescriptor = {
       kind: "draw",
@@ -117,8 +122,9 @@ export const renderSurfaceNode: NodeDefinition = {
       // a wrapped axis has a seam cell, so its cell count equals its point count.
       vertexCount: cellsU * cellsV * 6,
       buffers: [
-        // WRITE half: THIS frame's positions (§V168), whoever owns the pair (§V197).
-        { binding: "positions", resourceId: positionPair, half: "write" },
+        // The half the PAYLOAD names (§V231) — this frame's positions, whoever owns
+        // the pair (§V197) and whichever half compaction or convention left them in.
+        { binding: "positions", resourceId: positionPair.pair, half: positionPair.half },
       ],
       uniforms: {
         viewProjection: Array.from(matrix),

@@ -6,7 +6,14 @@ import { compileContext } from "./test-support.ts";
 /** The topology half of the T302 split: pure edge-payload authorship. */
 describe("pointTopology — the connectivity claim (T302)", () => {
   const edge = (capacity: number, topology: string) => ({
-    points: { pairs: { position: "scratch:gen:position", color: "scratch:gen:color" }, capacity, topology },
+    points: {
+      pairs: {
+        position: { pair: "scratch:gen:position", half: "write" as const },
+        color: { pair: "scratch:gen:color", half: "read" as const },
+      },
+      capacity,
+      topology,
+    },
   });
 
   it("republishes the upstream pairs BY REFERENCE with the authored claim (§V197)", () => {
@@ -21,9 +28,13 @@ describe("pointTopology — the connectivity claim (T302)", () => {
     expect(result.diagnostics ?? []).toEqual([]);
     expect(result.passes).toEqual([]);
     expect(result.scratch ?? []).toEqual([]);
+    // Halves pass through untouched (§V231): the claim changes, the data does not.
     expect(result.pointsets).toEqual({
       out: {
-        pairs: { position: "scratch:gen:position", color: "scratch:gen:color" },
+        pairs: {
+          position: { pair: "scratch:gen:position", half: "write" },
+          color: { pair: "scratch:gen:color", half: "read" },
+        },
         capacity: 4096,
         topology: "grid:64x64:wrapU",
       },

@@ -243,7 +243,14 @@ export const pointKernelNode: NodeDefinition = {
       // so every pair in the map is its own (§V197's "if you write it, you own it").
       pointsets: {
         out: {
-          pairs: Object.fromEntries(attributes.map((attribute) => [attribute.name, pointPairId(nodeId, attribute.name)])),
+          pairs: Object.fromEntries(
+            attributes.map((attribute) => [
+              attribute.name,
+              // §V168 through §V231: the kernel writes every pair this frame, so the
+              // payload names each write half.
+              { pair: pointPairId(nodeId, attribute.name), half: "write" as const },
+            ]),
+          ),
           capacity,
           topology: "points",
         },
@@ -353,8 +360,8 @@ export const renderPointsNode: NodeDefinition = {
         // positions (§V168) — whoever owns the pair (§V197, by-reference reads).
         {
           binding: "positions",
-          resourceId: points.pointset?.pairs["position"] ?? pointPairId(points.source.nodeId, "position"),
-          half: "write",
+          resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
+          half: points.pointset?.pairs["position"]?.half ?? "write",
         },
       ],
       uniforms: {
@@ -458,7 +465,8 @@ export const textureToAttributeNode: NodeDefinition = {
     // copy-everything shape existed purely for the id-derivation convention the edge
     // map replaces; its per-frame memcpy is simply gone.
     const upstream = points.pointset;
-    if (upstream === undefined || upstream.pairs["position"] === undefined) {
+    const upstreamPosition = upstream?.pairs["position"];
+    if (upstream === undefined || upstreamPosition === undefined) {
       return {
         passes: [],
         diagnostics: [
@@ -480,7 +488,7 @@ export const textureToAttributeNode: NodeDefinition = {
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
         // The producer's pair, WRITE half: this frame's positions, in plan order (§V168).
-        { binding: "in_position", resourceId: upstream.pairs["position"], half: "write" },
+        { binding: "in_position", resourceId: upstreamPosition.pair, half: upstreamPosition.half },
         { binding: "out_sample", resourceId: pointPairId(nodeId, "sample"), half: "write" },
       ],
       textures: [{ binding: "sourceTexture", resourceId: texture.resource, sampled: "unfiltered" }],
@@ -496,7 +504,7 @@ export const textureToAttributeNode: NodeDefinition = {
       ],
       pointsets: {
         out: {
-          pairs: { ...upstream.pairs, sample: pointPairId(nodeId, "sample") },
+          pairs: { ...upstream.pairs, sample: { pair: pointPairId(nodeId, "sample"), half: "write" as const } },
           capacity: count,
           ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
         },

@@ -134,8 +134,8 @@ export const renderInstancesNode: NodeDefinition = {
         // positions (§V168) — whoever owns the pair (§V197, by-reference reads).
         {
           binding: "positions",
-          resourceId: points.pointset?.pairs["position"] ?? pointPairId(points.source.nodeId, "position"),
-          half: "write",
+          resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
+          half: points.pointset?.pairs["position"]?.half ?? "write",
         },
       ],
       uniforms: {

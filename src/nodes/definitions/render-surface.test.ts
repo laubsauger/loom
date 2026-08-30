@@ -18,7 +18,7 @@ type DrawShape = {
 
 const gridEdge = (cols: number, rows: number, capacity = cols * rows) => ({
   points: {
-    pairs: { position: "scratch:gen:position" },
+    pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
     capacity,
     topology: `grid:${cols}x${rows}`,
   },
@@ -48,7 +48,11 @@ describe("renderSurface — the topology contract (T301)", () => {
         nodeId: "surf",
         inputs: ["points"],
         pointsets: {
-          points: { pairs: { position: "scratch:gen:position" }, capacity: 48 * 24, topology: "grid:48x24:wrapUV" },
+          points: {
+            pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
+            capacity: 48 * 24,
+            topology: "grid:48x24:wrapUV",
+          },
         },
       }),
     );
@@ -64,7 +68,13 @@ describe("renderSurface — the topology contract (T301)", () => {
       compileContext({
         nodeId: "surf",
         inputs: ["points"],
-        pointsets: { points: { pairs: { position: "scratch:gen:position" }, capacity: 256, topology: "points" } },
+        pointsets: {
+          points: {
+            pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
+            capacity: 256,
+            topology: "points",
+          },
+        },
       }),
     );
     expect(result.passes).toEqual([]);
