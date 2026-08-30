@@ -12,7 +12,7 @@ import { DEFAULT_PREVIEW_VIEW, previewShader, previewUniforms } from "@runtime/p
 import type { PreviewProgram } from "@runtime/previews/index.ts";
 import type { BackendStatus } from "@runtime/backend/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
-import { useNodePreviews } from "./use-node-previews.ts";
+import { previewCandidates, useNodePreviews } from "./use-node-previews.ts";
 
 /**
  * T185 — the preview system had no caller anywhere in the app, so a node body stayed an
@@ -230,7 +230,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
     const programs = renderWith(undefined);
     const pass = programs.at(-1)?.passes[0];
     expect(pass).toBeDefined();
-    expect(pass?.shader).toBe(previewShader("color"));
+    expect(pass?.shader).toBe(previewShader("color", "linear"));
     expect(pass?.uniforms).toMatchObject(previewUniforms(DEFAULT_PREVIEW_VIEW));
   });
 
@@ -241,7 +241,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
     const pass = renderWith(views).at(-1)?.passes[0];
 
     // Mode switches the PROGRAM (§V5: the shader text is in the structural key) …
-    expect(pass?.shader).toBe(previewShader("channel"));
+    expect(pass?.shader).toBe(previewShader("channel", "linear"));
     // … while exposure, the mask and the tonemap are values in the block every mode shares.
     expect(pass?.uniforms).toMatchObject({ channel: 1, exposure: 2, tonemap: 1 });
   });
@@ -250,7 +250,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
     const views = createPreviewViewStore();
     views.set("someone-else", { lens: "a" });
     const pass = renderWith(views).at(-1)?.passes[0];
-    expect(pass?.shader).toBe(previewShader("color"));
+    expect(pass?.shader).toBe(previewShader("color", "linear"));
   });
 });
 
@@ -357,6 +357,47 @@ describe("useNodePreviews previews the node that presents (§V25)", () => {
  * body's label would pass just as well against a hidden tile still being rendered every
  * frame, which is precisely the thing being complained about.
  */
+describe("every point-producing definition is a preview candidate (T373, §V316, §V319)", () => {
+  /**
+   * Derived from the REGISTRY the app really passes (§V333 — asking the wrong harness
+   * reports absence as truth), never from a list this test writes: the next generator
+   * someone adds is covered here by construction, or this fails naming it.
+   */
+  it("offers a preview for every definition with a pointset or texture output", () => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const producers = registry
+      .list()
+      .filter((definition) =>
+        definition.outputs.some((port) => port.type.kind === "pointset" || port.type.kind === "texture2d"),
+      );
+    expect(producers.length).toBeGreaterThan(10);
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: Object.fromEntries(
+        producers.map((definition, index) => [
+          `n${index}`,
+          {
+            id: `n${index}`,
+            type: definition.type,
+            definitionVersion: 1,
+            position: { x: 0, y: 0 },
+            parameters: {},
+          },
+        ]),
+      ),
+      edges: {},
+      groups: {},
+    } as never;
+    const candidates = previewCandidates(graph, registry);
+    const covered = new Set(candidates.map((candidate) => candidate.nodeId));
+    const missing = producers
+      .map((definition, index) => ({ definition, id: `n${index}` }))
+      .filter((entry) => !covered.has(entry.id as never))
+      .map((entry) => entry.definition.type);
+    expect(missing).toEqual([]);
+  });
+});
+
 describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
   function offGraph(preview: boolean | undefined): GraphDocument {
     return {

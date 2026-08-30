@@ -95,14 +95,15 @@ export interface NodePreviewInputs {
  * makes OFF cost nothing. The two exclusions cannot fight: an unconnected sink drops out
  * here whatever its switch says, and an off node never reaches the request path.
  */
-interface PreviewCandidate {
+export interface PreviewCandidate {
   readonly nodeId: NodeId;
   readonly portId: string;
   readonly gated: boolean;
   readonly on: boolean;
 }
 
-function previewCandidates(
+/** Exported for the T373 coverage gate — the product path itself only calls it below. */
+export function previewCandidates(
   graph: GraphDocument,
   registry: NodeRegistryView,
 ): ReadonlyArray<PreviewCandidate> {
@@ -115,7 +116,14 @@ function previewCandidates(
     // Absent means ON: an untouched node previews, so an untouched document and one
     // where somebody pressed P twice are the same document.
     const on = node.ui?.preview !== false;
-    const port = definition.outputs.find((candidate) => candidate.type.kind === "texture2d");
+    // T373 (§V85): a pointset output previews as its own splat — the compiler
+    // synthesizes the target when this candidate becomes a preview sink, so the same
+    // materialization dance texture nodes use (T252) covers point generators too.
+    // Keyed on the port KIND, so every present and future point producer is a
+    // candidate by construction (§V316, §V319).
+    const port = definition.outputs.find(
+      (candidate) => candidate.type.kind === "texture2d" || candidate.type.kind === "pointset",
+    );
     if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true, on });
     else if (definition.sink === true && fed.has(nodeId)) {
       found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false, on });
@@ -181,7 +189,14 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           off.push({ nodeId, portId });
           continue;
         }
-        const output = current.compiledOutputs.find((entry) => entry.nodeId === nodeId);
+        // A pointset MARKER is not bindable — it is the row a watched point output has
+        // BEFORE the compiler synthesizes its preview target (T373). Skipping it routes
+        // the node through the idle path below, which registers the sink that makes the
+        // recompile materialize the real target — the same dance as an unmaterialized
+        // texture (T252).
+        const output = current.compiledOutputs.find(
+          (entry) => entry.nodeId === nodeId && entry.resourceKind !== "pointset",
+        );
         // §V111: the offset within the node (never re-measured mid-drag). §V112: the
         // node's LIVE position, read fresh every tick — the two combine into the slot's
         // current graph-space box without a single DOM measurement this frame.
@@ -226,7 +241,15 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         };
         requests.push({
           ref: { nodeId, portId: output.portId },
-          source: { resourceId: output.resourceId, size: output.size, format: output.format },
+          // T375 (§V57): `space` travels with the texture. `output` is the compiler's
+          // ResolvedOutput, which already carries it — the preview shader is told what it
+          // is looking at rather than assuming linear (B47).
+          source: {
+            resourceId: output.resourceId,
+            size: output.size,
+            format: output.format,
+            space: output.space,
+          },
           rect: slotScreenRect(box, viewport),
           // §V142 — where the tile is DRAWN carries the camera; how big the tile is
           // ALLOCATED must not. This is the fitted region measured inside the node's own

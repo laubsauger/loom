@@ -34,6 +34,14 @@ export function swapPassId(resourceId: string): string {
   return `swap:${resourceId}`;
 }
 
+/**
+ * The synthesized splat target a watched pointset output previews into (T373, §V85).
+ * Distinct from `target:` ids so it can never collide with a port a definition declares.
+ */
+export function pointsPreviewResourceId(nodeId: NodeId, portId: PortId): string {
+  return `preview:points:${nodeId}:${portId}`;
+}
+
 /** One shared sampler for the whole plan; a per-node sampler would be identical objects. */
 export const SHARED_SAMPLER_ID = "sampler:linear";
 

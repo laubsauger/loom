@@ -20,6 +20,7 @@ import { describeError } from "../runtime/backend/diagnostics.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { declaredColorSpace } from "../domain/graph/port-compat.ts";
+import { colorPolicyOf, presentDecodesSrgbSource, sinkTargetSpace } from "../domain/color/display.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
 import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
@@ -31,10 +32,14 @@ import {
   SHARED_SAMPLER_ID,
   SINK_TARGET_PORT,
   pingPongResourceId,
+  pointsPreviewResourceId,
   scratchResourceId,
   swapPassId,
   targetResourceId,
 } from "./resources.ts";
+import { viewProjection } from "../domain/geometry/camera.ts";
+import { POINTS_PREVIEW_VERTEX_COUNT, pointsPreviewWgsl } from "../nodes/shaders/points-preview.wgsl.ts";
+import { applySubstepLoops, planSubstepLoops } from "./substeps.ts";
 import { orderNodes } from "./topology.ts";
 import { isTemporalOutput, validateGraph, validateRequiredInputs } from "./validate.ts";
 import type { ResolvedNode } from "./validate.ts";
@@ -84,6 +89,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * ordering never look at a pass kind at all.
  */
 const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "dispatch", "draw"]);
+
+/**
+ * The default framing every pointset preview shares (T373): an isometric-ish orbit at
+ * the origin, aspect 1 for the square tile. One constant, not per-node state — the
+ * viewer camera (T379) replaces the VALUE later, never the structure (§V5, §V330).
+ */
+const POINTS_PREVIEW_CAMERA = viewProjection([1.7, 1.2, 2.4], [0, 0, 0], { aspect: 1 });
+
+/** Clip-space disc half-extent — ~3px on a 192px tile, readable without occluding. */
+const POINTS_PREVIEW_POINT_SIZE = 0.03;
 
 /** Pass kinds that render into a resource and therefore need a target. */
 const TARGETED_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "draw"]);
@@ -247,6 +262,30 @@ function propagate(args: PropagationArgs): PropagationResult {
 
     if (collectDiagnostics) {
       diagnostics.push(...resolution.diagnostics, ...format.diagnostics, ...space.diagnostics);
+      // T375/B47, §V288: an `-srgb` sink target cannot be presented correctly. Its bytes
+      // are display values, but `textureSample` DECODES them, and the present blit is a
+      // raw copy (§V70a) into a canvas whose format is never an srgb variant — so the
+      // viewer shows linear light where the preview and the exporter show the picture
+      // (measured on Dawn: 54 against 127). Named rather than silently wrong.
+      if (
+        isDeclaredSink(definition) &&
+        presentDecodesSrgbSource(colorPolicyOf(request.settings), format.format)
+      ) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "warning",
+            CompilerDiagnosticCode.sinkFormatUndisplayable,
+            `Output "${nodeId}" renders to ${format.format}, which the viewer decodes on sample: ` +
+              `the presented image will be lighter than the preview and the exported file.`,
+            {
+              nodeId,
+              suggestion:
+                'Use "rgba8unorm" (same depth, no hardware transfer) or "rgba16float" for this output, ' +
+                'or set the project colour policy displayTransform to "none".',
+            },
+          ),
+        );
+      }
     }
 
     for (const slot of outputSlots(definition)) {
@@ -260,6 +299,17 @@ function propagate(args: PropagationArgs): PropagationResult {
       const portType = definition.outputs.find((port) => port.id === slot.portId)?.type;
       const declaredSpace =
         portType !== undefined && portType.kind === "texture2d" ? declaredColorSpace(portType) : undefined;
+      // T375/B47 (§V56, §V57, §V70a): a declared SINK's target is what the viewer, the
+      // preview tile and the exporter all look at, and the Output node applies the
+      // project's display transform to it. The space it lands in is published HERE, from
+      // the SAME function the node asks which shader to run, so the declaration and the
+      // pixels are one decision rather than two that drift (B47 was exactly that drift).
+      // A sink has no output PORT to carry `declaredColorSpace`, which is why this is not
+      // the port-type mechanism above.
+      const sinkSpace =
+        slot.portId === SINK_TARGET_PORT
+          ? sinkTargetSpace(colorPolicyOf(request.settings), format.format, space.space)
+          : undefined;
       outputs.set(key, {
         nodeId,
         portId: slot.portId,
@@ -272,7 +322,7 @@ function propagate(args: PropagationArgs): PropagationResult {
         resourceKind: slot.resourceKind,
         size: resolution.size,
         format: format.format,
-        space: declaredSpace ?? space.space,
+        space: declaredSpace ?? sinkSpace ?? space.space,
         temporal: slot.resourceKind === "pingPong",
         // T299: only a plain target can carry a depth attachment in the current IR — a
         // ping-pong 3D history target would need depth on both halves (deferred until
@@ -707,6 +757,18 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   // 2. active sinks and pruning (T26, §V25)
   const sinkResolution = resolveSinks(validated.nodes, redirectedSinks);
   diagnostics.push(...sinkResolution.diagnostics);
+
+  // T373: `${nodeId}:${portId}` of every resolved PREVIEW sink. A pointset output that
+  // appears here gets a synthesized splat pass below — and one that does not gets
+  // nothing, which is what makes an OFF preview cost zero (§V297, §V309).
+  const previewSinkKeys = new Set<string>();
+  for (const sink of sinkResolution.sinks) {
+    if (sink.kind !== "preview") continue;
+    const sinkDefinition = validated.nodes.get(sink.nodeId)?.definition;
+    if (sinkDefinition === undefined) continue;
+    const sinkPort = sink.portId ?? outputSlots(sinkDefinition)[0]?.portId;
+    if (sinkPort !== undefined) previewSinkKeys.add(outputKey(sink.nodeId, sinkPort));
+  }
   const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks);
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
 
@@ -775,6 +837,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const scratchRingIds: string[] = [];
   /** T296: what each pointset OUTPUT resolved to, published by the producing node's compile. */
   const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
+  /** T373: synthesized preview targets, later swapped into the outputs projection. */
+  const pointsPreviewOutputs = new Map<string, ResolvedOutput>();
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -837,6 +901,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       outputs: outputBindings,
       sampler: SHARED_SAMPLER_ID,
       projectResolution: [settings.outputResolution.width, settings.outputResolution.height],
+      // T375 (§V56): the project's colour commitments, so the ONE node §V56 puts the
+      // display transform in can read them. T84 recorded `colorPolicy` and nothing ever
+      // read it — the §V220 shape, and the whole of B47.
+      colorPolicy: colorPolicyOf(settings),
     };
 
     let description: CompiledNodeDescription;
@@ -1127,6 +1195,71 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         ),
       );
     }
+
+    /*
+     * T373 (§V85): a node whose OUTPUT is a pointset gets a preview of its OWN — a splat
+     * of its points into a synthesized square target — whenever a preview sink watches
+     * that output. Keyed on the PORT KIND, never the node type (§V316, §V319): every
+     * generator, kernel or converter with a point output — present and future — is
+     * covered by construction, not by a list. No sink means no pass, no target, no
+     * bytes: the P switch's off-costs-nothing (§V297, §V309) holds because the
+     * synthesis is gated on the same sink set that gates texture materialization.
+     *
+     * The pass is appended AFTER the producer's own passes and binds the half that
+     * holds THIS frame's data (§V168 via the edge map), so it draws what a consumer
+     * this frame would see; binding the pair also makes the §V22 swap placement count
+     * it as a consumer. A counted pointset (GPU lifecycle) gets the count-gated shader
+     * so dead capacity slots collapse instead of splatting stale positions.
+     */
+    for (const slot of outputSlots(definition)) {
+      if (slot.resourceKind !== "pointset") continue;
+      const key = outputKey(nodeId, slot.portId);
+      if (!previewSinkKeys.has(key)) continue;
+      const info = pointsetInfoByOutput.get(key);
+      const position = info?.pairs["position"];
+      if (info === undefined || position === undefined) continue;
+      const edgePx = Math.max(1, Math.round(settings.previewLongEdge));
+      const previewId = pointsPreviewResourceId(nodeId, slot.portId);
+      resources.push({
+        kind: "target",
+        id: previewId,
+        size: [edgePx, edgePx],
+        format: "rgba8unorm",
+        label: `${nodeId}.${slot.portId} points preview`,
+      });
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}#pointsPreview:${slot.portId}`,
+        nodeId,
+        shader: pointsPreviewWgsl({ counted: info.count !== undefined }),
+        target: previewId,
+        topology: "triangle-list",
+        instances: info.capacity,
+        vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
+        buffers: [
+          { binding: "positions", resourceId: position.pair, half: position.half },
+          ...(info.count === undefined ? [] : [{ binding: "counts", resourceId: info.count.buffer }]),
+        ],
+        uniforms: {
+          // Fixed default framing for now; T379's viewer camera can drive this as a
+          // VALUE update — the uniform is data, never structure (§V5, §V330).
+          viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+          pointSize: POINTS_PREVIEW_POINT_SIZE,
+        },
+        uniformBinding: "params",
+        blend: "alpha",
+      });
+      pointsPreviewOutputs.set(key, {
+        nodeId,
+        portId: slot.portId,
+        resourceId: previewId,
+        resourceKind: "target",
+        size: [edgePx, edgePx],
+        format: "rgba8unorm",
+        space: colorSpaceForFormat("rgba8unorm"),
+        temporal: false,
+      });
+    }
   }
 
   // §V22: the pair swaps only after every current-frame consumer has been encoded. Placing
@@ -1186,6 +1319,44 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     );
   }
 
+  /*
+   * 6b. SUBSTEPS (T387). Every pass and every swap now exists in topological order; this
+   * step only says which of them run more than once per displayed frame, and moves them
+   * together so a begin/end marker pair can say it. Nothing is allocated and nothing is
+   * duplicated — `expandLoops` in the backend is what turns the region into iterations.
+   *
+   * It runs LAST, after swap placement, on purpose: §V22's rule (a pair swaps after its
+   * last consumer) is what makes the region a complete iteration, so the region cannot be
+   * worked out before the swaps are where they belong.
+   */
+  const substeps = planSubstepLoops({
+    temporalOutputs: feedbackOutputs,
+    nodes: validated.nodes,
+    currentFrameEdges: topology.currentFrameEdges,
+    temporalEdges: topology.temporalEdges,
+  });
+  diagnostics.push(...substeps.diagnostics);
+  if (substeps.loops.length > 0) {
+    const feeders = (bodyNodes: ReadonlySet<NodeId>): ReadonlySet<NodeId> => {
+      const seen = new Set<NodeId>();
+      const stack = [...bodyNodes];
+      while (stack.length > 0) {
+        const next = stack.pop() as NodeId;
+        for (const edge of topology.currentFrameEdges) {
+          if (edge.target.nodeId !== next) continue;
+          const upstream = edge.source.nodeId;
+          if (bodyNodes.has(upstream) || seen.has(upstream)) continue;
+          seen.add(upstream);
+          stack.push(upstream);
+        }
+      }
+      return seen;
+    };
+    const reordered = applySubstepLoops(passes, substeps.loops, feeders, diagnostics);
+    passes.length = 0;
+    passes.push(...(reordered as ReadonlyArray<Record<string, unknown>>));
+  }
+
   // One shared sampler for the plan. Emitted whenever anything renders: deciding per-plan
   // whether it is referenced would make the resource list depend on shader text, and a
   // sampler is the cheapest object the backend owns.
@@ -1210,7 +1381,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   }
   const float32Filterable = request.capabilities.features.includes("float32-filterable");
   for (const pass of read.passes) {
-    if (pass.kind === "swap" || pass.kind === "counter") continue;
+    if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") continue;
     for (const binding of pass.textures ?? []) {
       if (binding.sampled === "unfiltered") continue;
       if (formatById.get(binding.resourceId) !== "r32float" || float32Filterable) continue;
@@ -1288,9 +1459,13 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       aliasOutputs.push({ ...resolved, nodeId: alias.nodeId, portId: alias.portId });
     }
   }
-  const outputs = [...propagated.outputs.values(), ...aliasOutputs].sort((a, b) =>
-    outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)),
-  );
+  // T373: a pointset output with a synthesized preview projects as that TARGET — a row
+  // the preview system can bind — replacing the marker row for the same port. Without
+  // the sink the marker row stands, exactly as before.
+  const outputs = [...propagated.outputs.values()]
+    .map((output) => pointsPreviewOutputs.get(outputKey(output.nodeId, output.portId)) ?? output)
+    .concat(aliasOutputs)
+    .sort((a, b) => outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)));
 
   // §V82: every diagnostic that names a node inside a component carries its source path.
   const reported = stamp(diagnostics);
