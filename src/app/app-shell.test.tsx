@@ -870,3 +870,30 @@ describe("T405 — a second pane of one role is its own instance", () => {
     expect(b?.textContent).toBe("count:1");
   });
 });
+
+/**
+ * V340 — the role picker on an EXISTING tab: the pane keeps its identity (place, size,
+ * window name), only what it shows changes. The model half is pinned in pane-tree.test;
+ * this is the control reaching it.
+ */
+describe("V340 — a pane can change what it shows without moving", () => {
+  it("switching the viewer tab to problems keeps the leaf and the key", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} problems={<div>problems slot</div>} />);
+
+    const rightLeaf = zoneElement("right");
+    const before = rightLeaf.querySelector('[data-pane-tab]')?.getAttribute("data-pane-tab");
+    await user.click(within(rightLeaf).getByRole("button", { name: "Move viewer" }));
+    await user.click(screen.getByRole("button", { name: /^problems$/ }));
+
+    // Same leaf, same KEY — a different face on the same pane.
+    const after = zoneElement("right").querySelector('[data-pane-tab]');
+    expect(after?.getAttribute("data-pane-tab")).toBe(before);
+    expect(after?.getAttribute("data-pane-role")).toBe("problems");
+    // TWO problems panes now exist (the bottom dock's and this one) — legal by design.
+    const instances = screen.getAllByText("problems slot");
+    expect(instances).toHaveLength(2);
+    expect(instances.some((element) => zoneElement("right").contains(element))).toBe(true);
+  });
+});

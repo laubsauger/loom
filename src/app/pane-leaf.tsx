@@ -69,6 +69,8 @@ export interface PaneLeafViewProps {
   readonly onSplit: (leafId: PaneKey, direction: "row" | "column") => void;
   readonly onCloseLeaf: (leafId: PaneKey) => void;
   readonly onAssignEmpty: (leafId: PaneKey, role: PaneRole) => void;
+  /** V340: change what an existing tab SHOWS; its key — place, size, window — stays. */
+  readonly onAssignRole: (key: PaneKey, role: PaneRole) => void;
 }
 
 export function PaneLeafView({
@@ -89,6 +91,7 @@ export function PaneLeafView({
   onSplit,
   onCloseLeaf,
   onAssignEmpty,
+  onAssignRole,
 }: PaneLeafViewProps) {
   const baseId = useId();
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -157,9 +160,11 @@ export function PaneLeafView({
             <PaneTabMenu
               tab={activeTab}
               targets={moveTargets}
+              roleOptions={roleOptions}
               onMove={onMoveTab}
               onFloat={onFloat}
               onClose={onCloseTab}
+              onAssignRole={onAssignRole}
             />
           )}
           <LeafMenu leafId={leafId} canClose={canCloseLeaf} onSplit={onSplit} onClose={onCloseLeaf} />
@@ -226,12 +231,14 @@ export function PaneLeafView({
 interface PaneTabMenuProps {
   readonly tab: LeafTabDescriptor;
   readonly targets: readonly LeafTarget[];
+  readonly roleOptions: ReadonlyArray<{ readonly role: PaneRole; readonly title: string }>;
   readonly onMove: (key: PaneKey, leafId: PaneKey) => void;
   readonly onFloat: (key: PaneKey) => void;
   readonly onClose: (key: PaneKey) => void;
+  readonly onAssignRole: (key: PaneKey, role: PaneRole) => void;
 }
 
-function PaneTabMenu({ tab, targets, onMove, onFloat, onClose }: PaneTabMenuProps) {
+function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAssignRole }: PaneTabMenuProps) {
   return (
     <PopoverRoot>
       <PopoverTrigger asChild>
@@ -253,6 +260,23 @@ function PaneTabMenu({ tab, targets, onMove, onFloat, onClose }: PaneTabMenuProp
           <Button variant="outline" size="md" onClick={() => onClose(tab.key)}>
             Close pane
           </Button>
+        </div>
+        <PopoverHeader>show instead</PopoverHeader>
+        {/* V340 made visible: the PANE stays — its place, size and window — and only
+            what it SHOWS changes. The role wearing the key, never a new key. */}
+        <div className={styles.menu}>
+          {roleOptions
+            .filter((option) => option.role !== tab.role)
+            .map((option) => (
+              <Button
+                key={option.role}
+                variant="outline"
+                size="md"
+                onClick={() => onAssignRole(tab.key, option.role)}
+              >
+                {option.title}
+              </Button>
+            ))}
         </div>
       </PopoverContent>
     </PopoverRoot>

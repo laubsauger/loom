@@ -20,6 +20,7 @@ import { PANE_IDS, PANE_TITLES, clearLegacyLayout, isPresetLayoutId } from "./la
 import {
   addTab,
   allTabs,
+  assignRole,
   closeLeaf,
   closeTab,
   dockTab,
@@ -269,6 +270,10 @@ export function AppShell({
     (leafId: PaneKey, role: PaneRole) => applyLayout((layout) => addTab(layout, leafId, role)),
     [applyLayout],
   );
+  const onAssignRole = useCallback(
+    (key: PaneKey, role: PaneRole) => applyLayout((layout) => assignRole(layout, key, role)),
+    [applyLayout],
+  );
 
   /** RESTORE a named layout: the stored ratios must win, so the groups remount. */
   const restoreLayout = useCallback(
@@ -399,6 +404,7 @@ export function AppShell({
         onSplit={onSplit}
         onCloseLeaf={onCloseLeaf}
         onAssignEmpty={onAssignEmpty}
+        onAssignRole={onAssignRole}
       />
     );
   };
