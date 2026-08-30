@@ -20,7 +20,7 @@ import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
-import { ProjectSettingsDialog } from "@editor/inspect/index.ts";
+import { OPEN_SETTINGS_COMMAND, ProjectSettingsHost } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import { GraphPane } from "./graph-pane.tsx";
@@ -276,9 +276,9 @@ export function App({
   /**
    * Project settings (T266). The dialog holds no settings state — every edit leaves
    * through `project.setSettings`, which classifies it per field (§V178) so a target-fps
-   * change costs no recompile while a resolution change does.
+   * change costs no recompile while a resolution change does. Whether it is OPEN is not
+   * here either: T359 moved that behind `ui.openSettings` (§V307).
    */
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const onSettingsChange = useCallback(
     (patch: Partial<ProjectSettings>, label: string) => {
       void runtime.bus.execute("project.setSettings", { settings: patch, label }, runtime.invocation);
@@ -554,6 +554,11 @@ export function App({
   const openHelp = useCallback(() => {
     void runtime.bus.execute(OPEN_HELP_COMMAND, {}, runtime.invocation);
   }, [runtime]);
+  // §V307: the button is a caller of the command, exactly like `mod+,` and the palette
+  // entry. Nothing here knows whether the dialog is open.
+  const openSettings = useCallback(() => {
+    void runtime.bus.execute(OPEN_SETTINGS_COMMAND, {}, runtime.invocation);
+  }, [runtime]);
   useEffect(() => {
     onAgentSurface?.(agentSurface);
   }, [agentSurface, onAgentSurface]);
@@ -667,7 +672,7 @@ export function App({
                   onNew={project.create}
                   onOpen={project.open}
                   onSave={project.save}
-                  onSettings={() => setSettingsOpen(true)}
+                  onSettings={openSettings}
                   onHelp={openHelp}
                 />
               }
@@ -767,14 +772,16 @@ export function App({
           }
           agent={<AgentPane surface={agentSurface} />}
         />
-        {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
-            New and Open cannot drift into asking two different questions. */}
-        <ProjectSettingsDialog
+        {/* T359/§V307: opened by `ui.openSettings`, never by a flag set from here. The
+            host owns the open state; the top bar, `mod+,` and the palette all execute the
+            one command. */}
+        <ProjectSettingsHost
+          bus={runtime.bus}
           settings={runtime.settings}
           onChange={onSettingsChange}
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
         />
+        {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
+            New and Open cannot drift into asking two different questions. */}
         <UnsavedChangesDialog
           open={project.confirm !== null}
           action={project.confirm?.action ?? ""}

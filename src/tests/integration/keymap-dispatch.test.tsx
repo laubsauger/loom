@@ -197,3 +197,31 @@ describe("a binding whose command nothing registered", () => {
     expect(dispatches.at(-1)).toMatchObject({ status: "dispatched", command: "node.toggleBypass" });
   });
 });
+
+/**
+ * The third door (T359, §V307, §V78).
+ *
+ * Project settings shipped with a button and no keystroke, because it opened from a
+ * `useState` toggle in the composition root while `mod+,` had named `ui.openSettings` in
+ * the default keymap since T77. The binding was real, the surface was real, and nothing
+ * joined them — the engine skips a command nobody registered, silently and correctly.
+ *
+ * This asserts the join, from the key the user presses to the dialog on screen. It is the
+ * assertion the button-level test cannot make: a component test that clicks the button
+ * supplies the very wiring it is checking (§V220's shared cause).
+ */
+describe("the settings dialog opens from its keybinding (T359)", () => {
+  it("puts the dialog on screen when mod+, is pressed", async () => {
+    const { element } = await mountWithNode();
+    expect(screen.queryByTestId("project-settings")).toBeNull();
+
+    // `mod` is Ctrl off macOS, which is what jsdom reports.
+    await act(async () => {
+      fireEvent.keyDown(element, { key: ",", ctrlKey: true });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("project-settings")).toBeDefined();
+    });
+  });
+});

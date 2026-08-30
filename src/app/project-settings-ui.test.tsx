@@ -4,6 +4,8 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import { DEFAULT_PROJECT_FPS } from "@domain/types/graph.ts";
+import { DEFAULT_BINDINGS } from "@editor/keymap/index.ts";
+import { OPEN_SETTINGS_COMMAND, registerProjectSettingsCommand } from "@editor/inspect/index.ts";
 import { App } from "./app.tsx";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -151,6 +153,66 @@ describe("T266 — the settings a user asked for are reachable and land in the d
     // §V24: the caps are the project's, so the control offers what the project allows
     // instead of a value the compiler would refuse afterwards.
     expect(runtime.settings.outputResolution.width).toBe(max);
+    runtime.dispose();
+  });
+});
+
+/**
+ * T359 / §V307 — the dialog is opened by a COMMAND, not by a flag.
+ *
+ * T266 shipped it opening from a `useState` toggle in the composition root, which made it
+ * the one openable surface in the app that the palette and the keymap could not reach —
+ * while `mod+,` had named `ui.openSettings` since T77 and the engine silently skipped it,
+ * because an unregistered command is not dispatched.
+ *
+ * The assertions below are the two halves of "three doors, one route": the command exists
+ * on the composed app's bus, and executing it — which is exactly what the keystroke, the
+ * palette entry and an agent do — puts the dialog on screen.
+ */
+describe("T359 — project settings opens by command (§V307, §V78)", () => {
+  it("registers `ui.openSettings` on the composed app's bus", async () => {
+    const runtime = newRuntime();
+    await act(async () => {
+      render(
+        <App runtime={runtime} storage={createMemoryStorage()} gpuProbe={() => Promise.resolve(NO_GPU)} />,
+      );
+    });
+
+    expect(runtime.bus.hasCommand(OPEN_SETTINGS_COMMAND)).toBe(true);
+    // The default keymap has bound this name since T77. A binding whose command nothing
+    // registers is a dead key, which is how this surface was unreachable for a week.
+    expect(DEFAULT_BINDINGS.some((binding) => binding.command === OPEN_SETTINGS_COMMAND)).toBe(true);
+    runtime.dispose();
+  });
+
+  it("opens the dialog when the command runs, with no button involved", async () => {
+    const runtime = newRuntime();
+    await act(async () => {
+      render(
+        <App runtime={runtime} storage={createMemoryStorage()} gpuProbe={() => Promise.resolve(NO_GPU)} />,
+      );
+    });
+    expect(screen.queryByTestId("project-settings")).toBeNull();
+
+    await act(async () => {
+      await runtime.bus.execute(OPEN_SETTINGS_COMMAND, {}, runtime.invocation);
+    });
+
+    expect(screen.getByTestId("project-settings")).toBeDefined();
+    runtime.dispose();
+  });
+
+  it("refuses honestly when no surface is mounted, rather than pretending", async () => {
+    // The bare runtime has no React tree, so the holder is empty. A command that opens a
+    // surface nobody mounted must SAY so — that rejection is what the seam guard's
+    // runtime cousin reads, and it is what makes "wired" observable at all.
+    const runtime = newRuntime();
+    registerProjectSettingsCommand(runtime.bus);
+
+    const result = await runtime.bus.execute(OPEN_SETTINGS_COMMAND, {}, runtime.invocation);
+
+    expect(result.status).toBe("rejected");
+    expect(result.output).toEqual({ opened: false });
     runtime.dispose();
   });
 });

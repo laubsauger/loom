@@ -10,6 +10,10 @@
  *    node context menu must reference so all three routes open the same thing (§V52,
  *    §V78). Neither of those directories is ours to edit; this export is the contract.
  *  - `<PerformancePanel telemetry>` for the bottom dock's `performance` slot.
+ *  - `<ProjectSettingsHost bus settings onChange>` — mount once. It registers
+ *    `ui.openSettings`, the name `mod+,`, the palette and the top bar button all execute
+ *    so the dialog has one route and three doors (§V307, §V78). Nothing opens it by
+ *    setting a flag.
  *
  * Nothing here mutates the document, and nothing here collects a metric — every number
  * comes from the telemetry hub, the compiled plan, or diagnostics already gathered (§V85).
@@ -45,6 +49,14 @@ export type {
 export type { CookPolicyValue } from "./performance-panel.tsx";
 export { ProjectSettingsDialog } from "./project-settings.tsx";
 export type { ProjectSettingsProps } from "./project-settings.tsx";
+export { ProjectSettingsHost } from "./project-settings-host.tsx";
+export type { ProjectSettingsHostProps } from "./project-settings-host.tsx";
+export {
+  OPEN_SETTINGS_COMMAND,
+  projectSettingsHolderFor,
+  registerProjectSettingsCommand,
+} from "./settings-command.ts";
+export type { ProjectSettingsHandlers, ProjectSettingsHolder } from "./settings-command.ts";
 export { PerformancePanel, PerformanceView } from "./performance-panel.tsx";
 export type { PerformancePanelProps, PerformanceViewProps } from "./performance-panel.tsx";
 
