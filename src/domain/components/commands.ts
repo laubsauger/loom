@@ -10,6 +10,7 @@ import type { ParameterDefinition, ParameterValue } from "../types/parameters.ts
 import type { GraphPatchResult } from "../types/patch.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "../commands/bus.ts";
 import { applyGraphPatch } from "../commands/apply-patch.ts";
+import { rewriteNodeNameReferences } from "../graph/names.ts";
 import { componentNodeType } from "./component-type.ts";
 import { readComponentInstance, PARENT_BINDINGS_STATE_KEY } from "./instance.ts";
 import { parseParentReference } from "./parent-scope.ts";
@@ -271,6 +272,15 @@ function copyInternalGraph(
     minY = 0;
   }
 
+  // B41: names taken BEFORE the copy lands. The copy carries the component's internal
+  // labels verbatim, and a label the parent already holds would make every reference to
+  // it ambiguous — `nodeNames` is first-wins, so the copy's own op()/driven/source
+  // references would silently bind the parent's node (or an earlier copy's).
+  const taken = new Set<string>();
+  for (const existing of Object.values(draft.nodes)) {
+    if (existing.label !== undefined) taken.add(existing.label);
+  }
+
   const remap: Record<NodeId, NodeId> = {};
   for (const nodeId of nodeIds) {
     const node = internal.nodes[nodeId];
@@ -288,6 +298,56 @@ function copyInternalGraph(
         y: origin.y + (node.position.y - minY),
       },
     };
+  }
+
+  // Rename colliding labels and rewrite the COPY's references to follow — scoped to the
+  // copied nodes only, so a parent node's reference to its own `over1` never moves.
+  const copyIds = Object.values(remap).sort();
+  const copyLabels = new Set<string>();
+  for (const id of copyIds) {
+    const label = draft.nodes[id]?.label;
+    if (label !== undefined) copyLabels.add(label);
+  }
+  const renames: Array<{ id: NodeId; oldName: string; newName: string }> = [];
+  for (const id of copyIds) {
+    const label = draft.nodes[id]?.label;
+    if (label === undefined) continue;
+    if (!taken.has(label)) {
+      taken.add(label);
+      continue;
+    }
+    const stripped = label.replace(/[0-9]+$/, "");
+    const base = stripped.length > 0 ? stripped : label;
+    let candidate = label;
+    for (let ordinal = 1; ; ordinal += 1) {
+      candidate = `${base}${ordinal}`;
+      if (!taken.has(candidate) && !copyLabels.has(candidate)) break;
+    }
+    renames.push({ id, oldName: label, newName: candidate });
+    taken.add(candidate);
+    copyLabels.add(candidate);
+  }
+  if (renames.length > 0) {
+    // The copies above spread the DEFINITION's nodes, so they still share its parameter
+    // records; the rewrite mutates those records in place and would otherwise edit the
+    // installed component. Give every copy its own record first.
+    for (const id of copyIds) {
+      const node = draft.nodes[id];
+      if (node !== undefined) draft.nodes[id] = { ...node, parameters: { ...node.parameters } };
+    }
+    // The scope graph shares the copies' node objects, so the rewrite lands in `draft`.
+    const scope: GraphDocument = {
+      ...draft,
+      nodes: Object.fromEntries(copyIds.map((id) => [id, draft.nodes[id] as GraphNode])),
+      edges: {},
+    };
+    for (const rename of renames) {
+      rewriteNodeNameReferences(scope, rename.oldName, rename.newName);
+      const node = draft.nodes[rename.id];
+      // In place, not a replacement object: `scope` shares this object, and a later
+      // rewrite through it must keep landing on the node `draft` holds.
+      if (node !== undefined) (node as { label?: string }).label = rename.newName;
+    }
   }
 
   for (const edgeId of Object.keys(internal.edges).sort()) {

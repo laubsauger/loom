@@ -252,6 +252,53 @@ describe("instances reference, they never copy (§V79)", () => {
     expect(rewired?.target.portId).toBe("source");
   });
 
+  it("a detached copy renames colliding labels and its references follow — the parent's and the definition's do not (B41)", async () => {
+    // A component whose internals REFERENCE each other by name: `echo` records `over1`
+    // by source reference (§V285). The parent already owns the name `over1`.
+    const echoDefinition = {
+      componentId: "echo",
+      version: 1,
+      name: "Echo",
+      graph: graphOf([
+        node("mix", "test.blur", { radius: 4 }, { label: "over1" }),
+        node("echo", "feedback", { source: "over1" }),
+      ]),
+      inputs: [{ externalId: "source", label: "Source", nodeId: "mix", portId: "source" }],
+      outputs: [{ externalId: "out", label: "Out", nodeId: "mix", portId: "out" }],
+      parameters: [],
+    };
+    const harness = createComponentHarness(
+      "t",
+      graphOf([node("mine", "test.blur", { radius: 4 }, { label: "over1" })]),
+    );
+    harness.components.register(echoDefinition);
+
+    const placed = await harness.bus.execute(
+      "component.instantiate",
+      { componentId: "echo", mode: "detached", position: { x: 200, y: 0 } },
+      ctx,
+    );
+    expect(placed.status).toBe("applied");
+    expect(placed.output.nodeIds).toHaveLength(2);
+
+    const graph = harness.store.view.getGraph();
+    const copies = placed.output.nodeIds.map((nodeId) => graph.nodes[nodeId]);
+    const mixCopy = copies.find((copy) => copy?.type === "test.blur");
+    const echoCopy = copies.find((copy) => copy?.type === "feedback");
+
+    // The collision resolved AWAY from the parent's name, and the copy's reference
+    // moved WITH the rename — still pointing at its own `mix`, not at the parent's node.
+    expect(graph.nodes.mine?.label).toBe("over1");
+    expect(mixCopy?.label).toBe("over2");
+    expect(echoCopy?.parameters.source).toBe("over2");
+
+    // The copy spread the definition's nodes; the rewrite must not have reached back
+    // into the installed component (shared parameter records, the B41 footgun).
+    const definition = harness.components.get("echo", 1);
+    expect(definition?.graph.nodes.mix?.label).toBe("over1");
+    expect(definition?.graph.nodes.echo?.parameters.source).toBe("over1");
+  });
+
   it("refuses to instantiate a component inside itself (§V83)", async () => {
     const harness = createComponentHarness();
     harness.components.register(bloomComponent("bloom", 1, [blurKnob]));

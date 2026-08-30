@@ -8,6 +8,7 @@ import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../domain/types/graph.ts";
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { ParameterSchema, ParameterValue, StoredParameter } from "../domain/types/parameters.ts";
+import { rewriteNodeNameReferences } from "../domain/graph/names.ts";
 import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.ts";
 import { storedValues } from "../domain/parameters/stored-values.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -213,6 +214,58 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
     diagnostics.push({ ...diagnostic, nodeId });
   };
 
+  /**
+   * Every label the flat graph has claimed so far, across ALL levels (B41).
+   *
+   * Labels are copied into the flat graph verbatim, and name references — op(), driven
+   * channels, source references, §V128's clause list — resolve on the flat graph
+   * GLOBALLY (first-wins in `nodeNames`). Two instances of one component therefore
+   * carried identical internal labels, and every reference in the second instance
+   * silently bound the FIRST instance's node. Each level's labels are made globally
+   * unique on entry, and the clause-complete rename rewrite keeps that level's own
+   * references pointing at its own nodes. The root level runs first against an empty
+   * set, so a name the user can see is never the one renamed.
+   */
+  const usedNames = new Set<string>();
+
+  const withUniqueNames = (level: GraphDocument): GraphDocument => {
+    const levelLabels = new Set<string>();
+    for (const node of Object.values(level.nodes)) {
+      if (node.label !== undefined) levelLabels.add(node.label);
+    }
+
+    const renames: Array<{ nodeId: NodeId; oldName: string; newName: string }> = [];
+    for (const nodeId of Object.keys(level.nodes).sort()) {
+      const label = level.nodes[nodeId]?.label;
+      if (label === undefined || !usedNames.has(label)) continue;
+      const stripped = label.replace(/[0-9]+$/, "");
+      const base = stripped.length > 0 ? stripped : label;
+      let candidate = label;
+      for (let ordinal = 1; ; ordinal += 1) {
+        candidate = `${base}${ordinal}`;
+        if (!usedNames.has(candidate) && !levelLabels.has(candidate)) break;
+      }
+      // Reserving the new name here keeps two renames at one level from colliding, and
+      // keeps a new name from shadowing a sibling's still-pending old one.
+      levelLabels.add(candidate);
+      renames.push({ nodeId, oldName: label, newName: candidate });
+    }
+
+    let graph = level;
+    if (renames.length > 0) {
+      // The level graph is the component DEFINITION's — shared by every instance — so
+      // the rename works on a copy, never the definition.
+      graph = structuredClone(level) as GraphDocument;
+      for (const rename of renames) {
+        rewriteNodeNameReferences(graph, rename.oldName, rename.newName);
+        const node = graph.nodes[rename.nodeId];
+        if (node !== undefined) graph.nodes[rename.nodeId] = { ...node, label: rename.newName };
+      }
+    }
+    for (const label of levelLabels) usedNames.add(label);
+    return graph;
+  };
+
   const recordSource = (flatId: NodeId, path: ComponentPath, node: GraphNode, leaf: string): void => {
     sources.set(flatId, {
       nodeId: flatId,
@@ -328,6 +381,7 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
   };
 
   const flattenLevel = (input: LevelInput): LevelResult => {
+    const levelGraph = withUniqueNames(input.graph);
     const scope = buildParentScope(input.chain);
     const grouped = overridesByNode(input.overrides);
     /** Raw instance id -> the boundary of the subgraph it expanded into. */
@@ -335,12 +389,12 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
     const childOutputs = new Map<NodeId, ReadonlyMap<PortId, FlatEndpoint>>();
 
     const names = instanceDisplayNames(
-      input.graph,
+      levelGraph,
       (componentId, version) => request.components.get(componentId, version)?.name ?? componentId,
     );
 
-    for (const nodeId of Object.keys(input.graph.nodes).sort()) {
-      const node = input.graph.nodes[nodeId];
+    for (const nodeId of Object.keys(levelGraph.nodes).sort()) {
+      const node = levelGraph.nodes[nodeId];
       if (node === undefined) continue;
       const flatId = flattenedNodeId(input.prefix, nodeId);
       const instance = readComponentInstance(node);
@@ -424,8 +478,8 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
       return boundary.get(portId);
     };
 
-    for (const edgeId of Object.keys(input.graph.edges).sort()) {
-      const edge = input.graph.edges[edgeId];
+    for (const edgeId of Object.keys(levelGraph.edges).sort()) {
+      const edge = levelGraph.edges[edgeId];
       if (edge === undefined) continue;
       const source = endpointOf(edge.source.nodeId, edge.source.portId, "output");
       const target = endpointOf(edge.target.nodeId, edge.target.portId, "input");
