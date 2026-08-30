@@ -44,7 +44,7 @@ const REPORTED_LIMITS = [
  * compiler checks per texture binding against `features` (compiler/binding-unfilterable)
  * instead of pretending the format does not exist.
  */
-function supportedFormats(_features: ReadonlySet<string>): ReadonlyArray<TextureFormat> {
+function supportedFormats(): ReadonlyArray<TextureFormat> {
   return TEXTURE_FORMATS;
 }
 
@@ -81,7 +81,7 @@ export function describeCapabilities(gpu: Gpu): BackendCapabilities {
   return {
     tier: classifyTier(features, limits),
     features: [...features].sort(),
-    formats: supportedFormats(features),
+    formats: supportedFormats(),
     timestampQuery: features.has("timestamp-query"),
     limits,
   };

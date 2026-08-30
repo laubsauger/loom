@@ -189,7 +189,6 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
       access: "read",
       role: "live",
     });
-    nextBinding += 1;
   }
 
   const structFields = touched
