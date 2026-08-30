@@ -54,7 +54,7 @@ async function until(predicate: () => boolean, what: string, budgetMs = 5_000): 
 }
 
 /** A real Shaderloom document with a real bus and the real catalogue — the "page". */
-function pageHarness() {
+function pageHarness(extras: { ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {}) {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const { bus } = createDomainBus({ store, registry });
@@ -62,7 +62,11 @@ function pageHarness() {
     bus,
     actor: { kind: "agent", id: "page", label: "Page" },
     projectId: "page-project",
+    ...(extras.ports === undefined ? {} : { ports: extras.ports }),
   });
+  // The tab grants what the tab grants: pixels leaving the page are the page's decision,
+  // the way serve.ts's --grant-export is the operator's (§V38).
+  bus.grants.grant({ kind: "agent", id: "page", label: "Page" }, "export");
   return { store, surface };
 }
 
@@ -121,8 +125,11 @@ function pairingCodeOf(harness: Harness): string {
  * Uses the product's DEFAULT socket factory, so the handshake, the masking and the frame
  * codec are all exercised for real.
  */
-async function attachPage(harness: Harness, options: { code?: string } = {}) {
-  const page = pageHarness();
+async function attachPage(
+  harness: Harness,
+  options: { code?: string; ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {},
+) {
+  const page = pageHarness(options.ports === undefined ? {} : { ports: options.ports });
   const registry = createMcpTransportRegistry();
   const client = createBridgeClient({
     surface: () => page.surface,
@@ -277,6 +284,74 @@ describe("bridge, attached to a live page (T451, §V382)", () => {
     expect(payload.bridge["attached"]).toBe(false);
     // The page's own store is untouched: execution really did move back.
     expect(Object.keys(page.store.view.getGraph().nodes)).toHaveLength(0);
+  });
+});
+
+/**
+ * V432 — ATTACHING GIVES THE UNION, and it is gated rather than promised.
+ *
+ * The other half of B93: the in-page transport was captured-wrong (B93/V431), but the
+ * stdio server's missing tools are HONEST absence — compile_project, play and
+ * get_diagnostics need app-side sources a headless process does not have. The designed
+ * answer is T451's bridge: while a tab is attached, stdio's tools/list AND tools/call are
+ * the TAB's, so an agent on the pipe gets everything the page can do — including seeing
+ * what it drew. Nothing proved that end to end before this test; "attach gives the full
+ * set" was the promise the owner was relying on.
+ */
+describe("bridge union (V432, T451)", () => {
+  it("a page-only port answers a stdio call: render_preview runs the TAB's exporter", async () => {
+    const harness = await bridgedServer();
+    // The page brings what only a tab has: a preview read source. Width 7 is the marker
+    // that THIS exporter answered, not any other surface's.
+    const page = await attachPage(harness, {
+      ports: {
+        preview: {
+          renderPreview: async () => ({
+            ref: { nodeId: "n", portId: "out" },
+            width: 7,
+            height: 7,
+            bytes: new Uint8Array([1, 2, 3]),
+          }),
+        },
+      } as never,
+    });
+    await until(() => page.row()?.state === "connected", "the page to attach");
+
+    // The node exists in the PAGE's document only — the headless twin knows nothing of it.
+    const seeded = await harness.request(
+      "tools/call",
+      { name: "add_node", arguments: { type: "solid" } },
+      30,
+    );
+    const seededPayload = JSON.parse(
+      ((seeded.result?.["content"] as Array<{ text: string }>)[0]?.text ?? "{}"),
+    ) as { status: string };
+    expect(seededPayload.status).toBe("ok");
+    // The created id, read from the PAGE's store — the proof of address doubles as the input.
+    const nodeId = Object.keys(page.store.view.getGraph().nodes)[0] ?? "";
+    expect(nodeId).not.toBe("");
+
+    // tools/list over stdio describes render_preview as AVAILABLE — the tab's roster,
+    // not the headless twin's honest refusal.
+    const listed = await harness.request("tools/list", {}, 31);
+    const preview = (listed.result?.["tools"] as Array<Record<string, unknown>>).find(
+      (tool) => tool["name"] === "render_preview",
+    );
+    expect(String(preview?.["description"])).not.toContain("currently unavailable");
+
+    // And the call is the union made real: a stdio request, the page's document, the
+    // page's exporter — the agent on the pipe SEES what the tab drew.
+    const call = await harness.request(
+      "tools/call",
+      { name: "render_preview", arguments: { nodeId } },
+      32,
+    );
+    const payload = JSON.parse(
+      ((call.result?.["content"] as Array<{ type: string; text: string }>).find((entry) => entry.type === "text")?.text ?? "{}"),
+    ) as { status: string; data?: { width?: number }; bridge?: Record<string, unknown> };
+    expect(payload.status).toBe("ok");
+    expect(payload.data?.width).toBe(7);
+    expect(payload.bridge?.["attached"]).toBe(true);
   });
 });
 
