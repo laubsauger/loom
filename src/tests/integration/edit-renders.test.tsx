@@ -5,7 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, FrameInputs } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { CompiledPlan, ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -100,7 +100,9 @@ function recordingBackend(): { backend: ShaderloomBackend; recorder: Recorder } 
       compileCount += 1;
       const id = `plan-${compileCount}`;
       recorder.compiled.push(id);
-      return { id, passes: [] } as unknown as CompiledPlan;
+      // Shape-only: the whole backend is cast at the end, and what this test reads back
+      // is the plan ID, not the plan.
+      return { id, passes: [] };
     },
     render: (plan: { id: string }) => {
       recorder.rendered.push(plan?.id ?? "none");
