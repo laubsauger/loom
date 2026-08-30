@@ -147,6 +147,20 @@ export interface FrameLoopOptions {
    * real plans before acting on it, and falls back to a full compile when they disagree.
    */
   readonly valuesOnly?: boolean | undefined;
+  /**
+   * This revision must land on CLEARED temporal history (§V22, T519, B106).
+   *
+   * From `useGraphCompile`, and true for exactly one thing today: a project LOAD. The
+   * backend's rebuild carries resources over by RESOURCE ID, and a carried ping-pong or
+   * ring keeps its CONTENTS (§V62b, T143) — which is what makes an unrelated edit cheap
+   * within one document and what leaks one PROJECT'S pixels into the next when both
+   * name a node `echo`.
+   *
+   * An INSTRUCTION rather than a suggestion, unlike `valuesOnly` above: there is no
+   * cheap check that could second-guess it, and the failure of ignoring it is a picture
+   * from a project the user has closed.
+   */
+  readonly resetFeedback?: boolean | undefined;
 }
 
 export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
@@ -156,6 +170,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const advanceChannels = options.advanceChannels ?? null;
   const onReset = options.onReset ?? null;
   const valuesOnly = options.valuesOnly ?? false;
+  const resetFeedback = options.resetFeedback ?? false;
   const suppliedPointer = options.pointer;
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
@@ -194,6 +209,9 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   // accompanies one.
   const valuesOnlyRef = useRef(valuesOnly);
   valuesOnlyRef.current = valuesOnly;
+  // Same reason as `valuesOnlyRef`: it accompanies a `compiled`, it does not trigger one.
+  const resetFeedbackRef = useRef(resetFeedback);
+  resetFeedbackRef.current = resetFeedback;
   /**
    * The plan the BACKEND has actually built, which is what the uniform pushes below write
    * into — so it starts null and is set only when a compile has completed. It used to be
@@ -510,6 +528,19 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         animatorRef.current.reset();
         driftRef.current = false;
         driverRef.current?.setPlan(plan);
+        /**
+         * AFTER the install, and that order is the whole point (T519, B106, §V22).
+         *
+         * `resetTemporalHistory` clears the ACTIVE program's feedback pairs and rings.
+         * Until this `.then` runs, the active program is the one built from the
+         * PREVIOUS document — clearing there would wipe history the user is still
+         * looking at and leave the incoming document's carried-over pairs untouched,
+         * which is the bug with the sides swapped.
+         *
+         * Unscoped: a load invalidates every pair, not a named one, so this is the same
+         * call `runtime.resetFeedback` makes with no `nodeIds` (§V126).
+         */
+        if (resetFeedbackRef.current) backend.resetTemporalHistory();
       })
       .catch((error: unknown) => {
         if (generation !== generationRef.current) return;

@@ -4,6 +4,7 @@ import { createDomainBus } from "@domain/commands/index.ts";
 import { createGraphStore } from "@domain/graph/store.ts";
 import { createSequentialIdFactory } from "@domain/graph/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import type { EdgeId, NodeId, PortId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
@@ -69,8 +70,19 @@ async function afterEdit(operations: (ids: SeededIds) => GraphPatchOperation[]) 
   return { previous, next: graph(), ids };
 }
 
+/**
+ * Two revisions OF THE SAME DOCUMENT — which is what every test below except the last
+ * group is about, and what makes those tests still mean what they meant (§V32's cheap
+ * path has to survive this task, or a correctness fix has bought a performance bug).
+ */
+const SAME_DOCUMENT = "document-under-test";
+
 const classify = (previous: GraphDocument, next: GraphDocument) =>
-  classifyGraphChange(previous, next, registry);
+  classifyGraphChange(
+    { identity: SAME_DOCUMENT, graph: previous },
+    { identity: SAME_DOCUMENT, graph: next },
+    registry,
+  );
 
 describe("classifying a revision (T308, §V5)", () => {
   it("calls an ordinary parameter edit values-only", async () => {
@@ -189,5 +201,136 @@ describe("classifying a revision (T308, §V5)", () => {
     const { graph } = harness();
     const document = graph();
     expect(classify(document, document).work).toBe("editor-only");
+  });
+});
+
+/**
+ * T519 / B106 — a LOAD is a discontinuity, not a diff.
+ *
+ * The owner: "if we're loading another loom or example and that happens to share the
+ * same name with the prior rendered one, we need to manually kick the different nodes to
+ * update and not show the prior rendered one's content". Two documents that share node
+ * NAMES share node IDS, and every one of the shipped examples has a node called `out`.
+ *
+ * ## Why these fixtures and not two obviously-different documents
+ *
+ * §V461: a fixture must be CAPABLE of distinguishing what its test asserts. Two
+ * documents that differ visibly diff as `topology` and would have passed before this
+ * task existed — they prove nothing, because the bug only appears where the diff
+ * BELIEVES nothing important happened. So both fixtures below are adversarial on
+ * purpose: identical node ids, identical types, identical labels, identical edge ids.
+ * `identicalExcept` differs in exactly one parameter that changes the picture and
+ * nothing else; `sameContent` does not differ at all, which is the case the old code
+ * answered `editor-only` for — "the document did not change" — and on which the caller
+ * therefore reused the PREVIOUS DOCUMENT'S compiled plan wholesale.
+ *
+ * The discriminating assertion is `resetFeedback`. Before this, the strongest a load
+ * could produce was `recompile-region` with `resetFeedback: false`, and a
+ * `recompile-region` still permits the backend to carry resources over by RESOURCE ID —
+ * which is how one project's feedback history ends up rendering in the next.
+ */
+describe("T519 — a load is a discontinuity, not a diff (B106)", () => {
+  const NODE = (parameters: Record<string, number>): GraphDocument["nodes"] => ({
+    // The names everyone gets. `out` is in every shipped example; E2 and E24 share
+    // ELEVEN ids including the one holding the reaction-diffusion state.
+    field: {
+      id: "field" as NodeId,
+      type: "test.solid",
+      definitionVersion: 1,
+      label: "solid1",
+      position: { x: 0, y: 0 },
+      parameters,
+    },
+    out: {
+      id: "out" as NodeId,
+      type: "test.blur",
+      definitionVersion: 1,
+      label: "blur1",
+      position: { x: 240, y: 0 },
+      parameters: {},
+    },
+  });
+
+  const EDGES: GraphDocument["edges"] = {
+    "e-field-out": {
+      id: "e-field-out" as EdgeId,
+      source: { nodeId: "field" as NodeId, portId: "out" as PortId },
+      target: { nodeId: "out" as NodeId, portId: "source" as PortId },
+    },
+  };
+
+  const documentWith = (parameters: Record<string, number>): GraphDocument => ({
+    revision: 1,
+    nodes: NODE(parameters),
+    edges: EDGES,
+    groups: {},
+  });
+
+  /** Two DIFFERENT documents. Same ids, same wiring; one parameter changes the image. */
+  const documentA = documentWith({ amount: 0.1 });
+  const documentB = documentWith({ amount: 0.9 });
+
+  it("rebuilds everything when the DOCUMENT changed, however alike the two are", () => {
+    const decision = classifyGraphChange(
+      { identity: "project-a", graph: documentA },
+      { identity: "project-b", graph: documentB },
+      registry,
+    );
+    // The strongest work there is — not `recompile-region`, which would leave everything
+    // outside the changed region reusable, and reuse is the bug.
+    expect(decision.work).toBe("repropagate");
+    expect(isValuesOnly(decision)).toBe(false);
+    // The two flags the pixels actually depend on. `resetFeedback` is the one the old
+    // code could not produce for a load at any strength.
+    expect(decision.recreateTargets).toBe(true);
+    expect(decision.resetFeedback).toBe(true);
+    // EVERY node, because there is nothing to diff against — not the subset some
+    // id-comparison happened to notice.
+    expect([...decision.nodes]).toEqual(["field", "out"]);
+  });
+
+  it("still rebuilds when the two documents are CONTENT-IDENTICAL", () => {
+    // The purest form of the bug, and the sentence the old code answered it with: "The
+    // document did not change." It had not — and it was a different document, whose
+    // every node would have kept the other project's cached texture, temporal history
+    // and compiled pass. A decision that depends on content coinciding is the defect.
+    const decision = classifyGraphChange(
+      { identity: "project-a", graph: documentA },
+      { identity: "project-b", graph: documentA },
+      registry,
+    );
+    expect(decision.work).toBe("repropagate");
+    expect(decision.resetFeedback).toBe(true);
+  });
+
+  it("keeps the CHEAP path for an ordinary edit inside one document (§V5, §V32)", async () => {
+    // The other direction, and it is not optional: if a load being expensive made every
+    // revision expensive, this task would have traded a correctness bug for a
+    // performance one. §V32's take-the-maximum rule exists so a batch costs what its
+    // most expensive member costs — and a value edit's maximum is still a uniform write.
+    const { previous, next, ids } = await afterEdit((id) => [
+      { op: "setParameters", nodeId: id.b, parameters: { radius: 8 } },
+    ]);
+    const decision = classifyGraphChange(
+      { identity: SAME_DOCUMENT, graph: previous },
+      { identity: SAME_DOCUMENT, graph: next },
+      registry,
+    );
+    expect(decision.work).toBe("uniform-update");
+    expect(isValuesOnly(decision)).toBe(true);
+    expect(decision.resetFeedback).toBe(false);
+    expect([...decision.nodes]).toEqual([ids.b]);
+  });
+
+  it("does not treat a NEW identity as a reason to be expensive twice", () => {
+    // The boundary is crossed ONCE. A second revision of the now-open document is an
+    // ordinary edit again — the identity is what changed, not the fact of having loaded.
+    const decision = classifyGraphChange(
+      { identity: "project-b", graph: documentA },
+      { identity: "project-b", graph: documentA },
+      registry,
+    );
+    expect(decision.work).toBe("editor-only");
+    expect(decision.resetFeedback).toBe(false);
   });
 });

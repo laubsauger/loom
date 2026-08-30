@@ -104,6 +104,7 @@ describe("useNodePreviews (T185)", () => {
         getNodePosition: () => ({ x: 0, y: 0 }),
         previewFps: 20,
         previewLongEdge: 192,
+        documentIdentity: "document-under-test",
       }),
     );
 
@@ -146,6 +147,7 @@ describe("useNodePreviews (T185)", () => {
         getNodePosition: () => ({ x: 0, y: 0 }),
         previewFps: 20,
         previewLongEdge: 192,
+        documentIdentity: "document-under-test",
       }),
     );
 
@@ -219,6 +221,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
         getNodePosition: () => ({ x: 0, y: 0 }),
         previewFps: 20,
         previewLongEdge: 192,
+        documentIdentity: "document-under-test",
       }),
     );
     vi.advanceTimersToNextFrame();
@@ -306,6 +309,7 @@ describe("useNodePreviews previews the node that presents (§V25)", () => {
         getNodePosition: () => ({ x: 0, y: 0 }),
         previewFps: 20,
         previewLongEdge: 192,
+        documentIdentity: "document-under-test",
       }),
     );
     vi.advanceTimersToNextFrame();
@@ -462,6 +466,7 @@ describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
         getNodePosition: () => ({ x: 0, y: 0 }),
         previewFps: 20,
         previewLongEdge: 192,
+        documentIdentity: "document-under-test",
       }),
     );
     vi.advanceTimersToNextFrame();
@@ -497,5 +502,104 @@ describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
 
   it("treats an explicit true exactly like an untouched node", () => {
     expect(run(offGraph(true)).snapshot.preview?.state.kind).toBe("live");
+  });
+});
+
+/**
+ * T519 / B106 — a project LOAD drops every tile and every refresh clock.
+ *
+ * `PreviewSystem.reset()` has named its three callers since T34: "device loss, project
+ * load, pane close". Two of them existed. The missing one is this bug: a tile is keyed by
+ * NODE ID, two documents share node ids the moment they share node names, and every
+ * shipped example has a node called `out`. So opening a second project finds the atlas
+ * already holding a tile under the incoming document's key, the scheduler's refresh clock
+ * says that key is not due yet, and the node shows the PREVIOUS PROJECT'S pixels — until
+ * the user kicks it, which is exactly what the owner reported having to do.
+ *
+ * §V461 — the fixture must be able to distinguish what it asserts, so the middle step is
+ * load-bearing: it proves the clock genuinely says NOT DUE at this moment. Without it, a
+ * refresh after the identity change could just be the cadence coming round, and the test
+ * would pass whether or not anything was reset.
+ */
+describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
+  it("refreshes a tile the refresh clock says is NOT due, because the document changed", () => {
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("n1", { x: 0, y: 0, width: 200, height: 120 });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+
+    const refreshes: ReadonlyArray<string>[] = [];
+    const backend = {
+      ...fakeBackend(),
+      previewHost: () => ({
+        setPreviewProgram: () => {},
+        presentPreviews: (command: { refresh: ReadonlyArray<string> }) => {
+          refreshes.push(command.refresh);
+        },
+        dispose: () => {},
+      }),
+    } as unknown as ShaderloomBackend;
+
+    // Two documents that share the node id `n1` — the whole point. Their content is
+    // irrelevant here: what must not survive the boundary is the TILE.
+    const graph = graphWith("test.blur");
+    const { rerender } = renderHook(
+      ({ documentIdentity }: { documentIdentity: string }) =>
+        useNodePreviews({
+          backend,
+          canvasRef: { current: canvas },
+          bounds,
+          graph,
+          registry,
+          compiledOutputs: [
+            {
+              nodeId: "n1",
+              portId: "out",
+              resourceId: "res:n1:out",
+              resourceKind: "target" as const,
+              size: [64, 64] as const,
+              format: "rgba8unorm" as const,
+              space: "linear" as const,
+              temporal: false,
+            },
+          ],
+          nodeRuntime,
+          getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+          getNodePosition: () => ({ x: 0, y: 0 }),
+          // A slow cadence, so "not due" lasts long enough to be a fact rather than a race.
+          previewFps: 1,
+          previewLongEdge: 192,
+          documentIdentity,
+        }),
+      { initialProps: { documentIdentity: "project-a" } },
+    );
+
+    // 1. FIRST PAINT. A key with no refresh clock is always due, so this must draw —
+    //    and if it does not, every assertion below is about an empty system.
+    vi.advanceTimersToNextFrame();
+    expect(refreshes.at(-1)?.length ?? 0).toBeGreaterThan(0);
+
+    // 2. NOT DUE. The clock has barely moved and the cadence is one frame a second, so
+    //    the same key must draw nothing. THIS IS THE NON-VACUITY CHECK: it establishes
+    //    that a refresh in step 3 cannot be the cadence coming round on its own.
+    vi.advanceTimersToNextFrame();
+    expect(refreshes.at(-1)).toEqual([]);
+
+    // 3. A DIFFERENT DOCUMENT IS OPEN. Same node id, same clock, still not due — and it
+    //    must draw anyway, because the tile behind that key belongs to a project that is
+    //    no longer open.
+    rerender({ documentIdentity: "project-b" });
+    vi.advanceTimersToNextFrame();
+    expect(refreshes.at(-1)?.length ?? 0).toBeGreaterThan(0);
+
+    // 4. ...and the boundary is crossed ONCE. Staying in the new document goes straight
+    //    back to the cadence, or the fix would be a permanent full-rate repaint.
+    vi.advanceTimersToNextFrame();
+    expect(refreshes.at(-1)).toEqual([]);
+
+    nodeRuntime.dispose();
   });
 });

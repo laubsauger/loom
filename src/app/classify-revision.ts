@@ -19,11 +19,30 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
  * ## Why a document DIFF and not the patch's operations
  *
  * The patch knows what it did, but it is not the only thing that changes a document: undo
- * and redo replay inverses, a project load replaces everything, and an agent's patch
- * arrives by the same door as a human's. Classifying the RESULT covers all of them with
- * one rule. It is also cheap in exactly the way that matters — the store applies patches
- * through immer, so an untouched node keeps its object identity and the diff is a walk of
- * reference comparisons, not a deep equality check.
+ * and redo replay inverses, and an agent's patch arrives by the same door as a human's.
+ * Classifying the RESULT covers all of them with one rule. It is also cheap in exactly
+ * the way that matters — the store applies patches through immer, so an untouched node
+ * keeps its object identity and the diff is a walk of reference comparisons, not a deep
+ * equality check.
+ *
+ * ## A LOAD is not an edit (T519, B106)
+ *
+ * A project load is the one revision this diff must NOT be asked about, and the header
+ * above said so for months while the code went on diffing anyway: "a project load
+ * replaces everything" was written down and never enforced. Two documents that share
+ * node NAMES share node IDS — `noise1`, `ramp1`, `out` is what everyone gets, and `out`
+ * is in every shipped example — so a node whose parameters happen to coincide diffs as
+ * unchanged and keeps its cached texture, its temporal history and its compiled pass.
+ * The picture that comes back is the PREVIOUS PROJECT'S.
+ *
+ * The correction is not more unique ids. Uniqueness would paper over the defect, break
+ * the id stability other things rely on, and leave the bug live for the next two
+ * documents that still collide. What was missing is DOCUMENT IDENTITY: this classifies
+ * two revisions OF A DOCUMENT, and two revisions of DIFFERENT documents are not a diff
+ * at all. So the input is a `DocumentRevision` — an identity paired with a graph — and a
+ * revision that crosses an identity boundary is a full rebuild regardless of what the
+ * contents happen to be. It is a TYPE change on purpose: a caller cannot forget to say
+ * which document it is talking about, which is the only way this stays fixed.
  *
  * ## Conservative in one direction only
  *
@@ -205,20 +224,61 @@ const NOTHING_CHANGED: RecompileDecision = {
 };
 
 /**
+ * One revision, and the DOCUMENT it is a revision of (T519, B106).
+ *
+ * The identity is opaque and only ever compared for equality. It is minted where a
+ * document is established — `createAppRuntime`, which is the only thing that opens a
+ * project — so "a load establishes a new identity" is a property of the constructor
+ * rather than a rule someone has to remember at each load site (§V437).
+ */
+export interface DocumentRevision {
+  readonly identity: string;
+  readonly graph: GraphDocument;
+}
+
+/**
+ * Crossing a document boundary: rebuild everything, and say why.
+ *
+ * The STRONGEST work there is, with both clearing flags set. Not "topology": topology
+ * means the shape of THIS document moved and the region downstream of the moved nodes
+ * must be rebuilt, which still permits everything outside that region to be reused —
+ * and reuse is precisely what must not happen here. Nothing carried from the previous
+ * document is valid for this one, whatever its ids say (§V22, §V21).
+ *
+ * `nodes` is every node in the incoming document rather than a diff, for the same
+ * reason: there is nothing to diff against.
+ */
+function documentReplaced(next: GraphDocument): RecompileDecision {
+  return {
+    work: "repropagate",
+    reason:
+      "A different document is open. A load is a discontinuity, not an edit: nothing from " +
+      "the previous document may be reused, however its node ids compare (T519, B106).",
+    nodes: Object.keys(next.nodes).sort() as NodeId[],
+    recreateTargets: true,
+    resetFeedback: true,
+  };
+}
+
+/**
  * The one decision for a whole revision: the most expensive edit in it.
  *
  * A patch is atomic and can carry many operations (§V32), so a batch that moves a node
  * AND rewires it costs what the rewire costs. Taking the maximum is the only combination
- * that cannot under-report.
+ * that cannot under-report — and that MAXIMUM RULE is why the document check is a guard
+ * ahead of the diff rather than another edit folded into it: a load has no cheapest
+ * member to be the maximum of.
  */
 export function classifyGraphChange(
-  previous: GraphDocument,
-  next: GraphDocument,
+  previous: DocumentRevision,
+  next: DocumentRevision,
   registry: NodeRegistryView,
 ): RecompileDecision {
-  const edits = graphEdits(previous, next);
+  // FIRST, and before anything looks at a node id.
+  if (previous.identity !== next.identity) return documentReplaced(next.graph);
+  const edits = graphEdits(previous.graph, next.graph);
   if (edits.length === 0) return NOTHING_CHANGED;
-  const context = { graph: next, registry };
+  const context = { graph: next.graph, registry };
   return edits
     .map((edit) => classifyEdit(edit, context))
     .reduce(strongest, classifyEdit(edits[0] as GraphEdit, context));

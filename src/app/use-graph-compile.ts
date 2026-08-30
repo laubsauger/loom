@@ -93,6 +93,23 @@ export interface GraphCompileResult {
    * before acting on it.
    */
   readonly valuesOnly: boolean;
+  /**
+   * True when temporal history can no longer be reused (§V22) — this revision must land
+   * on cleared feedback pairs and rings (T519, B106).
+   *
+   * `RecompileDecision.resetFeedback` has been computed since T31 and read by NOTHING:
+   * `grep` finds it produced at eight sites in `recompile.ts` and consumed at zero. So
+   * "a resolution change resets feedback" was a documented property of a value nobody
+   * looked at. This is the wire, and the case that forced it is the one where being
+   * wrong is visible: `backend.compile` carries resources over BY RESOURCE ID and a
+   * carried ping-pong keeps its CONTENTS (§V62b, T143) — correct within one document,
+   * cross-document contamination the moment two projects share a node name.
+   *
+   * Acted on AFTER the new plan is installed, never before: `resetTemporalHistory`
+   * clears the ACTIVE program's rings, and the active program is still the previous
+   * document's until `backend.compile` resolves (`use-frame-loop.ts`).
+   */
+  readonly resetFeedback: boolean;
 }
 
 /**
@@ -384,6 +401,16 @@ export function useGraphCompile(
    */
   const lastCompile = useRef<{
     graph: GraphDocument;
+    /**
+     * (e) the DOCUMENT the graph above belongs to (T519, B106).
+     *
+     * The fifth independent trigger, and the one whose absence was a correctness bug
+     * rather than a wasted compile. Every other entry here asks "did an input change";
+     * this one asks "is this even the same document", and without it the diff below
+     * compared two unrelated projects by NODE ID and answered from whatever their names
+     * happened to have in common.
+     */
+    documentIdentity: string;
     sinks: unknown;
     capabilities: BackendCapabilities | null;
     /** The STRUCTURAL projection, not the object: §V178's gate (T272). */
@@ -405,18 +432,30 @@ export function useGraphCompile(
         errorCount: 0,
         animate: null,
         valuesOnly: false,
+        resetFeedback: false,
       };
     }
     const previous = lastCompile.current;
     const settingsKey = structuralSettingsKey(runtime.settings);
     const sameInputs =
       previous !== null &&
+      // T519 — belt and braces with the classifier below. Both gates that can reuse
+      // work (`valuesOnly`, and the editor-only plan reuse) hang off this flag, so
+      // pinning the document here means neither can span a load even if the
+      // classification is later softened.
+      previous.documentIdentity === runtime.documentIdentity &&
       previous.sinks === scheduledPreviews &&
       previous.capabilities === capabilities &&
       previous.settingsKey === settingsKey &&
       previous.catalogue === catalogueRevision;
     const change =
-      previous === null ? null : classifyGraphChange(previous.graph, graph, runtime.registry);
+      previous === null
+        ? null
+        : classifyGraphChange(
+            { identity: previous.documentIdentity, graph: previous.graph },
+            { identity: runtime.documentIdentity, graph },
+            runtime.registry,
+          );
     const valuesOnly = sameInputs && change !== null && isValuesOnly(change);
 
     // §V178 ENFORCED rather than documented. A non-structural settings edit bumps the
@@ -434,6 +473,8 @@ export function useGraphCompile(
         errorCount: previous.view.diagnostics.filter((entry) => entry.severity === "error").length,
         animate,
         valuesOnly: false,
+        // The plan is the one already installed, so there is nothing new to land on.
+        resetFeedback: false,
       };
     }
 
@@ -447,6 +488,7 @@ export function useGraphCompile(
     cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
     lastCompile.current = {
       graph,
+      documentIdentity: runtime.documentIdentity,
       sinks: scheduledPreviews,
       capabilities,
       settingsKey,
@@ -461,6 +503,10 @@ export function useGraphCompile(
       errorCount: diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
       animate,
       valuesOnly,
+      // False on the FIRST compile (`change === null`): there is no history yet, and
+      // asking the backend to clear a program it has not been given would be a call
+      // into nothing.
+      resetFeedback: change?.resetFeedback === true,
     };
   }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 

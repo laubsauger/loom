@@ -458,6 +458,10 @@ export function App({
     },
     pointer,
     valuesOnly: compile.valuesOnly,
+    // T519/B106 — a load is a discontinuity: the incoming plan must land on cleared
+    // temporal history, because the backend carries feedback pairs and rings over BY
+    // RESOURCE ID and two documents share those ids as soon as they share node names.
+    resetFeedback: compile.resetFeedback,
   });
 
   /**

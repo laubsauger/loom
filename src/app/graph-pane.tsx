@@ -112,7 +112,10 @@ function GraphPaneInner({
   previewSinks,
   valueHistory,
 }: GraphPaneProps) {
-  const { bus, invocation, nodeRuntime, registry, settings } = useAppRuntime();
+  // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
+  // from the runtime rather than threaded as a prop, because the runtime IS the loaded
+  // document: `adoptDocument` builds a new one per open (`app.tsx`, `app-runtime.ts`).
+  const { bus, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
   const flow = useReactFlow();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -140,6 +143,7 @@ function GraphPaneInner({
     ...(previewSinks === undefined ? {} : { previewSinks }),
     previewFps,
     previewLongEdge,
+    documentIdentity,
   });
 
   useNodePreviews({
@@ -156,6 +160,7 @@ function GraphPaneInner({
     getNodePosition,
     previewFps,
     previewLongEdge,
+    documentIdentity,
   });
 
   /**

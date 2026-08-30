@@ -39,6 +39,8 @@ export interface GraphBackgroundInputs {
   readonly previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void };
   readonly previewFps: number;
   readonly previewLongEdge: number;
+  /** Which DOCUMENT is open — see the same field on `NodePreviewInputs` (T519, B106). */
+  readonly documentIdentity: string;
 }
 
 /** The marked nodes, in document order — exported for the wiring test. */
@@ -81,6 +83,7 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
     const system: PreviewSystem = createPreviewSystem({ host, capacity: BACKGROUND_TILE_CAPACITY });
     const clock = liveClock();
     let lastDeviceGeneration = backend.status.deviceGeneration;
+    let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
     const tick = (): void => {
@@ -92,6 +95,11 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
       }
 
       const current = inputsRef.current;
+      // T519/B106 — the background tile is keyed by node id like every other preview.
+      if (current.documentIdentity !== lastDocumentIdentity) {
+        lastDocumentIdentity = current.documentIdentity;
+        system.reset();
+      }
       const marks = graphBackgroundMarks(current.graph, current.compiledOutputs);
       // Marking IS watching (T252): the refs keep their nodes materialized. The sink
       // store merges callers, so this coexists with the tile scheduler's own set.

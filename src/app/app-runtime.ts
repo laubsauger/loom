@@ -48,6 +48,24 @@ export interface AppRuntime {
   /** Actor + project identity stamped on every command (§V30). Stable per browser. */
   readonly invocation: InvocationContext;
   /**
+   * Which DOCUMENT this runtime holds — the boundary a load crosses (T519, B106).
+   *
+   * Deliberately NOT `project.projectId`, and the difference is the whole point. A
+   * project id names a FILE: reopening the same file, or opening a copy of it, yields
+   * the same id while the runtime, the store, the plan and every GPU resource behind it
+   * have been thrown away and rebuilt. This names the LOADED INSTANCE. It is minted in
+   * the constructor, and `createAppRuntime` is the only way a project is ever opened
+   * (`adoptDocument`/`startNewProject` in `app.tsx`; `GraphStore` has no `replace`), so
+   * a load cannot happen without establishing a new one — the property is enforced by
+   * where it is minted rather than by remembering to mint it (§V437).
+   *
+   * Opaque: compared for equality and never parsed. What consumes it is anything that
+   * caches by NODE ID — the recompile classifier (`classify-revision.ts`), the preview
+   * tile atlas, temporal history — because two documents share node ids as soon as they
+   * share node names, and `out` is in every shipped example.
+   */
+  readonly documentIdentity: string;
+  /**
    * The project's settings, LIVE (§V177, T272).
    *
    * A getter over the store, not a snapshot taken at construction. It used to be the
@@ -251,6 +269,9 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     nodeRuntime,
     telemetry,
     invocation,
+    // T519: per CONSTRUCTION, not per project id — see `documentIdentity` above. Random
+    // rather than a counter so two runtimes built in two windows cannot collide.
+    documentIdentity: randomId("document"),
     get settings() {
       return bus.store.getSettings();
     },

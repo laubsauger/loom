@@ -159,6 +159,7 @@ async function mount(operations: GraphPatchOperation[], view: View = { zoom: 1, 
       getNodePosition: (nodeId: NodeId) => positions.get(nodeId),
       previewFps: 20,
       previewLongEdge: 192,
+      documentIdentity: "document-under-test",
     });
     return compile;
   });
