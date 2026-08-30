@@ -72,7 +72,6 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
   const dirty = new Set<NodeId>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastFlush = Number.NEGATIVE_INFINITY;
-  let disposed = false;
 
   function flush(): void {
     timer = null;
@@ -87,7 +86,7 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
 
   function schedule(nodeId: NodeId): void {
     dirty.add(nodeId);
-    if (disposed || timer !== null) return;
+    if (timer !== null) return;
     timer = setTimeout(flush, Math.max(0, intervalMs - (now() - lastFlush)));
   }
 
@@ -174,8 +173,19 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
       }
     },
 
+    /**
+     * NOT a latch (B96). The store is created by a []-memo and disposed by an effect
+     * cleanup, and under StrictMode's mount → probe-cleanup → remount the effect re-runs
+     * while the memo does not — so a `disposed = true` here left the ONE instance the
+     * app will ever hold permanently mute: pushes kept landing in the rings while
+     * `schedule()` silently refused, every value plot froze, and a click's re-render
+     * (which reads the snapshot directly) was the only thing that ever updated —
+     * §V222's silent rider, measured live as the owner's "CHOP nodes only update when
+     * i click them". Cancelling the pending tick and dropping the data is the whole of
+     * a real teardown: after a true unmount nothing pushes again, so nothing re-arms,
+     * and the worst case is one stray coalescing tick flushing over zero listeners.
+     */
     dispose() {
-      disposed = true;
       if (timer !== null) clearTimeout(timer);
       timer = null;
       rings.clear();

@@ -52,6 +52,46 @@ describe("the window keeps the last N frames, oldest first", () => {
   });
 });
 
+/**
+ * B96 — dispose is a TEARDOWN, not a latch.
+ *
+ * The app creates this store in a []-memo and disposes it in an effect cleanup. Under
+ * StrictMode's mount → probe-cleanup → remount, the cleanup runs and the memo does NOT,
+ * so the one instance the app will ever hold took the dispose and then lived a full
+ * session. With `disposed = true` latched, pushes kept landing while schedule() refused:
+ * every value plot froze, and only a click's re-render (a direct snapshot read) updated
+ * anything — the owner's "CHOP nodes only update when i click them", measured live.
+ */
+describe("dispose survives StrictMode's probe (B96)", () => {
+  it("a store disposed once still notifies for pushes that come after", () => {
+    const store = createValueHistoryStore({ frames: 4, now });
+    store.dispose(); // the probe-cleanup
+    let notified = 0;
+    store.subscribe("a", () => {
+      notified += 1;
+    });
+    store.push("a", { value: 0.5 });
+    advance(200);
+    expect(notified).toBeGreaterThan(0);
+    expect(store.get("a").latest).toEqual({ value: 0.5 });
+    store.dispose();
+  });
+
+  it("dispose still cancels the pending tick and drops the window", () => {
+    const store = createValueHistoryStore({ frames: 4, now });
+    let notified = 0;
+    store.subscribe("a", () => {
+      notified += 1;
+    });
+    store.push("a", { value: 1 });
+    store.dispose();
+    advance(500);
+    // The tick armed by the push was cancelled and the data is gone.
+    expect(notified).toBe(0);
+    expect(store.get("a")).toMatchObject({ channels: [], series: [], latest: null });
+  });
+});
+
 describe("multi-channel nodes keep their channels apart", () => {
   it("retains one series per channel, in publication order", () => {
     const store = createValueHistoryStore({ frames: 4, now });
