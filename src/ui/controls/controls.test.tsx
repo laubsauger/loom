@@ -499,3 +499,27 @@ describe("expression grammar refusals teach the boundary (T370)", () => {
     );
   });
 });
+
+/**
+ * T543 — the asset row gives the FILENAME the width. The session-only caveat is true
+ * and worth saying ONCE — in the tooltip, which carries it at every width — not as row
+ * chrome that fought the name and the button until all three ellipsized.
+ */
+describe("asset row layout (T543)", () => {
+  it("shows no inline session caveat; the tooltip carries it", () => {
+    render(
+      <ParameterControl
+        parameterKey="file"
+        definition={{ type: "asset", label: "Audio file", kind: "audio" }}
+        value={"blob:x#track.wav"}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/this session only/)).toBeNull();
+    const row = screen.getByRole("group", { name: "Audio file" });
+    expect(row.getAttribute("title")).toContain("this session only");
+    expect(row.getAttribute("title")).toContain("track.wav");
+    // The filename is rendered in full for the row to ellipsize by CSS, never pre-cut.
+    expect(screen.getByText("track.wav")).toBeDefined();
+  });
+});

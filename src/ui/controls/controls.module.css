@@ -870,12 +870,4 @@
   flex: 0 0 auto;
 }
 
-/* The caveat is TRUE and secondary: it survives while there is room and gets out of the
-   way when there is not. The row's `title` carries it at every width. */
-.assetCaveat {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+

@@ -98,9 +98,11 @@ export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
       aria-label={label}
       role="group"
       /*
-        The full name AND the session-only caveat live here, because the row cannot show
-        both at any width a sidebar actually is. Nothing is lost when the caption is the
-        first thing to give way.
+        T543: the session-only caveat lives HERE ALONE. Inline it fought the filename
+        for one row's width and all three parts ellipsized ("no audio bo… [choose…] ·
+        this session …") — the same crammed-chrome disease T498 treated. The caveat is
+        true and worth saying once; the tooltip says it at every width, and the
+        filename gets the row.
       */
       title={
         value === null || value === ""
@@ -122,7 +124,6 @@ export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
           >
             choose…
           </button>
-          <span className={cx(styles.meta, styles.assetCaveat)}>· this session only</span>
           <input
             ref={input}
             type="file"
