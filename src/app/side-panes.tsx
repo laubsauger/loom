@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
@@ -19,7 +19,10 @@ import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
 import { usePixelReadout } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
 import type { PixelProbe } from "@runtime/previews/index.ts";
+import { Button } from "@ui/primitives/button.tsx";
+import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { useAppRuntime } from "./app-context.ts";
+import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -300,7 +303,7 @@ export function ViewerPane({
   probe,
   readoutOptions,
 }: ViewerPaneProps) {
-  const { registry } = useAppRuntime();
+  const { bus, invocation, registry } = useAppRuntime();
   const outputs = useMemo(() => compiled?.outputs ?? [], [compiled]);
 
   const sink = useMemo(() => {
@@ -463,6 +466,41 @@ export function ViewerPane({
     clear();
   }, [clear, selectedRef]);
 
+  /**
+   * Fullscreen (T394, §V307).
+   *
+   * The SURFACE box, not the canvas: the canvas is sized to whatever box it is laid out
+   * in, so filling the screen with the box is what gives the picture the whole screen and
+   * keeps its letterbox. The element is PUBLISHED to a bus command rather than acted on
+   * from here, so the button below, `mod+shift+f` and the palette are one code path
+   * (§V29) — and the key is a rebindable row in the default keymap, not an `if` in this
+   * component (§V52, §V78).
+   */
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const surface = useCallback(() => surfaceRef.current, []);
+  useFullscreenSurface(bus, surface);
+
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const element = surfaceRef.current;
+    if (element === null) return;
+    // Escape, F11 and the browser's own chrome all leave fullscreen without asking us, so
+    // the label follows the EVENT and never the click — otherwise the first Escape leaves
+    // a button that says "leave fullscreen" over a window that already did.
+    //
+    // Listening on the ELEMENT rather than on a document: `fullscreenchange` is fired at
+    // the element on entry and on exit, and a listener on the element travels with it when
+    // the pane is floated into a child window (§V97, T393). A document captured at mount
+    // would be the wrong one after that move.
+    const sync = () => setFullscreen(element.ownerDocument.fullscreenElement === element);
+    element.addEventListener("fullscreenchange", sync);
+    return () => element.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    void bus.execute("view.toggleFullscreen", {}, invocation);
+  }, [bus, invocation]);
+
   return (
     <div className={styles.viewer} {...{ [KEYMAP_CONTEXT_ATTRIBUTE]: "viewer" }}>
       <div className={styles.bar}>
@@ -485,9 +523,21 @@ export function ViewerPane({
             </option>
           ))}
         </select>
+        {/* §V90: the hint is carried by the label, on hover and on focus — no permanent
+            caption in the bar. */}
+        <Tooltip label={fullscreen ? "Leave fullscreen — Escape also works" : "Fullscreen"}>
+          <Button
+            aria-label={fullscreen ? "Leave fullscreen" : "Fullscreen"}
+            aria-pressed={fullscreen}
+            data-testid="viewer-fullscreen"
+            onClick={toggleFullscreen}
+          >
+            <span aria-hidden="true">{fullscreen ? "⤡" : "⤢"}</span>
+          </Button>
+        </Tooltip>
       </div>
 
-      <div className={styles.surface} data-testid="viewer-surface">
+      <div ref={surfaceRef} className={styles.surface} data-testid="viewer-surface">
         {selected === null ? (
           <p className={styles.note}>No output</p>
         ) : (

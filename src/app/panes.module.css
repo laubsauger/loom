@@ -218,6 +218,19 @@
   overflow: hidden;
 }
 
+/*
+  Fullscreen (T394). The UA sizes a fullscreen element to the screen, but the aspect box
+  and the hairline above are the pane's chrome and would letterbox the picture a second
+  time inside a screen-sized frame. Dropped for the duration; the canvas keeps its own
+  `object-fit`-free 100%/100% and the runtime keeps blitting into the same surface.
+*/
+.surface:fullscreen {
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  background: var(--bg-sunken);
+}
+
 .canvas {
   display: block;
   width: 100%;

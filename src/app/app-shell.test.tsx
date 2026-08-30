@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -388,6 +388,59 @@ describe("V97 — floating a pane into its own window", () => {
 
     expect(readLayout(storage).floating).toEqual([]);
     expect(zoneElement("bottom").contains(screen.getByText("editor slot"))).toBe(true);
+  });
+
+  /**
+   * B51 / §V334 — the float survives StrictMode's DOUBLE MOUNT.
+   *
+   * The app runs under `<StrictMode>` (main.tsx), so every newly mounted effect runs
+   * mount → cleanup → mount. Two individually-correct decisions collided there: the
+   * window is opened by NAME so re-floating focuses rather than stacks, and the close is
+   * DEFERRED to a microtask so the dock can adopt the pane back in the same commit. Mount
+   * B reuses the window mount A opened, and cleanup A's queued close then killed it —
+   * the flash the owner saw.
+   *
+   * The fake `open` here reuses by name exactly the way the browser does; without that it
+   * is not this bug. A single-mount test passes against the broken code, which is why
+   * this shipped.
+   */
+  it("keeps the window mount B adopted when StrictMode's cleanup A fires late", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const byName = new Map<string, ReturnType<typeof fakeWindow>>();
+    const requested: string[] = [];
+    // What `window.open("", name)` actually does: a live window with that name is
+    // REUSED, and only a missing or closed one is created fresh.
+    const open = ({ name }: { name: string }) => {
+      requested.push(name);
+      const existing = byName.get(name);
+      if (existing !== undefined && !existing.closed) return existing;
+      const created = fakeWindow();
+      byName.set(name, created);
+      return created;
+    };
+
+    render(
+      <StrictMode>
+        <AppShell storage={storage} shaderEditor={<Probe />} openPaneWindow={open} />
+      </StrictMode>,
+    );
+
+    const probe = screen.getByTestId("probe");
+    await movePaneVia(user, "shader editor", "Float in its own window");
+    // The deferred close is a microtask; let it land before asserting.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(requested.length, "StrictMode did not double-mount the float").toBeGreaterThan(1);
+    const child = byName.get("shaderloom-shader");
+    expect(child, "no window was opened for the floated pane").toBeDefined();
+    expect(child?.closed, "cleanup A closed the window mount B is using").toBe(false);
+    // And the pane really is living in it — a window that is merely open is not enough.
+    expect(child?.document.body.contains(probe)).toBe(true);
+    expect(readLayout(storage).floating).toEqual(["shader"]);
   });
 });
 

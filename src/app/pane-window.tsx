@@ -77,6 +77,23 @@ function copyStyles(from: Document, to: Document): void {
   }
 }
 
+/**
+ * Who currently owns each window NAME (§V334, B51).
+ *
+ * The two decisions above are each correct and together were fatal. `window.open` REUSES
+ * a window by name, which is what makes re-floating focus the existing window instead of
+ * stacking a new one; the close below is DEFERRED so the dock can adopt the pane back in
+ * the same commit. Under `StrictMode` (main.tsx) an effect runs mount → cleanup → mount,
+ * so mount B is handed back the very window mount A opened — and cleanup A's queued close
+ * then killed it. That was the flash-and-vanish.
+ *
+ * So a cleanup closes only while it still HOLDS the name. Not a `child.closed` check
+ * (mount B's window is wide open — that is the problem) and not a timer (which only
+ * changes which race is lost). Module level because the ownership outlives any one
+ * component instance, which is exactly the thing being guarded.
+ */
+const windowOwners = new Map<string, symbol>();
+
 export interface FloatingPaneProps {
   readonly paneId: PaneId;
   readonly title: string;
@@ -102,7 +119,8 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
 
   useEffect(() => {
     const opener = open ?? openBrowserPaneWindow;
-    const child = opener({ name: `shaderloom-${paneId}`, title: `${title} — Shaderloom` });
+    const name = `shaderloom-${paneId}`;
+    const child = opener({ name, title: `${title} — Shaderloom` });
     if (child === null) {
       // A blocked popup must not leave the pane in limbo with nowhere to render — and
       // must not look like a button that does nothing either.
@@ -110,6 +128,11 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
       closeRef.current(paneId);
       return;
     }
+
+    // Claim the name. Whatever mount claimed it before this one no longer owns it, so its
+    // pending close becomes a no-op instead of landing on the window this mount now uses.
+    const token = Symbol(name);
+    windowOwners.set(name, token);
 
     const doc = child.document;
     copyStyles(document, doc);
@@ -133,7 +156,13 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
       // later in this same commit, which runs before any microtask. Closing the window
       // synchronously here would tear the child document down underneath that move and
       // cost the pane its scroll position and focus.
-      queueMicrotask(() => child.close());
+      queueMicrotask(() => {
+        // ...but by the time it runs, a newer mount may hold the name and be using this
+        // very window (§V334). Close only what is still ours.
+        if (windowOwners.get(name) !== token) return;
+        windowOwners.delete(name);
+        child.close();
+      });
     };
   }, [open, paneId, title]);
 

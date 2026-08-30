@@ -342,6 +342,19 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     label: "Step one frame",
   },
   {
+    // Fullscreen the viewer (T394). `global`, not `viewer`: filling the screen with the
+    // render is something you ask for while working in the graph or the shader editor,
+    // and a shortcut that only fires once the picture already has focus is the one you
+    // cannot use. `mod+shift+f` because the whole `f` family is taken — TD's `F`/`f`
+    // frame the graph, `mod+f` finds in it — and this is the free key one modifier out.
+    id: "view.fullscreen",
+    keys: "mod+shift+f",
+    context: "global",
+    command: "view.toggleFullscreen",
+    label: "Fullscreen viewer",
+    description: "Fill the screen with the viewer's output. Escape returns.",
+  },
+  {
     id: "runtime.resetFeedback",
     keys: "mod+shift+r",
     context: "global",
