@@ -155,11 +155,23 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
         absTimeSeconds: absSeconds,
       };
     },
+    /**
+     * T467 — the ONE caller with the right to zero the absolute clock: a RENDER. A take
+     * is a fresh performance — the same project rendered on two different days must
+     * yield the same abstime and therefore the same bytes (T431's replay contract) —
+     * while the LIVE clock keeps counting through every seek and lap (T461). That is
+     * why this is a separate verb rather than a flag on `reset`: the live paths cannot
+     * reach it by accident.
+     */
+    resetAbsolute(): void {
+      absFrameIndex = 0;
+      absSeconds = 0;
+    },
     reset(nextSeed?: number): void {
       // T461 — `absFrameIndex` and `absSeconds` are NOT cleared here, and that is the
       // point: a seek (which is what a lap is, §V170) rewinds the timeline and leaves the
       // absolute clock running, so `abstime` is the one number an expression can lean on
-      // across a loop boundary.
+      // across a loop boundary. A RENDER zeroes it through `resetAbsolute` (T467).
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = 0;
       lastMs = null;

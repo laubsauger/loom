@@ -150,6 +150,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
               seek: transport.seek,
               stepOnce: transport.stepOnce,
               latestFrame: live.latestFrame,
+              resetAbsoluteClock: transport.resetAbsoluteClock,
             },
           });
           // The report, not the byte count, decides whether this take is what was asked

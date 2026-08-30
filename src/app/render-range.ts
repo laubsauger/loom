@@ -91,6 +91,8 @@ export interface RangeTransport {
   seek(frameIndex: number): number;
   stepOnce(): ReturnType<TransportHandlers["stepOnce"]>;
   latestFrame(): ReturnType<TransportHandlers["stepOnce"]>;
+  /** T467: a take is a fresh performance — the absolute clock starts at zero. */
+  resetAbsoluteClock(): void;
 }
 
 export interface RenderFrameRangeInputs {
@@ -134,6 +136,15 @@ export async function renderFrameRange(inputs: RenderFrameRangeInputs): Promise<
   if (transport.isPlaying()) transport.togglePlay();
 
   await recorder.start();
+  /*
+   * T467 — A TAKE IS A FRESH PERFORMANCE. `absFrameIndex` counts from transport
+   * creation, so without this a project rendered on two different days would carry a
+   * different abstime into every frame — and different PIXELS wherever an expression or
+   * shader reads it, breaking "the same project renders the same file" (T431). Zeroed
+   * before the seek so the replayed frames 0..start carry abs 0..start, deterministic.
+   * The LIVE clock is untouched: only a render resets it (T461's rule kept whole).
+   */
+  transport.resetAbsoluteClock();
   // §V170 — the in point's true state, replayed rather than jumped to. The seek RENDERS
   // that frame, so the first thing captured is the frame already on the GPU; stepping
   // first instead is the off-by-one described above.

@@ -76,6 +76,11 @@ export interface TransportHandlers {
   stepOnce(): FrameInputs | null;
   /** Replays from frame 0 to `frameIndex`, clearing temporal state first (§V170). */
   seek(frameIndex: number): number;
+  /**
+   * T467: zero the ABSOLUTE clock — the render path's verb, never a live control's.
+   * A take is a fresh performance; abstime inside a render counts from the take.
+   */
+  resetAbsoluteClock(): void;
   /** T433 — is playback cycling the document's frame range? */
   isLooping(): boolean;
   /** Flips looping. Returns the resulting state. */

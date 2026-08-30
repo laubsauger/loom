@@ -57,6 +57,10 @@ function fakeTransport(): RangeTransport & { readonly rendered: number[]; playin
     togglePlay: () => {
       state.playing = !state.playing;
     },
+    // T467: the take's fresh-performance verb — recorded so a test can pin the ORDER.
+    resetAbsoluteClock: () => {
+      rendered.push(-1);
+    },
     seek: (frameIndex: number) => {
       state.current = frameIndex;
       rendered.push(frameIndex);
@@ -161,9 +165,12 @@ describe("renderFrameRange covers exactly the range (T433)", () => {
       transport,
       encoder: fakeEncoder(),
     });
-    // The seek is the FIRST thing rendered. Starting from wherever the playhead happened
-    // to be would carry a feedback graph's history into the take.
-    expect(transport.rendered[0]).toBe(3);
+    // T467 first, THEN the seek: the absolute clock zeroes before the replay, so the
+    // replayed frames 0..start carry abs 0..start — a take is a fresh performance, and
+    // the same project renders the same bytes on any day. Then §V170: the seek is the
+    // first thing rendered, so a feedback graph's history cannot leak into the take.
+    expect(transport.rendered[0]).toBe(-1); // the fake records resetAbsoluteClock as -1
+    expect(transport.rendered[1]).toBe(3);
   });
 
   it("pauses a running loop, so no frame slips between the steps it takes", async () => {

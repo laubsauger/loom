@@ -50,6 +50,9 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = startFrame;
     },
+    /** T467: an offline sequence never carried session age to shed — the frames above
+     *  publish no abs pair, so consumers fall back to the timeline clock (T461). */
+    resetAbsolute(): void {},
     /**
      * T464 — wrap the timeline without starting anything over.
      *

@@ -423,6 +423,9 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         setPlaying(live.running);
         return last?.frame.frameIndex ?? -1;
       },
+      // T467: the RENDER path's verb. The live paths never call this — a seek or a lap
+      // leaves the absolute clock growing (T461); only a take starts its clock at zero.
+      resetAbsoluteClock: () => transport.resetAbsolute(),
       isLooping: () => loopingRef.current,
       toggleLoop: () => {
         loopingRef.current = !loopingRef.current;

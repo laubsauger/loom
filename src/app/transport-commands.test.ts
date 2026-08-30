@@ -27,6 +27,7 @@ function fakeHandlers(): TransportHandlers & {
     togglePlay: () => {
       state.playing = !state.playing;
     },
+    resetAbsoluteClock: () => {},
     seek: (frameIndex: number) => frameIndex,
     stepFrame: (frames: number) => {
       state.stepped.push(frames);

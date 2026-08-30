@@ -198,3 +198,22 @@ describe("liveClock.wrapTo (T464)", () => {
     expect(after).toBeGreaterThan(before);
   });
 });
+
+describe("T467 — only a RENDER zeroes the absolute clock", () => {
+  it("resetAbsolute starts the show clock over; reset still leaves it growing", () => {
+    const clock = liveClock({ fps: 60 });
+    for (let index = 0; index < 10; index += 1) clock.next();
+
+    // T461, restated as the contrast: a seek's reset keeps the clock counting…
+    clock.reset();
+    expect(clock.next().absFrameIndex).toBe(10);
+
+    // …and a take's resetAbsolute is the one verb that starts it over — the fresh
+    // performance rule: same project, any day, same abstime, same bytes.
+    clock.resetAbsolute();
+    clock.reset();
+    const fresh = clock.next();
+    expect(fresh.absFrameIndex).toBe(0);
+    expect(fresh.absTimeSeconds).toBe(0);
+  });
+});

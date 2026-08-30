@@ -152,6 +152,13 @@ export interface TransportSource {
    */
   reset(seed?: number): void;
   /**
+   * T467: zero the ABSOLUTE clock (T461) — the render path's verb, and only its. A take
+   * is a fresh performance: the same project rendered on two different days must carry
+   * the same abstime into every frame, or expressions reading it change the pixels.
+   * The live clock never calls this; seeks and laps leave abstime growing.
+   */
+  resetAbsolute(): void;
+  /**
    * WRAP the timeline to a frame, keeping everything else running (T464).
    *
    * **A LOOP IS NOT A SEEK.** This is the distinction the transport was missing, and the
