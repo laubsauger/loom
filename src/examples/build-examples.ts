@@ -1,10 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { EXAMPLES_DIR } from "./catalogue.ts";
+import { EXAMPLES_DIR, STARTER_COMPONENTS_DIR } from "./catalogue.ts";
+import { buildStarterComponentFiles } from "./component-files.ts";
 import { buildExampleFiles } from "./example-files.ts";
 
 /**
- * Regenerates `examples/*.loom.json` (T153-T156).
+ * Regenerates `examples/*.loom.json` and `examples/components/*.loom.json` (T153-T156, T190).
  *
  *   node --experimental-strip-types src/examples/build-examples.ts
  *
@@ -17,6 +18,13 @@ import { buildExampleFiles } from "./example-files.ts";
 
 for (const file of buildExampleFiles()) {
   const path = join(EXAMPLES_DIR, file.fileName);
+  writeFileSync(path, file.text, "utf8");
+  console.log(`wrote ${path}`);
+}
+
+// Components are authored by running the real authoring commands, so this half is async.
+for (const file of await buildStarterComponentFiles()) {
+  const path = join(STARTER_COMPONENTS_DIR, file.fileName);
   writeFileSync(path, file.text, "utf8");
   console.log(`wrote ${path}`);
 }

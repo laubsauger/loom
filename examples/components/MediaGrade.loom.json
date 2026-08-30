@@ -1,0 +1,307 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "mediaGrade",
+        "description": "Range, tone and a legal-range tail — the grade you reach for on any input.",
+        "graph": {
+          "edges": {
+            "e-range-tone": {
+              "id": "e-range-tone",
+              "source": {
+                "nodeId": "range",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tone",
+                "portId": "input"
+              }
+            },
+            "e-tone-legal": {
+              "id": "e-tone-legal",
+              "source": {
+                "nodeId": "tone",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "legal",
+                "portId": "input"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "legal": {
+              "definitionVersion": 1,
+              "id": "legal",
+              "parameters": {
+                "high": 1,
+                "low": 0,
+                "mode": "clamp",
+                "steps": 4
+              },
+              "position": {
+                "x": 260,
+                "y": 0
+              },
+              "type": "limit"
+            },
+            "range": {
+              "definitionVersion": 1,
+              "id": "range",
+              "parameters": {
+                "blacklevel": 0,
+                "brightness": 1,
+                "contrast": 1,
+                "gamma1": 1,
+                "opacity": 1,
+                "whitelevel": 1
+              },
+              "position": {
+                "x": -260,
+                "y": 0
+              },
+              "type": "level"
+            },
+            "tone": {
+              "definitionVersion": 1,
+              "id": "tone",
+              "parameters": {
+                "hueoffset": 0,
+                "saturation": 1,
+                "value": 1
+              },
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "type": "hsv"
+            }
+          },
+          "revision": 0
+        },
+        "inputs": [
+          {
+            "externalId": "input",
+            "label": "Input",
+            "nodeId": "range",
+            "portId": "input"
+          }
+        ],
+        "name": "MediaGrade",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "Out",
+            "nodeId": "legal",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0,
+              "label": "Black Level",
+              "max": 2,
+              "min": -1,
+              "type": "number"
+            },
+            "key": "blacklevel",
+            "targets": [
+              {
+                "key": "blacklevel",
+                "nodeId": "range"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "label": "White Level",
+              "max": 4,
+              "min": -1,
+              "type": "number"
+            },
+            "key": "whitelevel",
+            "targets": [
+              {
+                "key": "whitelevel",
+                "nodeId": "range"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "label": "Gamma",
+              "max": 8,
+              "min": 0.01,
+              "type": "number"
+            },
+            "key": "gamma",
+            "targets": [
+              {
+                "key": "gamma1",
+                "nodeId": "range"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "label": "Contrast",
+              "max": 8,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "contrast",
+            "targets": [
+              {
+                "key": "contrast",
+                "nodeId": "range"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "label": "Saturation",
+              "max": 4,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "saturation",
+            "targets": [
+              {
+                "key": "saturation",
+                "nodeId": "tone"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "label": "Hue Offset",
+              "max": 180,
+              "min": -180,
+              "type": "number",
+              "unit": "degrees"
+            },
+            "key": "hue",
+            "targets": [
+              {
+                "key": "hueoffset",
+                "nodeId": "tone"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "ed_mediaGrade2": {
+        "id": "ed_mediaGrade2",
+        "source": {
+          "nodeId": "plate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_mediaGrade1",
+          "portId": "input"
+        }
+      },
+      "ed_mediaGrade3": {
+        "id": "ed_mediaGrade3",
+        "source": {
+          "nodeId": "nd_mediaGrade1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "nd_mediaGrade1": {
+        "definitionVersion": 1,
+        "id": "nd_mediaGrade1",
+        "parameters": {},
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "component:mediaGrade@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 520,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "plate": {
+        "definitionVersion": 1,
+        "id": "plate",
+        "parameters": {
+          "color1": [
+            0.05,
+            0.07,
+            0.12,
+            1
+          ],
+          "color2": [
+            0.9,
+            0.82,
+            0.6,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            8,
+            5
+          ]
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "type": "checker"
+      }
+    },
+    "revision": 2
+  },
+  "name": "MediaGrade",
+  "projectId": "component-mediaGrade",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

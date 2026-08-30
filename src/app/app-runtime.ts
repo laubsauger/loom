@@ -9,6 +9,8 @@ import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { createComponentSystem, registerComponentCommands } from "@domain/components/index.ts";
+import { installStarterComponents } from "@editor/component/index.ts";
+import type { StarterSetInstall } from "@editor/component/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { createTelemetryHub } from "@runtime/telemetry/index.ts";
 import type { TelemetryHub } from "@runtime/telemetry/index.ts";
@@ -56,6 +58,14 @@ export interface AppRuntime {
    * §V69). Reported by the loader, kept verbatim, and NEVER given a control to edit.
    */
   readonly unknownParameters: readonly UnknownParameter[];
+  /**
+   * The shipped starter components, installed at boot (T190, §V94, §V193).
+   *
+   * A field rather than a fire-and-forget call because a shipped file that fails to
+   * install has to be SAYABLE. `component-sync.test.ts` gates the files, so a diagnostic
+   * here means the build is broken — which is exactly when silence is worst (§V8).
+   */
+  readonly starterComponents: StarterSetInstall;
   /** The document as it would be saved right now: `project` plus the live graph. */
   projectDocument(): ProjectDocument;
   dispose(): void;
@@ -166,6 +176,11 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   // nodes plus Noise. This one import is what makes them reachable from the library.
   const nodeRegistry = createNodeRegistry(allNodeDefinitions).view();
   const { components, nodes: registry } = createComponentSystem(nodeRegistry);
+  // Installed BEFORE the document's own library, so a project that carries its own copy
+  // of a starter component (an older version, or an edited one) replaces the shipped one
+  // rather than the other way round: an instance is pinned to the definition it was saved
+  // against (§V84), and the document is the authority on that.
+  const starterComponents = installStarterComponents(components);
   const initialGraph: GraphDocument | undefined = options.document?.graph;
   const { bus } = createDomainBus({
     registry,
@@ -210,6 +225,7 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     settings: project.settings,
     project,
     unknownParameters: options.unknownParameters ?? [],
+    starterComponents,
     projectDocument() {
       return { ...project, graph: bus.store.getGraph() };
     },

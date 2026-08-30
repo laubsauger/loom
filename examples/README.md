@@ -38,6 +38,30 @@ step — there is no list to add it to.
 - `temporal.test.ts` — §V22 for every example that closes a loop.
 - `concepts.test.ts` — the specific claim each example's doc makes.
 - `sync.test.ts` — these files are byte-identical to what the app's own save path writes.
+- `component-sync.test.ts` — the same for `components/`, plus the §V89 gate on each.
+
+## `components/` — the starter component set
+
+`components/` holds the shipped components (T190, §V94): FeedbackEcho, Bloom,
+Kaleidoscope, DisplacementStack, MediaGrade. They are a **different library with a
+different verb** — you *instantiate* a component, you *open* an example (§V93) — which is
+why they sit in a subdirectory: `listExamples` and the browser's example glob both read
+this directory non-recursively, so a component can never appear as a project to open.
+
+Each file is a whole project: the definition under `componentLibrary`, plus a graph that
+instantiates it between a source and an Output, so the shipped component comes with a
+working demonstration of itself.
+
+§V94 says a shipped component must be the same `GraphComponentDefinition` a user's own save
+produces. So these are not constructed. `src/examples/starter-components.ts` drives the
+real authoring commands — `component.saveSelection` over a selection in a real document,
+then `component.publishParameter` inside a component session — and the result is saved
+through `buildProjectFile`. Four of the five are authored out of the examples above,
+because E1's echo loop and E4's threshold-blur-add already *are* the structures the
+components are meant to be.
+
+`component-sync.test.ts` regenerates the set and compares byte for byte, then loads,
+installs and compiles every file the way §V89 gates an example.
 
 ## Editing an example
 
@@ -49,6 +73,9 @@ node --experimental-strip-types src/examples/build-examples.ts
 
 The files are written by `buildProjectFile`, the app's real save path, so a shipped example
 can never be a shape the app would not itself produce. `sync.test.ts` fails if the two drift.
+
+The same command regenerates `components/`; edit `src/examples/starter-components.ts` for
+those.
 
 ## What the gate cannot check
 

@@ -1,0 +1,321 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "kaleidoscope",
+        "description": "Fold, mirror-tile and spin — three extend modes doing one job.",
+        "graph": {
+          "edges": {
+            "e-facets-spin": {
+              "id": "e-facets-spin",
+              "source": {
+                "nodeId": "facets",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "spin",
+                "portId": "input"
+              }
+            },
+            "e-fold-facets": {
+              "id": "e-fold-facets",
+              "source": {
+                "nodeId": "fold",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "facets",
+                "portId": "input"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "facets": {
+              "definitionVersion": 1,
+              "id": "facets",
+              "parameters": {
+                "mirrorx": true,
+                "mirrory": true,
+                "offset": [
+                  0.15,
+                  0.05
+                ],
+                "repeat": [
+                  3,
+                  3
+                ]
+              },
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "type": "tile"
+            },
+            "fold": {
+              "definitionVersion": 1,
+              "id": "fold",
+              "parameters": {
+                "aspectcorrect": true,
+                "extend": "mirror",
+                "p": [
+                  0,
+                  0
+                ],
+                "r": 30,
+                "s": [
+                  0.5,
+                  0.5
+                ],
+                "t": [
+                  0.12,
+                  0
+                ],
+                "xord": "srt"
+              },
+              "position": {
+                "x": -260,
+                "y": 0
+              },
+              "type": "transform"
+            },
+            "spin": {
+              "definitionVersion": 1,
+              "id": "spin",
+              "parameters": {
+                "aspectcorrect": true,
+                "extend": "repeat",
+                "p": [
+                  0,
+                  0
+                ],
+                "r": -15,
+                "s": [
+                  1,
+                  1
+                ],
+                "t": [
+                  0,
+                  0
+                ],
+                "xord": "rst"
+              },
+              "position": {
+                "x": 260,
+                "y": 0
+              },
+              "type": "transform"
+            }
+          },
+          "revision": 0
+        },
+        "inputs": [
+          {
+            "externalId": "input",
+            "label": "Input",
+            "nodeId": "fold",
+            "portId": "input"
+          }
+        ],
+        "name": "Kaleidoscope",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "Out",
+            "nodeId": "spin",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": [
+                3,
+                3
+              ],
+              "label": "Segments",
+              "max": 64,
+              "min": 0.01,
+              "size": 2,
+              "type": "vector"
+            },
+            "key": "segments",
+            "targets": [
+              {
+                "key": "repeat",
+                "nodeId": "facets"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 30,
+              "label": "Fold Angle",
+              "max": 360,
+              "min": -360,
+              "type": "number",
+              "unit": "degrees"
+            },
+            "key": "fold",
+            "targets": [
+              {
+                "key": "r",
+                "nodeId": "fold"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": [
+                0.5,
+                0.5
+              ],
+              "label": "Zoom",
+              "max": 8,
+              "min": -8,
+              "size": 2,
+              "type": "vector"
+            },
+            "key": "zoom",
+            "targets": [
+              {
+                "key": "s",
+                "nodeId": "fold"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": -15,
+              "label": "Spin",
+              "max": 360,
+              "min": -360,
+              "type": "number",
+              "unit": "degrees"
+            },
+            "key": "spin",
+            "targets": [
+              {
+                "key": "r",
+                "nodeId": "spin"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "ed_kaleidoscope2": {
+        "id": "ed_kaleidoscope2",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_kaleidoscope1",
+          "portId": "input"
+        }
+      },
+      "ed_kaleidoscope3": {
+        "id": "ed_kaleidoscope3",
+        "source": {
+          "nodeId": "nd_kaleidoscope1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "nd_kaleidoscope1": {
+        "definitionVersion": 1,
+        "id": "nd_kaleidoscope1",
+        "parameters": {},
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "component:kaleidoscope@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 520,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0.03,
+            0.05,
+            0.12,
+            1
+          ],
+          "center": [
+            0.32,
+            0.42
+          ],
+          "fillcolor": [
+            0.95,
+            0.4,
+            0.15,
+            1
+          ],
+          "mode": "distance",
+          "radius": [
+            0.18,
+            0.11
+          ],
+          "softness": 0.05
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "resolution": {
+          "height": 2048,
+          "mode": "fixed",
+          "width": 2048
+        },
+        "type": "circle"
+      }
+    },
+    "revision": 2
+  },
+  "name": "Kaleidoscope",
+  "projectId": "component-kaleidoscope",
+  "schemaVersion": 1,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
