@@ -68,8 +68,12 @@ function errorsOf(diagnostics: ReadonlyArray<{ severity: string; message: string
   return diagnostics.filter((d) => d.severity === "error").map((d) => d.message);
 }
 
-/** Nodes whose entire compiled output is a pointset edge claim — no passes (T302). */
-const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology"]);
+/**
+ * Nodes whose entire compiled output is an EDGE PAYLOAD — no passes. pointTopology's
+ * claim rewrite (T302), and the scene THINGS (T447): a camera, a light or a geometry
+ * publishes resolved CPU values the Render consumes; the render pass is the Render's.
+ */
+const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "geometry"]);
 
 describe("the catalogue compiles through the real compiler", () => {
   it("registers the whole catalogue in one registry with no type collisions", () => {
@@ -460,14 +464,19 @@ function uniformStructMembers(shader: string, binding: string): string[] {
  */
 function minimalGraphFor(definition: NodeDefinition): GraphDocument {
   const nodes: Record<string, GraphNode> = {
-    subject: node("subject", definition.type),
+    subject: { ...node("subject", definition.type), label: "subject1" },
   };
   // A node WITH outputs is observed through an Output sink; an output-less node
   // (Analyze, §V144) declares `sink: true` and observes itself.
   if (definition.outputs.length > 0) nodes["sink"] = node("sink", "output");
   const edges: Record<string, ReturnType<typeof edge>> = {};
 
+  // T447: reference-fed inputs are CONNECT-REFUSED by design — the harness must not
+  // wire what the editor forbids. Their feeders arrive by NAME through the parameter.
+  const referenceInputs = new Set((definition.sourceReferences ?? []).map((spec) => spec.input));
+
   definition.inputs.forEach((port, index) => {
+    if (referenceInputs.has(port.id)) return;
     const feedId = `feed${index}`;
     // Feeders match the port FAMILY: textures come from a checker, pointsets from a
     // point GRID (T298) — wiring a texture into a pointset port is exactly the §V13
@@ -478,12 +487,50 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
     edges[`in${index}`] = edge(`in${index}`, [feedId, "out"], ["subject", port.id]);
   });
 
+  // T447: reference parameters name kind-matched feeders — a camera for a camera slot,
+  // a light for lights, a grid-backed geometry for scenes.
+  for (const spec of definition.sourceReferences ?? []) {
+    const port = definition.inputs.find((candidate) => candidate.id === spec.input);
+    if (port === undefined) continue;
+    if (port.type.kind === "texture2d") {
+      // Feedback's source: a texture node, named (T350).
+      nodes["refsrc"] = { ...node("refsrc", "checker"), label: "refsrc1" };
+      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refsrc1" } } as GraphNode;
+    } else if (port.type.kind === "camera") {
+      nodes["refcam"] = { ...node("refcam", "camera"), label: "refcam1" };
+      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refcam1" } } as GraphNode;
+    } else if (port.type.kind === "light") {
+      nodes["reflight"] = { ...node("reflight", "light"), label: "reflight1" };
+      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "reflight1" } } as GraphNode;
+    } else if (port.type.kind === "scene") {
+      nodes["refgrid"] = node("refgrid", "pointGrid");
+      nodes["refgeo"] = { ...node("refgeo", "geometry"), label: "refgeo1" };
+      edges["refgeo-in"] = edge("refgeo-in", ["refgrid", "out"], ["refgeo", "points"]);
+      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refgeo1" } } as GraphNode;
+    }
+    // material references stay empty: the parameter is optional and the default
+    // material is the documented fallback (T428 adds material nodes).
+  }
+
   const firstOutput = definition.outputs[0];
   if (firstOutput !== undefined) {
     if (firstOutput.type.kind === "pointset") {
       // A pointset is observed by drawing it: subject -> renderPoints -> output.
       nodes["observe"] = node("observe", "renderPoints");
       edges["observe-in"] = edge("observe-in", ["subject", firstOutput.id], ["observe", "points"]);
+      edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
+    } else if (firstOutput.type.kind === "camera" || firstOutput.type.kind === "light" || firstOutput.type.kind === "scene") {
+      // T447: a scene THING is observed by rendering with it — assembled by NAME, the
+      // only way scene assembly travels (V372).
+      nodes["obsgrid"] = node("obsgrid", "pointGrid");
+      nodes["obsgeo"] = { ...node("obsgeo", "geometry"), label: "obsgeo1" };
+      edges["obsgeo-in"] = edge("obsgeo-in", ["obsgrid", "out"], ["obsgeo", "points"]);
+      nodes["obscam"] = { ...node("obscam", "camera"), label: "obscam1" };
+      nodes["obslight"] = { ...node("obslight", "light"), label: "obslight1" };
+      const scenes = firstOutput.type.kind === "scene" ? "subject1" : "obsgeo1";
+      const camera = firstOutput.type.kind === "camera" ? "subject1" : "obscam1";
+      const lights = firstOutput.type.kind === "light" ? "subject1" : "obslight1";
+      nodes["observe"] = node("observe", "render", { scenes, camera, lights });
       edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
     } else {
       edges["sink"] = edge("sink", ["subject", firstOutput.id], ["sink", "input"]);

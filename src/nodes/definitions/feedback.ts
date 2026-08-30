@@ -46,7 +46,7 @@ export const feedbackNode: NodeDefinition = {
         "Fed by the SOURCE reference (T350). Legacy documents may still wire it; the editor only ever writes the reference.",
     },
   ],
-  sourceReference: { parameter: "source", input: "in" },
+  sourceReferences: [{ parameter: "source", input: "in" }],
   outputs: [
     {
       id: "out",

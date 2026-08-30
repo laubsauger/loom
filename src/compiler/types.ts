@@ -241,6 +241,8 @@ export interface CompiledInputBinding {
   readonly temporal: boolean;
   /** Present iff the upstream output is a pointset (T296). */
   readonly pointset?: PointsetEdgeInfo;
+  /** T447: the scene payload the producing node published (camera/light/geometry/material). */
+  scene?: import("../domain/types/scene.ts").ScenePayload;
 }
 
 export interface CompiledOutputBinding {

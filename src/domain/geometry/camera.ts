@@ -114,3 +114,15 @@ export function viewProjection(
     lookAt(eye, center, options.up ?? [0, 1, 0]),
   );
 }
+
+/** Orthographic projection (T377): [0,1] depth, y up, matching `perspective`'s conventions. */
+export function orthographic(height: number, aspect: number, near: number, far: number): Mat4 {
+  const halfH = Math.max(height, 1e-6) / 2;
+  const halfW = halfH * Math.max(aspect, 1e-6);
+  const m = identity();
+  m[0] = 1 / halfW;
+  m[5] = 1 / halfH;
+  m[10] = 1 / (near - far);
+  m[14] = near / (near - far);
+  return m;
+}

@@ -24,7 +24,7 @@ import {
   rewriteNodeNameReferences,
   uniqueNodeName,
 } from "../graph/names.ts";
-import { sourceReferenceOf } from "../graph/source-references.ts";
+import { sourceReferenceForInput } from "../graph/source-references.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
 import { referenceCyclesThrough } from "../graph/reference-cycles.ts";
@@ -496,8 +496,8 @@ function executeOperation(
       // input — the loop is a NAME, and the dashed line shows it. Legacy documents
       // that arrive wired still load and compile; they just cannot grow new wires
       // here, or the confusing shape survives forever and the migration never ends.
-      const sourceSpec = sourceReferenceOf(targetNode.type);
-      if (sourceSpec !== undefined && sourceSpec.input === operation.target.portId) {
+      const sourceSpec = sourceReferenceForInput(targetNode.type, operation.target.portId);
+      if (sourceSpec !== undefined) {
         fail(
           "port.sourceReference",
           `"${targetNode.type}" takes its source by NAME, not a wire — set its "${sourceSpec.parameter}" parameter to the source node's name instead.`,

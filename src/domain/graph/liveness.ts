@@ -4,7 +4,7 @@ import type { StoredParameter } from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import { bindingTargets, channelTargetName, opReferenceNames } from "./parameter-dependencies.ts";
-import { sourceReferenceName } from "./source-references.ts";
+import { sourceReferenceNames } from "./source-references.ts";
 
 /**
  * THE liveness answer (T268, §V173b).
@@ -51,7 +51,8 @@ export interface LivenessNode {
    * compiler's own walk sees the synthesized edge instead and may leave this undefined;
    * a document-side caller has no such edge and must supply it.
    */
-  readonly sourceName?: string | undefined;
+  /** Every name this node references as a source (feedback, T447 scene family). */
+  readonly sourceNames?: ReadonlyArray<string> | undefined;
 }
 
 export interface LivenessResult {
@@ -78,7 +79,7 @@ function referencedNames(node: LivenessNode): string[] {
     ...bindingTargets(node.parameters).map(({ kind, address }) =>
       kind === "driven" ? channelTargetName(address) : address,
     ),
-    ...(node.sourceName === undefined ? [] : [node.sourceName]),
+    ...(node.sourceNames ?? []),
   ];
 }
 
@@ -127,7 +128,7 @@ export function documentLiveness(graph: GraphDocument, registry: NodeRegistryVie
       parameters: node.parameters,
       isValueSource: isValueSourceDefinition(definition),
       isSink: definition?.sink === true,
-      sourceName: sourceReferenceName(node.type, node.parameters),
+      sourceNames: sourceReferenceNames(node.type, node.parameters),
     });
   }
   const producers = new Map<NodeId, NodeId[]>();

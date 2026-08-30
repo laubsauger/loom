@@ -89,6 +89,11 @@ describe("core catalogue (T70, T40)", () => {
       "audioIn",
       "audioFileIn",
       "audioPattern",
+      // T447: the scene family — assembly by NAME, data by wire (V372).
+      "camera",
+      "light",
+      "geometry",
+      "render",
       "pointGenerator",
       "pointGrid",
       "pointLine",
@@ -205,14 +210,14 @@ describe("source references: the table and the declarations agree (T350)", () =>
   it("every declaration is in the domain table, and the table names only declarations", () => {
     const declared = new Map(
       coreNodeDefinitions
-        .filter((definition) => definition.sourceReference !== undefined)
-        .map((definition) => [definition.type, definition.sourceReference]),
+        .filter((definition) => definition.sourceReferences !== undefined)
+        .map((definition) => [definition.type, definition.sourceReferences]),
     );
     // Both directions: a declaration the table misses breaks the walk silently; a
     // table row with no declaration is a reference to nothing.
     expect(Object.keys(SOURCE_REFERENCE_PARAMETERS).sort()).toEqual([...declared.keys()].sort());
-    for (const [type, spec] of Object.entries(SOURCE_REFERENCE_PARAMETERS)) {
-      expect(declared.get(type), type).toEqual(spec);
+    for (const [type, specs] of Object.entries(SOURCE_REFERENCE_PARAMETERS)) {
+      expect(declared.get(type), type).toEqual(specs);
     }
   });
 });

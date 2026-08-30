@@ -1,7 +1,7 @@
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
-import { sourceReferenceOf } from "./source-references.ts";
+import { sourceReferenceTokens, sourceReferencesOf } from "./source-references.ts";
 
 /**
  * Node names as identifiers (T221/T222, §V127-§V129).
@@ -156,14 +156,30 @@ function rewriteDrivenChannels(node: GraphNode, oldName: string, newName: string
   return rewritten;
 }
 
-/** Kind 3 (T350): a source-reference parameter holding the bare name. */
+/**
+ * Kind 3 (T350) and kind 4 (T447): source-reference parameters holding a bare name, or
+ * a LIST of names. The list clause is token-wise — only whole names matching `oldName`
+ * move, separators and order preserved — because list order is draw/light order and a
+ * rename must not reshuffle the scene.
+ */
 function rewriteSourceReference(node: GraphNode, oldName: string, newName: string): number {
-  const spec = sourceReferenceOf(node.type);
-  if (spec === undefined) return 0;
-  const stored = node.parameters[spec.parameter];
-  if (typeof stored !== "string" || stored.trim() !== oldName) return 0;
-  node.parameters[spec.parameter] = newName;
-  return 1;
+  let rewritten = 0;
+  for (const spec of sourceReferencesOf(node.type)) {
+    const stored = node.parameters[spec.parameter];
+    if (typeof stored !== "string") continue;
+    if (spec.list === true) {
+      if (!sourceReferenceTokens(spec, node.parameters).includes(oldName)) continue;
+      node.parameters[spec.parameter] = stored
+        .split(/([\s,]+)/)
+        .map((piece) => (piece === oldName ? newName : piece))
+        .join("");
+      rewritten += 1;
+    } else if (stored.trim() === oldName) {
+      node.parameters[spec.parameter] = newName;
+      rewritten += 1;
+    }
+  }
+  return rewritten;
 }
 
 /**

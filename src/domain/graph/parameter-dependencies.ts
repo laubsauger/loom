@@ -3,7 +3,7 @@ import type { NodeId } from "../types/ids.ts";
 import { isParameterSlot } from "../parameters/slots.ts";
 import { parseExpression, type ExpressionAst } from "../expressions/index.ts";
 import { nodeNames } from "./names.ts";
-import { sourceReferenceName, sourceReferenceOf } from "./source-references.ts";
+import { sourceReferenceTokens, sourceReferencesOf } from "./source-references.ts";
 
 /**
  * What a parameter DEPENDS ON, as edges between nodes (T248, §V154).
@@ -44,7 +44,17 @@ export type ParameterDependencyKind =
    * it — closing the loop is this reference's entire purpose, and the compiler's
    * temporal split is what legalises the cycle it closes.
    */
-  | "feedback";
+  | "feedback"
+  /**
+   * T447: scene-assembly references — a Render naming its camera/lights/geometries, a
+   * Geometry naming its material. Who rules: LIVENESS counts them (a referenced camera
+   * is alive); the LINES draw them, hued per kind; the CYCLE GATE counts them too —
+   * unlike feedback, scene assembly is acyclic and a loop through it is a real error.
+   */
+  | "camera"
+  | "light"
+  | "scene"
+  | "material";
 
 export interface ParameterDependency {
   readonly from: NodeId;
@@ -139,12 +149,25 @@ function sourceReferenceDependency(
   nodeId: NodeId,
   byName: ReadonlyMap<string, NodeId>,
 ): ParameterDependency[] {
-  const spec = sourceReferenceOf(node.type);
-  const name = sourceReferenceName(node.type, node.parameters);
-  if (spec === undefined || name === undefined) return [];
-  const to = byName.get(name);
-  if (to === undefined) return [];
-  return [{ from: nodeId, parameterKey: spec.parameter, kind: "feedback", address: name, to }];
+  const found: ParameterDependency[] = [];
+  for (const spec of sourceReferencesOf(node.type)) {
+    const kind: ParameterDependencyKind =
+      node.type === "feedback"
+        ? "feedback"
+        : spec.input === "camera"
+          ? "camera"
+          : spec.input === "lights"
+            ? "light"
+            : spec.input === "material"
+              ? "material"
+              : "scene";
+    for (const name of sourceReferenceTokens(spec, node.parameters)) {
+      const to = byName.get(name);
+      if (to === undefined) continue;
+      found.push({ from: nodeId, parameterKey: spec.parameter, kind, address: name, to });
+    }
+  }
+  return found;
 }
 
 /** The name each kind of address resolves against — the one place the two differ. */

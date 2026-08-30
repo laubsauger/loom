@@ -265,7 +265,14 @@ export interface NodeDefinition {
    * The declaration of record; `SOURCE_REFERENCE_PARAMETERS` (domain/graph) is its
    * projection for registry-free consumers, pinned to this by test.
    */
-  sourceReference?: { readonly parameter: string; readonly input: PortId };
+  /**
+   * T350/T447: parameters that carry NODE NAMES resolved into synthesized edges — the
+   * feedback source, and the scene family's assembly (camera/lights/scenes/material).
+   * `list` marks a whitespace/comma-separated name LIST (order = draw/light order).
+   * Mirrored by the domain-side SOURCE_REFERENCE_PARAMETERS table; index.test.ts pins
+   * the two to each other in both directions.
+   */
+  sourceReferences?: ReadonlyArray<{ readonly parameter: string; readonly input: PortId; readonly list?: boolean }>;
   /**
    * Marks this node as an ACTIVE SINK: the compiler traces dependencies backward from
    * sinks and prunes everything else (§V25). Declared, never inferred — "has no outputs"

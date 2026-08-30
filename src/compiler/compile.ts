@@ -1,7 +1,8 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import { nodeNames } from "../domain/graph/names.ts";
-import { sourceReferenceName, sourceReferenceOf } from "../domain/graph/source-references.ts";
+import { sourceReferenceTokens, sourceReferencesOf } from "../domain/graph/source-references.ts";
+import type { ScenePayload } from "../domain/types/scene.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { GraphDocument, GraphEdge } from "../domain/types/graph.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
@@ -678,56 +679,82 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     for (const nodeId of Object.keys(flatGraph.nodes).sort()) {
       const node = flatGraph.nodes[nodeId];
       if (node === undefined) continue;
-      const spec = sourceReferenceOf(node.type);
-      if (spec === undefined) continue;
-      const name = sourceReferenceName(node.type, node.parameters);
-      const wired = Object.values(flatGraph.edges).find(
-        (edge) => edge.target.nodeId === nodeId && edge.target.portId === spec.input,
-      );
-      if (name === undefined) continue; // unwired AND unnamed = the ordinary missing-input story
-      if (wired !== undefined) {
-        diagnostics.push(
-          compilerDiagnostic(
-            "error",
-            CompilerDiagnosticCode.sourceReferenceAmbiguous,
-            `Node "${nodeId}" (${node.type}) names source "${name}" AND has "${spec.input}" wired; one loop, one truth.`,
-            { nodeId, suggestion: `Clear the ${spec.parameter} parameter, or disconnect the wire.` },
-          ),
+      for (const spec of sourceReferencesOf(node.type)) {
+        const tokens = sourceReferenceTokens(spec, node.parameters);
+        const wired = Object.values(flatGraph.edges).find(
+          (edge) => edge.target.nodeId === nodeId && edge.target.portId === spec.input,
         );
-        continue;
+        if (tokens.length === 0) continue; // unwired AND unnamed = the ordinary missing-input story
+        if (wired !== undefined) {
+          diagnostics.push(
+            compilerDiagnostic(
+              "error",
+              CompilerDiagnosticCode.sourceReferenceAmbiguous,
+              `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${tokens.join(" ")}" AND has "${spec.input}" wired; one link, one truth.`,
+              { nodeId, suggestion: `Clear the ${spec.parameter} parameter, or disconnect the wire.` },
+            ),
+          );
+          continue;
+        }
+        tokens.forEach((name, index) => {
+          const sourceId = names.get(name);
+          if (sourceId === undefined) {
+            // §V369: a dangling name is an ERROR that names the name — never a quietly
+            // smaller scene. An empty render because every name dangled is the failure
+            // this refusal exists to make impossible.
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.sourceReferenceMissing,
+                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", which no node in the document is called.`,
+                { nodeId, suggestion: "Name an existing node, or rename the intended one to match." },
+              ),
+            );
+            return;
+          }
+          const sourceNode = flatGraph.nodes[sourceId];
+          const sourceDefinition = sourceNode === undefined ? undefined : registry.get(sourceNode.type);
+          const sourcePort = sourceDefinition?.outputs[0]?.id;
+          if (sourcePort === undefined) {
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.sourceReferenceMissing,
+                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", which has no output to reference.`,
+                { nodeId },
+              ),
+            );
+            return;
+          }
+          const consumerDefinition = registry.get(node.type);
+          const targetKind = consumerDefinition?.inputs.find((port) => port.id === spec.input)?.type.kind;
+          const sourceKind = sourceDefinition?.outputs[0]?.type.kind;
+          if (targetKind !== undefined && sourceKind !== undefined && targetKind !== sourceKind) {
+            // T447: the type check references gave up returns as a NAMED refusal — the
+            // parameter, the name, and what the named node actually is.
+            diagnostics.push(
+              compilerDiagnostic(
+                "error",
+                CompilerDiagnosticCode.sourceReferenceMissing,
+                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", but "${name}" is a ${sourceNode?.type ?? "node"} and publishes no ${targetKind}.`,
+                { nodeId, suggestion: `Name a node whose output is a ${targetKind}.` },
+              ),
+            );
+            return;
+          }
+          // T447: one synthesized edge per token; `order` is the token's LIST position,
+          // so draw/light order is the user's stated order through the ordinary §V131
+          // comparator — never edge-id accident.
+          const edgeId = spec.list === true ? `ref:${nodeId}:${spec.parameter}:${index}` : `ref:${nodeId}`;
+          synthesized ??= { ...flatGraph.edges };
+          synthesized[edgeId] = {
+            id: edgeId,
+            source: { nodeId: sourceId, portId: sourcePort },
+            target: { nodeId, portId: spec.input },
+            ...(spec.list === true ? { order: index } : {}),
+          };
+        });
       }
-      const sourceId = names.get(name);
-      if (sourceId === undefined) {
-        diagnostics.push(
-          compilerDiagnostic(
-            "error",
-            CompilerDiagnosticCode.sourceReferenceMissing,
-            `Node "${nodeId}" (${node.type}) names source "${name}", which no node in the document is called.`,
-            { nodeId, suggestion: "Name an existing node, or rename the intended one to match." },
-          ),
-        );
-        continue;
-      }
-      const sourceNode = flatGraph.nodes[sourceId];
-      const sourceDefinition = sourceNode === undefined ? undefined : registry.get(sourceNode.type);
-      const sourcePort = sourceDefinition?.outputs[0]?.id;
-      if (sourcePort === undefined) {
-        diagnostics.push(
-          compilerDiagnostic(
-            "error",
-            CompilerDiagnosticCode.sourceReferenceMissing,
-            `Node "${nodeId}" (${node.type}) names source "${name}", which has no output to record.`,
-            { nodeId },
-          ),
-        );
-        continue;
-      }
-      synthesized ??= { ...flatGraph.edges };
-      synthesized[`ref:${nodeId}`] = {
-        id: `ref:${nodeId}`,
-        source: { nodeId: sourceId, portId: sourcePort },
-        target: { nodeId, portId: spec.input },
-      };
     }
     return synthesized === undefined ? flatGraph : { ...flatGraph, edges: synthesized };
   })();
@@ -839,6 +866,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
   /** T373: synthesized preview targets, later swapped into the outputs projection. */
   const pointsPreviewOutputs = new Map<string, ResolvedOutput>();
+  /** T447: scene payloads (camera/light/geometry/material) per output — the pointsets
+   *  channel's sibling, all CPU values, re-published on every animate recompile. */
+  const sceneInfoByOutput = new Map<string, ScenePayload>();
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -848,8 +878,31 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     for (const port of definition.inputs) inputs[port.id] = [];
     for (const edge of incoming.get(nodeId) ?? []) {
       const upstream = propagated.outputs.get(outputKey(edge.source.nodeId, edge.source.portId));
-      if (upstream === undefined) continue;
       const pointsetInfo = pointsetInfoByOutput.get(outputKey(edge.source.nodeId, edge.source.portId));
+      const sceneInfo = sceneInfoByOutput.get(outputKey(edge.source.nodeId, edge.source.portId));
+      if (upstream === undefined) {
+        /*
+         * T447: a scene producer (camera, light, geometry, material) materializes NO GPU
+         * resource — its output is a CPU payload — so there is no ResolvedOutput to hand
+         * over. The binding still exists: the payload IS the cargo, and the placeholder
+         * resource fields are inert by construction (nothing binds a `scene:` id).
+         */
+        if (sceneInfo !== undefined) {
+          inputs[edge.target.portId]?.push({
+            portId: edge.target.portId,
+            resourceId: `scene:${edge.source.nodeId}:${edge.source.portId}`,
+            sampler: SHARED_SAMPLER_ID,
+            sourceNodeId: edge.source.nodeId,
+            sourcePortId: edge.source.portId,
+            size: [1, 1],
+            format: settings.workingFormat,
+            space: colorSpaceForFormat(settings.workingFormat),
+            temporal: false,
+            scene: sceneInfo,
+          });
+        }
+        continue;
+      }
       inputs[edge.target.portId]?.push({
         portId: edge.target.portId,
         resourceId: upstream.resourceId,
@@ -861,6 +914,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         space: upstream.space,
         temporal: edge.temporal,
         ...(pointsetInfo === undefined ? {} : { pointset: pointsetInfo }),
+        ...(sceneInfo === undefined ? {} : { scene: sceneInfo }),
       });
     }
 
@@ -966,6 +1020,18 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             ? { count: { buffer: countBuffer } }
             : {}),
         });
+      }
+    }
+
+    // T447: the scene channel — structural like `pointsets`, values-only in content.
+    // Trusted as-is: producers are our own definitions, and a malformed payload fails
+    // loudly at the consumer with the producer named (§V288).
+    const sceneRaw = (description as { scene?: unknown }).scene;
+    if (isRecord(sceneRaw)) {
+      for (const [portId, payload] of Object.entries(sceneRaw)) {
+        if (isRecord(payload) && typeof payload["kind"] === "string") {
+          sceneInfoByOutput.set(outputKey(nodeId, portId), payload as unknown as ScenePayload);
+        }
       }
     }
 

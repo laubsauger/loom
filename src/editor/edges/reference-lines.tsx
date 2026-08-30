@@ -61,6 +61,12 @@ const KIND_COLOR: Record<ParameterDependencyKind, string> = {
   // T350: the feedback loop the user used to WIRE — the temporal family's own hue,
   // because this line is the loop. It reads as a loop at this weight, not as a wire.
   feedback: "var(--port-texture2d)",
+  // T447: scene assembly, hued per role so a Render's camera, lights and geometry read
+  // apart at a glance — and apart from feedback's temporal hue.
+  camera: "var(--port-vector)",
+  light: "var(--port-scalar)",
+  scene: "var(--port-pointset)",
+  material: "var(--text-dim)",
 };
 
 /**

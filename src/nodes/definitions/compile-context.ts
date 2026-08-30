@@ -113,6 +113,7 @@ interface CompilerContextShape {
         sourceNodeId?: string;
         sourcePortId?: string;
         pointset?: { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>; capacity: number; topology?: string; count?: { buffer: string } };
+        scene?: unknown;
       }>
     >
   >;
@@ -140,6 +141,7 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
         ? {}
         : { source: { nodeId: binding.sourceNodeId, portId: binding.sourcePortId ?? "out" } }),
       ...(binding.pointset === undefined ? {} : { pointset: binding.pointset }),
+      ...(binding.scene === undefined ? {} : { scene: binding.scene }),
     }));
     const first = adapted[0];
     // An unconnected optional port simply has no binding; compile() reports that itself
