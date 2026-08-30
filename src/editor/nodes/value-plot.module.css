@@ -1,0 +1,101 @@
+/*
+ * A value node's channel plot (T344). Every colour is a token (§V17).
+ *
+ * Sized like the texture preview above it so a value node and a texture node have the
+ * same visual weight in a network — the point is that BOTH show what they produce.
+ */
+
+.plot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: var(--border-hairline);
+  background: var(--bg-sunken);
+}
+
+.canvas {
+  width: 100%;
+  height: var(--space-10);
+  display: block;
+}
+
+/*
+ * Four distinguishable strokes. Order matches the node's publication order, so Mouse
+ * reads x, y, buttons the same way every time.
+ */
+.seriesA {
+  stroke: var(--signal);
+  stroke-width: 1.25px;
+}
+
+.seriesB {
+  stroke: var(--ok);
+  stroke-width: 1.25px;
+}
+
+.seriesC {
+  stroke: var(--warn);
+  stroke-width: 1.25px;
+}
+
+.seriesD {
+  stroke: var(--text-dim);
+  stroke-width: 1.25px;
+}
+
+.values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+}
+
+.reading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+/*
+ * The channel name is tinted with its own series colour, which is what lets a reading be
+ * matched to a line without a legend taking a row of its own (§V90).
+ */
+.channel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+}
+
+.channel.seriesA {
+  color: var(--signal);
+}
+
+.channel.seriesB {
+  color: var(--ok);
+}
+
+.channel.seriesC {
+  color: var(--warn);
+}
+
+.channel.seriesD {
+  color: var(--text-dim);
+}
+
+.number {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  color: var(--text-disabled);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}

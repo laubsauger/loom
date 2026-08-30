@@ -44,6 +44,7 @@ import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
+import { createValueHistoryStore } from "./value-history.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
@@ -203,6 +204,45 @@ export function App({
   const valueGraph = useValueGraph(runtime);
 
   /**
+   * The rolling window every value node plots in its body (T344, §V275).
+   *
+   * Filled from the SINGLE evaluation the value graph already performs, at the same point,
+   * with the same numbers a driven parameter reads. Never a second evaluation: a stateful
+   * stage evaluated twice per frame would advance twice, so a Lag would run at double rate
+   * purely because someone was looking at it.
+   *
+   * Analyze is the one channel that does not come from the value graph — it is a GPU
+   * readback (T305), one frame late by contract (§V144) — so it is sampled through the
+   * analyze resolver rather than invented here.
+   */
+  const valueHistory = useMemo(() => createValueHistoryStore(), []);
+  useEffect(() => () => valueHistory.dispose(), [valueHistory]);
+
+  const sampleValueHistory = useCallback(
+    (frame: FrameEvaluationInput) => {
+      const graph = runtime.bus.store.getGraph();
+      const bags = valueGraph.channels();
+      const live = new Set<NodeId>();
+      for (const [nodeId, node] of Object.entries(graph.nodes)) {
+        if (runtime.registry.get(node.type)?.category !== "value") continue;
+        live.add(nodeId);
+        const name = node.label;
+        if (name === undefined) continue;
+        const bag = bags.get(name);
+        if (bag !== undefined) {
+          valueHistory.push(nodeId, bag);
+          continue;
+        }
+        const measured = analyze.resolver(name, { frame } as never);
+        if (typeof measured === "number") valueHistory.push(nodeId, { value: measured });
+      }
+      // A deleted node frees its ring rather than holding a window nobody can see.
+      valueHistory.retain(live);
+    },
+    [analyze, runtime, valueGraph, valueHistory],
+  );
+
+  /**
    * THE pointer (T324, B30, §V182, §V236).
    *
    * `PointerSource.set` had no caller: the frame loop created its own instance, nothing
@@ -316,9 +356,19 @@ export function App({
     settings: runtime.settings,
     animate: compile.animate,
     // Before `animate` reads the channels, every rendered frame (§V179, §V155).
-    advanceChannels: valueGraph.evaluate,
+    advanceChannels: (inputs) => {
+      valueGraph.evaluate(inputs);
+      // Immediately after the ONE evaluation, so the plot and the parameter read the same
+      // frame's numbers (§V275) and no stateful stage is advanced twice.
+      sampleValueHistory(inputs.frame);
+    },
     observe: observeFrame,
-    onReset: valueGraph.reset,
+    onReset: () => {
+      valueGraph.reset();
+      // The window goes with the state: a replayed seek must not draw a trajectory from
+      // the history it just discarded (§V170, §V181).
+      valueHistory.clear();
+    },
     pointer,
     valuesOnly: compile.valuesOnly,
   });
@@ -656,6 +706,7 @@ export function App({
                 previewFps={runtime.settings.previewFps}
                 previewLongEdge={runtime.settings.previewLongEdge}
                 previewSinks={previewSinks}
+                valueHistory={valueHistory}
               />
             </NodeInfoHost>
           }

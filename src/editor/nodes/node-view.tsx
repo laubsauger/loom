@@ -75,7 +75,31 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   // §V28b: `ui.preview` is a PIN — keep previewing while scrolled off screen — not the
   // on-switch. Whether the slot exists at all is decided below, from the definition.
   const pinned = node.ui?.preview === true;
-  const hasPreview = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
+  /**
+   * What this node SHOWS in its body — a texture preview, or a value plot (T344).
+   *
+   * A value node produces a signal rather than pixels, and it is content in exactly the
+   * same sense: TD draws a CHOP's channel in the node, and that is why a TD network reads
+   * at a glance. `category === "value"` is the manifest's own answer to "does this node
+   * publish a channel", so the gate is declarative rather than a list of node types
+   * somebody has to remember to extend.
+   *
+   * `renderPreview` is the same seam for both; the composition root decides which surface
+   * comes back, exactly as it already did for textures (T185).
+   */
+  const producesTexture = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
+  const producesValue = definition?.category === "value";
+  /**
+   * A declared SINK shows its picture too, and it is the picture that matters most.
+   *
+   * An Output node publishes no port — it CONSUMES one — so `producesTexture` is false for
+   * it, and the node that presents the final image was the only one in the graph with an
+   * empty body. It does own a texture: the render target the compiler materializes for
+   * every declared sink (§V25). Same slot, same host, same scheduler — the composition
+   * root fills it from the compiled output like any other tile.
+   */
+  const presentsTexture = definition?.sink === true;
+  const hasPreview = producesTexture || producesValue || presentsTexture;
   const agent = snapshot.agent;
 
   return (

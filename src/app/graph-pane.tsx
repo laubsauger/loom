@@ -14,6 +14,8 @@ import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
 import { NodePreviewSlot, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
+import { ValuePlot } from "@editor/nodes/value-plot.tsx";
+import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
@@ -69,6 +71,12 @@ export interface GraphPaneProps {
   previewLongEdge?: number;
   /** T252 (§V158): sink for the preview scheduler's kept set, gating compilation. */
   previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void };
+  /**
+   * Rolling channel history for value nodes (T344). Optional for the same reason the
+   * backend is: a caller that only wants the canvas gets nodes with no plot rather than
+   * being forced to wire a frame loop.
+   */
+  valueHistory?: ValueHistorySource;
 }
 
 const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
@@ -98,6 +106,7 @@ function GraphPaneInner({
   previewFps = 20,
   previewLongEdge = 192,
   previewSinks,
+  valueHistory,
 }: GraphPaneProps) {
   const { bus, invocation, nodeRuntime, registry } = useAppRuntime();
   const flow = useReactFlow();
@@ -132,16 +141,33 @@ function GraphPaneInner({
     previewLongEdge,
   });
 
+  /**
+   * One seam, two surfaces (T185, T344).
+   *
+   * `NodeView` asks for "whatever this node shows" and knows nothing about either system.
+   * A texture node gets the preview slot, which measures its bounds so the runtime can
+   * composite a GPU tile there; a VALUE node gets a plot of its channels, which is plain
+   * DOM and must NOT publish slot bounds — there is no tile to place.
+   */
   const renderPreview = useCallback(
-    (nodeId: NodeId) => (
-      <NodePreviewSlot
-        nodeId={nodeId}
-        runtime={nodeRuntime}
-        bounds={previewBounds}
-        views={previewViews}
-      />
-    ),
-    [nodeRuntime, previewBounds, previewViews],
+    (nodeId: NodeId) => {
+      const type = graph.nodes[nodeId]?.type;
+      const definition = type === undefined ? undefined : registry.get(type);
+      if (definition?.category === "value") {
+        return valueHistory === undefined ? null : (
+          <ValuePlot nodeId={nodeId} history={valueHistory} />
+        );
+      }
+      return (
+        <NodePreviewSlot
+          nodeId={nodeId}
+          runtime={nodeRuntime}
+          bounds={previewBounds}
+          views={previewViews}
+        />
+      );
+    },
+    [graph, nodeRuntime, previewBounds, previewViews, registry, valueHistory],
   );
 
   const dispatch = useCallback(

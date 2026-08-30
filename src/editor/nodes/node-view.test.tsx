@@ -378,9 +378,24 @@ describe("preview slot (§V28b) — visible texture-producing node previews by d
     expect(screen.getByText("tile")).toBeDefined();
   });
 
-  it("has no slot at all for a node with no texture output", () => {
+  it("gives a VALUE node a slot too, because a signal is content (T344)", () => {
+    // The rule used to be "texture output or nothing", which left the half of the graph
+    // that MOVES as the half nobody could see: an LFO, a Lag and a Mouse all rendered an
+    // empty box and all looked inert. A value node's channel is its output in exactly the
+    // sense a texture is, so it gets the same slot and the composition root decides what
+    // goes in it.
     const { container } = mountNode("test.scalarF32", {
       graph: graphWith("test.scalarF32"),
+      renderPreview: () => <div>plot</div>,
+    });
+    expect(container.querySelector("[data-testid^='node-preview-']")).not.toBeNull();
+  });
+
+  it("has no slot for a node type this build does not have (§V10)", () => {
+    // An unknown-type placeholder produces neither pixels nor a channel, so there is
+    // nothing to show — which is what keeps the widened gate from meaning "always".
+    const { container } = mountNode("test.notInThisBuild", {
+      graph: graphWith("test.notInThisBuild"),
       renderPreview: () => <div>tile</div>,
     });
     expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();

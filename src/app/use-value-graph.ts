@@ -72,6 +72,16 @@ export interface ValueGraphBinding {
   readonly resolver: ChannelResolver;
   /** One frame. Call before the animated-parameter push, every rendered frame. */
   readonly evaluate: (inputs: FrameInputs) => void;
+  /**
+   * The channel BAGS from the most recently evaluated frame, keyed by node NAME (T344).
+   *
+   * The plot in a node's body reads this, so it shows the same numbers the resolver
+   * hands a driven parameter — §V275. Exposing the evaluated result rather than letting
+   * a plot evaluate for itself is the whole point: a second evaluation would advance
+   * every stateful stage twice per frame, and a Lag would run at double rate because
+   * somebody was watching it.
+   */
+  readonly channels: () => ReadonlyMap<string, Readonly<Record<string, number>>>;
   /** Clears every stateful stage (§V181, §V170). Transport reset and backward seek. */
   readonly reset: () => void;
   /**
@@ -112,6 +122,7 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
   const session = useMemo(() => createValueGraphSession(runtime.registry), [runtime.registry]);
 
   const latest = useRef<ChannelResolver | null>(null);
+  const latestBags = useRef<ReadonlyMap<string, Readonly<Record<string, number>>>>(new Map());
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   /** Signature of what is currently reported, so an unchanged condition costs no render. */
   const reported = useRef("");
@@ -124,6 +135,7 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
         pointer: inputs.pointer,
       });
       latest.current = result.resolver;
+      latestBags.current = result.byName;
 
       const signature = result.diagnostics
         .map((diagnostic) => `${diagnostic.code}:${diagnostic.nodeId ?? ""}`)
@@ -136,8 +148,11 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
     [session],
   );
 
+  const channels = useCallback(() => latestBags.current, []);
+
   const reset = useCallback(() => {
     session.reset();
+    latestBags.current = new Map();
     // The channels go with the state. Keeping the last frame's numbers after a reset would
     // hand the first replayed frame a value from the history just thrown away.
     latest.current = null;
@@ -166,5 +181,5 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
     [],
   );
 
-  return { resolver, evaluate, reset, diagnostics };
+  return { resolver, evaluate, channels, reset, diagnostics };
 }
