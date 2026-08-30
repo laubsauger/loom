@@ -1,6 +1,9 @@
-import type { CommandName } from "@domain/types/commands.ts";
+import type { CommandName, PlannedCommandName } from "@domain/types/commands.ts";
+import { PLANNED_COMMANDS } from "@domain/types/commands.ts";
 import type { MenuItem, MenuSchema, MenuTarget } from "@domain/types/menus.ts";
+import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 // The command constant, NOT a literal — importing it is what keeps the menu and the
 // popup naming one thing (§V78). Deliberately from `command.ts` rather than the
 // `@editor/inspect` barrel: the barrel exports React surfaces, and `@editor/inspect`
@@ -24,33 +27,13 @@ import type { MenuGuardName } from "./guards.ts";
  * Commands these menus name that NO track has registered yet. `CommandMap` only carries
  * commands somebody implemented, so naming a planned one needs this widening.
  *
- * We deliberately do NOT declare-merge fake entries into `CommandMap`: that would make
- * `bus.execute("view.frameAll", …)` typecheck against a command that does not exist.
- * Naming them here instead keeps the list of promises the menus make enumerable — and
- * every one of them renders DISABLED until its owner registers it, exactly as the
- * palette already does (§V55).
+ * The list itself lives in `@domain/types/commands.ts` since T365, because the default
+ * keymap names planned commands too — five of them the same ones these menus name — and
+ * two lists would mean two deletions to remember when one gets built. Re-exported here so
+ * the menus barrel keeps offering it.
  */
-export type PlannedCommandName =
-  | "ui.openNodeSearch"
-  | "graph.layoutAll"
-  | "view.frameAll"
-  | "node.rename"
-  | "node.openColorPalette"
-  | "graph.diveIn"
-  | "graph.insertConversion"
-  | "graph.rerouteEdge"
-  | "component.publishParameter";
-
-export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
-  "ui.openNodeSearch",
-  "graph.layoutAll",
-  "view.frameAll",
-  "node.openColorPalette",
-  "graph.diveIn",
-  "graph.insertConversion",
-  "graph.rerouteEdge",
-  "component.publishParameter",
-];
+export type { PlannedCommandName };
+export { PLANNED_COMMANDS };
 
 const planned = (name: PlannedCommandName): CommandName => name as CommandName;
 
@@ -120,7 +103,9 @@ export const NODE_MENU: MenuSchema = {
     // you can reach without knowing it exists.
     { command: "node.togglePin", label: "Pin preview" },
     { separator: true },
-    { command: planned("node.rename"), label: "Rename…" },
+    // Not `planned()` since `node.rename` became a real command: routing a live name
+    // through the planned cast would be a promise about something already built.
+    { command: "node.rename", label: "Rename…" },
     { command: planned("node.openColorPalette"), label: "Set colour…" },
     { command: planned("graph.diveIn"), label: "Dive in" },
     { separator: true },
@@ -176,16 +161,24 @@ export const PARAMETER_MENU: MenuSchema = {
     {
       // §V107: every parameter takes every mode, so the switch belongs on every
       // parameter's menu — not only on the ones whose panel someone thought to open.
+      // DERIVED from the mode union, never hand-listed (B45, §V316): the first version
+      // enumerated four members of a five-mode category and `map` was silently absent.
+      // A mode that cannot complete from a menu (map, bind, driven need a payload) is
+      // still offered and refuses BY NAME through `parameter.setMode` — a missing item
+      // teaches nothing, a named refusal says what the mode needs (§V288).
       label: "Mode",
-      submenu: [
-        { command: "parameter.setMode", input: { mode: "static" }, label: "Constant" },
-        { command: "parameter.setMode", input: { mode: "expression" }, label: "Expression" },
-        { command: "parameter.setMode", input: { mode: "bind" }, label: "Bind" },
-        { command: "parameter.setMode", input: { mode: "driven" }, label: "Driven" },
-      ],
+      submenu: PARAMETER_MODES.map((mode) => ({
+        command: "parameter.setMode" as const,
+        input: { mode },
+        label: MODE_LABELS[mode],
+      })),
     },
     { separator: true },
-    { command: planned("component.publishParameter"), label: "Publish to component" },
+    // A REAL command since T132 — registered by `registerComponentCommands`, which
+    // `app-runtime.ts` calls. It sat in `PLANNED_COMMANDS` until T365 because the menus'
+    // own test asks a bare DOMAIN harness whether a command is live, and component
+    // commands are not on that bus; the T365 gate asks `CommandMap` and found it.
+    { command: "component.publishParameter", label: "Publish to component" },
   ],
 };
 

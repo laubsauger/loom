@@ -74,6 +74,76 @@ export interface QueryMap {
 export type CommandName = keyof CommandMap;
 export type QueryName = keyof QueryMap;
 
+/**
+ * Commands that DATA names and no track has registered yet (T77, T127, T365, §V307).
+ *
+ * The right-click menus and the default keymap are tables of command names, never of
+ * handlers (§V52, §V78). Both name commands that do not exist yet, deliberately: a menu
+ * item renders DISABLED and the keymap engine reports `unresolved` rather than throwing.
+ *
+ * What is NOT deliberate is a table naming a command nobody ever intends to build.
+ * `mod+,` named `ui.openSettings` from T77 until T359 — the engine skipped the binding in
+ * silence and no gate looked, so a shipped keyboard shortcut did nothing at all for
+ * months, and it was found by accident. This list is what makes the difference between
+ * the two cases WRITTEN DOWN, so a gate can tell them apart.
+ *
+ * It is ONE list for both tables on purpose: the menus and the keymap name overlapping
+ * sets (`view.frameAll`, `graph.diveIn`, `node.openColorPalette`, `ui.openNodeSearch`,
+ * `graph.layoutAll` are named by both), and two lists would mean promoting one command
+ * required remembering two deletions.
+ *
+ * `composition-seams.test.ts` holds it exact in BOTH directions:
+ *
+ *  - a binding or menu item naming a command that is in neither `CommandMap` nor here
+ *    fails — that is the gate T365 exists for;
+ *  - an entry here that IS declared in `CommandMap` fails, so promoting a planned command
+ *    is one edit and the gate names the exact line to delete;
+ *  - an entry here that no menu and no binding names fails, so the allowlist cannot rot
+ *    into a dumping ground.
+ *
+ * These are deliberately NOT declare-merged into `CommandMap`. Doing that would make
+ * `bus.execute("view.frameAll", …)` typecheck against a command that does not exist,
+ * which is the silent-skip failure moved one layer up rather than removed.
+ */
+export type PlannedCommandName =
+  | "graph.diveIn"
+  | "graph.insertConversion"
+  | "graph.jumpUp"
+  | "graph.layout"
+  | "graph.layoutAll"
+  | "graph.rerouteEdge"
+  | "node.openColorPalette"
+  | "node.openViewer"
+  | "ui.cancel"
+  | "ui.findInGraph"
+  | "ui.openNodeSearch"
+  | "ui.openShaderEditor"
+  | "view.frameAll"
+  | "view.frameSelected"
+  | "view.home"
+  | "view.homeSelected"
+  | "view.overview";
+
+export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
+  "graph.diveIn",
+  "graph.insertConversion",
+  "graph.jumpUp",
+  "graph.layout",
+  "graph.layoutAll",
+  "graph.rerouteEdge",
+  "node.openColorPalette",
+  "node.openViewer",
+  "ui.cancel",
+  "ui.findInGraph",
+  "ui.openNodeSearch",
+  "ui.openShaderEditor",
+  "view.frameAll",
+  "view.frameSelected",
+  "view.home",
+  "view.homeSelected",
+  "view.overview",
+];
+
 export type CommandInput<T extends CommandName> = CommandMap[T]["input"];
 export type CommandOutput<T extends CommandName> = CommandMap[T]["output"];
 export type QueryInput<T extends QueryName> = QueryMap[T]["input"];

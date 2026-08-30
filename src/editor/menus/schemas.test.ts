@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createHarness } from "@domain/commands/test-support.ts";
+import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
+import type { ParameterMode } from "@domain/types/parameters.ts";
+import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 import type { MenuEntry, MenuItem, MenuSchema } from "@domain/types/menus.ts";
 import { isMenuSeparator } from "@domain/types/menus.ts";
 import { isMenuGuardName } from "./guards.ts";
@@ -66,19 +69,33 @@ const APP_REGISTERED = [
   // for `ctx.apply` to write and no reason for the domain bus to own it — but it IS
   // registered, so it is live rather than planned.
   "ui.showNodeInfo",
+  // T132, found by T365's gate: `registerComponentCommands` puts this on the app's bus
+  // (`app-runtime.ts`), but not on the bare domain harness this file constructs. It spent
+  // that whole time in `PLANNED_COMMANDS` — a built command the menus called a promise —
+  // because "is it live" asked here can only mean "is it on THIS bus".
+  "component.publishParameter",
 ];
 
 describe("what the menus promise but nobody has built", () => {
-  it("PLANNED_COMMANDS is exactly the set the menus name and no track implements", () => {
-    // The anti-drift check for the disabled half of the menus: when a track finally
-    // registers `view.frameAll`, this fails and PLANNED_COMMANDS gets one entry shorter.
+  it("declares every menu command no track implements, so none is a silent dead item", () => {
+    // The anti-drift check for the disabled half of the menus: a menu item naming a
+    // command nobody registered and nobody PLANNED fails here.
+    //
+    // This is a subset check, not equality, since T365: `PLANNED_COMMANDS` is shared with
+    // the default keymap, which names ten planned commands these menus do not. The
+    // equality — nothing in the list that no menu and no binding names — moved to
+    // `composition-seams.test.ts`, the one place that can see both tables at once.
     const named = new Set(
       everyItem.map((item) => item.command).filter((command): command is NonNullable<typeof command> => command !== undefined),
     );
     const missing = [...named]
       .filter((command) => !bus.hasCommand(command) && !APP_REGISTERED.includes(command))
       .sort();
-    expect(missing).toEqual([...PLANNED_COMMANDS].sort());
+    const declaredPlanned = new Set<string>(PLANNED_COMMANDS);
+    expect(missing.filter((command) => !declaredPlanned.has(command))).toEqual([]);
+    // Non-vacuity: the menus really do name unimplemented commands, so an empty `missing`
+    // would mean the walk broke rather than that the menus got finished.
+    expect(missing.length).toBeGreaterThan(5);
   });
 
   it("every command it treats as live is really on a bus", () => {
@@ -112,6 +129,26 @@ describe("shape", () => {
     // it stopped being a pin, because it has the `P` button and the `d` key and the item
     // cap below has no room for both.
     expect(toggles.map((item) => item.label)).toEqual(["Bypass", "Mute", "Pin preview"]);
+  });
+});
+
+describe("the Mode submenu is the mode UNION (B45/T372, §V316)", () => {
+  it("offers exactly the ParameterMode members, labelled from the one caption table", () => {
+    const modeParent = items(menuSchemaFor("parameter", registry).entries).find(
+      (item) => item.label === "Mode" && item.submenu !== undefined,
+    );
+    expect(modeParent).toBeDefined();
+    const offered = (modeParent?.submenu ?? []).map((item) => (item.input as { mode: ParameterMode }).mode);
+    // Structural equality with the union's runtime pin, not with a hand-written list:
+    // `PARAMETER_MODES` derives from a `Record<ParameterMode, true>`, so a sixth binding
+    // kind breaks THAT at compile time — and this test the moment the menu stops
+    // following. The first version of this submenu enumerated four of five modes and
+    // nothing noticed `map` was gone.
+    expect(offered).toEqual([...PARAMETER_MODES]);
+    for (const item of modeParent?.submenu ?? []) {
+      expect(item.command).toBe("parameter.setMode");
+      expect(item.label).toBe(MODE_LABELS[(item.input as { mode: ParameterMode }).mode]);
+    }
   });
 });
 

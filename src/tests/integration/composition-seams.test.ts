@@ -3,6 +3,14 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
+import { PLANNED_COMMANDS } from "@domain/types/commands.ts";
+import type { MenuEntry } from "@domain/types/menus.ts";
+import { isMenuSeparator } from "@domain/types/menus.ts";
+import { createHarness } from "@domain/commands/test-support.ts";
+// The keymap's data table directly, not through `@editor/keymap/index.ts` — the barrel
+// pulls the React provider and the key-hint components into a node-environment test.
+import { DEFAULT_BINDINGS } from "@editor/keymap/defaults.ts";
+import { menuSchemaFor } from "@editor/menus/schemas.ts";
 
 /**
  * EVERY SEAM THE APP IS SUPPOSED TO CONSTRUCT (T306, §V205, §V193).
@@ -776,5 +784,125 @@ describe("§V307 — every command in the registry is registered by the product 
     const stale = [...excusedCommands.keys()].filter((name) => !stillUnregistered.has(name));
     const vanished = [...excusedCommands.keys()].filter((name) => !declaredCommands.has(name));
     expect({ stale, vanished }).toEqual({ stale: [], vanished: [] });
+  });
+});
+
+/**
+ * KEYMAP AND MENU BINDINGS (T365, §V307, §V220).
+ *
+ * ## The bug this exists for
+ *
+ * `mod+,` named `ui.openSettings` in the default keymap from T77. Nothing registered that
+ * command until T359. The engine's contract for that case is `status: "unresolved"` —
+ * reported, never thrown, never stubbed — which is the right RUNTIME behaviour and was,
+ * for months, the only thing standing between a shipped keyboard shortcut and a user who
+ * pressed it. Nobody looked at those reports, because a report nothing reads is a silence.
+ * It was found by accident while building the settings command.
+ *
+ * So the rule is: a binding may name a command that does not exist only if somebody wrote
+ * down that they meant to. `PLANNED_COMMANDS` is where they write it.
+ *
+ * ## Why "declared in CommandMap" is the right question, and what makes it sufficient
+ *
+ * `CommandMap` is the registry the compiler enforces: `registerCommand` and `execute`
+ * refuse a name that is not in it, so a command cannot exist outside it. Declared is not
+ * by itself the same as LIVE — but the §V307 half above already requires every declared
+ * command to have a registrar module that a product entry point reaches AND calls, so the
+ * two compose: a bound, non-planned command is declared, registered, and registered by
+ * something the app runs.
+ *
+ * What that composition still does NOT catch is a registrar called only from a component
+ * nobody renders. `keymap-dispatch.test.tsx` closes that half at runtime, against the
+ * mounted `App`, for exactly the commands listed here.
+ *
+ * ## Both directions, so the allowlist cannot become a dumping ground
+ *
+ * An entry that got built fails (`PLANNED_COMMANDS` names a declared command), and an
+ * entry nothing names fails (a promise to nobody). Promoting a planned command is
+ * therefore one edit — declare it — and this gate names the line to delete.
+ */
+
+/** Every command the default keymap binds. */
+const boundCommands = [...new Set(DEFAULT_BINDINGS.map((binding) => binding.command))].sort();
+
+/** Every command the right-click menus name, at every submenu depth. */
+const menuCommands = (() => {
+  const registry = createHarness("seams").bus.registry;
+  const names = new Set<string>();
+  const walk = (entries: readonly MenuEntry[]): void => {
+    for (const entry of entries) {
+      if (isMenuSeparator(entry)) continue;
+      if (entry.command !== undefined) names.add(entry.command);
+      if (entry.submenu !== undefined) walk(entry.submenu);
+    }
+  };
+  for (const surface of ["canvas", "node", "port", "edge", "parameter"] as const) {
+    walk(menuSchemaFor(surface, registry).entries);
+  }
+  return [...names].sort();
+})();
+
+const namedByData = [...new Set([...boundCommands, ...menuCommands])].sort();
+const plannedSet = new Set<string>(PLANNED_COMMANDS);
+
+describe("§V307/T365 — a binding names a command that exists, or one somebody planned", () => {
+  it("is reading the real tables, or it is measuring nothing", () => {
+    // 35 bound and 33 menu-named commands when this was written. A walk that broke and
+    // found a handful would otherwise pass having asked nothing of anything.
+    expect(boundCommands.length).toBeGreaterThan(30);
+    expect(menuCommands.length).toBeGreaterThan(20);
+    // And the tables really do overlap the registry in both directions: some bound
+    // commands are declared, some are not. Either extreme means the scan is broken.
+    const declaredAndBound = boundCommands.filter((command) => declaredCommands.has(command));
+    expect(declaredAndBound.length).toBeGreaterThan(15);
+    expect(declaredAndBound.length).toBeLessThan(boundCommands.length);
+  });
+
+  it("has no binding naming a command that is neither declared nor planned", () => {
+    const orphans = boundCommands.filter(
+      (command) => !declaredCommands.has(command) && !plannedSet.has(command),
+    );
+    if (orphans.length > 0) {
+      const listed = orphans
+        .map((command) => {
+          const ids = DEFAULT_BINDINGS.filter((binding) => binding.command === command)
+            .map((binding) => `${binding.id} (${binding.keys})`)
+            .join(", ");
+          return `  ${command}  bound by ${ids}`;
+        })
+        .join("\n");
+      throw new Error(
+        `${orphans.length} keymap binding${orphans.length === 1 ? "" : "s"} name${orphans.length === 1 ? "s" : ""} ` +
+          `a command that is in neither \`CommandMap\` nor \`PLANNED_COMMANDS\` (§V307, T365). The engine reports ` +
+          `\`unresolved\` for these and nothing reads that, so the key does NOTHING — which is how \`mod+,\` shipped ` +
+          `dead from T77 to T359. Declare and register the command, or add it to \`PLANNED_COMMANDS\` in ` +
+          `\`src/domain/types/commands.ts\` so the promise is written down:\n${listed}`,
+      );
+    }
+    expect(orphans).toEqual([]);
+  });
+
+  it("has no menu item naming a command that is neither declared nor planned", () => {
+    const orphans = menuCommands.filter(
+      (command) => !declaredCommands.has(command) && !plannedSet.has(command),
+    );
+    expect(orphans).toEqual([]);
+  });
+
+  it("keeps every planned command UNREGISTERED, so the palette can stay honest", () => {
+    // The other direction, and the reason promoting a planned command is one edit: the
+    // moment `view.frameAll` is declared in a `CommandMap` block, this names it and says
+    // which line to delete. Leaving it here would mean the menus render a live command
+    // disabled and the palette calls a built command unavailable.
+    const built = [...PLANNED_COMMANDS].filter((command) => declaredCommands.has(command));
+    expect(built, "declared in CommandMap — delete these from PLANNED_COMMANDS").toEqual([]);
+  });
+
+  it("has no planned command that neither a binding nor a menu names", () => {
+    // Without this the allowlist is a dumping ground: anyone could quiet the gate above by
+    // adding a name, and nothing would ever make them take it back out.
+    const promised = new Set(namedByData);
+    const orphaned = [...PLANNED_COMMANDS].filter((command) => !promised.has(command));
+    expect(orphaned, "planned but named by no menu and no binding — delete these").toEqual([]);
   });
 });

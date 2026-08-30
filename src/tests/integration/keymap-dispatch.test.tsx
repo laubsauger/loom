@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
-import { createKeymapEngine, createKeymapStore, detectPlatform } from "@editor/keymap/index.ts";
+import { DEFAULT_BINDINGS, createKeymapEngine, createKeymapStore, detectPlatform } from "@editor/keymap/index.ts";
+import { PLANNED_COMMANDS } from "@domain/types/commands.ts";
 import type { KeymapDispatch } from "@editor/keymap/index.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { App } from "../../app/app.tsx";
@@ -223,5 +224,73 @@ describe("the settings dialog opens from its keybinding (T359)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("project-settings")).toBeDefined();
     });
+  });
+});
+
+/**
+ * EVERY BINDING, AGAINST THE MOUNTED APP (T365, §V220, §V307).
+ *
+ * The static half of this gate lives in `composition-seams.test.ts`: a bound command must
+ * be declared in `CommandMap` or written down in `PLANNED_COMMANDS`. What that cannot see
+ * — stated there, closed here — is a registrar that a live module calls only from a
+ * component nobody renders. `mod+,` was exactly that shape for months: the command
+ * existed nowhere, the engine reported `unresolved`, nothing read the report.
+ *
+ * So this asks the composed `App` itself, after mount, with no wiring supplied by the
+ * test (§V220's shared cause): does the bus the engine will call actually carry the
+ * command every key in the shipped table names?
+ */
+describe("§V307/T365 — every shipped binding reaches a command on the mounted app's bus", () => {
+  /**
+   * Commands whose registrar needs something jsdom cannot give this mount. Each carries
+   * the reason, and the both-directions check below fails if one becomes registrable here
+   * — so this cannot quietly grow into the place dead keys go to hide.
+   */
+  const NEEDS_A_BACKEND = [
+    // `space` and `.`. `registerTransportCommands` is called from the frame loop's effect,
+    // which returns early when `backend` is null — and there is no WebGPU in jsdom, so
+    // this mount has none. Their registrar IS reachable and called, which is what
+    // `composition-seams.test.ts` checks; what this mount cannot show is the call
+    // happening. A REAL consequence, worth stating: on a machine with no WebGPU these two
+    // keys, and the top bar's play/step buttons that name the same commands, do nothing.
+    "transport.togglePlay",
+    "transport.stepFrame",
+  ];
+
+  it("registers every bound command that is not declared planned", async () => {
+    const { runtime } = await mountWithNode();
+    const excused = new Set<string>([...PLANNED_COMMANDS, ...NEEDS_A_BACKEND]);
+    const shouldBeLive = [...new Set(DEFAULT_BINDINGS.map((binding) => binding.command))]
+      .filter((command) => !excused.has(command))
+      .sort();
+
+    // Non-vacuity: 18 of the 35 bound commands must be live at a GPU-less mount. An empty
+    // list would mean the table stopped being read, and this would pass having asked
+    // nothing of anything.
+    expect(shouldBeLive.length).toBeGreaterThan(15);
+
+    const dead = shouldBeLive.filter((command) => !runtime.bus.hasCommand(command));
+    expect(
+      dead,
+      "bound by the default keymap, not on the mounted app's bus — these keys do NOTHING",
+    ).toEqual([]);
+  });
+
+  it("has no stale excuse — a backend-gated command that registers anyway must leave", async () => {
+    const { runtime } = await mountWithNode();
+    const stale = NEEDS_A_BACKEND.filter((command) => runtime.bus.hasCommand(command));
+    expect(stale, "registered without a backend — delete these from NEEDS_A_BACKEND").toEqual([]);
+    // And each is really bound, so a renamed binding cannot leave a dangling excuse.
+    const bound = new Set(DEFAULT_BINDINGS.map((binding) => binding.command));
+    expect(NEEDS_A_BACKEND.filter((command) => !bound.has(command))).toEqual([]);
+  });
+
+  it("leaves every PLANNED command unregistered, so the promise stays a promise", async () => {
+    const { runtime } = await mountWithNode();
+    // The half `editor-commands.test.ts` established (§T365): an allowlist that stopped
+    // being true is worse than no allowlist, because the palette and the menus render
+    // these as unavailable while the command quietly works.
+    const built = [...PLANNED_COMMANDS].filter((command) => runtime.bus.hasCommand(command));
+    expect(built, "registered on the app's bus — delete these from PLANNED_COMMANDS").toEqual([]);
   });
 });
