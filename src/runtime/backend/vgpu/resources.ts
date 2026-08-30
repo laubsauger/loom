@@ -49,23 +49,45 @@ export interface ExternalTextureEntry {
  */
 export interface RingTargets {
   readonly frames: number;
-  /** The slice this frame renders into. */
+  /** The single write target — producers render into it every frame (T321). */
   current(): Target;
-  /** The slice written `n` frames ago, clamped to the oldest one written (§V229). */
-  tap(n: number): Target;
-  /** Advances the write slice. Called by the plan's swap pass, after every reader. */
+  /** Raw single-layer view of the frame written `n` ago, clamped to the oldest (§V229). */
+  tapView(n: number): GPUTextureView;
+  /** Raw 2d-array view of the whole history — the slit-scan binding (T321). */
+  arrayView(): GPUTextureView;
+  /** Layer index of the MOST RECENT frame — the per-frame uniform array readers need. */
+  latestLayer(): number;
+  /** Frames actually recorded, capped at `frames` (§V229). */
+  writtenCount(): number;
+  /**
+   * Marks rotation due. The plan's swap pass calls this DURING encode; the actual
+   * copy happens at the next frame entry via `flush()`, after the frame that wrote
+   * the target has been submitted — copying mid-encode would archive LAST frame.
+   */
   rotate(): void;
-  /** Every slice, for a history clear. */
-  readonly slices: readonly Target[];
+  /** Performs a pending rotation: copy write target → layer[head], advance. OUTSIDE any open frame. */
+  flush(): void;
+  /** Zeroes every history layer from the (cleared) write target and resets the counters. */
+  resetHistory(): void;
+  dispose(): void;
 }
 
 /**
- * Allocates a ring: N ordinary targets plus the integer that says which one is now.
+ * Allocates a ring (T237, restorage by T321): ONE ordinary write target — producers
+ * render into it exactly as before — plus ONE `texture_2d_array` of N layers holding
+ * the history. `rotate()` marks; `flush()` (next frame entry, after the writing frame
+ * submitted) copies the target into layer[head] and advances.
  *
- * Deliberately built from `target()` rather than a texture array, because taps bind as
- * ordinary `texture_2d` — no WGSL change, no `maxTextureArrayLayers` question, and every
- * existing binding path works untouched. Per-pixel time displacement (T321) is what would
- * need the array, and it is not this task.
+ * BOTH consumers come off the same storage: a fixed tap binds a single-layer view
+ * (`dimension: "2d"`), which IS an ordinary `texture_2d` at the WGSL level — T237's
+ * shaders unchanged — and per-pixel time (slit-scan) binds the whole-array view. The
+ * per-frame price is one full-frame copy PER RING (§V228: five Cache nodes is five
+ * copies a frame; the node states this beside its byte arithmetic).
+ *
+ * The array texture is raw-device (§V3's sanctioned reach-through — vgpu's target()
+ * owns its own texture and cannot wrap layers); the views are created ONCE and reused,
+ * so binding identity stays stable for the bind-group cache and nothing allocates in
+ * the frame loop (§V8: flush encodes a copy, allocates nothing).
  */
 function createRing(
   gpu: Gpu,
@@ -75,28 +97,79 @@ function createRing(
   label: string,
 ): RingTargets {
   const count = Math.max(2, Math.floor(frames));
-  const slices = Array.from({ length: count }, (_, index) =>
-    target(gpu, { size, format, label: `${label} [${index}]` }),
+  const raw = gpu.gpu;
+  const writeTarget = target(gpu, { size, format, label: `${label} [write]` });
+  const history = raw.createTexture({
+    size: { width: size[0], height: size[1], depthOrArrayLayers: count },
+    format,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    label: `${label} [history]`,
+  });
+  const layerViews = Array.from({ length: count }, (_, index) =>
+    history.createView({
+      dimension: "2d",
+      baseArrayLayer: index,
+      arrayLayerCount: 1,
+      label: `${label} [layer ${index}]`,
+    }),
   );
+  const wholeView = history.createView({ dimension: "2d-array", label: `${label} [array]` });
+  /** Next layer to write. `latest` = (head - 1) mod count once anything is written. */
   let head = 0;
-  /** How many slices hold a frame. Caps at count; only ever grows (§V229). */
+  /** How many layers hold a frame. Caps at count; only ever grows (§V229). */
   let written = 0;
+  let pendingRotate = false;
+
+  const copyInto = (layer: number): void => {
+    const encoder = raw.createCommandEncoder({ label: `${label} rotate` });
+    encoder.copyTextureToTexture(
+      { texture: writeTarget.color.gpu },
+      { texture: history, origin: { x: 0, y: 0, z: layer } },
+      { width: size[0], height: size[1], depthOrArrayLayers: 1 },
+    );
+    raw.queue.submit([encoder.finish()]);
+  };
+
   return {
     frames: count,
-    slices,
     current() {
-      return slices[head] as Target;
+      return writeTarget;
     },
-    tap(n) {
-      // §V229: before the ring has filled, the deepest available slice stands in for a
-      // deeper tap. Never a texture nobody has written — that reads black, flashes on
-      // every reset, and differs between a live session and a headless render.
+    tapView(n) {
+      // §V229: before the ring has filled, the deepest available layer stands in for
+      // a deeper tap — never a layer nobody has written.
       const back = Math.min(Math.max(1, Math.floor(n)), Math.max(written, 1));
-      return slices[(head - back + count * 2) % count] as Target;
+      const latest = (head - 1 + count) % count;
+      return layerViews[(latest - (back - 1) + count * 2) % count] as GPUTextureView;
+    },
+    arrayView() {
+      return wholeView;
+    },
+    latestLayer() {
+      return (head - 1 + count) % count;
+    },
+    writtenCount() {
+      return written;
     },
     rotate() {
+      pendingRotate = true;
+    },
+    flush() {
+      if (!pendingRotate) return;
+      pendingRotate = false;
+      copyInto(head);
       written = Math.min(written + 1, count);
       head = (head + 1) % count;
+    },
+    resetHistory() {
+      // The caller cleared the write target; archive that zero frame into every layer.
+      for (let layer = 0; layer < count; layer += 1) copyInto(layer);
+      head = 0;
+      written = 0;
+      pendingRotate = false;
+    },
+    dispose() {
+      history.destroy();
     },
   };
 }
@@ -323,7 +396,13 @@ export function buildResources(
           texture: gpu.device.createTexture({
             size: resource.size,
             format: resource.format as GPUTextureFormat,
-            usage: ["texture_binding", "copy_dst"],
+            // RENDER_ATTACHMENT is not optional here, and it is not this file's choice:
+            // `copyExternalImageToTexture` REQUIRES `COPY_DST | RENDER_ATTACHMENT` on the
+            // destination, because the implementation performs the copy as a draw (that
+            // is what buys the colour-space conversion and the flip). Without it every
+            // upload fails validation on the device's uncaptured-error path — no throw
+            // for the caller's try/catch to see — and the texture stays black forever.
+            usage: ["texture_binding", "copy_dst", "render_attachment"],
             label: resource.label ?? resource.id,
           }),
           sourceId: resource.sourceId,
@@ -403,14 +482,16 @@ export function buildResources(
    * The slice a binding reads (T237). A tap is resolved per FRAME, not once: the ring
    * rotates under it, which is why ring bindings join the dynamic set below.
    */
-  const readRingSlice = (resourceId: string, tap: number | undefined): unknown => {
+  const readRingSlice = (resourceId: string, tap: number | undefined, array?: boolean): unknown => {
     const ring = rings.get(resourceId);
     if (ring === undefined) return undefined;
-    return ring.tap(Math.max(1, tap ?? 1)).color;
+    // T321: the whole-array view for per-pixel time; a single-layer view for a fixed
+    // tap — an ordinary texture_2d at the WGSL level, T237's shaders untouched.
+    return array === true ? ring.arrayView() : ring.tapView(Math.max(1, tap ?? 1));
   };
 
-  const readTexture = (resourceId: string, tap?: number): unknown => {
-    const slice = readRingSlice(resourceId, tap);
+  const readTexture = (resourceId: string, tap?: number, array?: boolean): unknown => {
+    const slice = readRingSlice(resourceId, tap, array);
     if (slice !== undefined) return slice;
     // T94: bind the Target itself, never its .color texture. vgpu wires
     // onTexturesRecreated only for Target values, and Target.resize() destroys and
@@ -466,7 +547,7 @@ export function buildResources(
       bag[binding.binding] = value;
     }
     for (const binding of textureBindings) {
-      const value = readTexture(binding.resourceId, binding.tap);
+      const value = readTexture(binding.resourceId, binding.tap, binding.array);
       if (value === undefined) {
         diagnostics.push(
           backendDiagnostic(
@@ -699,7 +780,7 @@ export function buildResources(
 
 interface SetBagContext {
   readonly gpu: Gpu;
-  readonly readTexture: (resourceId: string) => unknown;
+  readonly readTexture: (resourceId: string, tap?: number, array?: boolean) => unknown;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
   readonly externals: ExternalResources;
   readonly shared: SharedUniforms<SharedUniformValues>;
@@ -714,7 +795,7 @@ function buildSetBag(
   const bag: Record<string, unknown> = {};
 
   for (const binding of pass.textures ?? []) {
-    const texture = ctx.readTexture(binding.resourceId);
+    const texture = ctx.readTexture(binding.resourceId, binding.tap, binding.array);
     if (texture === undefined) {
       ctx.diagnostics.push(
         backendDiagnostic(

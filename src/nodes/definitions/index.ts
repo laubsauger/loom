@@ -22,6 +22,7 @@ import { renderInstancesNode } from "./render-instances.ts";
 import { renderSurfaceNode } from "./render-surface.ts";
 import { pointTopologyNode } from "./point-topology.ts";
 import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
+import { slitScanNode } from "./slit-scan.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -43,6 +44,7 @@ export { renderInstancesNode, INSTANCE_SHAPES } from "./render-instances.ts";
 export { renderSurfaceNode } from "./render-surface.ts";
 export { pointTopologyNode } from "./point-topology.ts";
 export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
+export { slitScanNode } from "./slit-scan.ts";
 export {
   movieFileInNode,
   webcamNode,
@@ -158,6 +160,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   renderSurfaceNode,
   pointTopologyNode,
   pointKernelAdvancedNode,
+  slitScanNode,
 ];
 
 /**

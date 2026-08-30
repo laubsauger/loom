@@ -159,6 +159,14 @@ export interface TextureBindingDescriptor {
    * enforces rather than a convention each node is trusted to remember.
    */
   readonly tap?: number;
+  /**
+   * T321: bind the ring's WHOLE history as `texture_2d_array<f32>` — per-pixel time.
+   * The shader picks the layer per fragment; a per-frame `ringLatest`/`ringWritten`/
+   * `ringFrames` uniform merge tells it where "now" is. Mutually exclusive with `tap`
+   * (one binding is one WGSL type), enforced by the reader. Part of the pass structure
+   * key: array vs single-layer is a different pipeline.
+   */
+  readonly array?: boolean;
 }
 
 export interface SamplerBindingDescriptor {
@@ -344,17 +352,21 @@ function readBindings(value: unknown): ReadonlyArray<TextureBindingDescriptor> |
   const out: TextureBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId, sampled, tap } = entry;
+    const { binding, resourceId, sampled, tap, array } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
     if (sampled !== undefined && sampled !== "filtered" && sampled !== "unfiltered") return undefined;
     // T237: a tap is a whole number of frames back, and there is no tap 0 — slice 0 is
     // the one being written this frame.
     if (tap !== undefined && (!Number.isInteger(tap) || (tap as number) < 1)) return undefined;
+    // T321: array and tap are one binding claiming two WGSL types.
+    if (array !== undefined && typeof array !== "boolean") return undefined;
+    if (array === true && tap !== undefined) return undefined;
     out.push({
       binding,
       resourceId,
       ...(sampled === undefined ? {} : { sampled }),
       ...(tap === undefined ? {} : { tap: tap as number }),
+      ...(array === true ? { array: true } : {}),
     });
   }
   return out;
@@ -796,7 +808,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.shader,
           pass.target,
           pass.clear ?? true,
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered", t.array === true]),
           (pass.samplers ?? []).map((s) => [s.binding, s.resourceId]),
           pass.uniformBinding ?? null,
           // Names, never values (§V5).
@@ -813,7 +825,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
             ? ["indirect", pass.workgroups.indirect]
             : pass.workgroups,
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered", t.array === true]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,
         ];
@@ -826,7 +838,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.topology,
           typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
           (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
-          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered"]),
+          (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered", t.array === true]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,
           pass.sharedBinding ?? null,

@@ -557,9 +557,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           f.pass({ target: pair.write, clear: true }, () => {});
         }
         for (const ring of selectedRings) {
-          for (const slice of ring.slices) f.pass({ target: slice, clear: true }, () => {});
+          f.pass({ target: ring.current(), clear: true }, () => {});
         }
       });
+      // T321: the history is an array texture now — archive the cleared frame into
+      // every layer and reset the counters, outside the frame (copies self-submit).
+      for (const ring of selectedRings) ring.resetHistory();
     }
     hub.report(
       backendDiagnostic(
@@ -583,6 +586,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     // T311: BEFORE the frame opens — building preview resources is an allocation, and
     // the §V8 guard rightly refuses it once `duringFrame` begins.
     retryDirtyPreviewHosts();
+    flushRings(); // T321: archive last frame's ring writes before anything binds a tap.
     const previous = currentFrame;
     currentFrame = f;
     try {
@@ -768,7 +772,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // T237: the tap moves under the binding on every rotation, so it is re-pointed
         // here for the same reason a ping-pong read half is. `set()` allocates nothing.
         const ring = active.resources.rings.get(binding.resourceId);
-        if (ring) values[binding.binding] = ring.tap(binding.tap ?? 1).color;
+        if (ring) {
+          // T321: the whole-array view is ONE stable object and never needs
+          // re-pointing; only fixed taps chase the head per frame.
+          values[binding.binding] =
+            binding.array === true ? ring.arrayView() : ring.tapView(binding.tap ?? 1);
+        }
       }
       drawable.set(values);
     }
@@ -1087,6 +1096,19 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   const PREVIEW_RETRY_INTERVAL_FRAMES = 30;
   let previewRetryCooldown = 0;
 
+  /**
+   * T321: performs pending ring rotations — copy write target → layer[head] — at
+   * FRAME ENTRY, before anything binds a tap. The swap pass only MARKS during encode:
+   * copying mid-encode would archive LAST frame (the writing draws submit at frame
+   * end on the loop path). Frame entry is after that submit and outside any open
+   * frame, the same unconditional seam T311 rides (§V209).
+   */
+  function flushRings(): void {
+    const active = program;
+    if (!active) return;
+    for (const ring of active.resources.rings.values()) ring.flush();
+  }
+
   function retryDirtyPreviewHosts(): void {
     if (previewRetryCooldown > 0) {
       previewRetryCooldown -= 1;
@@ -1342,7 +1364,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // T311: the DIRECT render path (no loop, headless) is its own unconditional
       // frame entry. Loop renders arrive with a frame already open — runFrame retried
       // before opening it — so only retry here when no frame is open.
-      if (currentFrame === undefined) retryDirtyPreviewHosts();
+      if (currentFrame === undefined) {
+        retryDirtyPreviewHosts();
+        flushRings(); // T321: same reasoning, same seam.
+      }
       if (compiled.id !== program.id) {
         hub.report(
           backendDiagnostic(
@@ -1367,6 +1392,23 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             frameIndex: frameInputs.frame.frameIndex,
           });
         }
+      }
+      // T321: passes reading a ring as an ARRAY need to know where "now" is. The
+      // view is one stable object; the head is a NUMBER, so it travels as uniform
+      // VALUES (§V5) merged per frame exactly like the T172 frame fields.
+      for (const pass of active.passes) {
+        if (pass.kind === "swap" || pass.kind === "counter") continue;
+        const arrayBinding = (pass.textures ?? []).find(
+          (binding) => binding.array === true && active.resources.rings.has(binding.resourceId),
+        );
+        if (arrayBinding === undefined) continue;
+        const ring = active.resources.rings.get(arrayBinding.resourceId);
+        if (ring === undefined || pass.uniformBinding === undefined) continue;
+        applyUniforms(active, pass.id, {
+          ringLatest: ring.latestLayer(),
+          ringWritten: ring.writtenCount(),
+          ringFrames: ring.frames,
+        });
       }
       rebindDynamicTextures(active);
       active.mediaDirty = uploadExternalTextures(active);
@@ -2050,7 +2092,8 @@ function releaseResourcesExcept(previous: ResourceSet, next?: ResourceSet): void
   // instead of two turns a small leak into a visible one.
   for (const [id, ring] of previous.rings) {
     if (next?.rings.get(id) !== ring) {
-      for (const slice of ring.slices) destroy(slice);
+      destroy(ring.current());
+      ring.dispose();
     }
   }
   for (const [id, entry] of previous.externalTextures) {
