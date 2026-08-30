@@ -348,6 +348,33 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     label: "Step one frame",
   },
   {
+    /**
+     * T433. `L` is the loop key everywhere that has one, and both `l` and `L` are already
+     * spent on the graph's reference lines — so this is the free chord one modifier out,
+     * the same reasoning `mod+shift+f` records below. `global`, not `viewer`: looping is
+     * something you turn on while working in the graph.
+     */
+    id: "transport.toggleLoop",
+    keys: "mod+shift+l",
+    context: "global",
+    command: "transport.toggleLoop",
+    label: "Loop the range",
+    description: "Cycle playback over the timeline's in and out points.",
+  },
+  {
+    /**
+     * T433 — rendering the range out. `mod+shift+e` for export; `mod+e` is left alone
+     * because `e` alone already names the shader editor and the two would read as a pair
+     * that does not exist.
+     */
+    id: "export.renderRange",
+    keys: "mod+shift+e",
+    context: "global",
+    command: "export.renderRange",
+    label: "Render the range",
+    description: "Render the timeline's in/out range to a video file.",
+  },
+  {
     // Fullscreen the viewer (T394). `global`, not `viewer`: filling the screen with the
     // render is something you ask for while working in the graph or the shader editor,
     // and a shortcut that only fires once the picture already has focus is the one you

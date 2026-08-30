@@ -1,6 +1,7 @@
 import { compileGraph } from "../../compiler/index.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/types/backend.ts";
+import type { TransportSource } from "../../domain/types/frame.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
@@ -257,6 +258,14 @@ export async function renderOnce(request: HeadlessRenderRequest): Promise<Render
   return first;
 }
 
+/** What a `renderPlanHeadless` caller may do between frames (T464). */
+export interface PlanRenderLevers {
+  /** The clock. `wrapTo` is a lap; `reset` is the rewind half of a seek. */
+  readonly transport: TransportSource;
+  /** The state half of a seek (§V170/§V181) — what a lap must NOT do. */
+  resetTemporalHistory(): void;
+}
+
 export interface PlanRenderRequest {
   readonly host: GpuHost;
   /** A hand-written plan, for structures the node catalogue cannot express yet. */
@@ -268,6 +277,16 @@ export interface PlanRenderRequest {
   readonly capture?: ReadonlyArray<number>;
   readonly fps?: number;
   readonly seed?: number;
+  /**
+   * Runs after each frame, with the two levers a lap and a seek differ by (T464).
+   *
+   * Exposed so a test can WRAP the timeline mid-run — the lap a looping timeline takes —
+   * and look at the pixels on the other side of it, and so the same test can perform the
+   * CLEAR a seek does instead and show the difference. That pairing is the only way the
+   * claim can be made: a feedback that resets at the wrap still renders a moving picture,
+   * so only the accumulated value across the boundary tells the two apart (§V147).
+   */
+  readonly betweenFrames?: (levers: PlanRenderLevers, frameIndex: number) => void;
 }
 
 /**
@@ -290,13 +309,14 @@ export async function renderPlanHeadless(request: PlanRenderRequest): Promise<{
   try {
     await backend.initialize({});
     const compiled = await backend.compile(request.plan);
+    const transport = offlineTransport({
+      fps: request.fps ?? 60,
+      seed: request.seed ?? 7,
+      mode: "fixed-step",
+    });
     const driver = createFrameDriver({
       backend,
-      transport: offlineTransport({
-        fps: request.fps ?? 60,
-        seed: request.seed ?? 7,
-        mode: "fixed-step",
-      }),
+      transport,
       pointer: createPointerSource(),
       resolution: () => request.size,
     });
@@ -316,6 +336,15 @@ export async function renderPlanHeadless(request: PlanRenderRequest): Promise<{
           bytes: image.bytes,
         });
       }
+      request.betweenFrames?.(
+        {
+          transport,
+          resetTemporalHistory: () => {
+            backend.resetTemporalHistory();
+          },
+        },
+        index,
+      );
     }
     return { frames: captured, diagnostics };
   } finally {

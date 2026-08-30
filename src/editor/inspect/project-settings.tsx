@@ -1,6 +1,12 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import type { ProjectSettings } from "@domain/types/graph.ts";
-import { DEFAULT_PROJECT_FPS, projectFps } from "@domain/types/graph.ts";
+import {
+  DEFAULT_FRAME_RANGE,
+  DEFAULT_PROJECT_FPS,
+  SEEK_FRAME_LIMIT,
+  projectFps,
+  projectRange,
+} from "@domain/types/graph.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { nodeTypeLabelStore } from "@editor/nodes/node-type-labels.ts";
 import { BooleanField } from "@ui/controls/boolean-field.tsx";
@@ -85,6 +91,15 @@ const dimensionSpec = (max: number): NumericSpec => ({
 /** A rate is a whole number of frames per second, 1..240. */
 const FPS_SPEC: NumericSpec = { min: 1, max: 240, step: 1, precision: 0 };
 /**
+ * A timeline endpoint, in frames (T454).
+ *
+ * The bounds are not decoration. `min` keeps the out point after the in point, so the
+ * field cannot produce the inverted range the schema would then refuse with an error the
+ * user did not ask for; `max` is `SEEK_FRAME_LIMIT`, because a range whose out point a
+ * seek will not replay is a range that cannot loop and cannot render (§V170).
+ */
+const rangeSpec = (max: number, min = 0): NumericSpec => ({ min, max, step: 1, precision: 0 });
+/**
  * The seed has no meaningful maximum to drag towards, so it gets the same integer spec
  * with a reach the ladder can actually cross rather than `MAX_SAFE_INTEGER`, which makes
  * every drag either nothing or everything.
@@ -149,6 +164,8 @@ export function ProjectSettingsDialog({
   );
 
   const maxResolution = settings.limits.maxResolution;
+  // T454/T433 — one range, read through the one accessor that applies the default.
+  const range = projectRange(settings);
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
@@ -266,6 +283,49 @@ export function ProjectSettingsDialog({
                 spec={FPS_SPEC}
                 onChange={commitOnly("previewFps", (next) =>
                   onChange({ previewFps: next }, "Set preview rate"),
+                )}
+              />
+            </div>
+          </ControlRow>
+          {/*
+            T454 — the timeline's LENGTH is project state, not chrome.
+
+            The owner's reasoning, and it is the right one: duration is CONTENT. The piece
+            is twelve seconds long and that travels with the document — the opposite of
+            pane layout and keymap overrides, which are per-person and live in
+            `localStorage` (§V18, §V54). So it sits here beside fps and resolution, and a
+            project opened on another machine has the same length.
+
+            One row with two fields, laid out like the resolution above, for the same
+            reason: in and out are two components of ONE value (T433 — the out point is the
+            render length AND the loop end AND the scrub extent), and two separate rows
+            would invite reading them as two settings that can drift apart. The header
+            scrubber drags the same value; there is no second number anywhere.
+          */}
+          <ControlRow label="timeline range">
+            <div className={styles.pair}>
+              <NumberField
+                label="range in"
+                value={shown("rangeStart", range.start)}
+                defaultValue={DEFAULT_FRAME_RANGE.start}
+                spec={rangeSpec(range.end - 1)}
+                onChange={commitOnly("rangeStart", (next) =>
+                  onChange(
+                    { frameRange: { start: next, end: range.end } },
+                    "Set the timeline in point",
+                  ),
+                )}
+              />
+              <NumberField
+                label="range out"
+                value={shown("rangeEnd", range.end)}
+                defaultValue={DEFAULT_FRAME_RANGE.end}
+                spec={rangeSpec(SEEK_FRAME_LIMIT, range.start + 1)}
+                onChange={commitOnly("rangeEnd", (next) =>
+                  onChange(
+                    { frameRange: { start: range.start, end: next } },
+                    "Set the timeline out point",
+                  ),
                 )}
               />
             </div>

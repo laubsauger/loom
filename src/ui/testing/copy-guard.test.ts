@@ -44,6 +44,25 @@ const SENTENCE_LEN = 60;
  * inline literal.
  */
 const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
+  /**
+   * T461 — the HELP PANEL is where an explanation belongs, and this one cannot be a
+   * tooltip.
+   *
+   * §V90's rule is that help is on demand, carried by the label. These two sentences are
+   * IN the on-demand surface: the expression help is opened deliberately, and this is the
+   * moment an author picks between `time` and `abstime`. Picking wrong is silent —
+   * `time * 90` is correct for one lap of a bounded timeline and snaps back at every out
+   * point after that — so a chip showing a number cannot carry it and neither can a
+   * tooltip on a name the author has not hovered.
+   */
+  {
+    file: "src/editor/help/expression-help.tsx",
+    text: "follow the timeline and restart at the in point when it loops.",
+  },
+  {
+    file: "src/editor/help/expression-help.tsx",
+    text: "keep counting, so use them for anything that must not snap back.",
+  },
   {
     file: "src/app/dock-panes.tsx",
     text: "The graph, the inspector and the shader editor still work — the document is the source of truth and does not need a device. Rendering and compile validation stay off until one is available.",

@@ -23,13 +23,15 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
 
   let seed = options.seed ?? 0;
   let frameIndex = startFrame;
+  /** Set by `wrapTo`: the in point after a lap has a predecessor, so its step is real. */
+  let wrapped = false;
 
   return {
     next(): FrameEvaluationInput {
       const current = frameIndex;
       frameIndex += 1;
       const timeSeconds = current / options.fps;
-      const step = current === startFrame ? 0 : deltaSeconds;
+      const step = current === startFrame && !wrapped ? 0 : deltaSeconds;
       return {
         // Divided, not accumulated: frame N always lands on exactly N/fps.
         timeSeconds,
@@ -47,6 +49,19 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
     reset(nextSeed?: number): void {
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = startFrame;
+    },
+    /**
+     * T464 — wrap the timeline without starting anything over.
+     *
+     * Here so an offline render can reproduce a LAP, and so the headless suite can put a
+     * real feedback graph across one and look at the pixels. Same distinction as the live
+     * clock's: `reset` is a jump the caller clears state alongside, this is a continuation
+     * that clears nothing. The step reported after a wrap is a real one, because playback
+     * did not stop — only the first frame of a fresh run has no predecessor.
+     */
+    wrapTo(target: number): void {
+      frameIndex = Math.max(0, Math.trunc(target));
+      wrapped = true;
     },
   };
 }

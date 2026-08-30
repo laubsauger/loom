@@ -82,6 +82,19 @@ export function ExpressionHelp({ source, scope, onInsert }: ExpressionHelpProps)
             </button>
           ))}
         </div>
+        {/*
+          T461 — WHICH CLOCK RESETS, said where the author chooses between them.
+
+          This is the one place a sentence earns its keep against §V92, because choosing
+          wrong here is SILENT: `time * 90` looks perfectly correct for the first lap of a
+          bounded timeline and snaps back at every out point forever after, with nothing on
+          screen to explain it. A chip cannot say that, and the names alone cannot either.
+        */}
+        <p className={styles.sectionNote}>
+          <code>time</code> and <code>frame</code> follow the timeline and restart at the
+          in point when it loops. <code>abstime</code> and <code>absframe</code> keep
+          counting, so use them for anything that must not snap back.
+        </p>
       </section>
 
       {suggestions.length === 0 ? null : (

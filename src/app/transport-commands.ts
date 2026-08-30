@@ -1,4 +1,6 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { FrameInputs } from "@domain/types/backend.ts";
+import { SEEK_FRAME_LIMIT } from "@domain/types/graph.ts";
 
 /**
  * Transport as a bus command (§V29, §V52, T184).
@@ -33,23 +35,51 @@ declare module "@domain/types/commands.ts" {
      * command reports rather than freezing the tab for a typo.
      */
     "transport.seek": { input: { frameIndex: number }; output: { frameIndex: number } };
+    /**
+     * Loop the timeline's range (T433).
+     *
+     * SESSION state, not document state, and the line is the same one `playing` sits on:
+     * whether the transport is currently cycling is a property of this playback, not of
+     * the project. The RANGE it cycles is document state (`ProjectSettings.frameRange`),
+     * because "how long is this piece" is exactly the kind of thing a `.loom.json` is for.
+     *
+     * Looping goes back to the in point through the same replay `transport.seek` runs
+     * (§V170): a graph with feedback has no state at the in point just because it passed
+     * through it once, so wrapping the counter would show the second lap a picture from
+     * the first lap's history.
+     */
+    "transport.toggleLoop": { input: Record<string, never>; output: { looping: boolean } };
   }
 }
 
 /**
  * How far a seek will replay before it refuses (§V170).
  *
- * 10 000 frames is ~2.8 minutes of 60 fps material — past anything someone scrubs to by
- * hand, and low enough that a mistyped `1e9` reports instead of hanging the browser.
+ * Defined in the domain beside `FrameRange` (T454): the same number bounds the timeline's
+ * out point, and a project whose out point a seek would refuse is one that cannot loop and
+ * cannot render. Re-exported here because this is where the rule is enforced.
  */
-export const SEEK_FRAME_LIMIT = 10_000;
+export { SEEK_FRAME_LIMIT } from "@domain/types/graph.ts";
 
 export interface TransportHandlers {
   isPlaying(): boolean;
   togglePlay(): void;
   stepFrame(frames: number): number;
+  /**
+   * Renders exactly one frame and hands back its INPUTS (T433).
+   *
+   * `stepFrame` reports an index, which is all a command result can carry. The offline
+   * render path needs the `FrameEvaluationInput` itself: §V44 and the recorder's whole
+   * contract are that a captured frame is labelled with the deterministic index the
+   * render actually consumed, never one reconstructed alongside it.
+   */
+  stepOnce(): FrameInputs | null;
   /** Replays from frame 0 to `frameIndex`, clearing temporal state first (§V170). */
   seek(frameIndex: number): number;
+  /** T433 — is playback cycling the document's frame range? */
+  isLooping(): boolean;
+  /** Flips looping. Returns the resulting state. */
+  toggleLoop(): void;
 }
 
 export interface TransportHolder {
@@ -210,6 +240,27 @@ export function registerTransportCommands(bus: ShaderloomBus): TransportHolder {
         return { status: "applied", revision, output: { frameIndex } };
       },
       rejectionOutput: () => ({ frameIndex: -1 }),
+    });
+  }
+
+  if (!bus.hasCommand("transport.toggleLoop")) {
+    bus.registerCommand({
+      name: "transport.toggleLoop",
+      description: "Loop playback over the timeline's in/out range.",
+      handler: (_input, context) => {
+        const revision = context.store.getRevision();
+        if (holder.current === null) {
+          return {
+            status: "rejected",
+            revision,
+            diagnostics: [NO_LOOP_DIAGNOSTIC],
+            output: { looping: false },
+          };
+        }
+        if (!context.dryRun) holder.current.toggleLoop();
+        return { status: "applied", revision, output: { looping: holder.current.isLooping() } };
+      },
+      rejectionOutput: () => ({ looping: false }),
     });
   }
 

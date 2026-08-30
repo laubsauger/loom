@@ -229,6 +229,20 @@
   gap: var(--space-1);
 }
 
+/* A note UNDER a section, for the rare fact the values themselves cannot carry (§V90). */
+.sectionNote {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+}
+
+.sectionNote code {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
 .chip,
 .chipStatic {
   display: inline-flex;

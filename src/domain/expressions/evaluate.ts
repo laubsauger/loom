@@ -1,4 +1,9 @@
-import { wallDeltaSecondsOf, wallSecondsOf } from "../types/frame.ts";
+import {
+  absFrameIndexOf,
+  absTimeSecondsOf,
+  wallDeltaSecondsOf,
+  wallSecondsOf,
+} from "../types/frame.ts";
 import type { FrameEvaluationInput } from "../types/frame.ts";
 
 /**
@@ -166,6 +171,13 @@ export function scopeFromFrame(
     frame: frame.frameIndex,
     walltime: wallSecondsOf(frame),
     walldelta: wallDeltaSecondsOf(frame),
+    // T461 — the clocks that do NOT reset. `time` and `frame` wrap with the timeline once
+    // it is bounded (T455); these keep counting, so a continuous rotation has something to
+    // read that does not snap back at the out point. Still deterministic: a frame COUNT,
+    // never the wall clock, so a graph reading `abstime` renders offline exactly as it
+    // played (§V44).
+    abstime: absTimeSecondsOf(frame),
+    absframe: absFrameIndexOf(frame),
   };
 }
 

@@ -195,6 +195,61 @@ export function projectFps(settings: Pick<ProjectSettings, "fps">): number {
 /** Shared with the transport so the clock and the document cannot disagree about the default. */
 export const DEFAULT_PROJECT_FPS = 60;
 
+/**
+ * The timeline's in and out points — ONE value, three meanings (T433).
+ *
+ * `end` is simultaneously the render length, the loop end and the scrub extent. That is a
+ * RULING, not an accident of the shape: three fields for those three jobs can disagree,
+ * and a user who set the render length and then found the loop still running past it
+ * would be right to call that broken. Anything in the app that needs "how long is this"
+ * reads this, or it is a second number.
+ *
+ * Inclusive at both ends, so a range is `end - start + 1` frames and `{start: 0, end: 0}`
+ * is the single frame 0 rather than an empty one. `end > start` is enforced by the
+ * schema, so no consumer has to handle an inverted range.
+ */
+export interface FrameRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * 600 frames — ten seconds at the default 60 fps.
+ *
+ * Optional on `ProjectSettings` for the reason `fps` is: documents written before the
+ * timeline existed must keep parsing (§V68). Read through `projectRange()` so there is
+ * one answer to "what range is this project", never a `?? DEFAULT` at each call site.
+ */
+export const DEFAULT_FRAME_RANGE: FrameRange = Object.freeze({ start: 0, end: 599 });
+
+export function projectRange(settings: Pick<ProjectSettings, "frameRange">): FrameRange {
+  const range = settings.frameRange;
+  if (range === undefined) return DEFAULT_FRAME_RANGE;
+  // Defensive rather than decorative: settings arrive from a file (§V68) and the schema
+  // that would have refused an inverted range only runs at the boundaries it guards.
+  if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) {
+    return DEFAULT_FRAME_RANGE;
+  }
+  return range;
+}
+
+/**
+ * How far the transport will replay before it refuses (§V170), and therefore the largest
+ * out point a range may have.
+ *
+ * 10 000 frames is ~2.8 minutes of 60 fps material — past anything someone scrubs to by
+ * hand, and low enough that a mistyped `1e9` reports instead of hanging the browser. It
+ * lives in the domain rather than beside the seek command because the RANGE is bounded by
+ * it too: a project whose out point a seek would refuse is a project that cannot loop and
+ * cannot render, and two copies of that number is how those quietly stop agreeing.
+ */
+export const SEEK_FRAME_LIMIT = 10_000;
+
+/** Frames in the range, inclusive of both ends. */
+export function frameRangeLength(range: FrameRange): number {
+  return range.end - range.start + 1;
+}
+
 export interface ProjectSettings {
   outputResolution: { width: number; height: number };
   workingFormat: TextureFormat;
@@ -213,6 +268,13 @@ export interface ProjectSettings {
    * NOT structural (§V178): an fps edit must not recompile or rebuild resources.
    */
   fps?: number;
+  /**
+   * The timeline's in/out points (T433). Read through `projectRange()`.
+   *
+   * NOT structural (§V178), for the same reason `fps` is not: it changes what the
+   * transport does with time, never what the compiler emits or the backend allocates.
+   */
+  frameRange?: FrameRange;
   /** Absent in older documents; consumers read `settings.colorPolicy ?? DEFAULT_COLOR_POLICY`. */
   colorPolicy?: ColorPolicy;
   limits: {

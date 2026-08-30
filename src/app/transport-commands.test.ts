@@ -9,8 +9,12 @@ import type { TransportHandlers } from "./transport-commands.ts";
  * keymap engine reported them `unresolved` forever.
  */
 
-function fakeHandlers(): TransportHandlers & { playing: boolean; stepped: number[] } {
-  const state = { playing: false, stepped: [] as number[] };
+function fakeHandlers(): TransportHandlers & {
+  playing: boolean;
+  stepped: number[];
+  looping: boolean;
+} {
+  const state = { playing: false, looping: false, stepped: [] as number[] };
   return {
     get playing() {
       return state.playing;
@@ -27,6 +31,17 @@ function fakeHandlers(): TransportHandlers & { playing: boolean; stepped: number
     stepFrame: (frames: number) => {
       state.stepped.push(frames);
       return frames - 1;
+    },
+    stepOnce: () => null,
+    get looping() {
+      return state.looping;
+    },
+    set looping(value: boolean) {
+      state.looping = value;
+    },
+    isLooping: () => state.looping,
+    toggleLoop: () => {
+      state.looping = !state.looping;
     },
   };
 }

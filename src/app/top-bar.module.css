@@ -49,6 +49,35 @@
   line-height: 1;
 }
 
+/* An engaged mode, in the same colour the live dot uses — one meaning, one hue. */
+.glyphLive {
+  color: var(--signal);
+}
+
+/*
+ * The timeline strip (T433).
+ *
+ * The ONLY growable element in the header, which is what lets a timeline arrive without
+ * the bar getting taller: it takes the horizontal slack that already sat between the
+ * centred transport and the right-hand readouts. Capped, so on a wide window the bar
+ * still reads as three groups rather than one enormous track, and `min-width: 0` so it
+ * gives that space back before anything else is squeezed.
+ */
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 560px;
+}
+
+.renderLabel {
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-display);
+}
+
 .state {
   display: inline-flex;
   align-items: center;

@@ -44,6 +44,30 @@ export interface FrameEvaluationInput {
   wallSeconds?: number;
   /** The step that belongs to `wallSeconds` (§V172). Clamped exactly as it is. */
   wallDeltaSeconds?: number;
+  /**
+   * ABSOLUTE frame: frames this transport has produced, and it NEVER resets (T461).
+   *
+   * The third clock, and the one T455 makes necessary rather than nice. Once the timeline
+   * is bounded, `frameIndex` and `timeSeconds` WRAP at the out point — so an expression
+   * driving a continuous rotation off `time` snaps back every lap, and its author has no
+   * other clock to reach for. This is that clock: TouchDesigner's `absTime`, and the owner
+   * named it.
+   *
+   * What it is NOT is a wall clock, and the difference matters more here than it does in
+   * TD. TD's `absTime` is process uptime and is not reproducible. This is a COUNT of
+   * frames — the same determinism `frameIndex` has (§V44, §V45, §V47) — so a graph reading
+   * it renders the same offline as it does live, and T431's byte-identical audio replay
+   * keeps working. A wall-clock version would break both and look perfectly correct in
+   * every live session, which is exactly the failure shape this project keeps finding.
+   *
+   * Optional for the same reason `wallSeconds` is (§V68): a transport that has no absolute
+   * clock reports none, and readers fall back to the timeline pair — so the two clocks
+   * AGREE until the first lap and diverge only when the timeline actually wraps, which is
+   * precisely when the distinction is worth seeing.
+   */
+  absFrameIndex?: number;
+  /** `absFrameIndex` in seconds, at the timeline's rate. Never a wall reading (T461). */
+  absTimeSeconds?: number;
 }
 
 /**
@@ -103,8 +127,51 @@ export function wallDeltaSecondsOf(frame: FrameEvaluationInput): number {
   return frame.wallDeltaSeconds ?? frame.deltaSeconds;
 }
 
+/**
+ * Absolute time, falling back to the timeline reading when the transport supplied none.
+ *
+ * The fallback is the SAFE one and it is deliberate: timeline time is deterministic, so a
+ * transport with no absolute clock still gives a reproducible number rather than a
+ * plausible-looking wall reading (T461, §V44).
+ */
+export function absTimeSecondsOf(frame: FrameEvaluationInput): number {
+  return frame.absTimeSeconds ?? frame.timeSeconds;
+}
+
+/** Absolute frame count, falling back to the timeline index for the same reason. */
+export function absFrameIndexOf(frame: FrameEvaluationInput): number {
+  return frame.absFrameIndex ?? frame.frameIndex;
+}
+
 /** Supplies frame input. Swappable: live clock now, playhead or offline queue later (§V49). */
 export interface TransportSource {
   next(): FrameEvaluationInput;
+  /**
+   * Start over: the timeline goes back to zero AND stateful stages are cleared by the
+   * caller alongside it (§V170, §V181). This is what a SEEK does.
+   */
   reset(seed?: number): void;
+  /**
+   * WRAP the timeline to a frame, keeping everything else running (T464).
+   *
+   * **A LOOP IS NOT A SEEK.** This is the distinction the transport was missing, and the
+   * owner caught its absence: when a piece reaches its out point, playback CONTINUES —
+   * only the time VALUE wraps. A feedback that survives the wrap is what makes long-form
+   * feedback work at all, and it is what TouchDesigner does.
+   *
+   * §V181 is not weakened by this; it was being applied outside the situation it was
+   * written for. Its reasoning is that REPLAYED frames must not carry a trajectory from a
+   * history they did not come from — which is true of a scrub, where the user jumped, and
+   * false of a lap, where nothing was skipped and no frame is replayed. The rule is right;
+   * its blast radius was not checked.
+   *
+   * So this changes the CLOCK and nothing else: no temporal history is cleared, no CPU
+   * stage is reset, no frame is replayed, and the absolute clock (T461) keeps counting —
+   * which is what lets `time` wrap while `abstime` does not.
+   *
+   * Optional: a transport with no notion of wrapping (the offline queue) simply omits it,
+   * and a caller that finds it absent has nothing to fall back to except a seek, which it
+   * must then choose deliberately.
+   */
+  wrapTo?(frameIndex: number): void;
 }

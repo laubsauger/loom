@@ -25,7 +25,8 @@ import {
 
 /** Minimal File System Access surface. `lib.dom` does not declare it (TS 5.7). */
 interface FileSystemWritable {
-  write(data: string | Blob): Promise<void>;
+  /** Bytes as well as text: T433 writes an encoded mp4 through this same ladder. */
+  write(data: string | Blob | BufferSource): Promise<void>;
   close(): Promise<void>;
 }
 interface SaveFileHandle {
@@ -87,9 +88,21 @@ export interface WriteProjectOptions {
   readonly download?: (file: WritableTextFile) => void;
 }
 
+/**
+ * What actually goes to disk.
+ *
+ * A `Uint8Array` over any backing buffer becomes one over a plain `ArrayBuffer`, which is
+ * what both a `Blob` part and a writable stream require. Copying rather than asserting:
+ * the assertion would be a claim about every future caller's allocator, and this runs once
+ * per saved file.
+ */
+function payloadOf(file: WritableTextFile): string | Uint8Array<ArrayBuffer> {
+  return typeof file.text === "string" ? file.text : new Uint8Array(file.text);
+}
+
 /** Downloads the bytes. The last resort, and the only path Firefox and Safari have. */
 function downloadTextFile(file: WritableTextFile): void {
-  const blob = new Blob([file.text], { type: file.mime });
+  const blob = new Blob([payloadOf(file)], { type: file.mime });
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");
@@ -107,12 +120,22 @@ function downloadTextFile(file: WritableTextFile): void {
 }
 
 /**
- * A named blob of text destined for the user's disk. `ProjectFile` is one; T452's audio
- * feature track is another, and a rendered sequence will be a third.
+ * A named blob destined for the user's disk. `ProjectFile` is one; T452's audio feature
+ * track is another; T433's rendered range is the third, and it is the one that stopped
+ * these all being text.
+ *
+ * `text` therefore takes BYTES as well as a string, and widening it is deliberate where a
+ * second `writeBinaryFile` beside it would have been easier: the picker-then-download
+ * ladder, the cancel-is-not-a-failure rule and the never-throw rule are exactly what T452
+ * moved here to be written once, and duplicating the ladder for a second payload type is
+ * how three artifacts end up with three different behaviours on the browsers that lack a
+ * picker. Both `Blob` and `FileSystemWritableFileStream.write` already accept either, so
+ * nothing below had to learn a second shape.
  */
 export interface WritableTextFile {
   readonly fileName: string;
-  readonly text: string;
+  /** Text for a document, bytes for an encoded artifact (T433's mp4). */
+  readonly text: string | Uint8Array;
   readonly mime: string;
   /** What the save picker offers to filter by. */
   readonly pickerTypes: readonly FilePickerTypeSpec[];
@@ -144,7 +167,7 @@ export async function writeTextFile(
         types: file.pickerTypes,
       });
       const writable = await handle.createWritable();
-      await writable.write(file.text);
+      await writable.write(payloadOf(file));
       await writable.close();
       return { kind: "saved", fileName: handle.name ?? file.fileName, method: "picker" };
     } catch (error) {

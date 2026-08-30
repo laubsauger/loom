@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 
 import type { AgentPorts } from "@agent/index.ts";
 import type { PixelProbe } from "@runtime/previews/index.ts";
+import type { ExportInterface } from "@runtime/export/index.ts";
 import type { CompiledGraph } from "../compiler/types.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { createAgentPorts } from "@runtime/export/agent-ports.ts";
@@ -21,7 +22,7 @@ export function useAgentPorts(inputs: {
   compiled: CompiledGraph | null;
   playing: boolean;
   graph: () => GraphDocument;
-}): AgentPorts & { probe?: PixelProbe | undefined } {
+}): AgentPorts & { probe?: PixelProbe | undefined; exports?: ExportInterface | undefined } {
   const compiledRef = useRef(inputs.compiled);
   compiledRef.current = inputs.compiled;
   const playingRef = useRef(inputs.playing);

@@ -73,8 +73,35 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
   let epochIndex = 0;
   let epochFps = fpsNow();
   let lastTimelineSeconds = 0;
+  /**
+   * Has this clock emitted a frame since it was last RESET (T464)?
+   *
+   * Frame zero has no predecessor, so its delta is zero. That test used to be
+   * `index === 0`, which stopped being the same question the moment a LOOP could wrap the
+   * index back to the in point: playback across a wrap is continuous, so reporting a zero
+   * delta there would stall every delta-driven simulation for one frame, once per lap —
+   * a stutter with a period, which is the hardest kind to attribute.
+   */
+  let hasEmitted = false;
   let lastMs: number | null = null;
   let wallSeconds = 0;
+  /**
+   * The ABSOLUTE clock (T461). Frames this transport has produced, and `reset()` below
+   * deliberately does not clear it.
+   *
+   * That omission is the whole feature. Once the timeline is bounded (T455) a lap is a
+   * seek, and a seek resets everything above — so an expression driving a continuous
+   * rotation off `time` snaps back every lap with nothing else to reach for. This is the
+   * something else. It is a COUNT, never a wall reading: the same graph renders the same
+   * frames offline as it plays live (§V44, §V47).
+   *
+   * Seconds are ACCUMULATED rather than divided, unlike the timeline pair above, and for a
+   * reason the timeline does not have: there is no epoch to rebase on. A rate change must
+   * leave elapsed absolute time where it is and simply advance by the new step from there,
+   * which is what a running sum does and what `absFrames / fps` would not.
+   */
+  let absFrameIndex = 0;
+  let absSeconds = 0;
 
   return {
     next(): FrameEvaluationInput {
@@ -93,23 +120,27 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
 
       const index = frameIndex++;
       const fps = fpsNow();
+      const absIndex = absFrameIndex++;
+      if (absIndex > 0) absSeconds += 1 / fps;
       // Divided rather than accumulated, so frame N lands on exactly N/fps with no
       // accumulated rounding — but divided from an EPOCH, not from zero, so that changing
       // the project's rate does not teleport the timeline. At 60fps frame 600 is 10s; a
       // naive `index / fps` would make it 20s the instant the rate became 30. Rebasing on
       // the rate change keeps elapsed time continuous while every frame within one rate is
       // still exact.
+      const first = !hasEmitted;
+      hasEmitted = true;
       if (fps !== epochFps) {
         // Rebase so this frame advances by the NEW rate's step. Carrying the old step for
         // one frame would report a delta of 1/newFps while time moved 1/oldFps, and §V172
         // is exactly that the pair always belongs to one clock — a rate change must not
         // open a one-frame hole in it.
-        epochSeconds = lastTimelineSeconds + (index === 0 ? 0 : 1 / fps);
+        epochSeconds = lastTimelineSeconds + (first ? 0 : 1 / fps);
         epochIndex = index;
         epochFps = fps;
       }
       const timelineSeconds = epochSeconds + (index - epochIndex) / fps;
-      const timelineDelta = index === 0 ? 0 : 1 / fps;
+      const timelineDelta = first ? 0 : 1 / fps;
       lastTimelineSeconds = timelineSeconds;
 
       return {
@@ -120,9 +151,15 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
         randomSeed: seed,
         wallSeconds,
         wallDeltaSeconds,
+        absFrameIndex: absIndex,
+        absTimeSeconds: absSeconds,
       };
     },
     reset(nextSeed?: number): void {
+      // T461 — `absFrameIndex` and `absSeconds` are NOT cleared here, and that is the
+      // point: a seek (which is what a lap is, §V170) rewinds the timeline and leaves the
+      // absolute clock running, so `abstime` is the one number an expression can lean on
+      // across a loop boundary.
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = 0;
       lastMs = null;
@@ -131,6 +168,26 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
       epochIndex = 0;
       epochFps = fpsNow();
       lastTimelineSeconds = 0;
+      hasEmitted = false;
+    },
+    /**
+     * T464 — the LOOP path. Everything a `reset` clears, this deliberately keeps.
+     *
+     * Compare the two bodies: `reset` above zeroes the seed's frame counter, the wall
+     * clock and the epoch, and its callers clear GPU temporal history and CPU stage state
+     * alongside it. This moves the timeline epoch and NOTHING else — the wall clock keeps
+     * accumulating, the absolute clock keeps counting (T461), `hasEmitted` stays true so
+     * the wrap frame carries a real step rather than a zero one, and no caller is being
+     * told to clear anything. That difference IS the difference between a lap and a jump.
+     */
+    wrapTo(target: number): void {
+      const index = Math.max(0, Math.trunc(target));
+      const fps = fpsNow();
+      frameIndex = index;
+      epochIndex = index;
+      epochSeconds = index / fps;
+      epochFps = fps;
+      lastTimelineSeconds = epochSeconds;
     },
   };
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import { wallDeltaSecondsOf } from "@domain/types/frame.ts";
-import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import styles from "./timeline-readout.module.css";
 
@@ -42,6 +41,14 @@ import styles from "./timeline-readout.module.css";
  * scrub that shows a picture from a different history and looks like it works. The label
  * says as much, and the command reports rather than freezing when the replay would be
  * absurdly long.
+ *
+ * ## What this deliberately does NOT show (T433)
+ *
+ * A "go to start" button used to sit at the end of this strip, running `onSeek(0)`. The
+ * top bar's Reset time control is the same command with the same argument, two inches to
+ * the left, and the header is the densest strip in the app — so it is gone rather than
+ * duplicated (§V90). `frame`, `time` and `fps` stay: a scrubber shows you WHERE the
+ * playhead is and none of these three, and typing a frame is still how you go to one.
  */
 
 /** §V16: <= 10 Hz. A readout that updates per frame is per-frame data in the tree. */
@@ -109,7 +116,7 @@ export function TimelineReadout({ latestFrame, onSeek, intervalMs = READOUT_INTE
   const shown = draft ?? (sample === null ? "" : String(sample.frameIndex));
 
   return (
-    <div className={styles.readout} role="group" aria-label="Timeline">
+    <div className={styles.readout} role="group" aria-label="Timeline readout">
       <div className={styles.field}>
         <span className={styles.label}>frame</span>
         {/* §V170 on the surface, in one line: the field says a seek REPLAYS, so nobody
@@ -153,15 +160,6 @@ export function TimelineReadout({ latestFrame, onSeek, intervalMs = READOUT_INTE
         </span>
       </div>
 
-      {onSeek === undefined ? null : (
-        <Tooltip label="Back to frame 0">
-          <Button aria-label="Go to start" onClick={() => onSeek(0)}>
-            <span className={styles.glyph} aria-hidden="true">
-              ❙◀
-            </span>
-          </Button>
-        </Tooltip>
-      )}
     </div>
   );
 }

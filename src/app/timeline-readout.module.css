@@ -61,8 +61,3 @@
   background: transparent;
   color: var(--text-dim);
 }
-
-.glyph {
-  font-size: var(--fs-micro);
-  line-height: 1;
-}

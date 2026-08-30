@@ -13,6 +13,13 @@ export interface TopBarProps {
   onStep?: (() => void) | undefined;
   onResetTime?: (() => void) | undefined;
   /**
+   * T433: loop the timeline's range. A playback MODE, so it sits with play and step
+   * rather than with the range it cycles — the range is the document's and lives on the
+   * scrubber.
+   */
+  onToggleLoop?: (() => void) | undefined;
+  looping?: boolean;
+  /**
    * T452: audio feature capture. Arming is a deliberate act the user takes, never
    * always-on — so it needs a control, and this is where a user looks for "capture what
    * is playing". Omitted, no button renders: a session with no audio to record must not
@@ -31,6 +38,21 @@ export interface TopBarProps {
    * loop at its own <= 10 Hz tick, so it must own its state and re-render alone (§V16).
    */
   timeline?: ReactNode;
+  /**
+   * The timeline strip (T433), in the horizontal SLACK between the centred transport and
+   * the right-hand readouts — the header's one growable element and the reason this
+   * feature costs no height. A slot for the same §V16 reason `timeline` is one: it
+   * samples the frame loop on its own tick and must re-render alone.
+   */
+  scrubber?: ReactNode;
+  /**
+   * T433: render the timeline's range out. Omitted, no button renders — a session with no
+   * device has nothing to render and must not grow a control that can only refuse.
+   */
+  onRenderRange?: (() => void) | undefined;
+  rendering?: boolean;
+  /** Frames the current range would produce, for the control's tooltip. */
+  renderFrames?: number;
   /** Extra trailing chrome (the shell puts its layout menu here). */
   trailing?: ReactNode;
 }
@@ -56,6 +78,12 @@ export function TopBar({
   onPlayPause,
   onStep,
   onResetTime,
+  onToggleLoop,
+  looping = false,
+  onRenderRange,
+  rendering = false,
+  renderFrames = 0,
+  scrubber,
   onToggleAudioTrack,
   onSaveAudioTrack,
   recordingAudioTrack = false,
@@ -100,6 +128,18 @@ export function TopBar({
             </span>
           </Button>
         </Tooltip>
+        <Tooltip label={looping ? "Stop looping the range" : "Loop the timeline's range"}>
+          <Button
+            aria-label="Loop the range"
+            aria-pressed={looping}
+            onClick={onToggleLoop ?? undefined}
+            disabled={!onToggleLoop}
+          >
+            <span className={cx(styles.glyph, looping && styles.glyphLive)} aria-hidden="true">
+              ⟳
+            </span>
+          </Button>
+        </Tooltip>
         {onToggleAudioTrack === undefined ? null : (
           <Tooltip
             label={
@@ -133,6 +173,29 @@ export function TopBar({
           {playing ? "live" : "idle"}
         </span>
       </div>
+
+      {scrubber === undefined ? null : (
+        <div className={styles.timeline}>
+          {scrubber}
+          {/* Hidden, not disabled, when there is nothing to render (§V90, and the rule
+              T452's audio controls already follow): a graph with no Output cannot produce
+              a file, and a permanently greyed word in the densest strip in the app is one
+              more thing to read past. It appears the moment an Output node does. */}
+          {onRenderRange === undefined || renderFrames === 0 ? null : (
+            <Tooltip
+              label={
+                rendering
+                  ? "Rendering the range…"
+                  : `Render the range out — ${String(renderFrames)} frames`
+              }
+            >
+              <Button aria-label="Render the range" onClick={onRenderRange} disabled={rendering}>
+                <span className={styles.renderLabel}>{rendering ? "…" : "render"}</span>
+              </Button>
+            </Tooltip>
+          )}
+        </div>
+      )}
 
       <div className={styles.metrics}>
         {timeline}

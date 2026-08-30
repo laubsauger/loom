@@ -4,8 +4,8 @@ import type { CompiledGraph } from "@compiler/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
-import { projectFps } from "@domain/types/graph.ts";
-import type { ProjectSettings } from "@domain/types/graph.ts";
+import { projectFps, projectRange } from "@domain/types/graph.ts";
+import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
@@ -40,6 +40,14 @@ export interface FrameLoopResult {
   readonly diagnostics: readonly RuntimeDiagnostic[];
   /** True while the loop is running. Reflects the driver, not a request. */
   readonly playing: boolean;
+  /**
+   * T433 — true while playback is cycling the document's frame range.
+   *
+   * Session state, like `playing`: it says what THIS playback is doing, and the range it
+   * cycles is the document's (§V177). Surfaced so the header's loop control reflects the
+   * transport rather than keeping a second copy of the answer.
+   */
+  readonly looping: boolean;
   /**
    * The inputs of the last frame actually rendered, SAMPLED — never pushed (§V16).
    *
@@ -150,6 +158,23 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
+  /**
+   * T455 — TIMELINE MODE IS THE DEFAULT, so the frame counter is BOUNDED.
+   *
+   * The owner watched `frame 836` climb past a 600-frame range and asked, correctly, why
+   * the counter does not reset. A piece of length N plays 0..N-1 and wraps; a counter that
+   * runs away is frames-since-the-app-started, which is a fact about the session and not
+   * about the work. Turning the loop off is what asks for the free-running LIVE clock, and
+   * that is the rarer of the two once a timeline exists.
+   *
+   * Session state, not document state: it says what THIS playback is doing. The RANGE it
+   * cycles is the document's (T454).
+   */
+  const [looping, setLooping] = useState(true);
+  // Read inside the driver's frame callback, so a ref rather than the state: a lap
+  // boundary must be decided against the CURRENT flag, not the one captured when the
+  // driver was built.
+  const loopingRef = useRef(true);
   const driverRef = useRef<FrameDriver | null>(null);
   const latestFrameRef = useRef<FrameInputs | null>(null);
   // T259 — the per-frame values-only push. Read through refs because it runs inside the
@@ -189,6 +214,13 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const fps = projectFps(settings);
   const fpsRef = useRef(fps);
   fpsRef.current = fps;
+
+  // T433 — the timeline's in/out points, read LIVE for the same reason the resolution is:
+  // dragging the out point while the graph plays must not rebuild the driver, which would
+  // reset elapsed time on every pixel of the drag. One source: the document (§V177), read
+  // through `projectRange` so the default is applied in one place.
+  const rangeRef = useRef<FrameRange>(projectRange(settings));
+  rangeRef.current = projectRange(settings);
 
   /**
    * §V163 — the whole of "the picture moves".
@@ -271,6 +303,42 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // change is not a seek); the scheduler's cap is set when the loop starts, so the
     // effect below restarts it to keep the two in step.
     const transport = liveClock({ fps: () => fpsRef.current });
+
+    /**
+     * The lap boundary (T433, T464).
+     *
+     * **A LOOP IS NOT A SEEK.** This used to run `seek`, which clears GPU temporal
+     * history, resets CPU stages and replays from zero — and the owner caught it: "we're
+     * resetting feedbacks and all kinds of things whenever the timeline loops back. thats
+     * not how touchdesigner necessarily works". They are right. Playback across an out
+     * point is CONTINUOUS; only the time VALUE wraps. A feedback that survives the wrap is
+     * what makes a long-form feedback piece possible at all.
+     *
+     * §V170/§V181 are untouched by this and still govern the SEEK path below. Their
+     * reasoning is about REPLAYED frames carrying a trajectory from a history they did not
+     * come from — true when the user jumps, false when nothing was skipped. The rule was
+     * right and its blast radius was not checked, which is the general hazard worth naming:
+     * an invariant stated correctly for one situation, enforced in a neighbouring one.
+     *
+     * `runtime.resetFeedback` remains the way to start over, which is where a reset
+     * belongs — asked for, never implied.
+     *
+     * It also runs INLINE now. The old version had to defer to a microtask because `seek`
+     * stopped and restarted the very loop it was called from; wrapping the clock touches
+     * no scheduler, so there is nothing to be re-entrant about.
+     */
+    const maybeLap = (frameIndex: number): void => {
+      if (!loopingRef.current) return;
+      // Only during PLAYBACK. A manual step or a typed seek addresses a specific frame
+      // deliberately, and taking the user somewhere else instead is the silent kind of
+      // wrong. `seek` stops the driver before replaying, so its own frames arrive here
+      // with `running === false` and cannot start a lap inside a seek.
+      if (driverRef.current?.running !== true) return;
+      const { start, end } = rangeRef.current;
+      if (frameIndex < end) return;
+      transport.wrapTo?.(start);
+    };
+
     const driver = createFrameDriver({
       backend,
       transport,
@@ -298,6 +366,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       onFrame: (inputs) => {
         latestFrameRef.current = inputs;
         observeRef.current?.(inputs.frame);
+        maybeLap(inputs.frame.frameIndex);
       },
     });
     driverRef.current = driver;
@@ -324,6 +393,9 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         for (let index = 0; index < frames; index += 1) last = live.step();
         return last?.frame.frameIndex ?? -1;
       },
+      // `onFrame` above already records this into `latestFrameRef`, so there is nothing
+      // to write here — the export path needs the value RETURNED, not stored.
+      stepOnce: () => driverRef.current?.step() ?? null,
       /**
        * §V170 — a seek REPLAYS. A graph with feedback, a Cache or a point simulation has
        * no state at a frame it has not reached, so resetting the counter and leaving the
@@ -348,6 +420,11 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         if (wasRunning) live.start();
         setPlaying(live.running);
         return last?.frame.frameIndex ?? -1;
+      },
+      isLooping: () => loopingRef.current,
+      toggleLoop: () => {
+        loopingRef.current = !loopingRef.current;
+        setLooping(loopingRef.current);
       },
     };
 
@@ -448,5 +525,5 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
 
   const latestFrame = useCallback(() => latestFrameRef.current, []);
 
-  return { diagnostics, playing, latestFrame };
+  return { diagnostics, playing, looping, latestFrame };
 }

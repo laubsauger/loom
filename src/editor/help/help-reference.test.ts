@@ -102,7 +102,11 @@ describe("expression reference ← the evaluator (§V105, §V71)", () => {
   it("lists the names `scopeFromFrame` actually provides", () => {
     const variables = expressionVariables(scopeFromFrame(FRAME));
     // T271: `time`/`delta` are the TIMELINE pair, `walltime`/`walldelta` the wall one.
+    // T461: `abstime`/`absframe` are the THIRD clock — the one that does not reset when a
+    // bounded timeline laps, and the only one an unbroken rotation can be driven from.
     expect(variables.map((variable) => variable.name)).toEqual([
+      "absframe",
+      "abstime",
       "delta",
       "frame",
       "time",

@@ -201,6 +201,21 @@ export const projectSettingsSchema = z.object({
   // Bounded, not merely positive: 0.001 fps makes a timeline nothing advances on, and
   // 100000 makes `time` meaningless. Optional so pre-fps documents parse (§V68).
   fps: z.number().min(1).max(240).optional(),
+  /**
+   * T433 — the timeline's in/out points. Optional so pre-timeline documents parse (§V68).
+   *
+   * `end > start` is refused HERE rather than in each consumer, because this schema runs
+   * at both boundaries the value can arrive through: the file loader and
+   * `project.setSettings` (which validates with `.partial()`). An inverted range would
+   * otherwise be a scrub extent nothing can be dragged along and a render of a negative
+   * number of frames.
+   */
+  frameRange: z
+    .object({ start: z.number().int().min(0), end: z.number().int().min(0) })
+    .refine((range) => range.end > range.start, {
+      message: "the range's out point must be after its in point",
+    })
+    .optional(),
   /** T84: optional so pre-colour-policy documents parse; absent means the default. */
   colorPolicy: z
     .object({

@@ -1,0 +1,90 @@
+/*
+ * The header timeline (T433).
+ *
+ * HARD CONSTRAINT: the header does not get taller. Every height here is `--control-h`
+ * (20px) or less inside a 32px bar, so this strip can only ever occupy the row the
+ * transport and the readouts already sit on. Nothing here has a vertical margin.
+ */
+.scrubber {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Takes the slack the header already had between the transport and the readouts —
+     it is the only element in the bar that grows, and it shrinks to `min-width` first. */
+  flex: 1 1 auto;
+  min-width: 96px;
+  height: var(--control-h);
+}
+
+/* The in and out points. Bare text until hovered or focused (§V90). */
+.end {
+  width: 5ch;
+  height: var(--control-h);
+  padding: 0;
+  border: var(--border-hairline);
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.end:hover:not([readonly]),
+.end:focus-visible {
+  border-color: var(--line-hot);
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.end:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Half the control height: a full-height bar would read as a text field, and this is
+     the one element in the header that has to read as a length. */
+  height: 10px;
+  border: var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.trackLive {
+  cursor: ew-resize;
+}
+
+.trackLive:hover {
+  border-color: var(--line-hot);
+}
+
+.track:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Elapsed. Dim rather than saturated: the playhead is what the eye should find. */
+.elapsed {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--line-hot);
+  pointer-events: none;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--signal);
+  pointer-events: none;
+}

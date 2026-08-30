@@ -3,6 +3,7 @@ import type { CompiledGraph } from "../../compiler/types.ts";
 import type { ShaderloomBackend } from "../backend/index.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 import type { PixelProbe } from "../previews/index.ts";
+import type { ExportInterface } from "./types.ts";
 import {
   createExportInterface,
   createPixelProbe,
@@ -35,7 +36,7 @@ export function createAgentPorts(inputs: {
   playing: () => boolean;
   graph: () => GraphDocument;
   now: () => number;
-}): AgentPorts & { readonly probe: PixelProbe } {
+}): AgentPorts & { readonly probe: PixelProbe; readonly exports: ExportInterface } {
   const { backend } = inputs;
   const exports = createExportInterface({
     source: readbackSourceFromBackend(backend),
@@ -57,5 +58,9 @@ export function createAgentPorts(inputs: {
     },
     now: inputs.now,
   });
-  return { preview, points, probe: createPixelProbe(exports) };
+  // T433 — the timeline render takes THIS interface, not one of its own. The counters
+  // (readbacks, refusals, bytes, the once-only playback warning) live on the instance, so
+  // a second one would split the accounting in half and warn twice about one thing — the
+  // same reason the probe is returned from here rather than built beside it.
+  return { preview, points, probe: createPixelProbe(exports), exports };
 }

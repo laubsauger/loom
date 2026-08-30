@@ -4,6 +4,7 @@ import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { CommandResult, CommandStatus } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { LoadProjectSuccess, SnapshotStore } from "@domain/project/index.ts";
 import { HelpHost, OPEN_HELP_COMMAND } from "@editor/help/index.ts";
 import { NodeInfoHost } from "@editor/inspect/index.ts";
@@ -23,8 +24,8 @@ import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
 import { OPEN_SETTINGS_COMMAND, ProjectSettingsHost } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
-import type { ProjectSettings } from "@domain/types/graph.ts";
-import { projectFps } from "@domain/types/graph.ts";
+import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
+import { projectFps, projectRange } from "@domain/types/graph.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -36,6 +37,7 @@ import { NoticeStrip } from "./notices.tsx";
 import type { Notice } from "./notices.tsx";
 import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
 import { TimelineReadout } from "./timeline-readout.tsx";
+import { TimelineScrubber } from "./timeline-scrubber.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
 import { useMcpTransports } from "./use-mcp-transports.ts";
@@ -57,6 +59,7 @@ import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useProject } from "./use-project.ts";
+import { useRenderRange } from "./use-render-range.ts";
 
 /**
  * The composition root (T51, T139).
@@ -258,17 +261,19 @@ export function App({
       const bags = valueGraph.channels();
       const live = new Set<NodeId>();
       for (const [nodeId, node] of Object.entries(graph.nodes)) {
-        if (runtime.registry.get(node.type)?.category !== "value") continue;
+        // T438 (§V316): sample every DECLARED channel publisher — audio keeps its
+        // history from the "input" shelf; a camera never had a channel to sample.
+        if (!publishesValueChannels(runtime.registry.get(node.type))) continue;
         live.add(nodeId);
         const name = node.label;
         if (name === undefined) continue;
         const bag = bags.get(name);
         if (bag !== undefined) {
-          valueHistory.push(nodeId, bag);
+          valueHistory.push(nodeId, bag, frame.timeSeconds);
           continue;
         }
         const measured = analyze.resolver(name, { frame } as never);
-        if (typeof measured === "number") valueHistory.push(nodeId, { value: measured });
+        if (typeof measured === "number") valueHistory.push(nodeId, { value: measured }, frame.timeSeconds);
       }
       // A deleted node frees its ring rather than holding a window nobody can see.
       valueHistory.retain(live);
@@ -461,6 +466,33 @@ export function App({
   const onSaveAudioTrack = useCallback(() => {
     void runtime.bus.execute("audio.saveTrack", {}, runtime.invocation).then(reportRefusal);
   }, [reportRefusal, runtime]);
+  // T433/§V307 — the loop toggle and the render button are callers of their commands,
+  // like every other control in this bar. `l` in the keymap and the palette reach the
+  // same handlers, so a button and a hotkey cannot drift into two code paths.
+  const onToggleLoop = useCallback(() => {
+    void runtime.bus.execute("transport.toggleLoop", {}, runtime.invocation).then(reportRefusal);
+  }, [reportRefusal, runtime]);
+  const onRenderRange = useCallback(() => {
+    void runtime.bus.execute("export.renderRange", {}, runtime.invocation).then(reportRefusal);
+  }, [reportRefusal, runtime]);
+  /**
+   * The timeline's in/out points are DOCUMENT state (§V177), so dragging or typing one
+   * goes through `project.setSettings` like every other settings field — one undo entry,
+   * one revision, and it is in the saved file. There is no `transport.setRange`: a second
+   * command writing the same value would be the second mutation path §V29 forbids.
+   */
+  const onChangeRange = useCallback(
+    (range: FrameRange) => {
+      void runtime.bus
+        .execute(
+          "project.setSettings",
+          { settings: { frameRange: range }, label: "Set the timeline range" },
+          runtime.invocation,
+        )
+        .then(reportRefusal);
+    },
+    [reportRefusal, runtime],
+  );
 
   // ---- persistence ------------------------------------------------------------------
   const autosave = useAutosave(
@@ -589,6 +621,23 @@ export function App({
   // plan, so render_preview and describe_output work in the product, not only in tests.
   const agentPorts = useAgentPorts({ backend, compiled: compile.compiled, playing: frameLoop.playing, graph: runtime.bus.store.getGraph });
   useRuntimeCommands({ bus: runtime.bus, backend, compiled: compile.compiled });
+  /**
+   * T433/§V220 — the seam that makes "render the timeline out" real.
+   *
+   * It takes the export interface the agent ports already built rather than a second one:
+   * the readback counters (§V7, §V48) live on the instance, so two would split the
+   * accounting and warn twice about the same read.
+   */
+  const renderRange = useRenderRange({
+    bus: runtime.bus,
+    exports: agentPorts.exports,
+    compiled: compile.compiled,
+    graph: compile.graph,
+    registry: runtime.registry,
+    settings: runtime.settings,
+    latestFrame: frameLoop.latestFrame,
+    name: () => project.fileName ?? runtime.project.name,
+  });
   const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
   // T397/§V338: publishing the surface to a transport AND reporting what that publication
   // found. The row this produces is the app's only answer to "is an agent attached?".
@@ -728,6 +777,19 @@ export function App({
               onPlayPause={onPlayPause}
               onStep={onStepFrame}
               onResetTime={onResetTime}
+              onToggleLoop={onToggleLoop}
+              looping={frameLoop.looping}
+              scrubber={
+                <TimelineScrubber
+                  latestFrame={frameLoop.latestFrame}
+                  range={projectRange(runtime.settings)}
+                  onSeek={onSeek}
+                  onChangeRange={onChangeRange}
+                />
+              }
+              onRenderRange={onRenderRange}
+              rendering={renderRange.rendering}
+              renderFrames={renderRange.frames}
               onToggleAudioTrack={onToggleAudioTrack}
               onSaveAudioTrack={onSaveAudioTrack}
               recordingAudioTrack={audioTrack.recording}

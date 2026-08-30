@@ -163,7 +163,12 @@ describe("T452 — the track a save produces is a real, parseable artifact", () 
       {
         globals: {},
         download: (file) => {
-          written = { fileName: file.fileName, text: file.text, mime: file.mime };
+          written = {
+            fileName: file.fileName,
+            // T433 widened `text` to carry bytes as well; a feature track is JSON.
+            text: typeof file.text === "string" ? file.text : new TextDecoder().decode(file.text),
+            mime: file.mime,
+          };
         },
       },
     );

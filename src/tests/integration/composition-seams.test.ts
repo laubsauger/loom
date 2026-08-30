@@ -136,11 +136,6 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Agent PRESENCE (proposal mode) has no surface yet. Nothing in the app proposes rather than applies, so there is no id to mint.",
   },
   {
-    name: "createFrameRecorder",
-    reason:
-      "Sequence recording is export-side and has no UI entry point yet; `recordSequence` is driven by tests and the headless path.",
-  },
-  {
     name: "createShaderCompilePipeline",
     reason:
       "B27 — the shader editor's debounced compile pipeline is exported from its own index and constructed only by its unit test. The panel validates on the graph compile instead, so WGSL errors appear later than the pipeline was built to show them.",

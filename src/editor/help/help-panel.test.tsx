@@ -121,7 +121,9 @@ describe("HelpPanel (T200)", () => {
 
     selectTab(dialog, "Expressions");
     const variables = await within(dialog).findByRole("region", { name: "Variables" });
-    expect(within(variables).getByText("time")).toBeDefined();
+    // The CHIP, not any text saying "time": T461's note under this section names the
+    // clocks in prose too, and a bare text query cannot tell a control from a sentence.
+    expect(within(variables).getByRole("button", { name: /^time/ })).toBeDefined();
     // T271 — both clocks are listed, so someone can tell which one they are reading.
     // The fixture carries no wall reading, so `walltime` falls back to the timeline and
     // both chips show the same number.
@@ -287,7 +289,11 @@ describe("ExpressionHelp (T201)", () => {
   it("hands a name back to the field that owns the text", () => {
     const inserted: string[] = [];
     render(<ExpressionHelp source="" scope={scope} onInsert={(text) => inserted.push(text)} />);
-    fireEvent.click(within(screen.getByRole("region", { name: "Variables" })).getByText("time"));
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Variables" })).getByRole("button", {
+        name: /^time/,
+      }),
+    );
     expect(inserted).toEqual(["time"]);
   });
 
