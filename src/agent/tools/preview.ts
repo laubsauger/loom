@@ -1,8 +1,8 @@
 import type { GraphDocument } from "@domain/types/graph.ts";
 
-import { renderPreviewInput, type RenderPreviewInput } from "../schemas.ts";
+import { describeOutputInput, renderPreviewInput, type DescribeOutputInput, type RenderPreviewInput } from "../schemas.ts";
 import { failed, ok } from "../tool-support.ts";
-import { DEFAULT_OUTPUT_PORT, type AgentTool, type OutputRef } from "../types.ts";
+import { DEFAULT_OUTPUT_PORT, type AgentTool, type OutputRef, type OutputStatsData } from "../types.ts";
 
 /**
  * `render_preview` (T58, §V48, §V59, §I.tools).
@@ -160,4 +160,43 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
   },
 };
 
-export const previewTools: readonly AgentTool[] = [renderPreview] as readonly AgentTool[];
+/**
+ * `describe_output` (T291): the texture as NUMBERS — per-channel min/max/mean on the
+ * linear plane, resolution and format, no pixels. The look an agent reaches for FIRST:
+ * "is it black? clipped? flat?" costs ~a hundred tokens here and thousands as a
+ * thumbnail. Same seam and grant as render_preview (§V48, §V38) — statistics of pixels
+ * are still pixel information leaving the app.
+ */
+export const describeOutput: AgentTool<DescribeOutputInput, OutputStatsData> = {
+  name: "describe_output",
+  title: "Describe output",
+  description:
+    "Summarise one texture output as numbers: per-channel min/max/mean (linear), resolution, format. Cheaper than a preview; reach for this first.",
+  kind: "read",
+  inputSchema: describeOutputInput,
+  requires: { queries: ["graph.get"], ports: ["preview"] },
+  capabilities: ["export"],
+  mutates: false,
+  async run(input, runtime) {
+    const port = runtime.ports.preview;
+    if (port?.describeOutput === undefined) {
+      return failed<OutputStatsData>(
+        "describe_output",
+        "preview.statsUnavailable",
+        "This session's preview port does not provide output statistics.",
+      );
+    }
+    const ref: OutputRef = { nodeId: input.nodeId, portId: input.portId ?? DEFAULT_OUTPUT_PORT };
+    try {
+      return ok<OutputStatsData>("describe_output", await port.describeOutput(ref));
+    } catch (error) {
+      return failed<OutputStatsData>(
+        "describe_output",
+        "preview.statsFailed",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  },
+};
+
+export const previewTools: readonly AgentTool[] = [renderPreview, describeOutput] as readonly AgentTool[];

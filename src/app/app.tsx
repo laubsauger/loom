@@ -33,6 +33,7 @@ import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
 import { TimelineReadout } from "./timeline-readout.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
+import { useAgentPorts } from "./agent-ports.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
@@ -346,7 +347,10 @@ export function App({
    * the hook is what turns them into bus queries an out-of-process adapter can read
    * (§V39), and `AgentPane` below is what makes the agent's activity visible (§V42).
    */
-  const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems });
+  // T291: the pixel ports — export interface over the live backend and the CURRENT
+  // plan, so render_preview and describe_output work in the product, not only in tests.
+  const agentPorts = useAgentPorts({ backend, compiled: compile.compiled, playing: frameLoop.playing });
+  const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
 
   /** The installed catalogue, for the library panes and the help panel's node reference. */
   const definitions = useMemo(() => [...runtime.registry.list()], [runtime]);

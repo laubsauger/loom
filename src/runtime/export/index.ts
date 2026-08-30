@@ -65,6 +65,8 @@ export {
 export type { Plane, Rgba8Image, ToRgba8Options, TransferMode } from "./image.ts";
 
 export { encodeBase64, encodePng } from "./png.ts";
+export { describeOutputStats } from "./inspect.ts";
+export type { ChannelStats, OutputStats } from "./inspect.ts";
 export type { PngImage } from "./png.ts";
 
 export {

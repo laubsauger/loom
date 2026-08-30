@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { createAgentToolSurface } from "@agent/index.ts";
-import type { AgentRuntimeMetrics, AgentToolSurface } from "@agent/index.ts";
+import type { AgentPorts, AgentRuntimeMetrics, AgentToolSurface } from "@agent/index.ts";
 import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -49,7 +49,11 @@ export interface AgentSurfaceState {
   readonly diagnostics: readonly RuntimeDiagnostic[];
 }
 
-export function useAgentSurface(runtime: AppRuntime, state: AgentSurfaceState): AgentToolSurface {
+export function useAgentSurface(
+  runtime: AppRuntime,
+  state: AgentSurfaceState,
+  ports: AgentPorts = {},
+): AgentToolSurface {
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -84,12 +88,13 @@ export function useAgentSurface(runtime: AppRuntime, state: AgentSurfaceState): 
         bus: runtime.bus,
         actor: AGENT_ACTOR,
         projectId: runtime.invocation.projectId,
+        ports,
         // No `requireApproval` here on purpose. §V42 requires agent activity to be
         // VISIBLE and revertible, which the presence pane provides; holding every edit
         // for a click is a product policy nobody has asked for, and the surface already
         // supports it the day someone does.
       }),
-    [runtime],
+    [runtime, ports],
   );
 
   // T290 (§V192): publish the SAME surface to the browser's model-context API, so an

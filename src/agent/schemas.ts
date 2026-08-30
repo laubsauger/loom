@@ -119,6 +119,13 @@ export const getDiagnosticsInput = z
   .object({ severity: z.enum(["info", "warning", "error"]).optional(), limit: z.number().int().positive().max(500).optional() })
   .strict();
 
+export const describeOutputInput = z
+  .object({
+    nodeId: z.string().min(1),
+    portId: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const renderPreviewInput = z
   .object({
     nodeId: z.string().min(1),
@@ -217,6 +224,7 @@ export type ListNodeDefinitionsInput = z.infer<typeof listNodeDefinitionsInput>;
 export type GetNodeDefinitionInput = z.infer<typeof getNodeDefinitionInput>;
 export type GetDiagnosticsInput = z.infer<typeof getDiagnosticsInput>;
 export type AddNodeInput = z.infer<typeof addNodeInput>;
+export type DescribeOutputInput = z.infer<typeof describeOutputInput>;
 export type LayoutGraphInput = z.infer<typeof layoutGraphInput>;
 export type RemoveNodesInput = z.infer<typeof removeNodesInput>;
 export type ConnectPortsInput = z.infer<typeof connectPortsInput>;

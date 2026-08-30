@@ -44,6 +44,20 @@ export interface McpConnection {
 
 export const MCP_PROTOCOL_VERSION = "2024-11-05";
 
+/** MCP image content for a tool result carrying a base64 PNG, else null. */
+function imageContentOf(result: unknown): { type: "image"; data: string; mimeType: string } | null {
+  const data = (result as { data?: { mimeType?: unknown; base64?: unknown } }).data;
+  if (data?.mimeType !== "image/png" || typeof data.base64 !== "string") return null;
+  return { type: "image", data: data.base64, mimeType: "image/png" };
+}
+
+function withoutBase64(result: unknown): unknown {
+  const shaped = result as { data?: Record<string, unknown> };
+  if (shaped.data === undefined) return result;
+  const { base64: _lifted, ...rest } = shaped.data;
+  return { ...shaped, data: rest };
+}
+
 export function createMcpConnection(options: McpConnectionOptions): McpConnection {
   const { surface, send } = options;
   const serverInfo = options.serverInfo ?? { name: "shaderloom", version: "0.1.0" };
@@ -102,8 +116,17 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
             // The whole ToolResult travels as structured JSON text: refusals, conflicts
             // and diagnostics are DATA the calling model reads (§V66), so `isError` is
             // reserved for transport-level failure, not for a tool saying "no".
+            //
+            // T291: an image-shaped result ALSO travels as MCP image content, so a
+            // client that renders images (Claude does) shows the picture inline — the
+            // agent literally looks at the node. The base64 is lifted out of the JSON
+            // text so the pixels are never paid for twice.
+            const image = imageContentOf(result);
             respond(request.id, {
-              content: [{ type: "text", text: JSON.stringify(result) }],
+              content:
+                image === null
+                  ? [{ type: "text", text: JSON.stringify(result) }]
+                  : [image, { type: "text", text: JSON.stringify(withoutBase64(result)) }],
               isError: false,
             });
             return;

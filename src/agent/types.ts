@@ -149,6 +149,26 @@ export interface PreviewImageRequest {
  */
 export interface PreviewExport {
   renderPreview(request: PreviewImageRequest): Promise<PreviewImage>;
+  /**
+   * T291: the CHEAP look — per-channel min/max/mean on the linear plane, no pixels.
+   * Optional so a provider predating stats keeps render_preview working; the tool
+   * reports unavailable-as-data when absent.
+   */
+  describeOutput?(ref: OutputRef): Promise<OutputStatsData>;
+}
+
+/** Texture-as-numbers (T291): what `describe_output` returns. */
+export interface OutputStatsData {
+  readonly ref: OutputRef;
+  readonly width: number;
+  readonly height: number;
+  readonly format: string;
+  readonly channels: {
+    readonly r: { min: number; max: number; mean: number };
+    readonly g: { min: number; max: number; mean: number };
+    readonly b: { min: number; max: number; mean: number };
+    readonly a: { min: number; max: number; mean: number };
+  };
 }
 
 /** One window of point-attribute values (T125). Mirrors the export module's shape. */
