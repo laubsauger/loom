@@ -793,6 +793,10 @@ Mask ≠ TD Matte, which is 3-input). deprecated & ⊥ copy: **SVG TOP** (docume
 **GLSL Create POP** ∴ our 2nd kernel node = an ADVANCED kernel that ? change counts, ⊥ a
 separate Create node.
 
+V189: auto-layout is DETERMINISTIC — same graph → same positions, ∀ time. an agent that re-lays-out & gets different coordinates ⊥ reason about its own canvas, & a human gets churn ∈ every diff. ⊥ randomness, ⊥ iteration count, ⊥ insertion-order dependence.
+V190: layout is a POSITION edit ∴ `nodePosition` classification — editor-only, ⊥ recompile, ⊥ resource rebuild (V1). laying out a 200-node graph ! cost 0 GPU work.
+V191: ONE layout implementation, reached by both the keymap (`L`) & the bus command the agent calls (V78). a "layout for agents" that differs from the button is 2 products.
+V192: MCP|WebMCP adapters are TRANSPORT + SCHEMA ONLY (V39). they live OUTSIDE `src/agent/**` ∴ the surface stays transport-free & headlessly testable — a server drags node|network deps, WebMCP drags DOM, & neither belongs ∈ the thing they both wrap.
 V186: a comment citing an EXTERNAL fact is a claim. if nobody checked it, ⊥ write it — the next person treats it as researched. 2 invented TD citations shipped ∈ this catalogue before a survey caught them.
 V187: `index.test.ts`'s type list catches a node registered w/ the wrong name. it ⊥ catch WRITTEN BUT NEVER REGISTERED — a shader + definition can sit unreferenced & every gate stays green. the catalogue-chain sweep is what must own that claim.
 V188: POP survey vs §V104 — TD passes UNMODIFIED attributes downstream BY REFERENCE (copy-on-write); V104 mandates fresh pairs for ∀ a node outputs. V104's REASON is sound (aliased sim state across nodes). its COST is ~80 buffers where TD allocates 12. re-read before P3a allocates — ⊥ inherit the number by accident.
@@ -1043,6 +1047,10 @@ T273|.|`value` port type + value EDGES + CPU value-graph evaluator (topo order, 
 T274|.|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
 T275|.|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
 T276|.|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
+T288|.|deterministic auto-layout as a BUS COMMAND — layered/topological, rank = depth from sources, order within rank minimizing crossings. keymap `L` & the agent call the SAME one|V189,V190,V191,V78
+T289|.|`add_node` placement ergonomics: optional `{relativeTo, direction}` ∴ an agent building left-to-right ⊥ invent coordinates. still 1 undo group|V189,V34
+T290|.|MCP server + WebMCP adapters ∈ `src/mcp/**` — transport + schema only. + revision/diagnostic NOTIFICATIONS ∴ an observing agent sees the graph move w/o polling (quasi-realtime, ⊥ command-response)|V192,V39
+T291|.|agent output inspection economics: encoded thumbnails (PNG, bounded long edge) + `describe_output` returning STATS ⊥ pixels (the T236 reduction generalizes). both throttled like `read_points`|V16,V144
 T279|.|**Remap** — absolute UV lookup. our `uv` generator currently makes coordinates NOTHING can consume|V56
 T280|.|**Reorder** (2-input channel shuffle). we have ⊥ way to move a value between channels @ all — capability gap, ⊥ convenience|V56,V57
 T281|.|premultiply/unpremultiply as Math modes. we took TD's straight-alpha default w/o its escape hatch ∴ blurring a cutout halos & nothing can fix it|V56
