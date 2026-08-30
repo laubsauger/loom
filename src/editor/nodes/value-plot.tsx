@@ -1,5 +1,7 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
+import { stickyRange } from "./plot-range.ts";
+import type { PlotRange } from "./plot-range.ts";
 import type { ValueHistory, ValueHistorySource } from "./value-history.ts";
 import styles from "./value-plot.module.css";
 
@@ -28,6 +30,11 @@ import styles from "./value-plot.module.css";
  * Auto-ranged over the visible window, not pinned to 0..1: Slope and Math produce
  * arbitrary numbers and a fixed range would flatten them into the axis. A constant signal
  * has no range at all, so it is drawn as a centred flat line rather than amplified noise.
+ *
+ * The range is STICKY (T352, §V296, `plot-range.ts`). Auto-ranging per frame made a stable
+ * sine BREATHE: the sliding window's min and max wobble in the last decimal, the scale
+ * followed, and the wave expanded and contracted while the signal did not. The range now
+ * holds exactly still until the signal leaves it.
  *
  * ## No history is not zero
  *
@@ -72,7 +79,7 @@ function formatValue(value: number): string {
 }
 
 /** The window's range across EVERY channel, so overlaid series stay comparable. */
-function rangeOf(history: ValueHistory): { low: number; span: number } {
+function rangeOf(history: ValueHistory): PlotRange {
   let low = Number.POSITIVE_INFINITY;
   let high = Number.NEGATIVE_INFINITY;
   for (const series of history.series) {
@@ -81,8 +88,8 @@ function rangeOf(history: ValueHistory): { low: number; span: number } {
       if (value > high) high = value;
     }
   }
-  if (!Number.isFinite(low) || !Number.isFinite(high)) return { low: 0, span: 0 };
-  return { low, span: high - low };
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return { low: 0, high: 0 };
+  return { low, high };
 }
 
 export function ValuePlot({ nodeId, history }: ValuePlotProps) {
@@ -92,6 +99,9 @@ export function ValuePlot({ nodeId, history }: ValuePlotProps) {
   );
   const snapshot = useCallback(() => history.get(nodeId), [history, nodeId]);
   const value = useSyncExternalStore(subscribe, snapshot, snapshot);
+  // Held across renders, per node, because the whole point is that it does NOT follow
+  // every window. Declared above the empty-state return so the hook order is fixed.
+  const heldRange = useRef<PlotRange | null>(null);
 
   if (value.latest === null || value.series.length === 0) {
     // Named state, not a zeroed plot (§V91): this node has produced nothing yet, which is
@@ -103,7 +113,10 @@ export function ValuePlot({ nodeId, history }: ValuePlotProps) {
     );
   }
 
-  const { low, span } = rangeOf(value);
+  const range = stickyRange(heldRange.current, rangeOf(value));
+  heldRange.current = range;
+  const low = range.low;
+  const span = range.high - range.low;
 
   return (
     <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
