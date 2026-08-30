@@ -1110,7 +1110,7 @@ T304|.|"throttled by the browser" notice when rAF cadence collapses while playin
 T295|.|**camera matrix + depth attachment** — camera is free (a uniform array, ⊥ IR change); depth is a small real change. EVERYTHING geometric is invisible w/o them ∴ first|V199
 T296|.|pointset EDGE carries a resolved attribute→pair map + capacity + topology. 1 change, 4 payoffs — & it IS the copy-on-write mechanism V197 needs|V197,V19
 T297|.|**swap ownership** under copy-on-write: consumers found by WHO BINDS a `pairId`, ⊥ by reachability. own task, own test — the genuinely hard half of V197|V197,V22
-T298|.|point GENERATOR family — `pointGenerator` + named presets (grid, sphere, tube, torus, line, circle) sharing ONE kernel module, per the Composite/Over "both, one implementation" convention|V140,V196
+T298|x|point GENERATOR family — `pointGenerator` + named presets (grid, sphere, tube, torus, line, circle) sharing ONE kernel module, per the Composite/Over "both, one implementation" convention|V140,V196
 T299|.|`renderInstances` — procedural primitives on points, Houdini's published composition order. ⊥ new resource kind, ⊥ new pass kind: `SPRITE_RENDER_WGSL` is already an instanced draw off an SoA buffer|V198,V199
 T300|.|**mask/group** parameter on every point node — Houdini's Group field as a per-point WGSL predicate. CHEAPER for us than for Houdini: we evaluate ∈ a thread already running, Houdini ! materialize a list|-
 T301|.|`renderSurface` w/ ANALYTIC topology (TD's Connectivity + `Dim[]`) — grid → deform → shaded surface w/ ⊥ mesh machinery|V199
