@@ -65,7 +65,14 @@ export {
   lookupNode,
   colorNodes,
 } from "./color.ts";
-export { blurNode, edgeNode, convolveNode, displaceNode, filterNodes } from "./filters.ts";
+export {
+  blurNode,
+  edgeNode,
+  convolveNode,
+  displaceNode,
+  remapNode,
+  filterNodes,
+} from "./filters.ts";
 export {
   compositeNode,
   crossNode,

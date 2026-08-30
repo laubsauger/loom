@@ -16,6 +16,7 @@ import {
   EDGE_FRAGMENT_WGSL,
   BLUR_FRAGMENT_WGSL,
   DISPLACE_FRAGMENT_WGSL,
+  REMAP_FRAGMENT_WGSL,
 } from "../shaders/filters.wgsl.ts";
 
 /**
@@ -266,6 +267,121 @@ export const displaceNode: NodeDefinition = {
   },
 };
 
+/**
+ * Remap — absolute UV lookup (T279). TD's Remap TOP.
+ *
+ * Displace's sibling, and the one difference is the point of the node: Displace ADDS the
+ * field to the pixel's own coordinate, Remap USES it as the coordinate. That makes this the
+ * first node in the catalogue that can consume the UV generator's output — until now `uv`
+ * produced coordinates nothing could read — and with it, a hand-painted or computed warp
+ * field is an ordinary texture rather than a Custom WGSL node.
+ *
+ * SHAPE AND PIXELS COME FROM DIFFERENT INPUTS, which is the same split Lookup makes and
+ * for the same reason. `map` is the index image: there is one lookup per one of ITS pixels,
+ * so the output has its resolution. `source` is what is being read: the output's pixels are
+ * literally the source's pixels, so the output has its format and its colour space. A 4K
+ * source remapped through a 256-square field is a 256-square image, and that is the
+ * operation, not a downscale that snuck in.
+ *
+ * COLOUR (§V56/§V57): `map` is DATA — positions, never light. Colour-converting it would
+ * move every sample somewhere else. `source` is whatever it was and comes out unchanged.
+ */
+export const remapNode: NodeDefinition = {
+  type: "remap",
+  version: 1,
+  title: "Remap",
+  category: "filter",
+  description:
+    "Samples the source at coordinates read from a UV map — absolute position, not an offset. TD Remap TOP.",
+  inputs: [
+    {
+      id: "source",
+      label: "Source",
+      type: RGBA_TEXTURE,
+      description: "The image being sampled. Its format and colour space are the output's.",
+    },
+    {
+      id: "map",
+      label: "UV Map",
+      type: RGBA_TEXTURE,
+      description:
+        "DATA, not colour: absolute uv coordinates. Its resolution is the output's. Never colour-convert this (§V56).",
+    },
+  ],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    sourcex: {
+      type: "enum",
+      label: "Horizontal Source",
+      default: "red",
+      options: [...CHANNEL_OPTIONS],
+      description: "Which channel of the map carries u.",
+    },
+    sourcey: {
+      type: "enum",
+      label: "Vertical Source",
+      default: "green",
+      options: [...CHANNEL_OPTIONS],
+      description: "Which channel of the map carries v.",
+    },
+    flipu: { type: "boolean", label: "Flip U", default: false },
+    flipv: {
+      type: "boolean",
+      label: "Flip V",
+      default: false,
+      description:
+        "For a map authored with v = 0 at the BOTTOM. Our UV generator's default needs no flip.",
+    },
+    extend: {
+      type: "enum",
+      label: "Extend",
+      default: "hold",
+      options: [...EXTEND_OPTIONS],
+      description: "What a coordinate outside 0..1 reads. Common here: the field is absolute.",
+    },
+  },
+  // The map is the index image, so its shape is the output's; the source is what gets read,
+  // so its pixels — and their format — are the output's. Same split as Lookup (§V57).
+  resolutionPolicy: { kind: "inherit", input: "map" },
+  formatPolicy: { kind: "inherit", input: "source" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const source = inputs["source"];
+    const field = inputs["map"];
+    if (target === undefined || source === undefined || field === undefined) {
+      const what =
+        target === undefined
+          ? 'output port "out"'
+          : source === undefined
+            ? 'input port "source"'
+            : 'input port "map"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:remap`,
+      shader: REMAP_FRAGMENT_WGSL,
+      target,
+      textures: [
+        { binding: "inputTexture", resourceId: source.resource },
+        { binding: "mapTexture", resourceId: field.resource },
+      ],
+      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        flip: [readFlag(parameters, "flipu", false), readFlag(parameters, "flipv", false)],
+        sourcex: readEnumIndex(parameters, "sourcex", CHANNEL_OPTIONS, "red"),
+        sourcey: readEnumIndex(parameters, "sourcey", CHANNEL_OPTIONS, "green"),
+        extend: readEnumIndex(parameters, "extend", EXTEND_OPTIONS, "hold"),
+      },
+      nodeId,
+      label: "Remap",
+    };
+    return { passes: [pass] };
+  },
+};
+
 /** The neighbourhood-filter group, in library order. */
 /**
  * Edge — Sobel gradient magnitude (T241). TD's Edge TOP.
@@ -404,4 +520,5 @@ export const filterNodes: readonly NodeDefinition[] = [
   edgeNode,
   convolveNode,
   displaceNode,
+  remapNode,
 ];

@@ -9,9 +9,12 @@ import {
   displaceNode,
   edgeNode,
   filterNodes,
+  remapNode,
 } from "./filters.ts";
-import { EXTEND_OPTIONS } from "./parameter-readers.ts";
+import { uvNode } from "./generators.ts";
+import { CHANNEL_OPTIONS, EXTEND_OPTIONS } from "./parameter-readers.ts";
 import { WGSL_EXTEND } from "../shaders/common.wgsl.ts";
+import { UV_FRAGMENT_WGSL } from "../shaders/generators.wgsl.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
 import {
   compileContext,
@@ -60,7 +63,13 @@ function firstPass(definition: NodeDefinition, parameters = {}, resolution?: rea
 describe("filter nodes (T40)", () => {
   it("all register together with no manifest diagnostics", () => {
     for (const definition of filterNodes) expect(validateNodeDefinition(definition)).toEqual([]);
-    expect(createNodeRegistry(filterNodes).list().map((d) => d.type)).toEqual(["blur", "convolve", "displace", "edge"]);
+    expect(createNodeRegistry(filterNodes).list().map((d) => d.type)).toEqual([
+      "blur",
+      "convolve",
+      "displace",
+      "edge",
+      "remap",
+    ]);
   });
 
   it("agree with the shader about which extend mode each enum index means", () => {
@@ -228,6 +237,56 @@ describe("filter nodes (T40)", () => {
       expect(compiled.passes).toEqual([]);
       expect(compiled.diagnostics?.[0]?.message).toContain('input port "disp"');
     });
+  });
+});
+
+/**
+ * Remap (T279) — the decisions that are arguments, not code.
+ */
+describe("Remap (T279)", () => {
+  it("uses the field as a position where Displace uses it as an offset", () => {
+    // The entire difference between the two nodes, and nothing about the names says which
+    // is which. Displace adds the field to the pixel's own coordinate; Remap replaces it.
+    // A constant field therefore collapses the source to one pixel here and merely slides
+    // the image in Displace — if this assertion ever flips, one node has become the other.
+    expect(firstPass(displaceNode).shader).toContain("uv + (shift * params.weight)");
+    expect(firstPass(remapNode).shader).not.toContain("uv +");
+  });
+
+  it("consumes the UV generator's output as an identity map, v unflipped", () => {
+    // The reason this node exists: `uv` produced coordinates nothing could read. Our
+    // fragment coordinate runs v DOWN and the generator writes that coordinate straight
+    // into green, so Remap must read green as v with no flip for `uv -> Remap.map` to be
+    // a passthrough. TD's Remap TOP documents the opposite for its input ("green: 0 =
+    // bottom row"), which is right for TD's bottom-up image space; adopting it here would
+    // make our own generator produce an upside-down warp out of the box. Both halves of
+    // that contract are asserted, so changing either module alone fails here.
+    const flipv = uvNode.parameters["flipv"];
+    expect(flipv?.type === "boolean" ? flipv.default : undefined).toBe(false);
+    expect(UV_FRAGMENT_WGSL).toContain("return vec4f(uv.x, v, 0.0, 1.0)");
+
+    const red = CHANNEL_OPTIONS.findIndex((option) => option.value === "red");
+    const green = CHANNEL_OPTIONS.findIndex((option) => option.value === "green");
+    expect(firstPass(remapNode).uniforms).toMatchObject({
+      sourcex: red,
+      sourcey: green,
+      flip: [0, 0],
+    });
+  });
+
+  it("takes its shape from the map and its pixels from the source", () => {
+    // Not the composite family's "inherit everything from input 1": there is one lookup
+    // per pixel OF THE MAP, so the map's resolution is the output's, while the pixels
+    // written out are the source's and carry the source's format and colour space. Lookup
+    // splits its policies for the same reason (§V57) — index image vs palette.
+    expect(remapNode.resolutionPolicy).toEqual({ kind: "inherit", input: "map" });
+    expect(remapNode.formatPolicy).toEqual({ kind: "inherit", input: "source" });
+  });
+
+  it("reports which input is missing rather than emitting half a pass", () => {
+    const compiled = remapNode.compile(compileContext({ inputs: ["source"] }));
+    expect(compiled.passes).toEqual([]);
+    expect(compiled.diagnostics?.[0]?.message).toContain('input port "map"');
   });
 });
 

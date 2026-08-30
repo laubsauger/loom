@@ -110,6 +110,53 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /**
+ * Remap — absolute UV lookup (T279). TD's Remap TOP.
+ *
+ * The sibling of Displace, and the difference is the whole node: Displace reads the field
+ * as an OFFSET added to the pixel's own coordinate, Remap reads it as the COORDINATE. So a
+ * constant field collapses the source to a single pixel here, where in Displace it slides
+ * the image sideways — that is the operation working, not a bug.
+ *
+ * WHICH WAY IS V, and why this is not TD's answer. Our fragment coordinate has v running
+ * DOWN (v = 0 is the top row), and the UV generator writes exactly that coordinate into
+ * green. This shader consumes the field the same way, so `uv -> Remap.map` is the identity
+ * and nothing has to be flipped to make the catalogue's own generator work. TD's Remap TOP
+ * documents the opposite convention for its input ("green: 0 = bottom row, 1 = top row"),
+ * which is right for TD's bottom-up image space and wrong for ours. `flip` is the escape
+ * hatch for a field authored under the other convention — a painted or imported map — and
+ * costs one subtraction.
+ *
+ * The map is DATA, never colour (§V56): its values are positions. A gamma curve applied to
+ * a coordinate moves the sample somewhere else entirely, which is the §V56 failure in its
+ * purest form.
+ */
+export const REMAP_FRAGMENT_WGSL = `${WGSL_EXTEND}
+${WGSL_CHANNEL}
+
+struct Params {
+  flip: vec2f,
+  sourcex: f32,
+  sourcey: f32,
+  extend: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+@group(0) @binding(3) var mapTexture: texture_2d<f32>;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let field = textureSampleLevel(mapTexture, inputSampler, uv, 0.0);
+  let raw = vec2f(
+    channelValue(field, params.sourcex),
+    channelValue(field, params.sourcey),
+  );
+  // Absolute, not relative: the field IS the coordinate. Nothing adds uv here.
+  let coord = select(raw, vec2f(1.0) - raw, params.flip > vec2f(0.5));
+  return sampleExtend(inputTexture, inputSampler, coord, params.extend);
+}`;
+
+/**
  * Edge — Sobel gradient magnitude (T241). TD's Edge TOP.
  *
  * Per channel rather than on luminance, which is what TD does and what makes the node

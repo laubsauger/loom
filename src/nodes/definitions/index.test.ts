@@ -50,6 +50,7 @@ describe("core catalogue (T70, T40)", () => {
       "edge",
       "convolve",
       "displace",
+      "remap",
       "composite",
       "cross",
       "over",
