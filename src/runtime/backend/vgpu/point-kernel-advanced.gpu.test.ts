@@ -120,3 +120,163 @@ describe("advanced kernel end to end on Dawn (T322)", () => {
     }
   });
 });
+
+/**
+ * T323 on Dawn, on VALUES. The spawn kernel: ids self-seed on frame zero, ids in
+ * [8,16) die, parent id 0 emits five children on frame zero. Analytically: 8 survive,
+ * 5 are born (room for all), live count 13, children carry ids 16..20 from the
+ * monotone cursor and their parent's exact position, and the packed flags word for
+ * the spawning survivor reads back as (5 << 1) | 1 — BOTH fields non-trivial in one
+ * word, decoded independently, which is where a shift or mask error would produce
+ * plausible-wrong birth counts instead of a crash.
+ */
+const SPAWN_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  if (ctx.frameIndex == 0u) {
+    q.id = ctx.index;
+  }
+  q.position = vec3f(f32(q.id) * 0.1 - 0.7, 0.0, 0.0);
+  q.velocity = vec3f(0.0);
+  if (q.id >= 8u && q.id < 16u) {
+    q.alive = 0u;
+  }
+  if (ctx.frameIndex == 0u && q.id == 0u) {
+    q.spawnCount = 5u;
+  }
+  return q;
+}`;
+
+const SATURATE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  if (ctx.frameIndex == 0u) {
+    q.id = ctx.index;
+  }
+  q.spawnCount = 5u;
+  return q;
+}`;
+
+function spawnPlan(capacity: number, kernel: string) {
+  const registry = createNodeRegistry(allNodeDefinitions).view();
+  return compileGraph({
+    graph: {
+      revision: 1,
+      nodes: {
+        sim: { id: "sim", type: "pointKernelAdvanced", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { capacity, seed: 7, kernel } },
+        draw: { id: "draw", type: "renderPoints", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { count: capacity, sizePixels: 6 } },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "sim", portId: "out" }, target: { nodeId: "draw", portId: "points" } },
+        e2: { id: "e2", source: { nodeId: "draw", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    },
+    settings: {
+      outputResolution: { width: 64, height: 64 },
+      workingFormat: "rgba8unorm",
+      randomSeed: 7,
+      previewLongEdge: 192,
+      previewFps: 20,
+      limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+    },
+    registry,
+    capabilities: {
+      tier: "B",
+      features: [],
+      formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+      timestampQuery: false,
+      limits: { maxTextureDimension2D: 8192 },
+    },
+  });
+}
+
+describe("spawn end to end on Dawn (T323)", () => {
+  it("births are copies with fresh ids; the packed word decodes both fields", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const plan = spawnPlan(16, SPAWN_KERNEL);
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const errors: string[] = [];
+    backend.onDiagnostic((d) => {
+      if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
+    });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      expect(errors).toEqual([]);
+
+      // ORCHESTRATED CONDITION: both packed fields non-trivial, decoded independently.
+      // Survivor slot 0 is the spawning parent — its compacted flags word carries
+      // alive=1 AND spawnCount=5 in one u32.
+      const flags = new Uint32Array(await backend.readBuffer("scratch:sim:flags"));
+      expect((flags[0] ?? 0) & 1).toBe(1);
+      expect((flags[0] ?? 0) >> 1).toBe(5);
+      expect(flags[1]).toBe(1); // a non-spawning survivor: alive only
+
+      const counts = new Uint32Array(await backend.readBuffer(liveCountBufferId("sim")));
+      expect(counts[0], "live = 8 survivors + 5 births").toBe(13);
+      expect(counts[1], "id cursor = capacity + births placed").toBe(16 + 5);
+      expect(counts[2], "nothing dropped — there was room").toBe(0);
+
+      // Second frame: children persist (their ids are outside the kill band), nothing
+      // new is born, and every value is exactly where the analysis says.
+      backend.render(compiled, {
+        frame: { timeSeconds: 1 / 60, deltaSeconds: 1 / 60, frameIndex: 1, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      expect(errors).toEqual([]);
+      const countsAfter = new Uint32Array(await backend.readBuffer(liveCountBufferId("sim")));
+      expect(countsAfter[0]).toBe(13);
+      expect(countsAfter[1]).toBe(21);
+
+      const ids = new Uint32Array(await backend.readBuffer("scratch:sim:id"));
+      expect([...ids.slice(0, 13)]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20]);
+      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      // Children recomputed their own position from their own id on frame one — the
+      // copy gave them their parent's, identity gave them their own trajectory (§V74).
+      expect(positions[8 * 4], "first child x = f(id 16)").toBeCloseTo(16 * 0.1 - 0.7, 5);
+      expect(positions[12 * 4], "last child x = f(id 20)").toBeCloseTo(20 * 0.1 - 0.7, 5);
+    } finally {
+      backend.dispose();
+    }
+  });
+
+  it("a saturating emitter drops COUNTABLY — the second orchestrated condition", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const plan = spawnPlan(4, SATURATE_KERNEL);
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const errors: string[] = [];
+    backend.onDiagnostic((d) => {
+      if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
+    });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      for (let frameIndex = 0; frameIndex < 2; frameIndex += 1) {
+        backend.render(compiled, {
+          frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+      }
+      expect(errors).toEqual([]);
+      const counts = new Uint32Array(await backend.readBuffer(liveCountBufferId("sim")));
+      // Four parents, five children each, zero room: everything requested drops, the
+      // live count never moves, and the CUMULATIVE counter says 20 + 20 after two
+      // frames — a silently-saturating emitter is exactly what this number exposes.
+      expect(counts[0]).toBe(4);
+      expect(counts[2]).toBe(40);
+    } finally {
+      backend.dispose();
+    }
+  });
+});

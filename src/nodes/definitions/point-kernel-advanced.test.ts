@@ -18,7 +18,7 @@ type PassShape = {
 };
 
 describe("pointKernelAdvanced — kill and compact (T322)", () => {
-  it("emits kernel, tail clear, scan, and scatter — in that order, nothing else", () => {
+  it("emits kernel, tail clear, alive scan, scatter, spawn scan, copies, identity, finalize — in order", () => {
     const result = pointKernelAdvancedNode.compile(
       compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 1000 } }),
     );
@@ -28,7 +28,15 @@ describe("pointKernelAdvanced — kill and compact (T322)", () => {
     expect(ids[1]).toBe("clearDeadTail");
     expect(ids[2]).toBe("scanLocal");
     expect(ids[3]).toBe("scanBlocks");
-    expect(ids.slice(4).every((id) => id.startsWith("scatter:"))).toBe(true);
+    const scatters = ids.slice(4).filter((id) => id.startsWith("scatter:"));
+    expect(scatters.length).toBeGreaterThan(0);
+    // T323: the spawn tail, strictly after every survivor scatter.
+    const tail = ids.slice(4 + scatters.length);
+    expect(tail[0]).toBe("spawnScanLocal");
+    expect(tail[1]).toBe("spawnScanBlocks");
+    expect(tail.slice(2, -2).every((id) => id.startsWith("spawnCopy:"))).toBe(true);
+    expect(tail[tail.length - 2]).toBe("spawnIdentity");
+    expect(tail[tail.length - 1]).toBe("spawnFinalize");
   });
 
   it("scatter reads the write halves and lands in the READ halves (§V231's inversion)", () => {

@@ -3,6 +3,7 @@ import {
   validateAttributes,
   type PointAttributeSchema,
 } from "./attributes.ts";
+import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
 
 /**
  * The attribute→WGSL codegen module (T117) — named the TOP RISK of the P3a slice, which
@@ -30,10 +31,30 @@ import {
 export const POINT_KERNEL_CONTRACT_VERSION = 1;
 
 /**
- * Contract for the LIFECYCLE variant (T322): same `process` signature, but the module
- * additionally reads a GPU-resident live count (dispatch is guarded by it, not by the
- * static capacity), and the alive attribute is forced to 1 on frame zero so a
- * zero-initialised pair does not start universally dead.
+ * Contract for the LIFECYCLE variant (T322/T323): same `process` signature, plus a
+ * GPU-resident live-count guard and the packed flags word exposed as `alive` and
+ * `spawnCount` Point fields (both write-only by construction).
+ *
+ * THE BINDING BUDGET, and the two named ways past it (documented per B33 — the limit
+ * fails SILENTLY when exceeded, so the strategy must be written where the arithmetic
+ * lives, not rediscovered):
+ *
+ * Baseline WebGPU guarantees 8 storage buffers per compute STAGE (bind GROUPS do not
+ * raise the per-stage limit). The lifecycle kernel spends 2·(n−1)+2 for n attributes
+ * incl. flags — the default schema lands exactly at 8, and one more attribute busts
+ * it, which is why the spawn(parent) hook (2n+4 in one pass) is deferred. The paths:
+ *
+ *  1. REQUEST a higher limit at device creation: `maxStorageBuffersPerShaderStage`
+ *     is a baseline DEFAULT, not a ceiling — most desktop adapters offer 10–64+.
+ *     `initialize()` can pass requiredLimits from `adapter.limits` and the compiler's
+ *     budget checks (T328) then validate against the REAL device limit instead of 8.
+ *     This widens every kernel at once and is the right first move.
+ *
+ *  2. TWO-PASS spawn hook: children are copied first (chunked, fits), then an
+ *     in-place `spawn(child: Point, ctx)` kernel runs over just the newborn range —
+ *     the child arrives as its parent's copy, so inheritance is the initial value
+ *     and the pass needs only n+2 bindings. Correct hook semantics regardless of
+ *     limits; design it with T287's attribute qualifiers.
  */
 export const ADVANCED_KERNEL_CONTRACT_VERSION = 2;
 
@@ -60,12 +81,17 @@ export interface KernelModuleRequest {
   readonly kernel: string;
   readonly workgroupSize?: number;
   /**
-   * T322: generate the lifecycle variant. The named attribute (u32, in the schema) is
-   * the alive flag; the module gains a `liveCount` read binding, guards the dispatch
-   * by it (frame zero uses the static count — the buffer is zero-initialised), and
-   * loads the flag as 1 (alive by construction inside the guard — no read binding).
+   * T322/T323: generate the lifecycle variant. The named attribute (u32, in the
+   * schema, written) is the PACKED flags word — the kernel ABI exposes it as two
+   * Point fields, `alive: u32` and `spawnCount: u32`, and the generated store packs
+   * `(min(spawnCount, cap) << 1) | (alive & 1)`. Both are write-only BY CONSTRUCTION:
+   * inside the guard a slot is alive (compaction packed survivors below the count)
+   * and last frame's spawnCount is meaningless — which is what keeps the default
+   * schema inside the 8-storage-buffers-per-stage budget (§V24, B33). The module
+   * gains a `liveCount` read binding and guards the dispatch by it; frame zero uses
+   * the static count, the buffer being zero-initialised.
    */
-  readonly lifecycle?: { readonly aliveAttribute: string };
+  readonly lifecycle?: { readonly flagsAttribute: string };
   /**
    * T300: Houdini's Group field as a WGSL predicate over (p, ctx). Only matching
    * points run `process`; the rest pass through byte-identical. Evaluated in the
@@ -129,13 +155,18 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   }
   const lifecycle = request.lifecycle;
   if (lifecycle !== undefined) {
-    const alive = byName.get(lifecycle.aliveAttribute);
-    if (alive === undefined) {
-      errors.push(`lifecycle names alive attribute "${lifecycle.aliveAttribute}", which the schema does not declare`);
-    } else if (alive.type !== "u32") {
-      errors.push(`alive attribute "${lifecycle.aliveAttribute}" must be u32, not ${alive.type}`);
-    } else if (!writes.includes(lifecycle.aliveAttribute)) {
-      errors.push(`alive attribute "${lifecycle.aliveAttribute}" must be written, or nothing can die`);
+    const flags = byName.get(lifecycle.flagsAttribute);
+    if (flags === undefined) {
+      errors.push(`lifecycle names flags attribute "${lifecycle.flagsAttribute}", which the schema does not declare`);
+    } else if (flags.type !== "u32") {
+      errors.push(`flags attribute "${lifecycle.flagsAttribute}" must be u32, not ${flags.type}`);
+    } else if (!writes.includes(lifecycle.flagsAttribute)) {
+      errors.push(`flags attribute "${lifecycle.flagsAttribute}" must be written, or nothing can die`);
+    }
+    for (const reserved of ["alive", "spawnCount"]) {
+      if (byName.has(reserved) && reserved !== lifecycle.flagsAttribute) {
+        errors.push(`"${reserved}" is a lifecycle Point field (contract v2); the schema must not declare it`);
+      }
     }
   }
 
@@ -157,11 +188,12 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   const bindings: PointBufferBinding[] = [];
   let nextBinding = 1; // binding 0 is the uniforms block
   for (const attribute of touched) {
-    // T322: the alive flag is WRITE-ONLY. Inside the guarded range a slot is alive BY
-    // CONSTRUCTION (compaction packed survivors below the live count), so reading the
-    // flag back is redundant — and the saved binding is what keeps the default schema
-    // inside the baseline 8-storage-buffers-per-stage budget (§V24).
-    if (attribute.name === lifecycle?.aliveAttribute) continue;
+    // T322/T323: the flags word is WRITE-ONLY. Inside the guarded range a slot is
+    // alive BY CONSTRUCTION (compaction packed survivors below the live count) and
+    // last frame's spawnCount is meaningless, so reading back is redundant — and the
+    // saved binding is what keeps the default schema inside the baseline
+    // 8-storage-buffers-per-stage budget (§V24).
+    if (attribute.name === lifecycle?.flagsAttribute) continue;
     bindings.push({
       attribute: attribute.name,
       variable: `in_${attribute.name}`,
@@ -183,7 +215,7 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   }
   if (lifecycle !== undefined) {
     bindings.push({
-      attribute: lifecycle.aliveAttribute,
+      attribute: lifecycle.flagsAttribute,
       variable: "liveCount",
       binding: nextBinding,
       access: "read",
@@ -192,7 +224,11 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   }
 
   const structFields = touched
-    .map((attribute) => `  ${attribute.name}: ${attribute.type},`)
+    .map((attribute) =>
+      attribute.name === lifecycle?.flagsAttribute
+        ? "  alive: u32,\n  spawnCount: u32,"
+        : `  ${attribute.name}: ${attribute.type},`,
+    )
     .join("\n");
 
   const bufferDeclarations = bindings
@@ -206,14 +242,19 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
 
   const loads = touched
     .map((attribute) =>
-      attribute.name === lifecycle?.aliveAttribute
-        ? `  p.${attribute.name} = 1u; /* alive by construction inside the guard (T322) */`
+      attribute.name === lifecycle?.flagsAttribute
+        ? "  p.alive = 1u; /* by construction inside the guard (T322) */\n" +
+          "  p.spawnCount = 0u; /* last frame's births are not this frame's (T323) */"
         : `  p.${attribute.name} = in_${attribute.name}[index];`,
     )
     .join("\n");
 
   const stores = written
-    .map((attribute) => `  out_${attribute.name}[index] = q.${attribute.name};`)
+    .map((attribute) =>
+      attribute.name === lifecycle?.flagsAttribute
+        ? `  out_${attribute.name}[index] = (min(q.spawnCount, ${MAX_SPAWN_PER_PARENT}u) << 1u) | (q.alive & 1u);`
+        : `  out_${attribute.name}[index] = q.${attribute.name};`,
+    )
     .join("\n");
 
   /* T322: the lifecycle module is guarded by the LIVE count — frame zero uses the

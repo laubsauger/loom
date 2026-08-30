@@ -32,6 +32,26 @@ import {
 
 export const SCAN_WORKGROUP_SIZE = 256;
 
+/**
+ * T323: per-parent births per frame are CAPPED. A WGSL loop must be bounded, and a
+ * runaway emitter should saturate loudly (the dropped counter) rather than hang a
+ * dispatch. Eight per parent per frame is 480/second at 60fps from ONE point.
+ */
+export const MAX_SPAWN_PER_PARENT = 8;
+
+/**
+ * T323: the counts buffer layout (u32 × 4, one per producer). Slot 0 is what T322
+ * shipped as the live count — consumers read it unchanged. The rest arrived with
+ * spawn: the monotone id cursor (§V73 — identity survives compaction AND birth),
+ * the CUMULATIVE dropped-births counter (a saturating emitter must be countable,
+ * or it is indistinguishable from a working one that spawns fewer), and this
+ * frame's raw birth total, scratch for finalize.
+ */
+export const COUNTS_LIVE = 0;
+export const COUNTS_NEXT_ID = 1;
+export const COUNTS_DROPPED = 2;
+export const COUNTS_BIRTHS = 3;
+
 /** Baseline WebGPU guarantees 8 storage buffers per stage; scatter uses 3 + 2·chunk. */
 const SCATTER_ATTRIBUTES_PER_PASS = 2;
 
@@ -75,13 +95,35 @@ const PARAMS_WGSL = `struct LifecycleParams {
 };
 @group(0) @binding(0) var<uniform> params: LifecycleParams;`;
 
-function scanLocalWgsl(): string {
+/**
+ * T323: `extract` reads the scanned quantity out of a flags word — `raw` (v1's 0/1
+ * arrays), the alive bit (`& 1u`) or the spawn count (`>> 1u`, capped). ONE scan
+ * implementation, three spellings, so the second scan cannot drift from the first.
+ */
+export type FlagsExtract = "raw" | "aliveBit" | "spawnCount";
+
+function extractWgsl(extract: FlagsExtract): string {
+  switch (extract) {
+    case "raw":
+      return "raw";
+    case "aliveBit":
+      return "raw & 1u";
+    case "spawnCount":
+      return `min(raw >> 1u, ${MAX_SPAWN_PER_PARENT}u)`;
+  }
+}
+
+function scanLocalWgsl(extract: FlagsExtract): string {
   return `${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read_write> scanned: array<u32>;
 @group(0) @binding(3) var<storage, read_write> blockSums: array<u32>;
 
 var<workgroup> temp: array<u32, ${SCAN_WORKGROUP_SIZE}>;
+
+fn extract(raw: u32) -> u32 {
+  return ${extractWgsl(extract)};
+}
 
 @compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
 fn main(
@@ -90,7 +132,7 @@ fn main(
   @builtin(workgroup_id) wid: vec3u,
 ) {
   let index = gid.x;
-  let value = select(0u, flags[index], index < params.capacity);
+  let value = select(0u, extract(flags[index]), index < params.capacity);
   temp[lid.x] = value;
   workgroupBarrier();
 
@@ -117,7 +159,7 @@ fn main(
 }`;
 }
 
-function scanBlocksWgsl(): string {
+function scanBlocksWgsl(targetSlot = 0): string {
   return `${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read_write> blockSums: array<u32>;
 @group(0) @binding(2) var<storage, read_write> aliveCount: array<u32>;
@@ -137,11 +179,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     acc = acc + value;
     block = block + 1u;
   }
-  aliveCount[0] = acc;
+  aliveCount[${targetSlot}u] = acc;
 }`;
 }
 
-function scatterWgsl(chunk: ReadonlyArray<PointAttributeSchema>): string {
+function scatterWgsl(chunk: ReadonlyArray<PointAttributeSchema>, extract: FlagsExtract): string {
   const declarations = chunk
     .map(
       (attribute, index) =>
@@ -159,13 +201,17 @@ function scatterWgsl(chunk: ReadonlyArray<PointAttributeSchema>): string {
 @group(0) @binding(3) var<storage, read> blockSums: array<u32>;
 ${declarations}
 
+fn extract(raw: u32) -> u32 {
+  return ${extractWgsl(extract)};
+}
+
 @compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let index = gid.x;
   if (index >= params.capacity) {
     return;
   }
-  if (flags[index] == 0u) {
+  if (extract(flags[index]) == 0u) {
     return;
   }
   let destination = scanned[index] + blockSums[index / ${SCAN_WORKGROUP_SIZE}u];
@@ -176,6 +222,8 @@ ${copies}
 export function generateCompactionModule(
   attributes: ReadonlyArray<PointAttributeSchema>,
   capacity: number,
+  /** T323: how the scan reads its quantity out of the flags word. Default: v1's raw 0/1. */
+  extract: FlagsExtract = "raw",
 ): CompactionResult {
   const errors: string[] = [];
   const schemaCheck = validateAttributes(attributes);
@@ -188,7 +236,7 @@ export function generateCompactionModule(
   const passes: LifecyclePass[] = [
     {
       name: "scanLocal",
-      wgsl: scanLocalWgsl(),
+      wgsl: scanLocalWgsl(extract),
       entryPoint: "main",
       dispatch: "perPoint",
       bindings: [
@@ -213,7 +261,7 @@ export function generateCompactionModule(
     const chunk = attributes.slice(start, start + SCATTER_ATTRIBUTES_PER_PASS);
     passes.push({
       name: `scatter:${chunk.map((attribute) => attribute.name).join("+")}`,
-      wgsl: scatterWgsl(chunk),
+      wgsl: scatterWgsl(chunk, extract),
       entryPoint: "main",
       dispatch: "perPoint",
       bindings: [
@@ -315,6 +363,198 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   drawArgs[2] = 0u;
   drawArgs[3] = 0u;
 }`;
+}
+
+
+/* ------------------------------------------------------------------------------------
+ * T323: the SPAWN half. A second scan over the same flags word (spawnCount bits) plus
+ * chunked child-copy passes and one finalize. Children are COPIES of their parent —
+ * every attribute rides over verbatim except id (fresh, from the monotone cursor) and
+ * flags (born alive, spawning nothing). Differentiation happens NEXT frame through
+ * pointRand(id, salt): distinct ids, distinct draws (§V74). The spawn(parent) hook is
+ * deferred: a one-pass hook needs 2n+4 storage bindings against the per-stage limit
+ * of 8 (B33's arithmetic — bind GROUPS do not raise the per-STAGE limit); the clean
+ * path is a second in-place kernel over the newborn range, designed with T287.
+ * ---------------------------------------------------------------------------------- */
+
+/** Frame-aware params block shared by spawn passes (T172: frame fields merge in). */
+const SPAWN_PARAMS_WGSL = `struct SpawnParams {
+  timeSeconds: f32,
+  deltaSeconds: f32,
+  frameIndex: u32,
+  capacity: u32,
+};
+@group(0) @binding(0) var<uniform> params: SpawnParams;`;
+
+function spawnCopyWgsl(attribute: PointAttributeSchema): string {
+  return `${SPAWN_PARAMS_WGSL}
+@group(0) @binding(1) var<storage, read> flags: array<u32>;
+@group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
+@group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
+@group(0) @binding(4) var<storage, read> counts: array<u32>;
+@group(0) @binding(5) var<storage, read> in_${attribute.name}: array<${attribute.type}>;
+@group(0) @binding(6) var<storage, read_write> out_${attribute.name}: array<${attribute.type}>;
+
+@compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.capacity) {
+    return;
+  }
+  let births = min(flags[index] >> 1u, ${MAX_SPAWN_PER_PARENT}u);
+  if (births == 0u) {
+    return;
+  }
+  let base = counts[${COUNTS_LIVE}u] + spawnScanned[index] + spawnBlockSums[index / ${SCAN_WORKGROUP_SIZE}u];
+  for (var child = 0u; child < births; child = child + 1u) {
+    let slot = base + child;
+    if (slot < params.capacity) {
+      out_${attribute.name}[slot] = in_${attribute.name}[index];
+    }
+  }
+}`;
+}
+
+/** Ids and flags for newborns, one pass: fresh id from the cursor, born alive. */
+function spawnIdentityWgsl(idAttribute: string): string {
+  return `${SPAWN_PARAMS_WGSL}
+@group(0) @binding(1) var<storage, read> flags: array<u32>;
+@group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
+@group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
+@group(0) @binding(4) var<storage, read> counts: array<u32>;
+@group(0) @binding(5) var<storage, read_write> out_${idAttribute}: array<u32>;
+@group(0) @binding(6) var<storage, read_write> out_flags: array<u32>;
+
+@compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.capacity) {
+    return;
+  }
+  let births = min(flags[index] >> 1u, ${MAX_SPAWN_PER_PARENT}u);
+  if (births == 0u) {
+    return;
+  }
+  /* Frame zero: the cursor buffer is zero-initialised and ids 0..capacity-1 are the
+     first generation's, so newborn ids start at capacity (§V73). */
+  let nextIdBase = select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.frameIndex == 0u);
+  let birthIndex = spawnScanned[index] + spawnBlockSums[index / ${SCAN_WORKGROUP_SIZE}u];
+  let base = counts[${COUNTS_LIVE}u] + birthIndex;
+  for (var child = 0u; child < births; child = child + 1u) {
+    let slot = base + child;
+    if (slot < params.capacity) {
+      out_${idAttribute}[slot] = nextIdBase + birthIndex + child;
+      out_flags[slot] = 1u; /* alive, spawning nothing */
+    }
+  }
+}`;
+}
+
+function spawnFinalizeWgsl(): string {
+  return `${SPAWN_PARAMS_WGSL}
+@group(0) @binding(1) var<storage, read_write> counts: array<u32>;
+
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  if (gid.x != 0u) {
+    return;
+  }
+  let alive = counts[${COUNTS_LIVE}u];
+  let requested = counts[${COUNTS_BIRTHS}u];
+  let placed = min(requested, params.capacity - alive);
+  /* CUMULATIVE (T323's countable condition): a saturating emitter that dropped
+     silently would be indistinguishable from a working one that spawns fewer. */
+  counts[${COUNTS_DROPPED}u] = counts[${COUNTS_DROPPED}u] + (requested - placed);
+  counts[${COUNTS_NEXT_ID}u] =
+    select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.frameIndex == 0u) + placed;
+  counts[${COUNTS_LIVE}u] = alive + placed;
+}`;
+}
+
+export interface SpawnModule {
+  readonly ok: true;
+  readonly passes: ReadonlyArray<LifecyclePass>;
+}
+
+/**
+ * The spawn pass list, appended AFTER the survivor scatter: spawn scan (the alive
+ * scan's generated passes with the spawnCount extraction — one implementation, so the
+ * second scan cannot drift from the first), chunked child copies into the read halves,
+ * identity, finalize. Bindings are named; the node maps them to resources exactly as
+ * it does for compaction.
+ */
+export function generateSpawnModule(
+  attributes: ReadonlyArray<PointAttributeSchema>,
+  options: { readonly idAttribute: string; readonly flagsAttribute: string },
+): SpawnModule {
+  const copyBindings = [
+    { binding: 1, name: "flags", access: "read" as const },
+    { binding: 2, name: "spawnScanned", access: "read" as const },
+    { binding: 3, name: "spawnBlockSums", access: "read" as const },
+    { binding: 4, name: "counts", access: "read" as const },
+  ];
+  const copied = attributes.filter(
+    (attribute) => attribute.name !== options.idAttribute && attribute.name !== options.flagsAttribute,
+  );
+  return {
+    ok: true,
+    passes: [
+      {
+        name: "spawnScanLocal",
+        wgsl: scanLocalWgsl("spawnCount"),
+        entryPoint: "main",
+        dispatch: "perPoint",
+        // The WGSL is the SHARED scan — its binding names are scanned/blockSums; the
+        // consumer maps them to the spawn-side buffers per pass (see the node).
+        bindings: [
+          { binding: 1, name: "flags", access: "read" },
+          { binding: 2, name: "scanned", access: "read_write" },
+          { binding: 3, name: "blockSums", access: "read_write" },
+        ],
+      },
+      {
+        name: "spawnScanBlocks",
+        wgsl: scanBlocksWgsl(COUNTS_BIRTHS),
+        entryPoint: "main",
+        dispatch: "single",
+        bindings: [
+          { binding: 1, name: "blockSums", access: "read_write" },
+          { binding: 2, name: "aliveCount", access: "read_write" },
+        ],
+      },
+      ...copied.map(
+        (attribute): LifecyclePass => ({
+          name: `spawnCopy:${attribute.name}`,
+          wgsl: spawnCopyWgsl(attribute),
+          entryPoint: "main",
+          dispatch: "perPoint",
+          bindings: [
+            ...copyBindings,
+            { binding: 5, name: `in_${attribute.name}`, access: "read" },
+            { binding: 6, name: `out_${attribute.name}`, access: "read_write" },
+          ],
+        }),
+      ),
+      {
+        name: "spawnIdentity",
+        wgsl: spawnIdentityWgsl(options.idAttribute),
+        entryPoint: "main",
+        dispatch: "perPoint",
+        bindings: [
+          ...copyBindings,
+          { binding: 5, name: `out_${options.idAttribute}`, access: "read_write" },
+          { binding: 6, name: "out_flags", access: "read_write" },
+        ],
+      },
+      {
+        name: "spawnFinalize",
+        wgsl: spawnFinalizeWgsl(),
+        entryPoint: "main",
+        dispatch: "single",
+        bindings: [{ binding: 1, name: "counts", access: "read_write" }],
+      },
+    ],
+  };
 }
 
 /** Re-export so lifecycle consumers size attribute buffers without a second import. */

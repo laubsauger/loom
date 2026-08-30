@@ -8,6 +8,7 @@ import {
   blockCount,
   clearDeadTailWgsl,
   generateCompactionModule,
+  generateSpawnModule,
 } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL } from "../shaders/points.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
@@ -15,15 +16,21 @@ import { readNumber } from "./parameter-readers.ts";
 import { parseAttributes, pointPairId } from "./points.ts";
 
 /**
- * The ADVANCED kernel (T322): a per-point kernel that may CHANGE COUNTS — the second
- * kernel node of the T302 split, shaped by TD deprecating its combined Create POP.
- * v1 kills; spawning is T323, with its own emitter vocabulary.
+ * The ADVANCED kernel (T322/T323): a per-point kernel that may CHANGE COUNTS — the
+ * second kernel node of the T302 split, shaped by TD deprecating its combined Create
+ * POP. Kills AND spawns: `q.alive = 0u` kills; `q.spawnCount = n` emits n children
+ * this frame (capped per parent per frame; a runaway emitter saturates COUNTABLY —
+ * the counts buffer keeps a cumulative dropped-births tally — instead of hanging).
  *
  * The whole lifecycle is deterministic scan compaction (T119/T120, §V74 — never
- * atomics), wired at last: the kernel writes an auto-injected `alive: u32` flag
- * (`q.alive = 0u` kills), a glue pass zeroes the stale tail the guarded kernel never
- * touched, the scan counts survivors into a GPU-resident live count, and scatter packs
- * every attribute — ids riding along, identity never slot-keyed (§V73).
+ * atomics): the kernel writes ONE packed flags word (exposed to kernels as separate
+ * `alive`/`spawnCount` fields — the packing never reaches user code), a glue pass
+ * zeroes the stale tail, the alive scan counts survivors, the SAME generated scan
+ * with a different extraction counts births, scatter packs survivors, chunked copy
+ * passes append children as COPIES of their parents — fresh ids from a monotone
+ * GPU-resident cursor (§V73; a 32-bit hash would birthday-collide within seconds),
+ * differentiation next frame via pointRand(id, salt) (§V74). The spawn(parent) hook
+ * is deferred — see the budget note on ADVANCED_KERNEL_CONTRACT_VERSION.
  *
  * THE INVERSION (§V231): scatter cannot land in the half the kernel just wrote (that
  * is its input), so compacted data lands in the READ half, the pairs declare
@@ -32,10 +39,10 @@ import { parseAttributes, pointPairId } from "./points.ts";
  * travels as `count: { buffer }`; capacity stays the allocation bound.
  */
 
-const ALIVE = "alive";
+const FLAGS = "flags";
 
-function withAlive(attributes: ReadonlyArray<PointAttributeSchema>): ReadonlyArray<PointAttributeSchema> {
-  return [...attributes, { name: ALIVE, type: "u32", default: [1] }];
+function withFlags(attributes: ReadonlyArray<PointAttributeSchema>): ReadonlyArray<PointAttributeSchema> {
+  return [...attributes, { name: FLAGS, type: "u32", default: [1] }];
 }
 
 export function liveCountBufferId(nodeId: string): string {
@@ -85,7 +92,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       multiline: true,
       compileTime: true,
-      description: "fn process(p: Point, ctx: PointCtx) -> Point. Set q.alive = 0u to kill. pointRand(pointId, salt) is available.",
+      description: "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -111,23 +118,45 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         ],
       };
     }
-    if (parsed.attributes.some((attribute) => attribute.name === ALIVE)) {
+    for (const reserved of [FLAGS, "alive", "spawnCount"]) {
+      if (parsed.attributes.some((attribute) => attribute.name === reserved)) {
+        return {
+          passes: [],
+          diagnostics: [
+            {
+              severity: "error",
+              code: "node.points.attributes",
+              message: `Node "${nodeId}": "${reserved}" belongs to the injected lifecycle contract; the schema must not declare it.`,
+              nodeId,
+            },
+          ],
+        };
+      }
+    }
+    // T323: spawning mints identity — children need fresh ids or §V73's guarantee dies
+    // at the first birth. The u32 id-semantic attribute is therefore REQUIRED here.
+    const idAttribute = parsed.attributes.find(
+      (attribute) => attribute.semantic === "id" && attribute.type === "u32",
+    );
+    if (idAttribute === undefined) {
       return {
         passes: [],
         diagnostics: [
           {
             severity: "error",
             code: "node.points.attributes",
-            message: `Node "${nodeId}": "${ALIVE}" is the injected lifecycle flag; the schema must not declare it.`,
+            message: `Node "${nodeId}": the advanced kernel requires a u32 attribute with semantic "id" — spawning mints identity (§V73). The default schema carries one.`,
             nodeId,
           },
         ],
       };
     }
-    const attributes = withAlive(parsed.attributes);
+    const attributes = withFlags(parsed.attributes);
     // Baseline WebGPU allows 8 storage buffers per stage (§V24). The kernel binds an
-    // in/out pair per attribute, the alive flag out-only, and the live count:
-    // 2·(n−1) + 1 + 1. Beyond that the pipeline FAILS — refuse loudly instead.
+    // in/out pair per attribute, the packed flags word out-only, and the counts
+    // buffer: 2·(n−1) + 1 + 1. Beyond that the pipeline FAILS SILENTLY (B33) —
+    // refuse loudly instead. The named ways past 8 are documented on
+    // ADVANCED_KERNEL_CONTRACT_VERSION.
     const storageBindings = (attributes.length - 1) * 2 + 2;
     if (storageBindings > 8) {
       return {
@@ -151,7 +180,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       reads: names,
       writes: names,
       kernel: kernelSource,
-      lifecycle: { aliveAttribute: ALIVE },
+      lifecycle: { flagsAttribute: FLAGS },
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
     });
     if (!module.ok) {
@@ -166,7 +195,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       };
     }
 
-    const compaction = generateCompactionModule(attributes, capacity);
+    const compaction = generateCompactionModule(attributes, capacity, "aliveBit");
     if (!compaction.ok) {
       return {
         passes: [],
@@ -179,11 +208,46 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       };
     }
 
-    const liveCount = liveCountBufferId(nodeId);
+    const spawn = generateSpawnModule(attributes, {
+      idAttribute: idAttribute.name,
+      flagsAttribute: FLAGS,
+    });
+
+    const counts = liveCountBufferId(nodeId);
     const scanned = pointPairId(nodeId, "scanned");
     const blockSums = pointPairId(nodeId, "blockSums");
-    const alivePair = pointPairId(nodeId, ALIVE);
+    const spawnScanned = pointPairId(nodeId, "spawnScanned");
+    const spawnBlockSums = pointPairId(nodeId, "spawnBlockSums");
+    const flagsPair = pointPairId(nodeId, FLAGS);
     const frameUniforms = { timeSeconds: 0, deltaSeconds: 0, frameIndex: 0 };
+
+    /**
+     * One binding-name→resource mapping for every lifecycle pass. The SPAWN scans run
+     * the SHARED scan WGSL (binding names scanned/blockSums), pointed at the spawn
+     * buffers — same implementation, different resources, which is exactly why the
+     * second scan cannot drift from the first.
+     */
+    const lifecycleBinding = (
+      passName: string,
+      name: string,
+    ): { binding: string; resourceId: string; half?: "read" | "write" } => {
+      const spawnScan = passName.startsWith("spawnScan");
+      if (name === "flags") return { binding: name, resourceId: flagsPair, half: "write" };
+      if (name === "scanned") return { binding: name, resourceId: spawnScan ? spawnScanned : scanned };
+      if (name === "blockSums") return { binding: name, resourceId: spawnScan ? spawnBlockSums : blockSums };
+      if (name === "spawnScanned") return { binding: name, resourceId: spawnScanned };
+      if (name === "spawnBlockSums") return { binding: name, resourceId: spawnBlockSums };
+      if (name === "aliveCount" || name === "counts") return { binding: name, resourceId: counts };
+      const attribute = name.replace(/^(in|out)_/, "");
+      // Scatter and spawn copies read this frame's data from WRITE halves and land
+      // results in READ halves — the §V231 inversion, contained in this pass list.
+      // Exception: spawnIdentity WRITES out_id/out_flags into read halves too.
+      return {
+        binding: name,
+        resourceId: pointPairId(nodeId, attribute),
+        half: name.startsWith("in_") ? "write" : "read",
+      };
+    };
 
     const passes: DispatchPassDescriptor[] = [
       {
@@ -194,7 +258,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         workgroups: [Math.ceil(capacity / module.workgroupSize), 1, 1],
         buffers: module.buffers.map((binding) =>
           binding.role === "live"
-            ? { binding: binding.variable, resourceId: liveCount }
+            ? { binding: binding.variable, resourceId: counts }
             : {
                 binding: binding.variable,
                 resourceId: pointPairId(nodeId, binding.attribute),
@@ -212,14 +276,14 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         entryPoint: "main",
         workgroups: [Math.ceil(capacity / SCAN_WORKGROUP_SIZE), 1, 1],
         buffers: [
-          { binding: "liveCount", resourceId: liveCount },
-          { binding: "aliveFlags", resourceId: alivePair, half: "write" },
+          { binding: "liveCount", resourceId: counts },
+          { binding: "aliveFlags", resourceId: flagsPair, half: "write" },
         ],
         uniforms: { ...frameUniforms, capacity },
         uniformBinding: "params",
         nodeId,
       },
-      ...compaction.passes.map(
+      ...[...compaction.passes, ...spawn.passes].map(
         (pass): DispatchPassDescriptor => ({
           kind: "dispatch",
           id: `${nodeId}:${pass.name}`,
@@ -227,22 +291,11 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           entryPoint: pass.entryPoint,
           workgroups:
             pass.dispatch === "single" ? [1, 1, 1] : [Math.ceil(capacity / SCAN_WORKGROUP_SIZE), 1, 1],
-          buffers: pass.bindings.map((binding) => {
-            // flags = the alive attribute's post-kernel WRITE half; scan scratch by
-            // name; scatter's in_* reads write halves, out_* lands in READ halves —
-            // the §V231 inversion, contained entirely inside this pass list.
-            if (binding.name === "flags") return { binding: "flags", resourceId: alivePair, half: "write" as const };
-            if (binding.name === "scanned") return { binding: "scanned", resourceId: scanned };
-            if (binding.name === "blockSums") return { binding: "blockSums", resourceId: blockSums };
-            if (binding.name === "aliveCount") return { binding: "aliveCount", resourceId: liveCount };
-            const attribute = binding.name.replace(/^(in|out)_/, "");
-            return {
-              binding: binding.name,
-              resourceId: pointPairId(nodeId, attribute),
-              half: binding.name.startsWith("in_") ? ("write" as const) : ("read" as const),
-            };
-          }),
-          uniforms: { capacity },
+          buffers: pass.bindings.map((binding) => lifecycleBinding(pass.name, binding.name)),
+          uniforms:
+            pass.name.startsWith("spawnCopy") || pass.name === "spawnIdentity" || pass.name === "spawnFinalize"
+              ? { ...frameUniforms, capacity }
+              : { capacity },
           uniformBinding: "params",
           nodeId,
         }),
@@ -259,9 +312,13 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         // hand next frame the stale half.
         swap: false,
       })),
-      { kind: "buffer", key: "liveCount", stride: 4, capacity: 1 },
+      // The counts buffer (u32 × 4): live count, id cursor, cumulative dropped
+      // births, this frame's raw birth total. Slot 0 is what consumers read.
+      { kind: "buffer", key: "liveCount", stride: 4, capacity: 4 },
       { kind: "buffer", key: "scanned", stride: 4, capacity },
       { kind: "buffer", key: "blockSums", stride: 4, capacity: blockCount(capacity) },
+      { kind: "buffer", key: "spawnScanned", stride: 4, capacity },
+      { kind: "buffer", key: "spawnBlockSums", stride: 4, capacity: blockCount(capacity) },
     ];
 
     return {
@@ -273,7 +330,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           // survivors. The payload says so; nobody downstream has to know why.
           pairs: Object.fromEntries(
             attributes
-              .filter((attribute) => attribute.name !== ALIVE)
+              .filter((attribute) => attribute.name !== FLAGS)
               .map((attribute) => [
                 attribute.name,
                 { pair: pointPairId(nodeId, attribute.name), half: "read" as const },
@@ -281,7 +338,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           ),
           capacity,
           topology: "points",
-          count: { buffer: liveCount },
+          count: { buffer: counts },
         },
       },
     };
