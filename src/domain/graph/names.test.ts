@@ -95,6 +95,66 @@ describe("reference rewriting (§V128)", () => {
   });
 });
 
+/**
+ * B88 (T485) — the COUNT walks the same four kinds the rewrite does, because they are
+ * now literally the same walk (one clause list, rename === null counts). Clearing a
+ * label used to report zero stranded references while driven, source and list
+ * references all pointed at the vanished name — the info-severity twin of B40.
+ */
+describe("count and rewrite are one walk (T485, B88)", () => {
+  const graphWithEveryKind = (): GraphDocument =>
+    ({
+      revision: 1,
+      nodes: {
+        target: { id: "target", type: "lfo", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "sig1" },
+        expr: {
+          id: "expr", type: "level", definitionVersion: 1, position: { x: 0, y: 0 },
+          parameters: {
+            brightness: { mode: "expression", bindings: { expression: { kind: "expression", source: "op('sig1') * 2" } } },
+          },
+        },
+        driven: {
+          id: "driven", type: "level", definitionVersion: 1, position: { x: 0, y: 0 },
+          parameters: {
+            opacity: { mode: "driven", bindings: { driven: { kind: "driven", channel: "sig1:value" } } },
+          },
+        },
+        scalarRef: {
+          id: "scalarRef", type: "geometry", definitionVersion: 1, position: { x: 0, y: 0 },
+          parameters: { material: "sig1" },
+        },
+        listRef: {
+          id: "listRef", type: "render", definitionVersion: 1, position: { x: 0, y: 0 },
+          parameters: { scenes: "other1 sig1 other2", camera: "", lights: "" },
+        },
+      },
+      edges: {},
+      groups: {},
+    }) as never;
+
+  it("counts all four kinds — expression, driven, scalar source ref, list source ref", () => {
+    expect(countNodeNameReferences(graphWithEveryKind(), "sig1")).toBe(4);
+    expect(countNodeNameReferences(graphWithEveryKind(), "other")).toBe(0);
+  });
+
+  it("count equals what a rewrite touches, on the same graph", () => {
+    const graph = graphWithEveryKind();
+    const counted = countNodeNameReferences(graph, "sig1");
+    const rewritten = rewriteNodeNameReferences(graph, "sig1", "sig9");
+    expect(counted).toBe(rewritten);
+    // And after the rewrite the old name strands nothing — the two answers agree again.
+    expect(countNodeNameReferences(graph, "sig1")).toBe(0);
+    expect(countNodeNameReferences(graph, "sig9")).toBe(4);
+  });
+
+  it("counting mutates nothing", () => {
+    const graph = graphWithEveryKind();
+    const before = JSON.stringify(graph);
+    countNodeNameReferences(graph, "sig1");
+    expect(JSON.stringify(graph)).toBe(before);
+  });
+});
+
 describe("rename rewrites EVERY reference kind (§V128, §V316)", () => {
   const graphWith = (parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
     ({

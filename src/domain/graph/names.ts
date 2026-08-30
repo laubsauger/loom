@@ -98,26 +98,45 @@ export function rewriteNodeNameReferences(
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
     if (node === undefined) continue;
-    rewritten += rewriteExpressionReferences(node, oldName, newName);
-    rewritten += rewriteDrivenChannels(node, oldName, newName);
-    rewritten += rewriteSourceReference(node, oldName, newName);
+    for (const clause of REFERENCE_CLAUSES) rewritten += clause(node, oldName, newName);
   }
   return rewritten;
+}
+
+/**
+ * How many stored references name `name` — what a CLEAR of the label would strand.
+ *
+ * B88: this used to scan expressions ALONE while the rewrite above handled four kinds,
+ * so clearing a label reported zero stranded references while driven, source and list
+ * references all pointed at the vanished name. Count and rewrite now share ONE clause
+ * list, and each clause is a single walker asked either question — so a fifth reference
+ * kind cannot teach the rename and forget the count, which is §V316's clause-per-kind
+ * applied to the PAIR rather than to each copy.
+ */
+export function countNodeNameReferences(graph: GraphDocument, name: string): number {
+  let count = 0;
+  for (const nodeId of Object.keys(graph.nodes).sort()) {
+    const node = graph.nodes[nodeId];
+    if (node === undefined) continue;
+    for (const clause of REFERENCE_CLAUSES) count += clause(node, name, null);
+  }
+  return count;
 }
 
 /*
  * §V128 says "every stored reference", and §V316 says an invariant stated over a
  * CATEGORY but implemented over one MEMBER narrows silently — which is exactly what
- * happened here (B40): only expressions were scanned, and a rename orphaned every
- * `driven` parameter naming the node, with no symptom because an unattached channel
- * is deliberately info-severity (§V317). One clause PER REFERENCE KIND, so kind four
- * has to declare itself instead of being forgotten.
+ * happened here twice (B40: rename scanned only expressions; B88: the COUNT still did,
+ * years of clauses later). One clause PER REFERENCE KIND, and one FUNCTION per clause
+ * answering both questions — `rename === null` counts, a string rewrites — so the two
+ * surfaces cannot drift apart again: they are the same walk.
  */
+type ReferenceClause = (node: GraphNode, name: string, rename: string | null) => number;
 
 /** Kind 1: `op('name')` inside expression payloads (the original clause). */
-function rewriteExpressionReferences(node: GraphNode, oldName: string, newName: string): number {
-  const pattern = referencePattern(oldName);
-  let rewritten = 0;
+const expressionClause: ReferenceClause = (node, name, rename) => {
+  const pattern = referencePattern(name);
+  let touched = 0;
   for (const key of Object.keys(node.parameters).sort()) {
     const stored = node.parameters[key];
     if (stored === undefined || !isParameterSlot(stored)) continue;
@@ -125,19 +144,21 @@ function rewriteExpressionReferences(node: GraphNode, oldName: string, newName: 
     if (binding?.kind !== "expression") continue;
     pattern.lastIndex = 0;
     if (!pattern.test(binding.source)) continue;
-    const source = binding.source.replace(referencePattern(oldName), (_match, quote: string) => `op(${quote}${newName}${quote})`);
-    node.parameters[key] = {
-      ...stored,
-      bindings: { ...stored.bindings, expression: { kind: "expression", source } },
-    };
-    rewritten += 1;
+    if (rename !== null) {
+      const source = binding.source.replace(referencePattern(name), (_match, quote: string) => `op(${quote}${rename}${quote})`);
+      node.parameters[key] = {
+        ...stored,
+        bindings: { ...stored.bindings, expression: { kind: "expression", source } },
+      };
+    }
+    touched += 1;
   }
-  return rewritten;
-}
+  return touched;
+};
 
 /** Kind 2 (B40): `driven` channels — `name` or `name:channel`, the part before the colon. */
-function rewriteDrivenChannels(node: GraphNode, oldName: string, newName: string): number {
-  let rewritten = 0;
+const drivenChannelClause: ReferenceClause = (node, name, rename) => {
+  let touched = 0;
   for (const key of Object.keys(node.parameters).sort()) {
     const stored = node.parameters[key];
     if (stored === undefined || !isParameterSlot(stored)) continue;
@@ -145,42 +166,52 @@ function rewriteDrivenChannels(node: GraphNode, oldName: string, newName: string
     if (binding?.kind !== "driven") continue;
     const colon = binding.channel.indexOf(":");
     const head = colon < 0 ? binding.channel : binding.channel.slice(0, colon);
-    if (head !== oldName) continue;
-    const channel = colon < 0 ? newName : `${newName}${binding.channel.slice(colon)}`;
-    node.parameters[key] = {
-      ...stored,
-      bindings: { ...stored.bindings, driven: { kind: "driven", channel } },
-    };
-    rewritten += 1;
+    if (head !== name) continue;
+    if (rename !== null) {
+      const channel = colon < 0 ? rename : `${rename}${binding.channel.slice(colon)}`;
+      node.parameters[key] = {
+        ...stored,
+        bindings: { ...stored.bindings, driven: { kind: "driven", channel } },
+      };
+    }
+    touched += 1;
   }
-  return rewritten;
-}
+  return touched;
+};
 
 /**
  * Kind 3 (T350) and kind 4 (T447): source-reference parameters holding a bare name, or
- * a LIST of names. The list clause is token-wise — only whole names matching `oldName`
+ * a LIST of names. The list clause is token-wise — only whole names matching the target
  * move, separators and order preserved — because list order is draw/light order and a
  * rename must not reshuffle the scene.
  */
-function rewriteSourceReference(node: GraphNode, oldName: string, newName: string): number {
-  let rewritten = 0;
+const sourceReferenceClause: ReferenceClause = (node, name, rename) => {
+  let touched = 0;
   for (const spec of sourceReferencesOf(node.type)) {
     const stored = node.parameters[spec.parameter];
     if (typeof stored !== "string") continue;
     if (spec.list === true) {
-      if (!sourceReferenceTokens(spec, node.parameters).includes(oldName)) continue;
-      node.parameters[spec.parameter] = stored
-        .split(/([\s,]+)/)
-        .map((piece) => (piece === oldName ? newName : piece))
-        .join("");
-      rewritten += 1;
-    } else if (stored.trim() === oldName) {
-      node.parameters[spec.parameter] = newName;
-      rewritten += 1;
+      if (!sourceReferenceTokens(spec, node.parameters).includes(name)) continue;
+      if (rename !== null) {
+        node.parameters[spec.parameter] = stored
+          .split(/([\s,]+)/)
+          .map((piece) => (piece === name ? rename : piece))
+          .join("");
+      }
+      touched += 1;
+    } else if (stored.trim() === name) {
+      if (rename !== null) node.parameters[spec.parameter] = rename;
+      touched += 1;
     }
   }
-  return rewritten;
-}
+  return touched;
+};
+
+const REFERENCE_CLAUSES: readonly ReferenceClause[] = [
+  expressionClause,
+  drivenChannelClause,
+  sourceReferenceClause,
+];
 
 /**
  * A free name derived from a TAKEN one (B41/B44): trailing digits strip to the word,
@@ -197,20 +228,4 @@ export function renumberedName(label: string, taken: (candidate: string) => bool
     const candidate = `${base}${ordinal}`;
     if (!taken(candidate)) return candidate;
   }
-}
-
-/** How many stored references name `name` — what a CLEAR of the label would strand. */
-export function countNodeNameReferences(graph: GraphDocument, name: string): number {
-  let count = 0;
-  const pattern = referencePattern(name);
-  for (const node of Object.values(graph.nodes)) {
-    for (const stored of Object.values(node.parameters)) {
-      if (!isParameterSlot(stored)) continue;
-      const binding = stored.bindings.expression;
-      if (binding?.kind !== "expression") continue;
-      pattern.lastIndex = 0;
-      if (pattern.test(binding.source)) count += 1;
-    }
-  }
-  return count;
 }
