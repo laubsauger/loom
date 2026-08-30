@@ -208,6 +208,24 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     label: "You",
   };
 
+  /**
+   * The person at the keyboard controls their own camera (T315, §V38).
+   *
+   * `setViewport` is capability-gated because another actor moving the viewport seizes
+   * the screen of whoever is using the app. That gate would be a permanent wall rather
+   * than a permission if nobody could ever hold the grant — nothing in the product
+   * issues one today, the confirm flow that owns `bus.grants` being T90's unbuilt half —
+   * so the composition root grants it to the human actor it just constructed. That is
+   * not self-granting (§V67): the grant store's owner is issuing it, which is exactly
+   * who §V38 says may, and the caller can still fabricate nothing.
+   *
+   * An AGENT is deliberately not granted it here. When the confirm flow lands, an agent
+   * asking to frame the graph is a question a person can answer; until then it is
+   * refused with the capability named, which the agent surface already reports as
+   * `ungranted` per tool.
+   */
+  if (actor.kind === "human") bus.grants.grant(actor, "viewportControl");
+
   // An opened project brings its own id; otherwise the browser-local one keeps autosave
   // snapshots and audit attribution stable across reloads.
   const projectId = options.document?.projectId ?? stableLocalId(PROJECT_STORAGE_KEY, "project", storage);

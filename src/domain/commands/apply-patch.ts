@@ -1,5 +1,6 @@
 import { SELECTABLE_COLOR_FORMATS } from "../types/node-definition.ts";
 import { graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
+import type { CapabilityClass } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
 import { MIN_NODE_SIZE } from "../types/graph.ts";
@@ -83,6 +84,11 @@ interface PatchRun {
   createdIds: Record<string, string>;
   /** A dry run resolves temp refs against provisional ids it never hands back (§V36). */
   dryRun: boolean;
+  /**
+   * Whether the invoking actor holds a capability (T315, §V38). Bound to the caller, so
+   * an operation can check an authorization and can never mint one.
+   */
+  holds: (capability: CapabilityClass) => boolean;
 }
 
 export function applyGraphPatch(
@@ -114,7 +120,12 @@ export function applyGraphPatch(
     };
   }
 
-  const run: PatchRun = { diagnostics: [...staleness.diagnostics], createdIds: {}, dryRun: context.dryRun };
+  const run: PatchRun = {
+    diagnostics: [...staleness.diagnostics],
+    createdIds: {},
+    dryRun: context.dryRun,
+    holds: context.holds,
+  };
 
   let applied;
   try {
@@ -834,6 +845,37 @@ function executeOperation(
     }
 
     case "setViewport": {
+      /**
+       * §V38, T315 — moving the camera someone else is looking through needs a grant.
+       *
+       * The only operation in this union that is gated, and the reason is that it is the
+       * only one that is not an edit to the artefact. Every other operation changes the
+       * document: undoable, audited, actor-stamped, and deliberately UNGATED, because
+       * gating ordinary edits trains a user to approve by reflex and then approve the
+       * file write with the same reflex. This one changes nothing a user can lose and
+       * instead seizes the viewport of the person at the keyboard, mid-gesture.
+       *
+       * Checked HERE rather than in the agent tool because this is the single mutation
+       * door (§V29): a WebMCP call, an out-of-process MCP server and a future transport
+       * all arrive through it, and a rule enforced at one adapter is a rule the next
+       * adapter has to remember (§V215 — the divergence this project has already paid
+       * for once).
+       *
+       * The whole patch is refused, not just this operation (§V32). An agent that
+       * bundled a camera move with real edits is told which capability it lacks and can
+       * resend without it; silently applying the rest would make "all or none" a lie in
+       * exactly the case where the caller most needs to know what happened.
+       */
+      if (!run.holds("viewportControl")) {
+        fail(
+          "capability.denied",
+          "setting the viewport requires the viewportControl capability.",
+          {
+            suggestion:
+              "The person at the keyboard controls their own camera; another actor has to be granted it, and calling a tool never grants it (§V38).",
+          },
+        );
+      }
       // View framing IS document state (`GraphDocument.viewport`), so a project reopens
       // where it was left. It is not entity state: the store records node, edge and
       // group changes in an undo group, so undoing a viewport-only patch does not

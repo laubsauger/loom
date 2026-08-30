@@ -777,13 +777,36 @@ describe("graph.applyPatch — groups and viewport (T104)", () => {
     expect(graph().groups[groupId]?.members).toEqual([built.output.createdIds["$b"]]);
   });
 
-  it("round-trips the viewport and clears it with null", async () => {
+  it("round-trips the viewport and clears it with null, for an actor that may (T315)", async () => {
+    // §V38/T315: `setViewport` is the one operation in this union that is capability
+    // gated, because it moves the camera of whoever is looking at the app rather than
+    // editing the document. The composition root grants it to the human it constructs;
+    // a bare domain bus grants nothing, so the test says who it is acting as.
+    harness.bus.grants.grant(alice, "viewportControl");
+
     const set = await apply([{ op: "setViewport", viewport: { x: -120, y: 40, zoom: 1.5 } }]);
     expect(set.status).toBe("applied");
     expect(graph().viewport).toEqual({ x: -120, y: 40, zoom: 1.5 });
 
     await apply([{ op: "setViewport", viewport: null }]);
     expect(graph().viewport).toBeUndefined();
+  });
+
+  it("refuses the viewport to an actor without the grant, and refuses the WHOLE patch (§V38, §V32)", async () => {
+    const before = graph().revision;
+    const refused = await apply([
+      { op: "moveNodes", positions: {} },
+      { op: "setViewport", viewport: { x: 1, y: 2, zoom: 3 } },
+    ]);
+
+    expect(refused.status).toBe("rejected");
+    expect(refused.output.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "capability.denied",
+    );
+    expect(graph().viewport).toBeUndefined();
+    // Atomic: the operation beside it did not land either, so "all or none" stays true
+    // in exactly the case where a caller most needs to know what happened.
+    expect(graph().revision).toBe(before);
   });
 
   it("refuses a viewport with a non-finite coordinate or a non-positive zoom (§V66)", async () => {

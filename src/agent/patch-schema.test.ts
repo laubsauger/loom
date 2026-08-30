@@ -115,6 +115,50 @@ describe("the agent patch schema is the domain schema (T309)", () => {
     expect(store.view.getGraph().nodes[nodeId]?.size).toEqual({ width: 320, height: 240 });
   });
 
+  it("cannot move the human's camera without a grant (T315, §V38)", async () => {
+    // T309 made `setViewport` reachable for an agent along with the rest of the union,
+    // and flagged that as a decision rather than a conclusion. This is the answer: the
+    // SHAPE is shared, and the AUTHORITY is not. Every other operation in the union is an
+    // ordinary document edit — undoable, audited, actor-stamped, and ungated on purpose,
+    // because gating edits trains a user to approve by reflex. This one takes the screen
+    // away from the person using the app.
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("n"),
+      now: () => "2026-08-30T00:00:00.000Z",
+    });
+    const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
+    const claude: Actor = { kind: "agent", id: "claude" };
+    const surface: AgentToolSurface = createAgentToolSurface({
+      bus,
+      actor: claude,
+      projectId: "project-1",
+      now: () => 1_000,
+    });
+
+    const refused = await surface.callTool("apply_graph_patch", {
+      baseRevision: store.view.getRevision(),
+      operations: [{ op: "setViewport", viewport: { x: 10, y: 20, zoom: 2 } }],
+    });
+    // `rejected`, not `error`: the denial travels the ordinary patch-rejection channel,
+    // so the agent is told WHICH capability it lacks and can act on that, rather than
+    // being handed an opaque failure.
+    expect(refused.status).toBe("rejected");
+    expect(JSON.stringify(refused)).toContain("capability.denied");
+    expect(store.view.getGraph().viewport).toBeUndefined();
+
+    // ...and it is a GRANT, not a wall: the same call succeeds once a person has said so.
+    // Nothing the agent sends can produce this — the grant store is bus-owned and the
+    // tool schemas are `.strict()`, so a fabricated `capabilities` field is rejected
+    // rather than ignored (§V38, §V67).
+    bus.grants.grant(claude, "viewportControl");
+    const allowed = await surface.callTool("apply_graph_patch", {
+      baseRevision: store.view.getRevision(),
+      operations: [{ op: "setViewport", viewport: { x: 10, y: 20, zoom: 2 } }],
+    });
+    expect(allowed.status).toBe("ok");
+    expect(store.view.getGraph().viewport).toEqual({ x: 10, y: 20, zoom: 2 });
+  });
+
   it("is narrower than the domain and never wider", () => {
     // The property that makes "one shape, one policy" checkable rather than asserted:
     // anything this boundary accepts, the document accepts too. A future refinement that

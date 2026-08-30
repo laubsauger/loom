@@ -80,6 +80,21 @@ export interface CommandContext {
   readonly registry: NodeRegistryView;
   readonly store: GraphStoreView;
   readonly ids: IdFactory;
+  /**
+   * Whether the INVOKING actor holds a capability (T315, §V38).
+   *
+   * Bound to `actor`, so a handler can ask what the caller may do and cannot ask about
+   * anyone else. Deliberately not the grant store itself: a handler must be able to READ
+   * an authorization and must never be able to write one — "calling a tool never grants a
+   * capability" is only structural if the granting API is out of reach here.
+   *
+   * `requiredCapabilities` on the registration covers a command that is wholly gated.
+   * This exists for the case it cannot express: `graph.applyPatch` carries a batch of
+   * mixed operations (§V32) and exactly one of them, `setViewport`, needs a grant — a
+   * command-level requirement would gate every graph edit there is, which §V38 explicitly
+   * does not want.
+   */
+  readonly holds: (capability: CapabilityClass) => boolean;
   /** The sole mutation primitive available to a handler (§V29). */
   apply: (request: ApplyRequest) => AppliedInfo;
   /**
@@ -367,6 +382,7 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
         registry,
         store: store.view,
         ids: store.internals.ids,
+        holds: (capability: CapabilityClass): boolean => grants.has(context.actor, capability),
         apply: (request: ApplyRequest): AppliedInfo =>
           store.internals.apply({
             actor: context.actor,

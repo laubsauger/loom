@@ -20,7 +20,23 @@ export type CapabilityClass =
   | "export"
   | "recording"
   | "componentInstall"
-  | "projectDelete";
+  | "projectDelete"
+  /**
+   * Moving the camera someone else is looking through (T315, §V38).
+   *
+   * The odd one out, and deliberately so: every other class here is a side effect that
+   * leaves the app — bytes on disk, bytes on a network, pixels handed to a model — which
+   * is why graph EDITS are ungated (they are undoable, audited and actor-stamped, and
+   * gating them trains a user to approve by reflex). `setViewport` is neither. It edits
+   * nothing a user can lose and it is not a side effect; it seizes the viewport of the
+   * person at the keyboard, mid-gesture, from another actor. The harm is not to the
+   * document, it is to control of the screen, and nothing in the other six classes covers
+   * that.
+   *
+   * The human actor holds this by construction — you control your own camera — so it
+   * costs a person nothing and is the one thing an agent must be given.
+   */
+  | "viewportControl";
 
 export interface CapabilityGrant {
   capability: CapabilityClass;

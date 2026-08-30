@@ -311,7 +311,7 @@ export function useGraphCompile(
     if (capabilities === null || !hasAnimatedParameters(graph)) return null;
     return (frame: FrameEvaluationInput): CompiledGraph | null =>
       compileSafely(graph, runtime, capabilities, { frame, channels }).compiled;
-  }, [capabilities, channels, graph, runtime, catalogueRevision]);
+  }, [capabilities, channels, graph, runtime]);
 
   /**
    * The inputs of the LAST compile, for classifying the next one (T308).
