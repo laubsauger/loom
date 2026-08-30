@@ -116,6 +116,15 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     file: "src/app/top-bar.tsx",
     text: "Detected WebGPU capability tier. Baseline is B.",
   },
+  {
+    // T399. The Agents tab's one long line, and it is a CONSENT statement, not chrome:
+    // the snippet below it hands an external process write access to the open document,
+    // so what that process may do is spelled out at the point of the decision. A tooltip
+    // is the wrong home for the sentence a user is agreeing to. Everything else on that
+    // tab was cut to a label; this is the piece that may not be.
+    file: "src/editor/help/mcp-setup.tsx",
+    text: "An external MCP client starts this server as a subprocess and gets the same tools the in-app agent has: read the graph, add and rewire nodes, edit parameters and shader source, compile, and undo.",
+  },
 ];
 
 function isSentenceShaped(text: string): boolean {

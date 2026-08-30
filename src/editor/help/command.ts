@@ -24,10 +24,14 @@ declare module "@domain/types/commands.ts" {
   }
 }
 
-/** The panel's tabs. Each one is a projection of a live source (§V105). */
-export type HelpSection = "shortcuts" | "nodes" | "expressions";
+/**
+ * The panel's tabs. Each one is a projection of a live source (§V105) — including
+ * `agents`, whose snippet is derived from `mcp/client-config.ts` and checked against
+ * `package.json` by that module's test rather than typed out here (T399).
+ */
+export type HelpSection = "shortcuts" | "nodes" | "expressions" | "agents";
 
-export const HELP_SECTIONS: readonly HelpSection[] = ["shortcuts", "nodes", "expressions"];
+export const HELP_SECTIONS: readonly HelpSection[] = ["shortcuts", "nodes", "expressions", "agents"];
 
 /** The command name. The keymap and any menu entry reference THIS, never a literal. */
 export const OPEN_HELP_COMMAND = "ui.openHelp";
@@ -57,7 +61,7 @@ export function registerHelpCommand(bus: ShaderloomBus): HelpHolder {
 
   bus.registerCommand({
     name: OPEN_HELP_COMMAND,
-    description: "Open help — shortcuts, node reference, expression reference.",
+    description: "Open help — shortcuts, node reference, expression reference, agent setup.",
     handler: (input, context) => {
       const revision = context.store.getRevision();
 

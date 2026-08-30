@@ -20,6 +20,8 @@ export type { HelpHostProps } from "./help-host.tsx";
 export { HelpPanel } from "./help-panel.tsx";
 export type { HelpPanelProps } from "./help-panel.tsx";
 
+export { McpSetup } from "./mcp-setup.tsx";
+
 export { ExpressionHelp } from "./expression-help.tsx";
 export type { ExpressionHelpProps } from "./expression-help.tsx";
 

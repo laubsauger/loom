@@ -5,7 +5,6 @@ import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
-import { registerWebMcp } from "../mcp/webmcp.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -38,6 +37,14 @@ import type { AppRuntime } from "./app-runtime.ts";
  * render's `selection` would report a stale answer for the rest of the session, and
  * re-attaching on every render would re-register nothing (the bus has no unregister) while
  * churning the surface. One surface per runtime; one set of sources; both read live.
+ *
+ * ## Transports are not built here (T397)
+ *
+ * This hook used to call `registerWebMcp` and discard what it returned, which is how the
+ * app came to publish twenty-eight document-editing tools while being unable to tell
+ * anyone whether it had (§V338). Publication moved to `useMcpTransports`, which registers
+ * AND records the result somewhere a human can read it. This hook stays transport-free,
+ * which is also what §V192 asks of everything around the surface.
  */
 
 /** The agent this build talks to. §V30: an agent is an actor, never anonymous. */
@@ -96,14 +103,6 @@ export function useAgentSurface(
       }),
     [runtime, ports],
   );
-
-  // T290 (§V192): publish the SAME surface to the browser's model-context API, so an
-  // in-tab agent drives the live canvas. Feature-detected; a browser without WebMCP
-  // registers nothing and nothing changes. Mounted here, in the same seam that builds
-  // the surface, because "built, tested, never wired" is B12's exact shape.
-  useEffect(() => {
-    registerWebMcp(surface);
-  }, [surface]);
 
   return surface;
 }

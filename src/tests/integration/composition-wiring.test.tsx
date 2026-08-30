@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
@@ -921,6 +921,95 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
     // The presence pane is MOUNTED — the panel had no host at all before T220.
     expect(await screen.findByTestId("agent-presence-panel")).toBeDefined();
     expect(screen.getByTestId("agent-activity").textContent).toBe("Idle");
+  });
+
+  /**
+   * T397/§V338: the app performs a feature detection and must SAY what it found.
+   *
+   * These two run the REAL path — `App` builds the surface, `useMcpTransports` registers
+   * it, and the panel renders whatever that registration reported. Nothing here hands the
+   * panel a status: that is the whole point, because a test that supplies the wiring it
+   * checks is the shape §V220 keeps catching us with. The pair is also the sensitivity
+   * argument, because the same code produces two different screens depending only on
+   * whether the host has `navigator.modelContext`.
+   *
+   * §V339, stated rather than glossed: jsdom paints nothing, so this proves the panel is
+   * MOUNTED with the right data, not that it is visible. It sits in the agent pane
+   * beside `agent-presence-panel`, whose visibility the same slot already carries.
+   */
+  it("T397/§V338: reports what its WebMCP detection FOUND, naming the missing capability", async () => {
+    await mountApp({ status: READY });
+
+    expect(await screen.findByTestId("mcp-connection-panel")).toBeDefined();
+    expect(screen.getByTestId("mcp-state-webmcp").textContent).toBe("Unavailable");
+    // §V288: the row names the problem. Before T397 this sentence existed nowhere.
+    expect(screen.getByTestId("mcp-detail-webmcp").textContent).toContain("navigator.modelContext");
+    expect(screen.getByTestId("mcp-consent").textContent).toBe("Nothing attached.");
+    // Nothing was published, so there is nothing to withdraw.
+    expect(screen.queryByText("Disconnect")).toBeNull();
+  });
+
+  it("T397: flips to Connected, and the count is the app's OWN publication", async () => {
+    const provided: Array<{ tools: Array<{ name: string }> }> = [];
+    Object.defineProperty(globalThis.navigator, "modelContext", {
+      value: { provideContext: (context: { tools: Array<{ name: string }> }) => provided.push(context) },
+      configurable: true,
+    });
+    try {
+      let surface: AgentToolSurface | null = null;
+      await mountApp({ status: READY, onAgentSurface: (next) => (surface = next) });
+      const built = surface as AgentToolSurface | null;
+      if (built === null) throw new Error("the composition root constructed no agent surface");
+
+      expect(screen.getByTestId("mcp-state-webmcp").textContent).toBe("Connected");
+      expect(screen.getByTestId("mcp-consent").textContent).toBe("Attached agents can edit this document.");
+
+      // Read off the host the APP called, then off the surface the app built — the panel
+      // is only allowed to agree with both, never to be the source of either.
+      const publishedNames = provided[0]?.tools.map((tool) => tool.name) ?? [];
+      expect(publishedNames).toEqual(built.listTools().map((tool) => tool.name));
+      const toggle = screen.getByTestId("mcp-tools-toggle-webmcp");
+      expect(toggle.textContent).toBe(`${String(publishedNames.length)} tools`);
+
+      // Drill in: the tool list, then one tool's schema — what a client is actually handed.
+      await act(async () => {
+        fireEvent.click(toggle);
+      });
+      const toolButton = within(screen.getByTestId("mcp-tool-list")).getByText("add_node");
+      await act(async () => {
+        fireEvent.click(toolButton);
+      });
+      const detail = screen.getByTestId("mcp-tool-detail-add_node");
+      expect(detail.textContent).toContain('"type": "object"');
+
+      // Disconnect genuinely withdraws the publication from the host the app registered
+      // with — not merely a local state flip (§V288: the button means what it says).
+      await act(async () => {
+        fireEvent.click(screen.getByText("Disconnect"));
+      });
+      expect(provided.at(-1)?.tools).toEqual([]);
+      expect(screen.getByTestId("mcp-state-webmcp").textContent).toBe("Disconnected");
+    } finally {
+      Reflect.deleteProperty(globalThis.navigator, "modelContext");
+    }
+  });
+
+  /**
+   * T399/§V342: the setup snippet is REACHABLE. `ui.openHelp` taking a section proves
+   * nothing about whether a surface supplies one — B60's exact lesson — so this clicks
+   * the button a user would click and asserts the snippet is on screen.
+   */
+  it("T399: the connections panel opens the setup snippet, and it is paste-ready", async () => {
+    await mountApp({ status: READY });
+    await act(async () => {
+      fireEvent.click(await screen.findByText("Set up…"));
+    });
+    const snippet = await screen.findByTestId("mcp-client-config");
+    const config = JSON.parse(snippet.textContent ?? "{}") as {
+      mcpServers?: Record<string, { command?: string; args?: string[] }>;
+    };
+    expect(config.mcpServers?.["shaderloom"]?.command).toBe("node");
+    expect(config.mcpServers?.["shaderloom"]?.args?.join(" ")).toContain("src/mcp/serve.ts");
   });
 });
 

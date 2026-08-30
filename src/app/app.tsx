@@ -36,6 +36,7 @@ import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
 import { TimelineReadout } from "./timeline-readout.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
+import { useMcpTransports } from "./use-mcp-transports.ts";
 import { useAgentPorts } from "./agent-ports.ts";
 import { usePulseFiring } from "./pulse-firing.ts";
 import { useRuntimeCommands } from "./runtime-commands.ts";
@@ -538,6 +539,9 @@ export function App({
   const agentPorts = useAgentPorts({ backend, compiled: compile.compiled, playing: frameLoop.playing, graph: runtime.bus.store.getGraph });
   useRuntimeCommands({ bus: runtime.bus, backend, compiled: compile.compiled });
   const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
+  // T397/§V338: publishing the surface to a transport AND reporting what that publication
+  // found. The row this produces is the app's only answer to "is an agent attached?".
+  const mcpTransports = useMcpTransports(agentSurface);
 
   /** The installed catalogue, for the library panes and the help panel's node reference. */
   const definitions = useMemo(() => [...runtime.registry.list()], [runtime]);
@@ -557,6 +561,11 @@ export function App({
 
   const openHelp = useCallback(() => {
     void runtime.bus.execute(OPEN_HELP_COMMAND, {}, runtime.invocation);
+  }, [runtime]);
+  // T399/§V307: the connections panel's way in to the setup snippet is the same command
+  // the palette and `?` use, aimed at a section. Nothing here knows the dialog's state.
+  const openAgentHelp = useCallback(() => {
+    void runtime.bus.execute(OPEN_HELP_COMMAND, { section: "agents" }, runtime.invocation);
   }, [runtime]);
   // §V307: the button is a caller of the command, exactly like `mod+,` and the palette
   // entry. Nothing here knows whether the dialog is open.
@@ -777,7 +786,9 @@ export function App({
               onCookPolicyChange={setCookPolicy}
             />
           }
-          agent={<AgentPane surface={agentSurface} />}
+          agent={
+            <AgentPane surface={agentSurface} transports={mcpTransports} onOpenSetup={openAgentHelp} />
+          }
         />
         {/* T359/§V307: opened by `ui.openSettings`, never by a flag set from here. The
             host owns the open state; the top bar, `mod+,` and the palette all execute the

@@ -18,6 +18,7 @@ import {
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import type { HelpSection } from "./command.ts";
 import { ExpressionHelp } from "./expression-help.tsx";
+import { McpSetup } from "./mcp-setup.tsx";
 import { nodeReferenceSections } from "./node-reference.ts";
 import { conflictWith, shortcutSections } from "./shortcut-reference.ts";
 import type { ShortcutEntry } from "./shortcut-reference.ts";
@@ -73,6 +74,7 @@ const SECTION_LABEL: Readonly<Record<HelpSection, string>> = {
   shortcuts: "Shortcuts",
   nodes: "Nodes",
   expressions: "Expressions",
+  agents: "Agents",
 };
 
 export function HelpPanel({
@@ -321,6 +323,12 @@ export function HelpPanel({
 
           <TabsContent value="expressions" className={styles.body}>
             <ExpressionHelp source="" scope={scope} />
+          </TabsContent>
+
+          {/* T399: how to attach an EXTERNAL agent. The in-app transports and what they
+              have published are the agent pane's job (T397); this is the setup only. */}
+          <TabsContent value="agents" className={styles.body}>
+            <McpSetup />
           </TabsContent>
         </TabsRoot>
       </DialogContent>

@@ -4,13 +4,14 @@ import { SHADER_SOURCE_PARAMETER } from "@domain/commands/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
-import { AgentPresencePanel, useAgentPresence } from "@editor/agent/index.ts";
+import { AgentPresencePanel, McpConnectionPanel, useAgentPresence } from "@editor/agent/index.ts";
 import { PerformancePanel } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
+import type { McpTransportsView } from "./use-mcp-transports.ts";
 import styles from "./panes.module.css";
 
 /** The panes that used to be the bottom dock's tabs: shader editor, performance, agent. */
@@ -297,8 +298,28 @@ function GpuStatusCard({ status }: { status: GpuStatus }) {
  * had no host; this is the host. It reads a snapshot of the presence store the tool
  * surface writes as it runs, and it is never a producer of tool state: approve, reject
  * and revert all go back through the surface, which goes through the bus (§V29).
+ *
+ * ## Why the connection panel lives here and not in settings (T397)
+ *
+ * The two candidates were this pane and the settings dialog. Connection state is not
+ * configuration: it changes at runtime without anybody typing, it is the thing you WATCH
+ * while an agent works, and it sits one line above the presence readout that says what
+ * that same agent is doing right now. Settings is where you go to change something and
+ * leave; a state you have to keep an eye on does not belong behind a modal you closed.
+ *
+ * The half that WOULD have been configuration — a pasted relay token — does not exist to
+ * be configured (see the note at the foot of `mcp/connections.ts`), so the split that
+ * argument was protecting never arises.
  */
-export function AgentPane({ surface }: { surface: AgentToolSurface }) {
+export interface AgentPaneProps {
+  readonly surface: AgentToolSurface;
+  /** What is published, on which transport (T397). Omitted → the connections panel is absent. */
+  readonly transports?: McpTransportsView | undefined;
+  /** Opens the setup documentation. §V307: a surface is opened by a COMMAND, dispatched by the caller. */
+  readonly onOpenSetup?: (() => void) | undefined;
+}
+
+export function AgentPane({ surface, transports, onOpenSetup }: AgentPaneProps) {
   const presence = useAgentPresence(surface.presence);
   const onApprove = useCallback(
     (proposalId: string) => {
@@ -320,6 +341,13 @@ export function AgentPane({ surface }: { surface: AgentToolSurface }) {
   );
   return (
     <div className={styles.viewer}>
+      {transports === undefined ? null : (
+        <McpConnectionPanel
+          transports={transports.transports}
+          describeTool={transports.describeTool}
+          onOpenSetup={onOpenSetup}
+        />
+      )}
       <AgentPresencePanel
         presence={presence}
         onApprove={onApprove}

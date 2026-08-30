@@ -7,6 +7,7 @@ import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createAgentToolSurface } from "../agent/surface.ts";
 import { createMcpConnection } from "./server.ts";
 import { registerWebMcp } from "./webmcp.ts";
+import { createMcpTransportRegistry } from "./connections.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
 import { layoutGraphInput } from "../agent/schemas.ts";
 import { registerTransportCommands } from "../app/transport-commands.ts";
@@ -118,7 +119,7 @@ describe("WebMCP registration (T290)", () => {
     const provided: Array<{ tools: Array<{ name: string; execute: (args: unknown) => Promise<unknown> }> }> = [];
     const host = { navigator: { modelContext: { provideContext: (ctx: never) => provided.push(ctx) } } };
 
-    const registration = registerWebMcp(surface, host);
+    const registration = registerWebMcp(surface, { host });
     expect(registration.registered).toBe(true);
     expect(registration.toolCount).toBe(surface.listTools().length);
 
@@ -130,7 +131,68 @@ describe("WebMCP registration (T290)", () => {
     expect(JSON.parse(result.content[0]?.text ?? "{}").status).toBe("ok");
     expect(Object.keys(store.view.getGraph().nodes)).toHaveLength(1);
 
-    expect(registerWebMcp(surface, {})).toEqual({ registered: false, toolCount: 0 });
+    expect(registerWebMcp(surface, { host: {} })).toEqual({ registered: false, toolCount: 0 });
+  });
+});
+
+/**
+ * §V338 / T397: the DETECTION RESULT is state somebody can read, not a boolean the
+ * caller throws away. These assert the two sentences the app previously could not say —
+ * "this browser has no WebMCP" and "twenty-eight tools are published right now" — and
+ * that Disconnect is offered only where it actually revokes something.
+ */
+describe("WebMCP reports what it found (T397, §V338)", () => {
+  const row = (registry: ReturnType<typeof createMcpTransportRegistry>) => {
+    const found = registry.snapshot().find((status) => status.kind === "webmcp");
+    if (found === undefined) throw new Error("the registry declared no webmcp row");
+    return found;
+  };
+
+  it("publishes an `unavailable` row NAMING the missing capability when there is no host", () => {
+    const { surface } = harness();
+    const registry = createMcpTransportRegistry();
+    registerWebMcp(surface, { host: {}, registry });
+
+    expect(row(registry).state).toBe("unavailable");
+    // §V288: the refusal names the problem. A bare "unavailable" is the state this
+    // whole mechanism exists to stop being indistinguishable from a broken build.
+    expect(row(registry).detail).toContain("navigator.modelContext");
+    expect(row(registry).toolNames).toEqual([]);
+    expect(row(registry).disconnect).toBeNull();
+  });
+
+  it("publishes the LIVE tool list, records an invocation, and revokes on disconnect", async () => {
+    const { surface } = harness();
+    const provided: Array<{ tools: Array<{ name: string; execute: (args: unknown) => Promise<unknown> }> }> = [];
+    const host = { navigator: { modelContext: { provideContext: (ctx: never) => provided.push(ctx) } } };
+    const registry = createMcpTransportRegistry({ now: () => 1234 });
+    registerWebMcp(surface, { host, registry });
+
+    expect(row(registry).state).toBe("connected");
+    // The names the transport actually published, not a count it was told.
+    expect(row(registry).toolNames).toEqual(surface.listTools().map((tool) => tool.name));
+    expect(row(registry).lastInvocation).toBeNull();
+
+    await provided[0]?.tools.find((tool) => tool.name === "add_node")?.execute({ type: "solid", baseRevision: 0 });
+    expect(row(registry).lastInvocation).toEqual({ tool: "add_node", at: 1234 });
+
+    // Disconnect genuinely withdraws the tools — the host is handed an empty set — and
+    // the row says so. A button that left them published would be a lie about who can
+    // still write to the document.
+    row(registry).disconnect?.();
+    expect(provided.at(-1)?.tools).toEqual([]);
+    expect(row(registry).state).toBe("disconnected");
+    expect(row(registry).toolNames).toEqual([]);
+  });
+
+  it("offers NO disconnect when the host only supports registerTool, and says why", () => {
+    const { surface } = harness();
+    const host = { navigator: { modelContext: { registerTool: () => undefined } } };
+    const registry = createMcpTransportRegistry();
+    registerWebMcp(surface, { host, registry });
+
+    expect(row(registry).state).toBe("connected");
+    expect(row(registry).disconnect).toBeNull();
   });
 });
 

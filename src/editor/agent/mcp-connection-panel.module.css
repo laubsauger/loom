@@ -1,0 +1,150 @@
+/* Agent connections (T397, §V338). Every colour is a token (§V17). */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-ui);
+  color: var(--text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.consent {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.rows,
+.tools {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+/* §V19: state is carried by the LABEL beside it; colour is reinforcement, never the fact. */
+.dot[data-state="connected"] {
+  background: var(--ok);
+}
+
+.dot[data-state="connecting"] {
+  background: var(--signal);
+}
+
+.dot[data-state="error"] {
+  background: var(--error);
+}
+
+.label {
+  font-weight: var(--weight-header);
+}
+
+.state {
+  color: var(--text-dim);
+  margin-inline-end: auto;
+}
+
+.detail,
+.meta {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.toolToggle,
+.toolName {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--signal);
+  cursor: pointer;
+  text-align: start;
+}
+
+.toolToggle:hover,
+.toolName:hover {
+  text-decoration: underline;
+}
+
+.tools {
+  margin-block-start: var(--space-2);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.toolDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-3);
+  border-inline-start: var(--border-hairline);
+}
+
+.schema {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  white-space: pre;
+}
