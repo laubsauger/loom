@@ -30,6 +30,13 @@ import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
  * it, so a graph that does not read the pointer generates exactly the text it generated
  * before the member existed (§V309). Its four numbers are the shared frame block's, byte
  * for byte — one publisher, one convention, §V182.
+ *
+ * `ctx.dim` (T472) is the second, and it exists to end B85: E20 hard-coded `64u` twice
+ * inside its WGSL while `cols: 64` sat in two node parameters, so turning the visible
+ * knob silently broke the kernel (§V349, with the extra sting that the reachable control
+ * LIED). The grid is already travelling — the topology string rides the pointset edge
+ * (T296/T302) — it was simply not reachable from inside a kernel. Same detection, same
+ * zero cost when unused.
  */
 
 /** Bumped when the generated Point/PointCtx/process signature changes shape (§V77). */
@@ -103,6 +110,15 @@ export interface KernelModuleRequest {
    * thread already running — no list is ever materialized.
    */
   readonly group?: string;
+  /**
+   * T472: the GRID this kernel runs over, when the pointset it processes publishes a
+   * grid topology (T296/T302). Supplied by the emitting node from the EDGE — never a
+   * parameter of the kernel node itself, because the dimensions belong to the producer
+   * and a second copy is the bug (§V349, B85). Absent for a `points` topology or an
+   * unwired processor port, and a kernel that then names `ctx.dim` is REFUSED by name
+   * rather than handed zeros (§V288).
+   */
+  readonly dim?: { readonly cols: number; readonly rows: number };
 }
 
 export interface KernelModule {
@@ -147,6 +163,29 @@ const PROCESS_SIGNATURE = /fn\s+process\s*\(\s*\w+\s*:\s*Point\s*,\s*\w+\s*:\s*P
  * a zero that looks like a pointer parked in the corner (§V288).
  */
 const POINTER_REFERENCE = /\.\s*pointer\b/;
+
+/**
+ * T472 (§V309, §V349): the GRID, detected exactly the way the pointer is, for exactly
+ * the same reason — an unconditional member would rewrite the ctx struct and the ctx
+ * constructor of every point graph ever saved.
+ *
+ * The dimensions are BAKED as literals rather than carried in `KernelFrame`, and that is
+ * a decision worth stating: topology is already STRUCTURAL (the generator's `cols`/`rows`
+ * are `compileTime`, and the string is on the edge payload the compiler resolves), so a
+ * uniform would buy nothing and would cost the mirroring hazard `usesPointer` documents
+ * above — a member with no value in the pass's `uniforms` record silently reads zero.
+ * Nothing here can drift out of step with the edge because nothing here is written twice.
+ *
+ * WHAT IS DELIBERATELY ABSENT: `u`/`v`. The normalising divisor is a CHOICE, not a fact —
+ * `i / cols` closes a wrapped seam, `i / (cols - 1)` closes an open one — and the wrap
+ * flags on the INCOMING topology need not be the ones the author is targeting. E20 is
+ * precisely that case: its sheet is an unwrapped `grid:64x64` and its kernel deliberately
+ * divides by COLS because a `pointTopology` node DOWNSTREAM re-claims the edge with
+ * `wrapU`. A `ctx.dim.u` derived from the input's flags would have quietly halved that
+ * example's seam cell into a duplicated column — the plausible-wrong answer §V288 exists
+ * to refuse. The kernel author writes the division; `ctx.dim` supplies the numbers.
+ */
+const DIM_REFERENCE = /\.\s*dim\b/;
 
 /**
  * PCG-based hash, the deterministic core of §V74. Everything about it is fixed on
@@ -203,6 +242,23 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
   if (!Number.isInteger(workgroupSize) || workgroupSize < 1 || workgroupSize > 256) {
     errors.push(`workgroupSize ${String(request.workgroupSize)} is outside [1, 256]`);
+  }
+
+  /* T472/B85: the kernel asked for a grid the point set does not have. Refuse BY NAME —
+     handing it zeros would divide by zero and put every point in cell (0, 0), which is a
+     picture, and a plausible one (§V288). */
+  const groupSource = typeof request.group === "string" ? request.group.trim() : "";
+  const usesDim = DIM_REFERENCE.test(kernel) || DIM_REFERENCE.test(groupSource);
+  const dim = request.dim;
+  if (usesDim && dim === undefined) {
+    errors.push(
+      "kernel reads ctx.dim, but the point set it runs over publishes no grid topology — " +
+        "ctx.dim is the cols×rows the kernel is running over (T296/T302). Put a Point Grid, " +
+        "Tube or Torus upstream, or claim connectivity with a Point Topology node before this one.",
+    );
+  }
+  if (usesDim && dim !== undefined && (!Number.isInteger(dim.cols) || dim.cols < 1 || !Number.isInteger(dim.rows) || dim.rows < 1)) {
+    errors.push(`ctx.dim needs whole positive dimensions; the edge published ${dim.cols}×${dim.rows}`);
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -290,20 +346,19 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   /* T322: the lifecycle module is guarded by the LIVE count — frame zero uses the
      static count because the buffer is zero-initialised and nothing has counted yet —
      and forces the alive flag on frame zero for the same reason. */
-  const group = typeof request.group === "string" ? request.group.trim() : "";
   /* T300: a group predicate gates `process`; non-members pass through byte-identical.
      The no-group text stays EXACTLY what v1 generated, so existing plans' pass
      signatures do not change under this feature's mere existence. */
   const groupFunction =
-    group === ""
+    groupSource === ""
       ? ""
       : `
 fn groupMatch(p: Point, ctx: PointCtx) -> bool {
-  return (${group});
+  return (${groupSource});
 }
 `;
   const invoke =
-    group === ""
+    groupSource === ""
       ? "  let q = process(p, ctx);"
       : `  var q = p;
   if (groupMatch(p, ctx)) {
@@ -328,11 +383,35 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      shared frame block uses (x, y, buttons, unused) so the two carry identical numbers
      (§V182). Appended last: `count` ends the block at 20 bytes and a vec4f aligns to
      32, so no member that existed before this moves. */
-  const usesPointer = POINTER_REFERENCE.test(kernel) || POINTER_REFERENCE.test(group);
+  const usesPointer = POINTER_REFERENCE.test(kernel) || POINTER_REFERENCE.test(groupSource);
   const framePointer = usesPointer ? "\n  pointer: vec4f," : "";
   const ctxPointer = usesPointer
     ? "\n  /* T367: viewer-normalised x, y (v DOWN, §V236), buttons, unused — the same\n     numbers the shared frame block hands every shader (§V182). */\n  pointer: vec4f,"
     : "";
+
+  /* T472: the grid, appended after the pointer for the same reason the pointer was
+     appended last — a member that moved would move every kernel that already reads the
+     one before it. `cols`/`rows` are the EDGE's (T296/T302); `i`/`j` are this slot's
+     cell, computed once here so no kernel repeats the modulo. */
+  const dimStruct =
+    usesDim && dim !== undefined
+      ? `struct PointDim {
+  /* T472 (B85, §V349): the grid the kernel is RUNNING OVER, taken from the topology the
+     incoming pointset publishes — never a number retyped into the kernel. */
+  cols: u32,
+  rows: u32,
+  /* This slot's cell: index % cols, index / cols. */
+  i: u32,
+  j: u32,
+};
+
+`
+      : "";
+  const ctxDim = usesDim && dim !== undefined ? "\n  /* T472: the grid this kernel runs over (T296/T302). */\n  dim: PointDim," : "";
+  const dimArgument =
+    usesDim && dim !== undefined
+      ? `, PointDim(${dim.cols}u, ${dim.rows}u, index % ${dim.cols}u, index / ${dim.cols}u)`
+      : "";
 
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
@@ -351,13 +430,13 @@ struct Point {
 ${structFields}
 };
 
-struct PointCtx {
+${dimStruct}struct PointCtx {
   /* Slot in the buffers — addressing, never identity (§V73). */
   index: u32,
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${ctxPointer}
+  frameIndex: u32,${ctxPointer}${ctxDim}
 };
 
 ${RNG_WGSL}
@@ -370,7 +449,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""});
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument});
 ${invoke}
 ${stores}
 }
@@ -420,6 +499,15 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
   errors.push(...schemaCheck.errors);
   if (!SPAWN_HOOK_SIGNATURE.test(request.hook)) {
     errors.push("spawn hook must define `fn spawn(child: Point, ctx: PointCtx) -> Point` (§V77 contract v2)");
+  }
+  /* T472: the hook runs on the advanced kernel, whose pointset is a spawning population
+     with no grid connectivity at all — so `ctx.dim` is refused HERE by name rather than
+     left to surface as Dawn's "struct PointCtx has no member named 'dim'". */
+  if (DIM_REFERENCE.test(request.hook)) {
+    errors.push(
+      "spawn hook reads ctx.dim, but a spawning population has no grid topology — points are " +
+        "born and killed, so there are no fixed cols×rows to index (T472).",
+    );
   }
   const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
   if (errors.length > 0) return { ok: false, errors };

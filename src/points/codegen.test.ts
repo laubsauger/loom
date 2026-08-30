@@ -300,3 +300,119 @@ describe("the pointer in PointCtx (T367)", () => {
     );
   });
 });
+
+/**
+ * T472 — `ctx.dim` in `PointCtx` (§V309, §V349, B85).
+ *
+ * B85 is the case this exists for: E20 hard-coded `64u` twice inside its WGSL while
+ * `cols: 64` sat in two node parameters, so the reachable knob LIED — turning it left the
+ * kernel computing a different grid than the one it was running over. The dimensions were
+ * already travelling on the edge as a topology string (T296/T302); they were only
+ * unreachable from inside a kernel.
+ *
+ * Three claims, and the second is the one §V309 exists to force:
+ *  1. a kernel that names it gets the struct, the member and the constructor argument,
+ *     with the EDGE's numbers baked in — not a parameter of the kernel node;
+ *  2. a kernel that does not name it emits the pre-T472 text, character for character;
+ *  3. naming it over a point set with no grid is REFUSED BY NAME, because zeros here
+ *     divide by zero and put every point in cell (0, 0) — a picture, and a plausible one.
+ */
+describe("the grid in PointCtx (T472)", () => {
+  const request = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position", "velocity"],
+    kernel: GRAVITY_KERNEL,
+  };
+
+  const DIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);
+  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
+  q.position = vec3f(u, v, 0.0);
+  return q;
+}`;
+
+  it("bakes the EDGE's cols and rows, and derives the cell, for a kernel that names it", () => {
+    const module = generateKernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 64, rows: 48 } });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).toContain("struct PointDim {");
+    expect(module.wgsl).toContain("  dim: PointDim,\n};");
+    // The numbers are the TOPOLOGY's, and the cell is computed once in the wrapper so no
+    // kernel repeats the modulo — the whole point of B85 is that 64 is written ONCE.
+    expect(module.wgsl).toContain("PointDim(64u, 48u, index % 64u, index / 64u));");
+    // And nothing was retyped: the kernel body never spells the dimension out.
+    expect(DIM_KERNEL).not.toMatch(/\b64\b/);
+  });
+
+  it("follows the edge, so a different grid generates a different kernel", () => {
+    const wide = generateKernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 128, rows: 48 } });
+    if (!wide.ok) throw new Error(wide.errors.join("; "));
+    expect(wide.wgsl).toContain("PointDim(128u, 48u, index % 128u, index / 128u));");
+  });
+
+  it("a GROUP predicate over the grid brings the member in on its own", () => {
+    // The predicate compiles into the same module and reads the same ctx, so the member
+    // has to follow the group even when `process` never mentions it.
+    const module = generateKernelModule({ ...request, group: "ctx.dim.j > 0u", dim: { cols: 8, rows: 8 } });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).toContain("dim: PointDim,");
+    expect(module.wgsl).toContain("PointDim(8u, 8u, index % 8u, index / 8u));");
+  });
+
+  it("REFUSES by name when the point set publishes no grid, rather than handing over zeros", () => {
+    const module = generateKernelModule({ ...request, kernel: DIM_KERNEL });
+    expect(module.ok).toBe(false);
+    if (module.ok) throw new Error("expected a refusal");
+    // §V288: the message names what is missing AND the route to having it.
+    expect(module.errors.join(" ")).toContain("ctx.dim");
+    expect(module.errors.join(" ")).toContain("no grid topology");
+    expect(module.errors.join(" ")).toMatch(/Point Grid|Point Topology/);
+  });
+
+  it("refuses a group predicate over the grid on a gridless point set too", () => {
+    const module = generateKernelModule({ ...request, group: "ctx.dim.i == 0u" });
+    expect(module.ok).toBe(false);
+  });
+
+  it("generates EXACTLY the pre-T472 text for a kernel that does not name it (§V309)", () => {
+    // Supplied WITH a grid: the edge offering one must not be enough to change a byte.
+    const module = generateKernelModule({ ...request, dim: { cols: 64, rows: 64 } });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).not.toContain("dim");
+    expect(module.wgsl).not.toContain("PointDim");
+    // The full pre-T472 spelling of the struct and the constructor, verbatim: a
+    // "not.toContain" alone would pass while a stray blank line rewrote the text.
+    expect(module.wgsl).toContain(`struct PointCtx {
+  /* Slot in the buffers — addressing, never identity (§V73). */
+  index: u32,
+  count: u32,
+  time: f32,
+  delta: f32,
+  frameIndex: u32,
+};`);
+    expect(module.wgsl).toContain(
+      "  let ctx = PointCtx(index, kernelFrame.count, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);",
+    );
+    // And it is the SAME text a caller who never heard of T472 gets.
+    const unaware = generateKernelModule(request);
+    if (!unaware.ok) throw new Error(unaware.errors.join("; "));
+    expect(module.wgsl).toBe(unaware.wgsl);
+  });
+
+  it("stacks with the pointer without either member moving the other (§V309)", () => {
+    const both = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position = vec3f(ctx.pointer.x, f32(ctx.dim.i), f32(ctx.dim.j));
+  return q;
+}`;
+    const module = generateKernelModule({ ...request, kernel: both, dim: { cols: 16, rows: 4 } });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesPointer).toBe(true);
+    // The pointer keeps its place in the uniform block; the grid is not in the block at
+    // all (it is compile-time, so there is nothing to mirror and nothing to read zero).
+    expect(module.wgsl).toContain("  count: u32,\n  pointer: vec4f,\n};");
+    expect(module.wgsl).not.toContain("dim: vec2u");
+    expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.pointer, PointDim(16u, 4u,");
+  });
+});

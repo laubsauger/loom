@@ -1601,8 +1601,12 @@ const MURMURATION_PART_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  * E20 — Gooeyball (T417). The owner's ask, in their words: a ball "deformed from the
  * inside without breaking the surface". The 2D→3D crossing made literal: an animated
  * 2D noise becomes a per-point attribute (textureToAttribute), a T401 processor pushes
- * every point along the surface NORMAL by that sample, and renderSurface shades the
- * grid as a closed ball whose seam the wrap flag heals.
+ * every point along the surface NORMAL by that sample, and a `geometry` object in
+ * SURFACE mode — its material named by reference, drawn by `render` (T446/T447) — shades
+ * the grid as a closed ball whose seam the wrap flag heals. (The legacy `renderSurface`
+ * node still exists and still builds the same surface; this example went through the
+ * scene pipeline when the ports→references redirect landed, and B83 is the doc that kept
+ * naming the node it no longer uses.)
  *
  * WHY THE SURFACE SURVIVES — the doc's teaching, stated here for the tests:
  *  - displacement is ALONG THE NORMAL, and on a sphere the normal is free:
@@ -1612,15 +1616,19 @@ const MURMURATION_PART_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  *  - the noise is CONTINUOUS in uv and in time, so neighbouring points sample nearly
  *    the same displacement and the surface stays a surface — white noise here would
  *    shred the ball into spikes.
- *  - the seam is a TOPOLOGY claim, not geometry: the ball kernel maps u = col/COLS so
+ *  - the seam is a TOPOLOGY claim, not geometry: the ball kernel maps u = i/COLS so
  *    column 0 and a hypothetical column COLS coincide, and `pointTopology`'s wrapU adds
  *    the seam CELL that stitches the last column to the first (T302). Remove the wrap
- *    and the ball shows a slit; the points never move.
+ *    and the ball shows a slit; the points never move. Note the divisor is the KERNEL
+ *    AUTHOR's — `ctx.dim` hands over cols and rows, never a normalised u, because the
+ *    right divisor here (COLS, targeting a claim made DOWNSTREAM) is not the one the
+ *    incoming edge's own unwrapped flags would imply (T472).
  *
- * The chain is FIVE point nodes — grid → ball → sample → goo → claim → surface — and
+ * The chain is FIVE point nodes — grid → ball → sample → goo → claim → body — and
  * every link is T401's processor mechanism or an edge-payload edit. `sample` is
  * authored by the bridge and read by `goo` as an upstream-bound attribute; topology
- * flows generator → kernels → claim by passthrough.
+ * flows generator → kernels → claim by passthrough — and now flows INTO the ball kernel
+ * too, as `ctx.dim` (T472, B85: the 64 that used to be typed into the WGSL).
  */
 const GOOEY_COLS = 64;
 const GOOEY_ROWS = 64;
@@ -1628,12 +1636,13 @@ const GOOEY_ROWS = 64;
 const GOOEY_BALL_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   /* The grid is an INDEX SHEET; the sphere comes from the index, not the plane.
-     u runs col/COLS (not cols-1): column 0 and "column COLS" coincide, which is what
-     the wrapU seam cell downstream stitches together. v runs pole to pole. */
-  let col = f32(ctx.index % ${GOOEY_COLS}u);
-  let row = f32(ctx.index / ${GOOEY_COLS}u);
-  let u = col / ${GOOEY_COLS}.0;
-  let v = row / ${GOOEY_ROWS - 1}.0;
+     ctx.dim IS the sheet (T472): cols, rows and this slot's cell, read off the topology
+     the grid publishes on the edge — turn grid1's Columns knob and this follows, which
+     is exactly what a hard-coded 64u could not do (B85).
+     u runs i/COLS (not cols-1): column 0 and "column COLS" coincide, which is what the
+     wrapU seam cell downstream stitches together. v runs pole to pole. */
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);
+  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
   let theta = u * 6.28318530718;
   let phi = v * 3.14159265359;
   q.position = 0.85 * vec3f(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));

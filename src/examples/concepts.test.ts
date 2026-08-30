@@ -1235,6 +1235,40 @@ describe("E20 Gooeyball", () => {
     expect(kernel).toContain("normalize(p.position)");
     expect(kernel).toContain("p.sample.r - 0.5");
   });
+
+  /**
+   * B85 closed, in the shipped bytes: the ball kernel takes the grid off the EDGE.
+   *
+   * The bug was five copies of one number — `cols: 64` on the grid, `cols: 64` on the
+   * topology claim, and `64u` twice inside the WGSL — so turning the visible knob left the
+   * kernel parametrising a grid it was no longer running over. Silent, and still a
+   * picture. The assertion is therefore about ABSENCE: no dimension may appear in the
+   * kernel text at all, because a literal is what the knob cannot reach (§V349).
+   */
+  it("reads the grid from ctx.dim instead of retyping it (T472, B85)", () => {
+    const ball = document.graph.nodes["ball"] as GraphNode;
+    const kernel = ball.parameters["kernel"] as string;
+    const body = kernel.replace(/\/\*[\s\S]*?\*\//g, ""); // the comment may say 64u; the CODE may not
+    expect(body).toContain("ctx.dim.cols");
+    expect(body).toContain("ctx.dim.rows");
+    expect(body).toContain("ctx.dim.i");
+    expect(body).toContain("ctx.dim.j");
+
+    // The knob it now follows is the one the user can see, on the node upstream — and
+    // ITS value is what may not appear in the shader, which is B85 stated exactly.
+    const sheet = document.graph.nodes["sheet"] as GraphNode;
+    expect(sheet.parameters["cols"]).toBe(64);
+    expect(sheet.parameters["rows"]).toBe(64);
+    expect(body, "a dimension typed into the kernel is B85 coming back").not.toContain(
+      String(sheet.parameters["cols"]),
+    );
+    // The generated module is where the 64 lives now — written once, by the compiler,
+    // from the topology string the grid published.
+    const ballPass = plan.passes.find(
+      (pass) => pass.kind === "dispatch" && (pass as { nodeId?: string }).nodeId === "ball",
+    ) as { shader: string };
+    expect(ballPass.shader).toContain("PointDim(64u, 64u, index % 64u, index / 64u)");
+  });
 });
 
 describe("E24 Audio Reaction-Diffusion", () => {

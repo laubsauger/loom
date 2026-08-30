@@ -134,7 +134,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
           "capacity": 4096,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* The grid is an INDEX SHEET; the sphere comes from the index, not the plane.\n     u runs col/COLS (not cols-1): column 0 and \"column COLS\" coincide, which is what\n     the wrapU seam cell downstream stitches together. v runs pole to pole. */\n  let col = f32(ctx.index % 64u);\n  let row = f32(ctx.index / 64u);\n  let u = col / 64.0;\n  let v = row / 63.0;\n  let theta = u * 6.28318530718;\n  let phi = v * 3.14159265359;\n  q.position = 0.85 * vec3f(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* The grid is an INDEX SHEET; the sphere comes from the index, not the plane.\n     ctx.dim IS the sheet (T472): cols, rows and this slot's cell, read off the topology\n     the grid publishes on the edge — turn grid1's Columns knob and this follows, which\n     is exactly what a hard-coded 64u could not do (B85).\n     u runs i/COLS (not cols-1): column 0 and \"column COLS\" coincide, which is what the\n     wrapU seam cell downstream stitches together. v runs pole to pole. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let theta = u * 6.28318530718;\n  let phi = v * 3.14159265359;\n  q.position = 0.85 * vec3f(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));\n  return q;\n}",
           "seed": 37
         },
         "position": {

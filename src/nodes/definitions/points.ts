@@ -6,6 +6,7 @@ import {
   type PointAttributeSchema,
 } from "../../points/attributes.ts";
 import { POINT_KERNEL_CONTRACT_VERSION, generateKernelModule } from "../../points/codegen.ts";
+import { parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -180,7 +181,7 @@ export const pointKernelNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — and pointer (vec4f: x, y, buttons) for a kernel that names it. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons) and dim (cols, rows, i, j — the grid off the incoming edge, T472) for a kernel that names them. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -268,12 +269,22 @@ export const pointKernelNode: NodeDefinition = {
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
     const names = attributes.map((attribute) => attribute.name);
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
+    /* T472 (B85): `ctx.dim` comes off the EDGE, never off a parameter of this node. The
+       topology string has ridden the pointset edge since T296 — the dimensions were
+       already travelling, they were simply unreachable from inside a kernel, which is why
+       E20 retyped `64u` into its WGSL beside the `cols: 64` the user can actually see. A
+       non-grid (or absent) topology supplies nothing, and codegen refuses by name only if
+       the kernel asks (§V288/§V309: costing nothing when unused is the whole point). */
+    const incomingTopology = parseTopology(incoming?.topology);
     const module = generateKernelModule({
       attributes,
       reads: names,
       writes: names,
       kernel: kernelSource,
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
+      ...(incomingTopology?.kind === "grid"
+        ? { dim: { cols: incomingTopology.cols, rows: incomingTopology.rows } }
+        : {}),
     });
     if (!module.ok) {
       return {
