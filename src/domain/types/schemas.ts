@@ -55,6 +55,15 @@ export const parameterValueSchema = z.union([
   z.string(),
   z.array(z.number()),
   z.array(z.object({ x: z.number(), y: z.number() })),
+  // T270 — a `stops` list. Structural only: the CAP and the channel count are the
+  // manifest's business (`validateParameterValue`), because they belong to the parameter
+  // and not to the file format.
+  z.array(
+    z.object({
+      position: z.number(),
+      color: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+    }),
+  ),
   z.null(),
 ]);
 

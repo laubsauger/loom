@@ -20,6 +20,11 @@ export function defaultValueOf(definition: ParameterDefinition): ParameterValue 
       return [...definition.default];
     case "curve":
       return definition.default.map((point) => ({ x: point.x, y: point.y }));
+    case "stops":
+      return definition.default.map((stop) => ({
+        position: stop.position,
+        color: [...stop.color] as [number, number, number, number],
+      }));
     default:
       return definition.default;
   }

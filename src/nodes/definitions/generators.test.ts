@@ -64,31 +64,98 @@ describe("generator nodes (T40)", () => {
     }
   });
 
-  describe("Ramp", () => {
-    it("round-trips its colour keys and type into the uniforms", () => {
+  describe("Ramp (T270)", () => {
+    const stop = (position: number, color: readonly [number, number, number, number]) => ({
+      position,
+      color,
+    });
+
+    it("packs an N-stop list into the capped uniform table, count first", () => {
       const pass = firstPass(rampNode, {
-        color1: [1, 0, 0, 1],
-        color2: [0, 0, 1, 0.5],
+        stops: [stop(0, [1, 0, 0, 1]), stop(0.5, [0, 1, 0, 1]), stop(1, [0, 0, 1, 0.5])],
         type: "radial",
         interp: "smooth",
       });
       expect(pass.uniforms).toMatchObject({
-        color1: [1, 0, 0, 1],
-        color2: [0, 0, 1, 0.5],
+        count: 3,
+        c0: [1, 0, 0, 1],
+        c1: [0, 1, 0, 1],
+        c2: [0, 0, 1, 0.5],
+        // Four positions to a vector; the tail repeats the last stop so a stray read is
+        // the edge colour rather than uninitialised memory.
+        p0: [0, 0.5, 1, 1],
         rtype: 2,
         interp: 1,
       });
     });
 
     /**
-     * A colour parameter comes out of a picker, which shows perceptual values — the same
-     * claim the Solid node makes. Decoding it belongs to the parameter layer, not to a
-     * shader quietly applying a curve (§V13, §V56).
+     * `count` is the only thing that says how much of the table is real, so a shader that
+     * read past it would render whatever the previous write left behind. The uniform is
+     * asserted rather than assumed for exactly that reason.
      */
-    it("declares its colour parameters as display-space", () => {
-      for (const key of ["color1", "color2"]) {
-        expect(rampNode.parameters[key]).toMatchObject({ type: "color", space: "display" });
-      }
+    it("says how many stops are live, and pads the rest", () => {
+      const pass = firstPass(rampNode, { stops: [stop(0.25, [0.5, 0.5, 0.5, 1])] });
+      expect(pass.uniforms?.["count"]).toBe(1);
+      expect(pass.uniforms?.["c15"]).toEqual([0.5, 0.5, 0.5, 1]);
+      expect(pass.uniforms?.["p3"]).toEqual([0.25, 0.25, 0.25, 0.25]);
+    });
+
+    it("reports the stops it could not fit instead of dropping them quietly", () => {
+      const many = Array.from({ length: 20 }, (_, index) =>
+        stop(index / 19, [index / 19, 0, 0, 1] as [number, number, number, number]),
+      );
+      const compiled = rampNode.compile(compileContext({ parameters: { stops: many } }));
+      const capped = (compiled.diagnostics ?? []).find((d) => d.code === "ramp.stops.capped");
+      // A gradient missing its last four colours with nothing to point at is the failure
+      // this diagnostic exists to prevent.
+      expect(capped?.message).toContain("20 stops");
+      expect(capped?.message).toContain("first 16");
+    });
+
+    it("reports a list whose positions run backwards, because order is authored", () => {
+      const compiled = rampNode.compile(
+        compileContext({ parameters: { stops: [stop(0.8, [1, 1, 1, 1]), stop(0.2, [0, 0, 0, 1])] } }),
+      );
+      // Not re-sorted: the list order IS the gradient, so the editor and the picture
+      // agree, and the thing that is odd gets said once.
+      expect((compiled.diagnostics ?? []).map((d) => d.code)).toContain("ramp.stops.unordered");
+    });
+
+    /**
+     * §V196 — the stop list carries colour, so it declares its space exactly as a `color`
+     * parameter does, and the resolver decodes PER ENTRY. Decoding at the container level,
+     * or not at all, is B8 once per stop with only one swatch being checked.
+     */
+    it("declares its stop list as display-space", () => {
+      expect(rampNode.parameters["stops"]).toMatchObject({
+        type: "stops",
+        space: "display",
+        maxStops: 16,
+      });
+    });
+
+    /** §V10: a v1 Ramp's two keys ARE the two-stop degenerate case; nothing is guessed. */
+    it("migrates a two-colour v1 Ramp into a two-stop list", () => {
+      const migrated = rampNode.migrate?.(1, {
+        color1: [1, 0, 0, 1],
+        color2: [0, 0, 1, 1],
+        type: "vertical",
+        period: 2,
+      });
+      expect(migrated?.parameters).toEqual({
+        type: "vertical",
+        period: 2,
+        stops: [
+          { position: 0, color: [1, 0, 0, 1] },
+          { position: 1, color: [0, 0, 1, 1] },
+        ],
+      });
+    });
+
+    it("leaves an already-migrated node alone", () => {
+      const stops = [stop(0, [0, 0, 0, 1]), stop(1, [1, 1, 1, 1])];
+      expect(rampNode.migrate?.(2, { stops })?.parameters).toEqual({ stops });
     });
   });
 

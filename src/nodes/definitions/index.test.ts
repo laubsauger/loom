@@ -74,6 +74,7 @@ describe("core catalogue (T70, T40)", () => {
       "analyze",
       "movieFileIn",
       "webcam",
+      "text",
       "mouse",
       "valueMath",
       "valueLimit",
@@ -88,6 +89,7 @@ describe("core catalogue (T70, T40)", () => {
       "pointSphere",
       "pointTube",
       "pointTorus",
+      "renderInstances",
     ]);
   });
 
@@ -113,10 +115,18 @@ describe("core catalogue (T70, T40)", () => {
     );
   });
 
-  /** Every definition ships at version 1 with a description the library pane can show. */
+  /**
+   * Every definition ships with a positive version and a description the library pane can
+   * show. Version 1 was the assertion until Ramp grew a stop list (T270); a bumped
+   * version is the §V10 mechanism working, and a node that bumps one must declare a
+   * `migrate` — which is the part actually worth checking.
+   */
   it("declares a version and a description for every node", () => {
     for (const definition of coreNodeDefinitions) {
-      expect(definition.version, definition.type).toBe(1);
+      expect(definition.version, definition.type).toBeGreaterThanOrEqual(1);
+      if (definition.version > 1) {
+        expect(definition.migrate, `${definition.type} bumped its version`).toBeTypeOf("function");
+      }
       expect(definition.description?.length ?? 0, definition.type).toBeGreaterThan(0);
       expect(definition.title.length, definition.type).toBeGreaterThan(0);
     }

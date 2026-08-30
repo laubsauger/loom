@@ -22,6 +22,11 @@ export function defaultValueFor(definition: ParameterDefinition): ParameterValue
       return [...definition.default];
     case "curve":
       return definition.default.map((point) => ({ x: point.x, y: point.y }));
+    case "stops":
+      return definition.default.map((stop) => ({
+        position: stop.position,
+        color: [...stop.color] as [number, number, number, number],
+      }));
     default:
       return definition.default;
   }
@@ -59,6 +64,18 @@ export function matchesDefinition(definition: ParameterDefinition, value: unknow
     // legitimately resolves to `true` on the frame it fires.
     case "pulse":
       return typeof value === "boolean";
+    case "stops":
+      return (
+        Array.isArray(value) &&
+        (definition.maxStops === undefined || value.length <= definition.maxStops) &&
+        value.every(
+          (stop) =>
+            typeof stop === "object" &&
+            stop !== null &&
+            typeof (stop as { position?: unknown }).position === "number" &&
+            isFiniteNumberArray((stop as { color?: unknown }).color, 4),
+        )
+      );
     case "curve":
       return (
         Array.isArray(value) &&

@@ -201,9 +201,7 @@ export function srgbToLinear(channel: number): number {
  * boundary is: decode happens only when values leaves the resolver as bulk evaluation
  * input, never on the per-entry value the inspector renders.
  */
-function evaluationValue(definition: ParameterDefinition, value: ParameterValue): ParameterValue {
-  if (definition.type !== "color" || definition.space !== "display") return value;
-  if (!Array.isArray(value) || value.length !== 4) return value;
+function decodeRgba(value: readonly unknown[]): readonly number[] {
   const channel = (index: number, fallback: number): number => {
     const entry: unknown = value[index];
     return typeof entry === "number" && Number.isFinite(entry) ? entry : fallback;
@@ -214,6 +212,32 @@ function evaluationValue(definition: ParameterDefinition, value: ParameterValue)
     srgbToLinear(channel(2, 0)),
     channel(3, 1),
   ];
+}
+
+function evaluationValue(definition: ParameterDefinition, value: ParameterValue): ParameterValue {
+  /**
+   * §V196 — a CONTAINER carrying colour declares its space like `color` does, and the
+   * decode happens PER ENTRY. Decoding the container as a unit is not a thing that means
+   * anything, and skipping it entirely reproduces B8 one gradient stop at a time: the
+   * swatches in the inspector would be right and the pixels would not. A list makes that
+   * N times harder to catch, because the eye checks one swatch and assumes the rest.
+   */
+  if (definition.type === "stops") {
+    if (definition.space !== "display" || !Array.isArray(value)) return value;
+    return value.map((stop) => {
+      const entry = stop as { position?: unknown; color?: unknown };
+      if (!Array.isArray(entry.color)) return stop as { position: number; color: readonly [number, number, number, number] };
+      const [r = 0, g = 0, b = 0, a = 1] = decodeRgba(entry.color);
+      return {
+        position: typeof entry.position === "number" ? entry.position : 0,
+        color: [r, g, b, a] as readonly [number, number, number, number],
+      };
+    });
+  }
+  if (definition.type !== "color" || definition.space !== "display") return value;
+  if (!Array.isArray(value) || value.length !== 4) return value;
+  const [r = 0, g = 0, b = 0, a = 1] = decodeRgba(value);
+  return [r, g, b, a];
 }
 
 interface Checked {

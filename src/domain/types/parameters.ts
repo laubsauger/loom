@@ -126,6 +126,43 @@ export interface PulseParameter extends ParameterBase {
   input?: Readonly<Record<string, unknown>>;
 }
 
+/** One entry of a `stops` parameter: where it sits, and what colour it is (T270). */
+export interface ColorStop {
+  /** Position along the gradient, 0..1. */
+  position: number;
+  color: readonly [number, number, number, number];
+}
+
+/**
+ * A list of positioned colours (T270, §V195, §V196). Ramp's key list, TD-style.
+ *
+ * Two colours is the DEGENERATE CASE of this, and every gradient anyone actually wants
+ * needs more than two, so the list is the parameter — not something assembled out of
+ * two-colour ramps and a Lookup.
+ *
+ * §V195 — this is a CONTAINER parameter and it is STATIC AS A WHOLE. An expression
+ * returns a number and there is no meaning to a list-valued one; the moded things are its
+ * LEAVES (`stops[2].position`), once the key grammar carries an index. `curve` already
+ * lives under this rule, and writing it down here is what stops `stops` inventing a
+ * second answer. Nothing in this change invents an indexed key grammar.
+ *
+ * §V196 — it declares `space` exactly as `color` does, and the resolver decodes PER
+ * ENTRY. Decoding at the container level, or not at all, reproduces B8 — the inspector
+ * shows one colour and the GPU renders another — and a list makes that N times harder to
+ * notice, because the eye checks one swatch and assumes the rest.
+ */
+export interface StopsParameter extends ParameterBase {
+  type: "stops";
+  default: readonly ColorStop[];
+  /** Data stops bypass colour conversion; display stops are decoded to linear per entry. */
+  space: "linear" | "display";
+  /**
+   * How many stops the consumer can carry. The compiler packs a capped uniform table and
+   * REPORTS the ones beyond it rather than dropping them quietly.
+   */
+  maxStops?: number;
+}
+
 export type ParameterDefinition =
   | NumberParameter
   | BooleanParameter
@@ -135,7 +172,17 @@ export type ParameterDefinition =
   | StringParameter
   | AssetParameter
   | CurveParameter
-  | PulseParameter;
+  | PulseParameter
+  | StopsParameter;
+
+/**
+ * §V195: a CONTAINER parameter is static as a whole — its modes live on its leaves, so
+ * the mode panel is not offered for it. One predicate, so `curve` and `stops` cannot
+ * drift into two answers about the same rule.
+ */
+export function isContainerParameter(definition: ParameterDefinition): boolean {
+  return definition.type === "curve" || definition.type === "stops";
+}
 
 export type ParameterSchema = Record<string, ParameterDefinition>;
 
@@ -145,6 +192,7 @@ export type ParameterValue =
   | string
   | readonly number[]
   | ReadonlyArray<{ x: number; y: number }>
+  | readonly ColorStop[]
   | null;
 
 /**

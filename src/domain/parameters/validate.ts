@@ -99,6 +99,31 @@ export function validateParameterValue(
       // lives. Keeping the two apart matters: an expression driving a pulse resolves to
       // `true` for the frame it fires on, and this function is also what checks THAT.
       return typeof value === "boolean" ? null : wrongType("a boolean trigger");
+    case "stops": {
+      if (!Array.isArray(value)) return wrongType("an array of {position, color} stops");
+      const max = definition.maxStops;
+      if (max !== undefined && value.length > max) {
+        // Refused at the boundary rather than truncated on the way to the GPU: a
+        // gradient silently missing its last two colours is a bug nobody can see the
+        // cause of.
+        return error(
+          "parameter.stops.count",
+          `Parameter "${key}" has ${value.length} stops; "${definition.label}" carries at most ${max}.`,
+          nodeId,
+        );
+      }
+      const ok = value.every((stop) => {
+        if (typeof stop !== "object" || stop === null) return false;
+        const entry = stop as { position?: unknown; color?: unknown };
+        if (typeof entry.position !== "number" || !Number.isFinite(entry.position)) return false;
+        return (
+          Array.isArray(entry.color) &&
+          entry.color.length === 4 &&
+          entry.color.every((channel) => typeof channel === "number" && Number.isFinite(channel))
+        );
+      });
+      return ok ? null : wrongType("an array of {position, color: [r,g,b,a]} stops");
+    }
     case "curve": {
       if (!Array.isArray(value)) return wrongType("an array of {x, y} points");
       const ok = value.every(
@@ -288,6 +313,14 @@ export function defaultParameterValue(definition: ParameterDefinition): Paramete
       return [...definition.default];
     case "curve":
       return definition.default.map((point) => ({ x: point.x, y: point.y }));
+    // Deep-copied like every other structured default: the manifest is shared by every
+    // node of a type, so handing out the literal would let one node's edit move every
+    // other node's default.
+    case "stops":
+      return definition.default.map((stop) => ({
+        position: stop.position,
+        color: [...stop.color] as [number, number, number, number],
+      }));
     default:
       return definition.default;
   }

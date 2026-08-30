@@ -82,6 +82,9 @@ export type { VectorFieldProps } from "./vector-field.tsx";
 export { ColorField } from "./color-field.tsx";
 export type { ColorFieldProps } from "./color-field.tsx";
 
+export { StopsField } from "./stops-field.tsx";
+export type { StopsFieldProps } from "./stops-field.tsx";
+
 export { AssetField, CurveField, curvePolyline } from "./curve-field.tsx";
 export type { AssetFieldProps, CurveFieldProps, CurvePoint } from "./curve-field.tsx";
 

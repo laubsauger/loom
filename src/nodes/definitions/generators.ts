@@ -1,8 +1,21 @@
-import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
+import type {
+  CompiledNodeDescription,
+  MigrationResult,
+  NodeDefinition,
+} from "../../domain/types/node-definition.ts";
+import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
+import type { ColorStop } from "../../domain/types/parameters.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { readColor, readEnumIndex, readFlag, readNumber, readVector } from "./parameter-readers.ts";
+import {
+  readColor,
+  readEnumIndex,
+  readFlag,
+  readNumber,
+  readVector,
+  type Params,
+} from "./parameter-readers.ts";
 import {
   RECTANGLE_FRAGMENT_WGSL,
   CHECKER_FRAGMENT_WGSL,
@@ -19,13 +32,12 @@ import {
  * they evaluate. A generator has nothing to inherit a size or a format from, which is what
  * makes `project` the right policy rather than a default nobody chose.
  *
- * COLOUR (§V56): all four write LINEAR working-space values. Their colour parameters are
- * declared `space: "display"`, matching the Solid node: the number came out of a colour
- * picker, and decoding it to linear is the parameter layer's job, not something a shader
- * does invisibly. NOTE FOR THE TRACK THAT OWNS THAT LAYER: nothing decodes a
- * `space: "display"` parameter today, so those values currently reach a linear buffer
- * unconverted. Every node in this catalogue behaves the same way, so the fix is one change
- * in the resolver rather than twenty here.
+ * COLOUR (§V56): all of them write LINEAR working-space values. Their colour parameters
+ * are declared `space: "display"`, matching the Solid node: the number came out of a
+ * colour picker, and decoding it to linear is the parameter layer's job, not something a
+ * shader does invisibly. The resolver does that decode in one place (T148, B8) — and for
+ * Ramp's stop LIST it does it per entry (§V196), because a container that decoded as a
+ * unit, or not at all, would be B8 once per stop with only one swatch being checked.
  *
  * The exception is UV, whose output is DATA: coordinates, not light.
  */
@@ -52,26 +64,91 @@ const BLACK: readonly [number, number, number, number] = [0, 0, 0, 1];
 const WHITE: readonly [number, number, number, number] = [1, 1, 1, 1];
 const TRANSPARENT: readonly [number, number, number, number] = [0, 0, 0, 0];
 
+/** How many stops the uniform table carries. Mirrors `MAX_STOPS` in the shader. */
+export const RAMP_MAX_STOPS = 16;
+
+const DEFAULT_RAMP_STOPS: readonly ColorStop[] = [
+  { position: 0, color: BLACK },
+  { position: 1, color: WHITE },
+];
+
 /**
- * Ramp — TD's Ramp TOP (T40).
+ * Packs a stop list into the shader's flat uniform table (T270).
  *
- * Two colour keys rather than TD's editable key list: no parameter type in the manifest
- * can hold a list of colour stops yet (`curve` holds scalar points). Two keys plus phase,
- * period and interpolation covers most real uses, and a genuinely multi-stop palette is
- * better built as Ramp -> Lookup than as a bespoke parameter editor.
+ * Twenty `vec4f` members rather than `array<vec4f, 16>`: the plan carries uniform values
+ * as FLAT number lists (`UniformValue`), and vgpu writes a WGSL array element-wise from a
+ * nested list the contract cannot express. See the shader's own note. The tail past
+ * `count` is padded with the last stop so a stray read is at worst the edge colour, never
+ * uninitialised memory.
+ */
+function packStops(stops: readonly ColorStop[]): Record<string, number | readonly number[]> {
+  const used = stops.slice(0, RAMP_MAX_STOPS);
+  const last = used[used.length - 1] ?? { position: 1, color: WHITE };
+  const uniforms: Record<string, number | readonly number[]> = { count: used.length };
+  for (let index = 0; index < RAMP_MAX_STOPS; index += 1) {
+    const stop = used[index] ?? last;
+    uniforms[`c${index}`] = [...stop.color];
+  }
+  for (let group = 0; group < RAMP_MAX_STOPS / 4; group += 1) {
+    uniforms[`p${group}`] = [0, 1, 2, 3].map((offset) => {
+      const stop = used[group * 4 + offset] ?? last;
+      return stop.position;
+    });
+  }
+  return uniforms;
+}
+
+/** A tolerant read of the stops parameter — the document may disagree (§V10). */
+function readStops(parameters: Params, key: string): readonly ColorStop[] {
+  const value = parameters[key];
+  if (!Array.isArray(value)) return DEFAULT_RAMP_STOPS;
+  const stops = value.flatMap((entry): ColorStop[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const stop = entry as { position?: unknown; color?: unknown };
+    if (typeof stop.position !== "number" || !Number.isFinite(stop.position)) return [];
+    if (!Array.isArray(stop.color) || stop.color.length !== 4) return [];
+    const color = stop.color.filter(
+      (channel): channel is number => typeof channel === "number" && Number.isFinite(channel),
+    );
+    if (color.length !== 4) return [];
+    return [{ position: stop.position, color: color as unknown as ColorStop["color"] }];
+  });
+  return stops.length > 0 ? stops : DEFAULT_RAMP_STOPS;
+}
+
+/**
+ * Ramp — TD's Ramp TOP (T40, T270).
+ *
+ * Two colours WAS this node, and two colours is the degenerate case of a gradient: every
+ * palette anyone actually wants — a heat map, a duotone with a highlight, a three-stop
+ * sky — was inexpressible, and the workaround (Ramp into a Lookup) needs the multi-stop
+ * ramp to build the lookup with.
+ *
+ * The stop list is one `stops` parameter, static as a whole (§V195) with its colours
+ * decoded per entry by the resolver (§V196). It compiles to a CAPPED uniform table of
+ * sixteen, plus a count, with a diagnostic past it — not a LUT texture, which would add a
+ * resource per Ramp for a case a small array covers, and not a silent truncation, which
+ * would drop the last colours of a gradient with nothing to point at.
  */
 export const rampNode: NodeDefinition = {
   type: "ramp",
-  version: 1,
+  version: 2,
   title: "Ramp",
   category: "generator",
-  description: "Two-key gradient: horizontal, vertical, radial or circular. TD Ramp TOP.",
+  description: "Multi-stop gradient: horizontal, vertical, radial or circular. TD Ramp TOP.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE, description: "Linear-space colour." }],
   parameters: {
     type: { type: "enum", label: "Type", default: "horizontal", options: [...RAMP_TYPE_OPTIONS] },
-    color1: { type: "color", label: "Color 1", default: BLACK, space: "display" },
-    color2: { type: "color", label: "Color 2", default: WHITE, space: "display" },
+    stops: {
+      type: "stops",
+      label: "Stops",
+      default: DEFAULT_RAMP_STOPS,
+      space: "display",
+      maxStops: RAMP_MAX_STOPS,
+      description:
+        "Colour keys in order. The gradient interpolates between consecutive keys and holds outside the first and last.",
+    },
     interp: {
       type: "enum",
       label: "Interpolation",
@@ -90,11 +167,64 @@ export const rampNode: NodeDefinition = {
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
+  /**
+   * §V10: a version-1 Ramp carries `color1`/`color2`, which version 2 has no parameter
+   * for. Those two keys ARE the two-stop degenerate case, so the migration is exact —
+   * nothing is guessed and nothing is lost, and a saved project opens looking identical.
+   */
+  migrate(oldVersion, data): MigrationResult {
+    const parameters = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+    if (oldVersion >= 2) return { parameters };
+    const { color1, color2, ...rest } = parameters;
+    const key = (value: unknown, fallback: readonly [number, number, number, number]) =>
+      Array.isArray(value) && value.length === 4 && value.every((c) => typeof c === "number")
+        ? (value as unknown as ColorStop["color"])
+        : fallback;
+    return {
+      parameters: {
+        ...rest,
+        stops: [
+          { position: 0, color: key(color1, BLACK) },
+          { position: 1, color: key(color2, WHITE) },
+        ],
+      },
+    };
+  },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, parameters } = readCompileInputs(context);
     const target = outputs["out"];
     if (target === undefined) {
       return { passes: [], diagnostics: [missingCompileResource(nodeId, 'output port "out"')] };
+    }
+    const stops = readStops(parameters, "stops");
+    const diagnostics: RuntimeDiagnostic[] = [];
+    if (stops.length > RAMP_MAX_STOPS) {
+      // Reported, not truncated silently. The picture WILL be missing the tail — saying
+      // which stops and how many is the difference between a limit and a mystery.
+      diagnostics.push({
+        severity: "warning",
+        code: "ramp.stops.capped",
+        message: `Ramp has ${stops.length} stops; only the first ${RAMP_MAX_STOPS} are rendered.`,
+        nodeId,
+        suggestion: `Remove ${stops.length - RAMP_MAX_STOPS} stop(s), or split the gradient across two Ramps.`,
+      });
+    }
+    /**
+     * The list order IS the gradient (the shader walks consecutive pairs), so a
+     * non-monotonic list is not re-sorted — it renders a hard edge at that segment. That
+     * is deterministic and matches what the editor shows, but it is almost never what the
+     * author meant, so it is worth saying once.
+     */
+    const packed = stops.slice(0, RAMP_MAX_STOPS);
+    const outOfOrder = packed.some((stop, index) => index > 0 && stop.position < (packed[index - 1]?.position ?? 0));
+    if (outOfOrder) {
+      diagnostics.push({
+        severity: "warning",
+        code: "ramp.stops.unordered",
+        message: "Ramp's stop positions do not increase; the gradient has a hard edge where they cross.",
+        nodeId,
+        suggestion: "Reorder the stops, or move their positions so each is at or after the one before it.",
+      });
     }
     const pass: EffectPassDescriptor = {
       kind: "effect",
@@ -103,8 +233,7 @@ export const rampNode: NodeDefinition = {
       target,
       uniformBinding: "params",
       uniforms: {
-        color1: readColor(parameters, "color1", BLACK),
-        color2: readColor(parameters, "color2", WHITE),
+        ...packStops(packed),
         rtype: readEnumIndex(parameters, "type", RAMP_TYPE_OPTIONS, "horizontal"),
         interp: readEnumIndex(parameters, "interp", RAMP_INTERP_OPTIONS, "linear"),
         phase: readNumber(parameters, "phase", 0),
@@ -113,7 +242,7 @@ export const rampNode: NodeDefinition = {
       nodeId,
       label: "Ramp",
     };
-    return { passes: [pass] };
+    return diagnostics.length === 0 ? { passes: [pass] } : { passes: [pass], diagnostics };
   },
 };
 

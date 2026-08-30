@@ -45,8 +45,14 @@ const registry = createNodeRegistry(allNodeDefinitions).view();
 
 const compile = (graph: GraphDocument) => compileGraph({ graph, settings, registry, capabilities });
 
+/**
+ * Nodes are stamped with the registry's CURRENT version. A hardcoded `1` made every
+ * node that ever bumps its version fail this suite with a stale-version warning that has
+ * nothing to do with what the suite is about (§V10's check is `node-migrations`' job).
+ */
 function node(id: string, type: string, parameters: GraphNode["parameters"] = {}): GraphNode {
-  return { id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters };
+  const definitionVersion = registry.get(type)?.version ?? 1;
+  return { id, type, definitionVersion, position: { x: 0, y: 0 }, parameters };
 }
 
 function edge(id: string, from: [string, string], to: [string, string], order?: number) {

@@ -12,16 +12,40 @@
  */
 
 /**
- * Ramp — TD's Ramp TOP, with two colour keys instead of an editable key list.
+ * Ramp — an N-stop gradient (T270). TD's Ramp TOP key list.
  *
- * A key LIST needs a parameter type that can hold colour stops; the manifest's `curve`
- * type holds scalar {x,y} points and nothing holds colour stops yet. Two keys plus phase,
- * period and an interpolation mode covers the overwhelming majority of real uses (and
- * feeds Lookup, which is where a richer palette actually belongs).
+ * ## Why the stop table is twenty vec4s and not an array
+ *
+ * `array<vec4f, 16>` is the obvious declaration and it is not reachable: the plan
+ * contract carries a uniform value as a FLAT list of numbers (`UniformValue` =
+ * `number | boolean | readonly number[]`), and vgpu writes an array element-wise from a
+ * NESTED list it therefore cannot be handed. Twenty flat `vec4f` members is what the
+ * writer does accept, and the shader assembles them into local arrays exactly as the
+ * matrix filter already assembles `params.row0..row2`. A storage buffer or a LUT texture
+ * would have avoided this, and both would add a resource per Ramp for a case sixteen
+ * stops covers.
+ *
+ * `count` is authoritative. The unused tail of the table is whatever the last write left
+ * there, so nothing may read past `count` — which is also why the compiler refuses a
+ * count it cannot pack rather than truncating one (a gradient silently missing its last
+ * two colours is a bug with no visible cause).
+ *
+ * ## Order is the document's, not the sort's
+ *
+ * The shader walks CONSECUTIVE entries. A list whose positions run backwards produces a
+ * hard edge at that segment rather than a re-sorted gradient: the user's list order is
+ * the answer, and re-sorting it here would mean the picture disagreed with the editor.
  */
-export const RAMP_FRAGMENT_WGSL = `struct Params {
-  color1: vec4f,
-  color2: vec4f,
+export const RAMP_FRAGMENT_WGSL = `const MAX_STOPS: u32 = 16u;
+
+struct Params {
+  c0: vec4f, c1: vec4f, c2: vec4f, c3: vec4f,
+  c4: vec4f, c5: vec4f, c6: vec4f, c7: vec4f,
+  c8: vec4f, c9: vec4f, c10: vec4f, c11: vec4f,
+  c12: vec4f, c13: vec4f, c14: vec4f, c15: vec4f,
+  // Sixteen positions, four to a vector.
+  p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f,
+  count: f32,
   rtype: f32,
   interp: f32,
   phase: f32,
@@ -45,18 +69,47 @@ fn rampCoordinate(uv: vec2f) -> f32 {
   }
 }
 
+fn blendAt(t: f32) -> f32 {
+  let mode = u32(params.interp + 0.5);
+  if (mode == 1u) { return smoothstep(0.0, 1.0, t); }
+  if (mode == 2u) { return step(0.5, t); }
+  return t;
+}
+
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  var colors = array<vec4f, 16>(
+    params.c0, params.c1, params.c2, params.c3,
+    params.c4, params.c5, params.c6, params.c7,
+    params.c8, params.c9, params.c10, params.c11,
+    params.c12, params.c13, params.c14, params.c15,
+  );
+  var positions = array<f32, 16>(
+    params.p0.x, params.p0.y, params.p0.z, params.p0.w,
+    params.p1.x, params.p1.y, params.p1.z, params.p1.w,
+    params.p2.x, params.p2.y, params.p2.z, params.p2.w,
+    params.p3.x, params.p3.y, params.p3.z, params.p3.w,
+  );
+
+  let n = max(1u, min(MAX_STOPS, u32(params.count + 0.5)));
   let raw = (rampCoordinate(uv) + params.phase) / max(abs(params.period), 1e-6);
   let t = fract(raw);
-  var blend = t;
-  let mode = u32(params.interp + 0.5);
-  if (mode == 1u) {
-    blend = smoothstep(0.0, 1.0, t);
-  } else if (mode == 2u) {
-    blend = step(0.5, t);
+
+  // Before the first stop and after the last: hold. A gradient that faded to black
+  // outside its own range would make every partial ramp look like a bug.
+  if (t <= positions[0]) { return colors[0]; }
+  if (t >= positions[n - 1u]) { return colors[n - 1u]; }
+
+  var result = colors[n - 1u];
+  for (var i = 0u; i + 1u < n; i = i + 1u) {
+    let a = positions[i];
+    let b = positions[i + 1u];
+    if (t >= a && t <= b) {
+      result = mix(colors[i], colors[i + 1u], blendAt((t - a) / max(b - a, 1e-6)));
+      break;
+    }
   }
-  return mix(params.color1, params.color2, blend);
+  return result;
 }`;
 
 /**

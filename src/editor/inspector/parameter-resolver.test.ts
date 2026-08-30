@@ -118,8 +118,6 @@ describe("T148 — colour parameter decode", () => {
     const midGrey = [0.5, 0.5, 0.5, 1] as const;
     const cases: ReadonlyArray<{ definition: typeof catalogueSolidNode; key: string }> = [
       { definition: catalogueSolidNode, key: "color" },
-      { definition: rampNode, key: "color1" },
-      { definition: rampNode, key: "color2" },
       { definition: checkerNode, key: "color1" },
       { definition: circleNode, key: "fillcolor" },
     ];
@@ -134,6 +132,40 @@ describe("T148 — colour parameter decode", () => {
       // And the entry the inspector renders is untouched.
       expect(resolved.get(key)?.value).toEqual(midGrey);
     }
+  });
+
+  /**
+   * §V196 — Ramp's colours moved into a CONTAINER (T270), and a container decodes PER
+   * ENTRY. Decoding it as a unit, or not at all, is B8 once per stop: the inspector shows
+   * one colour and the GPU renders another, N times, with the eye checking one swatch and
+   * assuming the rest.
+   */
+  it("decodes a stop list entry by entry, and leaves the displayed value alone", () => {
+    const midGrey = [0.5, 0.5, 0.5, 1] as const;
+    const node = nodeWith(
+      {
+        stops: [
+          { position: 0, color: midGrey },
+          { position: 1, color: [1, 1, 1, 1] },
+        ],
+      },
+      rampNode.type,
+    );
+    const resolved = resolveParameters(node, rampNode);
+    const stops = resolved.values["stops"] as ReadonlyArray<{ position: number; color: readonly number[] }>;
+
+    expect(stops).toHaveLength(2);
+    expect(stops[0]?.color[0]).toBeCloseTo(0.214, 3);
+    expect(stops[0]?.position).toBe(0);
+    // White stays white; a decode that only touched the first entry would pass the line
+    // above and still be wrong.
+    expect(stops[1]?.color[0]).toBeCloseTo(1, 5);
+    // Alpha is coverage, not light: never encoded, never decoded.
+    expect(stops[0]?.color[3]).toBe(1);
+
+    // What the inspector renders stays in the space the user picked in.
+    const shown = resolved.get("stops")?.value as ReadonlyArray<{ color: readonly number[] }>;
+    expect(shown[0]?.color).toEqual(midGrey);
   });
 });
 

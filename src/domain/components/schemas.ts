@@ -71,6 +71,18 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     type: z.literal("curve"),
     default: z.array(z.object({ x: z.number(), y: z.number() })),
   }),
+  z.object({
+    ...parameterBase,
+    type: z.literal("stops"),
+    default: z.array(
+      z.object({
+        position: z.number(),
+        color: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+      }),
+    ),
+    space: z.enum(["linear", "display"]),
+    maxStops: z.number().int().positive().optional(),
+  }),
   // A pulse has no `default` — it fires, it does not hold (§V124). It carries the bus
   // command it fires instead, which is data and therefore survives a round trip.
   z.object({

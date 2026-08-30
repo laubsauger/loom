@@ -3,7 +3,9 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ResolvedComponent } from "@domain/parameters/resolve.ts";
 import { componentKey } from "@domain/parameters/slots.ts";
+import { isContainerParameter } from "@domain/types/parameters.ts";
 import type {
+  ColorStop,
   ParameterDefinition,
   ParameterSlot,
   ParameterValue,
@@ -18,6 +20,7 @@ import { describeRange } from "./drag-math.ts";
 import { EnumField } from "./enum-field.tsx";
 import { NumberField } from "./number-field.tsx";
 import { PulseField } from "./pulse-field.tsx";
+import { StopsField } from "./stops-field.tsx";
 import { ParameterModePanel } from "./parameter-mode.tsx";
 import { valueForDefinition } from "./parameter-value.ts";
 import { slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
@@ -118,9 +121,18 @@ export function ParameterControl({
   /** Set only when ctrl/cmd+E opened the panel, so the payload field takes focus. */
   const [focusExpression, setFocusExpression] = useState(false);
 
-  // The mode UI needs somewhere to write. Node-embedded rows pass no writer and stay
-  // exactly as dense as they were.
-  const modesAvailable = onStoredChange !== undefined && variant === "inspector";
+  /**
+   * The mode UI needs somewhere to write. Node-embedded rows pass no writer and stay
+   * exactly as dense as they were.
+   *
+   * §V195: a CONTAINER parameter (`curve`, `stops`) is static AS A WHOLE, so it gets no
+   * mode panel. An expression returns a number and there is no meaning to a list-valued
+   * one; the moded things are its leaves (`stops[2].position`), which wait on the key
+   * grammar carrying an index. Offering four buttons that can only ever produce a
+   * diagnostic would be the interface telling a lie about what the model supports.
+   */
+  const modesAvailable =
+    onStoredChange !== undefined && variant === "inspector" && !isContainerParameter(definition);
   const slot = slotOf(storedSlot, resolved);
 
   const emit = (next: ParameterValue, phase: EditPhase): void => onChange(next, phase);
@@ -333,6 +345,19 @@ export function ParameterControl({
           disabled={shared.disabled || onPulse === undefined}
           onFire={() => onPulse?.(parameterKey)}
         />,
+      );
+
+    case "stops":
+      return row(
+        <StopsField
+          {...shared}
+          value={Array.isArray(resolved) ? (resolved as readonly ColorStop[]) : definition.default}
+          definition={definition}
+          onChange={(next, phase) => emit(next, phase)}
+        />,
+        // §V196: the space is a FACT about the stored numbers, shown the same way a
+        // colour's is — the hint slot, not a sentence.
+        { hint: definition.space, stacked: true },
       );
 
     case "curve":
