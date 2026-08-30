@@ -146,6 +146,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "B27 — the shader editor's debounced compile pipeline is exported from its own index and constructed only by its unit test. The panel validates on the graph compile instead, so WGSL errors appear later than the pipeline was built to show them.",
   },
   {
+    name: "createFeatureTrackRecorder",
+    reason:
+      "T431's remaining half, and this gate caught it on the first run rather than a report catching it later. The track CONTRACT, the recorder, the replay path and the offline seam all exist and are gated end to end by `tests/headless/audio-track-replay.test.ts` — a stored track renders the same pixels as the source it was recorded from. What has no construction site is the LIVE capture: recording a performance in the app needs a surface decision nobody has made (always-on versus an explicit arm, where the track is written, whether it belongs to the project file), and inventing one here would be the fifth layer of B68 committed by the person who gated it. Delete this line the moment the app records.",
+  },
+  {
     name: "openComponentSession",
     reason:
       "Entering a component navigates (T130) without opening an editing session; publishing and exposing from inside a component are therefore not reachable from the canvas yet.",

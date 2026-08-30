@@ -9,6 +9,8 @@ import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import { createUniformAnimator } from "../../app/animate-parameters.ts";
+import type { AudioFeatures } from "../../domain/types/frame.ts";
+import type { FeatureTrackRecorder } from "../../domain/audio/feature-track.ts";
 import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
@@ -67,6 +69,19 @@ export interface HeadlessRenderRequest {
    * it does not use, and every existing caller keeps its exact behaviour.
    */
   readonly animate?: boolean;
+  /**
+   * T431: FEED a recorded feature track. The closure is the frame driver's `audio` seam
+   * — the same one the live session's analyser fills — so a replayed render and the
+   * performance it was recorded from are the same computation with the same inputs.
+   * Absent, a render runs in silence rather than re-listening (§V352).
+   */
+  readonly audio?: (frameIndex: number) => AudioFeatures | null;
+  /**
+   * T431: CAPTURE what crossed that seam, frame by frame. Recording here rather than at
+   * the analyser is the whole contract: what must replay identically is what the engine
+   * READ, not what some upstream stage computed.
+   */
+  readonly recordAudio?: FeatureTrackRecorder;
 }
 
 export interface HarnessControl {
@@ -151,8 +166,27 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
 
     const valueSession = request.animate === true ? createValueGraphSession(registry()) : null;
     const animator = request.animate === true ? createUniformAnimator() : null;
+    // One closure serves both directions, so a render can replay a track and record what
+    // it replayed — which is what makes "record, replay, record again, compare" a test of
+    // the ROUND TRIP rather than of two separate code paths.
+    const audioAt = request.audio;
+    const recorder = request.recordAudio;
+    // The driver reads its audio seam with no argument — it is a LIVE source there. The
+    // loop below publishes the index it is about to step so the closure knows which frame
+    // of the track it is standing in.
+    let steppingFrame = 0;
+    const audioSeam =
+      audioAt === undefined && recorder === undefined
+        ? undefined
+        : (): AudioFeatures | null => {
+            const features = audioAt?.(steppingFrame) ?? null;
+            recorder?.capture(steppingFrame, features);
+            return features;
+          };
+
     const driver = createFrameDriver({
       backend,
+      ...(audioSeam === undefined ? {} : { audio: audioSeam }),
       // §V45: the seed is the project's, not the transport's own invention.
       transport: offlineTransport({ fps, seed: settings.randomSeed, mode: "fixed-step" }),
       pointer: createPointerSource(),
@@ -183,6 +217,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     const captured: RenderedFrame[] = [];
     const wanted = new Set(capture);
     for (let index = 0; index < frameCount; index += 1) {
+      steppingFrame = index;
       driver.step();
       if (wanted.has(index)) {
         // §V48/§V7: readback happens between frames, never inside the loop, which is why
