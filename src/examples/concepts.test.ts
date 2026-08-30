@@ -1151,3 +1151,60 @@ describe("E16 Murmuration", () => {
   });
 });
 
+describe("E20 Gooeyball", () => {
+  const { document, plan } = example("E20-Gooeyball.loom.json");
+
+  /**
+   * T417's crossing, link by link: grid positions into the ball kernel, ball positions
+   * into the bridge, the bridge's sample INTO the goo kernel from upstream (T401), goo
+   * positions into the surface. One buffer per attribute, zero copies.
+   */
+  it("chains grid -> ball -> bridge -> goo -> surface by pair bindings", () => {
+    const buffersOf = (nodeId: string, kind: "dispatch" | "draw") =>
+      (plan.passes.find((pass) => pass.kind === kind && (pass as { nodeId?: string }).nodeId === nodeId) as {
+        buffers?: ReadonlyArray<{ binding: string; resourceId: string }>;
+      }).buffers;
+    const binding = (nodeId: string, kind: "dispatch" | "draw", name: string) =>
+      buffersOf(nodeId, kind)?.find((buffer) => buffer.binding === name)?.resourceId;
+
+    expect(binding("ball", "dispatch", "in_position")).toBe("scratch:sheet:position");
+    expect(binding("bridge", "dispatch", "in_position")).toBe("scratch:ball:position");
+    expect(binding("goo", "dispatch", "in_position")).toBe("scratch:ball:position");
+    // The 2D->3D crossing itself: the goo kernel reads the BRIDGE's sample pair.
+    expect(binding("goo", "dispatch", "in_sample")).toBe("scratch:bridge:sample");
+    // And the surface draws the goo's positions.
+    const draw = plan.passes.find((pass) => pass.kind === "draw") as {
+      buffers?: ReadonlyArray<{ resourceId: string }>;
+    };
+    expect(draw.buffers?.some((buffer) => buffer.resourceId === "scratch:goo:position")).toBe(true);
+  });
+
+  /**
+   * The seam is a CLAIM (T302): the topology node moves no point — it emits no pass at
+   * all — and the surface's uniforms carry the wrap it authored.
+   */
+  it("closes the ring with a topology claim, not geometry", () => {
+    expect(plan.passes.some((pass) => (pass as { nodeId?: string }).nodeId === "claim")).toBe(false);
+    const draw = plan.passes.find((pass) => pass.kind === "draw") as {
+      uniforms?: Record<string, unknown>;
+    };
+    expect(draw.uniforms?.["wrapU"]).toBe(1);
+    expect(draw.uniforms?.["wrapV"]).toBe(0);
+  });
+
+  /** B14's lesson, pinned again: animated goo needs a 4D noise with speed set. */
+  it("drives the goo from a noise that actually moves", () => {
+    const noise = document.graph.nodes["wobble"] as GraphNode;
+    expect(noise.parameters["type"]).toBe("perlin4d");
+    expect(noise.parameters["speed"]).not.toBe(0);
+  });
+
+  /** The displacement is radial IN THE SHADER SOURCE the document ships. */
+  it("displaces along the normal — normalize(position) — by the centred sample", () => {
+    const goo = document.graph.nodes["goo"] as GraphNode;
+    const kernel = goo.parameters["kernel"] as string;
+    expect(kernel).toContain("normalize(p.position)");
+    expect(kernel).toContain("p.sample.r - 0.5");
+  });
+});
+

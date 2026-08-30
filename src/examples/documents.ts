@@ -1597,6 +1597,152 @@ const MURMURATION_PART_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
+/**
+ * E20 — Gooeyball (T417). The owner's ask, in their words: a ball "deformed from the
+ * inside without breaking the surface". The 2D→3D crossing made literal: an animated
+ * 2D noise becomes a per-point attribute (textureToAttribute), a T401 processor pushes
+ * every point along the surface NORMAL by that sample, and renderSurface shades the
+ * grid as a closed ball whose seam the wrap flag heals.
+ *
+ * WHY THE SURFACE SURVIVES — the doc's teaching, stated here for the tests:
+ *  - displacement is ALONG THE NORMAL, and on a sphere the normal is free:
+ *    normalize(position) IS the outward normal, no neighbours needed. A radial push
+ *    moves a point toward or away from the centre and never sideways past its grid
+ *    neighbours, so cells stretch but never fold or self-intersect.
+ *  - the noise is CONTINUOUS in uv and in time, so neighbouring points sample nearly
+ *    the same displacement and the surface stays a surface — white noise here would
+ *    shred the ball into spikes.
+ *  - the seam is a TOPOLOGY claim, not geometry: the ball kernel maps u = col/COLS so
+ *    column 0 and a hypothetical column COLS coincide, and `pointTopology`'s wrapU adds
+ *    the seam CELL that stitches the last column to the first (T302). Remove the wrap
+ *    and the ball shows a slit; the points never move.
+ *
+ * The chain is FIVE point nodes — grid → ball → sample → goo → claim → surface — and
+ * every link is T401's processor mechanism or an edge-payload edit. `sample` is
+ * authored by the bridge and read by `goo` as an upstream-bound attribute; topology
+ * flows generator → kernels → claim by passthrough.
+ */
+const GOOEY_COLS = 64;
+const GOOEY_ROWS = 64;
+
+const GOOEY_BALL_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* The grid is an INDEX SHEET; the sphere comes from the index, not the plane.
+     u runs col/COLS (not cols-1): column 0 and "column COLS" coincide, which is what
+     the wrapU seam cell downstream stitches together. v runs pole to pole. */
+  let col = f32(ctx.index % ${GOOEY_COLS}u);
+  let row = f32(ctx.index / ${GOOEY_COLS}u);
+  let u = col / ${GOOEY_COLS}.0;
+  let v = row / ${GOOEY_ROWS - 1}.0;
+  let theta = u * 6.28318530718;
+  let phi = v * 3.14159265359;
+  q.position = 0.85 * vec3f(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+  return q;
+}`;
+
+const GOOEY_GOO_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* ALONG THE NORMAL, and on a sphere the normal is free: normalize(position) is the
+     outward direction, no neighbour reads. Radial pushes stretch cells but never fold
+     them — that is why the ball deforms from inside and never tears. */
+  let normal = normalize(p.position);
+  /* p.sample is the bridge's pair, upstream-bound (T401): the noise value sampled at
+     THIS point's sphere position, fresh every frame. Centred so the ball breathes both
+     inward and outward around its rest radius. */
+  let amount = (p.sample.r - 0.5) * 0.5;
+  q.position = p.position + normal * amount;
+  q.sample = p.sample;
+  return q;
+}`;
+
+const gooeyballDocument = document(
+  "e20-gooeyball",
+  "E20 Gooeyball",
+  settings({ randomSeed: 37 }),
+  graph(
+    [
+      node(
+        "wobble",
+        "noise",
+        [-1480, -220],
+        {
+          type: "perlin4d",
+          period: 0.45,
+          harmon: 3,
+          spread: 2,
+          gain: 0.5,
+          rough: 0.5,
+          exp: 1,
+          amp: 1,
+          offset: 0,
+          mono: true,
+          aspectcorrect: true,
+          seed: 37,
+          s4d: 1,
+          t4d: 0,
+          /* Animated, and a 4D type so `speed` actually does something (B14): the goo
+             crawls over the ball instead of freezing into one dent. */
+          speed: 0.3,
+        },
+        { label: "noise1" },
+      ),
+      node("sheet", "pointGrid", [-1480, 0], { cols: GOOEY_COLS, rows: GOOEY_ROWS }, { label: "grid1" }),
+      node(
+        "ball",
+        "pointKernel",
+        [-1180, 0],
+        {
+          capacity: GOOEY_COLS * GOOEY_ROWS,
+          seed: 37,
+          attributes: JSON.stringify([{ name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] }]),
+          kernel: GOOEY_BALL_KERNEL,
+        },
+        { label: "ball1" },
+      ),
+      node("bridge", "textureToAttribute", [-880, 0], { count: GOOEY_COLS * GOOEY_ROWS }, { label: "sample1" }),
+      node(
+        "goo",
+        "pointKernel",
+        [-580, 0],
+        {
+          capacity: GOOEY_COLS * GOOEY_ROWS,
+          seed: 37,
+          attributes: JSON.stringify([
+            { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
+          ]),
+          kernel: GOOEY_GOO_KERNEL,
+        },
+        { label: "goo1" },
+      ),
+      node(
+        "claim",
+        "pointTopology",
+        [-280, 0],
+        { connectivity: "grid", cols: GOOEY_COLS, rows: GOOEY_ROWS, wrapU: true, wrapV: false },
+        { label: "topology1" },
+      ),
+      node(
+        "skin",
+        "renderSurface",
+        [20, 0],
+        { color: [0.55, 0.85, 0.7, 1], eye: [0, 0.5, 2.6], lookAt: [0, 0, 0], fov: 55 },
+        { label: "surface1" },
+      ),
+      node("out", "output", [320, 0], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-sheet-ball", ["sheet", "out"], ["ball", "in"]),
+      edge("e-ball-bridge", ["ball", "out"], ["bridge", "points"]),
+      edge("e-wobble-bridge", ["wobble", "out"], ["bridge", "texture"]),
+      edge("e-bridge-goo", ["bridge", "out"], ["goo", "in"]),
+      edge("e-goo-claim", ["goo", "out"], ["claim", "points"]),
+      edge("e-claim-skin", ["claim", "out"], ["skin", "points"]),
+      edge("e-skin-out", ["skin", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 const murmurationDocument = document(
   "e16-murmuration",
   "E16 Murmuration",
@@ -1679,4 +1825,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   fluidDocument,
   prismDocument,
   murmurationDocument,
+  gooeyballDocument,
 ];

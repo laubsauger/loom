@@ -1,0 +1,252 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-ball-bridge": {
+        "id": "e-ball-bridge",
+        "source": {
+          "nodeId": "ball",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "points"
+        }
+      },
+      "e-bridge-goo": {
+        "id": "e-bridge-goo",
+        "source": {
+          "nodeId": "bridge",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "goo",
+          "portId": "in"
+        }
+      },
+      "e-claim-skin": {
+        "id": "e-claim-skin",
+        "source": {
+          "nodeId": "claim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "skin",
+          "portId": "points"
+        }
+      },
+      "e-goo-claim": {
+        "id": "e-goo-claim",
+        "source": {
+          "nodeId": "goo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "claim",
+          "portId": "points"
+        }
+      },
+      "e-sheet-ball": {
+        "id": "e-sheet-ball",
+        "source": {
+          "nodeId": "sheet",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ball",
+          "portId": "in"
+        }
+      },
+      "e-skin-out": {
+        "id": "e-skin-out",
+        "source": {
+          "nodeId": "skin",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-wobble-bridge": {
+        "id": "e-wobble-bridge",
+        "source": {
+          "nodeId": "wobble",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bridge",
+          "portId": "texture"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "ball": {
+        "definitionVersion": 1,
+        "id": "ball",
+        "label": "ball1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 4096,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* The grid is an INDEX SHEET; the sphere comes from the index, not the plane.\n     u runs col/COLS (not cols-1): column 0 and \"column COLS\" coincide, which is what\n     the wrapU seam cell downstream stitches together. v runs pole to pole. */\n  let col = f32(ctx.index % 64u);\n  let row = f32(ctx.index / 64u);\n  let u = col / 64.0;\n  let v = row / 63.0;\n  let theta = u * 6.28318530718;\n  let phi = v * 3.14159265359;\n  q.position = 0.85 * vec3f(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));\n  return q;\n}",
+          "seed": 37
+        },
+        "position": {
+          "x": -1180,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "bridge": {
+        "definitionVersion": 1,
+        "id": "bridge",
+        "label": "sample1",
+        "parameters": {
+          "count": 4096
+        },
+        "position": {
+          "x": -880,
+          "y": 0
+        },
+        "type": "textureToAttribute"
+      },
+      "claim": {
+        "definitionVersion": 1,
+        "id": "claim",
+        "label": "topology1",
+        "parameters": {
+          "cols": 64,
+          "connectivity": "grid",
+          "rows": 64,
+          "wrapU": true,
+          "wrapV": false
+        },
+        "position": {
+          "x": -280,
+          "y": 0
+        },
+        "type": "pointTopology"
+      },
+      "goo": {
+        "definitionVersion": 1,
+        "id": "goo",
+        "label": "goo1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
+          "capacity": 4096,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* ALONG THE NORMAL, and on a sphere the normal is free: normalize(position) is the\n     outward direction, no neighbour reads. Radial pushes stretch cells but never fold\n     them — that is why the ball deforms from inside and never tears. */\n  let normal = normalize(p.position);\n  /* p.sample is the bridge's pair, upstream-bound (T401): the noise value sampled at\n     THIS point's sphere position, fresh every frame. Centred so the ball breathes both\n     inward and outward around its rest radius. */\n  let amount = (p.sample.r - 0.5) * 0.5;\n  q.position = p.position + normal * amount;\n  q.sample = p.sample;\n  return q;\n}",
+          "seed": 37
+        },
+        "position": {
+          "x": -580,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 320,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "sheet": {
+        "definitionVersion": 1,
+        "id": "sheet",
+        "label": "grid1",
+        "parameters": {
+          "cols": 64,
+          "rows": 64
+        },
+        "position": {
+          "x": -1480,
+          "y": 0
+        },
+        "type": "pointGrid"
+      },
+      "skin": {
+        "definitionVersion": 1,
+        "id": "skin",
+        "label": "surface1",
+        "parameters": {
+          "color": [
+            0.55,
+            0.85,
+            0.7,
+            1
+          ],
+          "eye": [
+            0,
+            0.5,
+            2.6
+          ],
+          "fov": 55,
+          "lookAt": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 20,
+          "y": 0
+        },
+        "type": "renderSurface"
+      },
+      "wobble": {
+        "definitionVersion": 1,
+        "id": "wobble",
+        "label": "noise1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.45,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 37,
+          "speed": 0.3,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1480,
+          "y": -220
+        },
+        "type": "noise"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E20 Gooeyball",
+  "projectId": "example-e20-gooeyball",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 37,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

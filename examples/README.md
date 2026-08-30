@@ -28,6 +28,7 @@ happened:
 | [E12 Fluid](./E12-Fluid.md) | two temporal states — a velocity field carrying a dye; advection as a Displace; the pointer stirs both halves (§V182, §V236) |
 | [E13 Prism](./E13-Prism.md) | the showcase: dispersion through three refractions, per-point colour, LFO → Lag, Mouse → Lag, an expression (T364, §V179, §V71) |
 | [E16 Murmuration](./E16-Murmuration.md) | the SOP-chain showcase: generator → flock kernel → pointer kernel → instances; mixed §V197 ownership, by-reference tint across a node, draw-time group cull (T401, T333) |
+| [E20 Gooeyball](./E20-Gooeyball.md) | the 2D→3D crossing: animated noise → per-point attribute → displacement along the normal → a closed surface whose seam is a topology claim (T417, T301/T302) |
 
 ## Running them
 
