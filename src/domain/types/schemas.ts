@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { SELECTABLE_COLOR_FORMATS, TEXTURE_FORMATS } from "./node-definition.ts";
 import type { GraphPatchOperation } from "./patch.ts";
+import type { ParameterMode } from "./parameters.ts";
 
 /**
  * Runtime validation for the two boundaries where data arrives untrusted (§V10, §V66):
@@ -73,9 +74,31 @@ export const parameterBindingSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("expression"), source: z.string() }),
   z.object({ kind: z.literal("bind"), ref: z.string().min(1) }),
   z.object({ kind: z.literal("driven"), channel: z.string().min(1) }),
+  // T286/B92: the Map page. This variant was MISSING while the domain type had it, so a
+  // document carrying a mapped parameter failed the load boundary — saved fine, never
+  // opened again. The kind list below is pinned to the union in both directions so a
+  // seventh kind cannot repeat that.
+  z.object({
+    kind: z.literal("map"),
+    attribute: z.string().min(1),
+    channel: z.string().min(1).optional(),
+    port: z.string().min(1).optional(),
+  }),
 ]);
 
-export const parameterModeSchema = z.enum(["static", "expression", "bind", "driven"]);
+/**
+ * B92 (§V316, B45's shape at the FILE boundary): the mode list is written once and
+ * CHECKED against `ParameterMode` in both directions — `satisfies` catches a stray
+ * entry, the `MissingMode` line catches an absent one — so a sixth binding kind breaks
+ * this file at compile time instead of quietly rejecting saved documents that use it,
+ * which is exactly how `map` mode documents stopped opening.
+ */
+const PARAMETER_MODE_VALUES = ["static", "expression", "bind", "driven", "map"] as const satisfies readonly ParameterMode[];
+type MissingMode = Exclude<ParameterMode, (typeof PARAMETER_MODE_VALUES)[number]>;
+const _everyModeListed: MissingMode[] = [] as never[];
+void _everyModeListed;
+
+export const parameterModeSchema = z.enum(PARAMETER_MODE_VALUES);
 
 /**
  * The mode envelope (T202, §V108). A bare-value parameter never parses as this — a

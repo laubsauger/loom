@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { SCHEMA_VERSION, projectDocumentSchema, projectSettingsSchema } from "./schemas.ts";
+import {
+  SCHEMA_VERSION,
+  parameterModeSchema,
+  projectDocumentSchema,
+  projectSettingsSchema,
+  storedParameterSchema,
+} from "./schemas.ts";
+import { PARAMETER_MODES } from "../parameters/slots.ts";
 import { DEFAULT_COLOR_POLICY } from "./graph.ts";
 
 const minimalProject = () => ({
@@ -55,6 +62,57 @@ describe("projectDocumentSchema", () => {
     const doc = minimalProject();
     const parsed = projectDocumentSchema.parse(JSON.parse(JSON.stringify(doc)));
     expect(parsed).toEqual(doc);
+  });
+});
+
+/**
+ * T487/B92 — the file boundary knows EVERY binding kind the domain has.
+ *
+ * `map` existed in `ParameterBinding` and in `PARAMETER_MODES` (B45's pinned list) but
+ * not in these schemas — so a document carrying a mapped parameter SAVED fine and then
+ * never opened again: the loader's zod refused the slot. The mode list is now derived
+ * with a two-direction compile-time pin; these tests are the runtime half.
+ */
+describe("map bindings cross the file boundary (T487, B92)", () => {
+  const mapSlot = {
+    mode: "map",
+    bindings: {
+      map: { kind: "map", attribute: "position", channel: "y" },
+      static: { kind: "static", value: 0 },
+    },
+  };
+
+  it("a map slot parses as a stored parameter", () => {
+    expect(storedParameterSchema.safeParse(mapSlot).success).toBe(true);
+    // The optional pieces stay optional: a bare attribute is a legal mapping.
+    expect(
+      storedParameterSchema.safeParse({
+        mode: "map",
+        bindings: { map: { kind: "map", attribute: "position" } },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("a document holding a mapped parameter survives load", () => {
+    const project = minimalProject() as ReturnType<typeof minimalProject> & {
+      graph: { nodes: Record<string, unknown> };
+    };
+    project.graph.nodes["n1"] = {
+      id: "n1",
+      type: "renderPoints",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: { sizePixels: mapSlot },
+    };
+    expect(projectDocumentSchema.safeParse(project).success).toBe(true);
+  });
+
+  it("the schema's mode list IS the domain's mode list (§V316) — derived, both directions", () => {
+    expect([...parameterModeSchema.options].sort()).toEqual([...PARAMETER_MODES].sort());
+  });
+
+  it("an unknown mode still refuses", () => {
+    expect(storedParameterSchema.safeParse({ mode: "wat", bindings: {} }).success).toBe(false);
   });
 });
 

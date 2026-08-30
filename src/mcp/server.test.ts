@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { createGraphStore } from "../domain/graph/store.ts";
 import { createDomainBus } from "../domain/commands/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
-import { createAgentToolSurface } from "../agent/surface.ts";
+import { createAgentToolSurface, toolInputSchema } from "../agent/surface.ts";
 import { createMcpConnection } from "./server.ts";
 import { registerWebMcp } from "./webmcp.ts";
 import { toolListings } from "./published-tools.ts";
@@ -262,6 +263,82 @@ describe("WebMCP answers from the CURRENT surface (B93)", () => {
     // capability that depends on which pipe you arrived down is a bug, not a design.
     expect(webmcpNames).toEqual(toolListings(surface).map((tool) => tool.name));
     expect(webmcpNames).toEqual(surface.listTools().map((tool) => tool.name));
+  });
+});
+
+/**
+ * B91 (T487) — the published schema and the validator agree about record KEYS, for
+ * every tool. An agent reported parameter bindings as unusable and was right: the
+ * conversion dropped key constraints, so the contract said "any key" while zod
+ * demanded a mode enum — and for an agent the schema IS the documentation. The gate
+ * walks every tool's REAL zod tree rather than pinning one field, so the next keyed
+ * record is covered the day it is written.
+ */
+describe("record keys survive publication (B91, T487)", () => {
+  type DefLike = {
+    typeName?: string;
+    keyType?: z.ZodType<unknown>;
+    valueType?: z.ZodType<unknown>;
+    innerType?: z.ZodType<unknown>;
+    schema?: z.ZodType<unknown>;
+    type?: z.ZodType<unknown>;
+    options?: ReadonlyArray<z.ZodType<unknown>>;
+    values?: ReadonlyArray<string>;
+    shape?: () => Record<string, z.ZodType<unknown>>;
+  };
+  const defOf = (schema: z.ZodType<unknown>): DefLike =>
+    (schema as unknown as { _def: DefLike })._def;
+
+  const keyedRecords = (schema: z.ZodType<unknown>, out: z.ZodType<unknown>[] = []): z.ZodType<unknown>[] => {
+    const def = defOf(schema);
+    if (def.typeName === "ZodRecord" && def.keyType !== undefined && defOf(def.keyType).typeName === "ZodEnum") {
+      out.push(schema);
+    }
+    for (const child of [def.innerType, def.schema, def.type, def.valueType, def.keyType]) {
+      if (child !== undefined) keyedRecords(child, out);
+    }
+    for (const option of def.options ?? []) keyedRecords(option, out);
+    for (const field of Object.values(def.shape?.() ?? {})) keyedRecords(field, out);
+    return out;
+  };
+
+  it("every keyed record in every tool publishes its key enum as propertyNames", () => {
+    const { surface } = harness();
+    let checked = 0;
+    for (const tool of surface.listTools()) {
+      const schema = toolInputSchema(tool.name);
+      if (schema === null) continue;
+      for (const record of keyedRecords(schema)) {
+        const keys = defOf(defOf(record).keyType as z.ZodType<unknown>).values ?? [];
+        const emitted = zodToJsonSchema(record) as { propertyNames?: { enum?: string[] } };
+        expect(emitted.propertyNames?.enum, `${tool.name}: a keyed record published without its keys`).toEqual([
+          ...keys,
+        ]);
+        checked += 1;
+      }
+    }
+    // The gate must have found the record the report was about — zero would mean the
+    // walker went blind, not that the codebase went recordless.
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("set_parameters: what zod refuses is outside the published keys, what it accepts is inside", () => {
+    const schema = toolInputSchema("set_parameters");
+    if (schema === null) throw new Error("set_parameters has no schema");
+    const slot = (bindings: Record<string, unknown>) => ({
+      nodeId: "n1",
+      parameters: { level: { mode: "map", bindings } },
+    });
+    const good = slot({ map: { kind: "map", attribute: "position", channel: "y" } });
+    const bad = slot({ wat: { kind: "static", value: 1 } });
+    expect(schema.safeParse(good).success).toBe(true);
+    expect(schema.safeParse(bad).success).toBe(false);
+    // And the published contract says the same thing the validator does.
+    const record = keyedRecords(schema)[0];
+    if (record === undefined) throw new Error("no keyed record inside set_parameters");
+    const emitted = zodToJsonSchema(record) as { propertyNames?: { enum?: string[] } };
+    expect(emitted.propertyNames?.enum).toContain("map");
+    expect(emitted.propertyNames?.enum).not.toContain("wat");
   });
 });
 

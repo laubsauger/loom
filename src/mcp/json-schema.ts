@@ -16,6 +16,7 @@ interface ZodDefLike {
   readonly innerType?: z.ZodType<unknown>;
   readonly schema?: z.ZodType<unknown>;
   readonly type?: z.ZodType<unknown>;
+  readonly keyType?: z.ZodType<unknown>;
   readonly valueType?: z.ZodType<unknown>;
   readonly options?: ReadonlyArray<z.ZodType<unknown>>;
   readonly values?: ReadonlyArray<string>;
@@ -63,8 +64,14 @@ export function zodToJsonSchema(schema: z.ZodType<unknown>): Record<string, unkn
     case "ZodArray":
       return described({ type: "array", items: def.type === undefined ? {} : zodToJsonSchema(def.type) });
     case "ZodRecord":
+      // B91: the KEY constraint travels too. A keyed record (z.record(keySchema, value))
+      // used to publish as "any string key", so an agent reading the schema — for an
+      // agent the schema IS the documentation — sent keys the validator then refused.
       return described({
         type: "object",
+        ...(def.keyType === undefined || defOf(def.keyType).typeName === "ZodString"
+          ? {}
+          : { propertyNames: zodToJsonSchema(def.keyType) }),
         additionalProperties: def.valueType === undefined ? {} : zodToJsonSchema(def.valueType),
       });
     case "ZodUnion":

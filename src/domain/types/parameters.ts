@@ -224,7 +224,10 @@ export type ParameterBinding =
    * names the pointset input when a node declares more than one (§V306: optional
    * here, REQUIRED by validation the moment it is ambiguous).
    */
-  | { kind: "map"; attribute: string; channel?: string; port?: string };
+  // `| undefined` on both: the zod boundary's `.optional()` writes exactly that under
+  // exactOptionalPropertyTypes, every builder spread-omits the absent case, and every
+  // reader treats absent and undefined identically (T487).
+  | { kind: "map"; attribute: string; channel?: string | undefined; port?: string | undefined };
 
 export type ParameterMode = ParameterBinding["kind"];
 
