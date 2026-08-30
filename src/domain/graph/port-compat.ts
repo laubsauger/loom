@@ -50,7 +50,14 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
       // and refusing it would make every operator declare the whole schema. A missing or
       // mistyped attribute is refused outright rather than silently defaulted, because a
       // zero-filled "vel" that should have existed is a bug you debug in the render.
-      if (source.topology !== b.topology) return false;
+      // ABSENCE IS NOT A CLAIM, the same rule colour space follows below. A consumer that
+      // states no topology accepts any — `renderPoints` does not care whether its input
+      // came from a scatter or a grid. Strict inequality made `undefined` a VALUE, so the
+      // first producer honest enough to declare `topology: "points"` would have failed to
+      // connect to every consumer that had simply never mentioned topology. Nothing
+      // declares it today, so both sides are `undefined`, they compare equal, and the bug
+      // is invisible until the moment someone does the right thing.
+      if (b.topology !== undefined && source.topology !== b.topology) return false;
       const available = new Map(source.requires.map((attribute) => [attribute.name, attribute.type]));
       return b.requires.every((needed) => available.get(needed.name) === needed.type);
     }

@@ -151,6 +151,27 @@ describe("pointset attribute requirements", () => {
     ).toBe(false);
   });
 
+  it("accepts a DECLARED topology into a consumer that asks for none", () => {
+    // The reverse of the case above, and the one that was broken: strict inequality made
+    // `undefined` a value, so a producer honest enough to declare `topology: "points"`
+    // failed to connect to every consumer that had simply never mentioned topology —
+    // `renderPoints` among them. Invisible until now because nothing declares it, so both
+    // sides were `undefined` and compared equal. A consumer that states no topology has
+    // stated no requirement.
+    expect(
+      arePortsCompatible(
+        { kind: "pointset", requires: [P], topology: "points" },
+        { kind: "pointset", requires: [P] },
+      ),
+    ).toBe(true);
+    expect(
+      arePortsCompatible(
+        { kind: "pointset", requires: [P], topology: "triangles" },
+        { kind: "pointset", requires: [P] },
+      ),
+    ).toBe(true);
+  });
+
   it("accepts two topology-free pointsets", () => {
     expect(arePortsCompatible({ kind: "pointset", requires: [P] }, { kind: "pointset", requires: [P] })).toBe(true);
   });
