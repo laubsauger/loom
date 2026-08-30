@@ -15,7 +15,7 @@ import {
 } from "../../points/codegen.ts";
 import { parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
-import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
+import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, pointRayWgsl, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
@@ -1080,11 +1080,208 @@ export const textureToAttributeNode: NodeDefinition = {
 };
 
 /**
+ * T483 — the Ray POP: every point casts a ray against a HEIGHT FIELD and the hit comes
+ * back as attributes, ready for the next kernel — GPU-resident per point, the owner's
+ * "Ray POP not the SOP". Why a heightfield and not mesh intersection is argued on the
+ * shader (`pointRayWgsl`); the short form: a displaced grid has no closed-form
+ * intersection, brute force is P×2C, and a marched field is steps×P with the cost on a
+ * parameter. Rays default straight down (rain onto terrain); a pointset carrying a
+ * vec3f `direction` attribute aims each ray itself.
+ */
+export const pointRayNode: NodeDefinition = {
+  type: "pointRay",
+  version: 1,
+  title: "Ray",
+  category: "points",
+  description:
+    "Casts one ray per point against a height-field texture and writes hit, hitPosition, hitNormal and hitDistance as attributes. Cost = steps × points, every frame.",
+  tags: ["points", "ray", "raycast", "collision", "heightfield"],
+  inputs: [
+    {
+      id: "points",
+      label: "Points",
+      type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
+      description: "Ray origins. A vec3f `direction` attribute, when carried, aims each ray; otherwise the Direction parameter aims all of them.",
+    },
+    {
+      id: "field",
+      label: "Field",
+      type: RGBA_TEXTURE,
+      description:
+        "The height field: R is height (y = r × Height Scale + Height Offset) over world x,z ∈ [−Extent, +Extent]. Read with textureLoad — r32float data fields work on Tier B (§V57).",
+    },
+  ],
+  outputs: [
+    {
+      id: "out",
+      label: "Points",
+      type: {
+        kind: "pointset",
+        requires: [
+          { name: "position", type: "vec3f" },
+          { name: "hit", type: "f32" },
+          { name: "hitPosition", type: "vec3f" },
+          { name: "hitNormal", type: "vec3f" },
+          { name: "hitDistance", type: "f32" },
+        ],
+      },
+      description: "The same points, plus what each ray found. hit is 1 or 0; a miss carries the ray's end and the full distance.",
+    },
+  ],
+  parameters: {
+    steps: {
+      type: "number",
+      label: "Steps",
+      default: 32,
+      min: 1,
+      max: 256,
+      step: 1,
+      compileTime: true,
+      description: "March samples per ray. THE cost knob: steps × points texture reads per frame.",
+    },
+    maxDistance: { type: "number", label: "Max Distance", default: 8, min: 0.01, description: "Ray length in world units." },
+    direction: {
+      type: "vector",
+      size: 3,
+      label: "Direction",
+      default: [0, -1, 0],
+      description: "Every ray's direction — unless the incoming points carry a vec3f `direction` attribute, which wins.",
+    },
+    extent: {
+      type: "number",
+      label: "Extent",
+      default: 4,
+      min: 0.01,
+      description: "The field spans world x,z ∈ [−extent, +extent]. Explicit, like the shadow volume (V426): nothing knows your scene's bounds.",
+    },
+    heightScale: { type: "number", label: "Height Scale", default: 1, description: "y = texel.r × scale + offset." },
+    heightOffset: { type: "number", label: "Height Offset", default: 0 },
+  },
+  resolutionPolicy: { kind: "project" },
+  formatPolicy: { kind: "project" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, inputs, parameters } = readCompileInputs(context);
+    const points = inputs["points"];
+    const field = inputs["field"];
+    if (points === undefined || field === undefined) {
+      const what = points === undefined ? 'input port "points"' : 'input port "field"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    const upstream = points.pointset;
+    const position = upstream?.pairs["position"];
+    if (upstream === undefined || position === undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.edge",
+            message: `Node "${nodeId}": the points edge carries no resolved position pair (producer predates T296?).`,
+            nodeId,
+          },
+        ],
+      };
+    }
+    if (upstream.count !== undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.input",
+            message: `Node "${nodeId}": the incoming pointset carries a GPU live count; this ray pass runs a fixed capacity and would cast from the dead tail.`,
+            nodeId,
+            suggestion: "Ray a static set, or run the query inside the advanced kernel.",
+          },
+        ],
+      };
+    }
+    // The direction ATTRIBUTE wins when the edge carries one of the right type; a wrong
+    // type refuses rather than quietly falling back to the parameter (§V288).
+    const carried = upstream.pairs["direction"];
+    if (carried !== undefined && carried.type !== "vec3f") {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.input",
+            message: `Node "${nodeId}": the incoming \`direction\` attribute is ${carried.type ?? "untyped"}, and a ray needs vec3f — falling back to the parameter would silently ignore wired data.`,
+            nodeId,
+          },
+        ],
+      };
+    }
+    const count = upstream.capacity;
+    const steps = Math.max(1, Math.min(256, Math.round(readNumber(parameters, "steps", 32))));
+    const direction = ((): readonly [number, number, number] => {
+      const raw = parameters["direction"];
+      const list = Array.isArray(raw) ? raw : [0, -1, 0];
+      return [Number(list[0] ?? 0), Number(list[1] ?? -1), Number(list[2] ?? 0)];
+    })();
+    const pass: DispatchPassDescriptor = {
+      kind: "dispatch",
+      id: `${nodeId}:ray`,
+      shader: pointRayWgsl({ steps, directionAttribute: carried !== undefined }),
+      entryPoint: "main",
+      workgroups: [Math.ceil(count / 64), 1, 1],
+      buffers: [
+        { binding: "in_position", resourceId: position.pair, half: position.half },
+        ...(carried === undefined
+          ? []
+          : [{ binding: "in_direction", resourceId: carried.pair, half: carried.half }]),
+        { binding: "out_hit", resourceId: pointPairId(nodeId, "hit"), half: "write" },
+        { binding: "out_hitPosition", resourceId: pointPairId(nodeId, "hitPosition"), half: "write" },
+        { binding: "out_hitNormal", resourceId: pointPairId(nodeId, "hitNormal"), half: "write" },
+        { binding: "out_hitDistance", resourceId: pointPairId(nodeId, "hitDistance"), half: "write" },
+      ],
+      textures: [{ binding: "fieldTexture", resourceId: field.resource, sampled: "unfiltered" }],
+      uniforms: {
+        count,
+        extent: Math.max(0.01, readNumber(parameters, "extent", 4)),
+        heightScale: readNumber(parameters, "heightScale", 1),
+        heightOffset: readNumber(parameters, "heightOffset", 0),
+        maxDistance: Math.max(0.01, readNumber(parameters, "maxDistance", 8)),
+        direction: [direction[0], direction[1], direction[2], 0],
+      },
+      uniformBinding: "rayFrame",
+      nodeId,
+    };
+
+    return {
+      passes: [pass],
+      scratch: [
+        { key: "hit", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["f32"], capacity: count },
+        { key: "hitPosition", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
+        { key: "hitNormal", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
+        { key: "hitDistance", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["f32"], capacity: count },
+      ],
+      pointsets: {
+        out: {
+          pairs: {
+            ...upstream.pairs,
+            hit: { pair: pointPairId(nodeId, "hit"), half: "write" as const, type: "f32" },
+            hitPosition: { pair: pointPairId(nodeId, "hitPosition"), half: "write" as const, type: "vec3f" },
+            hitNormal: { pair: pointPairId(nodeId, "hitNormal"), half: "write" as const, type: "vec3f" },
+            hitDistance: { pair: pointPairId(nodeId, "hitDistance"), half: "write" as const, type: "f32" },
+          },
+          capacity: count,
+          ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
+        },
+      },
+    };
+  },
+};
+
+/**
  * Exported separately from `coreNodeDefinitions` until the compiler accepts
  * dispatch/draw emission and bufferPair scratch (see module doc).
  */
 export const pointNodeDefinitions: readonly NodeDefinition[] = [
   pointKernelNode,
+  pointRayNode,
   textureToAttributeNode,
   renderPointsNode,
 ];
+
+

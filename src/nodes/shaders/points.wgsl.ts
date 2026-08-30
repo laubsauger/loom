@@ -177,3 +177,99 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let texel = vec2i(uv * (dims - vec2f(1.0)));
   out_sample[index] = textureLoad(sourceTexture, texel, 0);
 }`;
+
+/**
+ * T483 — the RAY POP: every point casts one ray against a HEIGHT FIELD and writes what
+ * it hit. GPU-resident per point (TD's Ray POP, not the SOP), and deliberately a
+ * heightfield rather than mesh intersection: a grid surface is analytic in
+ * CONNECTIVITY but its positions are arbitrary displaced buffers (E20's whole point),
+ * so no closed form exists and brute-force ray-triangle is P×2C tests a frame.
+ * A marched field costs steps×P — visible, controllable — and covers the scenes we
+ * build: rain onto terrain, sparks hugging a fluid surface. Exact mesh intersection is
+ * specced when an example demands it, not before.
+ *
+ * THE FIELD'S CONVENTION, documented exactly: the texture spans world x,z ∈ [−extent,
+ * +extent] (u = x/(2·extent) + 0.5, v = z/(2·extent) + 0.5), and its R channel is
+ * height: y = r × heightScale + heightOffset. Read with textureLoad — data fields
+ * (r32float) work on Tier B (§V57).
+ *
+ * The march samples `steps` points along the ray; on the first below-surface sample it
+ * refines by ONE secant between the straddling pair — exact on a locally-linear
+ * surface, cheap everywhere. A miss writes hit = 0 with the ray's end, so downstream
+ * kernels can branch without a sentinel convention.
+ */
+export function pointRayWgsl(options: { steps: number; directionAttribute: boolean }): string {
+  const steps = Math.max(1, Math.floor(options.steps));
+  const directionDeclaration = options.directionAttribute
+    ? "@group(0) @binding(2) var<storage, read> in_direction: array<vec3f>;\n"
+    : "";
+  const directionExpression = options.directionAttribute
+    ? "normalize(in_direction[index])"
+    : "normalize(rayFrame.direction.xyz)";
+  const outBase = options.directionAttribute ? 3 : 2;
+  return `struct RayFrame {
+  count: u32,
+  extent: f32,
+  heightScale: f32,
+  heightOffset: f32,
+  maxDistance: f32,
+  direction: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> rayFrame: RayFrame;
+@group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
+${directionDeclaration}@group(0) @binding(${outBase}) var<storage, read_write> out_hit: array<f32>;
+@group(0) @binding(${outBase + 1}) var<storage, read_write> out_hitPosition: array<vec3f>;
+@group(0) @binding(${outBase + 2}) var<storage, read_write> out_hitNormal: array<vec3f>;
+@group(0) @binding(${outBase + 3}) var<storage, read_write> out_hitDistance: array<f32>;
+@group(0) @binding(${outBase + 4}) var fieldTexture: texture_2d<f32>;
+
+fn heightAt(x: f32, z: f32) -> f32 {
+  let uv = clamp(vec2f(x, z) / (2.0 * rayFrame.extent) + vec2f(0.5), vec2f(0.0), vec2f(1.0));
+  let dims = vec2f(textureDimensions(fieldTexture, 0));
+  let r = textureLoad(fieldTexture, vec2i(uv * (dims - vec2f(1.0))), 0).r;
+  return r * rayFrame.heightScale + rayFrame.heightOffset;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= rayFrame.count) {
+    return;
+  }
+  let origin = in_position[index];
+  let direction = ${directionExpression};
+  let stepLength = rayFrame.maxDistance / ${steps}.0;
+
+  var previous = origin;
+  var previousAbove = origin.y - heightAt(origin.x, origin.z);
+  var hit = 0.0;
+  var where3 = origin + direction * rayFrame.maxDistance;
+  var travelled = rayFrame.maxDistance;
+
+  for (var step = 1u; step <= ${steps}u; step += 1u) {
+    let sample = origin + direction * (stepLength * f32(step));
+    let above = sample.y - heightAt(sample.x, sample.z);
+    if (previousAbove > 0.0 && above <= 0.0) {
+      /* The straddling pair: one secant — exact where the surface is locally linear. */
+      let t = previousAbove / max(previousAbove - above, 1e-6);
+      where3 = previous + (sample - previous) * t;
+      travelled = stepLength * (f32(step - 1u) + t);
+      hit = 1.0;
+      break;
+    }
+    previous = sample;
+    previousAbove = above;
+  }
+
+  /* The field's normal from its own gradient — two taps per axis, world-space epsilon. */
+  let e = rayFrame.extent / 128.0;
+  let dhdx = (heightAt(where3.x + e, where3.z) - heightAt(where3.x - e, where3.z)) / (2.0 * e);
+  let dhdz = (heightAt(where3.x, where3.z + e) - heightAt(where3.x, where3.z - e)) / (2.0 * e);
+
+  out_hit[index] = hit;
+  out_hitPosition[index] = where3;
+  out_hitNormal[index] = select(vec3f(0.0, 1.0, 0.0), normalize(vec3f(-dhdx, 1.0, -dhdz)), hit > 0.5);
+  out_hitDistance[index] = travelled;
+}`;
+}

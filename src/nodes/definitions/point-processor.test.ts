@@ -288,3 +288,65 @@ describe("the field input reaches the kernel's pass (T477)", () => {
     expect(refusal?.message).toContain("field input");
   });
 });
+
+describe("the Ray POP casts against a height field (T483)", () => {
+  const attrs = JSON.stringify([
+    { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  ]);
+  const rayGraph = (kernelAttrs = attrs) =>
+    chainGraph(
+      [
+        node("terrain", "noise", {}),
+        node("src", "pointKernel", { capacity: 64, attributes: kernelAttrs, kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  return p;\n}" }),
+        node("ray", "pointRay", {}),
+        node("draw", "renderPoints", { count: 64 }),
+        node("out", "output", {}),
+      ],
+      [
+        ["src", "out", "ray", "points"],
+        ["terrain", "out", "ray", "field"],
+        ["ray", "out", "draw", "points"],
+        ["draw", "out", "out", "input"],
+      ],
+    );
+
+  it("emits one march pass and publishes the four hit attributes on the edge", () => {
+    const compiled = compile(rayGraph());
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const pass = compiled.passes.find(
+      (entry): entry is DispatchPassDescriptor => (entry as { id?: string }).id === "ray#ray:ray",
+    ) as DispatchPassDescriptor;
+    expect(pass).toBeDefined();
+    // The cost knob is baked: 32 steps default appears as the loop bound.
+    expect(pass.shader).toContain("step <= 32u");
+    expect(pass.textures?.[0]?.binding).toBe("fieldTexture");
+    // No direction attribute upstream: the parameter's uniform aims every ray.
+    expect(pass.shader).toContain("rayFrame.direction.xyz");
+    expect(pass.buffers?.some((binding) => binding.binding === "in_direction")).toBe(false);
+  });
+
+  it("a carried vec3f direction attribute aims each ray itself", () => {
+    const withDirection = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      { name: "direction", type: "vec3f", default: [0, -1, 0] },
+    ]);
+    const compiled = compile(rayGraph(withDirection));
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const pass = compiled.passes.find(
+      (entry): entry is DispatchPassDescriptor => (entry as { id?: string }).id === "ray#ray:ray",
+    ) as DispatchPassDescriptor;
+    expect(pass.shader).toContain("in_direction[index]");
+    expect(pass.buffers?.some((binding) => binding.binding === "in_direction")).toBe(true);
+  });
+
+  it("a wrongly-typed direction attribute refuses rather than quietly using the parameter (§V288)", () => {
+    const withBadDirection = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      { name: "direction", type: "f32", default: [0] },
+    ]);
+    const compiled = compile(rayGraph(withBadDirection));
+    const refusal = compiled.diagnostics.find((d) => d.code === "node.points.input");
+    expect(refusal?.message).toContain("direction");
+    expect(refusal?.message).toContain("vec3f");
+  });
+});

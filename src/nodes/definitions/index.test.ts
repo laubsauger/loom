@@ -67,6 +67,8 @@ describe("core catalogue (T70, T40)", () => {
       "feedback",
       "cache",
       "pointKernel",
+      // T483: the Ray POP — one ray per point against a height field.
+      "pointRay",
       "textureToAttribute",
       "renderPoints",
       "null",
