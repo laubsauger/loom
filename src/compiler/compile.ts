@@ -43,6 +43,10 @@ import {
   targetResourceId,
 } from "./resources.ts";
 import { POINTS_PREVIEW_VERTEX_COUNT, pointsPreviewWgsl } from "../nodes/shaders/points-preview.wgsl.ts";
+// T532: the geometry preview draws through the scene Render's OWN shader builders, so
+// the preview and the render cannot drift about what a geometry looks like.
+import { sceneInstancesWgsl, sceneSurfaceWgsl } from "../nodes/shaders/scene-render.wgsl.ts";
+import { gridCellCounts, gridPointCount, parseTopology } from "../points/topology.ts";
 import {
   CAMERA_PREVIEW_VERTEX_COUNT,
   SCENE_PREVIEW_BALL_VERTEX_COUNT,
@@ -127,6 +131,27 @@ const SCENE_PREVIEW_CAMERA = viewProjection([0, 0, 2.6], [0, 0, 0], {
 });
 const SCENE_PREVIEW_EYE = [0, 0, 2.6, 0] as const;
 const SCENE_PREVIEW_BACKGROUND = [0.055, 0.06, 0.075, 1] as const;
+/** The eye `POINTS_PREVIEW_CAMERA` looks from — the geometry preview's specular needs it. */
+const GEOMETRY_PREVIEW_EYE = [1.7, 1.2, 2.4, 0] as const;
+/**
+ * T532/T444 (§V384): one full-target triangle pair at far depth, painting the backdrop.
+ *
+ * The ball and camera previews paint their own background inside the draw; the Render's
+ * geometry shaders — which the geometry preview reuses verbatim — do not, so it gets the
+ * Render's own backdrop pass instead. An unlit object on unpainted black is no preview.
+ */
+const SCENE_PREVIEW_BACKDROP_WGSL = `struct Backdrop { color: vec4f };
+@group(0) @binding(0) var<uniform> backdrop: Backdrop;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.999, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4f { return backdrop.color; }`;
 const SCENE_PREVIEW_AMBIENT = 0.08;
 /** Straight down the preview axis: |N·L| = 1 at the ball's centre. */
 const SCENE_PREVIEW_KEY = { direction: [0, 0, -1] as const, color: [1, 0.96, 0.9] as const, intensity: 0.85 };
@@ -1397,26 +1422,33 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     }
 
     /*
-     * T462 (§V85): a SCENE PAYLOAD output — camera, light, material — previews as its
-     * own payload in a tiny stock scene, whenever a preview sink watches it. Keyed on
-     * the PAYLOAD KIND, never the node type (§V316/§V319), exactly as the pointset
+     * T462 (§V85): a SCENE PAYLOAD output — camera, light, geometry, material — previews
+     * as its own payload in a tiny stock scene, whenever a preview sink watches it. Keyed
+     * on the PAYLOAD KIND, never the node type (§V316/§V319), exactly as the pointset
      * splat above keys on the port kind. Gated on the same sink set (§V309): off costs
      * nothing — no pass, no target, no bytes.
      *
-     * Geometry ("scene" payloads) deliberately does NOT preview: its shape is already
-     * the upstream pointset's splat, its material is the material node's ball, and what
-     * it uniquely adds — the pairing — is what the render it feeds shows.
+     * T532 added GEOMETRY, and the reason it was missing is the reason this comment now
+     * names all four: T462 shipped three variants and stated the fourth as a decision —
+     * "its shape is already the upstream splat, its material is the material node's ball"
+     * — which was true of the PARTS and false of the THING. A geometry node's whole job
+     * is the pairing plus how it is worn: the instance shape and scale, and the material
+     * overrides it composes onto the referenced material. Neither is visible anywhere
+     * upstream, so the node showed nothing and read as broken (§V437: a requirement
+     * delivered kind-by-kind is not delivered; `SCENE_PAYLOAD_KINDS` is now iterable and
+     * `scene-preview.test.ts` fails for kind N+1 until someone writes its variant).
      *
-     * Everything analytic (no buffers); a material's map textures bind because they ARE
-     * its look, and the wires that carry them keep their producers alive. Payload
-     * values land as uniforms with the render's own field names, so an orbiting light
-     * animates its preview as a value update (§V5) and never a rebuild.
+     * The first three are analytic (no buffers); a material's map textures bind because
+     * they ARE its look, and the wires that carry them keep their producers alive.
+     * Geometry binds its position pair, because a geometry with no points is not a
+     * geometry. Payload values land as uniforms with the render's own field names, so an
+     * orbiting light animates its preview as a value update (§V5) and never a rebuild.
      */
     for (const port of definition.outputs) {
       const key = outputKey(nodeId, port.id);
       if (!previewSinkKeys.has(key)) continue;
       const payload = sceneInfoByOutput.get(key);
-      if (payload === undefined || payload.kind === "geometry") continue;
+      if (payload === undefined) continue;
       // T502: same rule, same helper — a camera, light or material preview is synthesized
       // exactly like the splat, so it renders at the same size. This is the half of §V437
       // that matters: the policy reaches the NEXT preview kind by construction.
@@ -1471,6 +1503,139 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             light0Vector: [...(light.type === "point" ? light.position : light.direction), 0],
           },
         });
+      } else if (payload.kind === "geometry") {
+        /*
+         * T532 — GEOMETRY: the object itself, in the pointset splat's three-quarter
+         * framing, under the material preview's own key and fill.
+         *
+         * Two things had to be visible or this variant would exist and still fail the
+         * owner: INSTANCING (the primitive worn per point, and its scale) and the
+         * MATERIAL OVERRIDES the node composed onto its referenced material. Both come
+         * from the payload, and both reach the picture because this reuses the scene
+         * Render's OWN shader builders rather than a preview-shaped imitation — the
+         * preview and the render cannot drift about what a geometry looks like.
+         *
+         * The backdrop is a separate first pass rather than the ball shader's built-in
+         * one, for the same reason the Render has one (T444, §V384): these shaders paint
+         * no background, and an unlit object on unpainted black is not a preview. It
+         * writes at z = 0.999 and clears; the object draws over it without clearing.
+         *
+         * `points` mode gets the SPLAT, which is what "points" means and what the
+         * pointset preview already draws — rather than the Render's refusal, which is
+         * about a mode the scene render has no pipeline for. A preview that showed
+         * nothing for one of three modes would be this task's own bug, one level down.
+         */
+        const position = payload.pairs["position"];
+        if (position === undefined) continue;
+        const material = payload.material;
+        const geometryModel =
+          material.model === "unlit"
+            ? ("unlit" as const)
+            : material.model === "phong" || material.model === "pbr"
+              ? ("phong" as const)
+              : ("lambert" as const);
+        // T428's pbr-through-phong, exactly as the Render maps it (scene.ts).
+        const geometrySpecular =
+          material.model === "pbr"
+            ? ([
+                1 + (material.baseColor[0] - 1) * material.metallic,
+                1 + (material.baseColor[1] - 1) * material.metallic,
+                1 + (material.baseColor[2] - 1) * material.metallic,
+              ] as const)
+            : material.specularColor;
+        const geometryShininess = material.model === "pbr" ? 96 : material.shininess;
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}#scenePreviewBackdrop:${port.id}`,
+          nodeId,
+          shader: SCENE_PREVIEW_BACKDROP_WGSL,
+          target: previewId,
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 6,
+          uniforms: { color: [...SCENE_PREVIEW_BACKGROUND] },
+          uniformBinding: "backdrop",
+          clear: true,
+        });
+        const geometryUniforms = {
+          viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+          eye: [...GEOMETRY_PREVIEW_EYE],
+          ambientColor: [1, 1, 1, SCENE_PREVIEW_AMBIENT],
+          baseColor: [...material.baseColor],
+          specular: [...geometrySpecular, geometryShininess],
+          material: [material.metallic, material.roughness, 0, 0],
+          light0Meta: [0, SCENE_PREVIEW_KEY.intensity, 0, 0],
+          light0Color: [...SCENE_PREVIEW_KEY.color, 0],
+          light0Vector: [...SCENE_PREVIEW_KEY.direction, 0],
+          light1Meta: [0, SCENE_PREVIEW_FILL.intensity, 0, 0],
+          light1Color: [...SCENE_PREVIEW_FILL.color, 0],
+          light1Vector: [...SCENE_PREVIEW_FILL.direction, 0],
+        };
+        const geometryBuffers = [
+          { binding: "positions", resourceId: position.pair, half: position.half },
+        ];
+        if (payload.mode === "points") {
+          passes.push({
+            ...passBase,
+            clear: false,
+            shader: pointsPreviewWgsl({ counted: payload.count !== undefined }),
+            vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
+            instances: payload.capacity,
+            buffers: [
+              ...geometryBuffers,
+              ...(payload.count === undefined
+                ? []
+                : [{ binding: "counts", resourceId: payload.count.buffer }]),
+            ],
+            uniforms: {
+              viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+              pointSize: POINTS_PREVIEW_POINT_SIZE,
+            },
+            blend: "alpha",
+          });
+        } else if (payload.mode === "instances") {
+          const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+          passes.push({
+            ...passBase,
+            clear: false,
+            // Maps are refused on instances at the Render (no uv yet), so they are not
+            // offered here either — the preview promises exactly what the render draws.
+            shader: sceneInstancesWgsl({ model: geometryModel, lightCount: 2 }),
+            vertexCount: 36,
+            instances: Math.max(1, payload.capacity),
+            buffers: geometryBuffers,
+            uniforms: {
+              ...geometryUniforms,
+              instance: [
+                instance.scale,
+                instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1,
+                0,
+                0,
+              ],
+            },
+          });
+        } else {
+          // Surface: the same grid the Render addresses. A payload whose topology is not
+          // a grid, or whose grid overruns its capacity, is what the Render refuses by
+          // name — so it gets the backdrop and no object, never a plausible wrong shape.
+          const parsed =
+            typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
+          if (parsed === null || parsed.kind !== "grid") continue;
+          if (gridPointCount(parsed) > payload.capacity) continue;
+          const topology = parsed;
+          const cells = gridCellCounts(topology);
+          passes.push({
+            ...passBase,
+            clear: false,
+            shader: sceneSurfaceWgsl({ model: geometryModel, lightCount: 2 }),
+            vertexCount: cells.cellsU * cells.cellsV * 6,
+            buffers: geometryBuffers,
+            uniforms: {
+              ...geometryUniforms,
+              grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
+            },
+          });
+        }
       } else {
         // Material: the shaded ball under the fixed warm key and cool fill — the
         // model/specular mapping is the scene Render's own (T428's pbr-through-phong).

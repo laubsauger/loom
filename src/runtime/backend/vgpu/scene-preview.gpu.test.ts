@@ -195,4 +195,67 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
     const mapped = images.get("mapped")!;
     expect(texel(mapped, CENTRE, CENTRE)).not.toEqual(texel(mapped, CENTRE - 40, CENTRE));
   }, 120_000);
+
+  /**
+   * T532 — the geometry variant, on a real device.
+   *
+   * The compiler tests pin that the passes exist and carry the right values; this is the
+   * half they cannot answer, and the half T462's geometry hole actually failed: does
+   * anything reach the pixels? Three assertions, each of which a plausible half-fix would
+   * fail — a backdrop with no object (§V384's inverse), an object with no backdrop, and
+   * two geometries whose only difference is the thing the node uniquely decides.
+   */
+  it("a geometry previews its OWN object, and instancing changes the picture", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const geometry = (id: string, parameters: Record<string, unknown>) =>
+      graphOf(
+        [node("grid", "pointGrid", { cols: 24, rows: 24 }, "grid1"), node(id, "geometry", parameters, `${id}1`)],
+        { e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: id, portId: "points" } } },
+      );
+
+    const surface = (await renderPreviews(geometry("surf", { mode: "surface" }), [{ nodeId: "surf", portId: "out" }])).get("surf")!;
+    savePng("scene-preview-geometry-surface.png", surface);
+    // The BACKDROP is painted (§V384): a corner is the stock backdrop, not black.
+    expect(texel(surface, 2, 2)).toEqual([
+      Math.round(0.055 * 255),
+      Math.round(0.06 * 255),
+      Math.round(0.075 * 255),
+    ]);
+    // And the OBJECT is drawn over it: the centre is not the backdrop.
+    expect(texel(surface, CENTRE, CENTRE)).not.toEqual(texel(surface, 2, 2));
+
+    // Instancing is the thing a geometry node uniquely decides, and it must be VISIBLE:
+    // the same points worn as small boxes and as large octahedra are different pictures.
+    const small = (await renderPreviews(
+      geometry("small", { mode: "instances", shape: "box", scale: 0.02 }),
+      [{ nodeId: "small", portId: "out" }],
+    )).get("small")!;
+    const big = (await renderPreviews(
+      geometry("big", { mode: "instances", shape: "octahedron", scale: 0.12 }),
+      [{ nodeId: "big", portId: "out" }],
+    )).get("big")!;
+    savePng("scene-preview-geometry-instances.png", big);
+    expect(small).not.toEqual(big);
+    // Both draw something; neither is the backdrop alone.
+    for (const [name, bytes] of [["small", small], ["big", big]] as const) {
+      const ink = countDifferingFromBackdrop(bytes);
+      expect([name, ink > 0]).toEqual([name, true]);
+    }
+    // The bigger primitive covers strictly more of the tile — the scale reaches pixels.
+    expect(countDifferingFromBackdrop(big)).toBeGreaterThan(countDifferingFromBackdrop(small));
+  }, 120_000);
 });
+
+/** Texels that are not the painted backdrop — "how much object is in this picture". */
+function countDifferingFromBackdrop(bytes: Uint8Array): number {
+  const backdrop = texel(bytes, 2, 2);
+  let count = 0;
+  for (let y = 0; y < EDGE; y += 1) {
+    for (let x = 0; x < EDGE; x += 1) {
+      const here = texel(bytes, x, y);
+      if (here[0] !== backdrop[0] || here[1] !== backdrop[1] || here[2] !== backdrop[2]) count += 1;
+    }
+  }
+  return count;
+}

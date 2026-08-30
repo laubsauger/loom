@@ -4,7 +4,8 @@ import { compileGraph } from "./index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { cameraPayloadMatrix } from "../domain/geometry/camera.ts";
-import { DEFAULT_MATERIAL } from "../domain/types/scene.ts";
+import { DEFAULT_MATERIAL, SCENE_PAYLOAD_KINDS } from "../domain/types/scene.ts";
+import type { ScenePayloadKind } from "../domain/types/scene.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { DrawPassDescriptor, TargetResourceDescriptor } from "../runtime/backend/plan.ts";
 
@@ -17,8 +18,19 @@ import type { DrawPassDescriptor, TargetResourceDescriptor } from "../runtime/ba
  *    same sink set as every other preview.
  *  - The payload reaches the pass as VALUES with the render's own field names, so the
  *    animate path drives an orbiting light's preview as a uniform write (§V5).
- *  - Keyed on the payload KIND (§V316/§V319): every camera/light/material — present
- *    and future — is covered by construction, and geometry deliberately is not.
+ *  - Keyed on the payload KIND (§V316/§V319): every camera/light/geometry/material —
+ *    present and future — is covered by construction.
+ *
+ * T532 replaced the last clause of that list. It used to read "and geometry deliberately
+ * is not", and the reasoning was that a geometry's shape is its upstream splat and its
+ * look is the material node's ball. True of the PARTS; false of the THING — the pairing,
+ * the instance shape and scale, and the material overrides the node composes are visible
+ * nowhere else, so the node showed nothing and read as broken. Absent, not broken, for as
+ * long as three of four kinds looked like a finished feature.
+ *
+ * The kind sweep at the bottom is the part that matters: it iterates
+ * `SCENE_PAYLOAD_KINDS`, which the type system keeps exhaustive, so kind N+1 fails HERE
+ * until someone writes its variant (§V437).
  */
 
 const registry = createNodeRegistry(allNodeDefinitions).view();
@@ -68,6 +80,19 @@ const compile = (graph: GraphDocument, sinks: Array<{ nodeId: string; portId: st
     capabilities: CAPABILITIES,
     sinks: sinks.map((sink) => ({ ...sink, kind: "preview" as const })),
   } as never);
+
+/** A geometry wearing whatever the case under test wants to see reach the picture. */
+function geometryGraph(parameters: Record<string, unknown>): GraphDocument {
+  return graphOf(
+    [
+      node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"),
+      node("geo", "geometry", parameters, "geo1"),
+    ],
+    {
+      e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
+    },
+  );
+}
 
 const previewPasses = (compiled: { passes: ReadonlyArray<unknown> }) =>
   compiled.passes.filter((pass) =>
@@ -142,14 +167,105 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
     expect(albedo?.resourceId).toBe("target:plate:out");
   });
 
-  it("geometry deliberately previews NOTHING — its picture lives elsewhere", () => {
-    const graph = graphOf(
-      [node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"), node("geo", "geometry", {}, "geo1")],
-      {
-        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
-      },
+  it("a watched geometry draws its OWN object, backdrop first (T532, §V384)", () => {
+    const compiled = compile(geometryGraph({ mode: "surface" }), [{ nodeId: "geo", portId: "out" }]);
+    const passes = compiled.passes.filter((pass) =>
+      String((pass as { id: string }).id).startsWith("geo#scenePreview"),
+    ) as DrawPassDescriptor[];
+    // Backdrop then object, and only the backdrop clears: an unlit object on unpainted
+    // black is not a preview (§V384, E25's invisible screen).
+    expect(passes.map((pass) => pass.id)).toEqual([
+      "geo#scenePreviewBackdrop:out",
+      "geo#scenePreview:out",
+    ]);
+    expect(passes.map((pass) => pass.clear)).toEqual([true, false]);
+    // It binds the geometry's OWN points — a geometry with none is not a geometry.
+    const object = passes[1];
+    expect(object?.buffers?.[0]?.binding).toBe("positions");
+    // The 8×8 grid the pointset declares: 7×7 cells, two triangles each.
+    expect(object?.vertexCount).toBe(7 * 7 * 6);
+    expect(object?.uniforms?.["grid"]).toEqual([8, 8, 0, 0]);
+  });
+
+  it("INSTANCING is visible: the worn primitive and its scale reach the picture (T532)", () => {
+    const compiled = compile(
+      geometryGraph({ mode: "instances", shape: "octahedron", scale: 0.25 }),
+      [{ nodeId: "geo", portId: "out" }],
     );
-    const compiled = compile(graph, [{ nodeId: "geo", portId: "out" }]);
-    expect(previewPasses(compiled)).toEqual([]);
+    const object = compiled.passes.find(
+      (pass) => (pass as { id: string }).id === "geo#scenePreview:out",
+    ) as DrawPassDescriptor;
+    // shape 2 = octahedron in the Render's own encoding, and the node's own scale — the
+    // two things a geometry node uniquely decides, neither visible anywhere upstream.
+    expect(object?.uniforms?.["instance"]).toEqual([0.25, 2, 0, 0]);
+    expect(object?.vertexCount).toBe(36);
+    // One instance per capacity slot, exactly as the Render draws it.
+    expect(object?.instances).toBe(4096);
+  });
+
+  it("MATERIAL OVERRIDES are visible: the composed material, not the referenced one (T532)", () => {
+    const compiled = compile(
+      // 0/1 fixed points of the display decode (§V56): the tint arrives exactly.
+      geometryGraph({ mode: "surface", tint: [1, 0, 0, 1] }),
+      [{ nodeId: "geo", portId: "out" }],
+    );
+    const object = compiled.passes.find(
+      (pass) => (pass as { id: string }).id === "geo#scenePreview:out",
+    ) as DrawPassDescriptor;
+    // The COMPOSED material: the default material's 0.8 grey multiplied by the node's own
+    // red tint. The referenced material alone would read [0.8, 0.8, 0.8, 1] — which is
+    // exactly the thing that was invisible before this preview existed.
+    expect(object?.uniforms?.["baseColor"]).toEqual([0.8, 0, 0, 1]);
+    // The material preview's own key and fill, so two geometries read against one rig.
+    expect(object?.uniforms?.["light0Meta"]).toBeDefined();
+    expect(object?.uniforms?.["light1Meta"]).toBeDefined();
+  });
+});
+
+/**
+ * THE GATE (T532, §V437).
+ *
+ * Three of four payload kinds had a preview and the fourth had none, for as long as
+ * nobody counted. `SCENE_PAYLOAD_KINDS` is kept exhaustive by the type system (a fifth
+ * kind added to the `ScenePayload` union does not compile until it is listed), and this
+ * iterates it — so a kind that exists and has no variant fails HERE rather than shipping
+ * as a node that quietly shows nothing.
+ */
+describe("every scene payload kind has a preview variant (T532, §V437)", () => {
+  /** One graph per kind, watched at its own output. No list of "kinds that preview". */
+  const fixtures: Readonly<Record<ScenePayloadKind, () => GraphDocument>> = {
+    camera: () => graphOf([node("subject", "camera", {}, "subject1")]),
+    light: () => graphOf([node("subject", "light", {}, "subject1")]),
+    material: () => graphOf([node("subject", "materialPhong", {}, "subject1")]),
+    geometry: () =>
+      graphOf(
+        [
+          node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"),
+          node("subject", "geometry", {}, "subject1"),
+        ],
+        {
+          e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "subject", portId: "points" } },
+        },
+      ),
+  };
+
+  it.each(SCENE_PAYLOAD_KINDS)("%s synthesizes a preview target and a draw into it", (kind) => {
+    const compiled = compile(fixtures[kind](), [{ nodeId: "subject", portId: "out" }]);
+    expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+    const target = compiled.resources.find(
+      (resource) => resource.id === "preview:scene:subject:out",
+    ) as TargetResourceDescriptor | undefined;
+    expect([kind, target?.size]).toEqual([kind, [384, 384]]);
+    const draws = compiled.passes.filter(
+      (pass) =>
+        (pass as { kind: string }).kind === "draw" &&
+        (pass as { target?: string }).target === "preview:scene:subject:out",
+    );
+    expect([kind, draws.length > 0]).toEqual([kind, true]);
+    // And the row the preview system binds, or the tile has nothing to sample.
+    expect([
+      kind,
+      compiled.outputs.some((output) => output.resourceId === "preview:scene:subject:out"),
+    ]).toEqual([kind, true]);
   });
 });

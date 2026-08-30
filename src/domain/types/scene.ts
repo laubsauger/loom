@@ -108,6 +108,30 @@ export interface MaterialPayload {
 
 export type ScenePayload = CameraPayload | LightPayload | GeometryPayload | MaterialPayload;
 
+/**
+ * Every scene-payload kind, as a value (T532).
+ *
+ * The union above is a TYPE, so nothing could iterate it — and that is how T462 shipped
+ * previews for three of four kinds and nobody noticed the fourth. `geometry` had no
+ * preview variant at all, so a geometry node correctly showed nothing, for a year, with
+ * every suite green: absent, not broken (§V437's shape, one kind at a time).
+ *
+ * The two `satisfies` below make the array and the union each other's proof. A fifth kind
+ * added to `ScenePayload` fails to compile until it is listed here, and
+ * `scene-preview.test.ts` iterates THIS array to assert every kind has a preview variant
+ * — so the new kind then fails a test until someone writes one. Neither half can be
+ * skipped, and neither is a list anyone has to remember to update.
+ */
+export const SCENE_PAYLOAD_KINDS = ["camera", "light", "geometry", "material"] as const;
+
+export type ScenePayloadKind = (typeof SCENE_PAYLOAD_KINDS)[number];
+
+/** Bidirectional: every listed kind is a real payload kind, and every kind is listed. */
+const _kindsAreExhaustive: readonly ScenePayload["kind"][] = SCENE_PAYLOAD_KINDS satisfies readonly ScenePayload["kind"][];
+const _kindsAreComplete: ScenePayloadKind = null as unknown as ScenePayload["kind"];
+void _kindsAreExhaustive;
+void _kindsAreComplete;
+
 /** The default material: what a geometry with no material reference renders with. */
 export const DEFAULT_MATERIAL: MaterialPayload = {
   kind: "material",
