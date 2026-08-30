@@ -25,6 +25,11 @@ import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
  * under compaction; identity is the id attribute's value). No raw buffer access exists
  * in the contract; neighbor iteration arrives later as an addition to `PointCtx`, which
  * is exactly why the wrapper owns all loads and stores.
+ *
+ * `ctx.pointer` (T367) is the first OPTIONAL member: present only in a kernel that names
+ * it, so a graph that does not read the pointer generates exactly the text it generated
+ * before the member existed (§V309). Its four numbers are the shared frame block's, byte
+ * for byte — one publisher, one convention, §V182.
  */
 
 /** Bumped when the generated Point/PointCtx/process signature changes shape (§V77). */
@@ -107,6 +112,14 @@ export interface KernelModule {
   readonly buffers: ReadonlyArray<PointBufferBinding>;
   readonly contractVersion: number;
   readonly workgroupSize: number;
+  /**
+   * T367: whether this module's `KernelFrame` block carries the `pointer` member, i.e.
+   * whether the kernel asked for it. The emitting node MUST mirror this in the pass's
+   * `uniforms` record — vgpu writes uniform values BY NAME into the reflected layout, so
+   * a member with no value silently reads zero and a value with no member is silently
+   * dropped (the catalogue's uniform sweep is what holds the two together).
+   */
+  readonly usesPointer: boolean;
 }
 
 export interface KernelModuleFailure {
@@ -117,6 +130,23 @@ export interface KernelModuleFailure {
 export type KernelModuleResult = KernelModule | KernelModuleFailure;
 
 const PROCESS_SIGNATURE = /fn\s+process\s*\(\s*\w+\s*:\s*Point\s*,\s*\w+\s*:\s*PointCtx\s*\)\s*->\s*Point/;
+
+/**
+ * T367 (§V182, §V309): the POINTER is an OPTIONAL member of `PointCtx`, and it is
+ * optional for the reason every other stage on this family is — a member that appeared
+ * unconditionally would rewrite the `KernelFrame` block and the ctx constructor of every
+ * point graph that has ever shipped, structurally recompiling all of them for a field
+ * they never read. "Costs nothing by existing" is a sustained property, so the sixth
+ * stage keeps it too.
+ *
+ * DETECTED, not declared: the ctx parameter's NAME is the kernel author's (`ctx`, `c`,
+ * anything), so what is recognisable is the field ACCESS. Over-detection is harmless —
+ * a kernel that says `.pointer` anywhere gets a member it may not read, which costs one
+ * vec4f. Under-detection is LOUD: the kernel names a member the struct does not declare
+ * and Dawn refuses the module by name, which is the failure this codebase prefers over
+ * a zero that looks like a pointer parked in the corner (§V288).
+ */
+const POINTER_REFERENCE = /\.\s*pointer\b/;
 
 /**
  * PCG-based hash, the deterministic core of §V74. Everything about it is fixed on
@@ -294,6 +324,15 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
     return;
   }`;
 
+  /* T367: the pointer rides the same block the clock does, in the SAME packing the
+     shared frame block uses (x, y, buttons, unused) so the two carry identical numbers
+     (§V182). Appended last: `count` ends the block at 20 bytes and a vec4f aligns to
+     32, so no member that existed before this moves. */
+  const usesPointer = POINTER_REFERENCE.test(kernel) || POINTER_REFERENCE.test(group);
+  const framePointer = usesPointer ? "\n  pointer: vec4f," : "";
+  const ctxPointer = usesPointer
+    ? "\n  /* T367: viewer-normalised x, y (v DOWN, §V236), buttons, unused — the same\n     numbers the shared frame block hands every shader (§V182). */\n  pointer: vec4f,"
+    : "";
 
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
@@ -301,7 +340,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,
+  count: u32,${framePointer}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -318,7 +357,7 @@ struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,
+  frameIndex: u32,${ctxPointer}
 };
 
 ${RNG_WGSL}
@@ -331,7 +370,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""});
 ${invoke}
 ${stores}
 }
@@ -343,6 +382,7 @@ ${stores}
     buffers: bindings,
     contractVersion: lifecycle === undefined ? POINT_KERNEL_CONTRACT_VERSION : ADVANCED_KERNEL_CONTRACT_VERSION,
     workgroupSize,
+    usesPointer,
   };
 }
 
@@ -384,6 +424,10 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
   const workgroupSize = request.workgroupSize ?? DEFAULT_WORKGROUP_SIZE;
   if (errors.length > 0) return { ok: false, errors };
 
+  /* T367, the hook's half: same optional member, same detection, same reason (§V309) —
+     a hookless-then-hooked graph must not see its OTHER passes' text move either. */
+  const usesPointer = POINTER_REFERENCE.test(request.hook);
+
   const shaped = request.attributes.filter((attribute) => attribute.name !== request.flagsAttribute);
   const bindings: PointBufferBinding[] = [
     // In place: the read halves, where the copy passes left the newborns.
@@ -403,7 +447,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,
+  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -426,7 +470,7 @@ struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,
+  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}
 };
 
 ${RNG_WGSL}
@@ -445,13 +489,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   var p: Point;
 ${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
-  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
+  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""});
   let q = spawn(p, ctx);
 ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
 }
 `;
 
-  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize };
+  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer };
 }
 
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */

@@ -676,6 +676,22 @@ const slitScanDocument = document(
  * If spawning, compaction, the counted indirect draw or the hook's newborn-range
  * guard regress, this file is where it shows: a fountain that freezes, doubles, or
  * sprays identical particles.
+ *
+ * AND IT IS PLAYABLE (T367). The kernel reads `ctx.pointer`, so the cursor parts the
+ * spray — the first thing anyone tries with a particle system, and until T367 the one
+ * thing a point kernel structurally could not do: `PointCtx` carried index, count, time,
+ * delta and frameIndex, and no pointer at all. The push is a Gaussian rather than a
+ * radius with an edge, because a cutoff reads as a bug and a fade reads as air.
+ *
+ * The pointer costs the other examples NOTHING. A kernel that does not name it generates
+ * the text it generated before the member existed, block for block (§V309), so E1's and
+ * E13's plans are untouched by this file having grown a cursor.
+ *
+ * Determinism is unchanged in the sense §V45 means it — nothing reads a wall clock and the
+ * RNG is still hash(seed, id, frame) — but the fountain is now a function of the POINTER
+ * STREAM as well as the seed, exactly as E12's stirring force is. A replay feeds the same
+ * pointer and gets the same frames; a live run with a moving mouse does not reproduce a
+ * still one, and that is what "playable" costs.
  */
 const PARTICLE_FOUNTAIN_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
@@ -694,6 +710,16 @@ const PARTICLE_FOUNTAIN_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
     return q;
   }
   q.velocity = q.velocity + vec3f(0.0, -0.9, 0.0) * ctx.delta;
+  /* T367: the CURSOR parts the spray. \`ctx.pointer\` is the same four numbers the value
+     graph's Mouse node publishes and every fragment shader reads (§V182) — viewer-
+     normalised, v DOWN (§V236) — and the one conversion into this graph's clip space is
+     written HERE, because a kernel cannot see how it will be viewed. */
+  let cursor = vec3f(ctx.pointer.x * 2.0 - 1.0, 1.0 - ctx.pointer.y * 2.0, 0.0);
+  let away = q.position - cursor;
+  let distance = max(length(away), 0.0001);
+  /* Gaussian, not a cutoff radius: a hard edge reads as a bug, a fading push reads as air. */
+  let falloff = exp(-(distance * distance) / 0.09);
+  q.velocity = q.velocity + (away / distance) * (7.0 * falloff) * ctx.delta;
   q.position = q.position + q.velocity * ctx.delta;
   if (q.position.y < -1.1 || abs(q.position.x) > 1.25) {
     q.alive = 0u;

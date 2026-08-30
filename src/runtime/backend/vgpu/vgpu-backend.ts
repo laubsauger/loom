@@ -1403,16 +1403,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       }
 
       const active = program;
-      active.resources.shared.set(sharedUniformsFromFrame(frameInputs));
+      const shared = sharedUniformsFromFrame(frameInputs);
+      active.resources.shared.set(shared);
       // T172 convention: a dispatch pass's uniform block receives the frame fields each
       // render, merged over its static values (seed, count) — the KernelFrame contract,
       // fed from FrameInputs and nothing else (§V44).
+      //
+      // T367/§V182: the pointer travels the SAME route, and it is deliberately read off
+      // the object that was just handed to the shared block rather than re-derived from
+      // `frameInputs` — one expression fills both blocks, so a kernel and a fragment
+      // shader cannot come to disagree about where the cursor is. Passes whose block
+      // does not declare `pointer` ignore the key: vgpu writes by NAME into the layout
+      // it reflected, so this costs a graph that never asked for it nothing.
       for (const pass of active.passes) {
         if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) {
           applyUniforms(active, pass.id, {
             timeSeconds: frameInputs.frame.timeSeconds,
             deltaSeconds: frameInputs.frame.deltaSeconds,
             frameIndex: frameInputs.frame.frameIndex,
+            pointer: shared.pointer,
           });
         }
       }

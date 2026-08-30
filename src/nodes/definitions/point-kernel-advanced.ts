@@ -96,7 +96,8 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       multiline: true,
       compileTime: true,
-      description: "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). pointRand(pointId, salt) is available.",
+      description:
+        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). ctx.pointer (vec4f: x, y, buttons) is available to a kernel that names it. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -297,7 +298,14 @@ export const pointKernelAdvancedNode: NodeDefinition = {
                 half: binding.role === "in" ? ("read" as const) : ("write" as const),
               },
         ),
-        uniforms: { ...frameUniforms, seed: readNumber(parameters, "seed", 7), count: capacity },
+        // T367: the pointer entry exists exactly when the generated block declares it —
+        // the backend fills it per frame from the shared block's own value (§V182).
+        uniforms: {
+          ...frameUniforms,
+          seed: readNumber(parameters, "seed", 7),
+          count: capacity,
+          ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+        },
         uniformBinding: "kernelFrame",
         nodeId,
       },
@@ -347,7 +355,12 @@ export const pointKernelAdvancedNode: NodeDefinition = {
                     // newborns and where consumers bind (§V231).
                     { binding: binding.variable, resourceId: pointPairId(nodeId, binding.attribute), half: "read" as const },
               ),
-              uniforms: { ...frameUniforms, seed: readNumber(parameters, "seed", 7), count: capacity },
+              uniforms: {
+                ...frameUniforms,
+                seed: readNumber(parameters, "seed", 7),
+                count: capacity,
+                ...(hookModule.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+              },
               uniformBinding: "kernelFrame",
               nodeId,
             },

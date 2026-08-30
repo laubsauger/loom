@@ -166,7 +166,8 @@ export const pointKernelNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       multiline: true,
       compileTime: true,
-      description: "fn process(p: Point, ctx: PointCtx) -> Point. pointRand(pointId, salt) is available.",
+      description:
+        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — and pointer (vec4f: x, y, buttons) for a kernel that names it. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -235,6 +236,10 @@ export const pointKernelNode: NodeDefinition = {
         frameIndex: 0,
         seed: readNumber(parameters, "seed", 7),
         count: capacity,
+        // T367: present exactly when the generated block declares it. The backend
+        // overwrites it every frame from the SAME value the shared block gets (§V182);
+        // this entry only reserves the name, because vgpu matches uniforms by name.
+        ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
       },
       uniformBinding: "kernelFrame",
       nodeId,
@@ -337,6 +342,75 @@ export function resolveGroupPredicate(
     binds.push({ attribute, type: entry.type, pair: entry.pair, half: entry.half });
   }
   return { expression, binds };
+}
+
+/**
+ * T364/T369: resolves a map on the COMPOUND HEAD `color` against the TYPED edge payload.
+ *
+ * ONE definition, because there are now two renderers that honour it (§V109): a refusal
+ * worded differently on `renderPoints` and on `renderInstances` is two answers to the
+ * same question, and the map's whole promise is that the same binding means the same
+ * thing wherever a colour is drawn. Every failure is §V288-shaped — by name, saying what
+ * the pointset actually provides — and there is no silent fall-back to the retained
+ * static, which is the failure a per-point colour cannot show you (the picture stays
+ * plausible; it is simply the wrong colour).
+ *
+ * `pointsPort` is the node's own pointset input id: §V306's `port` names WHICH pointset
+ * when a node has several, and naming one that is not this node's is a mistake said out
+ * loud rather than ignored.
+ */
+export function resolveColorMap(
+  nodeId: string,
+  binding: { attribute: string; channel?: string; port?: string } | undefined,
+  pointset:
+    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
+    | undefined,
+  pointsPort: string,
+):
+  | { map: { pair: string; half: "read" | "write" } | undefined }
+  | { refusal: CompiledNodeDescription } {
+  if (binding === undefined) return { map: undefined };
+  const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
+    refusal: {
+      passes: [],
+      diagnostics: [
+        {
+          severity: "error",
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+    },
+  });
+  if (binding.port !== undefined && binding.port !== pointsPort) {
+    return refuse(`color maps port "${binding.port}", but the only pointset input is "${pointsPort}".`);
+  }
+  if (binding.channel !== undefined) {
+    return refuse(
+      `color maps the whole compound; a channel belongs on a component slot ("color.r"), not the head.`,
+    );
+  }
+  const available = Object.keys(pointset?.pairs ?? {}).sort();
+  const entry = pointset?.pairs[binding.attribute];
+  if (entry === undefined) {
+    return refuse(
+      `color maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
+      available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
+    );
+  }
+  if (entry.type === undefined) {
+    return refuse(
+      `color maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
+    );
+  }
+  if (entry.type !== "vec4f") {
+    return refuse(
+      `color needs a vec4f attribute to map the whole compound; "${binding.attribute}" is ${entry.type}.`,
+    );
+  }
+  return { map: { pair: entry.pair, half: entry.half } };
 }
 
 export function countedDrawSupport(
@@ -516,6 +590,26 @@ export const renderPointsNode: NodeDefinition = {
       groupPredicate = resolvedGroup;
     }
 
+    // T369 (§V288, and §V109's "one answer"): renderInstances names a map it cannot
+    // honour, so this renderer must too — a map on any OTHER key here (a `blend`, a
+    // component slot like `color.r`) was silently ignored before, which is precisely the
+    // parameter that looks mapped and is not.
+    const unhonoured = Object.keys(parameterMaps)
+      .filter((key) => key !== "color" && key !== "sizePixels")
+      .sort();
+    if (unhonoured.length > 0) {
+      return {
+        passes: [],
+        diagnostics: unhonoured.map((key) => ({
+          severity: "error" as const,
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${key} is in map mode, but renderPoints maps only "color" and "sizePixels".`,
+          nodeId,
+          suggestion: "Switch it back to Constant, or drive it through the value graph instead.",
+        })),
+      };
+    }
+
     const sizeMap = parameterMaps["sizePixels"];
     let mappedSize: { entry: MapEntry; type: string; channel?: string } | undefined;
     if (sizeMap !== undefined) {
@@ -548,24 +642,11 @@ export const renderPointsNode: NodeDefinition = {
 
     // T364 (§V195 as amended): a map on the COMPOUND HEAD, type-matched — a vec4f
     // attribute drives the whole colour. LINEAR by convention: attributes are data
-    // (§V56/§V57); nothing display-decodes a per-point value.
-    const colorMap = parameterMaps["color"];
-    let mappedColor: { entry: MapEntry } | undefined;
-    if (colorMap !== undefined) {
-      const found = lookupMap("color", colorMap);
-      if (isRefusal(found)) return found;
-      if (colorMap.channel !== undefined) {
-        return refuseMap(
-          `color maps the whole compound; a channel belongs on a component slot ("color.r"), not the head.`,
-        );
-      }
-      if (found.type !== "vec4f") {
-        return refuseMap(
-          `color needs a vec4f attribute to map the whole compound; "${colorMap.attribute}" is ${found.type}.`,
-        );
-      }
-      mappedColor = found;
-    }
+    // (§V56/§V57); nothing display-decodes a per-point value. T369 moved the resolution
+    // to `resolveColorMap` so renderInstances refuses in the SAME words (§V109).
+    const resolvedColor = resolveColorMap(nodeId, parameterMaps["color"], points.pointset, "points");
+    if ("refusal" in resolvedColor) return resolvedColor.refusal;
+    const mappedColor = resolvedColor.map;
     // T322: a counted edge draws INDIRECTLY — the live count is GPU-resident, so a
     // tiny pass converts it to draw arguments and the draw reads them. A static edge
     // keeps the literal count (edge capacity clamped by the param).
@@ -625,7 +706,7 @@ export const renderPointsNode: NodeDefinition = {
           : [{ binding: "mapSizes", resourceId: mappedSize.entry.pair, half: mappedSize.entry.half }]),
         ...(mappedColor === undefined
           ? []
-          : [{ binding: "mapColors", resourceId: mappedColor.entry.pair, half: mappedColor.entry.half }]),
+          : [{ binding: "mapColors", resourceId: mappedColor.pair, half: mappedColor.half }]),
         ...(groupPredicate === undefined
           ? []
           : groupPredicate.binds.map((bind) => ({

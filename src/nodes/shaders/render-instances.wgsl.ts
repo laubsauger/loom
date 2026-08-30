@@ -19,10 +19,23 @@
 export const INSTANCE_VERTEX_COUNT = 36;
 
 export function renderInstancesWgsl(options?: {
+  /**
+   * T369: per-point COLOUR — a vec4f attribute drives the whole `color` compound, exactly
+   * as it does on renderPoints (T364). LINEAR by declaration (§V313): a point attribute is
+   * DATA, and nothing display-decodes a per-point value on its way to a pixel.
+   *
+   * Unlike the sprite shader, the params struct here can never empty out — `viewProjection`,
+   * `rotate`, `scale` and `shape` are not mappable — so the block stays and only `color`
+   * leaves it. Mapped, the colour rides VertexOut and the LIGHTING is applied to it
+   * unchanged: a per-point colour is still a lit solid, not a flat sprite, which is the
+   * whole reason to want it here rather than on renderPoints.
+   */
+  colorMap?: boolean;
   /** T333: draw-time group over `p.<attribute>` — binds resolved from the typed edge (§V308). */
   group?: { expression: string; binds: ReadonlyArray<{ attribute: string; type: string }> };
 }): string {
   const group = options?.group;
+  const colorMap = options?.colorMap === true;
   const groupBindings =
     group === undefined
       ? ""
@@ -54,24 +67,27 @@ ${group.binds.map((bind) => `  gp.${bind.attribute} = group_${bind.attribute}[in
     var gated: VertexOut;
     gated.position = vec4f(2.0, 2.0, 0.0, 1.0);
     gated.normal = vec3f(0.0, 0.0, 1.0);
-    return gated;
+${colorMap ? "    gated.color = vec4f(0.0);\n" : ""}    return gated;
   }
 `;
+  const colorBinding = colorMap
+    ? "@group(0) @binding(4) var<storage, read> mapColors: array<vec4f>;\n"
+    : "";
+  const colorExpr = colorMap ? "input.color" : "params.color";
   return `struct InstanceParams {
   viewProjection: mat4x4f,
-  color: vec4f,
-  rotate: vec3f,       // radians; applied X then Y then Z (published order)
+${colorMap ? "" : "  color: vec4f,\n"}  rotate: vec3f,       // radians; applied X then Y then Z (published order)
   scale: f32,
   shape: u32,          // 0=quad 1=box 2=octahedron
 };
 
 @group(0) @binding(0) var<uniform> params: InstanceParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${groupBindings}
+${colorBinding}${groupBindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
-};
+${colorMap ? "  @location(1) color: vec4f,\n" : ""}};
 
 /* Function-local var: WGSL only permits runtime indexing into var-stored arrays. */
 fn quadCorner(v: u32) -> vec2f {
@@ -160,7 +176,7 @@ ${groupGate}  let count = shapeVertexCount(params.shape);
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);
   out.normal = rotation * shapeNormal(params.shape, v);
-  return out;
+${colorMap ? "  out.color = mapColors[instance];\n" : ""}  return out;
 }
 
 const LIGHT_DIRECTION = vec3f(0.3713906, 0.7427813, 0.5570860); // normalize(2,4,3)
@@ -171,9 +187,9 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
   /* Two-sided lambert: a quad seen from behind still reads as lit geometry. */
   let lambert = abs(dot(normalize(input.normal), LIGHT_DIRECTION));
   let shade = AMBIENT + (1.0 - AMBIENT) * lambert;
-  return vec4f(params.color.rgb * shade, params.color.a);
+  return vec4f(${colorExpr}.rgb * shade, ${colorExpr}.a);
 }`;
 }
 
-/** The ungrouped spelling, kept as the constant its consumers always imported (§V309). */
+/** The plain spelling — no group, no colour map — kept as the constant its consumers always imported (§V309). */
 export const RENDER_INSTANCES_WGSL = renderInstancesWgsl();

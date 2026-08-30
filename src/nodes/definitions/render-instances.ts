@@ -5,7 +5,7 @@ import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL, renderInstancesWgsl } fro
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { countedDrawSupport, pointPairId, resolveGroupPredicate } from "./points.ts";
+import { countedDrawSupport, pointPairId, resolveColorMap, resolveGroupPredicate } from "./points.ts";
 
 /**
  * RenderInstances (T299): a procedural primitive on every point — Houdini's copy-to-
@@ -73,7 +73,14 @@ export const renderInstancesNode: NodeDefinition = {
       default: [0, 0, 0],
       description: "Degrees; applied X, then Y, then Z — the published order (§V198).",
     },
-    color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
+    color: {
+      type: "color",
+      label: "Color",
+      default: [1, 1, 1, 1],
+      space: "display",
+      description:
+        "T369: in Map mode a vec4f point attribute drives every instance's colour, LINEAR by declaration (§V313) — the lighting still applies.",
+    },
     eye: { type: "vector", size: 3, label: "Camera Eye", default: [0, 0, 3] },
     lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
     fov: { type: "number", label: "FOV", default: 60, min: 1, max: 179, unit: "degrees" },
@@ -91,7 +98,7 @@ export const renderInstancesNode: NodeDefinition = {
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
-    const { nodeId, outputs, inputs, parameters, resolution } = readCompileInputs(context);
+    const { nodeId, outputs, inputs, parameters, parameterMaps, resolution } = readCompileInputs(context);
     const target = outputs["out"];
     const points = inputs["points"];
     if (target === undefined || points === undefined) {
@@ -123,6 +130,29 @@ export const renderInstancesNode: NodeDefinition = {
       far: readNumber(parameters, "far", 100),
     });
 
+    // T369 (§V288): a map is STORABLE on any parameter, and a consumer that cannot honour
+    // one says so by name rather than drawing the retained static. `color` is the one this
+    // renderer honours; a map anywhere else here would otherwise be a parameter that looks
+    // mapped and is not — the exact silence §V288 was written against.
+    const unhonoured = Object.keys(parameterMaps).filter((key) => key !== "color").sort();
+    if (unhonoured.length > 0) {
+      return {
+        passes: [],
+        diagnostics: unhonoured.map((key) => ({
+          severity: "error" as const,
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${key} is in map mode, but renderInstances maps only "color".`,
+          nodeId,
+          suggestion: "Switch it back to Constant, or drive it through the value graph instead.",
+        })),
+      };
+    }
+
+    // T369/T364 (§V195 as amended): a vec4f attribute drives the whole colour compound.
+    const resolvedColor = resolveColorMap(nodeId, parameterMaps["color"], points.pointset, "points");
+    if ("refusal" in resolvedColor) return resolvedColor.refusal;
+    const mappedColor = resolvedColor.map;
+
     // T333: the draw-time group. Excluded instances collapse to zero-area primitives.
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
     let groupPredicate:
@@ -143,13 +173,18 @@ export const renderInstancesNode: NodeDefinition = {
       kind: "draw",
       id: `${nodeId}:instances`,
       shader:
-        groupPredicate === undefined
+        groupPredicate === undefined && mappedColor === undefined
           ? RENDER_INSTANCES_WGSL
           : renderInstancesWgsl({
-              group: {
-                expression: groupPredicate.expression,
-                binds: groupPredicate.binds.map(({ attribute, type }) => ({ attribute, type })),
-              },
+              ...(mappedColor === undefined ? {} : { colorMap: true }),
+              ...(groupPredicate === undefined
+                ? {}
+                : {
+                    group: {
+                      expression: groupPredicate.expression,
+                      binds: groupPredicate.binds.map(({ attribute, type }) => ({ attribute, type })),
+                    },
+                  }),
             }),
       target,
       topology: "triangle-list",
@@ -171,6 +206,9 @@ export const renderInstancesNode: NodeDefinition = {
           resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
           half: points.pointset?.pairs["position"]?.half ?? "write",
         },
+        ...(mappedColor === undefined
+          ? []
+          : [{ binding: "mapColors", resourceId: mappedColor.pair, half: mappedColor.half }]),
         ...(groupPredicate === undefined
           ? []
           : groupPredicate.binds.map((bind) => ({
@@ -179,9 +217,13 @@ export const renderInstancesNode: NodeDefinition = {
               half: bind.half,
             }))),
       ],
+      // A mapped colour LEAVES the uniform block, and the record must follow the struct
+      // exactly (the catalogue sweep pins that). The block itself never vanishes here —
+      // the camera, rotation, scale and shape are not mappable — which is the one way
+      // this differs from the sprite path.
       uniforms: {
         viewProjection: Array.from(matrix),
-        color: readColor(parameters, "color", [1, 1, 1, 1]),
+        ...(mappedColor === undefined ? { color: readColor(parameters, "color", [1, 1, 1, 1]) } : {}),
         rotate: rotate.map((degrees) => (degrees ?? 0) * DEGREES_TO_RADIANS),
         scale: readNumber(parameters, "scale", 0.05),
         shape: SHAPE_INDEX[typeof shapeParameter === "string" ? shapeParameter : "box"] ?? 1,

@@ -227,3 +227,76 @@ describe("attribute qualifiers (T287, §V75)", () => {
     expect(unknown.errors.join(" ")).toContain('unknown qualifier "sideways"');
   });
 });
+
+/**
+ * T367 — the pointer in `PointCtx` (§V182, §V309).
+ *
+ * Two claims, and the second is the one V309 exists to force. The member must APPEAR for
+ * a kernel that names it, with the block member behind it, and it must be ABSENT — text
+ * for text, not "roughly the same" — for every kernel that does not. A struct field that
+ * appeared unconditionally would move the ctx constructor and the `KernelFrame` block of
+ * every point graph ever saved, recompiling all of them once for a value they never read.
+ */
+describe("the pointer in PointCtx (T367)", () => {
+  const request = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position", "velocity"],
+    kernel: GRAVITY_KERNEL,
+  };
+
+  const POINTER_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let target = vec3f(ctx.pointer.x * 2.0 - 1.0, 1.0 - ctx.pointer.y * 2.0, 0.0);
+  q.velocity += (target - q.position) * ctx.delta;
+  q.position += q.velocity * ctx.delta;
+  return q;
+}`;
+
+  it("declares the member in BOTH structs and passes it, for a kernel that names it", () => {
+    const module = generateKernelModule({ ...request, kernel: POINTER_KERNEL });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesPointer).toBe(true);
+    // The uniform block carries it LAST: count ends the block at 20 bytes and a vec4f
+    // aligns to 32, so nothing that was already there moves.
+    expect(module.wgsl).toContain("  count: u32,\n  pointer: vec4f,\n};");
+    expect(module.wgsl).toContain("  frameIndex: u32,\n  /* T367");
+    expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.pointer);");
+  });
+
+  it("a GROUP predicate over the pointer brings the member in on its own", () => {
+    // The predicate is compiled into the same module and reads the same ctx, so the
+    // member has to follow the group even when `process` never mentions it.
+    const module = generateKernelModule({ ...request, group: "ctx.pointer.z > 0.5" });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesPointer).toBe(true);
+    expect(module.wgsl).toContain("pointer: vec4f,");
+  });
+
+  it("generates EXACTLY the pre-T367 text for a kernel that does not name it (§V309)", () => {
+    const module = generateKernelModule(request);
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.usesPointer).toBe(false);
+    expect(module.wgsl).not.toContain("pointer");
+    // The full pre-T367 spelling of both structs and the constructor, verbatim: a
+    // "not.toContain" alone would pass while a stray blank line rewrote the text.
+    expect(module.wgsl).toContain(`struct KernelFrame {
+  timeSeconds: f32,
+  deltaSeconds: f32,
+  frameIndex: u32,
+  seed: u32,
+  count: u32,
+};`);
+    expect(module.wgsl).toContain(`struct PointCtx {
+  /* Slot in the buffers — addressing, never identity (§V73). */
+  index: u32,
+  count: u32,
+  time: f32,
+  delta: f32,
+  frameIndex: u32,
+};`);
+    expect(module.wgsl).toContain(
+      "  let ctx = PointCtx(index, kernelFrame.count, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);",
+    );
+  });
+});

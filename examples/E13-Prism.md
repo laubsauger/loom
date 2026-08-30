@@ -110,14 +110,24 @@ of luminance across 0.6 uv, which is gentle.
 Stated rather than hidden, because a showcase is exactly where the temptation is to route
 around a rough edge:
 
-- **A point kernel cannot read the pointer.** `PointCtx` carries `index`, `count`, `time`,
-  `delta` and `frameIndex` — no pointer. So the mouse cannot pull on the swarm itself, and
-  the most obviously playable thing this composition wants is not expressible today. The
-  mouse drives the lens instead, which is a good use and a smaller one.
+- ~~**A point kernel cannot read the pointer.**~~ Fixed by T367: `PointCtx` now carries
+  `pointer` alongside `index`, `count`, `time`, `delta` and `frameIndex`, and it is the
+  same four numbers the value graph and every fragment shader read (§V182). E9 uses it —
+  the cursor parts the fountain's spray. This file still drives the lens with the mouse
+  rather than the swarm, because `roll1` spins the sprite image about the frame centre
+  after `sparks1` has drawn it, so a swarm gathered at the cursor would be rotated away
+  from it. Pulling on the swarm here wants the roll to move or go.
 - **The expression grammar is arithmetic only.** No `sin`, no `clamp`, no `min`. With `%`
   you can build a sawtooth and a wrap, and that is the ceiling; anything with a shape wants
   an LFO node. That is a real v1 boundary, not a gap in this file.
-- **Per-point colour is on `renderPoints`, not `renderInstances`.** So the swarm is 2D
-  additive sprites rather than lit 3D primitives with a camera. Both together — thousands of
-  individually coloured lit solids — is not available yet, and it is the obvious next thing
-  to want after looking at this.
+- ~~**Per-point colour is on `renderPoints`, not `renderInstances`.**~~ Fixed by T369:
+  `renderInstances` takes the same compound-head map, refusing in the same words, and the
+  lighting still runs over the mapped colour — thousands of individually coloured LIT
+  solids. This file stays on additive sprites because dispersion wants light that ADDS;
+  swapping the renderer is now a choice rather than a limit.
+
+- **Nothing can displace a generator's points.** `pointKernel` is a SOURCE — it has no
+  pointset input — so a kernel cannot deform points that came from somewhere else. That is
+  why the pointer-driven displacement is demonstrated on a kernel that makes its own points
+  (E9) rather than on E10's torus generator: `torus1 → kernel → renderInstances` is not a
+  graph anyone can currently draw.

@@ -396,6 +396,29 @@ describe("sizePixels in map mode — pscale (T286)", () => {
     expect(wrongPort.diagnostics?.[0]?.message).toContain('only pointset input is "points"');
   });
 
+  /**
+   * T369 (§V288): the same refusal renderInstances gives, because §V109 forbids two
+   * answers to one question. Map mode is offered on EVERY parameter, so before this a
+   * map on `blend` (or on a component slot like `color.r`, which nothing honours anywhere)
+   * compiled quietly and drew the retained static.
+   */
+  it("names a map it cannot honour rather than ignoring it", () => {
+    const result = renderPointsNode.compile(
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "sim" },
+        pointsets: edge,
+        parameters: { count: 64 },
+        parameterMaps: { "color.r": { attribute: "size" } },
+      }),
+    );
+    expect(result.passes).toEqual([]);
+    expect(result.diagnostics?.[0]?.message).toContain(
+      'color.r is in map mode, but renderPoints maps only "color" and "sizePixels"',
+    );
+  });
+
   it("unmapped stays byte-identical to what always shipped (T300's property)", () => {
     const result = renderPointsNode.compile(
       compileContext({ nodeId: "draw", inputs: ["points"], sources: { points: "sim" }, pointsets: edge, parameters: { count: 128 } }),
