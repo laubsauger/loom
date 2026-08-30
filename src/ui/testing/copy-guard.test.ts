@@ -107,6 +107,20 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     file: "src/editor/menus/context-menu-host.tsx",
     text: "This command is not available yet — no track has registered it.",
   },
+  /**
+   * B79 — pane CONTENT, and the most load-bearing sentence in the app.
+   *
+   * §V90 sends explanation to a tooltip carried by a label. There is no label here and no
+   * hover to give: the pane this replaces has just stopped, and the reader's actual first
+   * question is not "what broke" but "did I just lose my graph". Before this existed the
+   * answer was a white screen, and a user with no answer reloads the tab — which is the one
+   * action that DOES lose it. So this is a diagnostic, in the surface, at the moment it is
+   * needed, and it cannot be moved anywhere on demand.
+   */
+  {
+    file: "src/ui/primitives/error-boundary.tsx",
+    text: "The rest of the app is still running and your graph has not been changed.",
+  },
   {
     file: "src/app/app-shell.tsx",
     text: "Drag a divider to resize, double-click it to reset. A focused divider resizes with the arrow keys and collapses with Enter.",

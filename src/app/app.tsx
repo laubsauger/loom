@@ -14,7 +14,7 @@ import type { KeymapEnvironment } from "@editor/keymap/index.ts";
 import { ComponentLibrary, ExampleLibrary, useDocumentDirty } from "@editor/library/index.ts";
 import { CommandPalette } from "@editor/palette/index.ts";
 import { ProblemsPanel } from "@editor/shader-editor/index.ts";
-import { Button } from "@ui/index.ts";
+import { Button, ErrorBoundary } from "@ui/index.ts";
 import { UnsavedChangesDialog } from "@ui/primitives/unsaved-changes-dialog.tsx";
 import { AppRuntimeContext } from "./app-context.ts";
 import { createAppRuntime } from "./app-runtime.ts";
@@ -809,33 +809,63 @@ export function App({
               }
             />
           }
+          /*
+           * EVERY PANE IS CONTAINED (B79).
+           *
+           * There was no error boundary anywhere in `src/`, so a throw in any one surface
+           * unmounted the whole React root: a WHITE SCREEN, no message, and the user's
+           * unsaved graph gone with the tree that was showing it. The cost of a bug has to
+           * be the bug, not the document.
+           *
+           * The wrap is per-PANE and names the pane, because that name is the whole
+           * diagnostic: "the Inspector stopped" is a report, a blank window is not. Every
+           * other pane keeps rendering, the store is untouched, and "Reload this pane"
+           * re-renders just the failed subtree.
+           *
+           * WHY HERE rather than once inside `AppShell`, where the pane contents are
+           * already mapped over: this is the composition root, and it is the only place
+           * that knows which surface each element IS — the shell holds them by slot id.
+           * A single wrap in the shell's `PaneContent` map would be less repetitive and is
+           * the better long-term home; it belongs to whoever owns that map.
+           *
+           * A boundary catches RENDER and lifecycle throws only. An event handler that
+           * throws (a click, a blur) is not caught here — and does not white-screen either,
+           * so it is a different failure with a different fix (§V288: say which one this is).
+           */
           nodeLibrary={
-            <LibraryPane
-              portDrag={portDrag}
-              onClearPortDrag={clearPortDrag}
-              actions={graphActions}
-            />
+            <ErrorBoundary name="Node library">
+              <LibraryPane
+                portDrag={portDrag}
+                onClearPortDrag={clearPortDrag}
+                actions={graphActions}
+              />
+            </ErrorBoundary>
           }
           componentLibrary={
-            <ComponentLibrary
-              bus={runtime.bus}
-              context={runtime.invocation}
-              components={componentsView}
-              selection={selection}
-              onPlaced={onSelectionChange}
-            />
+            <ErrorBoundary name="Components">
+              <ComponentLibrary
+                bus={runtime.bus}
+                context={runtime.invocation}
+                components={componentsView}
+                selection={selection}
+                onPlaced={onSelectionChange}
+              />
+            </ErrorBoundary>
           }
           exampleLibrary={
-            <ExampleLibrary
-              bus={runtime.bus}
-              context={runtime.invocation}
-              dirty={dirty.dirty}
-            />
+            <ErrorBoundary name="Examples">
+              <ExampleLibrary
+                bus={runtime.bus}
+                context={runtime.invocation}
+                dirty={dirty.dirty}
+              />
+            </ErrorBoundary>
           }
           graphCanvas={
             // T145: ONE popup for the pane, opened by ONE command. Middle click is
             // handled inside the host; the `?` binding and the node menu's Info item
             // both execute `ui.showNodeInfo`, so all three routes are the same surface.
+            <ErrorBoundary name="Graph">
             <NodeInfoHost
               // §V9/B36: the program-level fact, live from the backend rather than from
               // the per-node channel, which is published at compile while this flips in
@@ -865,47 +895,62 @@ export function App({
                 valueHistory={valueHistory}
               />
             </NodeInfoHost>
+            </ErrorBoundary>
           }
           inspector={
-            <InspectorPane
-              nodeId={selectedNodeId}
-              graph={compile.graph}
-              compiled={compile.compiled}
-              diagnostics={compile.diagnostics}
-              // B46/§V61: the panel resolves through the resolver the COMPILE used.
-              channels={compile.channels}
-              status={status}
-              unknownParameters={runtime.unknownParameters}
-              audioStatus={audioInput.status}
-            />
+            <ErrorBoundary name="Inspector">
+              <InspectorPane
+                nodeId={selectedNodeId}
+                graph={compile.graph}
+                compiled={compile.compiled}
+                diagnostics={compile.diagnostics}
+                // B46/§V61: the panel resolves through the resolver the COMPILE used.
+                channels={compile.channels}
+                status={status}
+                unknownParameters={runtime.unknownParameters}
+                audioStatus={audioInput.status}
+              />
+            </ErrorBoundary>
           }
           viewer={
-            <ViewerPane
-              compiled={compile.compiled}
-              graph={compile.graph}
-              backend={backend ?? null}
-              pointer={pointer}
-              probe={agentPorts.probe}
-            />
+            <ErrorBoundary name="Viewer">
+              <ViewerPane
+                compiled={compile.compiled}
+                graph={compile.graph}
+                backend={backend ?? null}
+                pointer={pointer}
+                probe={agentPorts.probe}
+              />
+            </ErrorBoundary>
           }
           shaderEditor={
-            <ShaderPane
-              nodeId={selectedNodeId}
-              graph={compile.graph}
-              diagnostics={compile.diagnostics}
-              stale={backend?.status.stale ?? false}
-            />
+            <ErrorBoundary name="Shader editor">
+              <ShaderPane
+                nodeId={selectedNodeId}
+                graph={compile.graph}
+                diagnostics={compile.diagnostics}
+                stale={backend?.status.stale ?? false}
+              />
+            </ErrorBoundary>
           }
-          problems={<ProblemsPanel diagnostics={problems} />}
+          problems={
+            <ErrorBoundary name="Problems">
+              <ProblemsPanel diagnostics={problems} />
+            </ErrorBoundary>
+          }
           performance={
-            <PerformancePane
-              status={status}
-              cookPolicy={cookPolicy}
-              onCookPolicyChange={setCookPolicy}
-            />
+            <ErrorBoundary name="Performance">
+              <PerformancePane
+                status={status}
+                cookPolicy={cookPolicy}
+                onCookPolicyChange={setCookPolicy}
+              />
+            </ErrorBoundary>
           }
           agent={
-            <AgentPane surface={agentSurface} transports={mcpTransports} onOpenSetup={openAgentHelp} />
+            <ErrorBoundary name="Agent">
+              <AgentPane surface={agentSurface} transports={mcpTransports} onOpenSetup={openAgentHelp} />
+            </ErrorBoundary>
           }
         />
         {/* T359/§V307: opened by `ui.openSettings`, never by a flag set from here. The

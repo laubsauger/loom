@@ -10,6 +10,9 @@ export { useReducedMotion } from "./hooks/use-reduced-motion.ts";
 export { Button } from "./primitives/button.tsx";
 export type { ButtonProps } from "./primitives/button.tsx";
 
+export { ErrorBoundary } from "./primitives/error-boundary.tsx";
+export type { ErrorBoundaryProps } from "./primitives/error-boundary.tsx";
+
 export {
   Tooltip,
   TooltipContent,
