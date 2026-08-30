@@ -57,6 +57,48 @@ describe("completion menu", () => {
     expect((field as HTMLInputElement).value).toBe("walldelta");
   });
 
+  it("Enter accepts the preselected top hit for a typed prefix (T539a)", async () => {
+    // The owner, twice: "hitting enter on a autocomplete suggestion item is not
+    // actually using that value... rather does nothing". The old gate demanded an
+    // arrow-press first; a typed prefix now preselects the top hit and Enter takes it.
+    const field = renderPanel();
+    await userEvent.click(field);
+    await userEvent.type(field, "walld");
+    await userEvent.keyboard("{Enter}");
+    expect((field as HTMLInputElement).value).toBe("walldelta");
+  });
+
+  it("Enter still COMMITS over an empty-prefix catalogue until the user arrows in (T539a)", async () => {
+    // Caret after a number: prefix is empty, the menu is a browse catalogue, and a
+    // swallowed Enter here would turn every finished expression into a fight.
+    const onChange = vi.fn();
+    const field = renderPanel(onChange);
+    await userEvent.click(field);
+    await userEvent.type(field, "time * 2");
+    await userEvent.keyboard("{Enter}");
+    const slot = onChange.mock.calls.at(-1)?.[0] as ParameterSlot;
+    expect(slot.bindings.expression?.kind === "expression" && slot.bindings.expression.source).toBe(
+      "time * 2",
+    );
+  });
+
+  it("accepting completes the prefix UNDER THE CARET after a pure caret move (T539b)", async () => {
+    // "adds the word to what we wrote in full instead of completing": the DOM select
+    // event does not fire for caret-only moves, so the tracked caret went stale and the
+    // splice landed at the old position. Key-up now syncs it. The fixture is
+    // caret-sensitive on purpose: accepting at the stale end-position would append.
+    const field = renderPanel() as HTMLInputElement;
+    await userEvent.click(field);
+    await userEvent.type(field, "wa + time");
+    // Arrow the caret back to sit right after "wa" (a pure caret move, no selection).
+    for (let step = 0; step < 7; step += 1) {
+      await userEvent.keyboard("{ArrowLeft}");
+    }
+    expect(field.selectionStart).toBe(2);
+    await userEvent.keyboard("{Enter}");
+    expect(field.value).toBe("walldelta + time");
+  });
+
   it("leaves Enter and Escape to the field, never to the menu (§V150)", async () => {
     // A popup that swallows commit and cancel turns every expression edit into a fight.
     const onChange = vi.fn();

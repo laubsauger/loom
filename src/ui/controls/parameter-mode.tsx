@@ -122,7 +122,8 @@ export function ParameterModePanel({
   const [highlighted, setHighlighted] = useState(0);
   // Escape closes the popup without cancelling the parameter; any edit brings it back.
   const [dismissed, setDismissed] = useState(false);
-  // Has the user ARROWED to a candidate? Enter accepts only then — see the keydown note.
+  // Browse-mode marker: with an EMPTY prefix the menu is a catalogue, and Enter must
+  // stay commit until the user arrows into it (T539's one surviving use of the gate).
   const [navigated, setNavigated] = useState(false);
   const [caret, setCaret] = useState(0);
 
@@ -260,18 +261,20 @@ export function ParameterModePanel({
             onKeyDown={(event) => {
               event.stopPropagation();
               /*
-                ENTER accepts a SELECTED candidate; TAB accepts the top hit outright.
-                The owner asked to "confirm selection with enter", and the earlier Tab-only
-                rule reasoned that a popup swallowing Enter turns every edit into a fight.
-                BOTH are satisfied by requiring NAVIGATION: Enter accepts only once the user
-                has arrowed to a candidate, so someone who typed a whole expression and hit
-                Enter still COMMITS. My first attempt took Enter unconditionally and this
-                file's own T370 tests caught it — they type a refusable expression and press
-                Enter expecting the refusal, and got a completion instead.
+                T539: ENTER accepts the highlighted candidate — top hit PRESELECTED —
+                whenever the user has TYPED a prefix the menu is narrowing; the owner hit
+                the old arrow-first gate twice ("hitting enter ... rather does nothing").
+                Two boundaries keep Enter-commits intact: a token typed IN FULL is
+                filtered out of its own candidate list, so the menu is closed and Enter
+                commits (T370's case, structural); and with an EMPTY prefix (caret after
+                a ")" or a number) the menu is a catalogue, so Enter stays commit until
+                the user arrows into it. Escape dismisses; the next Enter commits — the
+                way out is always one key.
               */
               const accepts =
                 completion !== null &&
-                ((event.key === "Tab" && !event.shiftKey) || (event.key === "Enter" && navigated));
+                ((event.key === "Tab" && !event.shiftKey) ||
+                  (event.key === "Enter" && (completion.prefix.length > 0 || navigated)));
               if (accepts) {
                 const candidate = completion.candidates[highlighted] ?? completion.candidates[0];
                 if (candidate !== undefined) {
@@ -314,6 +317,12 @@ export function ParameterModePanel({
               }
             }}
             onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+            // T539(b): the DOM "select" event does NOT fire for a caret-only move (arrow
+            // keys, Home/End), so tracking it alone left `caret` stale — and a stale
+            // caret made accepting a candidate splice at the OLD position, appending the
+            // word in full instead of completing the prefix under the cursor. Key-up is
+            // the moment the browser has applied the move.
+            onKeyUp={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
             onChange={(event) => {
               setDismissed(false);
               setNavigated(false);
