@@ -63,6 +63,8 @@ export {
   thresholdNode,
   limitNode,
   lookupNode,
+  reorderNode,
+  REORDER_SOURCE_OPTIONS,
   colorNodes,
 } from "./color.ts";
 export {

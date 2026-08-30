@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeDefinition } from "../../domain/types/node-definition.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
-import { colorNodes, hsvNode, levelNode, limitNode, lookupNode, thresholdNode } from "./color.ts";
+import {
+  colorNodes,
+  hsvNode,
+  levelNode,
+  limitNode,
+  lookupNode,
+  reorderNode,
+  REORDER_SOURCE_OPTIONS,
+  thresholdNode,
+} from "./color.ts";
 import { CHANNEL_OPTIONS } from "./parameter-readers.ts";
 import { WGSL_CHANNEL, WGSL_LUMA } from "../shaders/common.wgsl.ts";
 import { compileContext, inputResourceId, readNodePlan } from "./test-support.ts";
@@ -28,6 +37,7 @@ describe("colour nodes (T40)", () => {
       "level",
       "limit",
       "lookup",
+      "reorder",
       "threshold",
     ]);
   });
@@ -171,5 +181,66 @@ describe("Limit (T283)", () => {
     // dropped would look broken rather than useful.
     const uniforms = firstPass(limitNode).uniforms as Record<string, unknown>;
     expect(uniforms["mode"]).toBe(0);
+  });
+});
+
+/** Reorder (T280) — the decisions that are arguments rather than code. */
+describe("Reorder (T280)", () => {
+  it("defaults to the identity", () => {
+    // A Reorder you have just dropped must not change the picture — the same argument
+    // Convolve's identity kernel makes. Any other default (a swizzle, a matte view) would
+    // make an untouched node look broken, and this node is reached for BECAUSE the
+    // catalogue has no other way to move a channel: the first thing to establish is that
+    // it does nothing until told to.
+    const identity = ["in1r", "in1g", "in1b", "in1a"].map((value) =>
+      REORDER_SOURCE_OPTIONS.findIndex((option) => option.value === value),
+    );
+    expect(firstPass(reorderNode).uniforms).toMatchObject({
+      outr: identity[0],
+      outg: identity[1],
+      outb: identity[2],
+      outa: identity[3],
+    });
+  });
+
+  it("reads input 1 for input 2's selectors when nothing is wired to input 2", () => {
+    // The single-image swizzle — drop an alpha, look at a mask, build RGB from one
+    // channel — is the common case, so input 2 is optional. A texture binding cannot be
+    // left empty, so "optional" had to mean "bound to something": input 1 is the only
+    // honest choice, since any other would silently sample a texture the user never wired.
+    const soloed = reorderNode.compile(compileContext({ inputs: ["in1"] }));
+    expect(soloed.diagnostics ?? []).toEqual([]);
+    const pass = readNodePlan(soloed.passes, { inputs: ["in1"] }).passes[0];
+    expect(pass?.kind === "effect" ? pass.textures : undefined).toEqual([
+      { binding: "inputTexture", resourceId: inputResourceId("in1") },
+      { binding: "input2Texture", resourceId: inputResourceId("in1") },
+    ]);
+    expect(reorderNode.inputs[1]?.optional).toBe(true);
+  });
+
+  it("offers constants and per-input luminance in the same menu as the channels", () => {
+    // One menu of twelve rather than TD's two menus (input, then channel). That makes a
+    // channel move one click, and it makes `one` and `zero` ordinary entries rather than
+    // special cases hiding inside an input menu — `one` on alpha is how a broken alpha
+    // gets dropped, which is the single most common reason to reach for this node.
+    // Luminance is per input because with two images wired, "luminance" names neither.
+    const values = REORDER_SOURCE_OPTIONS.map((option) => option.value);
+    expect(values).toContain("one");
+    expect(values).toContain("zero");
+    expect(values).toContain("in1lum");
+    expect(values).toContain("in2lum");
+  });
+
+  it("agrees with the shader about which index each source means", () => {
+    // The enum reaches WGSL as an index, so reordering this list without editing the
+    // switch would silently repoint every saved project's channels at something else.
+    const shader = firstPass(reorderNode).shader;
+    REORDER_SOURCE_OPTIONS.forEach((option, index) => {
+      const branch =
+        index === REORDER_SOURCE_OPTIONS.length - 1
+          ? "default: { return 0.0; }"
+          : `case ${index}u: { return`;
+      expect(shader, option.value).toContain(branch);
+    });
   });
 });

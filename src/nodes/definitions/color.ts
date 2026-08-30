@@ -8,6 +8,7 @@ import {
   HSV_FRAGMENT_WGSL,
   LEVEL_FRAGMENT_WGSL,
   LOOKUP_FRAGMENT_WGSL,
+  REORDER_FRAGMENT_WGSL,
   THRESHOLD_FRAGMENT_WGSL,
 } from "../shaders/color.wgsl.ts";
 
@@ -423,10 +424,146 @@ export const limitNode: NodeDefinition = {
   },
 };
 
+/**
+ * Where each output channel's value comes from. Index order is load-bearing: it is what
+ * `reorderPick()` in `color.wgsl.ts` switches on, so the two are edited together.
+ *
+ * One flat list rather than TD's pair of menus (Output Red picks an input, Output Red
+ * Channel picks the channel). Four fewer menus for the same information, a channel move in
+ * one click, and "one"/"zero" become ordinary entries instead of special cases living in
+ * the input menu. Luminance is per input because with two images wired in, "luminance"
+ * alone does not name an image.
+ */
+export const REORDER_SOURCE_OPTIONS = [
+  { value: "in1r", label: "Input 1 Red" },
+  { value: "in1g", label: "Input 1 Green" },
+  { value: "in1b", label: "Input 1 Blue" },
+  { value: "in1a", label: "Input 1 Alpha" },
+  { value: "in1lum", label: "Input 1 Luminance" },
+  { value: "in2r", label: "Input 2 Red" },
+  { value: "in2g", label: "Input 2 Green" },
+  { value: "in2b", label: "Input 2 Blue" },
+  { value: "in2a", label: "Input 2 Alpha" },
+  { value: "in2lum", label: "Input 2 Luminance" },
+  { value: "one", label: "One" },
+  { value: "zero", label: "Zero" },
+] as const;
+
+/**
+ * Reorder — a two-input channel shuffle (T280). TD's Reorder TOP.
+ *
+ * A CAPABILITY GAP, not a convenience: nothing in the catalogue could move a value from
+ * one channel to another. Level and HSV adjust channels in place, Mask reads one and writes
+ * alpha, Threshold writes the same number everywhere. Putting a mask into red, dropping a
+ * broken alpha, making an opaque image out of a transparent one, or assembling three
+ * separate masks into one RGB image all needed a Custom WGSL node until now — and Slope's
+ * normal-map output (T284) is only usable downstream because this exists.
+ *
+ * The default is the IDENTITY (in1 r,g,b,a straight through). A Reorder you have just
+ * dropped in must not change the picture, for the same reason Convolve defaults to the
+ * identity kernel: a node that alters the image before you have touched it reads as broken.
+ *
+ * INPUT 2 IS OPTIONAL, and with nothing wired to it its selectors read input 1. The
+ * single-image swizzle is the common case by a wide margin, and requiring a second wire to
+ * do it — or refusing to compile until one exists — would tax every use for the sake of the
+ * rarer one. A texture binding cannot be left empty, so the alternative was not "no second
+ * texture" but "a second texture of something else".
+ *
+ * COLOUR (§V56): this moves NUMBERS between slots. No curve, no matrix, so it cannot change
+ * the space its inputs are in — but it does change what the values mean, which is the point:
+ * alpha routed into rgb is coverage being LOOKED at, not light.
+ */
+export const reorderNode: NodeDefinition = {
+  type: "reorder",
+  version: 1,
+  title: "Reorder",
+  category: "color",
+  description:
+    "Builds each output channel from any channel of either input, or from one or zero. TD Reorder TOP.",
+  inputs: [
+    {
+      id: "in1",
+      label: "Input 1",
+      type: RGBA_TEXTURE,
+      description: "Resolution and format come from here.",
+    },
+    {
+      id: "in2",
+      label: "Input 2",
+      type: RGBA_TEXTURE,
+      optional: true,
+      description: "Optional. With nothing wired here, its selectors read input 1.",
+    },
+  ],
+  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  parameters: {
+    outr: {
+      type: "enum",
+      label: "Output Red",
+      default: "in1r",
+      options: [...REORDER_SOURCE_OPTIONS],
+    },
+    outg: {
+      type: "enum",
+      label: "Output Green",
+      default: "in1g",
+      options: [...REORDER_SOURCE_OPTIONS],
+    },
+    outb: {
+      type: "enum",
+      label: "Output Blue",
+      default: "in1b",
+      options: [...REORDER_SOURCE_OPTIONS],
+    },
+    outa: {
+      type: "enum",
+      label: "Output Alpha",
+      default: "in1a",
+      options: [...REORDER_SOURCE_OPTIONS],
+    },
+  },
+  resolutionPolicy: { kind: "inherit", input: "in1" },
+  formatPolicy: { kind: "inherit", input: "in1" },
+  compile(context): CompiledNodeDescription {
+    const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+    const target = outputs["out"];
+    const first = inputs["in1"];
+    if (target === undefined || first === undefined) {
+      const what = target === undefined ? 'output port "out"' : 'input port "in1"';
+      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+    }
+    // Optional port, so the fallback is input 1's own texture rather than a bind that
+    // cannot exist. Stated on the port, and asserted in the tests.
+    const second = inputs["in2"] ?? first;
+    const pass: EffectPassDescriptor = {
+      kind: "effect",
+      id: `${nodeId}:reorder`,
+      shader: REORDER_FRAGMENT_WGSL,
+      target,
+      textures: [
+        { binding: "inputTexture", resourceId: first.resource },
+        { binding: "input2Texture", resourceId: second.resource },
+      ],
+      samplers: [{ binding: "inputSampler", resourceId: first.sampler }],
+      uniformBinding: "params",
+      uniforms: {
+        outr: readEnumIndex(parameters, "outr", REORDER_SOURCE_OPTIONS, "in1r"),
+        outg: readEnumIndex(parameters, "outg", REORDER_SOURCE_OPTIONS, "in1g"),
+        outb: readEnumIndex(parameters, "outb", REORDER_SOURCE_OPTIONS, "in1b"),
+        outa: readEnumIndex(parameters, "outa", REORDER_SOURCE_OPTIONS, "in1a"),
+      },
+      nodeId,
+      label: "Reorder",
+    };
+    return { passes: [pass] };
+  },
+};
+
 export const colorNodes: readonly NodeDefinition[] = [
   levelNode,
   hsvNode,
   thresholdNode,
   limitNode,
   lookupNode,
+  reorderNode,
 ];

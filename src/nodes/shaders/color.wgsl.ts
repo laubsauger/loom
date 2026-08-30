@@ -1,4 +1,4 @@
-import { WGSL_CHANNEL, WGSL_HSV } from "./common.wgsl.ts";
+import { WGSL_CHANNEL, WGSL_HSV, WGSL_LUMA } from "./common.wgsl.ts";
 
 /**
  * Fragment shaders for the colour operators: Level, HSV, Threshold, Lookup (T40).
@@ -198,4 +198,71 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     limitChannel(source.b, mode, params.low, params.high, params.steps),
   );
   return vec4f(rgb, source.a);
+}`;
+
+/**
+ * Reorder — a two-input channel shuffle (T280). TD's Reorder TOP.
+ *
+ * The catalogue had NO way to move a value between channels: Level and HSV adjust a
+ * channel in place, Mask reads one and writes alpha, and nothing could put a mask into
+ * red, drop a broken alpha, or build an RGB image out of three separate masks. That is a
+ * capability gap rather than a convenience, and it is what makes Slope's normal mode
+ * expressible downstream (T284).
+ *
+ * ONE MENU PER OUTPUT CHANNEL, listing both inputs' channels plus one, zero and each
+ * input's luminance. TD splits the same choice across two menus — Output Red picks the
+ * input, Output Red Channel picks the channel, with the constants living in the first —
+ * which is four extra menus for the same information. Folding them into one list makes a
+ * channel move one click, and makes "one" and "zero" ordinary entries rather than special
+ * cases hiding in an input menu. The index order is what the switch below reads, so
+ * `REORDER_SOURCE_OPTIONS` and this function have to be edited together.
+ *
+ * Luminance is per-input (Input 1 Luminance, Input 2 Luminance) because with two images
+ * wired in, "luminance" alone does not name an image.
+ *
+ * COLOUR (§V56): this moves NUMBERS. It applies no curve and no matrix, so it cannot
+ * change the space its inputs are in — but it can change what the values MEAN, and that
+ * is the user's intent: alpha routed into rgb is coverage being looked at, not light.
+ */
+export const REORDER_FRAGMENT_WGSL = `${WGSL_LUMA}
+
+struct Params {
+  outr: f32,
+  outg: f32,
+  outb: f32,
+  outa: f32,
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var inputSampler: sampler;
+@group(0) @binding(2) var inputTexture: texture_2d<f32>;
+@group(0) @binding(3) var input2Texture: texture_2d<f32>;
+
+/** Index order is fixed by REORDER_SOURCE_OPTIONS in color.ts. */
+fn reorderPick(a: vec4f, b: vec4f, which: f32) -> f32 {
+  switch (u32(which + 0.5)) {
+    case 0u: { return a.r; }
+    case 1u: { return a.g; }
+    case 2u: { return a.b; }
+    case 3u: { return a.a; }
+    case 4u: { return luma(a.rgb); }
+    case 5u: { return b.r; }
+    case 6u: { return b.g; }
+    case 7u: { return b.b; }
+    case 8u: { return b.a; }
+    case 9u: { return luma(b.rgb); }
+    case 10u: { return 1.0; }
+    default: { return 0.0; }
+  }
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let a = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  let b = textureSampleLevel(input2Texture, inputSampler, uv, 0.0);
+  return vec4f(
+    reorderPick(a, b, params.outr),
+    reorderPick(a, b, params.outg),
+    reorderPick(a, b, params.outb),
+    reorderPick(a, b, params.outa),
+  );
 }`;
