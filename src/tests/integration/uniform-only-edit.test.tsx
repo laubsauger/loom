@@ -88,6 +88,8 @@ function countingBackend(): { backend: ShaderloomBackend; counters: Counters } {
       counters.uniformWrites.push(write);
     },
     resetTemporalHistory: () => {},
+    // T326: part of the backend contract; a fixture without it is incomplete.
+    setCookPolicy() {},
     dispose: () => {},
   } as unknown as ShaderloomBackend;
   return { backend, counters };

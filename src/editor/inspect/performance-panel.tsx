@@ -37,8 +37,20 @@ import styles from "./inspect.module.css";
  * because the hub, not this component, owns the rate.
  */
 
+/** `BackendStatus`'s own switch, restated so this module never imports the backend. */
+export type CookPolicyValue = "always" | "auto";
+
 export interface PerformancePanelProps {
   readonly telemetry: TelemetrySource | null;
+  /**
+   * The cook policy the backend is running (T326, §V157). Omitted, no control renders.
+   *
+   * §V92a puts device and build diagnostics on THIS surface rather than a content one,
+   * and a bisect switch is exactly that: the thing you reach for when you suspect cooking
+   * is producing a wrong frame in the wild.
+   */
+  readonly cookPolicy?: CookPolicyValue | undefined;
+  readonly onCookPolicyChange?: ((policy: CookPolicyValue) => void) | undefined;
 }
 
 function Stat({
@@ -60,7 +72,11 @@ function Stat({
   );
 }
 
-export function PerformancePanel({ telemetry }: PerformancePanelProps) {
+export function PerformancePanel({
+  telemetry,
+  cookPolicy,
+  onCookPolicyChange,
+}: PerformancePanelProps) {
   const snapshot = useSyncExternalStore(
     useCallback(
       (listener: () => void) => telemetry?.subscribe(listener) ?? (() => {}),
@@ -78,7 +94,13 @@ export function PerformancePanel({ telemetry }: PerformancePanelProps) {
     );
   }
 
-  return <PerformanceView snapshot={snapshot} />;
+  return (
+    <PerformanceView
+      snapshot={snapshot}
+      {...(cookPolicy === undefined ? {} : { cookPolicy })}
+      {...(onCookPolicyChange === undefined ? {} : { onCookPolicyChange })}
+    />
+  );
 }
 
 /** A cost cell. An absent measurement is a word, never a digit (§V86). */
@@ -248,10 +270,61 @@ function ReadbackSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
 
 export interface PerformanceViewProps {
   readonly snapshot: TelemetrySnapshot;
+  readonly cookPolicy?: CookPolicyValue | undefined;
+  readonly onCookPolicyChange?: ((policy: CookPolicyValue) => void) | undefined;
+}
+
+/**
+ * The cook-policy switch (T326, §V157).
+ *
+ * §V157 ships this control before any gating and keeps it forever, as the permanent
+ * bisect when someone suspects cooking in the wild — flip to "always" and the question
+ * becomes "is it cooking?" instead of "is it something else?".
+ *
+ * It defaults to ALWAYS, and that is a measurement rather than caution. §V157 requires
+ * "auto" to be byte-identical to "always" at EVERY frame index, and today it is not: the
+ * uniform push runs in the frame callback, AFTER `render` has already asked the gate
+ * whether to skip, so the first frame of any new motion is skipped and its value appears
+ * one frame late. Measured on the real backend over eight frames of a static plan whose
+ * brightness starts moving at frame 3 — always encodes 1,1,1,1,1,1,1; auto encodes
+ * 0,0,0,1,1,1,1. A one-frame lag at motion onset is the signature failure §V157 names,
+ * so "auto" stays a switch someone chooses rather than the default anyone gets.
+ */
+function CookPolicyControl({
+  policy,
+  onChange,
+}: {
+  policy: CookPolicyValue;
+  onChange: (policy: CookPolicyValue) => void;
+}) {
+  return (
+    <section aria-label="Cooking">
+      <h3 className={styles.blockTitle}>cooking</h3>
+      <div className={styles.bar}>
+        <label className={styles.summary} htmlFor="cook-policy">
+          policy
+        </label>
+        <select
+          id="cook-policy"
+          data-testid="cook-policy"
+          className={styles.policySelect}
+          value={policy}
+          onChange={(event) => onChange(event.target.value as CookPolicyValue)}
+        >
+          <option value="always">always</option>
+          <option value="auto">auto</option>
+        </select>
+      </div>
+    </section>
+  );
 }
 
 /** Pure view over a snapshot — renders from a fixture with no GPU and no hub. */
-export function PerformanceView({ snapshot }: PerformanceViewProps) {
+export function PerformanceView({
+  snapshot,
+  cookPolicy,
+  onCookPolicyChange,
+}: PerformanceViewProps) {
   const { plan, build } = snapshot;
   const frame = formatMs(snapshot.frame);
 
@@ -275,6 +348,10 @@ export function PerformanceView({ snapshot }: PerformanceViewProps) {
           </p>
         )}
       </section>
+
+      {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (
+        <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
+      )}
 
       <CostSection snapshot={snapshot} />
 

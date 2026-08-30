@@ -257,3 +257,76 @@
 .disclosure[open] > .summary {
   margin-bottom: var(--space-2);
 }
+
+/* Cook-policy bisect switch (T326, §V157). Tokens only (§V17). */
+.policySelect {
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
+ * Preview lens controls (T336). Colours are tokens only (§V17); the row is dense on purpose
+ * — this is a control strip inside a popup, not a settings panel.
+ */
+.lensRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.lensLabel {
+  margin-right: var(--space-1);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+}
+
+.lensValue {
+  min-width: 4.5rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  text-align: center;
+}
+
+.lensButton {
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raise);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--space-5);
+  letter-spacing: var(--tracking-mono);
+  cursor: pointer;
+}
+
+.lensButton:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.lensButton:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.lensButton[data-active="true"] {
+  border-color: var(--signal);
+  color: var(--signal);
+}

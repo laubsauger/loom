@@ -20,6 +20,7 @@ import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
+import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -211,6 +212,26 @@ export function App({
    * and the loop that samples hold the same object.
    */
   const pointer = useMemo(() => createPointerSource(), []);
+
+  /**
+   * The cook policy, CONSTRUCTED (T326, B32, §V157).
+   *
+   * `setCookPolicy` had no production caller, so T254's static-plan gate was unreachable
+   * and the backend sat on its `"always"` default forever — a gate that shipped, was
+   * tested, and could not be entered.
+   *
+   * It defaults to ALWAYS, and that is measured rather than cautious. §V157 requires
+   * "auto" to be byte-identical to "always" at EVERY frame index; today it is not. The
+   * uniform push runs in the frame callback, AFTER `render` has already asked the gate
+   * whether to skip, so the first frame of new motion is skipped and its value lands one
+   * frame late — the signature failure §V157 names. Making "auto" safe means pushing
+   * values before the encode they belong to, which is a driver-ordering change with its
+   * own risks and its own task. Until then this is a switch someone chooses.
+   */
+  const [cookPolicy, setCookPolicy] = useState<CookPolicyValue>("always");
+  useEffect(() => {
+    backend?.setCookPolicy(cookPolicy);
+  }, [backend, cookPolicy]);
 
   /**
    * The channel ladder, in order (first non-undefined wins).
@@ -663,7 +684,13 @@ export function App({
             />
           }
           problems={<ProblemsPanel diagnostics={problems} />}
-          performance={<PerformancePane status={status} />}
+          performance={
+            <PerformancePane
+              status={status}
+              cookPolicy={cookPolicy}
+              onCookPolicyChange={setCookPolicy}
+            />
+          }
           agent={<AgentPane surface={agentSurface} />}
         />
         {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so

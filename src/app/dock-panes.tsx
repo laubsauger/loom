@@ -6,6 +6,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { AgentPresencePanel, useAgentPresence } from "@editor/agent/index.ts";
 import { PerformancePanel } from "@editor/inspect/index.ts";
+import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { useAppRuntime } from "./app-context.ts";
@@ -213,12 +214,25 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
  * query, formats and reuse counts are what someone diagnosing COST is looking at, and a
  * content pane whose job is showing pixels is not that surface.
  */
-export function PerformancePane({ status }: { status: GpuStatus }) {
+export function PerformancePane({
+  status,
+  cookPolicy,
+  onCookPolicyChange,
+}: {
+  status: GpuStatus;
+  /** T326/§V157 — the bisect switch, on the surface §V92a puts diagnostics on. */
+  cookPolicy?: CookPolicyValue | undefined;
+  onCookPolicyChange?: ((policy: CookPolicyValue) => void) | undefined;
+}) {
   const { telemetry } = useAppRuntime();
   return (
     <div className={styles.viewer}>
       <GpuStatusCard status={status} />
-      <PerformancePanel telemetry={telemetry} />
+      <PerformancePanel
+        telemetry={telemetry}
+        {...(cookPolicy === undefined ? {} : { cookPolicy })}
+        {...(onCookPolicyChange === undefined ? {} : { onCookPolicyChange })}
+      />
     </div>
   );
 }

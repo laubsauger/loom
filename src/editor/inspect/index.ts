@@ -42,6 +42,7 @@ export type {
   NodeOutputInfo,
 } from "./node-info-model.ts";
 
+export type { CookPolicyValue } from "./performance-panel.tsx";
 export { PerformancePanel, PerformanceView } from "./performance-panel.tsx";
 export type { PerformancePanelProps, PerformanceViewProps } from "./performance-panel.tsx";
 

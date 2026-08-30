@@ -72,6 +72,8 @@ function countingBackend(): { backend: ShaderloomBackend; seen: Seen } {
       seen.uniformWrites += 1;
     },
     resetTemporalHistory: () => {},
+    // T326: part of the backend contract; a fixture without it is incomplete.
+    setCookPolicy() {},
     dispose: () => {},
   } as unknown as ShaderloomBackend;
   return { backend, seen };

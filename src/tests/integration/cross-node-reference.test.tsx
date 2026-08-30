@@ -78,6 +78,8 @@ function capturingBackend(): { backend: ShaderloomBackend; plans: CompiledGraph[
     resize: () => {},
     updateUniforms: () => {},
     resetTemporalHistory: () => {},
+    // T326: part of the backend contract; a fixture without it is incomplete.
+    setCookPolicy: () => {},
     dispose: () => {},
   } as unknown as ShaderloomBackend;
   return { backend, plans };
@@ -119,7 +121,10 @@ function sizesFor(plan: CompiledGraph, nodeId: string): number[] {
  * solid → source blur → subject blur → output, where the SUBJECT's size is an expression
  * reading the SOURCE's size by name.
  */
-async function mountWithReference(expression: string) {
+async function mountWithReference(
+  expression: string,
+  options: { solidParameters?: Record<string, unknown> } = {},
+) {
   const runtime = newRuntime();
   const seeded = await patch(runtime, [
     { op: "addNode", ref: "$solid", type: "solid", position: { x: -300, y: 0 } },
