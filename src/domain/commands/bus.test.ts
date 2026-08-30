@@ -95,6 +95,9 @@ describe("command bus — registration surface (§V39)", () => {
       "parameter.pulse",
       "parameter.reset",
       "parameter.setMode",
+      // T272: settings are document state, so they mutate through the domain bus like
+      // every other document edit rather than through a pane holding an object.
+      "project.setSettings",
       "project.validate",
     ]);
     // T175: `selection.get`, `diagnostics.get`, `runtime.metrics` and `project.get` are

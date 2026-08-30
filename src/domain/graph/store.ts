@@ -4,7 +4,8 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { Actor, AuditEntry } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, GroupId, NodeId, Revision } from "../types/ids.ts";
-import type { GraphDocument, GraphEdge, GraphGroup, GraphNode } from "../types/graph.ts";
+import { DEFAULT_PROJECT_SETTINGS } from "../types/graph.ts";
+import type { GraphDocument, GraphEdge, GraphGroup, GraphNode, ProjectSettings } from "../types/graph.ts";
 import { createIdFactory, type IdFactory } from "./ids.ts";
 
 /**
@@ -62,6 +63,14 @@ export interface UndoGroup {
   nodes: Record<NodeId, EntityChange<GraphNode>>;
   edges: Record<EdgeId, EntityChange<GraphEdge>>;
   groups: Record<GroupId, EntityChange<GraphGroup>>;
+  /**
+   * Project settings, as a single-key record so it merges, restores and blocks through
+   * the SAME generic helpers the entity slices use (T272, §V177).
+   *
+   * Optional because every existing construction of an `UndoGroup` predates it, and
+   * because a group that touched no settings should not carry an empty record.
+   */
+  settings?: Record<string, EntityChange<ProjectSettings>>;
 }
 
 export interface ActorHistory {
@@ -76,6 +85,13 @@ interface EntityOwner {
 
 export interface GraphStoreState {
   graph: GraphDocument;
+  /**
+   * Project settings, DOCUMENT state (§V177): they serialize with the graph, mutate only
+   * through `project.setSettings`, bump the revision and make one undo entry. They live
+   * here rather than on a React-side object precisely so those four things are true —
+   * a snapshot held beside the store can do none of them.
+   */
+  settings: ProjectSettings;
   audit: AuditEntry[];
   /** Keyed by actor key: undo is per actor, never global (§V41). */
   history: Record<string, ActorHistory>;
@@ -101,6 +117,24 @@ export interface ApplyInput {
   recipe: (draft: GraphDocument) => void;
 }
 
+/**
+ * The one key the settings slice uses. Settings are a single value, not a keyed
+ * collection, so the record has exactly one entry — which is what lets it reuse the
+ * generic merge, restore and blocking helpers the entity slices already have.
+ */
+export const SETTINGS_ENTITY_KEY = "project";
+
+export interface ApplySettingsInput {
+  actor: Actor;
+  command: string;
+  label?: string;
+  transactionId?: string | undefined;
+  splitUndo?: boolean;
+  dryRun?: boolean;
+  /** A PARTIAL patch: absent fields keep their current value (§V68, T272). */
+  patch: Partial<ProjectSettings>;
+}
+
 export interface ApplyResult {
   committed: boolean;
   changed: boolean;
@@ -121,6 +155,8 @@ export interface GraphStoreView {
   getInitialState: () => GraphStoreState;
   subscribe: (listener: (state: GraphStoreState, previous: GraphStoreState) => void) => () => void;
   getGraph: () => GraphDocument;
+  /** Live settings (§V177). A caller holding the RESULT holds a snapshot; call again. */
+  getSettings: () => ProjectSettings;
   getRevision: () => Revision;
   getAudit: () => readonly AuditEntry[];
   getHistory: (actor: Actor) => ActorHistory;
@@ -129,6 +165,8 @@ export interface GraphStoreView {
 /** Mutating half. Held only by the command bus (§V29). */
 export interface GraphStoreInternals {
   apply: (input: ApplyInput) => ApplyResult;
+  /** The settings mutation path (§V177, T272). Held only by the command bus (§V29). */
+  applySettings: (input: ApplySettingsInput) => ApplyResult;
   undo: (actor: Actor, command?: string) => HistoryOutcome;
   redo: (actor: Actor, command?: string) => HistoryOutcome;
   /** Records a mutation that did not happen: rejected or conflicting (§V31). */
@@ -145,6 +183,8 @@ export interface GraphStore {
 
 export interface GraphStoreOptions {
   initialGraph?: GraphDocument;
+  /** The opened project's settings. Defaults to `DEFAULT_PROJECT_SETTINGS`. */
+  initialSettings?: ProjectSettings;
   ids?: IdFactory;
   now?: () => string;
   /** Cap on retained undo groups per actor. */
@@ -218,6 +258,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
 
   const store = createStore<GraphStoreState>()(() => ({
     graph: options.initialGraph ?? emptyGraph(),
+    settings: options.initialSettings ?? DEFAULT_PROJECT_SETTINGS,
     audit: [],
     history: {},
     owners: {},
@@ -230,6 +271,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     ...Object.keys(group.nodes).map((id) => `node:${id}`),
     ...Object.keys(group.edges).map((id) => `edge:${id}`),
     ...Object.keys(group.groups).map((id) => `group:${id}`),
+    ...Object.keys(group.settings ?? {}).map((id) => `settings:${id}`),
   ];
 
   function commit(
@@ -238,7 +280,10 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       nodes: Record<NodeId, EntityChange<GraphNode>>;
       edges: Record<EdgeId, EntityChange<GraphEdge>>;
       groups: Record<GroupId, EntityChange<GraphGroup>>;
+      settings?: Record<string, EntityChange<ProjectSettings>>;
     },
+    /** The settings to write alongside the graph. Undefined leaves the current ones. */
+    nextSettings: ProjectSettings | undefined,
     meta: {
       actor: Actor;
       command: string;
@@ -277,10 +322,18 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
           nodes: { ...top.nodes },
           edges: { ...top.edges },
           groups: { ...top.groups },
+          ...(top.settings === undefined && changes.settings === undefined
+            ? {}
+            : { settings: { ...top.settings } }),
         };
         mergeChanges(merged.nodes, changes.nodes);
         mergeChanges(merged.edges, changes.edges);
         mergeChanges(merged.groups, changes.groups);
+        // Same generic merge: the OLDEST `before` survives, so undoing a dragged fps
+        // field lands on the value the drag started from rather than the last frame.
+        if (changes.settings !== undefined) {
+          mergeChanges((merged.settings ??= {}), changes.settings);
+        }
         undoStack = [...undoStack.slice(0, -1), merged];
         undoGroupId = merged.id;
       } else {
@@ -296,6 +349,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
           nodes: changes.nodes,
           edges: changes.edges,
           groups: changes.groups,
+          ...(changes.settings === undefined ? {} : { settings: changes.settings }),
         };
         undoStack = [...undoStack, group].slice(-historyLimit);
         undoGroupId = group.id;
@@ -321,6 +375,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       ...Object.keys(changes.nodes).map((id) => `node:${id}`),
       ...Object.keys(changes.edges).map((id) => `edge:${id}`),
       ...Object.keys(changes.groups).map((id) => `group:${id}`),
+      ...Object.keys(changes.settings ?? {}).map((id) => `settings:${id}`),
     ];
     for (const entity of touched) owners[entity] = { actorKey: key, revision };
     // T103: owner rows for long-gone entities (deleted nodes keep theirs so §V41 can
@@ -347,6 +402,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
 
     store.setState({
       graph,
+      ...(nextSettings === undefined ? {} : { settings: nextSettings }),
       // Bounded ring (T103): a 60Hz drag writes an entry per frame; unbounded, the
       // audit array is the store's memory leak. The viewer shows the recent window.
       audit: [...state.audit.slice(-(MAX_AUDIT_ENTRIES - 1)), entry],
@@ -389,6 +445,55 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
         edges: diffRecordKeys(base.edges, drafted.edges, touchedKeys(patches, "edges", base.edges, drafted.edges)),
         groups: diffRecordKeys(base.groups, drafted.groups, touchedKeys(patches, "groups", base.groups, drafted.groups)),
       },
+      undefined,
+      {
+        actor: input.actor,
+        command: input.command,
+        label: input.label ?? input.command,
+        transactionId: input.transactionId,
+        splitUndo: input.splitUndo === true,
+        historyMode: "push",
+      },
+    );
+  }
+
+  /**
+   * A settings edit (T272, §V177, §V29).
+   *
+   * Shares `commit` with `apply` rather than reimplementing it: one revision bump, one
+   * audit entry, one undo group, and the same coalescing rule — so dragging an fps field
+   * through forty values is one undo step that lands where the drag began (§V15).
+   *
+   * The classifier lives OUTSIDE the store (`classifySettingsChange`), because whether a
+   * field is structural is a compiler question, not a storage one. The store's job is
+   * that the change is atomic and recorded.
+   */
+  function applySettings(input: ApplySettingsInput): ApplyResult {
+    if (input.actor.id.trim() === "") {
+      throw new Error("InvocationContext.actor.id is required for every mutation (§V30)");
+    }
+    const state = store.getState();
+    const before = state.settings;
+    const after: ProjectSettings = { ...before, ...input.patch };
+
+    // Deep-equal on the shallow-merged result: a patch that sets a field to the value it
+    // already had is not an edit, and must not burn a revision or an undo slot.
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+      return { committed: false, changed: false, revision: state.graph.revision, undoGroupId: undefined };
+    }
+    if (input.dryRun === true) {
+      return { committed: false, changed: true, revision: state.graph.revision, undoGroupId: undefined };
+    }
+
+    return commit(
+      state.graph,
+      {
+        nodes: {},
+        edges: {},
+        groups: {},
+        settings: { [SETTINGS_ENTITY_KEY]: { before, after } },
+      },
+      after,
       {
         actor: input.actor,
         command: input.command,
@@ -488,7 +593,10 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     // entry stays where it is, and the press can succeed later once the other actor's
     // newer edits are out of the way.
     const totalEntities =
-      Object.keys(group.nodes).length + Object.keys(group.edges).length + Object.keys(group.groups).length;
+      Object.keys(group.nodes).length +
+      Object.keys(group.edges).length +
+      Object.keys(group.groups).length +
+      Object.keys(group.settings ?? {}).length;
     if (totalEntities > 0 && blocked.size >= totalEntities) {
       return {
         status: "rejected",
@@ -529,14 +637,26 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       }
     });
 
+    // Settings restore through the same pick(): whole values, no cascade to reason about.
+    let nextSettings: ProjectSettings | undefined;
+    const settingsChanges: Record<string, EntityChange<ProjectSettings>> = {};
+    for (const [id, change] of Object.entries(group.settings ?? {})) {
+      if (blocked.has(`settings:${id}`)) continue;
+      const value = pick(change);
+      if (value === undefined) continue;
+      nextSettings = value;
+      settingsChanges[id] = { before: state.settings, after: value };
+    }
+
     // The group already names every entity a restore may touch — no scan needed (T103).
     const changes = {
       nodes: diffRecordKeys(state.graph.nodes, nextGraph.nodes, Object.keys(group.nodes)),
       edges: diffRecordKeys(state.graph.edges, nextGraph.edges, Object.keys(group.edges)),
       groups: diffRecordKeys(state.graph.groups, nextGraph.groups, Object.keys(group.groups)),
+      ...(Object.keys(settingsChanges).length === 0 ? {} : { settings: settingsChanges }),
     };
 
-    const result = commit(nextGraph, changes, {
+    const result = commit(nextGraph, changes, nextSettings, {
       actor: group.actor,
       command,
       label: group.label,
@@ -600,6 +720,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     getInitialState: store.getInitialState,
     subscribe: store.subscribe,
     getGraph: () => store.getState().graph,
+    getSettings: () => store.getState().settings,
     getRevision: () => store.getState().graph.revision,
     getAudit: () => store.getState().audit,
     getHistory: (actor: Actor) => historyFor(store.getState(), actorKeyOf(actor)),
@@ -607,7 +728,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
 
   return {
     view,
-    internals: { apply, undo, redo, recordAudit, ids },
+    internals: { apply, applySettings, undo, redo, recordAudit, ids },
     raw: store,
   };
 }

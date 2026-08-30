@@ -1,6 +1,7 @@
 import { createDomainBus } from "@domain/commands/index.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { Actor, InvocationContext } from "@domain/types/commands.ts";
+import { DEFAULT_PROJECT_SETTINGS } from "@domain/types/graph.ts";
 import type { GraphDocument, ProjectDocument, ProjectSettings } from "@domain/types/graph.ts";
 import { SCHEMA_VERSION } from "@domain/types/schemas.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
@@ -46,6 +47,15 @@ export interface AppRuntime {
   readonly telemetry: TelemetryHub;
   /** Actor + project identity stamped on every command (§V30). Stable per browser. */
   readonly invocation: InvocationContext;
+  /**
+   * The project's settings, LIVE (§V177, T272).
+   *
+   * A getter over the store, not a snapshot taken at construction. It used to be the
+   * latter, which meant a project saved at 4K opened at 1280x720 until T139 fixed the
+   * SOURCE — and left the shape that caused it: a value copied once cannot reflect an
+   * edit made later, so `project.setSettings` would have written to the store while every
+   * reader kept the old numbers.
+   */
   readonly settings: ProjectSettings;
   /**
    * Everything about the open project EXCEPT its graph, which lives in the store. Set
@@ -71,20 +81,12 @@ export interface AppRuntime {
   dispose(): void;
 }
 
-/** Project defaults for a NEW project. An opened `.loom.json` brings its own (§V10). */
-export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  outputResolution: { width: 1280, height: 720 },
-  workingFormat: "rgba16float",
-  randomSeed: 1,
-  previewLongEdge: 192,
-  previewFps: 20,
-  limits: {
-    maxResolution: 4096,
-    maxDispatch: 65_535,
-    maxBufferBytes: 268_435_456,
-    memoryBudgetBytes: 1_073_741_824,
-  },
-};
+/**
+ * Re-exported from the domain (T272): settings are document state and the STORE seeds
+ * itself with them, so the value cannot live here. Kept as an export because every
+ * existing caller imports it from the composition root.
+ */
+export { DEFAULT_PROJECT_SETTINGS };
 
 export const ACTOR_STORAGE_KEY = "shaderloom.actor.id.v1";
 export const PROJECT_STORAGE_KEY = "shaderloom.project.id.v1";
@@ -182,8 +184,10 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   // against (§V84), and the document is the authority on that.
   const starterComponents = installStarterComponents(components);
   const initialGraph: GraphDocument | undefined = options.document?.graph;
+  const initialSettings = options.settings ?? options.document?.settings ?? DEFAULT_PROJECT_SETTINGS;
   const { bus } = createDomainBus({
     registry,
+    initialSettings,
     ...(initialGraph === undefined ? {} : { initialGraph }),
     // §V148: "copy reference" is only worth anything if the string can be pasted into an
     // expression field, which means it has to reach the system clipboard. Best effort —
@@ -247,12 +251,16 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     nodeRuntime,
     telemetry,
     invocation,
-    settings: project.settings,
+    get settings() {
+      return bus.store.getSettings();
+    },
     project,
     unknownParameters: options.unknownParameters ?? [],
     starterComponents,
     projectDocument() {
-      return { ...project, graph: bus.store.getGraph() };
+      // Settings come from the STORE: a save must write what the user last set, and
+      // `project` holds the copy the document was opened with (§V177).
+      return { ...project, settings: bus.store.getSettings(), graph: bus.store.getGraph() };
     },
     dispose() {
       telemetry.dispose();

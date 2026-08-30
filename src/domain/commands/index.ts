@@ -7,6 +7,7 @@ import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
 import { registerParameterCommands } from "./parameter-commands.ts";
 import { registerValidateCommand } from "./validate-command.ts";
+import { registerSettingsCommands } from "./settings-commands.ts";
 
 export {
   CapabilityDeniedError,
@@ -107,6 +108,7 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   registerEditorCommands(bus);
   registerParameterCommands(bus, { ...(clipboard === undefined ? {} : { writeClipboard: clipboard }) });
   registerValidateCommand(bus);
+  registerSettingsCommands(bus);
   return { bus, store };
 }
 export { createCapabilityGrantStore, type CapabilityGrantStore, type CapabilityGrantStoreOptions } from "./grants.ts";

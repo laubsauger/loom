@@ -6,6 +6,7 @@ import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/gr
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { analyzeReadbacks, nodeCategories, telemetryPlan } from "@runtime/telemetry/index.ts";
+import { structuralSettingsKey } from "@domain/project/settings-change.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { PreviewSinkStore } from "./preview-sinks.ts";
 
@@ -327,11 +328,13 @@ export function useGraphCompile(
    *      while the plan needs a sink materialized;
    *  (b) BACKEND CAPABILITIES — a device recovery can hand back a different adapter, and
    *      a plan compiled against the old one is not valid against the new;
-   *  (d) SETTINGS — compile input (resolution, working format, limits). They cannot change
-   *      today (`AppRuntime.settings` is captured once and `project.setSettings` is T272),
-   *      which is exactly why the comparison is here NOW: when settings become live this
-   *      gate already treats them as structural instead of silently classifying a
-   *      resolution change as "no document edit".
+   *  (d) SETTINGS — but only the STRUCTURAL ones (§V178, T272). Settings are live now,
+   *      and comparing the OBJECT would make every settings edit structural: dragging an
+   *      fps field would recompile the graph sixty times a second, and it would do so
+   *      BECAUSE the user was adjusting how often it draws. `structuralSettingsKey`
+   *      projects the fields a plan actually depends on — resolution, working format,
+   *      limits, seed — so a rate change produces an identical key and cannot reach the
+   *      compiler.
    *
    * (c), component-catalogue edits, is the one trigger with nothing to do: `compileSafely`
    * passes no `components` to `compileGraph`, so component flattening is not part of this
@@ -342,8 +345,10 @@ export function useGraphCompile(
     graph: GraphDocument;
     sinks: unknown;
     capabilities: BackendCapabilities | null;
-    settings: AppRuntime["settings"];
+    /** The STRUCTURAL projection, not the object: §V178's gate (T272). */
+    settingsKey: string;
     catalogue: number;
+    view: CompileResultView;
   } | null>(null);
 
   const result = useMemo<GraphCompileResult>(() => {
@@ -351,14 +356,33 @@ export function useGraphCompile(
       return { graph, compiled: null, diagnostics: [], errorCount: 0, animate: null, valuesOnly: false };
     }
     const previous = lastCompile.current;
+    const settingsKey = structuralSettingsKey(runtime.settings);
     const sameInputs =
       previous !== null &&
       previous.sinks === scheduledPreviews &&
       previous.capabilities === capabilities &&
-      previous.settings === runtime.settings &&
+      previous.settingsKey === settingsKey &&
       previous.catalogue === catalogueRevision;
-    const valuesOnly =
-      sameInputs && isValuesOnly(classifyGraphChange(previous.graph, graph, runtime.registry));
+    const change =
+      previous === null ? null : classifyGraphChange(previous.graph, graph, runtime.registry);
+    const valuesOnly = sameInputs && change !== null && isValuesOnly(change);
+
+    // §V178 ENFORCED rather than documented. A non-structural settings edit bumps the
+    // revision (§V177) and so hands this memo a NEW graph object — while the document's
+    // content is exactly what it was, so there is nothing to compile. Reusing the previous
+    // plan is what makes "an fps edit does not recompile" true rather than intended.
+    if (sameInputs && previous !== null && change !== null && change.work === "editor-only") {
+      cacheRef.current = { revision: graph.revision, view: previous.view };
+      lastCompile.current = { ...previous, graph };
+      return {
+        graph,
+        compiled: previous.view.compiled,
+        diagnostics: previous.view.diagnostics,
+        errorCount: previous.view.diagnostics.filter((entry) => entry.severity === "error").length,
+        animate,
+        valuesOnly: false,
+      };
+    }
 
     const { compiled, diagnostics } = compileSafely(
       graph,
@@ -372,8 +396,9 @@ export function useGraphCompile(
       graph,
       sinks: scheduledPreviews,
       capabilities,
-      settings: runtime.settings,
+      settingsKey,
       catalogue: catalogueRevision,
+      view: { compiled, diagnostics },
     };
     return {
       graph,

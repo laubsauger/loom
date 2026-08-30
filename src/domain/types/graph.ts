@@ -208,6 +208,27 @@ export interface ProjectSettings {
   };
 }
 
+/**
+ * Project defaults for a NEW project. An opened `.loom.json` brings its own (§V10).
+ *
+ * Lives in the domain rather than the composition root because settings are DOCUMENT
+ * state (§V177) and the store seeds itself with them — a default the store had to import
+ * from `src/app` would be the dependency pointing the wrong way.
+ */
+export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  outputResolution: { width: 1280, height: 720 },
+  workingFormat: "rgba16float",
+  randomSeed: 1,
+  previewLongEdge: 192,
+  previewFps: 20,
+  limits: {
+    maxResolution: 4096,
+    maxDispatch: 65_535,
+    maxBufferBytes: 268_435_456,
+    memoryBudgetBytes: 1_073_741_824,
+  },
+};
+
 /** Serialized project. Never contains GPU resources, pipelines, or transient state (§V10). */
 export interface ProjectDocument {
   schemaVersion: number;

@@ -13,7 +13,7 @@ import type {
   QueryOutput,
 } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { GraphDocument } from "../types/graph.ts";
+import type { GraphDocument, ProjectSettings } from "../types/graph.ts";
 import type { Revision } from "../types/ids.ts";
 import type { IdFactory } from "../graph/ids.ts";
 import type { GraphStore, GraphStoreView, HistoryOutcome } from "../graph/store.ts";
@@ -62,6 +62,14 @@ export interface ApplyRequest {
   splitUndo?: boolean;
 }
 
+export interface ApplySettingsRequest {
+  /** Human-readable label for the undo entry, TD-style: "Set frame rate" (§V177). */
+  label: string;
+  /** A PARTIAL patch — absent fields keep their current value (T272). */
+  patch: Partial<ProjectSettings>;
+  splitUndo?: boolean;
+}
+
 export interface AppliedInfo {
   committed: boolean;
   changed: boolean;
@@ -97,6 +105,14 @@ export interface CommandContext {
   readonly holds: (capability: CapabilityClass) => boolean;
   /** The sole mutation primitive available to a handler (§V29). */
   apply: (request: ApplyRequest) => AppliedInfo;
+  /**
+   * The settings mutation primitive (T272, §V177).
+   *
+   * Separate from `apply` because settings are not a graph entity and a recipe over a
+   * `GraphDocument` draft cannot reach them — not because there are two mutation paths.
+   * Both land in the same `commit`: one revision, one audit entry, one undo group.
+   */
+  applySettings: (request: ApplySettingsRequest) => AppliedInfo;
   /**
    * Records an APPLIED audit entry for a mutation that never touches the document
    * (T214, §V31, §V124).
@@ -383,6 +399,16 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
         store: store.view,
         ids: store.internals.ids,
         holds: (capability: CapabilityClass): boolean => grants.has(context.actor, capability),
+        applySettings: (request: ApplySettingsRequest): AppliedInfo =>
+          store.internals.applySettings({
+            actor: context.actor,
+            command: name,
+            label: request.label,
+            transactionId: context.transactionId,
+            splitUndo: request.splitUndo === true,
+            dryRun,
+            patch: request.patch,
+          }),
         apply: (request: ApplyRequest): AppliedInfo =>
           store.internals.apply({
             actor: context.actor,
