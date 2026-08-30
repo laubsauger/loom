@@ -168,6 +168,14 @@ export const pointKernelNode: NodeDefinition = {
       compileTime: true,
       description: "fn process(p: Point, ctx: PointCtx) -> Point. pointRand(pointId, salt) is available.",
     },
+    group: {
+      type: "string",
+      label: "Group",
+      default: "",
+      compileTime: true,
+      description:
+        "T300: WGSL predicate over (p, ctx) — e.g. p.position.y > 0.0. Only matching points run the kernel; the rest pass through unchanged. Empty = all.",
+    },
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: POINT_KERNEL_CONTRACT_VERSION,
@@ -187,11 +195,13 @@ export const pointKernelNode: NodeDefinition = {
 
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
     const names = attributes.map((attribute) => attribute.name);
+    const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
     const module = generateKernelModule({
       attributes,
       reads: names,
       writes: names,
       kernel: kernelSource,
+      ...(groupSource.trim() === "" ? {} : { group: groupSource }),
     });
     if (!module.ok) {
       return {

@@ -176,3 +176,30 @@ describe("generated kernel module", () => {
     expect(badWorkgroup.ok).toBe(false);
   });
 });
+
+describe("group predicate (T300)", () => {
+  const request = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position", "velocity"],
+    kernel: GRAVITY_KERNEL,
+  };
+
+  it("gates process behind the predicate; non-members pass through byte-identical", () => {
+    const module = generateKernelModule({ ...request, group: "p.position.y > 0.0" });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).toContain("fn groupMatch(p: Point, ctx: PointCtx) -> bool {\n  return (p.position.y > 0.0);");
+    expect(module.wgsl).toContain("if (groupMatch(p, ctx)) {");
+    // q starts as p, so a non-member's stores write the loaded values back untouched.
+    expect(module.wgsl).toContain("var q = p;");
+  });
+
+  it("generates EXACTLY the v1 text with no group — existing pass signatures stand", () => {
+    const bare = generateKernelModule(request);
+    const empty = generateKernelModule({ ...request, group: "   " });
+    if (!bare.ok || !empty.ok) throw new Error("generation failed");
+    expect(empty.wgsl).toBe(bare.wgsl);
+    expect(bare.wgsl).toContain("let q = process(p, ctx);");
+    expect(bare.wgsl).not.toContain("groupMatch");
+  });
+});

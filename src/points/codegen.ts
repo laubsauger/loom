@@ -66,6 +66,12 @@ export interface KernelModuleRequest {
    * loads the flag as 1 (alive by construction inside the guard — no read binding).
    */
   readonly lifecycle?: { readonly aliveAttribute: string };
+  /**
+   * T300: Houdini's Group field as a WGSL predicate over (p, ctx). Only matching
+   * points run `process`; the rest pass through byte-identical. Evaluated in the
+   * thread already running — no list is ever materialized.
+   */
+  readonly group?: string;
 }
 
 export interface KernelModule {
@@ -214,6 +220,26 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   /* T322: the lifecycle module is guarded by the LIVE count — frame zero uses the
      static count because the buffer is zero-initialised and nothing has counted yet —
      and forces the alive flag on frame zero for the same reason. */
+  const group = typeof request.group === "string" ? request.group.trim() : "";
+  /* T300: a group predicate gates `process`; non-members pass through byte-identical.
+     The no-group text stays EXACTLY what v1 generated, so existing plans' pass
+     signatures do not change under this feature's mere existence. */
+  const groupFunction =
+    group === ""
+      ? ""
+      : `
+fn groupMatch(p: Point, ctx: PointCtx) -> bool {
+  return (${group});
+}
+`;
+  const invoke =
+    group === ""
+      ? "  let q = process(p, ctx);"
+      : `  var q = p;
+  if (groupMatch(p, ctx)) {
+    q = process(p, ctx);
+  }`;
+
   const liveExpression =
     lifecycle === undefined
       ? "kernelFrame.count"
@@ -258,7 +284,7 @@ struct PointCtx {
 ${RNG_WGSL}
 
 ${kernel}
-
+${groupFunction}
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let index = gid.x;
@@ -266,7 +292,7 @@ ${guard}
   var p: Point;
 ${loads}
   let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);
-  let q = process(p, ctx);
+${invoke}
 ${stores}
 }
 `;

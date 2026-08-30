@@ -87,6 +87,14 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       compileTime: true,
       description: "fn process(p: Point, ctx: PointCtx) -> Point. Set q.alive = 0u to kill. pointRand(pointId, salt) is available.",
     },
+    group: {
+      type: "string",
+      label: "Group",
+      default: "",
+      compileTime: true,
+      description:
+        "T300: WGSL predicate over (p, ctx). Only matching points run the kernel — non-members pass through ALIVE and unchanged. Empty = all.",
+    },
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,
@@ -137,12 +145,14 @@ export const pointKernelAdvancedNode: NodeDefinition = {
 
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
     const names = attributes.map((attribute) => attribute.name);
+    const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
     const module = generateKernelModule({
       attributes,
       reads: names,
       writes: names,
       kernel: kernelSource,
       lifecycle: { aliveAttribute: ALIVE },
+      ...(groupSource.trim() === "" ? {} : { group: groupSource }),
     });
     if (!module.ok) {
       return {
