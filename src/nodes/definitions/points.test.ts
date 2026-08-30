@@ -276,3 +276,63 @@ describe("attribute qualifiers ride the schema end to end (T287)", () => {
     expect(result.diagnostics?.[0]?.code).toBe("node.points.attributes");
   });
 });
+
+describe("bypass on a converter is muted, not spliced (T356)", () => {
+  it("a bypassed renderPoints never hands its consumer a pointset marker", async () => {
+    const { compileGraph } = await import("../../compiler/index.ts");
+    const { createNodeRegistry } = await import("../registry/registry.ts");
+    const { allNodeDefinitions } = await import("./index.ts");
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const graph = {
+      revision: 1,
+      nodes: {
+        sim: { id: "sim", type: "pointKernel", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { capacity: 64 } },
+        draw: {
+          id: "draw",
+          type: "renderPoints",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: { count: 64 },
+          ui: { bypassed: true },
+        },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "sim", portId: "out" }, target: { nodeId: "draw", portId: "points" } },
+        e2: { id: "e2", source: { nodeId: "draw", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    } as never;
+    const plan = compileGraph({
+      graph,
+      settings: {
+        outputResolution: { width: 64, height: 64 },
+        workingFormat: "rgba8unorm",
+        randomSeed: 7,
+        previewLongEdge: 192,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      } as never,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    // The failure this pins: the splice handed Output "points:sim:out" as a texture
+    // and the backend EXPLODED AT BUILD. Now: muted with the reason said out loud, no
+    // marker id ever appears in a pass, and what remains downstream is the ordinary
+    // missing-input story any mute produces — V9 keeps the last good plan, the
+    // problems tab says why, nothing detonates.
+    expect(plan.diagnostics.some((d) => d.code === "compiler/bypass-incoherent")).toBe(true);
+    const errors = plan.diagnostics.filter((d) => d.severity === "error");
+    expect(errors.every((d) => String(d.code).includes("input") || String(d.code).includes("missing"))).toBe(true);
+    const referencesMarker = plan.passes.some((pass) =>
+      JSON.stringify(pass).includes("points:sim:out"),
+    );
+    expect(referencesMarker).toBe(false);
+  });
+});

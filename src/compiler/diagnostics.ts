@@ -46,6 +46,8 @@ export const CompilerDiagnosticCode = {
   componentParameterConflict: "compiler/component-parameter-conflict",
   /** A passthrough (Null) chain that reaches no producer (T223, §V130). */
   passthroughUnconnected: "compiler/passthrough-unconnected",
+  /** T356: bypass on a converter — no input matches the output's kind; muted instead. */
+  bypassIncoherent: "compiler/bypass-incoherent",
 } as const;
 
 export type CompilerDiagnosticCodeValue =

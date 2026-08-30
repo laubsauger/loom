@@ -456,6 +456,7 @@ function splicePassthroughNodes(validated: {
     if (resolved.node.ui?.muted === true) muted.add(nodeId);
   }
   const wires = new Map<NodeId, { input: PortId; output: PortId }>();
+  const bypassDiagnostics: RuntimeDiagnostic[] = [];
   for (const [nodeId, resolved] of validated.nodes) {
     if (muted.has(nodeId)) continue;
     if (resolved.definition.passthrough !== undefined) {
@@ -465,11 +466,33 @@ function splicePassthroughNodes(validated: {
     // T250 (B16): BYPASS makes any node a wire, TD-style — first input through to
     // first output. A bypassed source (no inputs) has nothing to pass and mutes
     // instead: its output reads disconnected, exactly what "temporarily off" means.
+    //
+    // T356: the wire must be TYPE-COHERENT. A converter (renderPoints: pointset in,
+    // texture out) has no input a consumer of its output could bind — splicing one
+    // handed downstream a pointset MARKER as a texture id and the plan exploded at
+    // build (found by the cook oracle bypassing E9's renderPoints). The passthrough
+    // is the first input whose port KIND matches the first output's; none matching
+    // mutes instead, exactly like a source, with the reason said out loud.
     if (resolved.node.ui?.bypassed === true) {
-      const input = resolved.definition.inputs[0]?.id;
-      const output = resolved.definition.outputs[0]?.id;
-      if (input !== undefined && output !== undefined) wires.set(nodeId, { input, output });
-      else muted.add(nodeId);
+      const output = resolved.definition.outputs[0];
+      const input = resolved.definition.inputs.find(
+        (port) => output !== undefined && port.type.kind === output.type.kind,
+      );
+      if (input !== undefined && output !== undefined) {
+        wires.set(nodeId, { input: input.id, output: output.id });
+      } else {
+        muted.add(nodeId);
+        if (resolved.definition.inputs.length > 0 && output !== undefined) {
+          bypassDiagnostics.push(
+            compilerDiagnostic(
+              "warning",
+              CompilerDiagnosticCode.bypassIncoherent,
+              `Node "${nodeId}" (${resolved.node.type}) is bypassed, but no input matches its "${output.type.kind}" output — it is muted instead of wired through.`,
+              { nodeId, suggestion: "Un-bypass it, or disconnect it while you work." },
+            ),
+          );
+        }
+      }
     }
   }
   if (wires.size === 0 && muted.size === 0) {
@@ -478,11 +501,11 @@ function splicePassthroughNodes(validated: {
       edges: validated.edges,
       aliases: [],
       redirectSink: (sink) => sink,
-      diagnostics: [],
+      diagnostics: bypassDiagnostics,
     };
   }
 
-  const diagnostics: RuntimeDiagnostic[] = [];
+  const diagnostics: RuntimeDiagnostic[] = [...bypassDiagnostics];
   const edgesAfterMute =
     muted.size === 0
       ? validated.edges
