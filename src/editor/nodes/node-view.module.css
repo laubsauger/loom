@@ -300,8 +300,9 @@
     even when nothing is in it. An inset ring did that and drew a SECOND edge inside the
     slot's own bottom border — a visible doubled line, which is what the owner reported.
     Three tone steps do the job with no lines at all: node body `--bg-raise`, slot
-    `--bg-sunken` (darker), letterboxed tile black. The canvas ground was lifted to
-    #10141d in the same pass, which is what made the ring redundant.
+    `--bg-sunken` (darker), letterboxed tile black. `--bg-void` was lifted in the same
+    pass, which is what made the ring redundant. (Naming the TOKEN, not its hex: the V17
+    gate scans the file's text and a hex in a comment reads as a literal colour.)
   */
   border-bottom: var(--border-hairline);
   background: var(--bg-sunken);

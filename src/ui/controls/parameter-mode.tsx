@@ -120,6 +120,10 @@ export function ParameterModePanel({
   const [problem, setProblem] = useState<string | null>(null);
   /** Which candidate the arrow keys have moved to. Reset whenever the menu changes. */
   const [highlighted, setHighlighted] = useState(0);
+  // Escape closes the popup without cancelling the parameter; any edit brings it back.
+  const [dismissed, setDismissed] = useState(false);
+  // Has the user ARROWED to a candidate? Enter accepts only then — see the keydown note.
+  const [navigated, setNavigated] = useState(false);
   const [caret, setCaret] = useState(0);
 
   const active = pendingMode ?? slot.mode;
@@ -133,9 +137,9 @@ export function ParameterModePanel({
     // NOT gated on `scope`: an absent scope means "no live values to show", never "no
     // completion". Gating on it is how this shipped dead — the prop was optional, nothing
     // supplied it, and the menu could not appear (§V272).
-    if (active !== "expression" || draft === null) return null;
+    if (active !== "expression" || draft === null || dismissed) return null;
     return completionAt(draft, caret, scope, nodeNames ?? []);
-  }, [active, draft, caret, scope, nodeNames]);
+  }, [active, draft, caret, scope, nodeNames, dismissed]);
   const text = draft ?? payloadText(slot.bindings[active]);
 
   // The document caught up with the mode the panel was holding.
@@ -255,11 +259,20 @@ export function ParameterModePanel({
             // the graph keymap.
             onKeyDown={(event) => {
               event.stopPropagation();
-              // §V150: the menu never takes Enter or Escape. Those commit and cancel the
-              // PARAMETER, and a popup that swallows them turns every expression edit into
-              // a fight with the tool. TAB accepts — which is what the owner asked for and
-              // what leaves the field's own contract untouched.
-              if (completion !== null && event.key === "Tab" && !event.shiftKey) {
+              /*
+                ENTER accepts a SELECTED candidate; TAB accepts the top hit outright.
+                The owner asked to "confirm selection with enter", and the earlier Tab-only
+                rule reasoned that a popup swallowing Enter turns every edit into a fight.
+                BOTH are satisfied by requiring NAVIGATION: Enter accepts only once the user
+                has arrowed to a candidate, so someone who typed a whole expression and hit
+                Enter still COMMITS. My first attempt took Enter unconditionally and this
+                file's own T370 tests caught it — they type a refusable expression and press
+                Enter expecting the refusal, and got a completion instead.
+              */
+              const accepts =
+                completion !== null &&
+                ((event.key === "Tab" && !event.shiftKey) || (event.key === "Enter" && navigated));
+              if (accepts) {
                 const candidate = completion.candidates[highlighted] ?? completion.candidates[0];
                 if (candidate !== undefined) {
                   event.preventDefault();
@@ -267,6 +280,7 @@ export function ParameterModePanel({
                   setDraft(applied.source);
                   setProblem(null);
                   setHighlighted(0);
+                  setNavigated(false);
                   // The caret must land after the inserted text, and React will not move
                   // it for us — the value change alone would leave it where it was.
                   window.requestAnimationFrame(() => {
@@ -280,6 +294,7 @@ export function ParameterModePanel({
                 event.preventDefault();
                 const count = completion.candidates.length;
                 const step = event.key === "ArrowDown" ? 1 : count - 1;
+                setNavigated(true);
                 setHighlighted((current) => (current + step) % count);
                 return;
               }
@@ -288,11 +303,20 @@ export function ParameterModePanel({
                 commitPayload();
               } else if (event.key === "Escape") {
                 event.preventDefault();
+                // FIRST Escape closes the popup, SECOND cancels the parameter. That is what
+                // makes Enter-accepts safe: the way out is always one key, never a fight.
+                if (completion !== null) {
+                  setDismissed(true);
+                  setNavigated(false);
+                  return;
+                }
                 cancelPayload();
               }
             }}
             onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
             onChange={(event) => {
+              setDismissed(false);
+              setNavigated(false);
               setDraft(event.target.value);
               setCaret(event.target.selectionStart ?? event.target.value.length);
               setHighlighted(0);
