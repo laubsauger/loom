@@ -175,22 +175,26 @@ describe("T209 — the preview keeps its aspect inside the node's area (§V117, 
     const { captured } = await mountWithSquareSource();
 
     const program = captured.programs[captured.programs.length - 1];
-    const targets = (program?.resources ?? []).filter((resource) => resource.kind === "target");
+    const command = captured.commands[captured.commands.length - 1];
+
+    // The tile under test is NAMED, never "the only one": the Output node previews the
+    // picture it presents, so this graph has two tiles — the square Solid's and the
+    // 16:9 one the sink resolves to. `portId` separates them without knowing either
+    // generated node id.
+    const tile = command?.composite.find((entry) => entry.ref.portId === "out");
     // NON-VACUITY: there is a tile at all. Counting ratios on an empty program proves
     // nothing, and an empty program is what a broken preview pipeline produces.
-    expect(targets).toHaveLength(1);
-    const size = targets[0]?.size;
+    expect(tile).toBeDefined();
+    if (tile === undefined) return;
+
+    const targets = (program?.resources ?? []).filter((resource) => resource.kind === "target");
+    const size = targets.find((resource) => resource.id === tile.resourceId)?.size;
     expect(size).toBeDefined();
     if (size === undefined) return;
 
     // §V117: the tile is square because the TEXTURE is square — it does not inherit the
     // 16:9 shape of the box the user happens to have dragged the node to.
     expect(size[0] / size[1]).toBeCloseTo(SOURCE_ASPECT, 2);
-
-    const command = captured.commands[captured.commands.length - 1];
-    const tile = command?.composite[0];
-    expect(tile).toBeDefined();
-    if (tile === undefined) return;
 
     // §V118: and it is DRAWN into a region of the same aspect, so the image is letterboxed
     // inside the node rather than stretched across it. Stretching is what this asserts

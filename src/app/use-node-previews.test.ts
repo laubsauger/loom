@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { SINK_TARGET_PORT } from "@compiler/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { createPreviewSlotBounds, createPreviewViewStore } from "@editor/viewer/index.ts";
@@ -248,5 +251,99 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
     views.set("someone-else", { lens: "a" });
     const pass = renderWith(views).at(-1)?.passes[0];
     expect(pass?.shader).toBe(previewShader("color"));
+  });
+});
+
+/**
+ * The OUTPUT node's preview (§V25, §V117).
+ *
+ * An Output node declares no output port — it consumes one — so the candidate test
+ * "has a texture2d output" skipped the one node whose content is the finished picture,
+ * and its body was the only empty one in the graph. It does own a texture: the render
+ * target the compiler materializes for every declared sink, under `SINK_TARGET_PORT`.
+ *
+ * The second assertion is the one that is easy to lose: a declared sink must NOT be
+ * offered as a preview SINK. It is kept unconditionally already, and naming a port its
+ * definition does not declare makes `resolveSinks` warn — a true, useless warning on the
+ * problems surface, once per compile.
+ */
+describe("useNodePreviews previews the node that presents (§V25)", () => {
+  const wired = (): GraphDocument => ({
+    revision: 1,
+    nodes: {
+      src: { id: "src", type: "solid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      out1: { id: "out1", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+    },
+    edges: {
+      e0: { id: "e0", source: { nodeId: "src", portId: "out" }, target: { nodeId: "out1", portId: "input" } },
+    },
+    groups: {},
+  });
+
+  function run(graph: GraphDocument, compiledOutputs: ReadonlyArray<Record<string, unknown>>) {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    for (const nodeId of Object.keys(graph.nodes)) {
+      bounds.publish(nodeId, { x: 0, y: 0, width: 200, height: 120 });
+    }
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    const sinkSets: ReadonlyArray<{ nodeId: string; portId: string }>[] = [];
+
+    renderHook(() =>
+      useNodePreviews({
+        backend: fakeBackend(),
+        canvasRef: { current: canvas },
+        bounds,
+        graph,
+        registry,
+        compiledOutputs: compiledOutputs as never,
+        nodeRuntime,
+        previewSinks: { set: (refs) => sinkSets.push(refs) },
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+      }),
+    );
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    const snapshot = nodeRuntime.get("out1");
+    nodeRuntime.dispose();
+    return { snapshot, sinkSets };
+  }
+
+  const sinkTarget = {
+    nodeId: "out1",
+    portId: SINK_TARGET_PORT,
+    resourceId: `target:out1:${SINK_TARGET_PORT}`,
+    resourceKind: "target" as const,
+    size: [1280, 720] as const,
+    format: "rgba16float" as const,
+    space: "linear" as const,
+    temporal: false,
+  };
+
+  it("shows the presented image on the sink itself, without sinking it", () => {
+    const { snapshot, sinkSets } = run(wired(), [sinkTarget]);
+
+    expect(snapshot.preview?.output).toEqual({ nodeId: "out1", portId: SINK_TARGET_PORT });
+    expect(snapshot.preview?.state.kind).toBe("live");
+    expect(snapshot.preview?.facts).toEqual({ width: 1280, height: 720, format: "rgba16float" });
+    // Never asked for as a preview sink: §V25 keeps it, and `resolveSinks` would warn.
+    expect(sinkSets.flat().some((ref) => ref.nodeId === "out1")).toBe(false);
+  });
+
+  it("asks for nothing when the sink has no input, because it presents nothing", () => {
+    const graph = wired();
+    const empty = { ...graph, edges: {} };
+    const { snapshot } = run(empty, [sinkTarget]);
+
+    // A sink with nothing connected emits no pass, so its target exists in the plan and
+    // in no built program: a tile asking for it makes the preview host report an
+    // unresolvable binding on every retry, forever.
+    expect(snapshot.preview).toBeNull();
   });
 });

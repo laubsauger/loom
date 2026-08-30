@@ -200,14 +200,16 @@ describe("§V142 — a camera move costs no allocation (B13)", () => {
     const { view, counters, pane } = await mountWithPreviews();
 
     // NON-VACUITY: counting zero afterwards means nothing unless previews are actually
-    // running. One tile, sized from the node's preview area (160 CSS px -> the 192 ladder
-    // step) rather than from the on-screen rect, which at this zoom would be ~62.
+    // running. Two tiles — the Solid and the Output that presents it, since a declared
+    // sink previews the picture it presents — each sized from the node's preview area
+    // (160 CSS px -> the 192 ladder step) rather than from the on-screen rect, which at
+    // this zoom would be ~62.
     expect(counters.surfaceRegistrations).toBe(1);
     const installed = counters.programs[counters.programs.length - 1];
-    expect(installed?.passes).toHaveLength(1);
+    expect(installed?.passes).toHaveLength(2);
     expect(
       installed?.resources.filter((resource) => resource.kind === "target"),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
     // T252: the preview scheduler's kept set converges via ONE recompile after the
     // first tick registers visible tiles. Settle that handshake before baselining —

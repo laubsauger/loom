@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { liveClock } from "@domain/transport/live-clock.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { SINK_TARGET_PORT } from "@compiler/index.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { fitInsideRegion } from "@editor/nodes/index.ts";
@@ -67,16 +68,42 @@ export interface NodePreviewInputs {
   readonly previewLongEdge: number;
 }
 
-/** Every node whose definition has a texture output — the same test T182 uses to sink it. */
-function textureNodes(
+/**
+ * Every node that HAS a texture to show, and which port it lives on.
+ *
+ * A texture OUTPUT is the common case — the same test T182 uses to sink it. A declared
+ * sink is the other one: an Output node publishes no port at all, yet it owns the render
+ * target the whole graph exists to fill, materialized by the compiler under the reserved
+ * `SINK_TARGET_PORT`. Excluding it left the one node whose content the user most wants to
+ * see — the final picture — as the only empty body in the graph.
+ *
+ * `gated` says whether this node needs a preview SINK to exist at all (T252/§V158). A
+ * preview-only node does: nothing else keeps it, so the scheduler's kept set is what
+ * makes the compiler materialize it. A declared sink never does — §V25 keeps it
+ * unconditionally — and asking for it as a preview sink would make `resolveSinks` warn
+ * about a port the definition does not declare, which is true and useless.
+ *
+ * A sink with NOTHING CONNECTED is excluded, and that is not cosmetic. It presents no
+ * image, so its compile emits no pass; the target then exists in the plan and in no
+ * built program, and a tile asking for it makes the preview host report an unresolvable
+ * binding on every retry — a warning per second, forever, about a node whose real
+ * problem (`compiler/input-missing`) is already on screen.
+ */
+function previewCandidates(
   graph: GraphDocument,
   registry: NodeRegistryView,
-): ReadonlyArray<{ nodeId: NodeId; portId: string }> {
-  const found: Array<{ nodeId: NodeId; portId: string }> = [];
+): ReadonlyArray<{ nodeId: NodeId; portId: string; gated: boolean }> {
+  const found: Array<{ nodeId: NodeId; portId: string; gated: boolean }> = [];
+  const fed = new Set<NodeId>();
+  for (const edge of Object.values(graph.edges)) fed.add(edge.target.nodeId);
   for (const [nodeId, node] of Object.entries(graph.nodes)) {
     const definition = registry.get(node.type);
-    const port = definition?.outputs.find((candidate) => candidate.type.kind === "texture2d");
-    if (port !== undefined) found.push({ nodeId, portId: port.id });
+    if (definition === undefined) continue;
+    const port = definition.outputs.find((candidate) => candidate.type.kind === "texture2d");
+    if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true });
+    else if (definition.sink === true && fed.has(nodeId)) {
+      found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false });
+    }
   }
   return found;
 }
@@ -113,7 +140,12 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const viewport = current.getViewport();
       const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
 
-      const candidates = textureNodes(current.graph, current.registry);
+      const candidates = previewCandidates(current.graph, current.registry);
+      // Nodes the compiler already keeps on its own, so they must not be asked for as
+      // preview sinks (see `previewCandidates`).
+      const ungated = new Set<string>(
+        candidates.filter((candidate) => !candidate.gated).map((candidate) => candidate.nodeId),
+      );
       const requests: PreviewRequest[] = [];
       const idle: Array<{ nodeId: NodeId; portId: string }> = [];
       const visibleIdle: Array<{ nodeId: NodeId; portId: string }> = [];
@@ -145,7 +177,10 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
             const screen = slotScreenRect(box, viewport);
             const onScreen =
               screen.x < surface.width && screen.y < surface.height && screen.x + screen.width > 0 && screen.y + screen.height > 0;
-            if (onScreen || current.graph.nodes[nodeId]?.ui?.preview === true) {
+            if (
+              !ungated.has(nodeId) &&
+              (onScreen || current.graph.nodes[nodeId]?.ui?.preview === true)
+            ) {
               visibleIdle.push({ nodeId, portId });
             }
           }
@@ -198,9 +233,12 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       // T252: the compiler's preview-sink set = what the scheduler KEEPS, plus the
       // visible slots waiting on materialization (capped so the sink set cannot outrun
       // the tile budget the scheduler enforces).
+      const activeSinks = result.schedule.active
+        .filter((entry) => !ungated.has(entry.ref.nodeId as string))
+        .map((entry) => ({ nodeId: entry.ref.nodeId as string, portId: entry.ref.portId }));
       current.previewSinks?.set([
-        ...result.schedule.active.map((entry) => ({ nodeId: entry.ref.nodeId as string, portId: entry.ref.portId })),
-        ...visibleIdle.slice(0, Math.max(0, system.capacity - result.schedule.active.length)),
+        ...activeSinks,
+        ...visibleIdle.slice(0, Math.max(0, system.capacity - activeSinks.length)),
       ]);
 
       for (const entry of result.schedule.active) {

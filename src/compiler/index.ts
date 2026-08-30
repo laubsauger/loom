@@ -43,7 +43,7 @@ export type { FormatInputs, FormatOutcome, FormatRequest, FormatSource } from ".
 export { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 export type { ColorSpace, ColorSpaceOutcome, ColorSpaceRequest } from "./color-space.ts";
 
-export { SHARED_SAMPLER_ID, pingPongResourceId, swapPassId, targetResourceId } from "./resources.ts";
+export { SHARED_SAMPLER_ID, SINK_TARGET_PORT, pingPongResourceId, swapPassId, targetResourceId } from "./resources.ts";
 
 export {
   classifyEdit,
