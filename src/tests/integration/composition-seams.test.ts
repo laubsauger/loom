@@ -375,10 +375,34 @@ describe("§V205 — every seam the app is supposed to construct, enumerated (T3
  * MODULE, following re-exports through barrels, which is how the app actually reaches one.
  */
 
-const PANE_NAME = /(?:Pane|Panel)$/;
+/**
+ * The surface families this enumerates (T330, widened by T356).
+ *
+ * `Pane` and `Panel` fill the shell's slots, which is a registry — `AppShellProps` names
+ * them — and that is why §V241 was comfortable enumerating them. `Dialog`, `Settings` and
+ * `Popup` are the OTHER kind of whole surface: things a user OPENS. They are added because
+ * a third shape turned up (B38: `KeybindingSettings`, referenced only by its own test), and
+ * they are added by NAME because there is no registry of openable surfaces to check
+ * against.
+ *
+ * That is a real weakness and it is worth stating rather than hiding: §V241 prefers a
+ * registry precisely because a naming convention only catches what someone happened to
+ * name conventionally. A surface called `ShortcutEditor` would slip through this.
+ *
+ * The alternative — every exported component nothing renders — was measured before being
+ * rejected: 88 exported components, 63 of which match no surface family at all. That check
+ * would report buttons, rows and badges by the dozen and be switched off within a week.
+ * This set is nine components across three families, and it found exactly one real thing.
+ */
+const PANE_NAME = /(?:Pane|Panel|Dialog|Settings|Popup)$/;
 
 /** Panes deliberately not rendered, with the reason. Same both-directions rule as above. */
 const NOT_RENDERED: ReadonlyArray<{ name: string; reason: string }> = [
+  {
+    name: "KeybindingSettings",
+    reason:
+      "B38 — FOUND BY THIS GUARD when T356 widened it, and the third naming the enumeration could not see (after B34's ViewerPane and B35's ShaderEditorPanel). The keymap's rebinding surface is referenced only by its own test: the keymap ITSELF is live, so shortcuts work, but nothing in the product lets a user change one. Where a keybinding editor belongs — the help panel beside the shortcut list, a dialog of its own, a settings tab — is a product decision (§V242), so it is reported rather than folded. The line comes out when it is rendered or removed.",
+  },
   {
     name: "Pane",
     reason:
@@ -474,11 +498,15 @@ const panes = collectPanes();
 const unrendered = panes.filter((pane) => !isRendered(pane));
 const excusedPanes = new Map(NOT_RENDERED.map((entry) => [entry.name, entry.reason]));
 
-describe("§V241 — every pane module is rendered by the app (T330)", () => {
-  it("finds real panes, or it is measuring nothing", () => {
+describe("§V241 — every surface module is rendered by the app (T330, T356)", () => {
+  it("finds real surfaces, or it is measuring nothing", () => {
     expect(panes.length).toBeGreaterThan(4);
-    // The shell's own slots are the registry this is enumerated against.
+    // The shell's own slots are the registry the PANE half is enumerated against.
     expect(panes.some((pane) => pane.name === "ViewerPane")).toBe(true);
+    // And the widened families are actually present, or T356 added a regex that matches
+    // nothing and the guard silently got no bigger.
+    expect(panes.some((pane) => pane.name.endsWith("Dialog"))).toBe(true);
+    expect(panes.some((pane) => pane.name.endsWith("Settings"))).toBe(true);
   });
 
   it("renders every pane, or says in writing why it does not", () => {
