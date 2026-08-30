@@ -46,6 +46,7 @@ export const portTypeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("transform3d") }),
   z.object({ kind: z.literal("event") }),
   z.object({ kind: z.literal("audioFeatures") }),
+  z.object({ kind: z.literal("value") }),
 ]);
 
 export const parameterValueSchema = z.union([
@@ -182,6 +183,9 @@ export const projectSettingsSchema = z.object({
   randomSeed: z.number().int(),
   previewLongEdge: z.number().int().positive(),
   previewFps: z.number().positive(),
+  // Bounded, not merely positive: 0.001 fps makes a timeline nothing advances on, and
+  // 100000 makes `time` meaningless. Optional so pre-fps documents parse (§V68).
+  fps: z.number().min(1).max(240).optional(),
   /** T84: optional so pre-colour-policy documents parse; absent means the default. */
   colorPolicy: z
     .object({

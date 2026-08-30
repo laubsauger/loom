@@ -116,3 +116,40 @@ describe("liveClock", () => {
     expect(frame.deltaSeconds).toBe(0);
   });
 });
+
+describe("fps as a live setting (T272)", () => {
+  it("reads the rate every frame, so a project setting can change while running", () => {
+    let fps = 60;
+    const clock = liveClock({ fps: () => fps, now: () => 0 });
+    clock.next();
+    fps = 30;
+    // The step is the NEW rate's, immediately — not the one captured at construction.
+    const before = clock.next().timeSeconds;
+    expect(clock.next().timeSeconds - before).toBeCloseTo(1 / 30, 10);
+  });
+
+  it("does not teleport the timeline when the rate changes", () => {
+    // The bug this prevents: with a naive `frameIndex / fps`, frame 600 reads 10s at
+    // 60fps and 20s the instant the rate becomes 30 — every time-driven node in the
+    // project jumps ten seconds because someone nudged a settings field.
+    let fps = 60;
+    const clock = liveClock({ fps: () => fps, now: () => 0 });
+    let last = 0;
+    for (let i = 0; i < 600; i += 1) last = clock.next().timeSeconds;
+    expect(last).toBeCloseTo(599 / 60, 10);
+
+    fps = 30;
+    const after = clock.next().timeSeconds;
+    // Continuous: one frame later, one frame's worth of time at the new rate.
+    expect(after - last).toBeCloseTo(1 / 30, 10);
+  });
+
+  it("stays exact within a rate, so frames are not walked into drift", () => {
+    // Rebasing must not turn division into accumulation — 10000 frames of `+= 1/fps`
+    // accumulates float error that `index / fps` does not have.
+    const clock = liveClock({ fps: () => 60, now: () => 0 });
+    let last = 0;
+    for (let i = 0; i < 10_000; i += 1) last = clock.next().timeSeconds;
+    expect(last).toBe(9999 / 60);
+  });
+});

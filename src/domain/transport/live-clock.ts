@@ -9,7 +9,7 @@ export interface LiveClockOptions {
    * the same number, or timeline time runs fast on a 120 Hz display and slow on a
    * struggling one — one fps, driving both.
    */
-  fps?: number;
+  fps?: number | (() => number);
   /**
    * Which clock `timeSeconds` / `deltaSeconds` carry (T271, §V172).
    *
@@ -53,11 +53,26 @@ export const DEFAULT_TIMELINE_FPS = 60;
 export function liveClock(options: LiveClockOptions = {}): TransportSource {
   const now = options.now ?? (() => performance.now());
   const maxDelta = options.maxDeltaSeconds ?? 0.25;
-  const fps = options.fps === undefined || options.fps <= 0 ? DEFAULT_TIMELINE_FPS : options.fps;
+  // Read PER FRAME, not captured: the project's fps is a document setting the user can
+  // change while running, and re-creating the transport to pick it up would reset
+  // `timeSeconds` to zero — a settings edit is not a seek.
+  const readFps = typeof options.fps === "function" ? options.fps : () => options.fps as number;
+  const fpsNow = (): number => {
+    const value = readFps();
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_TIMELINE_FPS;
+  };
   const useTimeline = (options.clock ?? "timeline") === "timeline";
 
   let seed = options.seed ?? 0;
   let frameIndex = 0;
+  // Timeline epoch: the (time, frame, rate) triple the current run of frames is measured
+  // from. Only a rate change moves it.
+  let epochSeconds = 0;
+  let epochIndex = 0;
+  let epochFps = fpsNow();
+  let lastTimelineSeconds = 0;
   let lastMs: number | null = null;
   let wallSeconds = 0;
 
@@ -77,10 +92,25 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
       wallSeconds += wallDeltaSeconds;
 
       const index = frameIndex++;
-      // Divided, not accumulated: frame N lands on exactly N/fps, with no accumulated
-      // rounding and no jitter. Frame 0 has no predecessor, so it has no step.
-      const timelineSeconds = index / fps;
+      const fps = fpsNow();
+      // Divided rather than accumulated, so frame N lands on exactly N/fps with no
+      // accumulated rounding — but divided from an EPOCH, not from zero, so that changing
+      // the project's rate does not teleport the timeline. At 60fps frame 600 is 10s; a
+      // naive `index / fps` would make it 20s the instant the rate became 30. Rebasing on
+      // the rate change keeps elapsed time continuous while every frame within one rate is
+      // still exact.
+      if (fps !== epochFps) {
+        // Rebase so this frame advances by the NEW rate's step. Carrying the old step for
+        // one frame would report a delta of 1/newFps while time moved 1/oldFps, and §V172
+        // is exactly that the pair always belongs to one clock — a rate change must not
+        // open a one-frame hole in it.
+        epochSeconds = lastTimelineSeconds + (index === 0 ? 0 : 1 / fps);
+        epochIndex = index;
+        epochFps = fps;
+      }
+      const timelineSeconds = epochSeconds + (index - epochIndex) / fps;
       const timelineDelta = index === 0 ? 0 : 1 / fps;
+      lastTimelineSeconds = timelineSeconds;
 
       return {
         timeSeconds: useTimeline ? timelineSeconds : wallSeconds,
@@ -97,6 +127,10 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
       frameIndex = 0;
       lastMs = null;
       wallSeconds = 0;
+      epochSeconds = 0;
+      epochIndex = 0;
+      epochFps = fpsNow();
+      lastTimelineSeconds = 0;
     },
   };
 }

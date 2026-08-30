@@ -136,6 +136,15 @@ export const DEFAULT_COLOR_POLICY: ColorPolicy = Object.freeze({
   displayTransform: "srgb",
 });
 
+/** The timeline rate a project runs at, with the default applied once rather than per caller. */
+export function projectFps(settings: Pick<ProjectSettings, "fps">): number {
+  const fps = settings.fps;
+  return typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? fps : DEFAULT_PROJECT_FPS;
+}
+
+/** Shared with the transport so the clock and the document cannot disagree about the default. */
+export const DEFAULT_PROJECT_FPS = 60;
+
 export interface ProjectSettings {
   outputResolution: { width: number; height: number };
   workingFormat: TextureFormat;
@@ -143,6 +152,17 @@ export interface ProjectSettings {
   randomSeed: number;
   previewLongEdge: number;
   previewFps: number;
+  /**
+   * Timeline rate: the denominator of timeline time (§V176), so changing it changes the
+   * animation timebase rather than just how often we draw.
+   *
+   * Optional for the same reason `colorPolicy` is — documents written before it existed
+   * must keep parsing (§V68). Read it through `projectFps()` rather than defaulting at
+   * each call site, so there is one answer to "what rate is this project".
+   *
+   * NOT structural (§V178): an fps edit must not recompile or rebuild resources.
+   */
+  fps?: number;
   /** Absent in older documents; consumers read `settings.colorPolicy ?? DEFAULT_COLOR_POLICY`. */
   colorPolicy?: ColorPolicy;
   limits: {

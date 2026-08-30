@@ -4,6 +4,7 @@ import type { CompiledGraph } from "@compiler/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import { projectFps } from "@domain/types/graph.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
@@ -29,12 +30,9 @@ import { registerTransportCommands } from "./transport-commands.ts";
 
 const MAX_DIAGNOSTICS = 50;
 
-/**
- * The timeline rate (T271). Drives the clock AND the scheduler, so `time` advances at
- * one second per second on any display. `ProjectSettings` has no fps field yet (T266);
- * when it grows one, this constant is what it replaces.
- */
-const TIMELINE_FPS = 60;
+// The timeline rate now comes from the document (§V177, T272) via `projectFps`, which
+// applies the default in one place. What it must NOT become is two numbers: the clock and
+// the scheduler read the same one, or timeline time runs fast on a 120 Hz display.
 const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
 
 export interface FrameLoopResult {
@@ -85,6 +83,9 @@ export function useFrameLoop(
   // a function for exactly this reason.
   const resolutionRef = useRef(settings.outputResolution);
   resolutionRef.current = settings.outputResolution;
+  const fps = projectFps(settings);
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
 
   /**
    * §V163 — the whole of "the picture moves".
@@ -135,9 +136,11 @@ export function useFrameLoop(
     pointerRef.current = pointer;
     // T271/§V172 — ONE fps: the timeline clock advances at `1/fps` and the scheduler is
     // capped to the same rate, or timeline time runs fast on a 120 Hz display and slow on
-    // a struggling one. The number is a constant until `ProjectSettings` carries an fps
-    // (T266); it is read from one place either way.
-    const transport = liveClock({ fps: TIMELINE_FPS });
+    // a struggling one. The clock reads the rate through a getter so a settings edit takes
+    // effect without rebuilding the transport (which would reset elapsed time — a rate
+    // change is not a seek); the scheduler's cap is set when the loop starts, so the
+    // effect below restarts it to keep the two in step.
+    const transport = liveClock({ fps: () => fpsRef.current });
     const driver = createFrameDriver({
       backend,
       transport,
@@ -146,7 +149,7 @@ export function useFrameLoop(
         const { width, height } = resolutionRef.current;
         return [width, height] as const;
       },
-      fps: TIMELINE_FPS,
+      fps: fpsRef.current,
       // A ref, not state: this runs on every rendered frame (§V16).
       onFrame: (inputs) => {
         latestFrameRef.current = inputs;
@@ -206,6 +209,25 @@ export function useFrameLoop(
       driverRef.current = null;
     };
   }, [backend, bus, pushAnimatedValues]);
+
+  /**
+   * Keep the SCHEDULER's cap in step with the clock's rate (§V172).
+   *
+   * The clock reads fps through a getter, so a settings edit changes the timeline step
+   * immediately. The scheduler's cap, though, is fixed when `backend.loop` starts. Left
+   * alone the two would disagree — the timeline advancing at 1/30 while frames still
+   * arrive 60 times a second makes `time` run at half speed against the wall, which is
+   * the "one fps, driving both" rule broken in the least visible way.
+   *
+   * Restarting the LOOP is enough: the transport is not rebuilt, so elapsed time carries
+   * across (a rate change is not a seek), and a paused timeline stays paused.
+   */
+  useEffect(() => {
+    const driver = driverRef.current;
+    if (driver === null || !driver.running) return;
+    driver.stop();
+    driver.start();
+  }, [fps]);
 
   useEffect(() => {
     const driver = driverRef.current;
