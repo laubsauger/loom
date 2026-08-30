@@ -391,3 +391,122 @@ describe("B47 — one decode answer for every way of showing an output (T375)", 
     expect(measured.viewer).toEqual([54, 54, 54, 255]);
   }, 60_000);
 });
+
+/**
+ * T405 (§V64/§V70, V386): N viewers on one output are N BLITS of one texture — the
+ * multi-surface contract the pane tree's second viewer leans on. Nothing new was built
+ * for it, so what this pins is that nothing NEEDS to be: two surfaces of one output
+ * show the same bytes from the same plan (no per-viewer copy of anything), and two
+ * surfaces of two outputs each show their own.
+ */
+describe("T405 — two viewers are two blits, never two pipelines (V386)", () => {
+  it("two surfaces on ONE output agree byte for byte, from one unchanged plan", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: solidThroughOutput(),
+      settings: settings("rgba8unorm"),
+      registry,
+      capabilities: CAPS,
+    });
+    const output = plan.outputs.find((entry) => entry.nodeId === "out");
+    if (output === undefined) throw new Error("the Output node materialized no target");
+
+    const { host, session } = capturingHost();
+    const backend = createVgpuBackend({ host });
+    try {
+      await backend.initialize({});
+      const device = (session()?.gpu.gpu ?? undefined) as GPUDevice | undefined;
+      if (device === undefined) throw new Error("no device");
+      const compiled = await backend.compile(plan);
+
+      const first = stubCanvas(device, SIZE, SIZE);
+      const second = stubCanvas(device, SIZE, SIZE);
+      backend.present(first as never, { outputId: output.resourceId, label: "viewer-1" });
+      backend.present(second as never, { outputId: output.resourceId, label: "viewer-2" });
+
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [SIZE, SIZE],
+      });
+      await device.queue.onSubmittedWorkDone();
+
+      const a = first.texture();
+      const b = second.texture();
+      if (a === undefined || b === undefined) throw new Error("a viewer surface was never configured");
+      const bytesA = await readTexture(device, a, SIZE, SIZE);
+      const bytesB = await readTexture(device, b, SIZE, SIZE);
+      expect(bytesA).toEqual(bytesB);
+      // And they show the PICTURE, not a blank pair that trivially agrees.
+      const centre = ((SIZE / 2) * SIZE + SIZE / 2) * 4;
+      expect(bytesA[centre]).toBe(ENCODED_BYTE + 1);
+    } finally {
+      backend.dispose();
+    }
+  }, 60_000);
+
+  it("two surfaces on TWO outputs each show their own picture", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const graph = solidThroughOutput();
+    // A second, darker solid through a second Output.
+    (graph.nodes as Record<string, unknown>)["solid2"] = {
+      id: "solid2",
+      type: "solid",
+      definitionVersion: 1,
+      position: { x: 0, y: 200 },
+      parameters: { color: [0, 0, 0, 1] },
+    };
+    (graph.nodes as Record<string, unknown>)["out2"] = {
+      id: "out2",
+      type: "output",
+      definitionVersion: 1,
+      position: { x: 200, y: 200 },
+      parameters: {},
+    };
+    (graph.edges as Record<string, unknown>)["e2"] = {
+      id: "e2",
+      source: { nodeId: "solid2", portId: "out" },
+      target: { nodeId: "out2", portId: "input" },
+    };
+    const plan = compileGraph({ graph, settings: settings("rgba8unorm"), registry, capabilities: CAPS });
+    const grey = plan.outputs.find((entry) => entry.nodeId === "out");
+    const dark = plan.outputs.find((entry) => entry.nodeId === "out2");
+    if (grey === undefined || dark === undefined) throw new Error("an Output materialized no target");
+
+    const { host, session } = capturingHost();
+    const backend = createVgpuBackend({ host });
+    try {
+      await backend.initialize({});
+      const device = (session()?.gpu.gpu ?? undefined) as GPUDevice | undefined;
+      if (device === undefined) throw new Error("no device");
+      const compiled = await backend.compile(plan);
+
+      const first = stubCanvas(device, SIZE, SIZE);
+      const second = stubCanvas(device, SIZE, SIZE);
+      backend.present(first as never, { outputId: grey.resourceId, label: "viewer-1" });
+      backend.present(second as never, { outputId: dark.resourceId, label: "viewer-2" });
+
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [SIZE, SIZE],
+      });
+      await device.queue.onSubmittedWorkDone();
+
+      const a = first.texture();
+      const b = second.texture();
+      if (a === undefined || b === undefined) throw new Error("a viewer surface was never configured");
+      const centre = ((SIZE / 2) * SIZE + SIZE / 2) * 4;
+      const bytesA = await readTexture(device, a, SIZE, SIZE);
+      const bytesB = await readTexture(device, b, SIZE, SIZE);
+      expect(bytesA[centre]).toBe(ENCODED_BYTE + 1);
+      expect(bytesB[centre]).toBe(0);
+    } finally {
+      backend.dispose();
+    }
+  }, 60_000);
+});

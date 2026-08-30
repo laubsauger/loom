@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { StrictMode, useEffect, useState } from "react";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
@@ -823,5 +823,50 @@ describe("V311 — a v2 layout still opens on what the user arranged", () => {
     expect(screen.getByRole("button", { name: /^Saved layout/ })).toBeDefined();
     // And v2's key is gone — the v4 tree and its v3 projection hold the layout.
     expect(storage.keys().sort()).toEqual([PANE_TREE_STORAGE_KEY, LAYOUT_STORAGE_KEY].sort());
+  });
+});
+
+/**
+ * T405 — two tabs of ONE role are two INSTANCES: each holds its own state, which is
+ * what makes a second viewer with its own output picker true by construction rather
+ * than by plumbing. The backend side of the claim (two surfaces on one output are two
+ * blits of one texture) is pinned in `present-parity.gpu.test.ts`.
+ */
+describe("T405 — a second pane of one role is its own instance", () => {
+  function CounterProbe() {
+    const [count, setCount] = useState(0);
+    return (
+      <button type="button" data-testid="counter" onClick={() => setCount(count + 1)}>
+        {`count:${count}`}
+      </button>
+    );
+  }
+
+  it("splitting in a second viewer gives it INDEPENDENT state", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} viewer={<CounterProbe />} />);
+
+    // One viewer to start; bump its counter.
+    const first = screen.getByTestId("counter");
+    await user.click(first);
+    expect(first.textContent).toBe("count:1");
+
+    // Split the right dock and put a SECOND viewer in the fresh leaf.
+    const rightLeaf = zoneElement("right");
+    await user.click(within(rightLeaf).getByRole("button", { name: "Split or close this pane area" }));
+    await user.click(screen.getByRole("button", { name: "Split down" }));
+    await user.click(screen.getByRole("button", { name: /^viewer$/ }));
+
+    const counters = screen.getAllByTestId("counter");
+    expect(counters).toHaveLength(2);
+    // The first kept its state; the second starts fresh — two fibers, two states.
+    expect(counters.map((counter) => counter.textContent).sort()).toEqual(["count:0", "count:1"]);
+
+    await user.click(counters.find((counter) => counter.textContent === "count:0") as HTMLElement);
+    expect(counters.map((counter) => counter.textContent).sort()).toEqual(["count:1", "count:1"]);
+    // Still independent: bumping one did not move the other.
+    const [a, b] = screen.getAllByTestId("counter");
+    expect(a?.textContent).toBe("count:1");
+    expect(b?.textContent).toBe("count:1");
   });
 });

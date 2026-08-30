@@ -278,6 +278,12 @@ export interface ViewerPaneProps {
    * because a shader reading `pointer` means "where in the PICTURE", and this canvas is the
    * picture. Two sources for one device drift by a frame and the CPU and GPU halves of one
    * graph then disagree about where the cursor is (§V182).
+   *
+   * T405: with the pane tree, SEVERAL viewer instances may hold this same source. That is
+   * deliberate last-writer-wins — whichever picture the cursor is over is the picture
+   * "pointer" means — and it must stay ONE source: per-viewer pointer sources would make
+   * one graph read two cursors in one frame, which is §V182's drift with extra steps.
+   * Do not "fix" this into a source per instance.
    */
   pointer?: PointerSource | null;
   /**
