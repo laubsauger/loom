@@ -285,7 +285,27 @@ function checkAgainstManifest(
   return { value: defaultParameterValue(definition), diagnostic };
 }
 
-const ZERO_FRAME_SCOPE: ExpressionScope = { time: 0, delta: 0, frame: 0 };
+/**
+ * The zero frame, DERIVED rather than retyped (T489, §V150, §V316).
+ *
+ * This used to be a hand-written `{ time: 0, delta: 0, frame: 0 }`, and the hand list had
+ * fallen five names behind `scopeFromFrame`: `walltime`, `walldelta`, `abstime` and
+ * `absframe` were all absent. That is not a cosmetic gap, because `evaluateExpression`
+ * treats an unknown name as a HARD FAILURE — so on the frameless paths (a Text node's
+ * raster, a component instance's published values) `time * 2` resolved to `0` while
+ * `abstime * 2` failed outright and fell back to the manifest default. A clock the rest of
+ * the app offers, refused in one corner.
+ *
+ * Deriving it from `scopeFromFrame` of an all-zero frame means scope name #N+1 arrives
+ * here by construction, the way `frameVariableNames` already does for the completion menu.
+ */
+const ZERO_FRAME_SCOPE: ExpressionScope = scopeFromFrame({
+  timeSeconds: 0,
+  deltaSeconds: 0,
+  frameIndex: 0,
+  mode: "offline",
+  randomSeed: 0,
+});
 
 /** No frame = the deterministic zero frame (§V44), so a compile-time resolve of `time*2` is 0, not an error. */
 function expressionScope(options: ResolveParametersOptions): ExpressionScope {

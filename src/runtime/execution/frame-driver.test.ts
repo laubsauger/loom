@@ -220,6 +220,13 @@ describe("offline transport", () => {
       frameIndex: 10,
       mode: "fixed-step",
       randomSeed: 0,
+      // T489: the ABSOLUTE clock, seeded at `startFrame` so it AGREES with the timeline
+      // for any sequence that never wraps — which is exactly what the fallback returned
+      // when this transport published no pair at all, so no existing take moved. The two
+      // diverge only across a `wrapTo`, and there the divergence is the fix (see
+      // `loop-continuity.test.ts`).
+      absFrameIndex: 10,
+      absTimeSeconds: 10 / 24,
     });
     expect(second.deltaSeconds).toBeCloseTo(1 / 24, 12);
     expect(second.frameIndex).toBe(11);

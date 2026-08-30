@@ -1,5 +1,7 @@
 import { absFrameIndexOf, absTimeSecondsOf, wallDeltaSecondsOf, wallSecondsOf } from "../../domain/types/frame.ts";
+import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { FrameInputs } from "../../domain/types/backend.ts";
+import type { UniformValues } from "./plan.ts";
 
 /**
  * The per-frame uniform block every pass may bind (§T16).
@@ -78,5 +80,38 @@ export function sharedUniformsFromFrame(inputs: FrameInputs): SharedUniformValue
     absFrame: absFrameIndexOf(frame),
     resolution: [resolution[0], resolution[1]],
     pointer: [pointer.x, pointer.y, pointer.buttons, 0],
+  };
+}
+
+/**
+ * The per-frame values every DISPATCH pass's own uniform block receives (T172, T489).
+ *
+ * A compute pass does not bind the shared block above — it binds its own `KernelFrame`,
+ * generated per kernel — so the frame fields have to be written into it by name, and this
+ * is the one place that decides which fields those are. It lives here, beside the block it
+ * mirrors, rather than inline in the backend, because §V437's whole lesson is that a clock
+ * reaching one surface and not the next is what happens when two places each answer "which
+ * numbers is a frame" separately. One answer, gated in `loop-continuity.test.ts`.
+ *
+ * The pointer and the ABSOLUTE pair are read off the shared values rather than re-derived
+ * from the frame, so a point kernel and a fragment shader cannot come to disagree about
+ * where the cursor is or how long the show has run (§V182).
+ *
+ * Passes whose block declares none of these ignore the keys — vgpu writes by NAME into the
+ * layout it reflected — so a kernel that named no optional member pays nothing (§V309).
+ */
+export function dispatchFrameUniforms(
+  frame: FrameEvaluationInput,
+  shared: SharedUniformValues,
+): UniformValues {
+  return {
+    // T271/§V172: the TIMELINE pair, which wraps at a lap...
+    timeSeconds: frame.timeSeconds,
+    deltaSeconds: frame.deltaSeconds,
+    frameIndex: frame.frameIndex,
+    pointer: shared.pointer,
+    // ...and T461/T489's absolute pair, which does not. `ctx.absTime`/`ctx.absFrame`.
+    absTimeSeconds: shared.absTime,
+    absFrameIndex: shared.absFrame,
   };
 }

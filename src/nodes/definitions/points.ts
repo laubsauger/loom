@@ -256,7 +256,7 @@ export const pointKernelNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
+        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472), value1..value4 (this node's drivable Value parameters, T479) and absTime/absFrame (the clock that keeps growing across a timeline loop, where time and frameIndex wrap — T489) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
     },
     group: {
       type: "string",
@@ -418,6 +418,11 @@ export const pointKernelNode: NodeDefinition = {
         // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
         // new machinery at all.
         ...pointKernelValueUniforms(module.usesValues, parameters),
+        // T489 (B97): the absolute pair, reserved exactly when the module declared it —
+        // same by-name mirroring hazard as the pointer above. The backend overwrites both
+        // every frame from the numbers the shared block gets, so a kernel and a shader
+        // cannot disagree about how long the show has run (§V182).
+        ...(module.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
       },
       // T477: exactly when the module declared the texture (§V288's mirror hazard —
       // vgpu binds by name, and a declared texture with no binding fails loudly).

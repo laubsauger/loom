@@ -25,11 +25,31 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
   let frameIndex = startFrame;
   /** Set by `wrapTo`: the in point after a lap has a predecessor, so its step is real. */
   let wrapped = false;
+  /**
+   * The ABSOLUTE clock (T461), the offline half — added by T489.
+   *
+   * This transport used to publish NO absolute pair at all, which read as harmless because
+   * `absTimeSecondsOf`/`absFrameIndexOf` fall back to the timeline reading. It is harmless
+   * right up to a LAP: `wrapTo` puts `frameIndex` back to the in point, the fallback goes
+   * back with it, and every surface downstream — expressions, the shared frame block, point
+   * kernels — sees `abstime` DECREASE. The one clock that exists so nothing resets at the
+   * loop was resetting at the loop, for every offline render and every headless test that
+   * reproduces one. §V437's shape one level lower down: the property was delivered to the
+   * live transport and not to this one.
+   *
+   * It counts frames PRODUCED, and it is seeded at `startFrame` rather than at zero. That
+   * is what keeps this change from moving a single existing pixel: for any sequence that
+   * never wraps, this is exactly `frameIndex`, which is exactly what the fallback returned
+   * before. Only across a `wrapTo` do the two differ, and there the difference is the fix.
+   */
+  let absFrameIndex = startFrame;
 
   return {
     next(): FrameEvaluationInput {
       const current = frameIndex;
       frameIndex += 1;
+      const absIndex = absFrameIndex;
+      absFrameIndex += 1;
       const timeSeconds = current / options.fps;
       const step = current === startFrame && !wrapped ? 0 : deltaSeconds;
       return {
@@ -44,15 +64,30 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
         // here IS the timeline.
         wallSeconds: timeSeconds,
         wallDeltaSeconds: step,
+        // T489/T461: divided at the timeline rate, exactly as `timeSeconds` is, so the two
+        // clocks agree until something wraps the timeline and diverge only then.
+        absFrameIndex: absIndex,
+        absTimeSeconds: absIndex / options.fps,
       };
     },
+    /**
+     * Start the sequence over. The absolute clock goes back WITH the timeline here, where
+     * the live clock's `reset` deliberately leaves it running (T461) — and the difference
+     * is not an inconsistency but the two verbs meaning different things. A live `reset` is
+     * a SEEK inside one continuing session, which is precisely the case abstime exists to
+     * survive; re-running this transport is a FRESH TAKE, which is the case T467 says must
+     * start from zero or the same project renders different bytes on different days.
+     */
     reset(nextSeed?: number): void {
       if (nextSeed !== undefined) seed = nextSeed;
       frameIndex = startFrame;
+      absFrameIndex = startFrame;
     },
-    /** T467: an offline sequence never carried session age to shed — the frames above
-     *  publish no abs pair, so consumers fall back to the timeline clock (T461). */
-    resetAbsolute(): void {},
+    /** T467: a take is a fresh performance, so the absolute clock returns to where a fresh
+     *  run of this sequence would start it. */
+    resetAbsolute(): void {
+      absFrameIndex = startFrame;
+    },
     /**
      * T464 — wrap the timeline without starting anything over.
      *
@@ -65,6 +100,9 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
     wrapTo(target: number): void {
       frameIndex = Math.max(0, Math.trunc(target));
       wrapped = true;
+      // T489: `absFrameIndex` is deliberately NOT touched. That omission is the whole
+      // difference between a lap and a jump on this transport, exactly as it is on the
+      // live clock — `time` wraps, `abstime` does not.
     },
   };
 }

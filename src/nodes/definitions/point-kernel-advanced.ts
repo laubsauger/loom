@@ -97,7 +97,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). ctx.pointer (vec4f: x, y, buttons) and ctx.value1..value4 (this node's drivable Value parameters, T479) are available to a kernel that names them. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). ctx.pointer (vec4f: x, y, buttons), ctx.value1..value4 (this node's drivable Value parameters, T479) and ctx.absTime/ctx.absFrame (the clock that keeps growing across a timeline loop, where ctx.time wraps — T489) are available to a kernel that names them. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "string",
@@ -114,7 +114,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       multiline: true,
       compileTime: true,
       description:
-        "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies.",
+        "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies. Same ctx as the kernel: ctx.absTime is the clock that does not restart at a loop, so newborns after a lap do not repeat the phases of the ones before it (T489).",
     },
     // T479: all three texts are scanned — kernel, group predicate and spawn hook read the
     // SAME ctx on the SAME node, so a slot is active if any of them names it.
@@ -310,6 +310,8 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
           // T479: mirrored per declared slot, same hazard as the pointer above.
           ...pointKernelValueUniforms(module.usesValues, parameters),
+          // T489 (B97): the absolute pair, same mirroring rule as the pointer above.
+          ...(module.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
         },
         uniformBinding: "kernelFrame",
         nodeId,
@@ -367,6 +369,8 @@ export const pointKernelAdvancedNode: NodeDefinition = {
                 ...(hookModule.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
                 // T479: the hook's own slots, mirrored from the same parameters.
                 ...pointKernelValueUniforms(hookModule.usesValues, parameters),
+                // T489 (B97): the hook's own absolute pair, mirrored the same way.
+                ...(hookModule.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
               },
               uniformBinding: "kernelFrame",
               nodeId,

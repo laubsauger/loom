@@ -44,7 +44,7 @@ import {
   type ResourceDescriptor,
   type UniformValues,
 } from "../plan.ts";
-import { sharedUniformsFromFrame } from "../shared-uniforms.ts";
+import { dispatchFrameUniforms, sharedUniformsFromFrame } from "../shared-uniforms.ts";
 import { describeCapabilities, meetsBaseline } from "./capabilities.ts";
 import { browserGpuHost, type GpuHost, type GpuSession } from "./gpu-host.ts";
 import {
@@ -1514,20 +1514,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // render, merged over its static values (seed, count) — the KernelFrame contract,
       // fed from FrameInputs and nothing else (§V44).
       //
-      // T367/§V182: the pointer travels the SAME route, and it is deliberately read off
-      // the object that was just handed to the shared block rather than re-derived from
-      // `frameInputs` — one expression fills both blocks, so a kernel and a fragment
-      // shader cannot come to disagree about where the cursor is. Passes whose block
-      // does not declare `pointer` ignore the key: vgpu writes by NAME into the layout
-      // it reflected, so this costs a graph that never asked for it nothing.
+      // WHICH numbers is `dispatchFrameUniforms`'s call to make, not this loop's (T489):
+      // the pointer (T367/§V182) and the absolute clock (T461/T468) are read off the object
+      // just handed to the shared block, so a kernel and a fragment shader cannot come to
+      // disagree about either. Passes whose block declares none of them ignore the keys.
       for (const pass of active.passes) {
         if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) {
-          applyUniforms(active, pass.id, {
-            timeSeconds: frameInputs.frame.timeSeconds,
-            deltaSeconds: frameInputs.frame.deltaSeconds,
-            frameIndex: frameInputs.frame.frameIndex,
-            pointer: shared.pointer,
-          });
+          applyUniforms(active, pass.id, dispatchFrameUniforms(frameInputs.frame, shared));
         }
       }
       // T321: passes reading a ring as an ARRAY need to know where "now" is. The

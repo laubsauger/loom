@@ -2,7 +2,7 @@ import type {
   CompiledNodeDescription,
   NodeDefinition,
 } from "../../domain/types/node-definition.ts";
-import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
+import { absTimeSecondsOf, type FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { ParameterValue } from "../../domain/types/parameters.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 
@@ -29,6 +29,22 @@ import { VALUE_PORT } from "./common-ports.ts";
  * The port carries the same single-channel bag the resolver already publishes: the
  * evaluator wraps a `valueChannel` node's number as `{ value }`, and every stage
  * downstream (Math's operand fallback, Lag, Filter) already reads that name.
+ *
+ * ## WHICH CLOCK EACH ONE OWNS (§V436, T489)
+ *
+ * A node's clock is a DESIGN DECISION and it belongs in the node's own description, where
+ * the person wiring it can read it. Two kinds live in this file:
+ *
+ *  - FREE-RUNNING (LFO) reads the ABSOLUTE clock — `absTimeSecondsOf` — so a timeline lap
+ *    cannot touch its phase. "Always going" is the whole idea of an oscillator, and on the
+ *    timeline clock only frequencies that divide the loop length exactly survived a wrap
+ *    (B98). TouchDesigner's LFO CHOP is free-running for the same reason.
+ *  - TIMELINE-ANCHORED (Timer) reads `timeSeconds` and WRAPS BY DESIGN, because where you
+ *    are in the piece is what it is for. Making this one free-running would be a different
+ *    bug, not the same fix.
+ *
+ * The classification is gated rather than trusted: `loop-continuity.test.ts` derives the
+ * list of value nodes from the registry, so a node added without a stated clock fails.
  */
 
 const num = (value: ParameterValue | undefined, fallback: number): number =>
@@ -52,7 +68,26 @@ export function lfoValue(
   const amplitude = num(values["amplitude"], 1);
   const offset = num(values["offset"], 0);
   const phaseOffset = num(values["phase"], 0);
-  const phase = frame.timeSeconds * frequency + phaseOffset;
+  /**
+   * B98 / T489 / §V436 — THE LFO IS FREE-RUNNING, so it reads the ABSOLUTE clock.
+   *
+   * A node's clock is a DESIGN DECISION, not a default, and this one was defaulted. On
+   * `frame.timeSeconds` the phase restarts at every timeline lap: a 0.3 Hz sine that has
+   * reached the top of its swing SNAPS back to the bottom at the out point, and the only
+   * frequencies that survive are the ones that happen to divide the loop length exactly.
+   * TouchDesigner's LFO CHOP is free-running on absolute time, which is why it laps
+   * seamlessly there at ANY frequency, and the owner was right to say so.
+   *
+   * `absTimeSecondsOf` is still deterministic — a frame COUNT since transport start at the
+   * timeline rate, never a wall reading, and a render zeroes it (T467) — so the same
+   * project renders the same bytes (§V44/§V47). It also FALLS BACK to `timeSeconds` for a
+   * transport that publishes no absolute clock, which is what keeps every existing
+   * unbounded-timeline picture on exactly the numbers it had.
+   *
+   * The TIMER next door is deliberately NOT changed: its position in the piece is its whole
+   * point, so it wraps by design. That contrast is the invariant, not this line.
+   */
+  const phase = absTimeSecondsOf(frame) * frequency + phaseOffset;
 
   let wave: number;
   switch (values["shape"]) {
@@ -85,7 +120,7 @@ export const lfoNode: NodeDefinition = {
   title: "LFO",
   category: "value",
   description:
-    "A low-frequency oscillator: sine, triangle, square, saw or sample-and-hold noise of the frame clock. Its name is its channel — drive any parameter with it, or wire it.",
+    "A low-frequency oscillator: sine, triangle, square, saw or sample-and-hold noise. Its name is its channel — drive any parameter with it, or wire it. FREE-RUNNING: its phase comes from the ABSOLUTE clock, so it keeps oscillating straight through a timeline loop at any frequency instead of snapping back at the out point (T489). Still deterministic — a frame count, not the wall clock — so a render reproduces.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
@@ -147,7 +182,7 @@ export const constantNode: NodeDefinition = {
   version: 1,
   title: "Constant",
   category: "value",
-  description: "A named number. The patch-level knob several parameters can share by driving from it, or wiring from it.",
+  description: "A named number. The patch-level knob several parameters can share by driving from it, or wiring from it. CLOCKLESS (§V436): nothing here moves on its own, so a timeline loop cannot touch it.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
@@ -162,7 +197,8 @@ export const timerNode: NodeDefinition = {
   version: 1,
   title: "Timer",
   category: "value",
-  description: "The frame clock, scaled and delayed: max(0, time - delay) * speed. A ramp to build timelines on.",
+  description:
+    "The TIMELINE clock, scaled and delayed: max(0, time - delay) * speed. A ramp to build timelines on. TIMELINE-ANCHORED by design (§V436): its whole purpose is where you are IN the piece, so it wraps at a loop and follows a scrub. Reach for the LFO, which is free-running, when you want something that never restarts.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {

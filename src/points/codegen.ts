@@ -45,6 +45,14 @@ import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
  * on the node, so the channel reference is stored where the value graph already stores
  * one and is rewritten by rename like every other (§V128/§V316, kind 2). See
  * `VALUE_REFERENCE` for why the name is NOT written inside the WGSL.
+ *
+ * `ctx.absTime` / `ctx.absFrame` (T489, B97) are the fourth, and the requirement they
+ * serve is a PROPERTY rather than a feature: NOTHING RESETS AT THE LOOP. `ctx.time` is
+ * timeline time and wraps at the out point (T455), so a kernel animating off it snapped its
+ * whole population back once a lap and its author had nothing else to read. Expressions
+ * were given the absolute pair at T461 and the shared frame block at T468; this channel was
+ * missed both rounds (§V437). Same detection, same zero cost when unused, same determinism
+ * — a frame COUNT at the timeline rate, never a wall clock (§V44, T467).
  */
 
 /** Bumped when the generated Point/PointCtx/process signature changes shape (§V77). */
@@ -158,6 +166,14 @@ export interface KernelModule {
    */
   readonly usesValues: ReadonlyArray<number>;
   /**
+   * T489 (B97): whether this module's `KernelFrame` block carries the ABSOLUTE pair —
+   * `absTimeSeconds`/`absFrameIndex`, the clock that does not wrap at a timeline lap. Same
+   * mirroring contract as `usesPointer` above: the emitting node reserves the names in the
+   * pass's `uniforms` record exactly when this is true, and the backend fills them every
+   * frame from the same numbers the shared block gets (§V182).
+   */
+  readonly usesAbsClock: boolean;
+  /**
    * T477: the kernel samples `fieldAt(...)` and a field is wired. The emitting node
    * MUST bind the texture as `fieldTexture` exactly when this is true — vgpu matches
    * by name, and a declared texture with no binding fails loudly at pass build.
@@ -221,6 +237,29 @@ const FIELD_REFERENCE = /\bfieldAt\s*\(/;
  * to refuse. The kernel author writes the division; `ctx.dim` supplies the numbers.
  */
 const DIM_REFERENCE = /\.\s*dim\b/;
+
+/**
+ * T489 (B97, §V309, §V437): the ABSOLUTE CLOCK — `ctx.absTime` and `ctx.absFrame`, the
+ * FOURTH optional member of this family and detected exactly like the other three.
+ *
+ * `ctx.time` is TIMELINE time and it WRAPS: once a piece is bounded (T455) every lap puts
+ * it back to the in point, so a kernel animating off `ctx.time` snaps its whole population
+ * back at the out point and its author had no other clock to reach for. Expressions got
+ * the absolute pair at T461 and the shared frame block got it at T468; the kernel channel
+ * was missed both rounds, which is the entire shape of §V437 — a PROPERTY (nothing resets
+ * at the loop) delivered one SITE at a time is not delivered.
+ *
+ * Detected as ONE pair rather than two members, because they are one clock read two ways
+ * and a kernel that names either wants the other available: the cost is two scalars in a
+ * block that is already padded, against the confusion of `ctx.absFrame` compiling while
+ * `ctx.absTime` does not. Byte-identical WGSL when neither is named (§V309), which is what
+ * keeps every point graph ever saved on exactly the text it compiled with.
+ *
+ * Determinism is UNCHANGED and that is the design (§V44/§V47): what arrives here is a
+ * frame COUNT since transport start divided by the timeline rate — never a wall reading —
+ * and a render zeroes it first (T467), so the same project renders the same bytes.
+ */
+const ABS_CLOCK_REFERENCE = /\.\s*(?:absTime|absFrame)\b/;
 
 /**
  * T479: how many live value-graph slots a point kernel can reach. Four is a judgement,
@@ -564,13 +603,24 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
           .join("")}`;
   const valueArguments = valueSlots.map((slot) => `, kernelFrame.value${slot}`).join("");
 
+  /* T489 (B97): the absolute pair, appended LAST for the reason every member before it was
+     — a member that moved would move every kernel already reading the one in front of it.
+     The GROUP PREDICATE is scanned too: it is compiled against this same `PointCtx`, so a
+     predicate reading `ctx.absTime` must be able to declare the member the kernel did not. */
+  const usesAbsClock = ABS_CLOCK_REFERENCE.test(kernel) || ABS_CLOCK_REFERENCE.test(groupSource);
+  const frameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
+  const ctxAbs = usesAbsClock
+    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap — `time` above restarts at\n     the in point, this keeps counting (T461). A frame COUNT at the timeline rate, never\n     a wall reading, so an offline take reproduces (§V44, T467). */\n  absTime: f32,\n  absFrame: u32,"
+    : "";
+  const absArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
+
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
   timeSeconds: f32,
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${framePointer}${frameValues}
+  count: u32,${framePointer}${frameValues}${frameAbs}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -587,7 +637,7 @@ ${dimStruct}struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}
+  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}${ctxAbs}
 };
 
 ${RNG_WGSL}
@@ -600,7 +650,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments});
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments}${absArguments});
 ${invoke}
 ${stores}
 }
@@ -614,6 +664,7 @@ ${stores}
     workgroupSize,
     usesPointer,
     usesValues: valueSlots,
+    usesAbsClock,
     usesField: usesField && request.field === true,
   };
 }
@@ -677,6 +728,16 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
   /* T367, the hook's half: same optional member, same detection, same reason (§V309) —
      a hookless-then-hooked graph must not see its OTHER passes' text move either. */
   const usesPointer = POINTER_REFERENCE.test(request.hook);
+  /* T489 (B97), the hook's half — and the hook is the surface where the absolute clock is
+     LEAST optional: a spawn hook is the natural place to write "born with a phase taken
+     from the clock", and on `ctx.time` every population born after a lap repeats the phases
+     of the population born before it. Same detection, same optionality (§V309). */
+  const usesAbsClock = ABS_CLOCK_REFERENCE.test(request.hook);
+  const hookFrameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
+  const hookCtxAbs = usesAbsClock
+    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap (T461), same numbers the\n     kernel on this node reads. */\n  absTime: f32,\n  absFrame: u32,"
+    : "";
+  const hookAbsArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
 
   const shaped = request.attributes.filter((attribute) => attribute.name !== request.flagsAttribute);
   const bindings: PointBufferBinding[] = [
@@ -697,7 +758,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}
+  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}${hookFrameAbs}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -720,7 +781,7 @@ struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}${hookValueSlots.length === 0 ? "" : `\n  /* T479: the same live value slots the kernel reads, on the same node. */${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}`}
+  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}${hookValueSlots.length === 0 ? "" : `\n  /* T479: the same live value slots the kernel reads, on the same node. */${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}`}${hookCtxAbs}
 };
 
 ${RNG_WGSL}
@@ -739,13 +800,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   var p: Point;
 ${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
-  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")});
+  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")}${hookAbsArguments});
   let q = spawn(p, ctx);
 ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
 }
 `;
 
-  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesField: false };
+  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesAbsClock, usesField: false };
 }
 
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */

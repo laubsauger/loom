@@ -28,7 +28,7 @@ export const audioInNode: NodeDefinition = {
   title: "Audio In",
   category: "input",
   description:
-    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. Silent (all zeros) when no audio input is live.",
+    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -85,7 +85,7 @@ export const audioFileInNode: NodeDefinition = {
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture.",
+    "Plays an audio file and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture. CLOCKLESS (§V436): the channels report what was heard this frame, so a timeline loop passes straight through them.",
   tags: ["value", "input", "audio", "music", "file", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -127,7 +127,7 @@ export const audioPatternNode: NodeDefinition = {
   title: "Audio Pattern",
   category: "value",
   description:
-    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Same channels as Audio In (level, bands, onset, onsetCount, onsetMax), so swapping in a live source is one node. No microphone, no file, replayable by construction.",
+    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Same channels as Audio In (level, bands, onset, onsetCount, onsetMax), so swapping in a live source is one node. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
   tags: ["value", "audio", "test", "beat", "pattern", "deterministic"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],

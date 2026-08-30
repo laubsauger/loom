@@ -34,6 +34,17 @@
  *
  * NO AMBIENT GLOBALS (§V280): everything here is WGSL and shader constants. The grid
  * spacing comes from `textureDimensions`, as E2's does.
+ *
+ * THE `SharedFrame` BELOW IS A HAND COPY OF `SHARED_UNIFORMS_WGSL`, and it must stay
+ * member-for-member identical to it (T489). It cannot interpolate the constant, because
+ * this text ships as the literal `source` of a `customWgsl` node inside a document — which
+ * is exactly how it fell two members behind: T468 inserted `absTime`/`absFrame` into the
+ * canonical block and this copy kept its eight. It still RAN (vgpu adopts the layout the
+ * first binding declares and writes the block by name, so the two extra values were
+ * dropped), so the failure was silent and the shape was §V437's: the round that gave the
+ * absolute clock to texture shaders left the shipped example that TEACHES the contract
+ * teaching a contract with no absolute clock in it. `shared-uniform-contract.test.ts`
+ * scans the repo for copies now, so the next member cannot leave one behind.
  */
 export const FLUID_VELOCITY_WGSL = `struct SharedFrame {
   time: f32,
@@ -42,6 +53,8 @@ export const FLUID_VELOCITY_WGSL = `struct SharedFrame {
   randomSeed: f32,
   wallTime: f32,
   wallDelta: f32,
+  absTime: f32,
+  absFrame: f32,
   resolution: vec2f,
   pointer: vec4f,
 };
@@ -52,7 +65,8 @@ struct Params {
 @group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 // Filled by the runtime from FrameEvaluationInput every frame. There is no other clock
-// here, and no other pointer (§V44, §V182).
+// here, and no other pointer (§V44, §V182). absTime is the one that does NOT reset at a
+// timeline loop, where time does (T461/T489).
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 @group(0) @binding(3) var<uniform> params: Params;
 
