@@ -1,4 +1,4 @@
-import type { TimingBucket } from "@runtime/telemetry/index.ts";
+import type { CostBucket, TimingBucket } from "@runtime/telemetry/index.ts";
 
 /**
  * Display formatters shared by the node info popup and the performance tab.
@@ -26,6 +26,26 @@ export function formatMs(bucket: TimingBucket): FormattedMs {
       return { text: "measuring…", absent: true };
     case "measured":
       return { text: `${(bucket.gpuMs ?? 0).toFixed(3)} ms`, absent: false };
+  }
+}
+
+/**
+ * The same rule for the CPU half (T256).
+ *
+ * A separate function rather than a widened `formatMs`, because the two buckets are
+ * separate types on purpose (§V86): CPU milliseconds must never reach a formatter whose
+ * input field is called `gpuMs`, or one careless read puts them under the GPU label.
+ */
+export function formatCost(bucket: CostBucket): FormattedMs {
+  switch (bucket.availability) {
+    case "unavailable":
+      // Nothing is measuring this half. A zero would read as FREE and send someone
+      // optimising the node above it — the exact failure §V86 names, CPU side.
+      return { text: "unavailable", absent: true };
+    case "pending":
+      return { text: "measuring…", absent: true };
+    case "measured":
+      return { text: `${(bucket.ms ?? 0).toFixed(3)} ms`, absent: false };
   }
 }
 

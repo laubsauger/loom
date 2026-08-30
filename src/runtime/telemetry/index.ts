@@ -12,8 +12,10 @@
  * Nothing here imports React, touches the DOM, or writes to the document store (§V16).
  */
 
-export { NO_PASS_TIMING, emptyBucket, emptyNodeTelemetry } from "./types.ts";
+export { NO_CPU_TIMING, NO_PASS_TIMING, emptyBucket, emptyNodeTelemetry } from "./types.ts";
 export type {
+  CpuSpanResults,
+  CpuTimingSource,
   NodeTelemetry,
   PassSpanResults,
   PassTimingRow,
@@ -39,6 +41,16 @@ export type {
   TelemetryHubOptions,
   TelemetryPlanOptions,
 } from "./hub.ts";
+
+export {
+  UNAVAILABLE_COST,
+  UNCATEGORISED,
+  categoryRollups,
+  costBucket,
+  nodeCategories,
+  nodeCostRows,
+} from "./cost.ts";
+export type { CategoryRollup, CostBucket, CostInput, NodeCostRow } from "./cost.ts";
 
 export { EMPTY_READBACK_BUDGET, analyzeReadbacks, readbackPlanBudget } from "./readback.ts";
 export type {

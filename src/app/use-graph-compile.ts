@@ -3,7 +3,7 @@ import { compileGraph } from "@compiler/index.ts";
 import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
-import { analyzeReadbacks, telemetryPlan } from "@runtime/telemetry/index.ts";
+import { analyzeReadbacks, nodeCategories, telemetryPlan } from "@runtime/telemetry/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { PreviewSinkStore } from "./preview-sinks.ts";
 
@@ -284,6 +284,9 @@ export function useGraphCompile(
             // graph the plan was built from, so the count moves the moment an Analyze node
             // is added — which is the point: the cost has to be visible where it is made.
             readbacks: analyzeReadbacks(result.graph, runtime.registry),
+            // T256: the rollup dimension. From the DOCUMENT, because the plan carries node
+            // ids and never node types.
+            categories: nodeCategories(result.graph, runtime.registry),
           }),
     );
     // `result.graph` moves with `result.compiled` — both come out of the same compile —

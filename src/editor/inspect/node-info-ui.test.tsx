@@ -191,6 +191,7 @@ describe("the performance tab (T41)", () => {
   const snapshot = (over: Partial<TelemetrySnapshot> = {}): TelemetrySnapshot => ({
     timingAvailable: true,
     plan: {
+      categories: new Map([["blur", "filter"]]),
       readback: EMPTY_READBACK_BUDGET,
       passes: [{ id: "blur:p0", kind: "effect", nodeId: "blur", label: null }],
       sources: [],
@@ -202,6 +203,9 @@ describe("the performance tab (T41)", () => {
     },
     build: { resourcesCreated: 1, resourcesReused: 6, effectsBuilt: 2, effectsReused: 3 },
     readback: EMPTY_READBACK_BUDGET,
+    cpuTimingAvailable: false,
+    nodes: [],
+    categories: [],
     framesRendered: 120,
     lastFrameIndex: 119,
     frame: { availability: "measured", gpuMs: 3.5, passCount: 1, nodeCount: 1 },
@@ -344,6 +348,84 @@ describe("the performance tab (T41)", () => {
     const section = screen.getByLabelText("Readback");
     expect(section.textContent).toContain("≥ 16 B");
     expect(section.textContent).toContain("unknown");
+  });
+
+  /**
+   * T256 / §V86 — CPU and GPU on the same row, and an absent half is a WORD.
+   *
+   * The failure this guards is specific: a zero in the gpu column reads as "free", and the
+   * device that produces it (no `timestamp-query`) is the one where a build otherwise looks
+   * entirely healthy. Someone then optimises the node above the zero.
+   */
+  const withCost = (over: Partial<TelemetrySnapshot> = {}) =>
+    snapshot({
+      cpuTimingAvailable: true,
+      nodes: [
+        {
+          nodeId: "blur1",
+          sourcePath: "Main / Bloom_1 / blur1",
+          label: "blur1",
+          category: "filter",
+          passCount: 2,
+          cpu: { availability: "measured", ms: 0.5 },
+          gpu: { availability: "measured", ms: 5 },
+        },
+        {
+          nodeId: "noise1",
+          sourcePath: null,
+          label: "noise1",
+          category: "generator",
+          passCount: 1,
+          cpu: { availability: "pending", ms: null },
+          gpu: { availability: "measured", ms: 1 },
+        },
+      ],
+      categories: [
+        {
+          category: "filter",
+          nodeCount: 1,
+          passCount: 2,
+          cpu: { availability: "measured", ms: 0.5 },
+          gpu: { availability: "measured", ms: 5 },
+        },
+        {
+          category: "generator",
+          nodeCount: 1,
+          passCount: 1,
+          cpu: { availability: "pending", ms: null },
+          gpu: { availability: "measured", ms: 1 },
+        },
+      ],
+      ...over,
+    });
+
+  it("puts the CATEGORY rollup on the surface and the node rows behind a disclosure", () => {
+    render(<PerformanceView snapshot={withCost()} />);
+    const section = screen.getByLabelText("Cost");
+    expect(section.textContent).toContain("filter");
+    expect(section.textContent).toContain("generator");
+    expect(section.textContent).toContain("5.000 ms");
+    const disclosure = section.querySelector("details");
+    expect((disclosure as HTMLDetailsElement).open).toBe(false);
+    expect(section.textContent).toContain("Main / Bloom_1 / blur1");
+  });
+
+  it("shows both halves of a row and never fabricates the missing one (§V86)", () => {
+    render(<PerformanceView snapshot={withCost()} />);
+    const section = screen.getByLabelText("Cost");
+    // noise1's CPU half has no span yet. The cell says so; it does not say 0.000 ms.
+    expect(section.textContent).toContain("measuring…");
+    expect(section.textContent).not.toContain("0.000 ms");
+  });
+
+  it("names the state rather than tabulating 'unavailable' when nothing measures", () => {
+    render(
+      <PerformanceView snapshot={withCost({ timingAvailable: false, cpuTimingAvailable: false })} />,
+    );
+    const section = screen.getByLabelText("Cost");
+    // §V91 + §V90: a table of N identical "unavailable" cells is the same sentence N times.
+    expect(section.querySelector("table")).toBeNull();
+    expect(section.textContent).toContain("No timing on this device");
   });
 
   it("names the state when a plan reads nothing back (§V91)", () => {

@@ -1,5 +1,7 @@
 import type { NodeId } from "../../domain/types/ids.ts";
 import type {
+  CpuSpanResults,
+  CpuTimingSource,
   PassSpanResults,
   PassTimingRow,
   PassTimingSource,
@@ -12,10 +14,11 @@ import type {
   TimingAvailability,
   TimingBucket,
 } from "./types.ts";
-import { NO_PASS_TIMING, emptyNodeTelemetry } from "./types.ts";
+import { NO_CPU_TIMING, NO_PASS_TIMING, emptyNodeTelemetry } from "./types.ts";
 import { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";
 import type { ComponentTiming } from "./aggregate.ts";
 import { EMPTY_READBACK_BUDGET, readbackPlanBudget } from "./readback.ts";
+import { categoryRollups, nodeCostRows } from "./cost.ts";
 import type { DeclaredReadback, ReadbackBudget, SizedResource } from "./readback.ts";
 
 /**
@@ -93,6 +96,12 @@ export interface TelemetryPlanOptions {
    * never disagree about how many readbacks a graph does.
    */
   readonly readbacks?: readonly DeclaredReadback[] | undefined;
+  /**
+   * Node id -> manifest category, for the T256 rollup. `nodeCategories` in `./cost.ts`
+   * builds it. Absent, every node rolls up under "other" — which is honest (nothing has
+   * said what they are) rather than a guess from the pass kind.
+   */
+  readonly categories?: ReadonlyMap<NodeId, string> | undefined;
 }
 
 export function telemetryPlan(plan: PlanLike, options: TelemetryPlanOptions = {}): TelemetryPlan {
@@ -103,6 +112,7 @@ export function telemetryPlan(plan: PlanLike, options: TelemetryPlanOptions = {}
     label: pass.label ?? null,
   }));
   return {
+    categories: options.categories ?? new Map<NodeId, string>(),
     readback: readbackPlanBudget({
       declared: options.readbacks ?? [],
       resources: plan.resources,
@@ -139,6 +149,12 @@ export interface TelemetryHub extends TelemetrySource {
    */
   setReadbacksPerformed(count: number | null): void;
   /**
+   * Points the hub at a CPU span source (T256). Returns a detach function. Without one
+   * every `cpu` bucket reads "unavailable" — the honest state, and the one the app is in
+   * until something measures encode time per pass.
+   */
+  attachCpuTimingSource(source: CpuTimingSource): () => void;
+  /**
    * Points the hub at the backend's GPU timer. Returns a detach function. Passing a
    * source with `timestampQuery: false` puts every field into the "unavailable" reading.
    */
@@ -172,6 +188,9 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
   let timingSource: PassTimingSource = NO_PASS_TIMING;
   let detachTiming: (() => void) | null = null;
 
+  let cpuSource: CpuTimingSource = NO_CPU_TIMING;
+  let detachCpu: (() => void) | null = null;
+
   let plan: TelemetryPlan | null = null;
   let build: TelemetryBuildStats | null = null;
   let framesRendered = 0;
@@ -180,6 +199,8 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
 
   /** Most recent GPU span per pass id, ms. Only ever written from `onPassTimings`. */
   const spans = new Map<string, number>();
+  /** Most recent CPU span per pass id, ms. Only ever written from `onCpuTimings`. */
+  const cpuSpans = new Map<string, number>();
   const counters = new Map<NodeId, NodeCounters>();
   /** Node ids that have at least one pass in the current plan. Rebuilt on setPlan. */
   let activeNodes: ReadonlySet<NodeId> = new Set();
@@ -314,9 +335,26 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
     return { ...plan.readback, performed: readbacksPerformed };
   }
 
+  /** Per-node cost rows, both halves (T256). Recomputed per flush, never per frame. */
+  function costRows() {
+    return nodeCostRows({
+      passes: plan?.passes ?? [],
+      sources: plan?.sources ?? [],
+      gpuSpans: spans,
+      cpuSpans,
+      gpuAvailable: timingSource.timestampQuery,
+      cpuAvailable: cpuSource.available,
+      categories: plan?.categories ?? new Map<NodeId, string>(),
+    });
+  }
+
   function buildSnapshot(): TelemetrySnapshot {
     const budget = plan?.memoryBudgetBytes ?? null;
+    const nodes = costRows();
     return {
+      cpuTimingAvailable: cpuSource.available,
+      nodes,
+      categories: categoryRollups(nodes),
       timingAvailable: timingSource.timestampQuery,
       plan,
       build,
@@ -337,6 +375,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       // keeps a recompile from reporting the previous plan's cost against a new pass id.
       const live = new Set((next?.passes ?? []).map((pass) => pass.id));
       for (const passId of [...spans.keys()]) if (!live.has(passId)) spans.delete(passId);
+      for (const passId of [...cpuSpans.keys()]) if (!live.has(passId)) cpuSpans.delete(passId);
       for (const nodeId of [...counters.keys()]) if (!activeNodes.has(nodeId)) counters.delete(nodeId);
       schedule();
     },
@@ -351,6 +390,27 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       if (next === readbacksPerformed) return;
       readbacksPerformed = next;
       schedule();
+    },
+
+    attachCpuTimingSource(source) {
+      detachCpu?.();
+      cpuSource = source;
+      cpuSpans.clear();
+      const off = source.onCpuTimings((results: CpuSpanResults) => {
+        for (const [passId, ms] of Object.entries(results)) {
+          if (Number.isFinite(ms)) cpuSpans.set(passId, ms);
+        }
+        schedule();
+      });
+      detachCpu = () => {
+        off();
+        detachCpu = null;
+        cpuSource = NO_CPU_TIMING;
+        cpuSpans.clear();
+        schedule();
+      };
+      schedule();
+      return () => detachCpu?.();
     },
 
     attachTimingSource(source) {
@@ -426,10 +486,12 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
     dispose() {
       disposed = true;
       detachTiming?.();
+      detachCpu?.();
       if (timer !== null) clearTimeout(timer);
       timer = null;
       listeners.clear();
       spans.clear();
+      cpuSpans.clear();
       counters.clear();
     },
   };

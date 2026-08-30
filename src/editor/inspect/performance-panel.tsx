@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react";
-import type { TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
-import { formatBytes, formatMs } from "./format.ts";
+import type { CostBucket, TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
+import { formatBytes, formatCost, formatMs } from "./format.ts";
 import styles from "./inspect.module.css";
 
 /**
@@ -25,6 +25,13 @@ import styles from "./inspect.module.css";
  * SEE why it got slow rather than guess. Two numbers are on the surface — how many, how
  * many bytes — and the per-node attribution is one disclosure down, because "which node" is
  * the second question and §V90 says the panel shows what someone acts on first.
+ *
+ * COST (T256) is the one thing Notch's profiler does better than TD's: CPU and GPU on the
+ * same row. The pair says which machine the frame is waiting on, which neither number says
+ * alone. The CATEGORY rollup is on the surface and the per-node rows are one disclosure
+ * down, because "filters cost 11 ms" narrows the search before any individual row has to be
+ * read — and because sixty node rows permanently open is the §V90 failure this pane is most
+ * prone to.
  *
  * The whole pane re-renders once per telemetry tick — at most 10 times a second (§V16) —
  * because the hub, not this component, owns the rate.
@@ -72,6 +79,106 @@ export function PerformancePanel({ telemetry }: PerformancePanelProps) {
   }
 
   return <PerformanceView snapshot={snapshot} />;
+}
+
+/** A cost cell. An absent measurement is a word, never a digit (§V86). */
+function CostCell({ bucket }: { bucket: CostBucket }) {
+  const formatted = formatCost(bucket);
+  return (
+    <td className={`${styles.numeric} ${formatted.absent ? styles.absent : ""}`.trim()}>
+      {formatted.text}
+    </td>
+  );
+}
+
+/**
+ * Per-node CPU and GPU cost with category rollups (T256, §V86).
+ *
+ * Both halves degrade honestly and INDEPENDENTLY: a device with no `timestamp-query` shows
+ * "unavailable" in the gpu column while the cpu column keeps working, and vice versa.
+ * Neither ever shows 0.000 ms for a measurement that does not exist — a zero reads as
+ * "free" and sends someone optimising the wrong node, which is the whole reason §V86 makes
+ * absence a first-class state rather than a default value.
+ */
+function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
+  const measuring = snapshot.timingAvailable || snapshot.cpuTimingAvailable;
+  return (
+    <section aria-label="Cost">
+      <h3 className={styles.blockTitle}>cost by category</h3>
+      {snapshot.categories.length === 0 ? (
+        <p className={styles.note}>No nodes in the current plan.</p>
+      ) : !measuring ? (
+        // §V91: name the STATE, and only the state. A table of sixty "unavailable" cells is
+        // not information, it is the same word sixty times — and WHY there is no timing is
+        // already said once, in the frame section, where it belongs.
+        <p className={styles.note}>No timing on this device</p>
+      ) : (
+        <>
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">category</th>
+                  <th scope="col" className={styles.numeric}>
+                    nodes
+                  </th>
+                  <th scope="col" className={styles.numeric}>
+                    cpu ms
+                  </th>
+                  <th scope="col" className={styles.numeric}>
+                    gpu ms
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.categories.map((rollup) => (
+                  <tr key={rollup.category}>
+                    <td>{rollup.category}</td>
+                    <td className={styles.numeric}>{rollup.nodeCount}</td>
+                    <CostCell bucket={rollup.cpu} />
+                    <CostCell bucket={rollup.gpu} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <details className={styles.disclosure}>
+            <summary className={styles.summary}>per node</summary>
+            <div className={styles.tableScroll}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th scope="col">node</th>
+                    <th scope="col">category</th>
+                    <th scope="col" className={styles.numeric}>
+                      passes
+                    </th>
+                    <th scope="col" className={styles.numeric}>
+                      cpu ms
+                    </th>
+                    <th scope="col" className={styles.numeric}>
+                      gpu ms
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshot.nodes.map((row) => (
+                    <tr key={row.nodeId}>
+                      <td>{row.sourcePath ?? row.label ?? row.nodeId}</td>
+                      <td>{row.category}</td>
+                      <td className={styles.numeric}>{row.passCount}</td>
+                      <CostCell bucket={row.cpu} />
+                      <CostCell bucket={row.gpu} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -168,6 +275,8 @@ export function PerformanceView({ snapshot }: PerformanceViewProps) {
           </p>
         )}
       </section>
+
+      <CostSection snapshot={snapshot} />
 
       <ReadbackSection snapshot={snapshot} />
 

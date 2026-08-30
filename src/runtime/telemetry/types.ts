@@ -1,5 +1,6 @@
 import type { NodeId } from "../../domain/types/ids.ts";
 import type { ReadbackBudget, ReadbackPlanBudget } from "./readback.ts";
+import type { CategoryRollup, NodeCostRow } from "./cost.ts";
 
 /**
  * Telemetry contracts (T41, T42, §V16, §V85, §V86).
@@ -39,6 +40,28 @@ export interface PassTimingSource {
 export const NO_PASS_TIMING: PassTimingSource = Object.freeze({
   timestampQuery: false,
   onPassTimings: () => () => {},
+});
+
+/** CPU-side span results: pass id -> milliseconds. Same keying as the GPU source. */
+export type CpuSpanResults = Readonly<Record<string, number>>;
+
+/**
+ * The CPU half of a node's cost (T256).
+ *
+ * Notch's profiler shows CPU and GPU together, and the PAIR is what says which machine the
+ * frame is waiting on. §V86 is unchanged by this: the two never mix, never sum, and a CPU
+ * number never appears under a GPU label. `available: false` is the honest reading when
+ * nothing is measuring — an absent CPU column, never a zeroed one.
+ */
+export interface CpuTimingSource {
+  readonly available: boolean;
+  onCpuTimings(listener: (spans: CpuSpanResults) => void): () => void;
+}
+
+/** Nothing is measuring CPU time. Emits nothing, ever. */
+export const NO_CPU_TIMING: CpuTimingSource = Object.freeze({
+  available: false,
+  onCpuTimings: () => () => {},
 });
 
 /**
@@ -93,6 +116,8 @@ export interface TelemetryPass {
 
 /** Static facts about the plan currently running. Set at compile, never per frame. */
 export interface TelemetryPlan {
+  /** Node id -> manifest category, for the T256 rollup. Missing ids roll up as "other". */
+  readonly categories: ReadonlyMap<NodeId, string>;
   /**
    * What this graph costs per frame in GPU→CPU readbacks (T278, §V185). Derived at compile
    * from the plan, never sampled — see `./readback.ts`.
@@ -148,6 +173,15 @@ export interface TelemetrySnapshot {
    * performed (T278, §V185). Empty when no plan is compiled.
    */
   readonly readback: ReadbackBudget;
+  /**
+   * False when nothing is measuring CPU time (T256). Every `cpu` bucket then reads
+   * "unavailable" — never 0, which would read as free (§V86's reasoning, CPU side).
+   */
+  readonly cpuTimingAvailable: boolean;
+  /** Per-node CPU and GPU cost, sorted by node id (T256). */
+  readonly nodes: ReadonlyArray<NodeCostRow>;
+  /** `nodes` rolled up by manifest category, sorted by category (T256). */
+  readonly categories: ReadonlyArray<CategoryRollup>;
 }
 
 /** Per-node telemetry, the numbers TD's Info CHOP would show (§I node info). */
