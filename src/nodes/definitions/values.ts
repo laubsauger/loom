@@ -101,7 +101,26 @@ export const lfoNode: NodeDefinition = {
         { value: "noise", label: "Noise (S&H)" },
       ],
     },
-    frequency: { type: "number", label: "Frequency", default: 1, min: 0, max: 100, unit: "hz" },
+    /**
+     * B80 — `step` is DECLARED, and the declaration is load-bearing.
+     *
+     * With only `min: 0, max: 100`, the control kit derives a step of 1/100 of the range,
+     * which for this parameter is exactly `1`. A step of 1 means zero display decimals AND
+     * an integer quantisation grid, so a 0.25 Hz LFO rendered as `0` and — the destroying
+     * half — clicking the field and clicking away committed that `0` back into the
+     * document, which stops the oscillator. An LFO's useful band is well under 1 Hz
+     * (0.05..0.25 across the shipped examples), so `0.01` is the granularity this control
+     * actually needs; §V133's magnitude ladder still reaches finer without a re-declaration.
+     */
+    frequency: {
+      type: "number",
+      label: "Frequency",
+      default: 1,
+      min: 0,
+      max: 100,
+      step: 0.01,
+      unit: "hz",
+    },
     amplitude: { type: "number", label: "Amplitude", default: 1 },
     offset: { type: "number", label: "Offset", default: 0 },
     phase: { type: "number", label: "Phase", default: 0, min: 0, max: 1 },
