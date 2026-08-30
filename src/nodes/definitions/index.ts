@@ -15,12 +15,23 @@ import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
+import { pointGeneratorDefinitions } from "./point-generators.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
 export { pointSetInfoFor } from "./points.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
 export { analyzeNode, ANALYZE_RESULT_KEY } from "./analyze.ts";
+export {
+  pointGeneratorNode,
+  pointGridNode,
+  pointLineNode,
+  pointCircleNode,
+  pointSphereNode,
+  pointTubeNode,
+  pointTorusNode,
+  pointGeneratorDefinitions,
+} from "./point-generators.ts";
 export { movieFileInNode, webcamNode, mediaSourceIdFor, mediaNodeDefinitions } from "./media.ts";
 export {
   VALUE_PORT,
@@ -121,6 +132,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   analyzeNode,
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
+  ...pointGeneratorDefinitions,
 ];
 
 /**

@@ -80,6 +80,13 @@ describe("core catalogue (T70, T40)", () => {
       "trigger",
       "lag",
       "valueFilter",
+      "pointGenerator",
+      "pointGrid",
+      "pointLine",
+      "pointCircle",
+      "pointSphere",
+      "pointTube",
+      "pointTorus",
     ]);
   });
 
