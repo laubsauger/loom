@@ -794,6 +794,8 @@ Mask ≠ TD Matte, which is 3-input). deprecated & ⊥ copy: **SVG TOP** (docume
 separate Create node.
 
 NOTE: commit `640de4e` labels this work T279/T280 — ids assigned before the spec's were published & now taken by Remap/Reorder. the work IS T288/T289. ⊥ renumber the commit; record the mapping.
+V195: V107's "∀ parameter takes ∀ mode" applies to SCALAR LEAVES. a CONTAINER parameter (`curve`, `stops`) is static as a whole — an expression returns a number & there is ⊥ meaning to a list-valued one. its LEAVES (`stops[2].position`) are the moded things, once the key grammar carries an index. `curve` already lives under this rule; writing it down stops `stops` inventing a 2nd answer.
+V196: a container parameter carrying COLOUR declares its space like `color` does, & the resolver decodes PER ENTRY. decoding at the container level (or ⊥ @ all) reproduces B8 — inspector shows 1 colour, GPU renders another — & a list makes it N times harder to notice.
 V194: node TYPE STRINGS are 1 flat namespace across families ∴ a value-graph node that shares a concept w/ an image node is prefixed: `valueMath`, `valueLimit`, `valueFilter`. TD disambiguates by family suffix (TOP|CHOP) & we have ⊥ that. the collisions are ⊥ hypothetical — Limit, Math, Noise, Constant, Transform ∀ exist | will exist ∈ both families. the EXPORTED CONST ! match its type string ∴ `valueLimitNode`, ⊥ `limitNode` — a const named for the concept & typed for the family is how 2 modules silently claim 1 name.
 V193: ∀ agent tool is REACHABLE ∈ the composed app — a composed-level test enumerates the surface & asserts each tool's port is live, ⊥ per-tool spot checks. "built, tested, ⊥ wired" has now happened 3× (B12 agent surface, T264 media, B23 render_preview) & each time every unit test was green. the enumeration is the only guard that scales: a NEW tool is covered the day it exists, ⊥ the day someone remembers.
 V189: auto-layout is DETERMINISTIC — same graph → same positions, ∀ time. an agent that re-lays-out & gets different coordinates ⊥ reason about its own canvas, & a human gets churn ∈ every diff. ⊥ randomness, ⊥ iteration count, ⊥ insertion-order dependence.
@@ -1042,7 +1044,7 @@ T228|x|numeric magnitude ladder: press-hold on a number → decade ladder (0.001
 T225|.|`order` on edges targeting a variadic port + `reorderEdges` patch op. ⊥ creation order|V131,V29
 T271|x|2 clocks: timeline time (frameIndex/fps, default, smooth) + wall time (separate name). fixed-step realtime transport option|V176,V44,V49
 T269|x|inspector TABS — Parameters first, Common as its own tab (T224 completes here)|V174,V90
-T270|.|Ramp multi-stop: N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
+T270|.|Ramp multi-stop: new `stops` param type = `{position, color}[]` + `space` (V196), static-as-a-whole (V195). compile → capped uniform array (16) + count, diagnostic beyond. stop editor UI: add|remove|reorder|position|swatch, 1 patch per gesture (V114)|V175,V195,V196,V56 N stops w/ position + colour, add|remove|reorder, stop editor UI|V175,V56
 T268|x|ONE liveness fn: edges ∪ driven channels ∪ op() refs (V173b). fixes `plan.pruned` (B20), the example dead-node gate & the UI badge together. T251 folds in here|V173,V173b,V154
 T267|.|first-frame-after-edit: connect|add|param change ! render w/o a nudge. composed test measuring frames between edit & pixel change|V172,V5
 T265|x|timeline readout ∈ top bar — frame + time + fps, TD-style. frame field editable → seek (V170 rules apply)|V169,V170,V29
