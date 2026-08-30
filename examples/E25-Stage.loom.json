@@ -1,0 +1,554 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-floorpts-kernel": {
+        "id": "e-floorpts-kernel",
+        "source": {
+          "nodeId": "floorPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "floorKernel",
+          "portId": "in"
+        }
+      },
+      "e-kernel-floor": {
+        "id": "e-kernel-floor",
+        "source": {
+          "nodeId": "floorKernel",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "floor",
+          "portId": "points"
+        }
+      },
+      "e-ringa-geoa": {
+        "id": "e-ringa-geoa",
+        "source": {
+          "nodeId": "ringA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "geoA",
+          "portId": "points"
+        }
+      },
+      "e-screengrid-screen": {
+        "id": "e-screengrid-screen",
+        "source": {
+          "nodeId": "screenGrid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen",
+          "portId": "points"
+        }
+      },
+      "e-shota-screenmat": {
+        "id": "e-shota-screenmat",
+        "source": {
+          "nodeId": "shotA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screenMat",
+          "portId": "albedo"
+        }
+      },
+      "e-shotb-out": {
+        "id": "e-shotb-out",
+        "source": {
+          "nodeId": "shotB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "breathe": {
+        "definitionVersion": 1,
+        "id": "breathe",
+        "label": "breathe1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.2,
+          "offset": 1.1,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 0,
+          "y": -280
+        },
+        "type": "lfo"
+      },
+      "camA": {
+        "definitionVersion": 1,
+        "id": "camA",
+        "label": "cama1",
+        "parameters": {
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbax1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.4
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.y": 0.9,
+          "eye.z": {
+            "bindings": {
+              "driven": {
+                "channel": "orbaz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "fov": 50,
+          "lookAt": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": -1180,
+          "y": -380
+        },
+        "type": "camera"
+      },
+      "camB": {
+        "definitionVersion": 1,
+        "id": "camB",
+        "label": "camb1",
+        "parameters": {
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbbx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.8
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.y": 0.35,
+          "eye.z": 3.1,
+          "fov": 55,
+          "lookAt": [
+            0,
+            -0.1,
+            0
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": 40
+        },
+        "type": "camera"
+      },
+      "floor": {
+        "definitionVersion": 1,
+        "id": "floor",
+        "label": "floor1",
+        "parameters": {
+          "material": "matfloor1",
+          "mode": "instances",
+          "scale": 0.09,
+          "shape": "box"
+        },
+        "position": {
+          "x": -280,
+          "y": 240
+        },
+        "type": "geometry"
+      },
+      "floorKernel": {
+        "definitionVersion": 1,
+        "id": "floorKernel",
+        "label": "floorkernel1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 144,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the xy plane lies down: y becomes depth, the floor sits under the screen */\n  q.position = vec3f(p.position.x, -1.15, p.position.y - 0.6);\n  return q;\n}"
+        },
+        "position": {
+          "x": -430,
+          "y": 240
+        },
+        "type": "pointKernel"
+      },
+      "floorPts": {
+        "definitionVersion": 1,
+        "id": "floorPts",
+        "label": "floorpts1",
+        "parameters": {
+          "cols": 12,
+          "count": 144,
+          "rows": 12,
+          "sizeX": 4,
+          "sizeY": 3
+        },
+        "position": {
+          "x": -580,
+          "y": 240
+        },
+        "type": "pointGrid"
+      },
+      "geoA": {
+        "definitionVersion": 1,
+        "id": "geoA",
+        "label": "geoa1",
+        "parameters": {
+          "material": "mata1",
+          "mode": "instances",
+          "scale": 0.075,
+          "shape": "octahedron"
+        },
+        "position": {
+          "x": -1180,
+          "y": -200
+        },
+        "type": "geometry"
+      },
+      "keyA": {
+        "definitionVersion": 1,
+        "id": "keyA",
+        "label": "keya1",
+        "parameters": {
+          "color": [
+            1,
+            0.85,
+            0.95,
+            1
+          ],
+          "direction": [
+            -0.3,
+            -0.8,
+            -0.5
+          ],
+          "intensity": 1.1,
+          "kind": "directional"
+        },
+        "position": {
+          "x": -1180,
+          "y": -760
+        },
+        "type": "light"
+      },
+      "keyB": {
+        "definitionVersion": 1,
+        "id": "keyB",
+        "label": "keyb1",
+        "parameters": {
+          "color": [
+            1,
+            0.9,
+            0.7,
+            1
+          ],
+          "direction": [
+            -0.4,
+            -0.75,
+            -0.4
+          ],
+          "intensity": {
+            "bindings": {
+              "driven": {
+                "channel": "breathe1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.1
+              }
+            },
+            "mode": "driven"
+          },
+          "kind": "directional"
+        },
+        "position": {
+          "x": 0,
+          "y": 240
+        },
+        "type": "light"
+      },
+      "matA": {
+        "definitionVersion": 1,
+        "id": "matA",
+        "label": "mata1",
+        "parameters": {
+          "color": [
+            1,
+            0.25,
+            0.55,
+            1
+          ],
+          "roughness": 0.25,
+          "shininess": 80,
+          "specular": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1460,
+          "y": -380
+        },
+        "type": "materialPhong"
+      },
+      "matFloor": {
+        "definitionVersion": 1,
+        "id": "matFloor",
+        "label": "matfloor1",
+        "parameters": {
+          "color": [
+            0.25,
+            0.28,
+            0.38,
+            1
+          ],
+          "roughness": 0.7,
+          "shininess": 24,
+          "specular": [
+            0.6,
+            0.7,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -430,
+          "y": 420
+        },
+        "type": "materialPhong"
+      },
+      "orbAx": {
+        "definitionVersion": 1,
+        "id": "orbAx",
+        "label": "orbax1",
+        "parameters": {
+          "amplitude": 2.4,
+          "frequency": 0.07,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1180,
+          "y": -520
+        },
+        "type": "lfo"
+      },
+      "orbAz": {
+        "definitionVersion": 1,
+        "id": "orbAz",
+        "label": "orbaz1",
+        "parameters": {
+          "amplitude": 2.4,
+          "frequency": 0.07,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1180,
+          "y": -640
+        },
+        "type": "lfo"
+      },
+      "orbBx": {
+        "definitionVersion": 1,
+        "id": "orbBx",
+        "label": "orbbx1",
+        "parameters": {
+          "amplitude": 1.4,
+          "frequency": 0.045,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 0,
+          "y": -160
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 560,
+          "y": 40
+        },
+        "type": "output"
+      },
+      "ringA": {
+        "definitionVersion": 1,
+        "id": "ringA",
+        "label": "ringa1",
+        "parameters": {
+          "cols": 36,
+          "radius": 0.7,
+          "radius2": 0.28,
+          "rows": 18
+        },
+        "position": {
+          "x": -1460,
+          "y": -200
+        },
+        "type": "pointTorus"
+      },
+      "screen": {
+        "definitionVersion": 1,
+        "id": "screen",
+        "label": "screen1",
+        "parameters": {
+          "material": "screenmat1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -280,
+          "y": 40
+        },
+        "type": "geometry"
+      },
+      "screenGrid": {
+        "definitionVersion": 1,
+        "id": "screenGrid",
+        "label": "screengrid1",
+        "parameters": {
+          "cols": 48,
+          "count": 1296,
+          "rows": 27,
+          "sizeX": 3.2,
+          "sizeY": 1.8
+        },
+        "position": {
+          "x": -580,
+          "y": 40
+        },
+        "type": "pointGrid"
+      },
+      "screenMat": {
+        "definitionVersion": 1,
+        "id": "screenMat",
+        "label": "screenmat1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -580,
+          "y": -200
+        },
+        "type": "materialUnlit"
+      },
+      "shotA": {
+        "definitionVersion": 1,
+        "id": "shotA",
+        "label": "shota1",
+        "parameters": {
+          "ambientColor": [
+            0.3,
+            0.2,
+            0.5,
+            1
+          ],
+          "ambientIntensity": 0.3,
+          "background": [
+            0.14,
+            0.05,
+            0.2,
+            1
+          ],
+          "camera": "cama1",
+          "lights": "keya1",
+          "scenes": "geoa1"
+        },
+        "position": {
+          "x": -880,
+          "y": -200
+        },
+        "type": "render"
+      },
+      "shotB": {
+        "definitionVersion": 1,
+        "id": "shotB",
+        "label": "shotb1",
+        "parameters": {
+          "ambientColor": [
+            0.5,
+            0.55,
+            0.8,
+            1
+          ],
+          "ambientIntensity": 0.25,
+          "background": [
+            0.03,
+            0.04,
+            0.08,
+            1
+          ],
+          "camera": "camb1",
+          "lights": "keyb1",
+          "scenes": "screen1 floor1"
+        },
+        "position": {
+          "x": 280,
+          "y": 40
+        },
+        "type": "render"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E25 Stage",
+  "projectId": "example-e25-stage",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 432,
+      "width": 768
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

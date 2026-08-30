@@ -319,6 +319,7 @@ export const renderNode: NodeDefinition = {
     lights: { type: "string", label: "Lights", default: "", description: "Space-separated light names, in order." },
     ambientColor: { type: "color", label: "Ambient", default: [1, 1, 1, 1], space: "display" },
     ambientIntensity: { type: "number", label: "Ambient Intensity", default: 0.12, min: 0, max: 1 },
+    background: { type: "color", label: "Background", default: [0, 0, 0, 1], space: "display" },
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
@@ -402,7 +403,38 @@ export const renderNode: NodeDefinition = {
     const ambientIntensity = readNumber(parameters, "ambientIntensity", 0.12);
 
     const diagnostics: NonNullable<CompiledNodeDescription["diagnostics"]> = [];
+    const background = readColor(parameters, "background", [0, 0, 0, 1]);
     const passes: DrawPassDescriptor[] = [];
+    /*
+     * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
+     * so a render used as a material map is a PICTURE with a stage behind it rather
+     * than performers floating on unlit black (the invisible-screen failure the E25
+     * look pass caught). The colour is a value; geometry draws compose over it.
+     */
+    passes.push({
+      kind: "draw",
+      id: `${nodeId}:backdrop`,
+      nodeId,
+      shader: `struct Backdrop { color: vec4f };
+@group(0) @binding(0) var<uniform> backdrop: Backdrop;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.999, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4f { return backdrop.color; }`,
+      target,
+      topology: "triangle-list",
+      instances: 1,
+      vertexCount: 6,
+      uniforms: { color: [background[0] ?? 0, background[1] ?? 0, background[2] ?? 0, background[3] ?? 1] },
+      uniformBinding: "backdrop",
+      clear: true,
+    } as DrawPassDescriptor);
     geometries.forEach(({ payload, source }, index) => {
       if (payload.mode === "points") {
         diagnostics.push({
@@ -482,7 +514,7 @@ export const renderNode: NodeDefinition = {
             ),
           },
           uniformBinding: "params",
-          clear: index === 0,
+          clear: false,
         });
         return;
       }
@@ -587,7 +619,7 @@ export const renderNode: NodeDefinition = {
           ),
         },
         uniformBinding: "params",
-        clear: index === 0,
+        clear: false,
       });
     });
 

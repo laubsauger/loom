@@ -165,7 +165,7 @@ describe("phong specular is exact on the axis (T428, §V147)", () => {
       expect(await renderOnce()).toBe(Math.round(0.62 * 255));
       // White specular, via the VALUE path (§V5): + 1 × 0.5 highlight = 1.12, clamped.
       backend.updateUniforms({
-        passId: plan.passes.find((pass) => pass.kind === "draw")?.id ?? "",
+        passId: plan.passes.find((pass) => pass.kind === "draw" && pass.id.includes(":scene:"))?.id ?? "",
         values: { specular: [1, 1, 1, 64] },
       });
       expect(await renderOnce()).toBe(255);

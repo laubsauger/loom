@@ -82,8 +82,12 @@ function sceneGraph(overrides: {
 const compile = (graph: GraphDocument) =>
   compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPABILITIES } as never);
 
-const drawOf = (compiled: { passes: ReadonlyArray<unknown> }) =>
-  compiled.passes.find((pass) => (pass as { kind: string }).kind === "draw") as DrawPassDescriptor;
+// Geometry draws only: every render leads with its backdrop fill (T444).
+const sceneDraws = (compiled: { passes: ReadonlyArray<unknown> }) =>
+  compiled.passes.filter(
+    (pass) => (pass as { kind: string }).kind === "draw" && String((pass as { id: string }).id).includes(":scene:"),
+  ) as DrawPassDescriptor[];
+const drawOf = (compiled: { passes: ReadonlyArray<unknown> }) => sceneDraws(compiled)[0] as DrawPassDescriptor;
 
 describe("the scene pipeline compiles by NAME (T377, T447)", () => {
   it("resolves camera, light and geometry references into one lit draw", () => {
@@ -117,7 +121,7 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
       }),
     );
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-    const draws = compiled.passes.filter((pass) => pass.kind === "draw") as DrawPassDescriptor[];
+    const draws = sceneDraws(compiled);
     // geo1 first, geob1 second — the parameter's stated order.
     expect(draws.map((draw) => draw.buffers?.[0]?.resourceId)).toEqual([
       "scratch:grid:position",
@@ -125,8 +129,8 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     ]);
     // moon before sun in the flat light array: moon's intensity 0.2 leads.
     expect((draws[0]?.uniforms?.["light0Meta"] as number[])[1]).toBe(0.2);
-    // And only the first draw clears; the second composes into the same frame.
-    expect(draws[0]?.clear).toBe(true);
+    // The backdrop clears; every geometry draw composes over it (T444).
+    expect(draws[0]?.clear).toBe(false);
     expect(draws[1]?.clear).toBe(false);
   });
 
@@ -176,8 +180,7 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     });
     const compiled = compile(graph);
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-    const draws = compiled.passes.filter((pass) => pass.kind === "draw") as DrawPassDescriptor[];
-    const byNode = new Map(draws.map((draw) => [draw.nodeId, draw.buffers?.[0]?.resourceId]));
+    const byNode = new Map(sceneDraws(compiled).map((draw) => [draw.nodeId, draw.buffers?.[0]?.resourceId]));
     expect(byNode.get("shot")).toBe("scratch:grid:position");
     expect(byNode.get("shot2")).toBe("scratch:grid2:position");
   });
