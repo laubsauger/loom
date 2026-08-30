@@ -139,33 +139,6 @@ export const DEFAULT_SHELL_LAYOUT: ShellLayout = {
   floating: [],
 };
 
-/**
- * The arrangement the app shipped with before T426: inspector and viewer as TABS in one
- * right dock. Kept as a preset rather than deleted, because it is what everyone who used
- * the app before today is looking at, and "put it back" has to be one click.
- */
-export const CLASSIC_SHELL_LAYOUT: ShellLayout = {
-  columns: [74, 26],
-  mainColumns: [23, 77],
-  rows: [72, 28],
-  rightRows: [100, 0],
-  zones: {
-    left: ["library", "components"],
-    center: ["graph"],
-    right: ["inspector", "viewer"],
-    rightBottom: [],
-    bottom: ["shader", "problems", "performance", "examples", "agent"],
-  },
-  active: {
-    left: "library",
-    center: "graph",
-    right: "inspector",
-    rightBottom: null,
-    bottom: "shader",
-  },
-  floating: [],
-};
-
 // ---- named layouts (T436) -----------------------------------------------------------
 
 export interface NamedLayout {
@@ -175,7 +148,6 @@ export interface NamedLayout {
 }
 
 export const DEFAULT_LAYOUT_ID = "preset:default";
-export const CLASSIC_LAYOUT_ID = "preset:classic";
 
 /**
  * Built-in layouts, shipped in CODE and not in the store.
@@ -186,9 +158,18 @@ export const CLASSIC_LAYOUT_ID = "preset:classic";
  * in the store for a capability nobody asked for, and a user who deletes "Default" loses
  * the one arrangement the app can always get back to.
  */
+/*
+ * T470 (V399): the "Classic" preset — the pre-T426 arrangement — is GONE, on the
+ * owner's call. T466 removed its reason: the migration keeps a user's own arrangement
+ * as a named row, so anyone who preferred the old shell has THEIRS; a preset offered
+ * fresh users nostalgia for an arrangement they never used. What Classic taxed into
+ * existence stays (V399's other half): every shell panel is collapsible, because
+ * Classic stored a zero-height sidebar row and that accommodation turned out generally
+ * right. A stored selection of the vanished preset falls back to Default, NAMED
+ * (see the readers), never a dangling id.
+ */
 export const LAYOUT_PRESETS: readonly NamedLayout[] = [
   { id: DEFAULT_LAYOUT_ID, name: "Default", layout: DEFAULT_SHELL_LAYOUT },
-  { id: CLASSIC_LAYOUT_ID, name: "Classic", layout: CLASSIC_SHELL_LAYOUT },
 ];
 
 export function isPresetLayoutId(id: string): boolean {
@@ -716,7 +697,14 @@ export function readLayoutStore(
 
   return {
     current: repairLayout(source["current"]),
-    currentId: known ? (currentId as string) : null,
+    // T470 (V369/V385's shape): a selection naming a preset that no longer ships —
+    // Classic — falls back to Default, NAMED in the menu; a deleted USER layout's
+    // selection simply clears. The arrangement itself is untouched either way.
+    currentId: known
+      ? (currentId as string)
+      : typeof currentId === "string" && isPresetLayoutId(currentId)
+        ? DEFAULT_LAYOUT_ID
+        : null,
     layouts,
   };
 }

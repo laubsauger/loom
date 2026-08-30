@@ -647,7 +647,8 @@ describe("T436 — named layouts", () => {
     expect(screen.getByRole("button", { name: /^Default/ }).getAttribute("aria-current")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: /^Classic/ })).toBeDefined();
+    // T470: Classic is gone — Default is the one preset that ships.
+    expect(screen.queryByRole("button", { name: /^Classic/ })).toBeNull();
   });
 
   it("saves the live arrangement under a name and persists it across a reload", async () => {
@@ -704,7 +705,7 @@ describe("T436 — named layouts", () => {
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} />);
     await openMenu(user);
-    await user.click(screen.getByRole("button", { name: /^Classic/ }));
+    await user.click(screen.getByRole("button", { name: /^Default/ }));
     await openMenu(user);
 
     for (const verb of ["Update", "Rename", "Delete"]) {
@@ -765,24 +766,6 @@ describe("T436 — named layouts", () => {
     expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
   });
 
-  it("restoring the Classic preset puts the inspector and viewer back to being tabs", async () => {
-    const user = userEvent.setup();
-    const storage = createMemoryStorage();
-    render(
-      <AppShell
-        storage={storage}
-        viewer={<div>viewer slot</div>}
-        inspector={<div>inspector slot</div>}
-      />,
-    );
-
-    await openMenu(user);
-    await user.click(screen.getByRole("button", { name: /^Classic/ }));
-
-    expect(zoneElement("right").contains(screen.getByText("inspector slot"))).toBe(true);
-    expect(zoneElement("right").contains(screen.getByText("viewer slot"))).toBe(true);
-    expect(readLayoutStore(storage).current.zones.rightBottom).toEqual([]);
-  });
 });
 
 /**

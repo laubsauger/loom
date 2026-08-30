@@ -22,7 +22,7 @@ import {
   treeFromShellLayout,
 } from "./pane-tree.ts";
 import type { PaneTreeLayout } from "./pane-tree.ts";
-import { CLASSIC_SHELL_LAYOUT, DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
+import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
 
 /**
  * The pane TREE (T404, V340): identity split from role. This gate is front-loaded on
@@ -60,11 +60,9 @@ describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("round-trips BOTH stock layouts through the projection by content", () => {
-    for (const flat of [DEFAULT_SHELL_LAYOUT, CLASSIC_SHELL_LAYOUT]) {
-      // Content equality, not entry-exists (the layout track's own warning).
-      expect(shellLayoutFromTree(treeFromShellLayout(flat))).toEqual(flat);
-    }
+  it("round-trips the stock layout through the projection by content", () => {
+    // Content equality, not entry-exists (the layout track's own warning).
+    expect(shellLayoutFromTree(treeFromShellLayout(DEFAULT_SHELL_LAYOUT))).toEqual(DEFAULT_SHELL_LAYOUT);
   });
 });
 

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryStorage } from "@ui/testing/install-dom-stubs.ts";
 import {
-  CLASSIC_LAYOUT_ID,
-  CLASSIC_SHELL_LAYOUT,
   DEFAULT_LAYOUT_ID,
   DEFAULT_LAYOUT_STORE,
   DEFAULT_SHELL_LAYOUT,
@@ -435,14 +433,33 @@ describe("T436 — named layouts", () => {
     expect(LAYOUT_PRESETS[0]?.layout).toEqual(DEFAULT_SHELL_LAYOUT);
     expect(allNamedLayouts(DEFAULT_LAYOUT_STORE).map((entry) => entry.id)).toEqual([
       DEFAULT_LAYOUT_ID,
-      CLASSIC_LAYOUT_ID,
     ]);
   });
 
-  it("keeps the pre-T426 arrangement reachable as a preset", () => {
-    // The escape hatch: one click puts the inspector and viewer back to being tabs.
-    expect(CLASSIC_SHELL_LAYOUT.zones.right).toEqual(["inspector", "viewer"]);
-    expect(CLASSIC_SHELL_LAYOUT.zones.rightBottom).toEqual([]);
+  it("T470: a stored selection of a preset that no longer ships falls back to Default, NAMED", () => {
+    const storage = { map: new Map<string, string>() } as unknown as {
+      map: Map<string, string>;
+      getItem(key: string): string | null;
+      setItem(key: string, value: string): void;
+      removeItem(key: string): void;
+    };
+    storage.getItem = (key) => storage.map.get(key) ?? null;
+    storage.setItem = (key, value) => void storage.map.set(key, value);
+    storage.removeItem = (key) => void storage.map.delete(key);
+    storage.map.set(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        current: DEFAULT_SHELL_LAYOUT,
+        currentId: "preset:classic",
+        layouts: [],
+      }),
+    );
+    const store = readLayoutStore(storage);
+    // Not null (a dangling nothing) and not the ghost id: the Default row, selected.
+    expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
+    // The arrangement itself is untouched by the fallback.
+    expect(store.current).toEqual(DEFAULT_SHELL_LAYOUT);
   });
 
   it("SAVE AS adds an entry and selects it", () => {

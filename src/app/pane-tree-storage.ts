@@ -121,7 +121,13 @@ export function readPaneTreeStore(
 
   return {
     current: repairPaneTree(source["current"]),
-    currentId: known ? (currentId as string) : null,
+    // T470: a vanished PRESET selection (Classic) falls back to Default, named in the
+    // menu; a deleted user layout's selection clears. The arrangement is untouched.
+    currentId: known
+      ? (currentId as string)
+      : typeof currentId === "string" && isPresetLayoutId(currentId)
+        ? DEFAULT_LAYOUT_ID
+        : null,
     layouts,
   };
 }
