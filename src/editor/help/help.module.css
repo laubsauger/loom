@@ -91,6 +91,60 @@
   font-size: var(--fs-micro);
 }
 
+/* The keys cell is the rebind control (T360). It reads as text until it is reached —
+   a list that happens to be editable, not a row of buttons. */
+
+.keyButton {
+  margin: 0;
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.keyButton:hover:not(:disabled) {
+  border-color: var(--line);
+}
+
+.keyButton:disabled {
+  cursor: default;
+}
+
+.keyButton[aria-pressed="true"] {
+  border-color: var(--signal);
+  color: var(--text);
+}
+
+.capturing {
+  color: var(--signal);
+}
+
+.reset {
+  padding: 0 var(--space-1);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.reset:hover {
+  color: var(--text);
+}
+
+.status {
+  min-height: var(--fs-meta);
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+}
+
 /* Node reference — one block per manifest. */
 
 .node {

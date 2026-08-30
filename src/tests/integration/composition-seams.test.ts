@@ -376,33 +376,55 @@ describe("§V205 — every seam the app is supposed to construct, enumerated (T3
  */
 
 /**
- * The surface families this enumerates (T330, widened by T356).
+ * The surface families this enumerates (T330, widened by T356, RE-POINTED by T361).
  *
  * `Pane` and `Panel` fill the shell's slots, which is a registry — `AppShellProps` names
- * them — and that is why §V241 was comfortable enumerating them. `Dialog`, `Settings` and
- * `Popup` are the OTHER kind of whole surface: things a user OPENS. They are added because
- * a third shape turned up (B38: `KeybindingSettings`, referenced only by its own test), and
- * they are added by NAME because there is no registry of openable surfaces to check
- * against.
+ * them — and that is why §V241 was comfortable enumerating them. This half is unchanged.
  *
- * That is a real weakness and it is worth stating rather than hiding: §V241 prefers a
- * registry precisely because a naming convention only catches what someone happened to
- * name conventionally. A surface called `ShortcutEditor` would slip through this.
+ * The OTHER half — whole surfaces a user OPENS — used to be `Dialog|Settings|Popup`, three
+ * more name suffixes, added when a third shape turned up (B38: `KeybindingSettings`,
+ * referenced only by its own test). T356 wrote down its own weakness at the time: a naming
+ * convention only catches what somebody happened to name conventionally, and a surface
+ * called `ShortcutEditor` would walk straight past it.
+ *
+ * §V307 is what makes a registry available, and T361 takes it. An openable surface is now
+ * opened by a COMMAND, so the openable set is enumerated two ways below, neither of them a
+ * name:
+ *
+ *  - MODAL SURFACES are the modules that render `DialogRoot` — the app's single dialog
+ *    primitive (T5). Every modal in the tree goes through it, so what the component is
+ *    CALLED stops mattering: `ShortcutEditor` is caught by construction. Measured, this
+ *    finds five modules where the three name suffixes found four, and one of the extras
+ *    is `CommandPalette`, which the naming convention never saw at all.
+ *  - COMMANDS are enumerated in their own describe below, against the `CommandMap`
+ *    declaration blocks — the registry TypeScript itself enforces, since `registerCommand`
+ *    and `execute` refuse a name that is not in it.
  *
  * The alternative — every exported component nothing renders — was measured before being
  * rejected: 88 exported components, 63 of which match no surface family at all. That check
  * would report buttons, rows and badges by the dozen and be switched off within a week.
- * This set is nine components across three families, and it found exactly one real thing.
+ *
+ * `Popup` is deliberately NOT replaced by the popover primitive the way `Dialog` is
+ * replaced by the dialog one: `PopoverRoot` is also what a colour swatch and a ramp stop
+ * editor render, so enumerating it would report field-level controls by the dozen — §V241's
+ * own warning about a check nobody keeps. `NodeInfoPopup`, the one surface that suffix
+ * covered, is covered instead by the COMMAND half below: `ui.showNodeInfo` is in the
+ * registry, and being opened by a command is what §V307 says a surface IS.
+ *
+ * The limit worth stating, because a guard believed complete is worse than one known to be
+ * partial: a surface that is NEITHER a shell slot NOR a modal — an inline editing surface
+ * living inside another pane — is still invisible here. That is exactly what
+ * `KeybindingSettings` was. §V307 is what closes it, because such a surface still has to be
+ * opened by a command and the command half sees that; a surface with no command at all is a
+ * §V307 breach this file cannot detect, only the review that flips the row can.
  */
-const PANE_NAME = /(?:Pane|Panel|Dialog|Settings|Popup)$/;
+const PANE_NAME = /(?:Pane|Panel)$/;
+
+/** The app's one dialog primitive. A module rendering it is a modal surface (§V307). */
+const MODAL_ELEMENT = "DialogRoot";
 
 /** Panes deliberately not rendered, with the reason. Same both-directions rule as above. */
 const NOT_RENDERED: ReadonlyArray<{ name: string; reason: string }> = [
-  {
-    name: "KeybindingSettings",
-    reason:
-      "B38 — FOUND BY THIS GUARD when T356 widened it, and the third naming the enumeration could not see (after B34's ViewerPane and B35's ShaderEditorPanel). The keymap's rebinding surface is referenced only by its own test: the keymap ITSELF is live, so shortcuts work, but nothing in the product lets a user change one. Where a keybinding editor belongs — the help panel beside the shortcut list, a dialog of its own, a settings tab — is a product decision (§V242), so it is reported rather than folded. The line comes out when it is rendered or removed.",
-  },
   {
     name: "Pane",
     reason:
@@ -449,22 +471,48 @@ function exportOrigin(file: string, name: string, seen = new Set<string>()): str
   return null;
 }
 
-/** Every exported `*Pane` / `*Panel` component, by name and defining module. */
+/** Does this subtree render `<DialogRoot>` — i.e. is this component a modal surface? */
+function rendersModal(node: ts.Node, file: ts.SourceFile): boolean {
+  let found = false;
+  const visit = (child: ts.Node): void => {
+    if (found) return;
+    if (
+      (ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) &&
+      child.tagName.getText(file) === MODAL_ELEMENT
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
+
+/**
+ * Every exported surface, by name and defining module: a `*Pane` / `*Panel` (the shell's
+ * own slot registry) or a component that renders the dialog primitive (§V307's openable
+ * surfaces, enumerated by what they ARE rather than what they are called).
+ */
 function collectPanes(): Array<{ name: string; file: string }> {
   const panes: Array<{ name: string; file: string }> = [];
   for (const path of sources) {
     if (isTestFile(path) || !path.endsWith(".tsx")) continue;
-    for (const statement of sourceFile(path).statements) {
+    const file = sourceFile(path);
+    for (const statement of file.statements) {
       const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
       const exported =
         modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
       if (!exported) continue;
       if (ts.isFunctionDeclaration(statement) && statement.name !== undefined) {
-        if (PANE_NAME.test(statement.name.text)) panes.push({ name: statement.name.text, file: path });
+        if (PANE_NAME.test(statement.name.text) || rendersModal(statement, file)) {
+          panes.push({ name: statement.name.text, file: path });
+        }
       }
       if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
-          if (ts.isIdentifier(declaration.name) && PANE_NAME.test(declaration.name.text)) {
+          if (!ts.isIdentifier(declaration.name)) continue;
+          if (PANE_NAME.test(declaration.name.text) || rendersModal(declaration, file)) {
             panes.push({ name: declaration.name.text, file: path });
           }
         }
@@ -498,15 +546,23 @@ const panes = collectPanes();
 const unrendered = panes.filter((pane) => !isRendered(pane));
 const excusedPanes = new Map(NOT_RENDERED.map((entry) => [entry.name, entry.reason]));
 
-describe("§V241 — every surface module is rendered by the app (T330, T356)", () => {
+describe("§V241 — every surface module is rendered by the app (T330, T356, T361)", () => {
   it("finds real surfaces, or it is measuring nothing", () => {
     expect(panes.length).toBeGreaterThan(4);
     // The shell's own slots are the registry the PANE half is enumerated against.
     expect(panes.some((pane) => pane.name === "ViewerPane")).toBe(true);
-    // And the widened families are actually present, or T356 added a regex that matches
-    // nothing and the guard silently got no bigger.
-    expect(panes.some((pane) => pane.name.endsWith("Dialog"))).toBe(true);
-    expect(panes.some((pane) => pane.name.endsWith("Settings"))).toBe(true);
+    // And the MODAL half really is finding modals. Named individually, and by a name the
+    // old `Dialog|Settings|Popup` families did NOT match, so nobody can quietly shrink
+    // this back to a suffix test and still have it pass: `CommandPalette` is only here
+    // because the enumeration reads what a component RENDERS (T361, §V307).
+    const modalNames = panes.map((pane) => pane.name);
+    expect(modalNames).toContain("ProjectSettingsDialog");
+    expect(modalNames).toContain("CommandPalette");
+    expect(modalNames).toContain("HelpPanel");
+    // A widened guard invites quiet shrinking, so the count has a floor too. Five modal
+    // modules were measured when this was written; four is a regression, not a tidy-up.
+    const modals = panes.filter((pane) => !PANE_NAME.test(pane.name));
+    expect(modals.length).toBeGreaterThanOrEqual(4);
   });
 
   it("renders every pane, or says in writing why it does not", () => {
@@ -528,5 +584,197 @@ describe("§V241 — every surface module is rendered by the app (T330, T356)", 
     const stillUnrendered = new Set(unrendered.map((pane) => pane.name));
     const stale = [...excusedPanes.keys()].filter((name) => !stillUnrendered.has(name));
     expect(stale).toEqual([]);
+  });
+});
+
+/**
+ * COMMANDS (T361, §V307).
+ *
+ * §V307's rule is that an OPENABLE SURFACE IS OPENED BY A COMMAND. What that buys the
+ * guard is a registry where T356 had a naming convention: a command cannot exist outside
+ * `CommandMap`, because TypeScript refuses `registerCommand` and `execute` for a name that
+ * is not declared in it. So this half enumerates the declaration-merging blocks — the
+ * registry as the compiler sees it — and asks the same question the rest of the file asks
+ * of everything else: does anything the running product reaches actually WIRE this?
+ *
+ * ## Why "a registrar module" and not "a call site"
+ *
+ * Two of the command families register in a LOOP over their own table (`node.toggle*`,
+ * `transport.play`/`pause`), so the `name:` property is an identifier rather than a
+ * literal at the point of the call. Reading only literal `name:` properties would report
+ * six false positives and get an allowlist written for it within a week — which is how a
+ * guard becomes furniture. A module that calls `registerCommand` AND contains the command's
+ * name is the registrar, whichever shape the call takes.
+ *
+ * ## Why the registrar must be CALLED, not merely reachable
+ *
+ * Module reachability alone is not evidence of anything here, and this was measured rather
+ * than assumed: a barrel `index.ts` the app imports re-exports every module beside it, so
+ * "the entry points reach this file" is true of a command module the instant it is added to
+ * its directory's barrel — including one whose registrar nobody calls. So the rule is the
+ * same one the factory half uses: some exported FUNCTION of the registrar module must be
+ * REFERENCED by a different module the entry points reach. Consts are not enough, because
+ * `OPEN_SETTINGS_COMMAND` being imported for a keymap label says nothing about whether the
+ * command was ever registered. Verified by unwiring `registerProjectSettingsCommand` and
+ * watching this go red.
+ *
+ * ## What it does and does not catch
+ *
+ * It catches the §V307 shape of §V220: a command declared, implemented, and called by
+ * nothing the product runs — the surface built, tested and dead. It does NOT catch a
+ * registrar function that a live module calls only from a component nobody renders; the
+ * runtime half of that lives beside each surface (`project-settings-ui.test.tsx` executes
+ * `ui.openSettings` against the composed app and requires a dialog to appear). And it
+ * cannot see a surface that never got a command at all, which is a §V307 breach by
+ * definition rather than a wiring bug — the review that flips the row is what catches that.
+ */
+
+/** Commands declared but deliberately not registered by a product entry point. */
+const COMMANDS_NOT_REGISTERED: ReadonlyArray<{ name: string; reason: string }> = [
+  // Empty is the good state, and the both-directions rule below keeps it honest: an entry
+  // whose command got wired fails just as loudly as a command with no registrar.
+];
+
+/** Every command name declared in a `CommandMap` block, and the module declaring it. */
+function collectDeclaredCommands(): Map<string, string> {
+  const declared = new Map<string, string>();
+  for (const path of sources) {
+    if (isTestFile(path)) continue;
+    const file = sourceFile(path);
+    const visit = (node: ts.Node): void => {
+      if (ts.isInterfaceDeclaration(node) && node.name.text === "CommandMap") {
+        for (const member of node.members) {
+          if (!ts.isPropertySignature(member) || member.name === undefined) continue;
+          if (!ts.isStringLiteral(member.name)) continue;
+          declared.set(member.name.text, path);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+  }
+  return declared;
+}
+
+/** Modules that call `registerCommand`, with every string literal they contain. */
+function collectRegistrars(): Array<{ file: string; literals: ReadonlySet<string> }> {
+  const registrars: Array<{ file: string; literals: ReadonlySet<string> }> = [];
+  for (const path of sources) {
+    if (isTestFile(path)) continue;
+    const file = sourceFile(path);
+    let registers = false;
+    const literals = new Set<string>();
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression;
+        const called = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : ts.isIdentifier(callee)
+            ? callee.text
+            : "";
+        if (called === "registerCommand") registers = true;
+      }
+      if (ts.isStringLiteral(node)) literals.add(node.text);
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    if (registers) registrars.push({ file: path, literals });
+  }
+  return registrars;
+}
+
+const declaredCommands = collectDeclaredCommands();
+const registrars = collectRegistrars();
+
+/** Every exported function declaration of a module, by name. */
+function exportedFunctions(path: string): readonly string[] {
+  const names: string[] = [];
+  for (const statement of sourceFile(path).statements) {
+    if (!ts.isFunctionDeclaration(statement) || statement.name === undefined) continue;
+    const exported =
+      statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+    if (exported) names.push(statement.name.text);
+  }
+  return names;
+}
+
+/** Does a module the entry points reach actually CALL into this registrar module? */
+function registrarIsCalled(modulePath: string): boolean {
+  const names = exportedFunctions(modulePath);
+  if (names.length === 0) return false;
+  for (const path of sources) {
+    if (path === modulePath || isTestFile(path) || !reachable.has(path)) continue;
+    const referenced = referencesByFile.get(path);
+    if (referenced === undefined) continue;
+    if (names.some((name) => referenced.has(name))) return true;
+  }
+  return false;
+}
+
+const calledRegistrars = new Map<string, boolean>(
+  registrars.map((registrar) => [registrar.file, registrarIsCalled(registrar.file)] as const),
+);
+
+const unregisteredCommands = [...declaredCommands.entries()]
+  .filter(
+    ([name]) =>
+      !registrars.some(
+        (registrar) => registrar.literals.has(name) && calledRegistrars.get(registrar.file) === true,
+      ),
+  )
+  .map(([name, declaredIn]) => ({ name, file: relative(ROOT, declaredIn) }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+const excusedCommands = new Map(COMMANDS_NOT_REGISTERED.map((entry) => [entry.name, entry.reason]));
+
+describe("§V307 — every command in the registry is registered by the product (T361)", () => {
+  it("finds the real registry, or it is measuring nothing", () => {
+    // 53 commands were declared when this was written. A scan that broke and found a
+    // handful would otherwise pass silently, having asked nothing of anything.
+    expect(declaredCommands.size).toBeGreaterThan(40);
+    expect(registrars.length).toBeGreaterThan(10);
+    // And it is not matching everything: `registerCommand` is rare, panes and nodes are
+    // not registrars, and if this ever approached the file count the walk is broken.
+    expect(registrars.length).toBeLessThan(sources.length / 10);
+    // The "is it called" half is doing work in both directions: some registrar modules
+    // are live, and the check is not a constant `true`.
+    expect([...calledRegistrars.values()].filter(Boolean).length).toBeGreaterThan(5);
+
+    // The openable surfaces §V307 is about, named individually so that DELETING one goes
+    // red here rather than making the guard quieter. `ui.openSettings` is T359 itself: it
+    // was the one surface opened by a `useState` flag, unreachable from the palette and
+    // from every keybinding, and the whole reason this half exists.
+    for (const command of [
+      "ui.openSettings",
+      "ui.openHelp",
+      "ui.showNodeInfo",
+      "ui.openCommandPalette",
+      "preview.setView",
+    ]) {
+      expect(declaredCommands.has(command), command).toBe(true);
+      expect(excusedCommands.has(command), command).toBe(false);
+    }
+  });
+
+  it("registers every declared command, or says in writing why it does not", () => {
+    const surprises = unregisteredCommands.filter((command) => !excusedCommands.has(command.name));
+    if (surprises.length > 0) {
+      const listed = surprises.map((command) => `  ${command.name}  (${command.file})`).join("\n");
+      throw new Error(
+        `${surprises.length} command${surprises.length === 1 ? " is" : "s are"} declared in CommandMap ` +
+          `but registered by nothing a product entry point reaches (§V307). A surface whose command is ` +
+          `not registered is unreachable from the palette, from every keybinding and from an agent, ` +
+          `however well its own suite passes. Register it in a module the app reaches, or add it to ` +
+          `COMMANDS_NOT_REGISTERED with the reason:\n${listed}`,
+      );
+    }
+    expect(surprises).toEqual([]);
+  });
+
+  it("has no stale excuse — a command that got wired must leave the list", () => {
+    const stillUnregistered = new Set(unregisteredCommands.map((command) => command.name));
+    const stale = [...excusedCommands.keys()].filter((name) => !stillUnregistered.has(name));
+    const vanished = [...excusedCommands.keys()].filter((name) => !declaredCommands.has(name));
+    expect({ stale, vanished }).toEqual({ stale: [], vanished: [] });
   });
 });

@@ -14,6 +14,12 @@
  *    and selection-resolved inputs read.
  *  - `KEYMAP_CONTEXT_ATTRIBUTE` — put `data-keymap-context="graph"` on a pane's root and
  *    every key pressed inside it resolves in that context (§V53).
+ *
+ * There is no rebinding pane here. T360 put the EDITOR on the help panel's shortcuts tab,
+ * which was already a projection of the resolved keymap, so the list a user reads and the
+ * list a user changes are the same list. The pane that used to live here (`KeybindingSettings`)
+ * was a second surface over the same bindings, was never rendered by the app (B38), and is
+ * gone rather than left as the thing the shipped editor could drift from.
  */
 
 export type {
@@ -94,6 +100,3 @@ export {
 
 export type { KeyChipProps, KeyHintProps } from "./key-hint.tsx";
 export { KeyChip, KeyHint } from "./key-hint.tsx";
-
-export type { KeybindingSettingsProps } from "./keybinding-settings.tsx";
-export { KeybindingSettings } from "./keybinding-settings.tsx";

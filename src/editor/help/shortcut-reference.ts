@@ -14,6 +14,11 @@ import { displayForCommand } from "@editor/keymap/resolve.ts";
  * engine dispatches from, override layer and all. A binding with no keys (explicitly
  * unbound, §V54) still appears, marked, because "this exists and you have not bound it"
  * is a different fact from "this does not exist".
+ *
+ * T360 makes this projection the EDITOR's source too. The list a user reads and the list
+ * a user changes are the same list, from the same object, so there is no second surface to
+ * drift from it — which is the whole reason the shortcut editor went here rather than into
+ * a settings pane of its own.
  */
 
 export interface ShortcutEntry {
@@ -25,13 +30,37 @@ export interface ShortcutEntry {
   /** Platform-correct display, or null when the binding carries no keys. */
   readonly display: string | null;
   readonly description: string | undefined;
-  /** The keymap resolved a conflict here; the settings pane is where it is fixed. */
+  /** The keymap resolved a conflict here; `conflictWith` names the other side. */
   readonly conflicted: boolean;
+  /**
+   * The other commands sharing this row's chord, by label (T360).
+   *
+   * A rebind onto a taken chord is ALLOWED and NAMED rather than silently stolen or
+   * silently refused: refusing strands anyone mid-remap, and stealing hides the fact that
+   * a key they still expect to work no longer does. Two commands cannot both fire, so the
+   * honest thing is to say which other one is holding it.
+   */
+  readonly conflictWith: readonly string[];
+  /** `"override"` means the user changed this row, so a reset is meaningful (§V54). */
+  readonly source: "default" | "override";
 }
 
 export interface ShortcutSection {
   readonly context: KeyContext;
   readonly entries: readonly ShortcutEntry[];
+}
+
+/** The labels of the OTHER bindings this one collides with, in conflict order. */
+export function conflictWith(resolved: ResolvedKeymap, bindingId: string): readonly string[] {
+  const others: string[] = [];
+  for (const conflict of resolved.conflicts) {
+    if (!conflict.bindings.some((binding) => binding.id === bindingId)) continue;
+    for (const binding of conflict.bindings) {
+      if (binding.id === bindingId || others.includes(binding.label)) continue;
+      others.push(binding.label);
+    }
+  }
+  return others;
 }
 
 /** Every binding, grouped by the context it fires in, bound ones first. */
@@ -47,6 +76,8 @@ export function shortcutSections(resolved: ResolvedKeymap): readonly ShortcutSec
       display: binding.display,
       description: binding.description,
       conflicted: resolved.conflictingIds.has(binding.id),
+      conflictWith: conflictWith(resolved, binding.id),
+      source: binding.source,
     };
     const bucket = byContext.get(binding.context);
     if (bucket === undefined) byContext.set(binding.context, [entry]);

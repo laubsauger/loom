@@ -8,9 +8,11 @@ import { createComponentHarness, graphOf } from "@domain/components/test-support
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import { DEFAULT_BINDINGS } from "@editor/keymap/defaults.ts";
 import { KeymapProvider } from "@editor/keymap/keymap-provider.tsx";
+import { KEYMAP_STORAGE_KEY } from "@editor/keymap/storage.ts";
 import { createKeymapStore } from "@editor/keymap/store.ts";
 import type { KeymapStore } from "@editor/keymap/store.ts";
-import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
+import type { KeyBinding } from "@editor/keymap/types.ts";
+import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { ExpressionHelp } from "./expression-help.tsx";
 import { HelpHost } from "./help-host.tsx";
 
@@ -126,6 +128,142 @@ describe("HelpPanel (T200)", () => {
     expect(within(variables).getByText("walltime")).toBeDefined();
     // timeSeconds: 2 — read out of the scope, not written into the panel.
     expect(within(variables).getAllByText("2").length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The shortcuts tab is the shortcut EDITOR (T360, §V54, §V307).
+ *
+ * The keymap has taken overrides since T78 and nothing in the product wrote one, so a
+ * user could read every binding and change none. What is proved here is that the list a
+ * user READS and the list a user CHANGES are one list: the rebind goes through the store,
+ * the store re-resolves, and the same rows re-render — there is no second surface holding
+ * a copy that could disagree.
+ */
+const EDITABLE: KeyBinding[] = [
+  { id: "undo", keys: "mod+z", context: "global", command: "graph.undo", label: "Undo" },
+  { id: "redo", keys: "mod+shift+z", context: "global", command: "graph.redo", label: "Redo" },
+];
+
+describe("the shortcuts tab edits the keymap (T360)", () => {
+  const editable = (storage: ReturnType<typeof createMemoryStorage> | null = null): KeymapStore =>
+    createKeymapStore({ defaults: EDITABLE, storage, platform: "other" });
+
+  async function openEditor(store: KeymapStore) {
+    await openHelp(store);
+    return screen.findByRole("dialog");
+  }
+
+  const keysButton = (label: string): HTMLElement =>
+    screen.getByRole("button", { name: `Change shortcut for ${label}` });
+
+  it("rebinds from the next keystroke, and the list it was read from moves", async () => {
+    const store = editable();
+    const dialog = await openEditor(store);
+    expect(within(dialog).getByText("Ctrl+Z")).toBeDefined();
+
+    fireEvent.click(keysButton("Undo"));
+    fireEvent.keyDown(keysButton("Undo"), { key: "u", code: "KeyU", ctrlKey: true });
+
+    expect(store.getSnapshot().byId.get("undo")?.effectiveKeys).toBe("mod+u");
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByText("Ctrl+U")).toBeDefined();
+    });
+    // The old key is gone from the list, not merely joined by the new one.
+    expect(within(screen.getByRole("dialog")).queryByText("Ctrl+Z")).toBeNull();
+  });
+
+  it("persists the override to local storage, never to the document (§V18)", async () => {
+    const storage = createMemoryStorage();
+    const store = editable(storage);
+    await openEditor(store);
+
+    fireEvent.click(keysButton("Undo"));
+    fireEvent.keyDown(keysButton("Undo"), { key: "u", code: "KeyU", ctrlKey: true });
+
+    expect(JSON.parse(storage.getItem(KEYMAP_STORAGE_KEY) ?? "{}")).toEqual({ undo: "mod+u" });
+  });
+
+  it("names the command already holding the chord instead of stealing it in silence", async () => {
+    const store = editable();
+    await openEditor(store);
+
+    fireEvent.click(keysButton("Redo"));
+    fireEvent.keyDown(keysButton("Redo"), { key: "z", code: "KeyZ", ctrlKey: true });
+
+    // Applied — refusing would strand anyone swapping two keys through a third — and
+    // said out loud, naming the other side. Both are needed: a silent steal leaves the
+    // user believing a key still works that no longer does.
+    expect(store.getSnapshot().byId.get("redo")?.effectiveKeys).toBe("mod+z");
+    const status = within(screen.getByRole("dialog")).getByRole("status");
+    expect(status.textContent).toContain("Ctrl+Z");
+    expect(status.textContent).toContain("Undo");
+    // And the rows say so on their own, for anyone who reads the list later.
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getAllByText("conflict").length).toBe(2);
+    });
+  });
+
+  it("cancels on Escape and keeps the panel open — one press, one job (§V302)", async () => {
+    const store = editable();
+    await openEditor(store);
+
+    fireEvent.click(keysButton("Undo"));
+    fireEvent.keyDown(keysButton("Undo"), { key: "Escape", code: "Escape" });
+
+    expect(store.hasOverride("undo")).toBe(false);
+    // Dismissing in the same press would hide the cancel: the user never sees the row
+    // they were editing again.
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+    expect(within(screen.getByRole("dialog")).getByRole("status").textContent).toContain(
+      "cancelled",
+    );
+  });
+
+  it("unbinds on Backspace — 'no shortcut' is a state, not an absence", async () => {
+    const store = editable();
+    await openEditor(store);
+
+    fireEvent.click(keysButton("Undo"));
+    fireEvent.keyDown(keysButton("Undo"), { key: "Backspace", code: "Backspace" });
+
+    expect(store.getSnapshot().byId.get("undo")?.isBound).toBe(false);
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByText("unbound")).toBeDefined();
+    });
+  });
+
+  it("offers a reset only on a row the user changed, and restores that row alone", async () => {
+    const store = editable();
+    await openEditor(store);
+    expect(screen.queryByRole("button", { name: "Reset shortcut for Undo" })).toBeNull();
+
+    act(() => {
+      store.setOverride("undo", "mod+u");
+      store.setOverride("redo", "mod+y");
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset shortcut for Undo" })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset shortcut for Undo" }));
+    expect(store.getSnapshot().byId.get("undo")?.effectiveKeys).toBe("mod+z");
+    expect(store.getSnapshot().byId.get("redo")?.effectiveKeys).toBe("mod+y");
+  });
+
+  it("puts every action on a real button, so the keymap is editable from the keyboard (§V19)", async () => {
+    const store = editable();
+    await openEditor(store);
+    expect(keysButton("Undo").tagName).toBe("BUTTON");
+
+    act(() => {
+      store.setOverride("undo", "mod+u");
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Reset shortcut for Undo" }).tagName,
+      ).toBe("BUTTON");
+    });
   });
 });
 
