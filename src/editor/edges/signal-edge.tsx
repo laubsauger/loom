@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import { BaseEdge, getBezierPath } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 import { cx } from "@ui/cx.ts";
@@ -41,7 +41,7 @@ export const SignalEdge = memo(function SignalEdge({
   markerEnd,
   interactionWidth,
 }: EdgeProps<LoomEdge>) {
-  const { runtime } = useGraphCanvas();
+  const { runtime, edgeGeometry } = useGraphCanvas();
   const reducedMotion = useReducedMotion();
   // The pass that feeds this edge is the one whose cost the edge reports. Subscribing
   // per source node keeps metric churn off every other component (§V16).
@@ -55,6 +55,17 @@ export const SignalEdge = memo(function SignalEdge({
     targetY,
     targetPosition,
   });
+
+  /**
+   * §V14b/§V14c — publish the path THIS edge drew, so the canvas can hit-test a drop
+   * against the wire the user is actually looking at (`edge-geometry.ts`). Re-published
+   * whenever the endpoints move, which includes every frame of a node drag, and cleared
+   * on unmount so a deleted edge stops being a target the moment it stops being drawn.
+   */
+  useEffect(() => {
+    edgeGeometry.publish(id, path);
+    return () => edgeGeometry.clear(id);
+  }, [edgeGeometry, id, path]);
 
   const color = edgeFamilyColor(data?.portKind);
   const flow = describeFlow(snapshot.gpuMs, { inactive: data?.inactive === true });

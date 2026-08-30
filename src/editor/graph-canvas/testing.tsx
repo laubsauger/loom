@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Position, ReactFlowProvider } from "@xyflow/react";
 import type { EdgeProps, NodeProps } from "@xyflow/react";
+import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE } from "./derive.ts";
@@ -149,6 +150,7 @@ export interface FixtureContextOptions {
   store: GraphCanvasContextValue["store"];
   registry: GraphCanvasContextValue["registry"];
   runtime?: NodeRuntimeStore;
+  edgeGeometry?: GraphCanvasContextValue["edgeGeometry"];
   dispatch?: GraphDispatch;
   selection?: GraphCanvasContextValue["selection"];
   toggleUi?: GraphCanvasContextValue["toggleUi"];
@@ -168,6 +170,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       store: options.store,
       registry: options.registry,
       runtime,
+      edgeGeometry: options.edgeGeometry ?? createEdgeGeometry(),
       dispatch: options.dispatch ?? (() => {}),
       selection: options.selection ?? [],
       toggleUi: options.toggleUi ?? (() => {}),

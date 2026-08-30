@@ -18,9 +18,11 @@ import type {
   Connection,
   EdgeChange,
   EdgeTypes,
+  FinalConnectionState,
   IsValidConnection,
   NodeChange,
   NodeTypes,
+  ReactFlowInstance,
 } from "@xyflow/react";
 import { useStore } from "zustand";
 import { arePortsCompatible } from "@domain/graph/port-compat.ts";
@@ -30,6 +32,8 @@ import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
+import { EDGE_HIT_TOLERANCE_PX, createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
+import { replaceEdgeOperations } from "@editor/edges/edge-drop.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
@@ -93,6 +97,9 @@ export function GraphCanvas({
   const registry = bus.registry;
   const domainNodes = useStore(bus.store, (state) => state.graph.nodes);
   const domainEdges = useStore(bus.store, (state) => state.graph.edges);
+
+  // One per mounted canvas: every edge writes where it is, the drop handlers read it.
+  const edgeGeometry = useMemo(() => createEdgeGeometry(), []);
 
   const fallbackRuntime = useMemo(() => createNodeRuntimeStore(), []);
   useEffect(() => () => fallbackRuntime.dispose(), [fallbackRuntime]);
@@ -251,6 +258,69 @@ export function GraphCanvas({
   );
 
   /**
+   * The live React Flow instance, kept in a ref rather than in state.
+   *
+   * `screenToFlowPosition` is the only way to turn a drop point into graph coordinates,
+   * and it needs the current viewport transform. Subscribing to that transform would
+   * re-render this component on every frame of a pan — which is precisely the shape of
+   * B13 (§V142: a camera move must cost nothing). A ref updated once, on init, gives the
+   * drop handlers the live projection and re-renders nothing, ever.
+   */
+  const flowRef = useRef<ReactFlowInstance<LoomNode, LoomEdge> | null>(null);
+  const onInit = useCallback((instance: ReactFlowInstance<LoomNode, LoomEdge>) => {
+    flowRef.current = instance;
+  }, []);
+
+  /**
+   * §V14b/§V14c — an EDGE is a drop target for a connection.
+   *
+   * Released over a wire rather than over a port, the drag takes that wire's TARGET: the
+   * old edge goes and the dragged port takes its place, as ONE patch and so one undo
+   * group (§V32, §V34). The port dot is 7px (§V99) and the wire leading to it is right
+   * there under the cursor; demanding the dot is asking for precision the task does not
+   * need.
+   *
+   * `isValid` is React Flow telling us the drop landed on a real, compatible handle — in
+   * which case `onConnect` has already fired and this is not our gesture. Everything else
+   * (empty canvas, an incompatible handle, a wire) reaches the hit test, and a miss
+   * dispatches nothing at all.
+   */
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (state.isValid === true) return;
+      const from = state.fromHandle;
+      const flow = flowRef.current;
+      if (from === null || from === undefined || flow === null) return;
+      // A handle with no id belongs to a node that declares a single unnamed port; ours
+      // always name their ports, so there is nothing to reconnect.
+      const fromPortId = from.id;
+      if (fromPortId === null || fromPortId === undefined) return;
+
+      const client = "changedTouches" in event ? event.changedTouches[0] : event;
+      if (client === undefined) return;
+      const point = flow.screenToFlowPosition({ x: client.clientX, y: client.clientY });
+      // The tolerance is a SCREEN measurement (§V14c), so it is divided by the zoom to
+      // stay the same size under the cursor however far the camera is pulled back.
+      const zoom = flow.getZoom();
+      if (!(zoom > 0)) return;
+      const edgeId = edgeGeometry.nearest(point, EDGE_HIT_TOLERANCE_PX / zoom);
+      if (edgeId === null) return;
+
+      const graph = bus.store.getGraph();
+      const edge = graph.edges[edgeId];
+      if (edge === undefined) return;
+      const operations = replaceEdgeOperations(graph, registry, edge, {
+        nodeId: from.nodeId,
+        portId: fromPortId,
+        // React Flow's "source" handle is our output; "target" is our input.
+        direction: from.type === "source" ? "output" : "input",
+      });
+      dispatch(operations, "Replace connection");
+    },
+    [bus, dispatch, edgeGeometry, registry],
+  );
+
+  /**
    * §V13 — exact port-type match, checked while the connection line is still in the
    * air. The bus enforces it again on apply; doing it here too means an impossible
    * connection is refused under the cursor instead of silently rejected afterwards.
@@ -317,13 +387,24 @@ export function GraphCanvas({
       store: bus.store,
       registry,
       runtime: runtimeSource,
+      edgeGeometry,
       dispatch,
       selection: selectedIds,
       toggleUi,
       renderPreview,
       renderControls,
     }),
-    [bus.store, registry, runtimeSource, dispatch, selectedIds, toggleUi, renderPreview, renderControls],
+    [
+      bus.store,
+      registry,
+      runtimeSource,
+      edgeGeometry,
+      dispatch,
+      selectedIds,
+      toggleUi,
+      renderPreview,
+      renderControls,
+    ],
   );
 
   return (
@@ -339,6 +420,8 @@ export function GraphCanvas({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectEnd={onConnectEnd}
+          onInit={onInit}
           isValidConnection={isValidConnection}
           onSelectionChange={reportSelection}
           onNodeMouseEnter={reportEnter}

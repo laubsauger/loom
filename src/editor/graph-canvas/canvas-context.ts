@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { GraphStoreView } from "@domain/graph/store.ts";
+import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { NodeRuntimeSnapshot, NodeRuntimeSource } from "./node-runtime.ts";
 
@@ -23,6 +24,15 @@ export interface GraphCanvasContextValue {
   store: GraphStoreView;
   registry: NodeRegistryView;
   runtime: NodeRuntimeSource;
+  /**
+   * Where each edge tells the canvas where it is (§V14b, §V14c).
+   *
+   * Written by `SignalEdge` on every render, read only when a drop lands — so an edge is
+   * a target because it is DRAWN, not because something re-derived its geometry. Not
+   * React state, deliberately: it changes at pointer rate during a node drag and nothing
+   * renders from it (§V16).
+   */
+  edgeGeometry: EdgeGeometryStore;
   /** Every semantic edit the view makes, as one atomic patch on the bus (§V29, §V32). */
   dispatch: GraphDispatch;
   /** Current canvas selection (§V101): a per-node toggle acts on it when the node is in it. */
