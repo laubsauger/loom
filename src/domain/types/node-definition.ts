@@ -190,6 +190,13 @@ export interface NodeDefinition {
    */
   contractVersion?: number;
   /**
+   * T299 (§V198): texture outputs whose target materializes WITH a depth attachment.
+   * A 3D render pass needs depth testing; the attachment is structural (a target
+   * gaining or losing depth is a different render signature, T295), so it is declared
+   * here — data on the definition — rather than inferred from what the passes draw.
+   */
+  depthOutputs?: ReadonlyArray<PortId>;
+  /**
    * Marks this node as an ACTIVE SINK: the compiler traces dependencies backward from
    * sinks and prunes everything else (§V25). Declared, never inferred — "has no outputs"
    * is not the same claim, and a node with a side effect must survive pruning either way.

@@ -1,0 +1,136 @@
+/**
+ * The instance render shader (T299): a procedural primitive per point, vertex-pulled
+ * from the SoA position buffer — no vertex buffers, no mesh assets, no new pass kind.
+ *
+ * §V198's published composition order, in full:
+ *
+ *   clip = viewProjection × ( T(point) × Rz × Ry × Rx × S(scale) × vertex )
+ *
+ * i.e. the primitive is SCALED first, ROTATED next (X, then Y, then Z — Houdini's
+ * default rotation order), TRANSLATED to its point last, then projected through the
+ * §V198 camera (column-major, right-handed, −z forward, [0,1] depth). Pinned by test;
+ * changing this order is a spec change, not a refactor.
+ *
+ * Shape is a UNIFORM (§V5): every shape draws INSTANCE_VERTEX_COUNT vertices and the
+ * vertices past the shape's own count clamp to the shape's last vertex, forming
+ * zero-area triangles (each count is a multiple of 3, so a clamped triangle has all
+ * three vertices identical). Switching quad → box → octahedron re-uploads one integer.
+ */
+export const INSTANCE_VERTEX_COUNT = 36;
+
+export const RENDER_INSTANCES_WGSL = `struct InstanceParams {
+  viewProjection: mat4x4f,
+  color: vec4f,
+  rotate: vec3f,       // radians; applied X then Y then Z (published order)
+  scale: f32,
+  shape: u32,          // 0=quad 1=box 2=octahedron
+};
+
+@group(0) @binding(0) var<uniform> params: InstanceParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) normal: vec3f,
+};
+
+/* Function-local var: WGSL only permits runtime indexing into var-stored arrays. */
+fn quadCorner(v: u32) -> vec2f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return corners[v];
+}
+
+fn shapeVertexCount(shape: u32) -> u32 {
+  if (shape == 0u) { return 6u; }
+  if (shape == 2u) { return 24u; }
+  return 36u;
+}
+
+/* Unit box: face = v/6 picks an axis and a sign, the quad table fills the face. */
+fn boxVertex(v: u32) -> vec3f {
+  let face = v / 6u;
+  let corner = quadCorner(v % 6u);
+  let sign = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(sign, corner.x * sign, corner.y); }
+  if (axis == 1u) { return vec3f(corner.x, sign, corner.y * sign); }
+  return vec3f(corner.x * sign, corner.y, sign);
+}
+
+fn boxNormal(v: u32) -> vec3f {
+  let face = v / 6u;
+  let sign = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(sign, 0.0, 0.0); }
+  if (axis == 1u) { return vec3f(0.0, sign, 0.0); }
+  return vec3f(0.0, 0.0, sign);
+}
+
+/* Octahedron: face = v/3 picks an octant by its sign bits; the axis apexes wind so
+   outward faces agree with the face normal normalize(signs). */
+fn octaVertex(v: u32) -> vec3f {
+  let face = v / 3u;
+  let sx = f32(face & 1u) * 2.0 - 1.0;
+  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+  let corner = v % 3u;
+  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
+  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
+  return vec3f(0.0, 0.0, sz);
+}
+
+fn shapeVertex(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
+  if (shape == 2u) { return octaVertex(v); }
+  return boxVertex(v);
+}
+
+fn shapeNormal(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(0.0, 0.0, 1.0); }
+  if (shape == 2u) {
+    let face = v / 3u;
+    let sx = f32(face & 1u) * 2.0 - 1.0;
+    let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+    let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+    return normalize(vec3f(sx, sy, sz));
+  }
+  return boxNormal(v);
+}
+
+fn rotationMatrix(r: vec3f) -> mat3x3f {
+  let cx = cos(r.x); let sx = sin(r.x);
+  let cy = cos(r.y); let sy = sin(r.y);
+  let cz = cos(r.z); let sz = sin(r.z);
+  let rx = mat3x3f(1.0, 0.0, 0.0, 0.0, cx, sx, 0.0, -sx, cx);
+  let ry = mat3x3f(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy);
+  let rz = mat3x3f(cz, sz, 0.0, -sz, cz, 0.0, 0.0, 0.0, 1.0);
+  /* X first, then Y, then Z — column vectors, so the first-applied is rightmost. */
+  return rz * ry * rx;
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
+  let count = shapeVertexCount(params.shape);
+  let v = min(vertex, count - 1u);
+  let rotation = rotationMatrix(params.rotate);
+  let local = rotation * (shapeVertex(params.shape, v) * params.scale);
+  let world = local + positions[instance];
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  out.normal = rotation * shapeNormal(params.shape, v);
+  return out;
+}
+
+const LIGHT_DIRECTION = vec3f(0.3713906, 0.7427813, 0.5570860); // normalize(2,4,3)
+const AMBIENT = 0.25;
+
+@fragment
+fn fs(input: VertexOut) -> @location(0) vec4f {
+  /* Two-sided lambert: a quad seen from behind still reads as lit geometry. */
+  let lambert = abs(dot(normalize(input.normal), LIGHT_DIRECTION));
+  let shade = AMBIENT + (1.0 - AMBIENT) * lambert;
+  return vec4f(params.color.rgb * shade, params.color.a);
+}`;

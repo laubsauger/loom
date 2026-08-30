@@ -96,6 +96,8 @@ export interface ResolvedOutput {
   readonly space: ColorSpace;
   /** True when the output is declared temporal and therefore backed by a ping-pong pair (§V4, §V22). */
   readonly temporal: boolean;
+  /** True when the definition declares this target output carries a depth attachment (T299, T295). */
+  readonly depth?: boolean;
 }
 
 /**

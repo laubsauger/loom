@@ -17,6 +17,7 @@ import { analyzeNode } from "./analyze.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 import { pointGeneratorDefinitions } from "./point-generators.ts";
+import { renderInstancesNode } from "./render-instances.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -34,7 +35,15 @@ export {
   pointTorusNode,
   pointGeneratorDefinitions,
 } from "./point-generators.ts";
-export { movieFileInNode, webcamNode, mediaSourceIdFor, mediaNodeDefinitions } from "./media.ts";
+export { renderInstancesNode, INSTANCE_SHAPES } from "./render-instances.ts";
+export {
+  movieFileInNode,
+  webcamNode,
+  textNode,
+  mediaSourceIdFor,
+  MEDIA_TEXTURE_KEY,
+  mediaNodeDefinitions,
+} from "./media.ts";
 export {
   VALUE_PORT,
   mouseNode,
@@ -136,6 +145,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
   ...pointGeneratorDefinitions,
+  renderInstancesNode,
 ];
 
 /**

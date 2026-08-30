@@ -270,6 +270,12 @@ function propagate(args: PropagationArgs): PropagationResult {
         format: format.format,
         space: declaredSpace ?? space.space,
         temporal: slot.resourceKind === "pingPong",
+        // T299: only a plain target can carry a depth attachment in the current IR — a
+        // ping-pong 3D history target would need depth on both halves (deferred until
+        // something asks for it, loudly, rather than half-supported silently).
+        ...(slot.resourceKind === "target" && definition.depthOutputs?.includes(slot.portId) === true
+          ? { depth: true }
+          : {}),
       });
     }
   }
@@ -342,6 +348,7 @@ function describeResource(output: ResolvedOutput): Record<string, unknown> {
         size: output.size,
         format: output.format,
         label: `${output.nodeId}.${output.portId}`,
+        ...(output.depth === true ? { depth: true } : {}),
       };
     case "pointset":
       // The caller filters markers out before this point; reaching here is a bug.
