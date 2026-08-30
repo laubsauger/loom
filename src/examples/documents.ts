@@ -66,8 +66,12 @@ function node(
     type,
     definitionVersion: 1,
     position: { x: position[0], y: position[1] },
-    parameters,
     ...extra,
+    // T348: MERGED, never last-writer-wins — an example that passes base parameters
+    // AND a slot in `extra.parameters` (E10's rotate.y) must keep both. The plain
+    // spread silently dropped every base parameter, which renders as a node quietly
+    // on its defaults: plausible-wrong, the worst kind.
+    parameters: { ...parameters, ...(extra.parameters ?? {}) },
   };
 }
 
@@ -731,11 +735,11 @@ const instancedTorusDocument = document(
         { count: 1152, cols: 48, rows: 24, radius: 0.85, radius2: 0.33 },
         { label: "torus1" },
       ),
-      node("draw", "renderInstances", [-260, 0], {}, {
-        label: "instances1",
-        // All in `extra.parameters`: the slot for rotate.y lives beside the plain
-        // values, exactly the envelope a real save writes (§V107/§V113).
-        parameters: {
+      node(
+        "draw",
+        "renderInstances",
+        [-260, 0],
+        {
           count: 1152,
           shape: "box",
           scale: 0.045,
@@ -743,15 +747,21 @@ const instancedTorusDocument = document(
           eye: [0, 1.1, 2.6],
           lookAt: [0, 0, 0],
           fov: 55,
-          "rotate.y": {
-            mode: "driven",
-            bindings: {
-              static: { kind: "static", value: 0 },
-              driven: { kind: "driven", channel: "lfo1" },
+        },
+        {
+          label: "instances1",
+          // The slot merges OVER the base values (T348) — both survive.
+          parameters: {
+            "rotate.y": {
+              mode: "driven",
+              bindings: {
+                static: { kind: "static", value: 0 },
+                driven: { kind: "driven", channel: "lfo1" },
+              },
             },
           },
         },
-      }),
+      ),
       node("out", "output", [120, 0], {}, { label: "out1" }),
     ],
     [

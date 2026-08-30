@@ -357,7 +357,7 @@ describe("E9 Particle Fountain", () => {
    */
   it("compiles the full lifecycle: kernel, scans, scatter, spawn tail, hook", () => {
     const ids = plan.passes
-      .filter((pass) => pass.nodeId === "sim")
+      .filter((pass) => "nodeId" in pass && pass.nodeId === "sim")
       .map((pass) => (pass as { id: string }).id.split(":").pop());
     for (const stage of ["kernel", "scanLocal", "scanBlocks", "spawnScanLocal", "spawnScanBlocks", "spawnIdentity", "spawnFinalize", "spawnHook"]) {
       expect(ids, stage).toContain(stage);
