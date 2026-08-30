@@ -794,6 +794,24 @@ Mask ≠ TD Matte, which is 3-input). deprecated & ⊥ copy: **SVG TOP** (docume
 separate Create node.
 
 NOTE: commit `640de4e` labels this work T279/T280 — ids assigned before the spec's were published & now taken by Remap/Reorder. the work IS T288/T289. ⊥ renumber the commit; record the mapping.
+### POP + Houdini survey (2026-08-30) — what it corrected, what it unlocks
+my brief had 2 WRONG premises the survey fixed: ⊥ "Scatter POP" (= **Sprinkle POP**, needs an
+input; from-scratch scatter = **Point Generator POP**), ⊥ "Constant POP" (= **Point POP**), &
+POPs are **2025** (build 2025.30060, Jun 2025) ⊥ 2023.
+biggest unlock: ∀ TD parametric generator has a **Connectivity** param
+(`none|points|lines|linestrips|tris|alttris|quads`) + publishes **`Dim[]` (numCols numRows)**.
+topology is ANALYTIC ∴ a grid|sphere|tube|torus draws as a SURFACE w/ ⊥ index buffer. that
+collapses most of the "we need a mesh resource kind" work.
+⊥ exists ∈ TD after 2 release years: Instance POP, Render POP, **Lattice|Magnet|Deform POP**
+(cage deform is SOP-only). **Copy POP** = copy-to-points (realises copies); hardware
+instancing still lives on Geometry COMP. deprecated: **GLSL Create POP** → GLSL Advanced POP
+**+ a separate Topology POP** — that SPLIT is worth stealing.
+Houdini publishes an exact 3-line transform composition order; TD publishes NONE.
+
+V200: a "we measured & stopped" decision is recorded W/ ITS NUMBERS & the script that produced them, ⊥ as "deferred". a bare deferral reads as laziness to the next person & gets re-litigated from scratch; the census is what makes the decision re-checkable when the assumption (graph size) changes.
+V197: §V104 NARROWED — "if you WRITE it, you OWN it". an UNMODIFIED attribute passes downstream BY REFERENCE. V104's stated reason was an ID-DERIVATION CONVENTION (`pointPairId(nodeId, attr)`), ⊥ a physical hazard ∴ narrowing preserves the safety argument exactly. NUMBERS: a 4-node chain over a 7-attribute schema costs 56 buffers / 640 B per point / **480 B per point per frame of pure memcpy = 28.8 GB/s @ 1M points @60fps** — enough to saturate an integrated GPU before 1 useful instruction runs. copy-on-write: 20 buffers, 256 B/point, copy traffic ≈ 0. the HARD part is SWAP OWNERSHIP: consumers are found by WHO BINDS A `pairId`, ⊥ by reachability. that is its own task w/ its own test, ⊥ a footnote.
+V198: point-node TRANSFORM COMPOSITION ORDER is PUBLISHED & pinned by test. Houdini publishes one; TD publishes none, & "which order" is the most expensive thing to get wrong & costs nothing to fix today.
+V199: WebGPU **compat mode allows 0 storage buffers ∈ the VERTEX stage** (core allows 8). our render approach is vertex-pulling from SoA storage ∴ compat is a REWRITE, ⊥ a tuning problem. decide EXPLICITLY whether compat is a target before more of the point system assumes vertex-stage storage.
 V195: V107's "∀ parameter takes ∀ mode" applies to SCALAR LEAVES. a CONTAINER parameter (`curve`, `stops`) is static as a whole — an expression returns a number & there is ⊥ meaning to a list-valued one. its LEAVES (`stops[2].position`) are the moded things, once the key grammar carries an index. `curve` already lives under this rule; writing it down stops `stops` inventing a 2nd answer.
 V196: a container parameter carrying COLOUR declares its space like `color` does, & the resolver decodes PER ENTRY. decoding at the container level (or ⊥ @ all) reproduces B8 — inspector shows 1 colour, GPU renders another — & a list makes it N times harder to notice.
 V194: node TYPE STRINGS are 1 flat namespace across families ∴ a value-graph node that shares a concept w/ an image node is prefixed: `valueMath`, `valueLimit`, `valueFilter`. TD disambiguates by family suffix (TOP|CHOP) & we have ⊥ that. the collisions are ⊥ hypothetical — Limit, Math, Noise, Constant, Transform ∀ exist | will exist ∈ both families. the EXPORTED CONST ! match its type string ∴ `valueLimitNode`, ⊥ `limitNode` — a const named for the concept & typed for the family is how 2 modules silently claim 1 name.
@@ -1052,8 +1070,8 @@ T273|x|`value` port type + value EDGES + CPU value-graph evaluator (topo order, 
 T274|x|multi-channel value nodes: `node:channel` addressing; LFO/Constant/Timer keep single-channel as the degenerate case|V180
 T275|x|**Mouse** input node — x, y, buttons as channels, from `FrameEvaluationInput.pointer`. ⊥ a 2nd listener|V182,V180
 T276|x|CHOP math family: **Math** (binary op + scale/offset/range remap), **Limit** (clamp/quantize), **Slope** (derivative), **Trigger** (threshold → pulse)|V179,V180
-T292|.|**enumerate-the-surface** test: ∀ tool ∈ the agent surface has a live port ∈ the composed app (V193). the guard B12/B23 needed|V193
-T293|.|`read_points` port ∈ `useAgentPorts` — plan→schema mapping. portless in-app today (same shape as B23, caught before it bit)|V193
+T292|x|**enumerate-the-surface** test: ∀ tool ∈ the agent surface has a live port ∈ the composed app (V193). the guard B12/B23 needed|V193
+T293|x|`read_points` port ∈ `useAgentPorts` — plan→schema mapping. portless in-app today (same shape as B23, caught before it bit)|V193
 T294|.|MCP `tools/list_changed` notification when grants|ports change; wire backend diagnostics to the existing notification channel (needs a headless backend)|V192
 T288|x|deterministic auto-layout as a BUS COMMAND — layered/topological, rank = depth from sources, order within rank minimizing crossings. keymap `L` & the agent call the SAME one|V189,V190,V191,V78
 T289|x|`add_node` placement ergonomics: optional `{relativeTo, direction}` ∴ an agent building left-to-right ⊥ invent coordinates. still 1 undo group|V189,V34
@@ -1066,6 +1084,14 @@ T282|x|Composite ops 5 → ~15: Porter-Duff (atop/inside/outside/xor/under). ~0 
 T283|x|**Limit** — quantize. value → posterize, position → pixelate. 1 neighbourless shader, 2 recognisable looks|-
 T284|.|**Slope** w/ normal + emboss as MODES — the missing half of E6. needs T280 first (height → offset field ⊥ expressible w/o a Reorder)|T280
 T285|.|**B22: `scale` override SHIMMERS today** — ⊥ mipmaps + 1 shared sampler ∴ the existing `scale: 1/4` preview path aliases. ⊥ hypothetical|V60
+T295|.|**camera matrix + depth attachment** — camera is free (a uniform array, ⊥ IR change); depth is a small real change. EVERYTHING geometric is invisible w/o them ∴ first|V199
+T296|.|pointset EDGE carries a resolved attribute→pair map + capacity + topology. 1 change, 4 payoffs — & it IS the copy-on-write mechanism V197 needs|V197,V19
+T297|.|**swap ownership** under copy-on-write: consumers found by WHO BINDS a `pairId`, ⊥ by reachability. own task, own test — the genuinely hard half of V197|V197,V22
+T298|.|point GENERATOR family — `pointGenerator` + named presets (grid, sphere, tube, torus, line, circle) sharing ONE kernel module, per the Composite/Over "both, one implementation" convention|V140,V196
+T299|.|`renderInstances` — procedural primitives on points, Houdini's published composition order. ⊥ new resource kind, ⊥ new pass kind: `SPRITE_RENDER_WGSL` is already an instanced draw off an SoA buffer|V198,V199
+T300|.|**mask/group** parameter on every point node — Houdini's Group field as a per-point WGSL predicate. CHEAPER for us than for Houdini: we evaluate ∈ a thread already running, Houdini ! materialize a list|-
+T301|.|`renderSurface` w/ ANALYTIC topology (TD's Connectivity + `Dim[]`) — grid → deform → shaded surface w/ ⊥ mesh machinery|V199
+T302|.|split kernel authoring like TD did: an ADVANCED kernel (may change counts) + a separate TOPOLOGY node. TD deprecated the combined Create POP ∴ ⊥ rebuild it|-
 T286|.|POP **Map page** — a per-point attribute as a PARAMETER MODE (5th `ParameterBinding` kind). decide the shape while the union is cheap to grow|V107,V69
 T287|.|POP **attribute qualifiers** (Color/Direction/Quaternion) — declares how a transform ! treat an attribute. our spec is type-only; encoding this ∈ magic names later is "index as identity" again|V75
 T278|.|readback budget ∈ perf panel: count + bytes/frame, per-node attribution (V185)|V185,V144
@@ -1083,10 +1109,10 @@ T258|x|preview host resilience: 1 unresolvable binding currently blanks the WHOL
 T249|x|`cookPolicy:"always"|"auto"` + the ORACLE first: ∀ §V89 example rendered both ways, byte-identical @ every frame index, under a scripted edit sequence (param@f10, speed 0→1@f20, rewire@f30, bypass@f40, feedback pulse@f50, mode@f60, rename@f70) + bus-fuzzed variant|V157,V147
 T250|x|**fix bypass/mute** — `ui.bypassed`/`ui.muted` are UI-ONLY; `compile.ts` ⊥ reads them (B16)|V25
 T251|x|dependency graph = edges ∪ param refs, applied to `pruneToActiveSinks()` FIRST|V154,V152
-T252|.|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` declaring EVERY texture node a sink (B18)|V158,V25
-T253|.|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
-T254|.|per-node cook gate ∈ `encode()` + dirty set on `Program` + pure clock-free `runtime/execution/cook.ts` policy|V155,V156,V159,V157
-T255|.|**fix `renderedThisFrame`** — `noteFrame()` bumps EVERY node ∀ frame ∴ popup always reads true (B17)|V85
+T252|x|preview-only vs output-reachable partition + fix `visiblePreviewSinks()` declaring EVERY texture node a sink (B18)|V158,V25
+T253|x|reuse the media dirty bit `uploadExternalTextures` already computes & discards — 30fps source ∈ 60fps graph re-runs ∀ downstream today|V136
+T254|~|**DEFERRED W/ NUMBERS, ⊥ pending.** the STATIC-PLAN gate shipped (a fully static plan w/ nothing dirty skips the frame outright; V155 safe by construction). the per-node residual is ⊥ worth its correctness risk: census over ∀ 7 examples — E1 13%, E2-E4 0%, E5 100%, E6 17%, E7 25%. shared-frame binding propagates time-dependence through nearly everything ∴ gating buys ≤25% on ANIMATED graphs. revisit ONLY if 200-node graphs make 25% matter; the census script ∈ the commit reproduces the basis| ∈ `encode()` + dirty set on `Program` + pure clock-free `runtime/execution/cook.ts` policy|V155,V156,V159,V157
+T255|x|**fix `renderedThisFrame`** — `noteFrame()` bumps EVERY node ∀ frame ∴ popup always reads true (B17)|V85
 T256|.|per-node CPU+GPU ms together w/ category rollups (Notch's profiler, better than TD's)|V85
 T248|.|reference/bind lines ∈ node graph — straight + DASHED, visually ≠ data edge. derived, toggleable. + cycle rejection across edges ∪ refs|V151,V152,V153,V107
 T247|x|expression completion @ the parameter — variables ∈ scope, fns, node refs. popup ⊥ steal Enter|Esc from the field. source = evaluator probe|V150,V107,V90
@@ -1306,6 +1332,7 @@ id|date|cause|fix
 B9|2026-08-29|**V9 BROKEN ON REAL DEVICE.** vgpu raises `VGPU-COMPILE-FAILED` from an ASYNC pipeline-store path ∴ ⊥ caught by `resources.ts` try/catch — lands as an unhandled rejection on stderr. `compile()` RESOLVES, broken program installed, previous VALID program RELEASED, `stale` stays false, ZERO diagnostics reach `onDiagnostic`. picture "looks retained" only because Dawn drops the whole command buffer. **the mock test PASSES** — mock rejects sync, Dawn ⊥ — a gate greener than the product|T217 ✓
 B10|2026-08-29|**V15 BROKEN ∈ the composed app.** an 80px slider drag shows ONE value until release; arrow-key hold same. `parameter-editor.ts` + `coalesce.ts` correct in isolation & unit-tested; `NumberField` does emit live. suspect `inspector.tsx` builds the editor ∈ `useMemo` + disposes ∈ effect cleanup → disposed coalescer cancels the pending frame, swallowing live values while commit (immediate) still works. ∴ ∀ of V5's uniform-only path is UNREACHABLE from the UI|T218
 B11|2026-08-29|**DATA LOSS.** shader edit discarded when clicking empty canvas: the click blurs the editor AND clears selection, `ShaderPane` hits its `nodeId === null` branch and unmounts `ShaderEditor` BEFORE the onBlur commit lands. status strip then reads "saved" — a lie on top of the loss|T219 ✓
+B24|2026-08-30|**a DECLARED pointset topology ⊥ connect to a consumer asking for none.** `port-compat.ts` compared topology by STRICT INEQUALITY ∴ `undefined` was a VALUE, ⊥ an absent claim. ⊥ visible today (nothing declares topology ∴ both sides `undefined` ∴ equal) — it bites the FIRST generator honest enough to declare `topology:"points"`, which then fails to connect to `renderPoints`. the reward for precision would have been a graph that refuses to wire. same rule colour space already follows ∈ the same file|V13
 B23|2026-08-30|**`render_preview` was DEAD ∈ the product.** built, schema'd, unit-tested — & NOTHING ∈ `src/app` ever handed the surface a preview port; the only `ExportInterface` construction ∈ the tree was inside the ACCEPTANCE TEST. so the test proved the tool works against a fixture nobody ships. 3rd instance of the shape (B12, T264 media, this)|V193
 B22|2026-08-30|**`scale` resolution override ALIASES today.** ⊥ mipmaps anywhere + 1 shared sampler ∴ a node overridden to `scale: 1/4` minifies by point-sampling → shimmer on any moving high-frequency content (noise, checker, edges). ⊥ found by a test; found by reading the sampler contract. the override reads as "cheaper" & is quietly "worse"|T285
 B21|2026-08-30|**`time * k` animates JITTERY.** owner guessed JS rounding; ⊥ — `liveClock` accumulates WALL deltas & rAF jitters ~±several ms ∴ time advances unevenly & a linear expression steps unevenly. clock already does the 2 hard things right (clamped delta, epoch 0 for f32). missing piece = a TIMELINE clock, uniform by construction. workaround today: `frame * k` (`frame` IS ∈ scope)|V176
