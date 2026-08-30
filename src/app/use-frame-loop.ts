@@ -64,6 +64,16 @@ export function useFrameLoop(
   compiled: CompiledGraph | null,
   settings: ProjectSettings,
   animate: AnimateFrame | null = null,
+  /**
+   * Called with every rendered frame, after the plan has been encoded (T214, §V125).
+   *
+   * The expression-fired pulse watcher rides here. It is a separate seam from `animate`
+   * on purpose: `animate` answers "what are this frame's uniform values", and a pulse
+   * produces no value — it produces an EVENT, once, on a rising edge. Folding the two
+   * together would have made a pulse look like a parameter that happens to fire, which
+   * is precisely the confusion §V124 exists to prevent.
+   */
+  observe: ((frame: FrameEvaluationInput) => void) | null = null,
 ): FrameLoopResult {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
@@ -73,6 +83,8 @@ export function useFrameLoop(
   // driver's frame callback, which must never be re-created to pick up a new closure.
   const animateRef = useRef<AnimateFrame | null>(animate);
   animateRef.current = animate;
+  const observeRef = useRef<((frame: FrameEvaluationInput) => void) | null>(observe);
+  observeRef.current = observe;
   const planRef = useRef<CompiledGraph | null>(compiled);
   const animatorRef = useRef(createUniformAnimator());
   const driftRef = useRef(false);
@@ -154,6 +166,7 @@ export function useFrameLoop(
       onFrame: (inputs) => {
         latestFrameRef.current = inputs;
         pushAnimatedValues(inputs);
+        observeRef.current?.(inputs.frame);
       },
     });
     driverRef.current = driver;

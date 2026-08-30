@@ -71,6 +71,14 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     type: z.literal("curve"),
     default: z.array(z.object({ x: z.number(), y: z.number() })),
   }),
+  // A pulse has no `default` — it fires, it does not hold (§V124). It carries the bus
+  // command it fires instead, which is data and therefore survives a round trip.
+  z.object({
+    ...parameterBase,
+    type: z.literal("pulse"),
+    fires: z.string().min(1),
+    input: z.record(z.unknown()).optional(),
+  }),
 ]);
 
 export const exposedPortSchema = z.object({

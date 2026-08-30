@@ -14,6 +14,9 @@ export function defaultValueFor(definition: ParameterDefinition): ParameterValue
   switch (definition.type) {
     case "asset":
       return null;
+    /** §V124: a pulse is never armed by default and never stored. */
+    case "pulse":
+      return false;
     case "color":
     case "vector":
       return [...definition.default];
@@ -51,6 +54,11 @@ export function matchesDefinition(definition: ParameterDefinition, value: unknow
       return typeof value === "string";
     case "asset":
       return value === null || typeof value === "string";
+    // Armed or not. §V124's "never stored armed" is a WRITE rule and lives in
+    // `validateStoredParameter`; this is the read side, and an expression-driven pulse
+    // legitimately resolves to `true` on the frame it fires.
+    case "pulse":
+      return typeof value === "boolean";
     case "curve":
       return (
         Array.isArray(value) &&

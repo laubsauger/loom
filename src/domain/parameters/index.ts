@@ -22,6 +22,15 @@ export {
 export { bindCycleDiagnostics } from "./bind-cycles.ts";
 
 export {
+  PULSE_NODE_TOKEN,
+  createPulseWatcher,
+  isPulseArmed,
+  pulseCommandInput,
+  pulseParametersOf,
+} from "./pulse.ts";
+export type { PulseFire, PulseWatcher } from "./pulse.ts";
+
+export {
   resolveParameter,
   resolveParameterSchema,
   resolveParameters,

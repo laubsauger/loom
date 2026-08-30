@@ -67,6 +67,9 @@ export type { NumberFieldProps } from "./number-field.tsx";
 export { BooleanField } from "./boolean-field.tsx";
 export type { BooleanFieldProps } from "./boolean-field.tsx";
 
+export { PulseField } from "./pulse-field.tsx";
+export type { PulseFieldProps } from "./pulse-field.tsx";
+
 export { EnumField } from "./enum-field.tsx";
 export type { EnumFieldProps, EnumOption } from "./enum-field.tsx";
 

@@ -51,7 +51,18 @@ export function validateNodeDefinition(definition: NodeDefinition): RuntimeDiagn
   }
 
   for (const [key, parameter] of Object.entries(definition.parameters)) {
+    // Neither declares a default and neither can: an unset asset is genuinely absent,
+    // and a pulse has no value at all — it fires (§V124).
     if (parameter.type === "asset") continue;
+    if (parameter.type === "pulse") {
+      if (parameter.fires.trim() === "") {
+        err(
+          "node.parameter.pulse",
+          `Pulse "${key}" on "${definition.type}" names no command to fire (§V123).`,
+        );
+      }
+      continue;
+    }
     const value = "default" in parameter ? parameter.default : undefined;
     if (value === undefined) {
       err("node.parameter.default", `Parameter "${key}" on "${definition.type}" has no default.`);

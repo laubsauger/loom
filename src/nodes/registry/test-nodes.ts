@@ -156,6 +156,16 @@ export const feedbackNode: NodeDefinition = {
   outputs: [{ id: "out", label: "Out", type: rgba }],
   parameters: {
     decay: { type: "number", label: "Decay", default: 0.9, min: 0, max: 1 },
+    // §V123: a node declaring `stateful.reset` exposes a pulse to trigger it. The
+    // fixture carries one so the mechanism is exercised against a manifest shaped
+    // exactly like the shipped Feedback node's.
+    reset: { type: "boolean", label: "Reset", default: false },
+    resetPulse: {
+      type: "pulse",
+      label: "Reset Pulse",
+      fires: "runtime.resetFeedback",
+      input: { nodeIds: ["$node"] },
+    },
   },
   temporal: { outputs: ["out"], resetOn: ["resolution", "format", "device", "load"] },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },

@@ -5,6 +5,7 @@ import { registerEditorCommands } from "./editor-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
 import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
+import { registerParameterCommands } from "./parameter-commands.ts";
 import { registerValidateCommand } from "./validate-command.ts";
 
 export {
@@ -37,6 +38,8 @@ export type {
 } from "./editor-commands.ts";
 export { registerGraphCommands } from "./graph-commands.ts";
 export { registerNodeOutputCommands } from "./node-output-commands.ts";
+export { registerParameterCommands } from "./parameter-commands.ts";
+export type { PulseInput, PulseOutput } from "./parameter-commands.ts";
 export type {
   HistoryCommandOutput,
   HistoryGroupSummary,
@@ -87,6 +90,7 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: Shaderlo
   registerGraphCommands(bus);
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus);
+  registerParameterCommands(bus);
   registerValidateCommand(bus);
   return { bus, store };
 }

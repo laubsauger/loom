@@ -215,6 +215,9 @@ export function Inspector({
                 // §V114: whatever the control hands over — a mode envelope, or all four
                 // channels of a colour — goes out as ONE patch, so a colour pick stays one
                 // undo entry.
+                // §V124: a pulse writes nothing to the document, so it travels its own
+                // path — one command, audited, never undoable, never saved.
+                onPulse={(key) => editor.pulse(node.id, key)}
                 onStoredChange={(entries, phase) => editor.setStored(node.id, entries, phase)}
                 onChange={(value, phase) => editor.setParameter(node.id, entry.key, value, phase)}
               />

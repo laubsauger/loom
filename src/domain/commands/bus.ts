@@ -82,6 +82,25 @@ export interface CommandContext {
   readonly ids: IdFactory;
   /** The sole mutation primitive available to a handler (§V29). */
   apply: (request: ApplyRequest) => AppliedInfo;
+  /**
+   * Records an APPLIED audit entry for a mutation that never touches the document
+   * (T214, §V31, §V124).
+   *
+   * `apply` covers everything that edits the graph: it bumps the revision, opens the
+   * undo group and writes the audit entry together, because for a document edit those
+   * three are one event. A pulse is the case where they come apart — clearing a feedback
+   * buffer changes what is on screen and changes nothing in the file, so there is no
+   * revision to bump and nothing for undo to restore, and a recipe that mutated nothing
+   * would have been recorded as "no change" and left no trace at all.
+   *
+   * §V31 says every mutation is audited, and "it was not a document edit" is not an
+   * exemption — the audit ring is how a user (or an agent reading `graph.audit`) finds
+   * out that something reset the loop they were watching.
+   *
+   * Rejections are NOT this function's business: the bus already writes those from the
+   * outcome status, and calling both would log the same failure twice.
+   */
+  audit: () => void;
   /** Actor-local history, used by the undo/redo commands (§V41). */
   undoLast: () => HistoryOutcome;
   redoLast: () => HistoryOutcome;
@@ -358,6 +377,16 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
             dryRun,
             recipe: request.recipe,
           }),
+        audit: (): void => {
+          // §V36: a dry run reports and records nothing, including this.
+          if (dryRun) return;
+          store.internals.recordAudit({
+            revision: store.view.getRevision(),
+            actor: context.actor,
+            command: name,
+            status: "applied",
+          });
+        },
         undoLast: () => store.internals.undo(context.actor, name),
         redoLast: () => store.internals.redo(context.actor, name),
       };

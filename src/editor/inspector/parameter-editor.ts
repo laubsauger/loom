@@ -64,6 +64,17 @@ export interface ParameterEditor {
     resolution: NodeResolutionOverride | null,
   ) => Promise<GraphPatchResult>;
   setFormat: (nodeId: NodeId, format: NodeFormatOverride | null) => Promise<GraphPatchResult>;
+  /**
+   * Fires a momentary pulse (T214, §V124).
+   *
+   * Deliberately NOT queued behind the patch queue and deliberately returning nothing to
+   * write back: a pulse is not a patch. It carries no `baseRevision` to go stale, it
+   * cannot conflict, and it must land the instant it is pressed — a reset that waited its
+   * turn behind a slider drag would clear a buffer the user has since moved on from.
+   * Failures still reach `onDiagnostics`, which is how "this pulse fires a command nobody
+   * registered" becomes visible instead of a button that does nothing.
+   */
+  pulse: (nodeId: NodeId, key: string) => void;
   /** Apply anything waiting for the next frame right now. */
   flush: () => void;
   /** Resolves once every queued patch has been applied. */
@@ -213,6 +224,27 @@ export function createParameterEditor(options: ParameterEditorOptions): Paramete
         const result = await bus.execute("node.setFormat", { nodeId, format }, context);
         return report(result.output);
       });
+    },
+
+    pulse(nodeId, key) {
+      void bus
+        .execute("parameter.pulse", { nodeId, parameterKey: key }, context)
+        .then((result) => {
+          if (result.status !== "applied" && onDiagnostics !== undefined) {
+            onDiagnostics(result.diagnostics);
+          }
+        })
+        .catch((thrown: unknown) => {
+          onDiagnostics?.([
+            {
+              severity: "error",
+              code: "parameter.pulse.failed",
+              // The error TYPE only: its message may quote untrusted document text (§V37).
+              message: `Firing "${key}" failed: ${thrown instanceof Error ? thrown.name : "a non-Error value was thrown"}.`,
+              nodeId,
+            },
+          ]);
+        });
     },
 
     flush: coalescer.flush,

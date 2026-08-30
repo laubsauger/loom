@@ -17,6 +17,7 @@ import { CurveField, AssetField, type CurvePoint } from "./curve-field.tsx";
 import { describeRange } from "./drag-math.ts";
 import { EnumField } from "./enum-field.tsx";
 import { NumberField } from "./number-field.tsx";
+import { PulseField } from "./pulse-field.tsx";
 import { ParameterModePanel } from "./parameter-mode.tsx";
 import { valueForDefinition } from "./parameter-value.ts";
 import { slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
@@ -60,6 +61,12 @@ export interface ParameterControlProps {
   /** The value shown came from a driver rather than the document (doc §8.2 seam). */
   driven?: boolean;
   /**
+   * Fires this parameter's pulse (§V123). A pulse writes NOTHING to the document, so it
+   * cannot travel down `onChange` like every other control's value — omitting this
+   * renders the button disabled rather than letting it silently do nothing.
+   */
+  onPulse?: ((parameterKey: string) => void) | undefined;
+  /**
    * §V146 — why this parameter cannot affect the output in the node's current state,
    * from the manifest's own `inactiveWhen` predicate. The row dims and the reason joins
    * the label's hover; the control stays EDITABLE, because setting a value before
@@ -94,6 +101,7 @@ export function ParameterControl({
   disabled = false,
   driven = false,
   inactive = null,
+  onPulse,
   slot: storedSlot,
   components,
   diagnostic = null,
@@ -315,6 +323,16 @@ export function ParameterControl({
           kind={definition.kind}
         />,
         { hint: definition.kind },
+      );
+
+    case "pulse":
+      return row(
+        <PulseField
+          {...shared}
+          id={controlId}
+          disabled={shared.disabled || onPulse === undefined}
+          onFire={() => onPulse?.(parameterKey)}
+        />,
       );
 
     case "curve":

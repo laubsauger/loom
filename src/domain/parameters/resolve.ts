@@ -268,6 +268,11 @@ function coerceExpressionResult(definition: ParameterDefinition, result: number)
     }
     case "boolean":
       return { ok: true, value: result !== 0 };
+    // §V125: a pulse driven by an expression is ARMED while the expression is non-zero.
+    // The rising EDGE is what fires it (`createPulseWatcher`); a level here would make
+    // `time > 4` reset the buffer on every frame after the fourth.
+    case "pulse":
+      return { ok: true, value: result !== 0 };
     case "enum": {
       const index = Math.min(definition.options.length - 1, Math.max(0, Math.floor(result)));
       const option = definition.options[index];

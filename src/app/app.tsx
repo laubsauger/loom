@@ -34,6 +34,7 @@ import { TimelineReadout } from "./timeline-readout.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
 import { useAgentPorts } from "./agent-ports.ts";
+import { usePulseFiring } from "./pulse-firing.ts";
 import { useRuntimeCommands } from "./runtime-commands.ts";
 import { createPreviewSinkStore } from "./preview-sinks.ts";
 import { useAutosave } from "./use-autosave.ts";
@@ -191,6 +192,10 @@ export function App({
   const backend = status.kind === "ready" ? status.backend : undefined;
   useEffect(() => {
     runtime.telemetry.setBuild(backend?.status.lastBuild ?? null);
+    // T278: the OBSERVED half of the readback budget. The plan half says what the graph
+    // asks for per frame; this says what has actually crossed the bus. Null when there is
+    // no backend — nobody is counting, which is not the same as "none happened" (§V7).
+    runtime.telemetry.setReadbacksPerformed(backend?.status.readbacks ?? null);
   }, [backend, recovery.diagnostics, runtime]);
 
   // The frame loop (T184): the only caller of `backend.loop()` in the app. Without it
@@ -205,12 +210,16 @@ export function App({
    */
   const media = useMediaSources(runtime, backend ?? null, compile.graph);
 
+  // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
+  // watcher needs a frame, so it rides the frame loop's observer seam.
+  const pulses = usePulseFiring(runtime.bus, runtime.invocation);
   const frameLoop = useFrameLoop(
     runtime.bus,
     backend ?? null,
     compile.compiled,
     runtime.settings,
     compile.animate,
+    pulses.observe,
   );
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):

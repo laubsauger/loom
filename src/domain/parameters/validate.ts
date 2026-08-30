@@ -93,6 +93,12 @@ export function validateParameterValue(
     case "asset":
       // null is the legitimate "no asset bound yet" state (§C relink flow).
       return value === null || typeof value === "string" ? null : wrongType("an asset id or null");
+    case "pulse":
+      // A pulse is armed or it is not, so the VALUE rule is the boolean one. What a pulse
+      // may be STORED as is narrower — see `storedPulseValue` below, which is where §V124
+      // lives. Keeping the two apart matters: an expression driving a pulse resolves to
+      // `true` for the frame it fires on, and this function is also what checks THAT.
+      return typeof value === "boolean" ? null : wrongType("a boolean trigger");
     case "curve": {
       if (!Array.isArray(value)) return wrongType("an array of {x, y} points");
       const ok = value.every(
@@ -174,13 +180,33 @@ export function validateParameters(
  * Whether a bind's TARGET exists is resolution's business (a sibling may arrive in the
  * same patch); whether the chain cycles is the patch gate's (`bindCycleDiagnostics`).
  */
+function storedPulseValue(
+  key: string,
+  value: ParameterValue,
+  nodeId?: NodeId,
+): RuntimeDiagnostic | null {
+  if (value === false) return null;
+  return error(
+    "parameter.pulse.stored",
+    `Parameter "${key}" is a pulse: it fires, and a document cannot hold it armed.`,
+    nodeId,
+    "Fire it with parameter.pulse, or drive it with an expression (§V125).",
+  );
+}
+
 export function validateStoredParameter(
   key: string,
   definition: ParameterDefinition,
   stored: StoredParameter,
   nodeId?: NodeId,
 ): RuntimeDiagnostic | null {
-  if (!isParameterSlot(stored)) return validateParameterValue(key, definition, stored, nodeId);
+  if (!isParameterSlot(stored)) {
+    // §V124: an ARMED pulse in the document would re-fire on every open and wipe the
+    // work the project was opened to continue. Refusing it here is what makes that
+    // impossible structurally, rather than a rule somebody has to remember.
+    if (definition.type === "pulse") return storedPulseValue(key, stored, nodeId);
+    return validateParameterValue(key, definition, stored, nodeId);
+  }
 
   for (const mode of Object.keys(stored.bindings).sort()) {
     const binding = stored.bindings[mode as keyof typeof stored.bindings];
@@ -194,7 +220,10 @@ export function validateStoredParameter(
     }
     switch (binding.kind) {
       case "static": {
-        const invalid = validateParameterValue(key, definition, binding.value, nodeId);
+        const invalid =
+          definition.type === "pulse"
+            ? storedPulseValue(key, binding.value, nodeId)
+            : validateParameterValue(key, definition, binding.value, nodeId);
         if (invalid !== null) return invalid;
         break;
       }
@@ -250,6 +279,10 @@ export function defaultParameterValue(definition: ParameterDefinition): Paramete
   switch (definition.type) {
     case "asset":
       return null;
+    // A pulse is never armed by default and never stored (§V124); `false` is what the
+    // resolver reports for one nobody is holding down.
+    case "pulse":
+      return false;
     case "color":
     case "vector":
       return [...definition.default];
@@ -260,10 +293,18 @@ export function defaultParameterValue(definition: ParameterDefinition): Paramete
   }
 }
 
-/** The manifest defaults for a schema — the starting parameter bag of a new node. */
+/**
+ * The manifest defaults for a schema — the starting parameter bag of a new node.
+ *
+ * Pulses are OMITTED (§V124). A pulse has no value to store, so writing `false` for one
+ * would put a key in every document that means nothing, survives every save, and would
+ * have to be explained to every reader of the file. A node with only pulses starts with
+ * an empty bag, and the resolver answers `false` for a key that is not there.
+ */
 export function defaultParameters(schema: ParameterSchema): Record<string, ParameterValue> {
   const result: Record<string, ParameterValue> = {};
   for (const [key, definition] of Object.entries(schema)) {
+    if (definition.type === "pulse") continue;
     result[key] = defaultParameterValue(definition);
   }
   return result;

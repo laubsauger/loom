@@ -83,6 +83,49 @@ export interface CurveParameter extends ParameterBase {
   default: ReadonlyArray<{ x: number; y: number }>;
 }
 
+/**
+ * A momentary trigger (T214, §V123, §V124, §V125). TouchDesigner's Pulse.
+ *
+ * It is a parameter TYPE rather than a per-node feature, so the mechanism is written
+ * once and any node can declare one — Feedback's Reset, Noise's Reseed, a Timer's Start.
+ *
+ * ## Why it cannot just be a boolean (§V124)
+ *
+ * A pulse mutates RUNTIME state, not document state. Three consequences follow, and the
+ * middle one is the reason a `boolean` would be wrong:
+ *
+ *  - it is AUDITED (§V31), like every other command;
+ *  - it is NOT UNDOABLE — undo restores a document, and a cleared feedback buffer is not
+ *    in the document. A disabled undo that silently does nothing is worse than saying so;
+ *  - it is NOT SERIALIZED "on". A pulse saved as fired would re-fire on load and wipe
+ *    your work every time you opened the project.
+ *
+ * The last one is enforced structurally rather than by convention: the only value a
+ * pulse accepts is `false`, so a document physically cannot carry an armed one, and a
+ * file that does gets a diagnostic instead of a silent reset. `defaultParameters` omits
+ * pulses entirely, so a freshly created node stores nothing for them at all.
+ *
+ * ## Firing (§V125)
+ *
+ * A pulse names the bus COMMAND it fires. A name, never a handler: a node definition
+ * stays headless (§V11) and serializable, the same command is reachable from the menu,
+ * the keymap, the palette and an agent (§V29, §V78), and nothing in the catalogue has to
+ * know what a GPU is. `"$node"` anywhere in `input` — as a value, or as an element of an
+ * array value — is replaced by the id of the node whose pulse fired.
+ *
+ * A pulse takes every parameter mode like everything else (§V107): an EXPRESSION that
+ * becomes non-zero fires it, which is how an automated reset happens — on a beat, on a
+ * threshold, on a frame count. A trigger you can only click is not a trigger, it is a
+ * button.
+ */
+export interface PulseParameter extends ParameterBase {
+  type: "pulse";
+  /** Bus command name this pulse fires. */
+  fires: string;
+  /** Static input for that command; `"$node"` is substituted with the firing node id. */
+  input?: Readonly<Record<string, unknown>>;
+}
+
 export type ParameterDefinition =
   | NumberParameter
   | BooleanParameter
@@ -91,7 +134,8 @@ export type ParameterDefinition =
   | VectorParameter
   | StringParameter
   | AssetParameter
-  | CurveParameter;
+  | CurveParameter
+  | PulseParameter;
 
 export type ParameterSchema = Record<string, ParameterDefinition>;
 
