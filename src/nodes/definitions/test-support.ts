@@ -19,7 +19,12 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 
 export interface ContextOptions {
   readonly nodeId?: string;
-  /** Input port ids to give a bound resource. */
+  /**
+   * Input port ids to give a bound resource. Naming a port MORE THAN ONCE gives it that
+   * many bindings, in the order listed — which is how a variadic port is exercised (T225,
+   * T226). The first binding on a port keeps the plain `resource:<port>` id so the
+   * single-arity tests read unchanged.
+   */
   readonly inputs?: ReadonlyArray<PortId>;
   /** Producer node id per input port, for pointset consumers (T122). */
   readonly sources?: Readonly<Record<PortId, string>>;
@@ -37,9 +42,14 @@ export interface ContextOptions {
 
 export const TEST_SAMPLER_ID = "sampler:linear";
 
-/** Resource id this fixture assigns to an input port, matching the compiler's shape. */
-export function inputResourceId(portId: PortId): string {
-  return `resource:${portId}`;
+/**
+ * Resource id this fixture assigns to an input port, matching the compiler's shape.
+ *
+ * `index` is the position on a VARIADIC port (T225). Position 0 keeps the unsuffixed id so
+ * every single-arity expectation in the suite stays literal.
+ */
+export function inputResourceId(portId: PortId, index = 0): string {
+  return index === 0 ? `resource:${portId}` : `resource:${portId}:${index}`;
 }
 
 /** Resource id this fixture assigns to an output port. */
@@ -56,9 +66,11 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
   const inputs: Record<string, ReadonlyArray<{ resourceId: string; sampler: string; sourceNodeId?: string; sourcePortId?: string }>> = {};
   for (const portId of options.inputs ?? []) {
     const sourceNodeId = options.sources?.[portId];
+    const existing = inputs[portId] ?? [];
     inputs[portId] = [
+      ...existing,
       {
-        resourceId: inputResourceId(portId),
+        resourceId: inputResourceId(portId, existing.length),
         sampler: TEST_SAMPLER_ID,
         ...(sourceNodeId === undefined ? {} : { sourceNodeId, sourcePortId: "out" }),
       },
@@ -86,6 +98,16 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
  * that declares everything the fixture handed the node. `ok === false` means the backend
  * would refuse the plan.
  */
+/** One resource id per BINDING: a port listed twice has two (T226). */
+function declaredInputResourceIds(portIds: ReadonlyArray<PortId>): string[] {
+  const seen = new Map<PortId, number>();
+  return portIds.map((portId) => {
+    const index = seen.get(portId) ?? 0;
+    seen.set(portId, index + 1);
+    return inputResourceId(portId, index);
+  });
+}
+
 export function readNodePlan(
   passes: ReadonlyArray<unknown>,
   options: ContextOptions = {},
@@ -101,9 +123,9 @@ export function readNodePlan(
         size: options.resolution ?? ([640, 480] as const),
         format: "rgba16float" as const,
       })),
-      ...(options.inputs ?? []).map((portId) => ({
+      ...declaredInputResourceIds(options.inputs ?? []).map((id) => ({
         kind: "target" as const,
-        id: inputResourceId(portId),
+        id,
         size: options.resolution ?? ([640, 480] as const),
         format: "rgba16float" as const,
       })),

@@ -5,6 +5,7 @@ import { createNodeRegistry, validateNodeDefinition } from "../registry/registry
 import {
   addNode,
   compositeNode,
+  MAX_COMPOSITE_LAYERS,
   compositeNodes,
   crossNode,
   differenceNode,
@@ -129,7 +130,9 @@ describe("compositing nodes (T40)", () => {
       for (const definition of blendNodes) {
         expect(definition.inputs.map((port) => port.id), definition.type).toEqual(["in1", "in2"]);
         expect(definition.inputs[0]?.label, definition.type).toBe("Front");
-        expect(definition.inputs[1]?.label, definition.type).toBe("Back");
+        expect(definition.inputs[1]?.label, definition.type).toBe("Behind");
+        // T226: the layers behind the front one are one VARIADIC port, not a second slot.
+        expect(definition.inputs[1]?.variadic, definition.type).toBe(true);
       }
     });
 
@@ -145,7 +148,7 @@ describe("compositing nodes (T40)", () => {
       for (const definition of blendNodes) {
         expect(firstPass(definition).textures, definition.type).toEqual([
           { binding: "frontTexture", resourceId: inputResourceId("in1") },
-          { binding: "backTexture", resourceId: inputResourceId("in2") },
+          { binding: "backTexture0", resourceId: inputResourceId("in2") },
         ]);
       }
     });
@@ -230,5 +233,96 @@ describe("compositing nodes (T40)", () => {
     it("multiplies alpha only, leaving colour untouched", () => {
       expect(firstPass(maskNode).shader).toContain("vec4f(source.rgb, source.a * coverage)");
     });
+  });
+});
+
+/**
+ * The family goes variadic (T226) — the decisions that are arguments, not code.
+ */
+describe("variadic compositing (T226, §V131)", () => {
+  /** One front layer and `count` layers behind it, in that declared order. */
+  function foldPass(definition: NodeDefinition, count: number, parameters = {}) {
+    const inputs = ["in1", ...Array.from({ length: count }, () => "in2")];
+    const options = { inputs, parameters };
+    const compiled = definition.compile(compileContext(options));
+    return { compiled, read: readNodePlan(compiled.passes, options) };
+  }
+
+  it("folds left to right with the FIRST input in front", () => {
+    // Not a coin flip between two readings. Folding the other way would still be a
+    // composite — and every two-input graph ever saved would render its layers swapped,
+    // because `over` is asymmetric. This direction degenerates to exactly the old
+    // two-input shader at one layer, which is what makes the change invisible to existing
+    // documents (the Dawn pixel test in src/tests/headless/porter-duff.test.ts is the
+    // other half of that claim). It also matters beyond Over: `difference` is not
+    // associative, so the fold direction changes the picture from identical wiring.
+    const { read } = foldPass(overNode, 3);
+    const pass = read.passes[0];
+    const shader = pass?.kind === "effect" ? pass.shader : "";
+
+    const acc = shader.indexOf("var acc = textureSampleLevel(frontTexture");
+    const first = shader.indexOf("blendPixel(acc, textureSampleLevel(backTexture0");
+    const second = shader.indexOf("blendPixel(acc, textureSampleLevel(backTexture1");
+    const third = shader.indexOf("blendPixel(acc, textureSampleLevel(backTexture2");
+    expect(acc).toBeGreaterThan(-1);
+    expect(first).toBeGreaterThan(acc);
+    expect(second).toBeGreaterThan(first);
+    expect(third).toBeGreaterThan(second);
+  });
+
+  it("binds one texture per layer, in the order the compiler hands them over", () => {
+    // The compiler sorts a variadic port's bindings by the document's declared order
+    // (§V131, T225); this node must not re-sort, filter or reverse them. Any rearranging
+    // here would be a second opinion about layer order, and the user's would lose.
+    const { read } = foldPass(overNode, 3);
+    const pass = read.passes[0];
+    expect(pass?.kind === "effect" ? pass.textures : undefined).toEqual([
+      { binding: "frontTexture", resourceId: inputResourceId("in1") },
+      { binding: "backTexture0", resourceId: inputResourceId("in2", 0) },
+      { binding: "backTexture1", resourceId: inputResourceId("in2", 1) },
+      { binding: "backTexture2", resourceId: inputResourceId("in2", 2) },
+    ]);
+  });
+
+  it("keeps one definition of the blend maths at every layer count (§V140)", () => {
+    // The whole reason the factory exists. Composite and the named node must still agree
+    // once the shader depends on how many inputs are wired — otherwise a three-layer Over
+    // and a three-layer Composite-set-to-over are two programs, and only one gets the next
+    // fix. The blend itself appears exactly once in the text no matter how deep the fold.
+    for (const layers of [1, 3]) {
+      const named = foldPass(overNode, layers).read.passes[0];
+      const menu = foldPass(compositeNode, layers, { operation: "over" }).read.passes[0];
+      const namedShader = named?.kind === "effect" ? named.shader : "named";
+      const menuShader = menu?.kind === "effect" ? menu.shader : "menu";
+      expect(namedShader, `${layers} layers`).toBe(menuShader);
+      expect(namedShader.match(/porterDuff\(front, back/g), `${layers} layers`).toHaveLength(1);
+    }
+  });
+
+  it("changes its pass id with the layer count, so a new layer is new contents", () => {
+    // The pass id feeds the structure key: if adding a layer kept the id, the backend
+    // could carry the old pass — and its old bindings — across the rebuild (§V62b).
+    const one = foldPass(overNode, 1).compiled.passes[0] as { id: string };
+    const two = foldPass(overNode, 2).compiled.passes[0] as { id: string };
+    expect(one.id).not.toBe(two.id);
+  });
+
+  it("refuses more layers than it can bind, naming the way out", () => {
+    // WebGPU guarantees only 16 sampled textures per stage, so the cap is real rather than
+    // stylistic. Folding the first eight and dropping the rest would be a layer that is
+    // visibly wired and invisibly ignored — the exact failure a diagnostic exists for.
+    const { compiled } = foldPass(overNode, MAX_COMPOSITE_LAYERS + 1);
+    expect(compiled.passes).toEqual([]);
+    expect(compiled.diagnostics?.[0]?.code).toBe("node.compile.tooManyInputs");
+    expect(compiled.diagnostics?.[0]?.suggestion).toMatch(/second Composite/);
+  });
+
+  it("still requires something behind the front layer", () => {
+    // A variadic port is not an optional one. "Composite with nothing to composite
+    // against" is a half-built graph, and saying so beats rendering the front layer and
+    // letting the user wonder which operation did nothing.
+    const compiled = overNode.compile(compileContext({ inputs: ["in1"] }));
+    expect(compiled.passes).toEqual([]);
+    expect(compiled.diagnostics?.[0]?.message).toContain('input port "in2"');
   });
 });

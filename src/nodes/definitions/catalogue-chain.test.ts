@@ -49,11 +49,12 @@ function node(id: string, type: string, parameters: GraphNode["parameters"] = {}
   return { id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters };
 }
 
-function edge(id: string, from: [string, string], to: [string, string]) {
+function edge(id: string, from: [string, string], to: [string, string], order?: number) {
   return {
     id,
     source: { nodeId: from[0], portId: from[1] },
     target: { nodeId: to[0], portId: to[1] },
+    ...(order === undefined ? {} : { order }),
   };
 }
 
@@ -114,7 +115,7 @@ describe("the catalogue compiles through the real compiler", () => {
       "noise#noise:noise",
       "level#level:level",
       "ramp#ramp:ramp",
-      "over#over:over",
+      "over#over:over:1",
       "out#out:present",
     ]);
   });
@@ -238,6 +239,58 @@ describe("the catalogue compiles through the real compiler", () => {
     }
   });
 
+  /**
+   * T226/§V131 end to end: a Composite folds its layers in the order the DOCUMENT declares.
+   *
+   * The three edges here are numbered so that their declared order (b, c, a) disagrees with
+   * their id order (a, b, c) — which is what the compiler used to sort by. If anything in
+   * the chain falls back to ids, the bindings come out in the wrong sequence and an Over
+   * renders the wrong layer on top. Nothing in a unit fixture can catch that: it needs the
+   * real compiler, because the sort lives there.
+   */
+  it("folds a variadic composite in the document's declared order, not edge-id order", () => {
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        a: node("a", "checker"),
+        b: node("b", "noise"),
+        c: node("c", "ramp"),
+        front: node("front", "circle"),
+        over: node("over", "over"),
+        out: node("out", "output"),
+      },
+      edges: {
+        e0: edge("e0", ["front", "out"], ["over", "in1"]),
+        // ids sort a, b, c — the declared order is deliberately the other way round.
+        ea: edge("ea", ["a", "out"], ["over", "in2"], 2),
+        eb: edge("eb", ["b", "out"], ["over", "in2"], 0),
+        ec: edge("ec", ["c", "out"], ["over", "in2"], 1),
+        e4: edge("e4", ["over", "out"], ["out", "input"]),
+      },
+      groups: {},
+    };
+
+    const plan = compile(graph);
+    expect(errorsOf(plan.diagnostics)).toEqual([]);
+    const pass = plan.passes.find((entry) => entry.kind === "effect" && entry.nodeId === "over");
+    const textures = pass?.kind === "effect" ? pass.textures : undefined;
+    const resourceOf = (nodeId: string) =>
+      plan.outputs.find((output) => output.nodeId === nodeId)?.resourceId;
+
+    expect(textures?.map((texture) => texture.binding)).toEqual([
+      "frontTexture",
+      "backTexture0",
+      "backTexture1",
+      "backTexture2",
+    ]);
+    expect(textures?.map((texture) => texture.resourceId)).toEqual([
+      resourceOf("front"),
+      resourceOf("b"),
+      resourceOf("c"),
+      resourceOf("a"),
+    ]);
+  });
+
   /** §V21: a filter's resolved size is its input's, all the way down a chain. */
   it("propagates resolution and format through a filter chain", () => {
     const graph: GraphDocument = {
@@ -312,7 +365,11 @@ function uniformStructMembers(shader: string, binding: string): string[] {
   if (structName === undefined) return [];
   const body = new RegExp(`struct\\s+${structName}\\s*\\{([^}]*)\\}`).exec(shader)?.[1];
   if (body === undefined) return [];
+  // Comments come out FIRST: a `// 0 none, 1 circle` line inside the struct carries commas,
+  // and splitting before stripping turns each fragment into a member name that does not
+  // exist. The failure looked like a node setting eleven imaginary uniforms.
   return body
+    .replace(/\/\/[^\n]*/g, "")
     .split(",")
     .map((entry) => entry.split(":")[0]?.trim() ?? "")
     .filter((name) => name.length > 0 && !name.startsWith("//"));

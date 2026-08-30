@@ -4,18 +4,11 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
-  ADD_FRAGMENT_WGSL,
-  ATOP_FRAGMENT_WGSL,
+  blendShaderFor,
+  isBlendType,
+  type BlendType,
   CROSS_FRAGMENT_WGSL,
-  INSIDE_FRAGMENT_WGSL,
-  OUTSIDE_FRAGMENT_WGSL,
-  UNDER_FRAGMENT_WGSL,
-  XOR_FRAGMENT_WGSL,
-  DIFFERENCE_FRAGMENT_WGSL,
   MASK_FRAGMENT_WGSL,
-  MULTIPLY_FRAGMENT_WGSL,
-  OVER_FRAGMENT_WGSL,
-  SCREEN_FRAGMENT_WGSL,
 } from "../shaders/composite.wgsl.ts";
 
 /**
@@ -41,20 +34,16 @@ import {
  * the front layer is the one the user is placing.
  */
 
-const BLEND_SHADERS = {
-  over: OVER_FRAGMENT_WGSL,
-  under: UNDER_FRAGMENT_WGSL,
-  inside: INSIDE_FRAGMENT_WGSL,
-  outside: OUTSIDE_FRAGMENT_WGSL,
-  atop: ATOP_FRAGMENT_WGSL,
-  xor: XOR_FRAGMENT_WGSL,
-  add: ADD_FRAGMENT_WGSL,
-  multiply: MULTIPLY_FRAGMENT_WGSL,
-  screen: SCREEN_FRAGMENT_WGSL,
-  difference: DIFFERENCE_FRAGMENT_WGSL,
-} as const;
-
-type BlendType = keyof typeof BLEND_SHADERS;
+/**
+ * How many layers one Composite folds (T226).
+ *
+ * Every layer is a texture binding, and WebGPU only guarantees 16 sampled textures per
+ * shader stage. Eight back layers plus the front one is half that budget — room for the
+ * shared frame block and whatever a later pass wants — and past eight layers in ONE node a
+ * graph is easier to read as two composites anyway. Exceeded, the node reports and emits
+ * nothing: silently folding the first eight would drop a layer the user can see wired.
+ */
+export const MAX_COMPOSITE_LAYERS = 8;
 
 /**
  * The operation menu for the Composite node. Order is presentation only — the shader is
@@ -87,7 +76,7 @@ const BLEND_OPTIONS = [
 
 function readBlend(params: Record<string, unknown>, fallback: BlendType): BlendType {
   const value = params["operation"];
-  return typeof value === "string" && value in BLEND_SHADERS ? (value as BlendType) : fallback;
+  return isBlendType(value) ? value : fallback;
 }
 
 /**
@@ -101,7 +90,7 @@ function readBlend(params: Record<string, unknown>, fallback: BlendType): BlendT
  * drive the operation by expression (§V107), which no fixed node can do.
  *
  * §V140 is what makes shipping both safe: there is ONE implementation of the blend maths.
- * `BLEND_SHADERS` is the single source; a named node binds a fixed key and Composite reads
+ * `blendShaderFor` is the single source; a named node binds a fixed key and Composite reads
  * one from a parameter. Two copies would mean Over-inside-Composite and the Over node
  * drifting apart, with only one of them getting the next bug fix.
  */
@@ -123,9 +112,17 @@ function blendNode(
         id: "in1",
         label: "Front",
         type: RGBA_TEXTURE,
-        description: "Placed over input 2. Resolution and format come from here.",
+        description: "The nearest layer. Resolution and format come from here.",
       },
-      { id: "in2", label: "Back", type: RGBA_TEXTURE, description: "The layer underneath." },
+      {
+        id: "in2",
+        label: "Behind",
+        type: RGBA_TEXTURE,
+        // §V131/T226: the layers behind the front one, folded in the order the document
+        // declares — which the user sets, and which is not the order they were wired in.
+        variadic: true,
+        description: "The layers underneath, folded in order. Wire as many as you like.",
+      },
     ],
     outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
     parameters: {
@@ -157,11 +154,13 @@ function blendNode(
     resolutionPolicy: { kind: "inherit", input: "in1" },
     formatPolicy: { kind: "inherit", input: "in1" },
     compile(context): CompiledNodeDescription {
-      const { nodeId, outputs, inputs, parameters } = readCompileInputs(context);
+      const { nodeId, outputs, inputs, inputEdges, parameters } = readCompileInputs(context);
       const target = outputs["out"];
       const front = inputs["in1"];
-      const back = inputs["in2"];
-      if (target === undefined || front === undefined || back === undefined) {
+      // Every edge on the variadic port, in the DOCUMENT's order (§V131, T225) — the
+      // compiler hands them over already sorted, and the fold reads them straight through.
+      const layers = inputEdges["in2"] ?? [];
+      if (target === undefined || front === undefined || layers.length === 0) {
         const what =
           target === undefined
             ? 'output port "out"'
@@ -170,18 +169,35 @@ function blendNode(
               : 'input port "in2"';
         return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
       }
-      // The pass id carries the operation so that changing it produces a different
-      // structure key: a Composite switched from Over to Add is new contents, never a
-      // carry-over of the old picture.
+      if (layers.length > MAX_COMPOSITE_LAYERS) {
+        return {
+          passes: [],
+          diagnostics: [
+            {
+              severity: "error",
+              code: "node.compile.tooManyInputs",
+              message: `Node "${nodeId}" has ${layers.length} layers behind its front input; ${MAX_COMPOSITE_LAYERS} is the most one Composite folds.`,
+              nodeId,
+              suggestion: "Feed the extra layers through a second Composite and wire its output in.",
+            },
+          ],
+        };
+      }
+      // The pass id carries the operation AND the layer count so that changing either
+      // produces a different structure key: a Composite switched from Over to Add — or
+      // handed a fourth layer — is new contents, never a carry-over of the old picture.
       const blend = fixed ?? readBlend(parameters, "over");
       const pass: EffectPassDescriptor = {
         kind: "effect",
-        id: `${nodeId}:${blend}`,
-        shader: BLEND_SHADERS[blend],
+        id: `${nodeId}:${blend}:${layers.length}`,
+        shader: blendShaderFor(blend, layers.length),
         target,
         textures: [
           { binding: "frontTexture", resourceId: front.resource },
-          { binding: "backTexture", resourceId: back.resource },
+          ...layers.map((layer, index) => ({
+            binding: `backTexture${index}`,
+            resourceId: layer.resource,
+          })),
         ],
         samplers: [{ binding: "inputSampler", resourceId: front.sampler }],
         uniformBinding: "params",

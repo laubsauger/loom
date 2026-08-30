@@ -13,7 +13,10 @@ import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
  *
  * Two deltas from the original assumption, both deliberate on the compiler's side:
  *  - an input port carries an ARRAY of bindings, because a variadic port has more than
- *    one (§V14). Nodes here are all single-arity, so the adapter takes the first.
+ *    one (§V14). `inputs` is the FIRST of them, which is what every single-arity node
+ *    wants; `inputEdges` is the whole list, in the order the document declares (§V131),
+ *    which is what a variadic node folds. Two views of one array rather than two arrays:
+ *    a node that reads `inputs` on a variadic port gets the first layer, not a surprise.
  *  - an output carries a full binding (size, format, colour space), not a bare id.
  *
  * `NodeCompileContext` stays opaque in the frozen contract, so exactly one cast happens —
@@ -49,6 +52,13 @@ export interface NodeCompileInputs {
       }
     >
   >;
+  /**
+   * EVERY binding on each connected input port, in the document's declared order (T225,
+   * §V131). One entry per incoming edge, so a variadic port folds them in the order the
+   * user arranged — for Over, that order IS the operation. Single-arity ports have exactly
+   * one entry here, identical to `inputs`.
+   */
+  readonly inputEdges: Readonly<Record<PortId, ReadonlyArray<NodeCompileInputs["inputs"][PortId]>>>;
   /** This node's current parameter values, already validated against its own schema. */
   readonly parameters: Readonly<Record<string, ParameterValue>>;
   /** Resource id this node's passes render into. Undefined when nothing is materialized. */
@@ -96,19 +106,22 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
   }
 
   const inputs: Record<PortId, NodeCompileInputs["inputs"][PortId]> = {};
+  const inputEdges: Record<PortId, ReadonlyArray<NodeCompileInputs["inputs"][PortId]>> = {};
   for (const [portId, bindings] of Object.entries(raw.inputs ?? {})) {
-    const first = bindings[0];
+    const adapted = bindings.map((binding) => ({
+      resource: binding.resourceId,
+      sampler: binding.sampler ?? raw.sampler ?? "",
+      ...(binding.sourceNodeId === undefined
+        ? {}
+        : { source: { nodeId: binding.sourceNodeId, portId: binding.sourcePortId ?? "out" } }),
+      ...(binding.pointset === undefined ? {} : { pointset: binding.pointset }),
+    }));
+    const first = adapted[0];
     // An unconnected optional port simply has no binding; compile() reports that itself
     // through missingCompileResource rather than the adapter inventing an empty id.
     if (first === undefined) continue;
-    inputs[portId] = {
-      resource: first.resourceId,
-      sampler: first.sampler ?? raw.sampler ?? "",
-      ...(first.sourceNodeId === undefined
-        ? {}
-        : { source: { nodeId: first.sourceNodeId, portId: first.sourcePortId ?? "out" } }),
-      ...(first.pointset === undefined ? {} : { pointset: first.pointset }),
-    };
+    inputs[portId] = first;
+    inputEdges[portId] = adapted;
   }
 
   const size = raw.resolution;
@@ -119,6 +132,7 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
     nodeId: raw.nodeId,
     outputs,
     inputs,
+    inputEdges,
     parameters: raw.parameters,
     resolution,
     ...(raw.target === undefined ? {} : { target: raw.target }),
