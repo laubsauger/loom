@@ -2666,6 +2666,24 @@ const audioRdDocument = document(
        * persistent loop, which is the failure §V481(b) is about.
        * Rest 2.0: nothing in a 0..1 field is above 2.0, so between hits the gate is shut.
        */
+      /* T598 — TWO MORE PROPERTIES, and the pair of them is the reference's whole verb.
+         `flash1` is the stamp: the trigger, ungathered by any lag, straight onto `crest1`'s
+         opacity. Rest 0.02 and hit 0.62 is §V477 read as far as it will go — at rest
+         almost nothing enters the loop, so a beat is not a change of degree in a thing
+         already happening, it is the only time anything happens at all. §V509 is why it
+         hangs off `trig1` and not off `snap1`: a one-pole answers a single-frame impulse
+         with 1-exp(-dt/tau), which at 0.04 s is 0.31 and at 0.35 s is 0.047 — a trigger
+         through a smoother is a trigger you have deleted.
+         `xspeed1` is E29's lurch: the kick opens the magnification from 1.012 to 1.029 per
+         pass and `env1` closes it again over the beat, so the whole field surges outward
+         and settles. Both fences are ARITHMETIC and not a clamp — the band is 0..1, so the
+         pair cannot reach 1.0 (where the loop stops expanding and piles up into white) nor
+         pass ~1.03 (where the corridor outruns the eye). A `valueLimit` here would be a
+         fence around a range the gain already cannot leave. */
+      node("fgain", "valueMath", [-980, 2100], { operation: "multiply", operand: 0.53 }, { label: "fgain1" }),
+      node("flash", "valueMath", [-740, 2100], { operation: "add", operand: 0.02 }, { label: "flash1" }),
+      node("xgain", "valueMath", [-980, 2300], { operation: "multiply", operand: 0.017 }, { label: "xgain1" }),
+      node("xspeed", "valueMath", [-740, 2300], { operation: "add", operand: 1.012 }, { label: "xspeed1" }),
       node("seedamt", "valueMath", [-980, 1900], { operation: "multiply", operand: -1.28 }, { label: "seedamt1" }),
       node("seedcut", "valueMath", [-740, 1900], { operation: "add", operand: 2 }, { label: "seedcut1" }),
 
@@ -2731,6 +2749,41 @@ const audioRdDocument = document(
         parameters: { whitelevel: drivenSlot("wlevel1:lowMid", 0.543) },
       }),
 
+      /* ---- T598: WHERE THE ORGANISM IS ALLOWED TO EXIST ------------------------------
+       *
+       * The owner's reference is four fifths BLACK, with the living material a small dense
+       * cluster off the middle. Every earlier round of this file argued about the TEXTURE
+       * and left the COMPOSITION alone, and a wall-to-wall carpet is a composition however
+       * beautiful its texture is. Measured on the reference: 77.9% of it is under 0.08
+       * displayed luminance and its 90th percentile is 0.127; the shipped E24 measured
+       * 65.2% and 0.431. The gap is not a grade, it is where the material is.
+       *
+       * `bowl1` is that decision as one node — a soft disc, off-centre, and everything
+       * about the frame's occupancy is its `center`, `radius` and `softness`. It is read
+       * TWICE and never drawn (§V471.1): once inverted, as the chemistry's kill switch,
+       * and once straight, as the mask on the beat's seeding. Two readings of one shape is
+       * why "where does the material live" is a single number to change.
+       *
+       * IT IS A CHEMISTRY DECISION AND NOT A MATTE, which is §V427's point and T507's: a
+       * matte over the output would leave a full-frame simulation running underneath and
+       * cropped, and the edge would be a cut. `rim1` inverts the disc to 1 OUTSIDE, and
+       * `dish1` SCREENS that into the map — `1-(1-a)(1-b)` is exactly `mix(map, 1, rim)`
+       * for a 0..1 rim, so outside the disc the coordinate is pinned at the band's HIGH
+       * corner. §V474: the high corner (feed 0.042, kill 0.068) fails Gray-Scott's own
+       * existence condition — `F < 4(F+k)^2`, 0.042 against 0.0484 — so V there does not
+       * merely go sparse, it has no non-trivial steady state at all and decays to nothing.
+       * The black is the simulation being genuinely empty, and the soft edge of the disc
+       * is a gradient THROUGH the band, so the cluster frays into spots before it stops.
+       */
+      node("bowl", "circle", [-1720, -420], {
+        mode: "fill", center: [0.395, 0.635], radius: [0.225, 0.225], softness: 0.055,
+        fillcolor: [1, 1, 1, 1], bgcolor: [0, 0, 0, 1], aspectcorrect: true,
+      }, { label: "bowl1" }),
+      node("rim", "level", [-1720, -160], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1, invert: 1, opacity: 1,
+      }, { label: "rim1" }),
+      node("dish", "screen", [-700, -160], { opacity: 1 }, { label: "dish1" }),
+
       // ---- the simulation loop, with wind ---------------------------------------
       node("state", "feedback", [-680, 120], { source: "pack1", persistence: 1, clearColor: [0, 0, 0, 0] }, {
         resolution: { mode: "fixed", width: 512, height: 512 },
@@ -2767,6 +2820,13 @@ const audioRdDocument = document(
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.9,
       }, { label: "spark1" }),
+      /* T598 — AND THE SEED IS CONFINED TO THE SAME DISC, by multiplying the field before
+         the gate rather than the gate's output after it. Outside `bowl1` the sparse field
+         is exactly zero, so it cannot cross the cut however far the cut drops, and no beat
+         can strew a one-frame sprinkle across the empty four fifths of the frame. Masking
+         the FIELD and not the MASK matters here: the cut is what the trigger drives, and a
+         zero field keeps the gate honestly shut instead of shut-then-multiplied-out. */
+      node("sow", "multiply", [-700, -400], { opacity: 1 }, { label: "sow1" }),
       node("gate", "threshold", [-200, -400], {
         softness: 0.06, channel: "luminance", compare: "greater",
       }, {
@@ -2779,7 +2839,22 @@ const audioRdDocument = document(
          the seed's amplitude, on the node that does the seeding, with no extra node to
          hold it. At 0.5 the strike is strong enough to start a colony and short of the
          saturating V=1 that made every seed read as a white-hot pop for one frame. */
-      node("inject", "screen", [60, 240], { opacity: 0.6 }, { label: "inject1" }),
+      /* T598 — AND IT CARRIES THE SIMULATION'S OWN RESOLUTION, which is a latent flaw this
+         round had to fix before it could measure anything. Composite inherits its size from
+         `in1`, and `in1` is the GATE (that is §V510: opacity scales the front, so the mask
+         has to be the front). The gate is a `project`-resolution chain, so the loop was
+         running 512-square through `rd1`, being DOWNSAMPLED to the output's size here, and
+         being resampled back up by `state1` — a low-pass through the whole reaction, once
+         per frame. At 512-square output that is a no-op and nothing showed; at T521's
+         192x108 probe it wipes Gray-Scott's structure out completely, and with the T598
+         disc confining the chemistry to a fifth of the frame there was not enough left to
+         survive it: the probe measured range 0.0700 and a colony that DIED by frame 600.
+         Pinning the composite to the state's size takes the output resolution out of the
+         simulation entirely, which is what it should never have been in. */
+      node("inject", "screen", [60, 240], { opacity: 0.6 }, {
+        label: "inject1",
+        resolution: { mode: "fixed", width: 512, height: 512 },
+      }),
 
       node("pack", "reorder", [320, 120], {
         outr: "in1r", outg: "in1g", outb: "in2lum", outa: "in1a",
@@ -2823,10 +2898,19 @@ const audioRdDocument = document(
        * term moves each region's ground to its own place on the ramp and carries its
        * fronts with it: the hue now says which chemistry you are looking at, and V says
        * how far along the reaction is. Opacity 0 so the add contributes colour and no
-       * coverage. */
+       * coverage.
+       *
+       * T598 — IT NOW READS THE MASKED MAP AND IT IS INVERTED, and both halves are forced
+       * by the composition rather than chosen. `dish1` is pinned at 1 outside the disc, so
+       * reading it straight would lift the empty four fifths of the frame to ramp position
+       * 0.11×2.25 = 0.25 — a navy ground everywhere, which is exactly the wall-to-wall look
+       * this round exists to remove. Inverted, the dead field contributes EXACTLY ZERO and
+       * the ground is the ramp's own first stop, which is black. Inside the disc the sense
+       * is also the better one: a region running the LOW (labyrinth) chemistry is the dense
+       * one, and it now gets the warmer base rather than the colder. */
       node("chem", "level", [-200, 700], {
-        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0,
-        brightness: 0.11, opacity: 0,
+        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 1,
+        brightness: 0.17, opacity: 0,
       }, { label: "chem1" }),
       node("blend", "add", [60, 500], {}, { label: "blend1" }),
       node("tint", "lookup", [320, 380], { channel: "green", row: 0.5 }, {
@@ -2842,6 +2926,128 @@ const audioRdDocument = document(
           scale: drivenSlot("grade1:highMid", 2.25),
         },
       }),
+
+      /* ═══ T598 — THE OUTWARD DRIVING FORCE, AND THE FEEDBACK THAT CARRIES IT ═══════════
+       *
+       * The owner's third ask came with a picture: concentric rings propagating outward
+       * from a centre, several systems of them at once, and the material carried out with
+       * them so a ring TRAVELS rather than sitting there as a moiré. Six nodes, and every
+       * one of them is E29-Descent's mechanism rather than a rediscovery of it (§V481).
+       *
+       * ## What is born, and by WHAT
+       *
+       * `rings1` is a RADIAL ramp with `period: 6` — one node, six concentric rings, which
+       * is the "several ring systems at different scales" of the reference read literally.
+       * Its coordinate is `clamp(|uv-0.5|*2, 0, 1)`, so the rings are born inside the
+       * frame's inscribed circle and the loop below is what carries them out past the
+       * corners. `phase` rides `lfo1` (the palette's own 20-second sine, read a second
+       * time) so consecutive beats do not stamp their rings at identical radii and the set
+       * never stands still.
+       *
+       * §V481(b) IS THE WHOLE DESIGN OF `crest1`. Anything added into a persistent loop
+       * every frame is a DC term: at persistence 0.972 the loop integrates it about
+       * thirty-five fold and the frame goes white — three of E29's thirteen builds died
+       * exactly there. So the ring family and the living cluster are added through an
+       * `opacity` that is 0.02 at rest and 0.62 for the ONE frame `trig1` fires. A beat
+       * STAMPS the current picture and a new set of rings into the loop; between beats
+       * nothing enters it at all, and the mean input is a thirtieth of the peak by
+       * construction rather than by luck. That is also, exactly, the owner's sentence: a
+       * beat sends a ring outward.
+       *
+       * And it is why the stamp carries `tint1` as well as the rings. The reference's
+       * speckle is not one cluster — it is the SAME cluster at three or four sizes, out
+       * along the rings, each one older and blurrier than the last. Those are strobed
+       * copies of the living material, which is what a magnifying loop does to anything
+       * you drop into it once per beat.
+       *
+       * ## What carries it, and what stops it running away
+       *
+       * §V481(a), the one that cost E29 four builds: AN EXPANDING LOOP DOES NOT DIM
+       * ITSELF. `s > 1` DIVIDES the sampling coordinates, so `grow1` magnifies about the
+       * frame's centre and DUPLICATES pixels — nothing leaves, nothing is diluted, and a
+       * near-unity gain goes to white in seconds. Every bit of the decay here is
+       * deliberate: `echo1`'s persistence, `dim1`'s black point, and `dim1`'s gamma.
+       *
+       * §V481(c) WITH ITS SIGN CHECKED AGAINST THIS CATALOGUE'S SHADER, which is worth
+       * stating because the invariant's word and this node's parameter point opposite
+       * ways. Level computes `pow(c, 1.0/gamma1)`. Contractive therefore means gamma1
+       * BELOW one: 0.86 is the exponent 1.163, which is under `v` everywhere in [0,1) and
+       * so sharpens and shrinks in the same term. A gamma1 ABOVE one in this node is
+       * positive feedback, as a Contrast above one would be.
+       *
+       * `extend: "zero"` on the magnify, not `hold`: with hold, the edge pixels of an
+       * expanding image streak outward forever and the corners fill with smeared colour.
+       * The quarter-degree of rotation per pass does nothing to the rings — a rotation of
+       * a rotationally symmetric figure is invisible, which E29 learned the expensive way
+       * — but the STAMPED CLUSTER is not symmetric, so its echoes spiral as they travel
+       * and the shells read as depth rather than as a bullseye.
+       *
+       * `grow1`'s scale is on the audio (`low`), which is E29's lurch: the whole field
+       * SURGES outward on the kick and settles over the beat. Both fences are arithmetic
+       * rather than a clamp — the band is 0..1 and the pair spans 1.012…1.029, so it can
+       * neither stop expanding (which piles up into white) nor outrun the eye.
+       *
+       * ## Where it closes, and where it is read again
+       *
+       * The loop closes on the GRADED picture (§V471.5): `tint1` is downstream of the
+       * palette, so the echoes carry the ramp's own colour instead of raw simulation
+       * state. `show1` then puts the LIVE cluster back on top at full strength, which is
+       * the second reason the stamp is strobed — the thing you are watching is never the
+       * loop's own copy of itself.
+       *
+       * And `crest1` is read a SECOND time, as the finest lens (§V471.1): the ring field is
+       * `warpc1`'s displacement source, so the picture is physically pushed where a ring
+       * crosses it. `offset: [0, 0]` there rather than the usual 0.5 — the field is black
+       * over most of the frame, and a 0.5 offset would turn "no ring here" into a constant
+       * diagonal slide of the whole image. At 0 the displacement is zero where the field
+       * is, and only the rings move anything.
+       */
+      node("rings", "ramp", [320, 1120], {
+        type: "radial", interp: "smooth", period: 8,
+        stops: [
+          { position: 0, color: [0, 0, 0, 1] },
+          { position: 0.14, color: [0, 0, 0, 1] },
+          { position: 0.56, color: [0.075, 0.08, 0.095, 1] },
+          { position: 0.83, color: [0.28, 0.3, 0.36, 1] },
+          { position: 0.97, color: [0, 0, 0, 1] },
+          { position: 1, color: [0, 0, 0, 1] },
+        ],
+      }, { label: "rings1", definitionVersion: 2, parameters: { phase: drivenSlot("lfo1", 0) } }),
+      /* THE PICTURE IS THE FRONT AND THE RINGS ARE BEHIND, which is the opposite of how
+         the stack reads and is the only wiring that does the job. `opacity` scales the
+         FRONT only, so this one number says "stamp the ring family WHOLE and the living
+         picture at a third of itself". Both halves of that are load-bearing. The echoes
+         should be a HINT of the material — the reference's outer shells are ghosts of its
+         centre, not second copies of it — and it is also what keeps the loop stable: the
+         cluster's fronts reach V=1 and the ramp's cream, and a full-strength stamp of THAT
+         every beat is the one term in here that can integrate past 1. Wired the other way
+         round (measured, and it is an easy mistake because the ring is what you are
+         thinking about) the number lands on the rings instead and they go three times too
+         faint while the echoes go three times too hot: the frame becomes a bright smear
+         with a couple of arcs in the corner of it. */
+      node("stamp", "add", [580, 1120], { opacity: 0.32 }, { label: "stamp1" }),
+      node("echo", "feedback", [840, 1120], {
+        source: "crest1", persistence: 0.987, clearColor: [0, 0, 0, 1],
+      }, { label: "echo1" }),
+      node("grow", "transform", [1100, 1120], {
+        t: [0, 0], r: 0.25, s: [1.012, 1.012], p: [0, 0], xord: "srt", extend: "zero",
+        aspectcorrect: true,
+      }, {
+        label: "grow1",
+        parameters: {
+          "s.x": drivenSlot("xspeed1:low", 1.012),
+          "s.y": drivenSlot("xspeed1:low", 1.012),
+        },
+      }),
+      node("fade", "level", [1360, 1120], {
+        blacklevel: 0.0005, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 0.98, opacity: 1,
+      }, { label: "dim1" }),
+      node("born", "add", [1620, 1120], {}, {
+        label: "crest1",
+        parameters: { opacity: drivenSlot("flash1:onsetCount", 0.02) },
+      }),
+      node("show", "add", [1880, 1120], {}, { label: "show1" }),
+
       /* ---- T507: THREE LENSES, and the point is that they are at different SCALES ----
        *
        * The owner's reference stacked roughly three layers of lens. Stacking is not "turn
@@ -2873,13 +3079,19 @@ const audioRdDocument = document(
        * mid on `lowMid` (the fronts sway with the snare), fine on `high` (the ridges
        * shiver with the hats). The retained values below are the shipped weights, so
        * every host without the channel attached still gets the picture T507 tuned.
+       *
+       * T598 — THE THIRD LENS IS NOW THE RING FIELD, and that is a node REMOVED rather
+       * than added. `lensc1` was a fine, fast perlin and it was the one layer with nothing
+       * to say: the fastest displacement in the file was uncorrelated with everything else
+       * in it. `crest1` is faster, is already in the graph, and is the thing the picture is
+       * about — so the finest glass now ripples exactly where a ring is passing.
        */
-      node("lensA", "noise", [320, 860], {
+      node("lensA", "noise", [1880, 860], {
         type: "perlin4d", seed: 71, period: 1.15, harmon: 1, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.018,
       }, { label: "lensa1" }),
-      node("warpA", "displace", [580, 380], {
+      node("warpA", "displace", [2140, 380], {
         offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
       }, {
         label: "warpa1",
@@ -2888,12 +3100,12 @@ const audioRdDocument = document(
           "weight.y": drivenSlot("lena1:low", 0.062),
         },
       }),
-      node("lensB", "noise", [580, 860], {
+      node("lensB", "noise", [2140, 860], {
         type: "perlin4d", seed: 137, period: 0.42, harmon: 2, spread: 2, gain: 0.55,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.046,
       }, { label: "lensb1" }),
-      node("warpB", "displace", [840, 380], {
+      node("warpB", "displace", [2400, 380], {
         offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
       }, {
         label: "warpb1",
@@ -2902,32 +3114,27 @@ const audioRdDocument = document(
           "weight.y": drivenSlot("lenb1:lowMid", 0.024),
         },
       }),
-      node("lensC", "noise", [840, 860], {
-        type: "perlin4d", seed: 211, period: 0.14, harmon: 1, spread: 2, gain: 0.5,
-        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
-        t4d: 0.37, s4d: 1, speed: 0.115,
-      }, { label: "lensc1" }),
-      node("warpC", "displace", [1100, 380], {
-        offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      node("warpC", "displace", [2660, 380], {
+        offset: [0, 0], sourcex: "red", sourcey: "green", extend: "mirror",
       }, {
         label: "warpc1",
         parameters: {
-          "weight.x": drivenSlot("lenc1:high", 0.009),
-          "weight.y": drivenSlot("lenc1:high", 0.009),
+          "weight.x": drivenSlot("lenc1:high", 0.011),
+          "weight.y": drivenSlot("lenc1:high", 0.011),
         },
       }),
 
       // The RGB delay: three taps into time, one per channel. Full scale — this ring
       // is read for its colour, not just its motion.
-      node("tapR", "cache", [1360, 240], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
-      node("tapG", "cache", [1360, 500], { frames: 5, index: 4, scale: 1 }, { label: "tapg1" }),
-      node("tapB", "cache", [1360, 760], { frames: 8, index: 7, scale: 1 }, { label: "tapb1" }),
+      node("tapR", "cache", [2920, 240], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
+      node("tapG", "cache", [2920, 500], { frames: 5, index: 4, scale: 1 }, { label: "tapg1" }),
+      node("tapB", "cache", [2920, 760], { frames: 8, index: 7, scale: 1 }, { label: "tapb1" }),
       // Reorder is two-input, so the three taps braid in two steps: red-with-green
       // first, then the blue tap joins.
-      node("fringeRG", "reorder", [1620, 330], {
+      node("fringeRG", "reorder", [3180, 330], {
         outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a",
       }, { label: "fringerg1" }),
-      node("fringe", "reorder", [1880, 600], {
+      node("fringe", "reorder", [3440, 600], {
         outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a",
       }, { label: "fringe1" }),
       /* T560 — THE ONE-FRAME LIFT. The fastest path in the file: `level` on the finished
@@ -2935,7 +3142,7 @@ const audioRdDocument = document(
          integrates it, so it is up and down inside the beat. Rest 1.08 against a hit at 1.44 is
          §V477 again — the calm state is deliberately UNDER unity so the hit is a lift
          rather than a clip, and the picture has a floor to come back to. */
-      node("glow", "level", [2140, 600], {
+      node("glow", "level", [3700, 600], {
         blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
       }, { label: "glow1", parameters: { brightness: drivenSlot("bright1:level", 1.08) } }),
       /* §V471.8 — A LONG CYCLE. 0.033 Hz is a 30-SECOND lap, slower than anyone's
@@ -2943,14 +3150,14 @@ const audioRdDocument = document(
          own LFO above moves the ramp's offset a hair at 0.05 Hz; this one turns the whole
          graded picture through ±15° of hue, so the piece never sits in one colour.
          Free-running (§V436, B98): a timeline lap must not restart the drift. */
-      node("drift", "lfo", [2140, 820], {
+      node("drift", "lfo", [3700, 820], {
         shape: "sine", frequency: 0.033, amplitude: 15, offset: 0, phase: 0,
       }, { label: "drift1" }),
-      node("hue", "hsv", [2400, 600], { saturation: 1.08, value: 1 }, {
+      node("hue", "hsv", [3960, 600], { saturation: 1.08, value: 1 }, {
         label: "hue1",
         parameters: { hueoffset: drivenSlot("drift1", 0) },
       }),
-      node("out", "output", [2660, 600]),
+      node("out", "output", [4220, 600]),
     ],
     [
       // sound. BOTH sources reach the Switch; exactly one leaves it.
@@ -2981,31 +3188,54 @@ const audioRdDocument = document(
       // the seed gate: raw trigger, no lag between it and the Threshold's cut.
       edge("e-trig-seedamt", ["trig", "out"], ["seedamt", "a"]),
       edge("e-seedamt-seedcut", ["seedamt", "out"], ["seedcut", "a"]),
-      // chemistry map
+      // T598: the stamp is the raw trigger too; the expansion rate rides the envelope.
+      edge("e-trig-fgain", ["trig", "out"], ["fgain", "a"]),
+      edge("e-fgain-flash", ["fgain", "out"], ["flash", "a"]),
+      edge("e-env-xgain", ["env", "out"], ["xgain", "a"]),
+      edge("e-xgain-xspeed", ["xgain", "out"], ["xspeed", "a"]),
+      // chemistry map, and the disc that decides where any of it is allowed to exist
       edge("e-broad-warp", ["broad", "out"], ["warp", "source"]),
       edge("e-detail-warp", ["detail", "out"], ["warp", "disp"]),
       edge("e-warp-shape", ["warp", "out"], ["shape", "input"]),
-      edge("e-shape-pack", ["shape", "out"], ["pack", "in2"]),
+      edge("e-bowl-rim", ["bowl", "out"], ["rim", "input"]),
+      // rim is the FRONT: screen is commutative, but the front is the layer being placed.
+      edge("e-rim-dish", ["rim", "out"], ["dish", "in1"]),
+      edge("e-shape-dish", ["shape", "out"], ["dish", "in2"], 0),
+      edge("e-dish-pack", ["dish", "out"], ["pack", "in2"]),
       // the loop, wind inside it, and the beat's seed screened into the state
       edge("e-state-wind", ["state", "out"], ["wind", "input"]),
       edge("e-wind-rd", ["wind", "out"], ["rd", "input"]),
-      edge("e-spark-gate", ["spark", "out"], ["gate", "input"]),
+      edge("e-spark-sow", ["spark", "out"], ["sow", "in1"]),
+      edge("e-bowl-sow", ["bowl", "out"], ["sow", "in2"], 0),
+      edge("e-sow-gate", ["sow", "out"], ["gate", "input"]),
       edge("e-gate-inject", ["gate", "out"], ["inject", "in1"]),
       edge("e-rd-inject", ["rd", "out"], ["inject", "in2"], 0),
       edge("e-inject-pack", ["inject", "out"], ["pack", "in1"]),
       // colour then time. The map is read a SECOND time, as colour (§V471.1).
-      edge("e-shape-chem", ["shape", "out"], ["chem", "input"]),
+      edge("e-dish-chem", ["dish", "out"], ["chem", "input"]),
       edge("e-inject-blend", ["inject", "out"], ["blend", "in1"]),
       edge("e-chem-blend", ["chem", "out"], ["blend", "in2"], 0),
       edge("e-blend-tint", ["blend", "out"], ["tint", "source"]),
       edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
-      // three lenses, coarse to fine, in series
-      edge("e-tint-warpa", ["tint", "out"], ["warpA", "source"]),
+      /* T598 — the expansion. The stamp is rings + the graded picture; `crest1` is what the
+         loop records, and `show1` puts the LIVE cluster back over its own travelling
+         echoes. Nothing here reads a clock: the motion is the loop's own iteration, so a
+         timeline lap cannot snap it (T489). */
+      edge("e-tint-stamp", ["tint", "out"], ["stamp", "in1"]),
+      edge("e-rings-stamp", ["rings", "out"], ["stamp", "in2"], 0),
+      edge("e-echo-grow", ["echo", "out"], ["grow", "input"]),
+      edge("e-grow-fade", ["grow", "out"], ["fade", "input"]),
+      edge("e-stamp-born", ["stamp", "out"], ["born", "in1"]),
+      edge("e-fade-born", ["fade", "out"], ["born", "in2"], 0),
+      edge("e-tint-show", ["tint", "out"], ["show", "in1"]),
+      edge("e-born-show", ["born", "out"], ["show", "in2"], 0),
+      // three lenses, coarse to fine, in series — the finest one IS the ring field
+      edge("e-show-warpa", ["show", "out"], ["warpA", "source"]),
       edge("e-lensa-warpa", ["lensA", "out"], ["warpA", "disp"]),
       edge("e-warpa-warpb", ["warpA", "out"], ["warpB", "source"]),
       edge("e-lensb-warpb", ["lensB", "out"], ["warpB", "disp"]),
       edge("e-warpb-warpc", ["warpB", "out"], ["warpC", "source"]),
-      edge("e-lensc-warpc", ["lensC", "out"], ["warpC", "disp"]),
+      edge("e-born-warpc", ["born", "out"], ["warpC", "disp"]),
       edge("e-warpc-tapr", ["warpC", "out"], ["tapR", "input"]),
       edge("e-warpc-tapg", ["warpC", "out"], ["tapG", "input"]),
       edge("e-warpc-tapb", ["warpC", "out"], ["tapB", "input"]),

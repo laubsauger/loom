@@ -1,7 +1,11 @@
 # E24 — Audio Reaction-Diffusion
 
-E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. The
-music source is a deterministic beat pattern (`audioPattern`, 112 bpm), and it reaches
+E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. A dense
+colony of reaction-diffusion sits off the middle of an almost black frame, and every beat
+sends a family of rings outward through it: the rings travel, the colony's own echoes
+travel with them, and four fifths of the picture is the dark they cross.
+
+The music source is a deterministic beat pattern (`audioPattern`, 112 bpm), and it reaches
 the picture on THREE timescales at once: the bass makes the simulation grow FASTER and
 the mids steer which chemistry each region runs (slow, structural); five bands each
 drive one fast property — the three lens weights, the palette's grade, the output gain —
@@ -22,7 +26,8 @@ involved.
 ## What you see on load
 
 It **opens on a black frame**, then flares bright for a handful of frames, and has
-settled by about frame twelve. Two causes, both by construction rather than defect: the
+settled by about frame twelve, and the colony takes a couple of seconds more to fill its
+disc. Two causes for the black, both by construction rather than defect: the
 feedback pair's alpha channel is the seeded-start flag, so frame 0 is the moment before
 any chemistry exists; and the RGB delay's deepest cache ring is seven frames long, so
 until frame seven one colour channel is still reading an empty ring. Worth stating rather
@@ -39,7 +44,8 @@ track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
         YOUR TRACK HERE)                    │
    SLOW ── env1(lag 0.12) ◄────────────────┤
              ├─► sgain1·sbase1·steps1 ┄► state1.substeps            (low)
-             └─► wgain1·wbase1·wlevel1 ┄► shape1.whitelevel         (lowMid)
+             ├─► wgain1·wbase1·wlevel1 ┄► shape1.whitelevel         (lowMid)
+             └─► xgain1·xspeed1 ┄► grow1.s                          (low)
    FAST ── snap1(lag 0.04) ◄───────────────┤
              ├─► lagain1·lena1 ┄► warpa1.weight                     (low)
              ├─► lbgain1·lenb1 ┄► warpb1.weight                     (lowMid)
@@ -47,18 +53,35 @@ track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
              ├─► ggain1·gadd1·grade1 ┄► tint1.scale                 (highMid)
              └─► bgain1·bright1 ┄► glow1.brightness                 (level)
   EVENT ── trig1(trigger) ◄────────────────┘
-             └─► seedamt1·seedcut1 ┄► gate1.threshold               (onsetCount)
+             ├─► seedamt1·seedcut1 ┄► gate1.threshold               (onsetCount)
+             └─► fgain1·flash1 ┄► crest1.opacity                    (onsetCount)
 
-broad1 ─► warp1 ◄─ detail1     state1(feedback, source: pack1)      spark1 ─► gate1
-              │                     │                                            │
-              ▼                     ▼                                            ▼
-          shape1 ──────────► pack1 ◄─ inject1(screen) ◄─ rd1 ◄─ wind1 ◄─ (the loop)
-              │                                │
-              └─► chem1 ──► blend1(add) ◄──────┘
-                                 └─► tint1 ◄─ palette1
-tint1 ─► warpa1 ─► warpb1 ─► warpc1 (three lenses) ─► tapr1 ─► fringerg1 ─► fringe1 ─► glow1 ─► hue1 ─► out1
-     └─► tapg1 ──────┘             │                                                             ▲
-     └─► tapb1 ────────────────────┘                                          drift1(lfo 0.033Hz)┘
+WHERE THE ORGANISM LIVES — one disc, read twice, never drawn:
+  bowl1(circle, off-centre) ─► rim1(invert) ─► dish1(screen) ◄─ shape1   ⇒ chemistry
+  bowl1 ────────────────────► sow1(multiply) ◄─ spark1                   ⇒ the beat's seed
+
+broad1 ─► warp1 ◄─ detail1     state1(feedback, source: pack1)      sow1 ─► gate1
+              │                     │                                          │
+              ▼                     ▼                                          ▼
+ shape1 ─► dish1 ─────────► pack1 ◄─ inject1(screen, 512²) ◄─ rd1 ◄─ wind1 ◄─ (the loop)
+              │                            │
+              └─► chem1(invert) ─► blend1(add) ◄─┘
+                                       └─► tint1 ◄─ palette1
+
+THE OUTWARD DRIVING FORCE — a second loop, and a beat is the only thing that feeds it:
+  rings1(radial ramp, period 8, phase ◄─ lfo1)
+        │
+  tint1 ─► stamp1(add, opacity 0.32 on the PICTURE) ◄─ rings1 at full
+        │        │
+        │        ▼
+        │   crest1(add, opacity ◄─ trig1) ◄─ dim1(level) ◄─ grow1(scale ▸1) ◄─ echo1
+        │        │                                                    (feedback, source: crest1)
+        └─► show1(add) ◄────────────────────┘
+
+show1 ─► warpa1 ─► warpb1 ─► warpc1 ◄─ crest1 (the ring field IS the finest lens)
+                                 └─► tapr1 ─► fringerg1 ─► fringe1 ─► glow1 ─► hue1 ─► out1
+                                 └─► tapg1 ──────┘             ▲                  ▲
+                                 └─► tapb1 ─────────────────────┘   drift1(lfo 0.033Hz)┘
 ```
 
 ## The source is a SWITCH, and it could not have been a wire (T504, T508)
@@ -159,6 +182,132 @@ and the tails fall *outside* the window on purpose, because the kernel clamps th
 coordinate, so the deepest patches sit at one corner and the airiest at the other rather
 than everything crowding the middle.
 
+## The composition, and it was never a tuning pass (T598)
+
+The owner asked for this example three times and supplied a **reference image** on the
+third: *"still lame and is missing this multi-layered outward driving force and some
+feedback."*
+
+Every earlier round argued about the TEXTURE. The reference is an argument about the
+COMPOSITION, and the two things are not the same however good the texture gets. Measured,
+side by side, on the reference and on the file it was rejecting:
+
+| | reference | E24 before | E24 now (across a beat) |
+| --- | --- | --- | --- |
+| frame under 0.08 displayed luma | 77.9% | 65.2% | 66% … 87% |
+| 90th percentile luma | 0.127 | 0.431 | 0.10 … 0.25 |
+| mean chroma over the lit pixels | 0.067 | 0.527 | 0.19 … 0.27 |
+
+The old file was a wall-to-wall carpet with a bright ninetieth percentile: beautiful
+texture, no picture. The reference is four fifths dark, with the living material a small
+dense cluster off the middle and concentric rings crossing everything else.
+
+### Where the organism is allowed to exist — one disc, read twice, never drawn
+
+`bowl1` is a soft circle, off-centre, and it is the whole occupancy decision in one node's
+`center`, `radius` and `softness`. It is read TWICE and drawn never, which is §V471.1's
+"one source, several readings" in the shape a texture graph can have it:
+
+- **inverted, into the chemistry.** `rim1` flips the disc to 1 *outside* and `dish1`
+  SCREENS that into the map. `1−(1−a)(1−b)` is exactly `mix(map, 1, rim)` for a 0..1 rim,
+  so outside the disc the feed/kill coordinate is pinned at the band's HIGH corner.
+- **straight, onto the seed.** `sow1` multiplies `spark1` by the disc *before* the gate, so
+  the sparse field is exactly zero outside it and no beat can strew a one-frame sprinkle
+  across the empty four fifths of the frame.
+
+**The black is the simulation being genuinely empty, not a matte over a full-frame one.**
+§V474 said the high corner is where empty field lives; the arithmetic says why. At feed
+0.042 / kill 0.068 Gray-Scott fails its own existence condition — a non-trivial steady
+state needs `F ≥ 4(F+k)²`, and 0.042 against 0.0484 does not have one — so V there does not
+merely go sparse, it decays to nothing. The soft edge of the disc is a gradient *through*
+the band, so the colony frays into spots before it stops, which is the edge a matte cannot
+give you. §V427 is the reason to want it this way round: the structure is the simulation's.
+
+### The outward driving force, and the feedback that carries it
+
+Six nodes, and every one of them is E29-Descent's mechanism rather than a rediscovery of
+it. E29 paid thirteen builds for these two traps and §V481 is the receipt.
+
+**A ring is born by a TRIGGER, and that is the load-bearing line.** Anything added into a
+persistent loop every frame is a DC term: at persistence 0.987 the loop integrates it about
+seventy-fold and the frame goes white. So `crest1`'s `opacity` sits at **0.02** at rest and
+**0.55** for the ONE frame `trig1` fires. A beat STAMPS a fresh family of rings and the
+current picture into the loop; between beats nothing enters it at all, and the mean input
+is a thirtieth of the peak by construction rather than by luck. Which is also, exactly, the
+owner's own sentence: a beat sends a ring outward.
+
+`rings1` is a RADIAL ramp at `period: 8` — one node, eight concentric rings, which is
+"several ring systems at different scales" read literally. Its `phase` rides `lfo1`, the
+palette's own 20-second sine read a second time, so consecutive beats do not stamp at
+identical radii and the set never stands still.
+
+**The stamp carries the living picture as well as the rings, at a third of its strength.**
+`stamp1`'s `opacity` scales its FRONT only, and the front is `tint1` — which looks backwards
+in the stack and is the only wiring that works. The reference's outer speckle is not several
+colonies; it is the SAME colony at three or four sizes, further out and blurrier each time.
+Those are strobed copies of the material, which is what a magnifying loop does to anything
+dropped into it once per beat. Wired the other way round the number lands on the rings
+instead: they go three times too faint while the echoes go three times too hot, and the
+frame becomes a bright smear with a couple of arcs in the corner of it. (Measured. It is an
+easy mistake, because the ring is the thing you are thinking about.)
+
+**An expanding loop does not dim itself** (§V481a). `s > 1` DIVIDES the sampling
+coordinates, so `grow1` magnifies about the frame's centre and DUPLICATES pixels — nothing
+leaves, nothing is diluted, and a near-unity gain goes to white in seconds. Every part of
+the decay here is deliberate: `echo1`'s persistence, `dim1`'s black point, `dim1`'s gamma.
+
+**And §V481(c)'s sign has to be checked against this catalogue's own shader.** Level
+computes `pow(c, 1/gamma1)`. Contractive therefore means `gamma1` **below** one: 0.98 is the
+exponent 1.02, under `v` everywhere in [0,1). A `gamma1` above one in this node is positive
+feedback, exactly as a Contrast above one is. (E29's `fade1` carries a comment claiming
+`gamma1: 1.12` is "below v everywhere"; the shader says the opposite. Its loop is stable for
+other reasons — that is a note for whoever next reads E29, not a defect found here.)
+
+**THE COMPOSITION IS ALSO THE STABILITY.** The one thing that made this blow out was moving
+the colony onto the pivot: an expansion has a fixed point, material sitting on it never
+travels, and it integrates instead. At `bowl1.center` = (0.455, 0.545) the 90th percentile
+went to **0.93** and stayed there. At (0.395, 0.635) — the reference's own off-centre
+composition — it settles at 0.10…0.25 and is still stable at frame 900. The picture being
+off-centre is not a taste call; it is why the loop terminates.
+
+`grow1`'s scale rides the audio (`low`), which is E29's lurch: the field SURGES outward on
+the kick and settles over the beat. Both fences are arithmetic rather than a clamp — the
+band is 0..1 and the pair spans 1.012…1.029, so it can neither stop expanding (which piles
+up into white) nor outrun the eye. A `valueLimit` there would fence a range the gain cannot
+leave.
+
+The loop closes on the GRADED picture (§V471.5), so the echoes carry the ramp's own colour
+rather than raw simulation state, and `show1` puts the LIVE colony back on top at full
+strength — the thing you are watching is never the loop's own copy of itself.
+
+### The fringing was already here; it needed something to move
+
+The reference's iridescence is channel separation, and E24 has shipped an RGB delay since
+T425. **Nothing was added for it.** Motion fringing needs motion, and a Gray-Scott dish
+creeping a texel a frame gave the 2/4/7 taps almost nothing to separate. Rings that travel
+give them plenty: a ring crossing r = 0.4 moves about 2.5 px a frame, so seven frames of
+delay put the blue tap most of a ring-width behind the red one and every arc wears a green
+leading edge and a magenta trailing one. Zoom into the colony and the same delay renders
+each front as a bead of red, gold and violet. That is one existing node earning its keep
+because the composition finally moves, and it is the cheapest thing in this round.
+
+### The simulation was riding on the output resolution, and nobody could see it
+
+Composite inherits its size from `in1`, and `inject1`'s `in1` is the seed GATE — which it
+has to be, because `opacity` scales the front and that is what makes `opacity` mean "how
+much V a hit drops in" (§V510). The gate is a `project`-resolution chain. So the loop ran
+512-square through `rd1`, was DOWNSAMPLED to the output's size at the composite, and was
+resampled back up by `state1`: a low-pass through the whole reaction, once per frame.
+
+At a 512-square output that is a no-op and it hid for three rounds. At T521's 192×108 probe
+it wipes Gray-Scott's structure out, and once T598's disc confined the chemistry to a fifth
+of the frame there was not enough left to survive it — the probe measured a contrast range
+of **0.0700** and a colony that had DIED by frame 600. Pinning `inject1` to the state's own
+512-square takes the output resolution out of the simulation entirely, which is where it
+should never have been. The probe's range went 0.0700 → **0.9812** and its motion 0.00184 →
+**0.01001** on that one change, and the 512-square picture is unaffected because there it
+was already the same number.
+
 ### Three lenses, and the point is that they are at different scales
 
 Stacking is not "turn the displacement up". One strong displacement is a smear and a smear
@@ -242,22 +391,36 @@ and bias, off a SECOND and much faster Lag (`snap1`, 0.04 s):
 | `highMid` | `tint1.scale` | 2.25 → 2.64 | the ramp breathes (§V471.7) |
 | `level` | `glow1.brightness` | 1.08 → 1.44 | the whole frame lifts, one frame |
 
+and T598 added two more, both of them events rather than levels:
+
+| band | property | rest → peak | what you see |
+| --- | --- | --- | --- |
+| `onsetCount` | `gate1.threshold` (a CUT) | 2.0 → 0.72 | the beat seeds new chemistry |
+| `onsetCount` | `crest1.opacity` | 0.02 → 0.55 | the beat sends a ring outward |
+| `low` (env) | `grow1.s` | 1.012 → 1.029 | the whole field surges outward and settles |
+
+That is **ten** properties on the audio. E31-Corona, the file §V471 was measured from, has
+eight; this is the count half of T580's gap closed. The other half was three readings of one
+source, and there are now three of those: `bowl1` read inverted into the chemistry and
+straight onto the seed, `shape1` read as feed/kill and again (inverted, dimmed) as colour,
+and `crest1` read as the picture's own light and again as the finest lens.
+
 §V477 governs every one of those pairs: **the bias is the rest state and the gain is the
 swing**, so all five rest LOW and a hit has somewhere to travel to. `tint1.scale` also
 carries the third fence (T544): ×4.2 over a 0..1 band spans 1.83…6.03 against a Lookup
 Scale declared −4…4, so `grade1` holds it in 1.2…3.2 where you can still read it in the
 graph.
 
-**Where §V477 and the liveness gate pull against each other, and how far each got.** The
-rest states here are HIGHER than the rule wants. T521's contrast floor asks that the
-0.1st-to-99.9th percentile span of frame 180 clear 0.30 at 192×108, and a picture whose
-fronts rest in the violet does not: at a `tint1.scale` rest of 2.02 it measured 0.2325 and
-failed. The fronts therefore rest in the amber, and what travels on a hit is the last
-stretch to gold and cream plus a global lift. The swing is real — p90 luminance roughly
-doubles across a beat, against 1.03× before — but it is a smaller swing than a colder rest
-would have bought, and that is the trade rather than a tuning nobody looked at. The ground
-is unaffected either way: V is near zero over most of the frame, so it sits in the navy
-whatever the music does.
+**§V477 and the liveness gate used to pull against each other here, and T598 dissolved
+it.** T521's contrast floor asks that the 0.1st-to-99.9th percentile span of frame 180 clear
+0.30 at 192×108, and this file used to measure **0.2325** and fail: a picture whose fronts
+rest in the violet has no dark end to span from, so the rest states were pushed HIGHER than
+§V477 wants and the trade was written down here rather than tuned quietly (T581).
+
+It measures **0.9812** now, and neither half of that came from raising a rest state. Four
+fifths of the frame is the simulation being genuinely empty, which is a real black point;
+and the resolution bug above was costing the probe most of its span. A dark-resting picture
+was never the problem — a picture with no dark in it was.
 
 **Kick → the beat SEEDS the plate.** This is the one that makes a hit legible rather than
 merely measurable. A beat that nudges a rate is a rate change; a beat that spawns structure
@@ -293,7 +456,14 @@ degree. §V471.8 is the right idea; the file it was measured from does not imple
 **One source, several readings (§V471.1).** E31 gets its richness by drawing one point
 cloud three times and splitting it by group predicate — structure from SELECTION rather
 than from more nodes. The texture analogue is `chem1`: the chemistry map read a SECOND
-time, dimmed to 0.11, and added to the simulation's V before the palette lookup. It is
+time, dimmed and added to the simulation's V before the palette lookup. T598 made it read
+the MASKED map and INVERT it, and both halves are forced by the composition rather than
+chosen. `dish1` is pinned at 1 outside the disc, so reading it straight would lift the empty
+four fifths of the frame to ramp position 0.25 — a navy ground everywhere, which is the
+wall-to-wall look this whole round exists to remove. Inverted, the dead field contributes
+exactly zero and the ground is the ramp's own first stop, which is black. Inside the disc
+the sense is the better one anyway: a region running the LOW (labyrinth) chemistry is the
+dense one, and it now gets the warmer base rather than the colder. It is
 there because V in Gray-Scott is **near-binary** — empty plate or front, nothing between —
 and a near-binary coordinate visits exactly two positions on a ramp however many stops that
 ramp has. That is why the shipped file was cream fronts on navy with the blue and teal in
@@ -325,7 +495,16 @@ to the fastest thing in the picture.
 Swap in a live source and mute it, and the channels read all-zero (§V329): substeps
 rest at 14, the white point sits at 0.534, the three lens weights fall to their biases
 (0.018 / 0.002 / 0.000), the grade sits at 1.83, `glow1` at 0.93, the gate never opens — and the noises, the palette LFO and the 30-second hue drift keep the
-picture breathing. Every audio mapping is an ADDITION on top of a self-animating base. An `audioFileIn` with no file chosen SAYS so — the inspector's
+picture breathing.
+
+**T598 made silence a quieter picture than it was, and deliberately.** The rings are born by
+a trigger, and in silence no trigger fires: `crest1.opacity` sits on its 0.02 rest, so the
+expansion loop receives a trickle and the frame is the colony alone. Measured with
+`source1.index = 1` and no file bound, p90 goes to 0.0019 and 7% of the frame is lit; with a
+loud track on the same switch it is 0.135 and 73%. That is a large swing and it is the point
+— a beat is the only thing that sends a ring — but it does mean the true-silence frame is
+the colony breathing on its own noises rather than the whole composition. The file ships on
+`index 0`, the Beat pattern, which is what anyone opening it sees. Every audio mapping is an ADDITION on top of a self-animating base. An `audioFileIn` with no file chosen SAYS so — the inspector's
 Audio section reads "Waiting for a file" rather than an idle that looks finished.
 
 ## Regression signatures
@@ -349,3 +528,14 @@ Audio section reads "Waiting for a file" rather than an idle that looks finished
   the length of a transient.
 - Frame time spikes unboundedly with loud audio → a clamp fell off one of the two
   fences (graph `valueLimit`, encoder clamp at expansion).
+- The frame goes white within a few seconds → something is feeding the expansion loop every
+  frame instead of on the trigger (§V481b), or the colony has been moved onto the pivot at
+  (0.5, 0.5) where an expansion has nothing to carry it away.
+- Rings but no travel — a fixed moiré → `grow1.s` fell to 1.0 or below. At or under unity
+  the loop stops expanding and piles up; above about 1.03 it reads as a flash.
+- Rings faint and the echoes hot → `stamp1`'s inputs were swapped. `opacity` scales the
+  FRONT, and the front is the picture, not the ring family.
+- The example looks fine at 512-square and dies at preview size → `inject1` lost its fixed
+  resolution and the simulation is being low-passed through the output size once per frame.
+- Four fifths of the frame stopped being black → `chem1`'s invert came off, or `dish1` is
+  reading `shape1` without `rim1`, and the dead field is being lifted onto the ramp.

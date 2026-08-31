@@ -25,6 +25,52 @@
           "portId": "source"
         }
       },
+      "e-born-show": {
+        "id": "e-born-show",
+        "order": 0,
+        "source": {
+          "nodeId": "born",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "show",
+          "portId": "in2"
+        }
+      },
+      "e-born-warpc": {
+        "id": "e-born-warpc",
+        "source": {
+          "nodeId": "born",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warpC",
+          "portId": "disp"
+        }
+      },
+      "e-bowl-rim": {
+        "id": "e-bowl-rim",
+        "source": {
+          "nodeId": "bowl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rim",
+          "portId": "input"
+        }
+      },
+      "e-bowl-sow": {
+        "id": "e-bowl-sow",
+        "order": 0,
+        "source": {
+          "nodeId": "bowl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sow",
+          "portId": "in2"
+        }
+      },
       "e-broad-warp": {
         "id": "e-broad-warp",
         "source": {
@@ -59,6 +105,39 @@
           "portId": "disp"
         }
       },
+      "e-dish-chem": {
+        "id": "e-dish-chem",
+        "source": {
+          "nodeId": "dish",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chem",
+          "portId": "input"
+        }
+      },
+      "e-dish-pack": {
+        "id": "e-dish-pack",
+        "source": {
+          "nodeId": "dish",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
+        }
+      },
+      "e-echo-grow": {
+        "id": "e-echo-grow",
+        "source": {
+          "nodeId": "echo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grow",
+          "portId": "input"
+        }
+      },
       "e-env-sgain": {
         "id": "e-env-sgain",
         "source": {
@@ -78,6 +157,40 @@
         },
         "target": {
           "nodeId": "wgain",
+          "portId": "a"
+        }
+      },
+      "e-env-xgain": {
+        "id": "e-env-xgain",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "xgain",
+          "portId": "a"
+        }
+      },
+      "e-fade-born": {
+        "id": "e-fade-born",
+        "order": 0,
+        "source": {
+          "nodeId": "fade",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "born",
+          "portId": "in2"
+        }
+      },
+      "e-fgain-flash": {
+        "id": "e-fgain-flash",
+        "source": {
+          "nodeId": "fgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "flash",
           "portId": "a"
         }
       },
@@ -144,6 +257,17 @@
         },
         "target": {
           "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-grow-fade": {
+        "id": "e-grow-fade",
+        "source": {
+          "nodeId": "grow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fade",
           "portId": "input"
         }
       },
@@ -235,17 +359,6 @@
           "portId": "disp"
         }
       },
-      "e-lensc-warpc": {
-        "id": "e-lensc-warpc",
-        "source": {
-          "nodeId": "lensC",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "warpC",
-          "portId": "disp"
-        }
-      },
       "e-music-source": {
         "id": "e-music-source",
         "source": {
@@ -277,6 +390,29 @@
         },
         "target": {
           "nodeId": "inject",
+          "portId": "in2"
+        }
+      },
+      "e-rim-dish": {
+        "id": "e-rim-dish",
+        "source": {
+          "nodeId": "rim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dish",
+          "portId": "in1"
+        }
+      },
+      "e-rings-stamp": {
+        "id": "e-rings-stamp",
+        "order": 0,
+        "source": {
+          "nodeId": "rings",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stamp",
           "portId": "in2"
         }
       },
@@ -313,26 +449,27 @@
           "portId": "a"
         }
       },
-      "e-shape-chem": {
-        "id": "e-shape-chem",
+      "e-shape-dish": {
+        "id": "e-shape-dish",
+        "order": 0,
         "source": {
           "nodeId": "shape",
           "portId": "out"
         },
         "target": {
-          "nodeId": "chem",
-          "portId": "input"
+          "nodeId": "dish",
+          "portId": "in2"
         }
       },
-      "e-shape-pack": {
-        "id": "e-shape-pack",
+      "e-show-warpa": {
+        "id": "e-show-warpa",
         "source": {
-          "nodeId": "shape",
+          "nodeId": "show",
           "portId": "out"
         },
         "target": {
-          "nodeId": "pack",
-          "portId": "in2"
+          "nodeId": "warpA",
+          "portId": "source"
         }
       },
       "e-snap-bgain": {
@@ -423,15 +560,37 @@
           "portId": "in"
         }
       },
-      "e-spark-gate": {
-        "id": "e-spark-gate",
+      "e-sow-gate": {
+        "id": "e-sow-gate",
         "source": {
-          "nodeId": "spark",
+          "nodeId": "sow",
           "portId": "out"
         },
         "target": {
           "nodeId": "gate",
           "portId": "input"
+        }
+      },
+      "e-spark-sow": {
+        "id": "e-spark-sow",
+        "source": {
+          "nodeId": "spark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sow",
+          "portId": "in1"
+        }
+      },
+      "e-stamp-born": {
+        "id": "e-stamp-born",
+        "source": {
+          "nodeId": "stamp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "born",
+          "portId": "in1"
         }
       },
       "e-state-wind": {
@@ -478,15 +637,26 @@
           "portId": "in1"
         }
       },
-      "e-tint-warpa": {
-        "id": "e-tint-warpa",
+      "e-tint-show": {
+        "id": "e-tint-show",
         "source": {
           "nodeId": "tint",
           "portId": "out"
         },
         "target": {
-          "nodeId": "warpA",
-          "portId": "source"
+          "nodeId": "show",
+          "portId": "in1"
+        }
+      },
+      "e-tint-stamp": {
+        "id": "e-tint-stamp",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stamp",
+          "portId": "in1"
         }
       },
       "e-track-source": {
@@ -498,6 +668,17 @@
         "target": {
           "nodeId": "source",
           "portId": "in2"
+        }
+      },
+      "e-trig-fgain": {
+        "id": "e-trig-fgain",
+        "source": {
+          "nodeId": "trig",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fgain",
+          "portId": "a"
         }
       },
       "e-trig-seedamt": {
@@ -609,6 +790,17 @@
           "nodeId": "rd",
           "portId": "input"
         }
+      },
+      "e-xgain-xspeed": {
+        "id": "e-xgain-xspeed",
+        "source": {
+          "nodeId": "xgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "xspeed",
+          "portId": "a"
+        }
       }
     },
     "groups": {},
@@ -637,6 +829,66 @@
           "y": 500
         },
         "type": "add"
+      },
+      "born": {
+        "definitionVersion": 1,
+        "id": "born",
+        "label": "crest1",
+        "parameters": {
+          "opacity": {
+            "bindings": {
+              "driven": {
+                "channel": "flash1:onsetCount",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.02
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 1620,
+          "y": 1120
+        },
+        "type": "add"
+      },
+      "bowl": {
+        "definitionVersion": 1,
+        "id": "bowl",
+        "label": "bowl1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.395,
+            0.635
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.225,
+            0.225
+          ],
+          "softness": 0.055
+        },
+        "position": {
+          "x": -1720,
+          "y": -420
+        },
+        "type": "circle"
       },
       "bright": {
         "definitionVersion": 1,
@@ -685,10 +937,10 @@
         "label": "chem1",
         "parameters": {
           "blacklevel": 0,
-          "brightness": 0.11,
+          "brightness": 0.17,
           "contrast": 1,
           "gamma1": 1,
-          "invert": 0,
+          "invert": 1,
           "opacity": 0,
           "whitelevel": 1
         },
@@ -741,6 +993,19 @@
         },
         "type": "noise"
       },
+      "dish": {
+        "definitionVersion": 1,
+        "id": "dish",
+        "label": "dish1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -700,
+          "y": -160
+        },
+        "type": "screen"
+      },
       "drift": {
         "definitionVersion": 1,
         "id": "drift",
@@ -753,10 +1018,30 @@
           "shape": "sine"
         },
         "position": {
-          "x": 2140,
+          "x": 3700,
           "y": 820
         },
         "type": "lfo"
+      },
+      "echo": {
+        "definitionVersion": 1,
+        "id": "echo",
+        "label": "echo1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": 0.987,
+          "source": "crest1"
+        },
+        "position": {
+          "x": 840,
+          "y": 1120
+        },
+        "type": "feedback"
       },
       "env": {
         "definitionVersion": 1,
@@ -771,6 +1056,52 @@
         },
         "type": "valueLag"
       },
+      "fade": {
+        "definitionVersion": 1,
+        "id": "fade",
+        "label": "dim1",
+        "parameters": {
+          "blacklevel": 0.0005,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 0.98,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 1360,
+          "y": 1120
+        },
+        "type": "level"
+      },
+      "fgain": {
+        "definitionVersion": 1,
+        "id": "fgain",
+        "label": "fgain1",
+        "parameters": {
+          "operand": 0.53,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 2100
+        },
+        "type": "valueMath"
+      },
+      "flash": {
+        "definitionVersion": 1,
+        "id": "flash",
+        "label": "flash1",
+        "parameters": {
+          "operand": 0.02,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 2100
+        },
+        "type": "valueMath"
+      },
       "fringe": {
         "definitionVersion": 1,
         "id": "fringe",
@@ -782,7 +1113,7 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 1880,
+          "x": 3440,
           "y": 600
         },
         "type": "reorder"
@@ -798,7 +1129,7 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 1620,
+          "x": 3180,
           "y": 330
         },
         "type": "reorder"
@@ -885,7 +1216,7 @@
           "whitelevel": 1
         },
         "position": {
-          "x": 2140,
+          "x": 3700,
           "y": 600
         },
         "type": "level"
@@ -903,6 +1234,60 @@
           "y": 1500
         },
         "type": "valueLimit"
+      },
+      "grow": {
+        "definitionVersion": 1,
+        "id": "grow",
+        "label": "grow1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0.25,
+          "s": [
+            1.012,
+            1.012
+          ],
+          "s.x": {
+            "bindings": {
+              "driven": {
+                "channel": "xspeed1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.012
+              }
+            },
+            "mode": "driven"
+          },
+          "s.y": {
+            "bindings": {
+              "driven": {
+                "channel": "xspeed1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.012
+              }
+            },
+            "mode": "driven"
+          },
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": 1100,
+          "y": 1120
+        },
+        "type": "transform"
       },
       "hue": {
         "definitionVersion": 1,
@@ -926,7 +1311,7 @@
           "value": 1
         },
         "position": {
-          "x": 2400,
+          "x": 3960,
           "y": 600
         },
         "type": "hsv"
@@ -941,6 +1326,11 @@
         "position": {
           "x": 60,
           "y": 240
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
         },
         "type": "screen"
       },
@@ -1050,7 +1440,7 @@
           "type": "perlin4d"
         },
         "position": {
-          "x": 320,
+          "x": 1880,
           "y": 860
         },
         "type": "noise"
@@ -1077,34 +1467,7 @@
           "type": "perlin4d"
         },
         "position": {
-          "x": 580,
-          "y": 860
-        },
-        "type": "noise"
-      },
-      "lensC": {
-        "definitionVersion": 1,
-        "id": "lensC",
-        "label": "lensc1",
-        "parameters": {
-          "amp": 1,
-          "aspectcorrect": true,
-          "exp": 1,
-          "gain": 0.5,
-          "harmon": 1,
-          "mono": false,
-          "offset": 0,
-          "period": 0.14,
-          "rough": 0.5,
-          "s4d": 1,
-          "seed": 211,
-          "speed": 0.115,
-          "spread": 2,
-          "t4d": 0.37,
-          "type": "perlin4d"
-        },
-        "position": {
-          "x": 840,
+          "x": 2140,
           "y": 860
         },
         "type": "noise"
@@ -1128,7 +1491,7 @@
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 2660,
+          "x": 4220,
           "y": 600
         },
         "type": "output"
@@ -1243,6 +1606,109 @@
         },
         "type": "customWgsl"
       },
+      "rim": {
+        "definitionVersion": 1,
+        "id": "rim",
+        "label": "rim1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -1720,
+          "y": -160
+        },
+        "type": "level"
+      },
+      "rings": {
+        "definitionVersion": 2,
+        "id": "rings",
+        "label": "rings1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 8,
+          "phase": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0.14
+            },
+            {
+              "color": [
+                0.075,
+                0.08,
+                0.095,
+                1
+              ],
+              "position": 0.56
+            },
+            {
+              "color": [
+                0.28,
+                0.3,
+                0.36,
+                1
+              ],
+              "position": 0.83
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0.97
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "radial"
+        },
+        "position": {
+          "x": 320,
+          "y": 1120
+        },
+        "type": "ramp"
+      },
       "sbase": {
         "definitionVersion": 1,
         "id": "sbase",
@@ -1342,6 +1808,17 @@
         },
         "type": "level"
       },
+      "show": {
+        "definitionVersion": 1,
+        "id": "show",
+        "label": "show1",
+        "parameters": {},
+        "position": {
+          "x": 1880,
+          "y": 1120
+        },
+        "type": "add"
+      },
       "snap": {
         "definitionVersion": 1,
         "id": "snap",
@@ -1367,6 +1844,19 @@
           "y": 460
         },
         "type": "valueSwitch"
+      },
+      "sow": {
+        "definitionVersion": 1,
+        "id": "sow",
+        "label": "sow1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -700,
+          "y": -400
+        },
+        "type": "multiply"
       },
       "spark": {
         "definitionVersion": 1,
@@ -1394,6 +1884,19 @@
           "y": -400
         },
         "type": "noise"
+      },
+      "stamp": {
+        "definitionVersion": 1,
+        "id": "stamp",
+        "label": "stamp1",
+        "parameters": {
+          "opacity": 0.32
+        },
+        "position": {
+          "x": 580,
+          "y": 1120
+        },
+        "type": "add"
       },
       "state": {
         "definitionVersion": 1,
@@ -1446,7 +1949,7 @@
           "scale": 1
         },
         "position": {
-          "x": 1360,
+          "x": 2920,
           "y": 760
         },
         "type": "cache"
@@ -1461,7 +1964,7 @@
           "scale": 1
         },
         "position": {
-          "x": 1360,
+          "x": 2920,
           "y": 500
         },
         "type": "cache"
@@ -1476,7 +1979,7 @@
           "scale": 1
         },
         "position": {
-          "x": 1360,
+          "x": 2920,
           "y": 240
         },
         "type": "cache"
@@ -1610,7 +2113,7 @@
           }
         },
         "position": {
-          "x": 580,
+          "x": 2140,
           "y": 380
         },
         "type": "displace"
@@ -1655,7 +2158,7 @@
           }
         },
         "position": {
-          "x": 840,
+          "x": 2400,
           "y": 380
         },
         "type": "displace"
@@ -1667,8 +2170,8 @@
         "parameters": {
           "extend": "mirror",
           "offset": [
-            0.5,
-            0.5
+            0,
+            0
           ],
           "sourcex": "red",
           "sourcey": "green",
@@ -1680,7 +2183,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.009
+                "value": 0.011
               }
             },
             "mode": "driven"
@@ -1693,14 +2196,14 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.009
+                "value": 0.011
               }
             },
             "mode": "driven"
           }
         },
         "position": {
-          "x": 1100,
+          "x": 2660,
           "y": 380
         },
         "type": "displace"
@@ -1774,6 +2277,34 @@
           "y": 120
         },
         "type": "transform"
+      },
+      "xgain": {
+        "definitionVersion": 1,
+        "id": "xgain",
+        "label": "xgain1",
+        "parameters": {
+          "operand": 0.017,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 2300
+        },
+        "type": "valueMath"
+      },
+      "xspeed": {
+        "definitionVersion": 1,
+        "id": "xspeed",
+        "label": "xspeed1",
+        "parameters": {
+          "operand": 1.012,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 2300
+        },
+        "type": "valueMath"
       }
     },
     "revision": 1
