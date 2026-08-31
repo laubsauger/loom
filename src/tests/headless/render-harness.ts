@@ -14,6 +14,7 @@ import { createUniformAnimator } from "../../app/animate-parameters.ts";
 import type { AudioFeatures } from "../../domain/types/frame.ts";
 import type { FeatureTrackRecorder } from "../../domain/audio/feature-track.ts";
 import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
+import { analyzeChannelEntries, createAnalyzeChannels } from "../../runtime/execution/analyze-channels.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
 import { createPointerSource } from "../../runtime/execution/pointer.ts";
@@ -295,6 +296,43 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     };
     request.beforeFrames?.(control);
 
+    /**
+     * T655 — THE ANALYZE SEAM. The fourth reader-that-cannot-see in this file's own
+     * history (T630: compiler warnings unreturned; T633: the oracle with no channel
+     * resolver; T650: no media sources): the app has fed analyze readbacks into driven
+     * parameters since T236, and this harness never built the channel store — so every
+     * offline render of an analyze-driven document ran on fallbacks and reported green.
+     *
+     * Wired only under `animate` (the only consumer of channels here — a static render
+     * must not pay readbacks it cannot read, and `result.readbacks` is asserted by §V7
+     * gates). The seam samples between frames exactly where the app does, then AWAITS
+     * the readbacks it issued — the live path lets them land whenever they land, but a
+     * deterministic render must not race its own copies (§V44/§V45). §V144's shape
+     * survives intact: frame N's value becomes visible to frame N+1, never to frame N,
+     * so the one-frame latency is assertable offline instead of merely believed.
+     */
+    const analyzeEntries =
+      request.animate === true
+        ? (() => {
+            const allocated = new Set(plan.resources.map((resource) => resource.id));
+            return analyzeChannelEntries(logicalGraph, registry()).filter((entry) =>
+              allocated.has(entry.resourceId),
+            );
+          })()
+        : [];
+    const pendingReadbacks: Array<Promise<unknown>> = [];
+    const analyze =
+      analyzeEntries.length === 0
+        ? null
+        : createAnalyzeChannels({
+            readBuffer: (resourceId) => {
+              const read = backend.readBuffer(resourceId);
+              pendingReadbacks.push(read.catch(() => undefined));
+              return read;
+            },
+          });
+    analyze?.track(analyzeEntries);
+
     const valueSession = request.animate === true ? createValueGraphSession(registry()) : null;
     const animator = request.animate === true ? createUniformAnimator() : null;
     // One closure serves both directions, so a render can replay a track and record what
@@ -333,6 +371,17 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
               // node inside a component evaluates here exactly as it does live.
               const evaluated = valueSession.evaluate(logicalGraph, inputs.frame, {
                 ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
+                // T655/T654: analyze readbacks enter the value graph here — the same
+                // extras.channels seam `useValueGraph` threads live, number-narrowed
+                // the same way.
+                ...(analyze === null
+                  ? {}
+                  : {
+                      channels: (name: string): number | undefined => {
+                        const value = analyze.resolver(name, { frame: inputs.frame } as never);
+                        return typeof value === "number" ? value : undefined;
+                      },
+                    }),
               });
               const next = compileGraph({
                 graph: request.graph,
@@ -340,7 +389,15 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
                 registry: registry(),
                 capabilities,
                 ...(flattened === undefined ? {} : { flattened }),
-                resolution: { frame: inputs.frame, channels: evaluated.resolver },
+                resolution: {
+                  frame: inputs.frame,
+                  // Analyze FIRST, exactly as the app merges its resolvers: a measured
+                  // channel outranks a value-graph channel of the same name.
+                  channels:
+                    analyze === null
+                      ? evaluated.resolver
+                      : (name, context) => analyze.resolver(name, context) ?? evaluated.resolver(name, context),
+                },
               });
               animator.push(backend, plan, next);
             },
@@ -353,6 +410,13 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     for (let index = 0; index < frameCount; index += 1) {
       steppingFrame = index;
       driver.step();
+      if (analyze !== null) {
+        // Between frames, §V48's sanctioned window — then settle every copy this call
+        // issued before the next step, so the value frame N+1 reads is frame N's
+        // reduction by construction, not by luck.
+        analyze.sample(index);
+        await Promise.all(pendingReadbacks.splice(0));
+      }
       if (wanted.has(index)) {
         // §V48/§V7: readback happens between frames, never inside the loop, which is why
         // `step()` exists as a separate entry point at all.
