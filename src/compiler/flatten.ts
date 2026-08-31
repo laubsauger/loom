@@ -9,6 +9,7 @@ import type { GraphDocument, GraphEdge, GraphNode } from "../domain/types/graph.
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { ParameterSchema, ParameterValue, StoredParameter } from "../domain/types/parameters.ts";
 import { renumberedName, rewriteNodeNameReferences } from "../domain/graph/names.ts";
+import { isPreviewablePortKind } from "../domain/graph/previewable.ts";
 import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.ts";
 import { storedValues } from "../domain/parameters/stored-values.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -456,9 +457,25 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
       // preview of what it produced — otherwise §V25 prunes the whole component away.
       // The pin, not the switch (T353, §V297): the switch is default-on and would make
       // every instance an unconditional sink.
+      //
+      // T609: the first PREVIEWABLE exposed output, not the first output. Post-T607 the
+      // sockets derive from boundary nodes in graph order, so an `event` or `camera`
+      // socket can land first by accident of layout — and a sink naming a port with no
+      // picture materializes nothing. The kind lives on the INNER node's own declared
+      // port (the endpoint's node is already in the flat `nodes` map), judged by the one
+      // shared previewability list (§V437). No previewable output, no sink: a pin on a
+      // component with nothing drawable previews nothing, exactly like the node itself
+      // would.
       if (node.ui?.previewPinned === true) {
-        const first = [...child.outputs.values()][0];
-        if (first !== undefined) sinks.push({ nodeId: first.nodeId, portId: first.portId, kind: "preview" });
+        const drawable = [...child.outputs.values()].find((endpoint) => {
+          const inner = nodes[endpoint.nodeId];
+          const declared =
+            inner === undefined
+              ? undefined
+              : request.registry.get(inner.type)?.outputs.find((port) => port.id === endpoint.portId);
+          return declared !== undefined && isPreviewablePortKind(declared.type.kind);
+        });
+        if (drawable !== undefined) sinks.push({ nodeId: drawable.nodeId, portId: drawable.portId, kind: "preview" });
       }
     }
 

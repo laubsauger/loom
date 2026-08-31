@@ -449,3 +449,46 @@ describe("a component that is not installed (§V10)", () => {
     expect(compiled.order).toContain("out");
   });
 });
+
+describe("a pinned instance previews its first PREVIEWABLE output (T609)", () => {
+  // Post-T607 the sockets derive from boundary nodes in graph order, so a value or
+  // event socket can land first by accident of layout. The pin's sink must skip it:
+  // a sink naming a port with no picture materializes nothing, and §V25 then prunes
+  // the very component the pin was meant to keep alive.
+  const meter = (): GraphComponentDefinition => ({
+    componentId: "meter" as ComponentId,
+    version: 1,
+    name: "Meter",
+    graph: graphOf([
+      testNode("sig", "lfo", { parameters: { shape: "sine", frequency: 1 } }),
+      testNode("pic", "solid", {}),
+    ]),
+    inputs: [],
+    outputs: [
+      // The accident under test, made explicit: the VALUE socket is first.
+      { externalId: "level", label: "Level", nodeId: "sig" as never, portId: "out" },
+      { externalId: "picture", label: "Picture", nodeId: "pic" as never, portId: "out" },
+    ],
+    parameters: [],
+  });
+
+  it("skips the leading value socket and sinks the texture behind the second", async () => {
+    const { allNodeDefinitions } = await import("../nodes/definitions/index.ts");
+    const { createNodeRegistry } = await import("../nodes/registry/registry.ts");
+    const real = createNodeRegistry(allNodeDefinitions);
+    const system = createComponentSystem(real, [meter()]);
+    const compiled = compileGraph({
+      graph: graphOf([instance("c1", "meter" as ComponentId, 1, { ui: { previewPinned: true } })]),
+      settings: testSettings(),
+      registry: system.nodes,
+      capabilities: testCapabilities(),
+      components: system.components.view(),
+    });
+
+    // The pin kept the component alive THROUGH the drawable output: the inner solid
+    // materialized and renders. Under the kind-blind pick the sink named "c1/sig:out"
+    // — a value port — nothing materialized, and the whole instance pruned away.
+    expect(compiled.resources.map((resource) => resource.id)).toContain("target:c1/pic:out");
+    expect(compiled.outputs.some((output) => output.nodeId === ("c1/pic" as never))).toBe(true);
+  });
+});
