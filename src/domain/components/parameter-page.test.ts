@@ -174,6 +174,32 @@ describe("`component.reorderParameter` on a session bus (T423, §V29)", () => {
     session.dispose();
   });
 
+  it("refuses an INCOMPLETE publish rather than throwing (B60's shape, third instance)", async () => {
+    const harness = createComponentHarness("cmd4");
+    harness.components.register(bloomComponent("bloom", 1, []));
+    const session = openComponentSession({
+      components: harness.components,
+      nodes: harness.nodes,
+      componentId: "bloom",
+      version: 1,
+    });
+
+    // Exactly what the parameter context menu's "Publish to component" row resolves:
+    // `parameterRef` gives a TARGET, not a publish. Before the guard this threw
+    // "Cannot read properties of undefined (reading 'map')" on the click.
+    const result = await session.bus.execute(
+      "component.publishParameter",
+      { nodeId: "blurA", parameterKey: "radius" } as never,
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "component.parameter.incomplete",
+    );
+    expect(harness.components.get("bloom", 1)?.parameters).toEqual([]);
+    session.dispose();
+  });
+
   it("refuses outside a component: the root bus has no page to reorder", async () => {
     const harness = createComponentHarness("cmd3");
     harness.components.register(bloomComponent("bloom", 1, [blurKnob]));

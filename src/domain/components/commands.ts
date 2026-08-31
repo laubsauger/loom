@@ -787,6 +787,32 @@ export function registerComponentCommands(bus: ShaderloomBus, options: Component
         diagnostics.push(NOT_INSIDE);
         return editOutcome(revision, false, host, diagnostics);
       }
+      /*
+       * A COMPLETE publish request, or a named refusal (§V288, B60's shape).
+       *
+       * Found by probing the row that names this command: the parameter context menu's
+       * "Publish to component" resolves `{ nodeId, parameterKey }` through `parameterRef`
+       * — a target, not a publish — and the handler THREW `Cannot read properties of
+       * undefined (reading 'map')` on the click. That is B60 a third time: a menu row
+       * naming a command whose input no menu route can supply. The row is the menus'
+       * track to fix; a handler that crashes on a malformed call is this one's, and the
+       * guard covers the agent and every future caller too, not just that row.
+       */
+      if (
+        typeof input.key !== "string" ||
+        input.key === "" ||
+        input.definition === undefined ||
+        !Array.isArray(input.targets)
+      ) {
+        diagnostics.push(
+          error(
+            "component.parameter.incomplete",
+            "Publishing needs a page key, a re-authored parameter definition and the internal targets it drives.",
+            "Publish from the component's parameter page, which supplies all three (§V80).",
+          ),
+        );
+        return editOutcome(revision, false, host, diagnostics);
+      }
       const next = withPublishedParameter(definition, {
         key: input.key,
         definition: input.definition,
