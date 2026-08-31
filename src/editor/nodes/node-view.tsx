@@ -29,6 +29,7 @@ import { previewablePort } from "@domain/graph/previewable.ts";
 import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
+import { nodeFamilyOf } from "./node-family.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
 import type {
@@ -279,6 +280,12 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
         }
         data-bypassed={bypassed}
         data-muted={muted}
+        // T712: the node's type FAMILY, from its own primary output port kind, driving a
+        // very subtle body wash so 3D, point, texture and value nodes read apart at a
+        // glance. Undefined for a node with no outputs — a sink produces no payload, so
+        // it claims no family and keeps the plain surface. Pure CSS off this attribute;
+        // the mapping is `node-family.ts` and the bounds are gated with the tokens.
+        data-family={nodeFamilyOf(definition) ?? undefined}
         // §V117 — a resized node fills the box it was dragged to, and the PREVIEW is
         // what absorbs the extra room (the CSS beside this). That is the whole point of
         // the gesture: "the node got bigger" means "I can see the image better".

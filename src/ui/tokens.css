@@ -88,6 +88,41 @@
   --shadow-raise: 0 8px 24px rgba(0, 0, 0, 0.55);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 
+  /* ---- node type-family tints (T712) ---------------------------------
+     A VERY SUBTLE body wash so 3D, point, texture and value nodes can be told
+     apart at a glance. The owner asked for it twice in the same words — "a very
+     very subtle hint of different background color" — and both halves of that
+     are gated in `node-family.test.ts` rather than left to taste.
+
+     THE TECHNIQUE IS HUE AT CONSTANT LUMINANCE. Every tint below sits at the
+     lightness of --bg-raise, the node surface it replaces, and differs from it
+     only in chroma: measured drift is at most 0.14 L*. A brightness difference
+     would have made some families read as nearer or more important than others,
+     which is a lie — these are peers, and equal-L hue is the only honest way to
+     say so.
+
+     Laid out as five directions around --bg-raise in the a/b plane, evenly
+     spread and each pointed at the hue its port family already uses (§V26), so
+     the tint reinforces the port colour instead of introducing a second code: a
+     texture node leans teal, a pointset blue, a buffer violet.
+
+     Bounded BOTH ways, because one bound alone fails in a way this project has
+     already lived through:
+       - at least 5 L*-units of chroma between any two families, or the whole
+         thing is invisible and becomes §T664 (a control made so quiet nobody
+         could find it). Measured minimum: 6.67.
+       - at most 9 from the node surface, or it stops being a hint and starts
+         being decoration (§V90). Measured maximum: 6.37.
+
+     The tint paints the node BODY only. The status dot, the component top edge
+     (T639), the selection ring and the error border all carry meaning in colour
+     already and sit ON TOP of this — it must never be raised to compete. */
+  --family-texture: #162c37;
+  --family-points: #182a3f;
+  --family-spatial: #242a2f;
+  --family-value: #2e2632;
+  --family-data: #29273c;
+
   /* ---- port family colors (§C, V26) ---------------------------------
      Semantic, not decorative: hue encodes PortType.kind, and V26 makes the
      edge hue the source port's family color. Var name matches the union

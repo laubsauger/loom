@@ -1,6 +1,12 @@
 /*
- * Node chrome. Dense, quiet, and entirely token-driven (§V17): the only hues on a node
- * are the status dot and the port dots, and both of them mean something.
+ * Node chrome. Dense, quiet, and entirely token-driven (§V17): every hue on a node MEANS
+ * something — the status dot, the port dots, and (T712) the body's type-family tint.
+ *
+ * The tint was added to that list deliberately and is the quietest of the three by a wide
+ * margin: it is a wash at the node surface's own lightness, differing only in chroma, so a
+ * texture node and a 3D node read apart at a glance without either looking brighter or
+ * more important than the other. It sits UNDER everything above — the status edge, the
+ * dot, the selection ring, the error border — and must stay there.
  */
 
 .node {
@@ -12,7 +18,7 @@
   width: var(--node-width);
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
-  background: var(--bg-raise);
+  /* The fill is --node-surface, set just below so the family tint can move it. */
   box-shadow: var(--shadow-raise);
   color: var(--text);
   font-family: var(--font-ui);
@@ -24,6 +30,44 @@
 
 .node:hover {
   border-color: var(--line-hot);
+}
+
+/*
+ * T712 — the type-family tint, on the BODY and nothing else.
+ *
+ * `--node-surface` is the indirection rather than a direct `background` override, because
+ * two other rules below paint the same surface (the error card, and the resized preview's
+ * backdrop) and they must follow the family too — a node whose body is tinted and whose
+ * inner card is not looks broken rather than subtle.
+ *
+ * A node with no outputs sets no attribute and keeps --bg-raise: it produces no payload,
+ * so there is no family it could honestly claim. The families and the mapping that decides
+ * them live in `node-family.ts`; the values are in `tokens.css` with their bounds.
+ */
+.node {
+  --node-surface: var(--bg-raise);
+
+  background: var(--node-surface);
+}
+
+.node[data-family="texture"] {
+  --node-surface: var(--family-texture);
+}
+
+.node[data-family="points"] {
+  --node-surface: var(--family-points);
+}
+
+.node[data-family="spatial"] {
+  --node-surface: var(--family-spatial);
+}
+
+.node[data-family="value"] {
+  --node-surface: var(--family-value);
+}
+
+.node[data-family="data"] {
+  --node-surface: var(--family-data);
 }
 
 /*
@@ -220,7 +264,10 @@
   padding: var(--space-1) var(--space-2);
   border: var(--hairline) solid var(--error);
   border-radius: var(--radius);
-  background: var(--bg-raise);
+  /* T712: follows the family, so an error card on a tinted node does not read as a
+     patch of a different node laid over it. The ERROR hue is the border and the text,
+     untouched — the tint stays under the carrier that means something. */
+  background: var(--node-surface, var(--bg-raise));
   box-shadow: var(--shadow-raise);
   color: var(--error);
   font-size: var(--fs-micro);
