@@ -62,7 +62,7 @@ describe("examples: the gate", () => {
       "E6-Displacement-Stack.loom.json",
       "E7-LFO-Dissolve.loom.json",
       "E8-Slit-Scan.loom.json",
-      "E9-Particle-Fountain.loom.json",
+      "E9-Ember.loom.json",
     ]);
   });
 });

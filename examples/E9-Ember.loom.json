@@ -1,0 +1,410 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-ash-out": {
+        "id": "e-ash-out",
+        "source": {
+          "nodeId": "ash",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-bed-stack": {
+        "id": "e-bed-stack",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stack",
+          "portId": "in1"
+        }
+      },
+      "e-body-stack": {
+        "id": "e-body-stack",
+        "order": 0,
+        "source": {
+          "nodeId": "body",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stack",
+          "portId": "in2"
+        }
+      },
+      "e-burn-mix": {
+        "id": "e-burn-mix",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in1"
+        }
+      },
+      "e-fuse-burn": {
+        "id": "e-fuse-burn",
+        "source": {
+          "nodeId": "fuse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-fuse-halo": {
+        "id": "e-fuse-halo",
+        "source": {
+          "nodeId": "fuse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-halo-halolvl": {
+        "id": "e-halo-halolvl",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haloLvl",
+          "portId": "input"
+        }
+      },
+      "e-halolvl-burn": {
+        "id": "e-halolvl-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "haloLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-loop-mix": {
+        "id": "e-loop-mix",
+        "order": 0,
+        "source": {
+          "nodeId": "loop",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-mix-ash": {
+        "id": "e-mix-ash",
+        "source": {
+          "nodeId": "mix",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ash",
+          "portId": "in"
+        }
+      },
+      "e-sim-bed": {
+        "id": "e-sim-bed",
+        "source": {
+          "nodeId": "sim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "points"
+        }
+      },
+      "e-sim-body": {
+        "id": "e-sim-body",
+        "source": {
+          "nodeId": "sim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "body",
+          "portId": "points"
+        }
+      },
+      "e-sim-spark": {
+        "id": "e-sim-spark",
+        "source": {
+          "nodeId": "sim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spark",
+          "portId": "points"
+        }
+      },
+      "e-spark-fuse": {
+        "id": "e-spark-fuse",
+        "order": 0,
+        "source": {
+          "nodeId": "spark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fuse",
+          "portId": "in2"
+        }
+      },
+      "e-stack-fuse": {
+        "id": "e-stack-fuse",
+        "source": {
+          "nodeId": "stack",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fuse",
+          "portId": "in1"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "ash": {
+        "definitionVersion": 1,
+        "id": "ash",
+        "label": "ash1",
+        "parameters": {},
+        "position": {
+          "x": 1440,
+          "y": 0
+        },
+        "type": "null"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.11,
+            0.17,
+            0.3,
+            1
+          ],
+          "count": 16384,
+          "group": "p.velocity.z < 0.34",
+          "sizePixels": 3
+        },
+        "position": {
+          "x": -560,
+          "y": -280
+        },
+        "type": "renderPoints"
+      },
+      "body": {
+        "definitionVersion": 1,
+        "id": "body",
+        "label": "body1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            1,
+            0.42,
+            0.08,
+            1
+          ],
+          "count": 16384,
+          "group": "p.velocity.z > 0.22",
+          "sizePixels": 2
+        },
+        "position": {
+          "x": -560,
+          "y": 0
+        },
+        "type": "renderPoints"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 880,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "fuse": {
+        "definitionVersion": 1,
+        "id": "fuse",
+        "label": "fuse1",
+        "parameters": {},
+        "position": {
+          "x": 40,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 30
+        },
+        "position": {
+          "x": 320,
+          "y": -280
+        },
+        "type": "blur"
+      },
+      "haloLvl": {
+        "definitionVersion": 1,
+        "id": "haloLvl",
+        "label": "halolvl1",
+        "parameters": {
+          "blacklevel": 0.01,
+          "brightness": 1.4,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 600,
+          "y": -280
+        },
+        "type": "level"
+      },
+      "loop": {
+        "definitionVersion": 1,
+        "id": "loop",
+        "label": "loop1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": 0.62,
+          "reset": false,
+          "source": "ash1",
+          "substeps": 1
+        },
+        "position": {
+          "x": 880,
+          "y": 280
+        },
+        "type": "feedback"
+      },
+      "mix": {
+        "definitionVersion": 1,
+        "id": "mix",
+        "label": "mix1",
+        "parameters": {},
+        "position": {
+          "x": 1160,
+          "y": 0
+        },
+        "type": "screen"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1720,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "sim": {
+        "definitionVersion": 1,
+        "id": "sim",
+        "label": "fire1",
+        "parameters": {
+          "attributes": "",
+          "capacity": 16384,
+          "group": "",
+          "kernel": "const VENTS: u32 = 16u;\n/* The WARM START's size: near steady state, so frame 0 is the fire already burning\n   rather than an empty frame filling up. A gallery thumbnail is frame 0 (T535). */\nconst SEEDED: u32 = 7000u;\nconst TAU: f32 = 6.28318530717958647692;\n\n/** The DRAUGHT, as a stream function: three moving terms at three scales. What the\n    embers actually feel is its CURL, below — and the curl of any scalar field is\n    divergence-free by construction, so this can shear the plume, fold it and shed\n    eddies off it, and can never squeeze it into a knot. */\nfn draught(pos: vec2f, t: f32) -> f32 {\n  let broad = sin(pos.x * 3.1 + t * 0.61) * cos(pos.y * 2.3 - t * 0.44);\n  let mid = sin((pos.x + pos.y * 1.3) * 5.7 - t * 0.83) * 0.42;\n  let fine = cos(pos.x * 8.3 - t * 1.17) * sin(pos.y * 7.1 + t * 0.93) * 0.17;\n  return broad + mid + fine;\n}\n\nfn curl(pos: vec2f, t: f32) -> vec2f {\n  let e = 0.04;\n  let dx = draught(pos + vec2f(e, 0.0), t) - draught(pos - vec2f(e, 0.0), t);\n  let dy = draught(pos + vec2f(0.0, e), t) - draught(pos - vec2f(0.0, e), t);\n  return vec2f(dy, -dx) / (2.0 * e);\n}\n\n/** Everything an ember feels except the pointer, as ACCELERATION. One function because\n    it is integrated in two places: once per frame below, and once more as the warm\n    start's pre-roll — and a warm start computed by different arithmetic from the\n    simulation is a warm start that opens on a picture the piece never shows. */\nfn forces(pos: vec2f, vel: vec2f, heat: f32, t: f32) -> vec2f {\n  /* Scaled by heat: cold ash drifts where hot gas whips. */\n  let swirl = curl(pos, t) * (0.30 + 0.70 * heat) * 0.34;\n  /* Buoyancy IS heat, which is why the column leans over and comes apart near the top\n     rather than leaving the frame as a bar: an ember stops rising when it stops being\n     hot. */\n  let lift = vec2f(0.0, 1.55 * heat);\n  /* At the vents this is a BED, not a spray — a weak inward pull that has faded out by\n     a quarter of the way up, so the spreading higher up reads as spreading. */\n  let gather = vec2f(-pos.x * 0.9 * (1.0 - smoothstep(-0.87, -0.45, pos.y)), 0.0);\n  /* Drag. Embers are ACCELERATED by the draught, never teleported along it, so the\n     picture is the field INTEGRATED through inertia — which is the whole of §V427:\n     noise is smooth at every scale and a simulation is not. */\n  return swirl + lift + gather - vel * 1.55;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* THE SEEDING GUARD — `ctx.firstRun`, and the whole of T510/T579 is in that choice.\n     (The glue passes around this kernel have NOT been converted — see the note above the\n     document. This guard is right; the machinery it sits in is not, yet.)\n     It means \"my storage was just created or cleared\" and NOTHING else. The number it\n     replaced, ctx dot frameIndex equals zero, meant that AND \"the timeline lapped to the\n     in point\", and one token carrying two meanings is why the owner's fountain restarted\n     at every loop (§V495): a lap KEEPS its buffers, so a simulation must survive it,\n     while a seek and a document load CLEAR them and it must not. The absolute frame\n     counter is no better from the other side — it counts straight through a seek, so on\n     it the fire would never be rebuilt at all. (§V507: this is computed per dispatch from\n     fresh allocations plus pending buffer clears, and use-detected — a kernel that does\n     not name it emits byte-identical WGSL, §V309.) */\n  if (ctx.firstRun == 1u) {\n    /* Identity is the SLOT, once and only here. From now on a point IS its id: compaction\n       moves survivors down the buffer every frame and nothing may depend on where they\n       land (§V73). */\n    q.id = ctx.index;\n    q.spawnCount = 0u;\n    if (ctx.index >= VENTS) {\n      if (ctx.index >= SEEDED) {\n        q.alive = 0u; /* headroom for births */\n        return q;\n      }\n      /* THE WARM START, and it is not a scatter. Each ember is given the same BIRTH the\n         spawn hook gives one, and then the same integration is RUN FORWARD by its own\n         age — so frame 0 is a state this simulation genuinely reaches, filaments and\n         negative space and all, instead of a cloud of confetti the first second has to\n         clear away. A gallery thumbnail is frame 0 (T535), and the first thing anyone\n         sees of a file is its card.\n\n         The age is a uniform fraction of the ember's OWN lifetime, which is the age\n         distribution a constant birth rate actually produces — so the seeded generation\n         is not merely plausible, it is correctly proportioned, and it dies off on\n         exactly the schedule a born one does. Within about four seconds nothing seeded\n         here is still alive and everything on screen was born. */\n      let lean = pointRand(ctx.index, 1u) - 0.5;\n      let rise = pointRand(ctx.index, 2u);\n      let hot = pointRand(ctx.index, 3u);\n      let vent = pointRand(ctx.index, 12u);\n      let cool = 0.45 + pointRand(ctx.index, 4u) * 1.15;\n      let age = pointRand(ctx.index, 11u) * (3.3 / cool);\n      var sp = vec2f(-0.84 + vent * 1.68 + lean * 0.1, -0.87 + rise * 0.05);\n      var sv = vec2f(lean * 0.6, 0.26 + rise * 0.5);\n      var sh = 0.84 + hot * 0.16;\n      /* Bounded so a long-lived ember cannot cost 150 iterations; the step stays well\n         inside the drag's stability limit (2/1.55) either way. */\n      let steps = min(u32(age * 24.0) + 1u, 96u);\n      let sdt = age / f32(steps);\n      for (var step = 0u; step < steps; step = step + 1u) {\n        sh = sh * exp(-cool * sdt);\n        sv = sv + forces(sp, sv, sh, ctx.absTime) * sdt;\n        sp = sp + sv * sdt;\n      }\n      q.position = vec3f(sp, 0.0);\n      q.velocity = vec3f(sv, sh);\n      return q;\n    }\n  }\n\n  if (q.id < VENTS) {\n    /* A VENT. Pinned, immortal, and the only thing in the file that spawns. Each one\n       BREATHES at its own rate and phase off the free-running clock (§V436), so the fire\n       flares along its length instead of pulsing as one bar — which is the difference\n       between a fire and a row of jets. */\n    let seat = f32(q.id) / f32(VENTS - 1u);\n    q.position = vec3f(-0.84 + seat * 1.68, -0.87, 0.0);\n    q.velocity = vec3f(0.0, 0.0, 0.0);\n    let rate = 0.5 + pointRand(q.id, 7u) * 0.95;\n    let flare = 0.5 + 0.5 * sin(ctx.absTime * rate + pointRand(q.id, 8u) * TAU);\n    q.spawnCount = 1u + u32(flare * 2.99);\n    return q;\n  }\n\n  /* AN EMBER. Heat rides in `velocity.z` — the simulation is 2D so the component is\n     free, and a fifth attribute would bust the 8-storage-buffer budget outright. It is\n     also what the three draws select on (§V471.2). */\n  var heat = q.velocity.z;\n  /* Per-ember cooling rate, deterministic per id (§V73): identical lifetimes would make\n     the plume a moving edge. Death is at 0.03, so a life is 2.1s to 7.5s — and the SPREAD is what\n     puts tongues of still-hot gas high in the frame instead of a level band. */\n  heat = heat * exp(-(0.45 + pointRand(q.id, 4u) * 1.15) * ctx.delta);\n\n  let pos = q.position.xy;\n  var vel = q.velocity.xy;\n\n  /* T367: the GUST. `ctx.pointer` is the same four numbers the value graph's Mouse node\n     publishes and every fragment shader reads (§V182) — viewer-normalised, v DOWN\n     (§V236) — and the one conversion into this graph's clip space is written HERE,\n     because a kernel cannot see how it will be viewed. Gaussian, not a cutoff radius: a\n     hard edge reads as a bug and a fading shove reads as air. */\n  let cursor = vec2f(ctx.pointer.x * 2.0 - 1.0, 1.0 - ctx.pointer.y * 2.0);\n  let away = pos - cursor;\n  let reach = max(length(away), 0.0001);\n  let gust = (away / reach) * (8.0 * exp(-(reach * reach) / 0.055));\n\n  vel = vel + (forces(pos, vel, heat, ctx.absTime) + gust) * ctx.delta;\n  q.velocity = vec3f(vel, heat);\n  q.position = vec3f(pos + vel * ctx.delta, 0.0);\n\n  if (heat < 0.03 || q.position.y > 1.14 || abs(q.position.x) > 1.4) {\n    q.alive = 0u;\n  }\n  return q;\n}",
+          "seed": 13,
+          "spawn": "fn spawn(child: Point, ctx: PointCtx) -> Point {\n  var q = child;\n  /* The child arrives as a COPY OF ITS VENT, position included, so everything that makes\n     it an individual is drawn here from its own fresh id (§V73/§V74). Delete this hook\n     and every ember born in a frame is the same ember, launched from the same point at\n     the same speed with the same heat — twenty-four hard lines instead of a fire. */\n  let lean = pointRand(q.id, 1u) - 0.5;\n  let rise = pointRand(q.id, 2u);\n  let hot = pointRand(q.id, 3u);\n  q.position = q.position + vec3f(lean * 0.1, rise * 0.05, 0.0);\n  q.velocity = vec3f(lean * 0.6, 0.26 + rise * 0.5, 0.84 + hot * 0.16);\n  return q;\n}"
+        },
+        "position": {
+          "x": -900,
+          "y": 0
+        },
+        "type": "pointKernelAdvanced"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            1,
+            0.95,
+            0.84,
+            1
+          ],
+          "count": 16384,
+          "group": "p.velocity.z > 0.62",
+          "sizePixels": 1.4
+        },
+        "position": {
+          "x": -560,
+          "y": 280
+        },
+        "type": "renderPoints"
+      },
+      "stack": {
+        "definitionVersion": 1,
+        "id": "stack",
+        "label": "stack1",
+        "parameters": {},
+        "position": {
+          "x": -240,
+          "y": -140
+        },
+        "type": "add"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E9 Ember",
+  "projectId": "example-e9-ember",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 13,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

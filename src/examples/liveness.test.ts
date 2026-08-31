@@ -98,11 +98,11 @@ const LAST_CAPTURE = 180;
  *   E6  Displacement-Stack      0.28296   0.7293   0.7341
  *   E7  LFO-Dissolve            0.49997   0.3376   0.8388
  *   E8  Slit-Scan               0.11306   0.6484   0.3609
- *   E9  Particle-Fountain       0.02347   0.8995   0.9556
+ *   E9  Ember                   0.13639   1.0000   1.0000   <- T511, was Particle-Fountain
  *   E10 Instanced-Torus         0.01845   0.3710   0.3710
  *   E11 Gradient-Remap          0.11181   0.4466   0.4705
  *   E12 Fluid                   0.00000   0.0869   0.3868   <- declared, pointer-driven
- *   E13 Prism                   0.14107   1.0000   1.0000
+ *   E13 Prism                   0.19303   1.0000   1.0000   <- re-measured, see below
  *   E16 Murmuration             0.05786   0.8003   0.3596
  *   E20 Gooeyball               0.01405   0.5957   0.6980
  *   E24 Audio-RD                0.03971   0.5074   0.0000   <- declared, seeds from black
@@ -116,6 +116,14 @@ const LAST_CAPTURE = 180;
  *
  * And what the six T518 reworked ones measured BEFORE the rework: motion 0.00000 for E1,
  * E4, E5, E6 and E11; range 0.123 for E5 and 0.255 for E8; f0max 0.0000 for E8.
+ *
+ * TWO ROWS MOVED IN T511/T565, and only one of them because anything changed. E9's rework
+ * from a ballistic spray to a fire front took it from 0.02347 to 0.13639 and opened both
+ * its range and its first frame to 1.0. E13's 0.14107 was simply STALE — its row now reads
+ * 0.19303, and that is what HEAD measured too, before T565 touched the file. A table of
+ * measurements is documentation and rots like any other (§V421); this one is not asserted
+ * against, so nothing was red while it drifted. Worth knowing when reading a row as
+ * evidence.
  *
  * LIVENESS_FLOOR is 0.002. The gap it lives in is enormous and asymmetric: a genuinely
  * static plan reads EXACTLY zero (asserted below, so this is measured and not assumed),

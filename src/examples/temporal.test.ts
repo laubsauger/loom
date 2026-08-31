@@ -115,6 +115,12 @@ describe("examples with a temporal loop", () => {
       // T538: the owner's own file. Its loop closes on the FINAL output (§V471.5), so the
       // trails carry the graded colour rather than a ghost of the raw render.
       "E31-Corona.loom.json",
+      // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
+      // moving point reads as a moving point rather than a stipple — the loop's fourth
+      // use in the set, after a smear, a simulation and a zoom. Its persistence is a
+      // CONSTANT and nothing raises contrast inside it (§V481), and it closes on the
+      // final output (§V471.5) so what smears is the picture with its glow already on.
+      "E9-Ember.loom.json",
     ]);
   });
 });

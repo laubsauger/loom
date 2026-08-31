@@ -233,27 +233,17 @@ const DECLARED: Readonly<
       "ctx.absTime/ctx.absFrame as 'the clock that keeps growing across a timeline loop, " +
       "where ctx.time wraps'. Naming the wrapping clock is the whole value of the sentence.",
   },
-  "src/examples/documents.ts": {
-    kind: "timeline-anchored",
-    reads: 1,
-    reason:
-      "E9's fountain, and the source the shipped file is generated from — see the entry " +
-      "below, which is the same kernel after `buildExampleFiles()`.",
-  },
-  "examples/E9-Particle-Fountain.loom.json": {
-    kind: "timeline-anchored",
-    reads: 1,
-    reason:
-      "`if (ctx.frameIndex == 0u)` is the fountain's INITIALISATION guard, and it does not " +
-      "mean 'the show started' — it means 'my buffers were just cleared'. Those are the same " +
-      "event only on the timeline clock: a SEEK zeroes frameIndex and drops the point pairs " +
-      "together (§V170), while absFrame counts straight through it, so on ctx.absFrame every " +
-      "seek would leave a fountain in which no point was ever given an id and all of them " +
-      "believe they are the emitter. The cost is stated in the kernel rather than hidden: " +
-      "with an in point at frame 0 a lap DOES re-seed the population. The missing primitive " +
-      "is a ctx member meaning 'this buffer is fresh'; until there is one, this is the honest " +
-      "read, and it is the only wrapping clock read left in any shipped example.",
-  },
+  /*
+   * T579 — THE TWO E9 ENTRIES ARE GONE, and their absence is the point.
+   *
+   * They excused `if (ctx.frameIndex == 0u)` in the fountain's seeding guard, with the
+   * reason ending "the missing primitive is a ctx member meaning 'this buffer is fresh';
+   * until there is one, this is the honest read". T510 shipped that primitive and T579
+   * spent it: E9-Ember seeds on `ctx.firstRun == 1u`, so the read the excuse covered no
+   * longer exists and §V464(b) — the STALE half of the gate — is what deleted these.
+   * NO shipped example reads the wrapping clock any more; the three entries left are all
+   * node definitions, and two of them wrap on purpose.
+   */
 };
 
 const found = scan();
@@ -454,12 +444,16 @@ describe("T497 — the sites T497 moved are, and stay, on the absolute clock", (
   /**
    * §V309 — and the other half of it, which is the one that costs nothing to state and
    * everything to skip: a kernel that names NO absolute member must generate exactly what it
-   * generated before the member existed. E9's fountain and E20's goo are the witnesses,
-   * because neither was touched by T497 and both would have picked up a wider uniform block
-   * if the detection had become unconditional.
+   * generated before the member existed. The witnesses are kernels T497 never touched, which
+   * would have picked up a wider uniform block if the detection had become unconditional.
+   *
+   * E9 WAS one of the two, and T511/T579 spent it: E9-Ember's draught and its per-vent
+   * flare are free-running, so that kernel names `ctx.absTime` on purpose and can no longer
+   * witness the negative. E27-Relief's `lift` takes its place — a stateless point kernel
+   * with no clock read of any kind — so the property keeps two witnesses rather than one.
    */
   for (const [fileName, nodeId] of [
-    ["E9-Particle-Fountain.loom.json", "sim"],
+    ["E27-Relief.loom.json", "lift"],
     ["E20-Gooeyball.loom.json", "goo"],
   ] as const) {
     it(`${fileName} names no absolute member, so its block is unchanged (§V309)`, () => {
