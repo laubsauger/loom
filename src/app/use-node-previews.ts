@@ -152,10 +152,12 @@ export function previewCandidates(
     // synthesizes the target when this candidate becomes a preview sink, so the same
     // materialization dance texture nodes use (T252) covers point generators too.
     // T462 extends the same shape to scene payloads: a camera, light or material
-    // output previews as its payload in a stock scene. Keyed on the port KIND, so
-    // every present and future producer is a candidate by construction (§V316, §V319).
-    // Geometry ("scene" kind) deliberately absent: its shape is upstream's splat, its
-    // material is the material node's ball, and its pairing is its render's picture.
+    // output previews as its payload in a stock scene. Keyed on the port KIND through
+    // the ONE shared previewability list, so every present and future producer is a
+    // candidate by construction (§V316, §V319, §V437) — including geometry ("scene"
+    // kind), which T532 added there after this comment first claimed it was
+    // deliberately absent (T573): the geometry previews as itself, points worn as its
+    // own mode with its instancing and composed material overrides.
     const port = previewablePort(definition.outputs);
     if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true, on });
     else if (definition.sink === true && fed.has(nodeId)) {
