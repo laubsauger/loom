@@ -1,0 +1,620 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-both-burn": {
+        "id": "e-both-burn",
+        "source": {
+          "nodeId": "both",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-both-halo": {
+        "id": "e-both-halo",
+        "source": {
+          "nodeId": "both",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-burn-hue": {
+        "id": "e-burn-hue",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-cycle-shape": {
+        "id": "e-cycle-shape",
+        "source": {
+          "nodeId": "cycle",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "a"
+        }
+      },
+      "e-disc-ring": {
+        "id": "e-disc-ring",
+        "source": {
+          "nodeId": "disc",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in1"
+        }
+      },
+      "e-emblem-gather": {
+        "id": "e-emblem-gather",
+        "source": {
+          "nodeId": "emblem",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gather",
+          "portId": "field"
+        }
+      },
+      "e-gather-glyph": {
+        "id": "e-gather-glyph",
+        "source": {
+          "nodeId": "gather",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glyph",
+          "portId": "points"
+        }
+      },
+      "e-gather-haze": {
+        "id": "e-gather-haze",
+        "source": {
+          "nodeId": "gather",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haze",
+          "portId": "points"
+        }
+      },
+      "e-glyph-both": {
+        "id": "e-glyph-both",
+        "order": 0,
+        "source": {
+          "nodeId": "glyph",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "both",
+          "portId": "in2"
+        }
+      },
+      "e-grid-gather": {
+        "id": "e-grid-gather",
+        "source": {
+          "nodeId": "grid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gather",
+          "portId": "in"
+        }
+      },
+      "e-halo-halolvl": {
+        "id": "e-halo-halolvl",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haloLvl",
+          "portId": "input"
+        }
+      },
+      "e-halolvl-burn": {
+        "id": "e-halolvl-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "haloLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-haze-both": {
+        "id": "e-haze-both",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "both",
+          "portId": "in1"
+        }
+      },
+      "e-hole-ring": {
+        "id": "e-hole-ring",
+        "source": {
+          "nodeId": "hole",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in2"
+        }
+      },
+      "e-hue-out": {
+        "id": "e-hue-out",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-pip-emblem": {
+        "id": "e-pip-emblem",
+        "order": 0,
+        "source": {
+          "nodeId": "pip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "emblem",
+          "portId": "in2"
+        }
+      },
+      "e-ring-emblem": {
+        "id": "e-ring-emblem",
+        "source": {
+          "nodeId": "ring",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "emblem",
+          "portId": "in1"
+        }
+      },
+      "e-shape-hold": {
+        "id": "e-shape-hold",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hold",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "both": {
+        "definitionVersion": 1,
+        "id": "both",
+        "label": "both1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -180,
+          "y": 60
+        },
+        "type": "add"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 780,
+          "y": 60
+        },
+        "type": "add"
+      },
+      "cycle": {
+        "definitionVersion": 1,
+        "id": "cycle",
+        "label": "cycle1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.08,
+          "offset": 0.5,
+          "phase": 0.306,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1720,
+          "y": 420
+        },
+        "type": "lfo"
+      },
+      "disc": {
+        "definitionVersion": 1,
+        "id": "disc",
+        "label": "disc1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.3,
+            0.3
+          ],
+          "softness": 0.035
+        },
+        "position": {
+          "x": -1720,
+          "y": -260
+        },
+        "type": "circle"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 18,
+          "frequency": 0.041,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 780,
+          "y": 320
+        },
+        "type": "lfo"
+      },
+      "emblem": {
+        "definitionVersion": 1,
+        "id": "emblem",
+        "label": "emblem1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1120,
+          "y": -60
+        },
+        "type": "add"
+      },
+      "gather": {
+        "definitionVersion": 1,
+        "id": "gather",
+        "label": "gather1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"drift\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"vel\",\"type\":\"vec3f\",\"qualifier\":\"direction\",\"default\":[0,0,0]},{\"name\":\"mark\",\"type\":\"f32\",\"default\":[0]}]",
+          "capacity": 82944,
+          "group": "",
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/* The mark's spring, and the damping that lands it. 2*sqrt(GATHER) = 10.2 is critical, so\n   10.5 is a hair over — a member arrives at its cell and STOPS, with no ring of overshoot\n   travelling back out through the glyph. */\nconst GATHER: f32 = 26.0;\nconst DRAG: f32 = 10.5;\n\n/* How far a mote goes when the mark lets go, and how much shared weather rides on top.\n   Both are DISPLACEMENTS in clip units, so the scattered state is bounded by their sum. */\nconst SPREAD: f32 = 0.50;\nconst CURRENT: f32 = 0.09;\n\n/* Where the picture stops being background. The emblem is drawn with soft edges, so this\n   is a THRESHOLD WITH A WIDTH, not a step: a hard cut leaves the glyph's rim aliased into\n   the point population itself, which reads as a jagged edge no amount of blur downstream\n   can fix. */\nconst THRESHOLD: f32 = 0.42;\nconst THRESHOLD_WIDTH: f32 = 0.09;\n\n/* Just over one cell wide, so neighbouring cells' motes interleave. */\nconst CELL_JITTER: f32 = 0.011;\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T401: this is the UPSTREAM GRID's position pair, regenerated every frame, so it is\n     this mote's HOME CELL and not its own last frame. drift and vel are not in the grid's\n     schema, so they are this node's own state and persist (§V197). */\n  let home = p.position;\n  let id = ctx.index;\n\n  /* THE PICTURE DECIDES WHO BELONGS, and it is sampled at HOME - not at where the mote\n     currently is. That is the whole correctness argument of this file: membership is a\n     property of the CELL, so the same motes are the mark's for ever and the glyph that\n     re-forms is the glyph that came apart.\n\n     Sample at the live position (home + drift) instead and the mark's population CHANGES\n     HANDS: motes that wander in are captured and motes that wander out are dropped.\n     Measured on this document - 6528 members become 8302, with 3573 slots changing sides\n     across one cycle - while the look instrument's range reads 0.8953 for both, to four\n     decimal places. That is §V681 exactly: the damage is in the correspondence and no\n     still frame contains it. sigil.gpu.test.ts is what sees it. */\n  let picture = fieldAt(home);\n  let mark = smoothstep(THRESHOLD - THRESHOLD_WIDTH, THRESHOLD + THRESHOLD_WIDTH, max(picture.r, max(picture.g, picture.b)));\n  q.mark = mark;\n\n  /* ASSEMBLY: 0 lets go, 1 holds the mark. It arrives as ctx.value1 - an ordinary DRIVABLE\n     parameter on this node (T479) - so the cycle lives in the value graph, where it can be\n     seen, retimed and driven by something else, instead of being buried in this text where\n     only a recompile could reach it. */\n  let assembly = clamp(ctx.value1, 0.0, 1.0);\n\n  var drift = p.drift;\n  var vel = p.vel;\n  /* ctx.firstRun, not frameIndex == 0 (§V495/T510): a timeline lap KEEPS these buffers and\n     the cloud must survive it; a seek and a load clear them and it must not. */\n  if (ctx.firstRun == 1u) {\n    drift = vec3f(0.0);\n    vel = vec3f(0.0);\n  }\n\n  /* A FIXED sub-cell offset per mote, and it is not decoration: 320x180 cells land exactly\n     four pixels apart on a 1280x720 frame, so without it the assembled mark is a regular\n     LATTICE and reads as halftone dither rather than as a drawn shape. Fixed per mote, so\n     the stipple is the same every time the glyph re-forms - a jitter re-drawn each frame\n     would boil. */\n  let jitter = vec3f(pointRand(id, 17u) - 0.5, pointRand(id, 29u) - 0.5, 0.0) * CELL_JITTER;\n  let anchor = home + jitter;\n\n  /* WHERE THIS MOTE GOES WHEN THE MARK LETS GO. A bounded DISPLACEMENT, not a force —\n     and that distinction is the whole of the second build. A force that accumulates while\n     the spring is off does not scatter the glyph, it INFLATES it: members keep their\n     relative positions and drift outward together, so the mark balloons instead of coming\n     apart, and the shared term carries the whole population off the frame edges leaving\n     black corners. Measured, and visible in the frame that made this rewrite necessary.\n\n     A heading that is CONSTANT for this mote and different for every other one, so the\n     dispersal reads as a population coming apart rather than as a sheet being blown. */\n  let heading = pointRand(id, 5u) * TAU;\n  let loose = vec3f(cos(heading), sin(heading), 0.0) * (0.25 + 0.75 * pointRand(id, 9u)) * SPREAD;\n\n  /* One shared, MOVING current on top, so the scattered state has weather in it. It must\n     depend on TIME as well as on the cell: a rigid rotation about the origin gives every\n     mote an offset that never changes, and the haze reads as frozen grain. ctx.absTime, so\n     the current does not restart at a timeline lap (§V436). */\n  let t = ctx.absTime;\n  let current = vec3f(\n    sin(home.y * 2.70 + t * 0.50) - 0.40 * sin(home.x * 1.90 - t * 0.37),\n    sin(home.x * 2.30 - t * 0.44) + 0.40 * sin(home.y * 2.10 + t * 0.31),\n    0.0\n  ) * CURRENT;\n\n  /* THE MECHANISM, in one line: a mote's target is its own cell to the extent that the\n     PICTURE claims it and the cycle is holding, and its scattered place otherwise. The\n     mark is therefore drawn OUT OF the population rather than emitted from somewhere\n     else, and it is bounded by construction — nothing here can leave a ball of radius\n     SPREAD + CURRENT around its own cell, whatever the cycle does. */\n  /* Named rest and not target: target is a RESERVED KEYWORD in WGSL, and Dawn refuses\n     the whole module by name for it. */\n  let rest = (loose + current) * (1.0 - mark * assembly);\n\n  vel = vel + ((rest - drift) * GATHER - vel * DRAG) * ctx.delta;\n  drift = drift + vel * ctx.delta;\n\n  q.drift = drift;\n  q.vel = vel;\n  q.position = anchor + drift;\n  return q;\n}",
+          "seed": 38,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "hold1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -820,
+          "y": 60
+        },
+        "type": "pointKernel"
+      },
+      "glyph": {
+        "definitionVersion": 1,
+        "id": "glyph",
+        "label": "glyph1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            1,
+            0.74,
+            0.4,
+            1
+          ],
+          "count": 82944,
+          "group": "p.mark > 0.5",
+          "sizePixels": 1.7
+        },
+        "position": {
+          "x": -500,
+          "y": -60
+        },
+        "type": "renderPoints"
+      },
+      "grid": {
+        "definitionVersion": 1,
+        "id": "grid",
+        "label": "grid1",
+        "parameters": {
+          "cols": 384,
+          "count": 82944,
+          "rows": 216,
+          "sizeX": 2.4,
+          "sizeY": 2.4
+        },
+        "position": {
+          "x": -1420,
+          "y": 180
+        },
+        "type": "pointGrid"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 26
+        },
+        "position": {
+          "x": 140,
+          "y": 260
+        },
+        "type": "blur"
+      },
+      "haloLvl": {
+        "definitionVersion": 1,
+        "id": "haloLvl",
+        "label": "halolvl1",
+        "parameters": {
+          "blacklevel": 0.03,
+          "brightness": 0.9,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 460,
+          "y": 260
+        },
+        "type": "level"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.22,
+            0.38,
+            0.86,
+            1
+          ],
+          "count": 82944,
+          "group": "p.mark <= 0.5",
+          "sizePixels": 1.2
+        },
+        "position": {
+          "x": -500,
+          "y": 240
+        },
+        "type": "renderPoints"
+      },
+      "hold": {
+        "definitionVersion": 1,
+        "id": "hold",
+        "label": "hold1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1120,
+          "y": 420
+        },
+        "type": "valueLimit"
+      },
+      "hole": {
+        "definitionVersion": 1,
+        "id": "hole",
+        "label": "hole1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.185,
+            0.185
+          ],
+          "softness": 0.035
+        },
+        "position": {
+          "x": -1720,
+          "y": -60
+        },
+        "type": "circle"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.08,
+          "value": 1
+        },
+        "position": {
+          "x": 1100,
+          "y": 60
+        },
+        "type": "hsv"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1420,
+          "y": 60
+        },
+        "type": "output"
+      },
+      "pip": {
+        "definitionVersion": 1,
+        "id": "pip",
+        "label": "pip1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.072,
+            0.072
+          ],
+          "softness": 0.03
+        },
+        "position": {
+          "x": -1720,
+          "y": 140
+        },
+        "type": "circle"
+      },
+      "ring": {
+        "definitionVersion": 1,
+        "id": "ring",
+        "label": "ring1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1420,
+          "y": -160
+        },
+        "type": "difference"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "label": "shape1",
+        "parameters": {
+          "operand": 1.6,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1420,
+          "y": 420
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E38 Sigil",
+  "projectId": "example-e38-sigil",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 38,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

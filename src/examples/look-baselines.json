@@ -119,6 +119,11 @@
     "range": 0.4129,
     "f0max": 0.3781
   },
+  "E38-Sigil.loom.json": {
+    "motion": 0.04817,
+    "range": 0.8953,
+    "f0max": 1
+  },
   "E39-Rosette.loom.json": {
     "motion": 0.10256,
     "range": 0.9703,
