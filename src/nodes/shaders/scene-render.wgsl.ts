@@ -690,10 +690,22 @@ export function sceneInstancesWgsl(options: {
    * anything has. The scene loop skips it in the depth pass and says so there.
    */
   beam?: boolean;
+  /**
+   * T723: a vec4f attribute holding a unit QUATERNION turns each instance. Instances
+   * only — a billboard faces the camera by construction and a beam takes its axis from
+   * its endpoints, so neither has a free frame to orient, and the geometry node refuses
+   * both by name rather than binding a buffer nothing could read.
+   *
+   * The binding lands AFTER the group binds, at the very end of the numbering, because
+   * T680 and T721 took the last two holes below the shadow maps. Absent, not one byte of
+   * this shader changes (§V309).
+   */
+  pointOrient?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
   const billboard = options.billboard === true;
   const beam = options.beam === true;
+  const pointOrient = options.pointOrient === true;
   /* T721: binding 4 is the other half of the hole T680 documented below — 3 took the
      beam's endpoints, 4 takes the per-point size, and the shadow maps still start at 5,
      so nothing existing moves. `scaleAt` is 1.0 when nothing is mapped, which is why an
@@ -734,9 +746,10 @@ export function sceneInstancesWgsl(options: {
     aoBinding + (ambientOcclusion ? 1 : 0),
   );
   /* T642: the group binds come last in the numbering, after every optional texture. */
+  const groupBinding = aoBinding + (ambientOcclusion ? 1 : 0) + projectors.bindingCount;
   const group = groupBlocks(
     options.group,
-    aoBinding + (ambientOcclusion ? 1 : 0) + projectors.bindingCount,
+    groupBinding,
     `    var gated: VertexOut;
     gated.position = vec4f(2.0, 2.0, 2.0, 1.0);
     gated.normal = vec3f(0.0, 0.0, 1.0);
@@ -744,6 +757,26 @@ export function sceneInstancesWgsl(options: {
     gated.tint = vec4f(0.0);
     return gated;`,
   );
+  /* T723: after the group binds, which are themselves last — the two holes below the
+     shadow maps went to T680's endpoints and T721's sizes. */
+  const orientDeclaration = pointOrient
+    ? `@group(0) @binding(${groupBinding + (options.group?.binds.length ?? 0)}) var<storage, read> pointOrients: array<vec4f>;\n`
+    : "";
+  /**
+   * Rotating a vector by a UNIT quaternion, Rodrigues form: two cross products, no
+   * matrix and no trig. Right-handed and ACTIVE — q = (0, 0, sin45, cos45) is a +90°
+   * turn about +Z and carries +X to +Y, which is the domain fact `scene-orient.gpu.test`
+   * pins rather than re-deriving here (§V683: a gate that recomputes the author's own
+   * arithmetic agrees with an inverted sign as happily as with a correct one).
+   */
+  const quaternionHelper = pointOrient
+    ? `
+fn qrot(q: vec4f, v: vec3f) -> vec3f {
+  let t = 2.0 * cross(q.xyz, v);
+  return v + q.w * t + cross(q.xyz, t);
+}
+`
+    : "";
   const envTerm = environment
     ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
 ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - params.material.y) * params.environment.x${aoTerm};
@@ -836,7 +869,7 @@ ${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4
        lands in a hole rather than shifting a single existing slot. T721 took the other
        one for the per-point size. */
     beam ? "@group(0) @binding(3) var<storage, read> endpoints: array<vec3f>;\n" : ""
-  }${scaleDeclaration}${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}${group.bindings}
+  }${scaleDeclaration}${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}${group.bindings}${orientDeclaration}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -846,7 +879,7 @@ struct VertexOut {
 ${group.declarations}
 
 ${INSTANCE_SHAPES_WGSL}
-
+${quaternionHelper}
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
 ${group.gate}${
@@ -894,11 +927,25 @@ ${group.gate}${
       : `  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
-  let local = shapeVertex(shape, v) * ${scaleAt};
+${
+          pointOrient
+            ? `  /* T723: the primitive turns, AND SO DOES ITS NORMAL. Rotating only the positions
+     is the fault this generator would otherwise ship: a box turned ninety degrees would
+     be shaded for the way up it no longer has — every face taking the light meant for
+     another one. Invisible on a flat-lit scene, glaring under a key light, and not a
+     thing a still frame of an unlit example can see. */
+  let turn = pointOrients[instance];
+  let local = qrot(turn, shapeVertex(shape, v) * ${scaleAt});
   let world = local + positions[instance];
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);
-  out.normal = shapeNormal(shape, v);
+  out.normal = qrot(turn, shapeNormal(shape, v));`
+            : `  let local = shapeVertex(shape, v) * ${scaleAt};
+  let world = local + positions[instance];
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  out.normal = shapeNormal(shape, v);`
+        }
   out.world = world;
   out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
   return out;`
@@ -1019,7 +1066,17 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 
 /** The instance primitives from the light's view — shapes identical to the lit draw. */
 export function shadowInstancesWgsl(
-  options: DepthPassOptions & { group?: SceneGroupOption; pointScale?: { type: string; channel?: string } } = {},
+  options: DepthPassOptions & {
+    group?: SceneGroupOption;
+    pointScale?: { type: string; channel?: string };
+    /**
+     * T723 — AND A MAPPED ORIENTATION HAS TO REACH THE SWEEP FOR THE SAME REASON T721's
+     * size did, with more force. A wrongly-sized shadow is a shadow of the right shape;
+     * a wrongly-ORIENTED one is the silhouette of a thing that is not in the picture,
+     * which reads as a lighting fault and is really a missing binding.
+     */
+    pointOrient?: boolean;
+  } = {},
 ): string {
   const linear = options.linearDepth === true;
   /* T642: an excluded instance must not cast a GHOST SHADOW — the depth pass gates on
@@ -1049,6 +1106,21 @@ export function shadowInstancesWgsl(
     pointScale === undefined
       ? "params.instance.x"
       : `(params.instance.x * pointScales[instance]${pointScale.channel === undefined ? "" : `.${pointScale.channel}`})`;
+  /* T723: after the group binds AND after T721's sizes, so a geometry that orients
+     nothing keeps a byte-identical depth shader — and so does one that only sizes. */
+  const pointOrient = options.pointOrient === true;
+  const orientDeclaration = pointOrient
+    ? `@group(0) @binding(${2 + (options.group?.binds.length ?? 0) + (pointScale === undefined ? 0 : 1)}) var<storage, read> pointOrients: array<vec4f>;\n`
+    : "";
+  /** The same Rodrigues rotation the lit draw uses, and it must stay the same one. */
+  const quaternionHelper = pointOrient
+    ? `
+fn qrot(q: vec4f, v: vec3f) -> vec3f {
+  let t = 2.0 * cross(q.xyz, v);
+  return v + q.w * t + cross(q.xyz, t);
+}
+`
+    : "";
   const depthExpr = linear
     ? `dot(params.depthRow, vec4f(world, 1.0)) / max(params.depthRange.x, 1e-6)`
     : `clip.z`;
@@ -1064,7 +1136,7 @@ ${linearFields}};
 
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${group.bindings}${scaleDeclaration}
+${group.bindings}${scaleDeclaration}${orientDeclaration}
 fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
@@ -1110,13 +1182,13 @@ struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) depth: f32,
 };
-${group.declarations}
+${group.declarations}${quaternionHelper}
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
 ${group.gate}  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
-  let world = shapeVertex(shape, v) * ${scaleAt} + positions[instance];
+  let world = ${pointOrient ? "qrot(pointOrients[instance], shapeVertex(shape, v) * " + scaleAt + ")" : "shapeVertex(shape, v) * " + scaleAt} + positions[instance];
   let clip = params.lightViewProjection * vec4f(world, 1.0);
   var out: VertexOut;
   out.position = clip;

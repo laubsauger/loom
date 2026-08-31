@@ -443,6 +443,36 @@ export const geometryNode: NodeDefinition = {
       description:
         "Instances: the primitive's size. Points: the billboard's. Beam: its HALF-WIDTH — a beam takes its length from the data, so this is the only dimension left to set. In Map mode an f32 attribute (or one channel of a float vector) MULTIPLIES this per point, so the number here stays the object's size and the attribute is a factor — size by depth for a circle of confusion, by age, by confidence.",
     },
+    /*
+     * T723 — ORIENTATION, as a unit QUATERNION, and the map is the whole of it.
+     *
+     * Why a quaternion and not Euler angles or a forward direction: `ATTRIBUTE_STRIDES`
+     * makes `vec3f` and `vec4f` both SIXTEEN BYTES — WGSL aligns a vec3 to 16 — so all
+     * three candidates cost one attribute of §V588's four and exactly the same memory.
+     * There is no cheap option, which leaves only what each CANNOT do. Euler angles
+     * cannot compose (adding angles is not composing rotations), cannot interpolate and
+     * gimbal; a forward direction cannot express ROLL and pops through a half turn when
+     * it crosses the implied up. A quaternion does all of it, and the asymmetry decides
+     * it: a direction is recoverable from a quaternion, roll is not recoverable from a
+     * direction. T287 already declared the `quaternion` qualifier on vec4f with exactly
+     * this semantic and it has had no consumer until now.
+     *
+     * The value here is the IDENTITY and the compiler refuses any other — see the
+     * refusal below. A per-object turn is a separate feature; when it arrives it
+     * composes by quaternion multiply, which is what the qualifier already says.
+     */
+    orient: {
+      type: "vector",
+      size: 4,
+      label: "Orient",
+      default: [0, 0, 0, 1],
+      inactiveWhen: (values) =>
+        values["mode"] === "instances"
+          ? null
+          : "Only instances have a frame to turn: a billboard faces the camera, a beam takes its axis from its endpoints, and a surface has no per-point anything.",
+      description:
+        "Instances only, and MAP MODE only: a vec4f attribute holding a unit quaternion (x, y, z, w) turns each primitive — and its normals with it, so a turned box is lit for the way up it actually has. Write one in a kernel to point a tile down its own velocity or along a flow. Right-handed and active: (0, 0, sin45, cos45) is a +90° turn about +Z and carries +X to +Y.",
+    },
     tint: {
       type: "color",
       label: "Tint",
@@ -496,15 +526,18 @@ export const geometryNode: NodeDefinition = {
       };
     }
     // §V288: a map this stage cannot honour refuses BY NAME rather than drawing the
-    // retained static. `tint` (T478) and `scale` (T721) are the mappable ones.
-    const unhonoured = Object.keys(parameterMaps).filter((key) => key !== "tint" && key !== "scale").sort();
+    // retained static. `tint` (T478), `scale` (T721) and `orient` (T723) are the
+    // mappable ones — and this list is the reason a new map cannot be half-added: a
+    // parameter that grows a map binding without appearing here refuses itself.
+    const MAPPABLE = new Set(["tint", "scale", "orient"]);
+    const unhonoured = Object.keys(parameterMaps).filter((key) => !MAPPABLE.has(key)).sort();
     if (unhonoured.length > 0) {
       return {
         passes: [],
         diagnostics: unhonoured.map((key) => ({
           severity: "error" as const,
           code: "node.parameter.map",
-          message: `Node "${nodeId}": ${key} is in map mode, but geometry maps only "tint" and "scale".`,
+          message: `Node "${nodeId}": ${key} is in map mode, but geometry maps only "tint", "scale" and "orient".`,
           nodeId,
           suggestion: "Switch it back to Constant, or drive it through the value graph instead.",
         })),
@@ -567,6 +600,74 @@ export const geometryNode: NodeDefinition = {
     const resolvedScale = resolveScalarMap(nodeId, parameterMaps["scale"], pointset, "points", "scale");
     if ("refusal" in resolvedScale) return resolvedScale.refusal;
     const scaleMap = resolvedScale.map;
+    /*
+     * T723 — ORIENTATION refuses on THREE modes, not one. T721's size was meaningful on
+     * every per-point mode and only a surface had none; a rotation is narrower than
+     * that, because two of the three per-point modes have already spent their frame:
+     * a billboard faces the camera BY CONSTRUCTION (§V610 — that is why it casts no
+     * shadow), and a beam's long axis is its endpoints and its width axis is the
+     * camera's. Neither has a free frame left to turn, so binding a buffer for them
+     * would be §V624's dead parameter wearing a wire. Instances only, and each refusal
+     * says which of those two reasons applies (§V606).
+     */
+    if (mode !== "instances" && parameterMaps["orient"] !== undefined) {
+      const because =
+        mode === "surface"
+          ? "a surface spans its grid and has no per-point frame to turn"
+          : mode === "points"
+          ? "a points billboard faces the camera by construction, so a per-point rotation would have nowhere to go"
+          : "a beam takes its long axis from its endpoints and its width axis from the camera, so it has no free frame to turn";
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.parameter.map",
+            message: `Node "${nodeId}": orient is in map mode, but ${because}.`,
+            nodeId,
+            suggestion: "Switch the mode to instances, or set Orient back to Constant.",
+          },
+        ],
+      };
+    }
+    /*
+     * And an AUTHORED orientation refuses rather than being dropped. This draw carries
+     * no uniform for a per-object rotation, so a non-identity value here could only be
+     * ignored — which is §B132's fault exactly: a number that looks authored, renders
+     * as nothing, and takes weeks to notice. Refusing by name costs the author one
+     * message and cannot be mistaken for working (§V624, Rule 8).
+     */
+    const orientValue = parameters["orient"];
+    if (
+      parameterMaps["orient"] === undefined &&
+      Array.isArray(orientValue) &&
+      orientValue.length === 4 &&
+      !(orientValue[0] === 0 && orientValue[1] === 0 && orientValue[2] === 0 && orientValue[3] === 1)
+    ) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.parameter.map",
+            message: `Node "${nodeId}": Orient carries a rotation but is not in Map mode, and a geometry has no per-object orientation to apply it to.`,
+            nodeId,
+            suggestion:
+              "Drive Orient from a vec4f quaternion attribute in Map mode, or set it back to the identity (0, 0, 0, 1).",
+          },
+        ],
+      };
+    }
+    /*
+     * The map itself resolves through `resolveColorMap` — which is not a colour
+     * function, it is the COMPOUND-HEAD function: "one vec4f attribute drives this whole
+     * four-component value, and a channel belongs on a component slot, not the head".
+     * That is exactly a quaternion's contract, and §V109 is explicit that a second copy
+     * of it is a second chance to refuse the same document in different words.
+     */
+    const resolvedOrient = resolveColorMap(nodeId, parameterMaps["orient"], pointset, "points", "orient");
+    if ("refusal" in resolvedOrient) return resolvedOrient.refusal;
+    const orientMap = resolvedOrient.map;
     /*
      * T642: the group predicate, resolved by the SAME function renderPoints uses
      * (§V349 by construction). Instances only, and the refusal says WHY (§V606: a
@@ -666,6 +767,11 @@ export const geometryNode: NodeDefinition = {
       ...(endpointPair === undefined ? {} : { endpoint: endpointPair }),
       ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
       ...(scaleMap === undefined || !perPoint ? {} : { scaleAttribute: scaleMap }),
+      /* T723: instances only — the refusal above has already turned away every other
+         mode, so reaching here with a map means the frame is genuinely free to turn. */
+      ...(orientMap === undefined || mode !== "instances"
+        ? {}
+        : { orientAttribute: { pair: orientMap.pair, half: orientMap.half } }),
       ...(resolvedGroup === undefined ? {} : { group: resolvedGroup }),
       ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
       material,
@@ -1049,6 +1155,10 @@ export const renderNode: NodeDefinition = {
                       ...(payload.scaleAttribute.channel === undefined ? {} : { channel: payload.scaleAttribute.channel }),
                     },
                   }),
+              /* T723: and the turn, with MORE force than the size — a wrongly-sized
+                 shadow is the shadow of the right shape, a wrongly-oriented one is the
+                 silhouette of a thing that is not in the picture. */
+              ...(payload.orientAttribute === undefined ? {} : { pointOrient: true }),
             }),
             target: options.target,
             topology: "triangle-list",
@@ -1071,6 +1181,15 @@ export const renderNode: NodeDefinition = {
                       binding: "pointScales",
                       resourceId: payload.scaleAttribute.pair,
                       half: payload.scaleAttribute.half,
+                    },
+                  ]),
+              ...(payload.orientAttribute === undefined
+                ? []
+                : [
+                    {
+                      binding: "pointOrients",
+                      resourceId: payload.orientAttribute.pair,
+                      half: payload.orientAttribute.half,
                     },
                   ]),
             ],
@@ -1458,6 +1577,8 @@ export const renderNode: NodeDefinition = {
             ...(payload.group === undefined ? {} : { group: payload.group }),
             ...(billboard ? { billboard: true } : {}),
             ...(beam ? { beam: true } : {}),
+            /* T723: the turn, and the generator rotates the NORMALS with it. */
+            ...(payload.orientAttribute === undefined ? {} : { pointOrient: true }),
           }),
           target,
           topology: "triangle-list",
@@ -1487,6 +1608,15 @@ export const renderNode: NodeDefinition = {
                     binding: "pointScales",
                     resourceId: payload.scaleAttribute.pair,
                     half: payload.scaleAttribute.half,
+                  },
+                ]),
+            ...(payload.orientAttribute === undefined
+              ? []
+              : [
+                  {
+                    binding: "pointOrients",
+                    resourceId: payload.orientAttribute.pair,
+                    half: payload.orientAttribute.half,
                   },
                 ]),
             // T642: one storage buffer per attribute the predicate reads. The compiler's

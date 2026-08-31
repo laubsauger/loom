@@ -98,6 +98,25 @@ export interface GeometryPayload {
     readonly channel?: string;
   };
   /**
+   * T723 — a PER-INSTANCE ORIENTATION, as a vec4f attribute holding a unit quaternion.
+   *
+   * It REPLACES rather than multiplying, and that is not a departure from the size one
+   * field up: `scale` multiplies because there is an authored Scale to keep live, and
+   * there is no authored rotation anywhere on this node to keep. The map supplies the
+   * whole turn against an identity default, and a non-identity authored value refuses
+   * rather than being dropped.
+   *
+   * INSTANCES ONLY. A points billboard faces the camera by construction and a beam
+   * takes its axis from its endpoints, so neither has a free frame; both refuse by name.
+   * A vec4f, not a vec3f of Euler angles or a forward direction, because `vec3f` and
+   * `vec4f` both stride 16 bytes — the choice is free, so it is made on what each
+   * cannot do, and only the quaternion can compose, interpolate and carry roll.
+   */
+  readonly orientAttribute?: {
+    readonly pair: string;
+    readonly half: "read" | "write";
+  };
+  /**
    * T680 — BEAM mode: the other end of each segment, as a vec3f attribute pair.
    *
    * The beam is the third member of the billboard family and the one that carries a
