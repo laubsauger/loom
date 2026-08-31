@@ -1,21 +1,25 @@
 # E33 — Obol
 
-A yin-yang medallion — seventeen hundred little tiles laid on nothing, the emblem's two
-tones and its dividing curve carried by the tiles themselves — turns slowly on a dark
-studio sweep, lit by two softboxes it can see in itself. It holds. Then the curve goes
-soft, and the tiles lift off the face in a wave that leaves the seam and travels outward,
-arc through the air, and pack themselves into a three-lobed drop of black oil that pinches
-between its lobes and hangs. It holds there too. Then the whole thing runs backwards and the
-medallion reassembles, tile by tile. One sixteen-second breath, both directions, forever.
+A yin-yang medallion — seventeen hundred little tiles laid on nothing at all — turns
+slowly on a dark studio sweep, lit by two softboxes it can see in itself. It holds. Then
+the dividing curve goes soft, the tiles lift off the face in a wave that leaves the seam
+and travels outward, and as they arc through the air a drop of black oil buds out
+underneath them and swells; each tile lands on its skin and settles just inside it. What
+is left is a three-lobed mass that pinches between its lobes and hangs. It holds there
+too. Then the whole thing runs backwards and the medallion reassembles, tile by tile. One
+sixteen-second breath, both directions, forever.
 
-**There is nothing behind the tiles, and that is the point (T716).** The medallion has no
-bed and the goo has no surface: the same seventeen hundred elements are the whole object
-at both ends, so the change is a TRANSFORMATION rather than one thing dissolving while
-another appears. Every tile carries two places — one on the medallion, one on the goo —
-and a single rule decides how far along it has travelled, from its own distance to the
-emblem's dividing curve. A cross-fade at 50% shows a ghost of both pictures. This shows a
-medallion whose middle has already gone liquid while its rim is still a hard, lit edge,
-with its own tiles in the air between the two states.
+**Nothing is behind the tiles at the emblem end, and the goo end is an organic blob. Those
+are two different asks and the file answers both.** Dropping the mass from the render
+changes **exactly zero pixels** of the emblem frame and **106,056** of the goo frame. It
+is not hidden there, and it is not a detail here.
+
+**The morph is a FUSE, not a cross-fade.** Every tile carries two places — one on the
+medallion, one on the goo — and a single rule decides how far along it has travelled, from
+its own distance to the emblem's dividing curve. The mass grows on that same rule, read
+through the tiles' own map, so the skin materialises under a tile at the moment that tile
+reaches it. Discrete becoming continuous: the eye can follow one cube off the face, through
+the air, onto the surface and into it.
 
 ## Graph
 
@@ -25,7 +29,9 @@ with its own tiles in the air between the two states.
   circle ────┤ (studio1)                   ▲
   circle ────┘                             │
                                            │
-                                           │        ┌─ level ─ limit ─ blur ─┐
+  pointTube ── pointKernel ── geometry ────┤        ┌─ level ─ limit ─ blur ─┐
+   (grid:208x160:wrapU)  (morph1)  (body1) │        │                       │
+                                           │        │                       │
   pointGrid ── pointKernel ── geometry ────┼── render ──────────────────────add ── output
    (segpts1)             (segs1) (shards1) │   (shot1)                       │
                                            │      ▲  ▲                       │
@@ -36,16 +42,19 @@ with its own tiles in the air between the two states.
   lfo tide1 ─┬─ multiply ─ add ─► render.aoIntensity        (and the render's own
              ├─ multiply ─ add ─► render.environmentIntensity  output feeds `in1`)
              └─ multiply ─ add ─► materialPhong.roughness
-  lfo tide1 ────────────────────► pointKernel.value1  (the morph)
+  lfo tide1 ────────────────────► pointKernel.value1  (the morph, both kernels)
   lfo sheen1 ───────────────────► pointKernel.value2  (the spectrum's phase)
   lfo swing1, lift1 ────────────► camera.eye.x, camera.eye.y
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
+| `shell1` | `pointTube` | 208 x 160 points with **wrapU**, so the longitude seam closes and the blob has no slit. The kernel overwrites every position; only the topology matters here |
+| `morph1` | `pointKernel` | the MASS — the organic blob and only the blob. One configuration and the rule for when it is there |
+| `body1` | `geometry` | surface mode, `tint` in **map** mode bound to the kernel's `tint` attribute (T478) |
 | `oil1` | `materialPhong` | shininess 300, roughness driven 0.190 → 0.085. White base colour: the colour is the per-point tint |
 | `segpts1` | `pointGrid` | 54 x 32 = 1728 slots. The grid's own positions are discarded; `ctx.index` is what the kernel uses |
-| `segs1` | `pointKernel` | THE OBJECT — the only one there is. Both configurations, the melt order, the two tones and the front's spectrum, over 1728 tiles that carry the medallion AND the goo |
+| `segs1` | `pointKernel` | the TILES. The whole of the medallion, and the mosaic that fuses into the goo: both configurations, the melt order, the two tones and the front's spectrum |
 | `shards1` | `geometry` | **instances** mode, box, scale 0.019, the `oil1` material and the mapped `tint` attribute (T478) |
 | `rimband1` | `circle` | the rim — a band on the equirect's horizon, which is what a silhouette reflects (see below) |
 | `sweep1` | `pointKernel` | bends a flat 64 x 96 grid into a cyclorama — flat to z = −2, then rising 14 units over the next 16 |
@@ -80,11 +89,11 @@ worst angle 0.049 → 0.191, convexity deficit 0.0054 → 0.0492, max/min radius
 pre-T673 file's BEST one, so the form is lobed from everywhere rather than from the one
 angle somebody happened to render.
 
-**Those numbers are about an object that no longer exists.** T716 deleted the mass, so the
-outline the eye reads is the TILE CLOUD's, and the number was re-taken on it — see
-[T716](#t716--the-disc-is-gone-and-the-tiles-are-the-medallion) below. The mass is
-measured again there too, on the same instrument and in the same run, because a figure
-re-derived on a different instrument is not comparable to the one it replaces.
+The outline is still the mass's, and `gooAt` is untouched, so this finding stands — but
+the numbers are re-run below rather than carried, because a row with no provenance cannot
+be told from one stale since authoring (§V641, and T689 is where that was learned on this
+very file). T716 briefly deleted the mass and measured the tile cloud instead; that row is
+retired with the object it described.
 
 ### The morph did not read because its endpoints were too alike
 
@@ -97,10 +106,10 @@ Both ends were pushed apart. The emblem is flatter and harder: the bevel is
 within 6% of the rim instead of a dome, and it is built of hard-edged parts. The goo is
 lobed, self-occluding and wet, and its marbling is halved so the goo can be one black
 thing. The memory of the emblem is carried by the TILES instead — and a tile travelling
-is something an eye can follow, which a deforming blob is not. T716 took the same argument
-one step further: with the mass gone the tiles are not the memory of the emblem, they are
-the emblem, and the two ends are now a wide flat mosaic and a compact dense drop — a
-difference in SIZE as well as in shape.
+is something an eye can follow, which a deforming blob is not. T716/T724 took the same
+argument one step further: the tiles are not the memory of the emblem, they ARE the emblem,
+and the ends are now a flat hard mosaic of a thousand pieces and one smooth wet continuous
+mass. Discrete against continuous is about as far apart as two ends of a morph can be.
 
 The transition is also **staged**. `meltDrive` squeezes the LFO's travel into its middle
 — `smoothstep(0.18, 0.82)` where it was `smoothstep(0.06, 0.94)` — so the piece parks at
@@ -122,7 +131,8 @@ leaving the face, arcing, and arriving, instead of watching a blob deform. And t
 between tiles are real geometry for the shadow pass and the occlusion pass to bite on.
 
 T673 still ran this mosaic over a solid bed. T716 removed the bed, which is what turned
-"parts on a medallion" into "parts that ARE the medallion".
+"parts on a medallion" into "parts that ARE the medallion" — and T724 kept that while
+putting the blob back at the other end, so the parts now have somewhere to arrive.
 
 ### The lighting was flat because the ambient was doing the work
 
@@ -171,30 +181,52 @@ stale since authoring — which is T689, and is why the DELTAS are given beside 
 absolutes. **T716 moved this table too, and re-took it** — the object it describes is now
 tiles with nothing behind them, and the new column is below.
 
-## T716 — the disc is gone, and the tiles are the medallion
+## T716 / T724 — the disc leaves the emblem, and the blob stays the blob
 
-Every number in this section was measured at **bc681b7** (2026-08-31) on Dawn/Metal, both
-documents minutes apart on one tree (§V641), display-encoded at 1280×720 (§V618, §V627).
+Numbers stamped **bc681b7** are T716's; numbers stamped **0592b2e** are T724's. All on
+Dawn/Metal, the compared documents minutes apart on one tree (§V641), display-encoded at
+1280×720 (§V618, §V627).
 
-The owner, on the T673 build: *"the obol thing should not have the disc behind the cubes
-assembling the yinyang so that it really looks like the cubes transform into the blob and
-vice versa"*. T673 shipped TWO objects — a mass (a metaball at one end, a bevelled coin at
-the other) and 720 tiles laid on it. The mass showed between the tiles, so the emblem read
-as a solid with tiles ON it, and at the goo end the tiles sank out of sight entirely: the
-verb was "the tiles vanish and a blob appears".
+Two asks, and they pull opposite ways.
 
-`shell1`, `morph1` and `body1` are deleted. The tiles are the whole object, at both ends.
+> *"the obol thing should not have the disc behind the cubes assembling the yinyang so that
+> it really looks like the cubes transform into the blob and vice versa"*
 
-**THE ONE NUMBER THAT SAYS WHY.** Shrink the tiles to `scale 0.007` in each file and
-re-measure how much of the emblem's face each of its two tone populations holds. T673's
-emblem is STILL a legible yin-yang with its tiles reduced to specks — the smaller
-population holds **41.3%** of the object — because the disc was drawing it. T716's
-collapses to **19.1%**, because there is nothing else. That is the owner's complaint
-stated arithmetically, it is better evidence than any before-and-after picture because it
-isolates the disc's contribution rather than describing the result, and it is the reason
-the emblem's legibility is now MEASURED below rather than asserted.
+T673 shipped TWO objects — a mass (a metaball at one end, a bevelled coin at the other) and
+720 tiles laid on it. The mass showed between the tiles, so the emblem read as a solid with
+tiles ON it. **T716 deleted the mass outright**, and that was an over-correction:
 
-### Both ends out of one element, and the map between them is one line
+> *"obol is supposed to morph onto the organic blob not a blob made up of cubes thats the
+> whole gimmick on top of the reorg"*
+
+The complaint was only ever about the EMBLEM end. **T724 keeps T716's emblem and puts the
+blob back**, with the mass growing from a speck as the morph runs and the tiles fusing into
+it.
+
+**THE ONE NUMBER, and it holds both asks at once.** Drop `body1` from the render and count
+what changes:
+
+| pixels of the frame that change without the mass | |
+| --- | --- |
+| frame 0, the emblem | **0** |
+| frame 2100, the other emblem moment | **0** |
+| frame 484, the goo | **106,056** (11.5%) |
+| frame 1500, the far goo moment | **163,057** (17.7%) |
+
+The zero is exact, not a threshold — the mass is grown down to a speck behind a mosaic
+still standing in front of it, so it reaches the frame not at all. Deleting the mass fails
+the second half of that table; leaving it visible at the emblem end fails the first. One
+assertion, both asks, and neither can be satisfied by satisfying the other.
+
+**AND THE NUMBER THAT SAYS WHY THE FIRST ASK WAS RIGHT.** Shrink the tiles to `scale 0.007`
+and re-measure how much of the face each of the two tone populations holds. T673's emblem
+is STILL a legible yin-yang with its tiles reduced to specks — the smaller population holds
+**41.3%** of the object — because the disc was drawing it. This one collapses to **19.1%**,
+because there is nothing else. That isolates the disc's contribution rather than describing
+the result, which is why it is better evidence than any before-and-after picture, and it is
+the reason the emblem's legibility is MEASURED below rather than asserted.
+
+### The fuse, and why the map had to be invertible
 
 The tiles were already a Fibonacci lattice on the disc: tile *i* sits at radius
 `sqrt(u)·0.930` and azimuth `i·137.5°`, with `u = (i+½)/n`. The Fibonacci SPHERE is the
@@ -206,15 +238,43 @@ two poses, and the map between them is one line of arithmetic that
 - is area-uniform at BOTH ends, so the mosaic has no crowding at either.
 
 That is what makes the change followable rather than a re-shuffle, and it costs nothing:
-`u` and `ang` are computed once and both configurations are built from them. T673's
-staging (`meltDrive`'s `smoothstep(0.18, 0.82)` hold at each end) and its positional wave
-(`meltOrder`, the distance to the dividing curve) are reused unchanged — a tile still
-lifts when the wave reaches it, and the arc still peaks at the half-way point.
+`u` and `ang` are computed once and both configurations are built from them. T673's staging
+(`meltDrive`'s `smoothstep(0.18, 0.82)` hold at each end) and its positional wave
+(`meltOrder`, the distance to the dividing curve) are reused unchanged — a tile still lifts
+when the wave reaches it, and the arc still peaks at the half-way point.
 
-### The drop is drawn at 0.620, and that is arithmetic
+**T724's dividend: the map runs BACKWARDS too, and that is what makes the fuse exact.**
+`z = 1 − 2u` inverts to `u = (1 − z)/2`, and the azimuth is carried across untouched — so
+from any direction `s` on the blob's surface, the mass can recover the disc station of the
+tile that is going to land there:
 
-Without a mass under them the tiles have to COVER the goo, and a tile count that tiles a
-disc does not tile a sphere. Measured on the kernel's own field:
+```wgsl
+let station = normalize(s.xy) * (0.930 * sqrt(max(0.0, (1.0 - s.z) * 0.5)));
+let order   = meltOrder(station);
+```
+
+The mass then grows on THAT TILE'S OWN CLOCK. The skin appears under a tile at the moment
+the tile reaches it, rather than on a schedule of its own — which is the difference between
+a fuse and two events that happen to overlap. It is also why the shared prelude is shared:
+both kernels have to agree about the station, the order and the surface, or the skin
+materialises where the tiles are not.
+
+One wrinkle worth naming, because it is the same failure T673 paid for with the emblem's
+dots. The pole has no azimuth. Falling back to the disc CENTRE there gives it `order = 0`
+while every neighbour has `order ≈ 1`, so the pole grows first while the surface around it
+is still a speck — and that stands a spike on the mesh. The fallback is a fixed DIRECTION
+at the pole's own radius instead.
+
+The mass's radius runs `mix(0.010, 1.0, melt)`. The floor is not zero: a mesh collapsed to
+a point has no normals. 0.010 is a speck about two pixels across at 1280×720, behind the
+mosaic, and the zero-pixel table above is the proof that two pixels of speck behind a
+mosaic is no pixels at all.
+
+### Why T716's goo end was a blob made of cubes, and why that is now moot
+
+Worth recording, because it is the arithmetic that made the over-correction *look*
+reasonable while it was wrong. With no mass, the tiles have to COVER the goo — and a tile
+count that tiles a disc does not tile a sphere. On the kernel's own field:
 
 | | |
 | --- | --- |
@@ -222,15 +282,22 @@ disc does not tile a sphere. Measured on the kernel's own field:
 | the metaball's surface at its natural size (4π·⟨r²⟩, ⟨r²⟩ = 0.403) | **5.059** |
 | ratio | **2.04×** |
 | goo scale at coverage PARITY with the face | **0.700** |
-| goo scale shipped | **0.620** |
+| goo scale T716 shipped | **0.620** |
 
-0.620 rather than 0.700 because tiles are laid per unit SOLID ANGLE while a lobe at radius
-`r` has area going as `r²` — coverage thins as `1/r²`, so the mean is the wrong statistic
-and the lobes are where the holes appear. At 0.620 the mosaic closes out to `r = 0.72`,
-about the field's 73rd percentile, and the 15% radial jitter puts a second tile behind
-what is left. It is also, pleasingly, the size the medallion's own material makes: the
-plate is 0.89 in radius and 0.148 thick, and that volume is a ball of radius 0.44 against
-the drop's mean radius of 0.38.
+Tiles are laid per unit SOLID ANGLE while a lobe at radius `r` has area going as `r²`, so
+coverage thins as `1/r²` and the lobes are exactly where the holes open. T716 shrank the
+drop to 0.620 to close them, which bought coverage and cost the composition: the blob was
+two thirds the size it should be, and it was a pile of boxes rather than a skin.
+
+**T724 makes the whole calculation moot.** With a surface under them, the tiles are not
+the skin — they LAND on it. The drop is back at full size, and its silhouette is the
+metaball's own again. The tiles ride `1.030` of the field's radius while the front passes,
+which is what lets a cube be followed all the way in, and settle to `0.880` just inside it:
+a tile drawn ON an oil drop is a barnacle, a tile drawn just inside one has fused.
+
+This is also the clearest statement of what a per-instance SCALE would buy (T721): tiles
+that GREW as they landed would close the cloud into a skin on their own. Nothing here
+needs it, and the fuse works without it.
 
 The mosaic itself: 1728 tiles, hexagonal pitch **0.0407**, tile edge **0.038** — the
 tiles close to **93.4%** of their own spacing, so there are gutters (6.6%) and no merging.
@@ -241,9 +308,11 @@ interpenetrate and the face goes back to being a plate, and below ≈ 0.6 it is 
 
 This is the question the change could have failed, and "the mass is gone" is not an answer
 to it. Three numbers on the emblem frame at 1280×720, display-encoded (§V618, §V627), over
-the object's own pixels (mask from a shadowless pair, so the cast shadow is not counted):
+the object's own pixels (mask from a shadowless pair, so the cast shadow is not counted).
+T724 does not move this table by a single digit — the emblem end is bit-for-bit T716's,
+which is what makes T724 a correction to the goo end rather than a second rewrite:
 
-| frame 0 | T673 (with the disc) | T716 (tiles alone) |
+| frame 0 | T673 (with the disc) | T716 / T724 (tiles alone) |
 | --- | --- | --- |
 | object pixels | 166,454 | 150,536 |
 | smaller tone population, as a share of the object | 42.2% | **45.6%** |
@@ -257,76 +326,80 @@ straight line has to give up the lobes. It went slightly UP without the disc.
 **And the instrument is not blind, which is the part that makes it evidence** (§V655,
 §V666). Shrink the tiles to `scale 0.007` and re-measure:
 
-| tiles at `scale 0.007` | T673 | T716 |
+| tiles at `scale 0.007` | T673 | T716 / T724 |
 | --- | --- | --- |
 | object pixels | 157,373 | 92,278 |
 | smaller tone population | 41.3% | **19.1%** |
 
 With the disc present the emblem is still a perfectly legible yin-yang with the tiles
 reduced to specks, **because the disc was drawing it**. That is the owner's complaint,
-stated as a number, and it is the reason the same measurement means something now.
+stated as a number, and it is the reason the same measurement means something now. It is
+also live in the other direction: stop the mass shrinking and this gate reddens, because
+the disc is visibly back behind the mosaic.
 
 Two more mutations move the other two rows and nothing else: `tone = smoothstep(-0.03,
 0.03, disc.x)` (a straight bisector instead of `taiji`) takes the straight-line error to
 **7.3%**, and `tone = 1.0` takes the smaller tone population to **6.9%**.
 
-### The silhouette, re-measured on the object that now exists
+### The silhouette
 
-Same instrument as T673 — 12 orbit angles × 5 moments, orthographic, 96 angular sectors —
-run on both objects in the same pass. The tile cloud's sector radius includes a tile's own
-half-diagonal, because a tile is a solid box and not a point.
+**The outline at the goo end is the mass's again, and `gooAt` was never touched**, so
+T673's finding stands on its own object: three lobes far enough apart that the surface
+between them pinches, plus the core charge that keeps the form star-shaped. Re-run on the
+same instrument as T673 — 12 orbit angles × 5 moments, orthographic, 96 angular sectors —
+it reads radius CV vs angle **0.239** (worst angle 0.168), convexity deficit **0.0433**
+(worst 0.0145), max/min radius **2.360**. That is a re-run rather than T673's recorded row
+(0.234 / 0.191 / 0.0492): the moments and orbit phases are sampled slightly differently, so
+the two are not comparable digit for digit and the re-run is what this file now carries.
 
-| silhouette | the mass (T673's object) | the tile cloud (T716's object) | perfect sphere |
+T716 measured the TILE CLOUD instead (0.224 CV, 0.0795 deficit), because for one round the
+cloud was the outline. **That row is retired with the object it described.** Keeping a
+number for a thing that is no longer what you see is worse than dropping it.
+
+### The separation, and the one number that did not improve
+
+Object against room, on the display-encoded frame, with the mask taken from a shadowless
+pair so the cast shadow is not counted as object. All three documents, one instrument:
+
+| | T673 f0 | T716 f0 | T724 f0 | T673 f484 | T716 f484 | T724 f484 |
+| --- | --- | --- | --- | --- | --- | --- |
+| object median luma | 165.0 | 165.6 | 165.6 | 72.5 | 66.7 | 75.9 |
+| backdrop median luma | 28.2 | 28.2 | 28.2 | 34.1 | 35.0 | 34.2 |
+| **separation** | 136.9 | 137.4 | **137.4** | 38.4 | 31.6 | **41.7** |
+| p99 (the highlight) | 193.6 | 187.5 | 187.5 | 196.6 | 170.3 | 196.7 |
+| object pixels within 12 luma of the room | 4.2% | 5.7% | 5.7% | 11.0% | 9.4% | 15.2% |
+| object pixels | 166,454 | 150,536 | 150,536 | 95,248 | 32,879 | 95,288 |
+
+**The emblem end is bit-for-bit T716** — identical object pixels, identical separation, not
+merely close. That is what makes T724 a correction to the goo end and not a second rewrite.
+
+**The goo end recovers past both earlier rounds.** T716's 31.6 was the room showing through
+the mosaic's gutters; with a skin under the tiles the gutters close and separation lands at
+**41.7**, above T673's own 38.4.
+
+**And one number went the wrong way, which is worth more than the two that went right.**
+Object pixels within 12 luma of the room: 11.0% (T673) → **15.2%**. The median separates
+further while MORE of the limb sits close to the backdrop. The drop is the same size as
+T673's and its tint is the same, so the difference is the dark limb being read as object
+where T673's mask drew it slightly differently — but it is a real 4-point move and it is
+not explained by anything measured here.
+
+Shadows, which is §V617 and what gives the form its body:
+
+| pixels that darken when the key's shadow is switched on | T673 | T716 | T724 |
 | --- | --- | --- | --- |
-| radius CV vs angle (mean) | 0.239 | **0.224** | 0.000 |
-| radius CV vs angle (worst angle) | 0.168 | **0.158** | 0.000 |
-| convexity deficit (mean) | 0.0433 | **0.0795** | 0.000 |
-| convexity deficit (worst angle) | 0.0145 | **0.0515** | 0.000 |
-| max/min radius (mean) | 2.360 | **2.343** | 1.000 |
-
-The lobes survive: CV falls 6% and the pinch — the thing that says "not an egg" — nearly
-doubles, because a cloud of boxes has a rougher outline than the surface it samples. The
-mass column here is a RE-RUN, not T673's recorded row: it reads 0.239 against the recorded
-0.234 because the moments and orbit phases are sampled slightly differently. That is the
-point of running both in one pass — the two columns are comparable to each other, which is
-what the table is for, and neither is comparable to a number taken on another instrument.
-
-### The body, the separation and the shadow
-
-Everything the mass was silently providing had to come back from the tiles. Same
-instrument, same tree, both documents minutes apart:
-
-| | T673 f0 | T716 f0 | T673 f484 | T716 f484 |
-| --- | --- | --- | --- | --- |
-| object median luma | 165.0 | 165.6 | 72.5 | 66.7 |
-| backdrop median luma | 28.2 | 28.2 | 34.1 | 35.0 |
-| **separation** | 136.9 | **137.4** | 38.4 | **31.6** |
-| p99 (the highlight) | 193.6 | 187.5 | 196.6 | 170.3 |
-| object pixels within 12 luma of the backdrop | 4.2% | 5.7% | 11.0% | 9.4% |
-| object pixels | 166,454 | 150,536 | 95,248 | 32,879 |
-
-The emblem end is unmoved. **The goo end loses 6.8 luma of separation and that is a real
-cost, stated rather than buried**: the drop is a third of the pixels it was and the room
-shows through its gutters, so its median falls. It is still 20× §V618's "dark blob" figure
-of 1.6, and the fraction of object pixels indistinguishable from the room went DOWN.
-
-Shadows, which is §V617 and the thing that gives a pile of boxes its body:
-
-| pixels that darken when the key's shadow is switched on | T673 | T716 |
-| --- | --- | --- |
-| full scene, f0 | 64,999 | 31,557 |
-| full scene, f484 | 37,418 | 24,061 |
-| tiles alone (nothing else can be casting), f0 | 56,799 | **22,016** |
-| tiles alone, f484 | 8,779 | **11,710** |
-| tiles alone, **material mutated to the unlit one** | **0** | **0** |
+| full scene, f0 | 64,999 | 31,557 | 31,557 |
+| full scene, f484 | 37,418 | 24,061 | **35,820** |
+| tiles alone (nothing else can be casting), f0 | 56,799 | 22,016 | 22,016 |
+| tiles alone, **material mutated to the unlit one** | **0** | **0** | **0** |
 
 The last row is what makes the others evidence. §V617 says an unlit geometry casts no
 shadow in any draw mode, because a surface that ignores light cannot block it — and the
-number goes to exactly zero when `oil1` is swapped for a light-ignoring material, at both
-ends, for both documents. The tiles cast BECAUSE they are lit matter, not because a shadow happens to
-appear. The f0 count halves against T673 because the tiles are smaller and flatter and
-there is no bed for them to cast onto; at the goo end, where they now form the whole mass
-and shade each other, it goes UP.
+count goes to exactly zero when `oil1` is swapped for a light-ignoring material, at both
+ends, for every version of this file. The tiles cast BECAUSE they are lit matter, not
+because a shadow happens to appear. At the emblem end the tiles are the only caster and
+their count is unchanged from T716; at the goo end the mass is back and the full-scene
+count recovers from 24,061 to 35,820.
 
 ## The rim is not a light, and that is a fact about this renderer
 
@@ -418,10 +491,12 @@ same size and the same way up. That reads as a deliberate tiling here, and it is
 knowing rather than discovering: a mosaic that wanted to tumble as it flew would need a
 node-level change, not a parameter.
 
-**It is also the constraint that sets the goo's size.** One tile size has to serve a face
-of 2.478 and a surface of 5.059, and the only free variable left is how big the drop is
-drawn — which is why 0.620 is arithmetic and not a taste call. A per-instance scale would
-let the drop be full size and the tiles grow into it, and nothing short of that will.
+**What a per-instance scale would buy is the FUSE, not the coverage.** T724's tiles land
+on a surface, so they no longer have to cover anything and the drop is at full size. What
+they cannot do is CLOSE: a tile that grew as it landed would knit into the skin instead of
+sinking under it, which is a better last half-second than the one this file has. T721 is
+that node; T723's orientation would let a tile lie tangent to the surface rather than
+staying axis-aligned. Neither blocks the fuse and both would sharpen it.
 
 ## Ambient occlusion (T624)
 
@@ -432,11 +507,12 @@ ENVIRONMENT terms only, never the direct lights: occlusion is about light that a
 from everywhere, and a key light arrives from one direction whether or not the
 neighbourhood is enclosed. The radius came down to 0.34 in T673 because the contacts it
 had to find were 0.009 gutters between 0.052 slabs, and a 0.50 radius sweeps clean over a
-contact that size. T716's gutters are smaller again — 0.0027 between 0.038 tiles — but the
+contact that size. The gutters are smaller again — 0.0027 between 0.038 tiles — but the
 contacts that matter are no longer only the gutters: the height jitter puts every tile
-0 to 0.008 proud of its neighbours, and at the goo end the tiles pile against each other
-through the whole depth of the drop. The radius is left at 0.34 and that is a decision,
-not an oversight: it is now sized for the pile rather than for the seam.
+0 to 0.008 proud of its neighbours, and at the goo end the contact is a tile pressing into
+the skin. The radius is left at 0.34 and that is a decision, not an oversight — but it was
+tuned for a contact scale three times larger than the one it now has, and whether 0.34 or
+something smaller reads better here is unmeasured.
 
 The capability itself is pinned somewhere the numbers are unambiguous:
 `scene-ao.gpu.test.ts` renders a V-shaped groove with no lights and ambient 1.0, so the
@@ -475,22 +551,38 @@ reflections travelling across the surface.
   mosaic closes into a disc, which is exactly what T716 removed.
 - **The emblem reads as confetti** → the same ratio went the other way, or the tile count
   fell. Below about 60% the face has more room than tiles in it.
+- **The disc is back behind the cubes** → the mass stopped shrinking at the emblem end.
+  The number is exact: dropping `body1` from the render must change ZERO pixels of the
+  emblem frame. Anything above zero is the thing the owner objected to.
+- **The goo is a blob made of cubes** → the mass stopped growing, or was deleted again.
+  Dropping `body1` must change 106,056 pixels of the goo frame. That is the gimmick and
+  it is the half of the gate that fails if somebody satisfies the other half by deleting.
+- **A cube arrives before the skin does, or lands on skin that is already there** → the
+  mass stopped inverting the tiles' map. The two must read the SAME `meltOrder` from the
+  same shared prelude, the mass recovering the arriving tile's disc station from its own
+  direction. A schedule of its own renders the same two end frames and no fuse.
+- **A spike stands out of the drop while it is growing** → the pole's azimuth fallback
+  went back to the disc centre, so the one point with no azimuth grows first while
+  everything around it grows last.
 - **The goo reads as a sphere again** → the metaball's lobes moved in, or their weights
   went up. Both merge the charges into one ball; the silhouette CV is the number, and
-  0.224 on the tile cloud is where it should sit.
+  0.239 is where it should sit.
 - **The goo grows spikes, or the mesh tears** → the core charge is gone, or the radius
   solve went back to a bracketed bisection. Without the core a ray misses the field
   entirely; with bisection, neighbouring directions land on different crossings.
-- **The goo reads as a rind with holes in it** → the goo scale drifted up from 0.620.
-  Coverage thins as 1/r², so the lobes empty first and the pinches crowd; 0.700 is bare
-  parity with the face and anything above it is see-through.
+- **The goo reads as a rind with holes in it** → the mass is missing at that end and the
+  tiles are being asked to be the skin. That is T716's failure mode and the arithmetic
+  above says why it cannot be fixed by tuning: 1728 fixed-size tiles cannot cover a
+  surface twice the area of the face they came from.
 - **The mosaic reads as debris rather than as parts** → the tile layout lost the golden
   angle, or the tiles stopped landing on the medallion's own tilt.
-- **The tiles vanish at the goo end** → somebody reintroduced a sink factor. Before T716
-  they were drawn UNDER a surface that no longer exists, and a tile that sinks now is a
-  tile that has left the object.
+- **The tiles ride the finished drop like barnacles** → the sink stopped reaching 0.880,
+  so they never fuse. They are meant to end just INSIDE the skin.
+- **The tiles disappear before they arrive** → the sink went below the skin too early.
+  0.45 is where it starts, and the ride at 1.030 before it is what makes a cube
+  followable all the way in.
 - **The object and the room are the same brightness** → the ambient went back up, or the
-  room's albedo did. The separation numbers are 137 luma on the emblem frame and 32 on
+  room's albedo did. The separation numbers are 137 luma on the emblem frame and 42 on
   the goo frame.
 - **No rim at all** → `rimband1` is unwired, or it moved off `v = 0.5`. The silhouette
   reflects the equirect's horizon and nowhere else. Expect the goo's silhouette ring to
@@ -518,11 +610,11 @@ from the DISPLAY-ENCODED output rather than a raw linear dump (§V618).
 Liveness gate at 192×108. T673 against the file it replaced, then T716 against T673,
 each pair measured minutes apart on one tree:
 
-| | pre-T673 | T673 | T716 | floor |
-| --- | --- | --- | --- | --- |
-| motion | 0.00763 | 0.01256 | **0.01124** | 0.002 |
-| range | 0.3970 | 0.5953 | **0.5713** | 0.30 |
-| frame-0 max luma | 0.5963 | 0.8834 | **0.7051** | 0.02 |
+| | pre-T673 | T673 | T716 | T724 | floor |
+| --- | --- | --- | --- | --- | --- |
+| motion | 0.00763 | 0.01256 | 0.01124 | **0.01128** | 0.002 |
+| range | 0.3970 | 0.5953 | 0.5713 | **0.5718** | 0.30 |
+| frame-0 max luma | 0.5963 | 0.8834 | 0.7051 | **0.7051** | 0.02 |
 
 **A moved baseline row is not evidence either way about this change.** The liveness
 instrument samples 192×108 and reports three scalars, and structural damage far larger
@@ -530,15 +622,17 @@ than anything here passes it — so the row below is a record of a deliberate mo
 check that the example survived. What checks that is the legibility gate in
 `examples.gpu.test.ts`, at full resolution with its control rendered in the same run.
 
-**`look-baselines.json`'s E33 row moves in this commit, deliberately (§V643), by
-−0.00132 / −0.0240 / −0.1783.** The first two are small; the third is not, and it has one
+**`look-baselines.json`'s E33 row moved deliberately in each of the two commits (§V643),
+`--only E33` both times so no other example's row was swept up (§V646).** T716 moved it by
+−0.00132 / −0.0240 / −0.1783; the first two are small, and the third is not. It has one
 cause: frame 0's brightest pixel used to be the specular hot-spot on the mass's glossy
-dome, and there is no dome. The tiles' own highlights are smaller and flatter, and 0.705
-is what the picture actually contains. Re-measured with `measure-look-baselines.ts
---only E33` so no other example's row was swept up (§V646).
+dome, and there is no dome at that end any more. T724 then moved it by +0.00004 / +0.0005
+/ 0 — the last is exactly zero, because frame 0 is unchanged, and the two tiny ones are
+the growing skin appearing in the sampled frames.
 
-The first column was measured at **154ddf1**; the T673 and T716 columns above were
-re-measured together at **bc681b7**, and T673's row reproduced its recorded value exactly. The pre-T673 column does NOT match the row this file used to carry
+The first column was measured at **154ddf1**; T673 and T716 were re-measured together at
+**bc681b7** with T673's row reproducing its recorded value exactly, and T724 at
+**0592b2e**. The pre-T673 column does NOT match the row this file used to carry
 — 0.01191 / 0.7419 / 0.7621 — and that disagreement is T689, filed rather than papered
 over.
 
@@ -567,11 +661,12 @@ picture (§V465, and §B132 is the live example: points-mode `scale` was dropped
 floor from T647 until today, so every points-mode size ever authored was 0.05). Pixels of
 the 1280×720 frame that change, on the emblem frame:
 
-| | T673 | T716 |
+| | T673 | T716 / T724 |
 | --- | --- | --- |
 | `shards1.scale` → 0.030 | 28,842 (3.13%) | 30,515 (3.31%) |
 | `shards1` removed from the render | 185,496 (20.13%) | 165,678 (17.98%) |
 | `rimband1` unwired from the studio | 159,359 (17.29%) | 142,011 (15.41%) |
+| `body1` removed from the render | — | **0 (0.00%)** |
 
 Counted at a threshold of 8 luma. The rim guard is given at 8 rather than 1 because the
 environment reaches the cyclorama as well as the object, so at 1 luma it saturates at
@@ -580,15 +675,19 @@ at 100% is not a guard. T673's md recorded 209,000 (22.68%) for it on an unstate
 threshold; this row replaces it rather than sitting beside it.
 
 The first is the one §B132 would have failed: instances-mode scale is carried, and the
-draw changes when it does. The second is now the whole object rather than a layer on it —
-removing `shards1` leaves an empty room.
+draw changes when it does. The second is the whole object at this frame rather than a layer
+on it — removing `shards1` leaves an empty room. The last is the only guard in this file
+whose PASSING value is zero, and it is deliberate: at the emblem frame the mass is not a
+wire that might be broken, it is a thing that must not be there. Its non-zero half lives
+at frame 484, where the same removal takes 106,056 pixels.
 
 **Beauty (§V420/§V427).** The reservation the first round shipped with — "the fully
 melted state reads closer to wet chrome than to oil" — is answered, and by two different
 things: T636's diffuse irradiance term (which let the hand-tuned 7× re-exposure come
 home to its authored 1.00/0.85, §V575) and, here, by taking the room down so the
 reflections are the brightest thing on the object rather than the fill. What remains
-honest to say is that the cast shadow is hard, there is no soft area source, and every
-tile is the same size and the same way up — and, after T716, that the goo end costs 6.8
-luma of object-to-room separation and is drawn at 0.620 of the field's natural size,
-because one fixed tile size cannot cover both a disc and a sphere twice its area.
+honest to say is that the cast shadow is hard, there is no soft area source, and every tile
+is the same size and the same way up — which is why a tile SINKS into the skin instead of
+knitting into it, and is what T721 and T723 would change. Also honest: 15.2% of the goo
+frame's object pixels sit within 12 luma of the room, up from T673's 11.0%, even though the
+median separation improved.
