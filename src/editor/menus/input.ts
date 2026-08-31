@@ -137,6 +137,24 @@ const BUILDERS: Record<string, InputBuilder> = {
   "ui.beginRename": clickedNodeIds,
   "node.openColorPalette": nodeRef,
   "graph.diveIn": nodeRef,
+  /*
+   * T720 — the row that had never opened anything, and §B87's own note two screens down
+   * describing exactly why.
+   *
+   * `ui.showNodeInfo` takes an OPTIONAL `nodeId`, and omitting it means "whatever the
+   * surface considers current" — the selection. That is right for the `?` binding and for
+   * a bare palette run, and it was fatally wrong for a menu row: with no builder the row
+   * dispatched empty input, so a right-click on a node described the SELECTED node
+   * instead. A right-click does not select, so the ordinary gesture resolved to no target
+   * and refused (measured: popup count 0), and with another node selected it opened the
+   * popup for THAT one (measured: right-clicked `checker`, got "Node info for noise1").
+   *
+   * An optional input is what let this hide: nothing could reject the empty dispatch,
+   * because empty is a legal input for the other two routes. The builder is therefore
+   * scoped to the menu rather than enforced in the command (§V516) — the selection
+   * fallback stays exactly as it is for the doors that need it.
+   */
+  "ui.showNodeInfo": nodeRef,
   // The whole selection, like every other multi-node action: "save these nine as a
   // component" is the gesture, and taking only the clicked one would silently drop eight.
   "ui.createComponent": nodeIds,

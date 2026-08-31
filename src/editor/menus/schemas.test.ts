@@ -245,3 +245,61 @@ describe("every guarded toggle can actually dispatch (B87)", () => {
     }
   });
 });
+
+/**
+ * §B87's hole, closed (T720).
+ *
+ * `input.ts` has carried the diagnosis since B87: "a command whose input must carry a
+ * TARGET but has no builder dispatches its static input — empty — and rejects with 'no
+ * target' while every unit suite stays green." The gate that came out of it checks the
+ * TOGGLES the menus guard. `ui.showNodeInfo` is not a toggle, so the "Info" row walked
+ * straight through and shipped dead — for as long as T145 has existed.
+ *
+ * A row on a node, port, edge or parameter menu is BY CONSTRUCTION about the thing under
+ * the cursor: that is what those surfaces mean. So the rule is the surface's own
+ * definition rather than a hand-list of commands to remember — the shape §T675 asks for.
+ *
+ * The exemption list is deliberately tiny and each entry has to say why it needs nothing
+ * from the target. An exemption is a claim, and a wrong one shows up here as a row that
+ * cannot be exempted rather than as a silent dispatch of `{}`.
+ */
+const TARGET_BEARING = ["node", "port", "edge", "parameter"] as const;
+
+/**
+ * Commands that legitimately want NOTHING from the thing under the cursor, even though
+ * they are offered on a surface that has one.
+ */
+const TARGET_INDEPENDENT: ReadonlySet<string> = new Set<string>([
+  // Pastes at the cursor from the clipboard; the clicked node is irrelevant to it.
+  "graph.paste",
+]);
+
+describe("a row that needs its target has a builder to carry it (§B87, T720)", () => {
+  it("every actionable row on a target-bearing surface resolves target input", () => {
+    const offenders = TARGET_BEARING.flatMap((surface) =>
+      items(menuSchemaFor(surface, registry).entries)
+        .filter((item) => item.submenu === undefined)
+        .filter((item) => typeof item.command === "string")
+        .filter((item) => !TARGET_INDEPENDENT.has(item.command as string))
+        .filter((item) => !hasMenuInputBuilder(item.command as string))
+        .map((item) => `${surface}: ${item.label} → ${item.command as string}`),
+    );
+
+    // The list is the failure message: a new row lands here by name, before a user finds
+    // it by clicking it and getting nothing.
+    expect(offenders).toEqual([]);
+  });
+
+  it("has not been switched off by exempting the whole menu", () => {
+    // A guard whose exemption list grows to cover everything is a guard that has been
+    // deleted slowly (§V516's family). The exemptions must stay a rounding error against
+    // the rows actually checked.
+    const checked = TARGET_BEARING.flatMap((surface) =>
+      items(menuSchemaFor(surface, registry).entries).filter(
+        (item) => item.submenu === undefined && typeof item.command === "string",
+      ),
+    );
+    expect(checked.length).toBeGreaterThan(15);
+    expect(TARGET_INDEPENDENT.size).toBeLessThan(checked.length / 5);
+  });
+});
