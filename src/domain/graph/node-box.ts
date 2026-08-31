@@ -67,6 +67,15 @@ const TITLE_HEIGHT = 24;
  * output letterboxed inside its own slot and left a band of ground down each side —
  * "an extra border inside the area of the preview". Measured in the real DOM at 178 px
  * node width: content 176 × 99, border box 176 × 100.
+ *
+ * DELIBERATELY NOT the project aspect (§V622, T668 — decided, not overlooked). The slot
+ * is a fixed-footprint thumbnail serving the GRAPH's legibility, not the output's shape,
+ * and this number is a compatibility surface (§V621): every authored position — the 27
+ * shipped examples AND every user document — was placed around a 100px slot, and only
+ * the examples have a gate. Measured before deciding: following the project aspect costs
+ * E24 alone 23 overlapping pairs at 1:1, and a portrait project 203 pairs across 25 of
+ * 27 examples. Post-T663 the letterboxing is uniform in slot and target alike, so a
+ * non-16:9 preview is consistent, merely smaller.
  */
 const PREVIEW_ASPECT = 16 / 9;
 

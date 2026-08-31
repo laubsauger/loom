@@ -293,6 +293,10 @@
 /* ---- preview + inline controls ---------------------------------------- */
 
 .preview {
+  /* 16:9 on purpose, whatever the project's aspect (§V622, T668): the slot is a
+     thumbnail with a compatibility-bearing footprint (§V621) — every authored node
+     position, ours and users', was placed around this height. The full decision and
+     the measured cost of "following the project" live at node-box.ts PREVIEW_ASPECT. */
   aspect-ratio: 16 / 9;
   /*
     SEPARATION BY TONE, NOT BY A DRAWN LINE.
