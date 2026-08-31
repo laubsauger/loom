@@ -42,6 +42,7 @@ happened:
 | [E33 Obol](./E33-Obol.md) | a yin-yang medallion melting into slick oil and re-forming, in an ambient studio: the morph is a per-point blend of TWO CONFIGURATIONS with a front that leaves the emblem's own dividing curve, so it reads as becoming rather than as a cross-fade — and the first example to switch on the render's AMBIENT OCCLUSION (T624, T625) |
 | [E34 Lidar](./E34-Lidar.md) | a night survey: a ring of 240 rays, each AIMED BY AN ATTRIBUTE a kernel writes, sweeps a noise terrain — hot returns drape the relief, out-of-range dots hang where the beam gave out, and a SECOND chained Ray bounces off hitNormal for cyan echoes (T641, the Ray POP + reflection, lit by the T632/T636 environment stack) |
 | [E35 Nova-Torus](./E35-Nova-Torus.md) | the owner's second file, Corona's sibling: a starred torus whose TUBE THICKNESS is the audio's way in (`radius2` ← lowMid, gated from pixels — muting the pattern thins the ring to under half its lit area), a noise-mottled palette read, and a 0.5 Hz hue shimmer against Corona's 29-second cycle (T660, §V471, §V624) |
+| [E36 Facade](./E36-Facade.md) | projection-mapping PREVIZ: two projectors throw up a night facade — a scrolling warm gradient and an alignment chart whose overlap ADDS in the blend zone, aimed by LENS SHIFT rather than tilt so the rectangles stay rectangles, while a dentil cornice prints occlusion fingers on the wall above itself (T704: throw ratio, shift, additive beams, perspective occlusion) |
 
 ## Running them
 

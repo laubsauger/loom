@@ -1,0 +1,551 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-chart-projR": {
+        "id": "e-chart-projR",
+        "source": {
+          "nodeId": "chart",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "projR",
+          "portId": "cookie"
+        }
+      },
+      "e-cornlay-cornice": {
+        "id": "e-cornlay-cornice",
+        "source": {
+          "nodeId": "cornLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cornice",
+          "portId": "points"
+        }
+      },
+      "e-cornpts-cornlay": {
+        "id": "e-cornpts-cornlay",
+        "source": {
+          "nodeId": "cornPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cornLay",
+          "portId": "in"
+        }
+      },
+      "e-groundlay-ground": {
+        "id": "e-groundlay-ground",
+        "source": {
+          "nodeId": "groundLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ground",
+          "portId": "points"
+        }
+      },
+      "e-groundpts-groundlay": {
+        "id": "e-groundpts-groundlay",
+        "source": {
+          "nodeId": "groundPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "groundLay",
+          "portId": "in"
+        }
+      },
+      "e-shot-out": {
+        "id": "e-shot-out",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-walllay-wall": {
+        "id": "e-walllay-wall",
+        "source": {
+          "nodeId": "wallLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wall",
+          "portId": "points"
+        }
+      },
+      "e-wallpts-walllay": {
+        "id": "e-wallpts-walllay",
+        "source": {
+          "nodeId": "wallPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wallLay",
+          "portId": "in"
+        }
+      },
+      "e-warm-projL": {
+        "id": "e-warm-projL",
+        "source": {
+          "nodeId": "warm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "projL",
+          "portId": "cookie"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "chart": {
+        "definitionVersion": 1,
+        "id": "chart",
+        "label": "chart1",
+        "parameters": {
+          "color1": [
+            0.05,
+            0.05,
+            0.06,
+            1
+          ],
+          "color2": [
+            0.85,
+            0.85,
+            0.9,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            8,
+            5
+          ]
+        },
+        "position": {
+          "x": -1860,
+          "y": 340
+        },
+        "type": "checker"
+      },
+      "cornLay": {
+        "definitionVersion": 1,
+        "id": "cornLay",
+        "label": "cornlay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 9,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* nine dentil blocks along the cornice line, jutting off the wall face */\n  q.position = vec3f(p.position.x, 3.25, 0.42);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1260,
+          "y": 640
+        },
+        "type": "pointKernel"
+      },
+      "cornPts": {
+        "definitionVersion": 1,
+        "id": "cornPts",
+        "label": "cornpts1",
+        "parameters": {
+          "cols": 9,
+          "count": 9,
+          "rows": 1,
+          "sizeX": 6.4,
+          "sizeY": 1
+        },
+        "position": {
+          "x": -1560,
+          "y": 640
+        },
+        "type": "pointGrid"
+      },
+      "cornice": {
+        "definitionVersion": 1,
+        "id": "cornice",
+        "label": "cornice1",
+        "parameters": {
+          "mode": "instances",
+          "scale": 0.22,
+          "shape": "box"
+        },
+        "position": {
+          "x": -960,
+          "y": 640
+        },
+        "type": "geometry"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 0.35,
+          "frequency": 0.03,
+          "offset": 3.4,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -960,
+          "y": 940
+        },
+        "type": "lfo"
+      },
+      "drive": {
+        "definitionVersion": 1,
+        "id": "drive",
+        "label": "drive1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.05,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2160,
+          "y": 40
+        },
+        "type": "lfo"
+      },
+      "ground": {
+        "definitionVersion": 1,
+        "id": "ground",
+        "label": "ground1",
+        "parameters": {
+          "mode": "surface"
+        },
+        "position": {
+          "x": -960,
+          "y": 340
+        },
+        "type": "geometry"
+      },
+      "groundLay": {
+        "definitionVersion": 1,
+        "id": "groundLay",
+        "label": "groundlay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 384,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the grid lies down: the forecourt, from the wall foot toward the camera */\n  q.position = vec3f(p.position.x, 0.0, p.position.y + 4.0);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1260,
+          "y": 340
+        },
+        "type": "pointKernel"
+      },
+      "groundPts": {
+        "definitionVersion": 1,
+        "id": "groundPts",
+        "label": "groundpts1",
+        "parameters": {
+          "cols": 24,
+          "count": 384,
+          "rows": 16,
+          "sizeX": 10,
+          "sizeY": 8
+        },
+        "position": {
+          "x": -1560,
+          "y": 340
+        },
+        "type": "pointGrid"
+      },
+      "moon": {
+        "definitionVersion": 1,
+        "id": "moon",
+        "label": "moon1",
+        "parameters": {
+          "color": [
+            0.5,
+            0.62,
+            0.95,
+            1
+          ],
+          "direction": [
+            0.4,
+            -0.7,
+            -0.6
+          ],
+          "intensity": 0.16,
+          "kind": "directional",
+          "shadows": false
+        },
+        "position": {
+          "x": -640,
+          "y": 640
+        },
+        "type": "light"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 0,
+          "y": 340
+        },
+        "type": "output"
+      },
+      "projL": {
+        "definitionVersion": 1,
+        "id": "projL",
+        "label": "projL1",
+        "parameters": {
+          "brightness": 1.1,
+          "eye": [
+            -2,
+            1.2,
+            6
+          ],
+          "lookAt": [
+            -0.8,
+            2.3,
+            0
+          ],
+          "shiftY": 0.35,
+          "throwRatio": 1.8
+        },
+        "position": {
+          "x": -640,
+          "y": 40
+        },
+        "type": "projector"
+      },
+      "projR": {
+        "definitionVersion": 1,
+        "id": "projR",
+        "label": "projR1",
+        "parameters": {
+          "brightness": 1.1,
+          "eye": [
+            2,
+            1.2,
+            6
+          ],
+          "lookAt": [
+            0.8,
+            2.3,
+            0
+          ],
+          "shiftY": 0.35,
+          "throwRatio": 1.8
+        },
+        "position": {
+          "x": -640,
+          "y": 340
+        },
+        "type": "projector"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.55,
+            0.65,
+            1,
+            1
+          ],
+          "ambientIntensity": 0.07,
+          "background": [
+            0.008,
+            0.012,
+            0.028,
+            1
+          ],
+          "camera": "view1",
+          "lights": "moon1",
+          "projectors": "projL1 projR1",
+          "scenes": "wall1 ground1 cornice1"
+        },
+        "position": {
+          "x": -320,
+          "y": 340
+        },
+        "type": "render"
+      },
+      "view": {
+        "definitionVersion": 1,
+        "id": "view",
+        "label": "view1",
+        "parameters": {
+          "eye": [
+            3.4,
+            1.9,
+            9.5
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 3.4
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 60,
+          "fov": 38,
+          "lookAt": [
+            0,
+            2.2,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": -640,
+          "y": 940
+        },
+        "type": "camera"
+      },
+      "wall": {
+        "definitionVersion": 1,
+        "id": "wall",
+        "label": "wall1",
+        "parameters": {
+          "mode": "surface"
+        },
+        "position": {
+          "x": -960,
+          "y": 40
+        },
+        "type": "geometry"
+      },
+      "wallLay": {
+        "definitionVersion": 1,
+        "id": "wallLay",
+        "label": "walllay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 576,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* the grid stands up: the facade, 8 wide, foot on the ground at y = 0 */\n  q.position = vec3f(p.position.x, p.position.y + 2.1, 0.0);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1260,
+          "y": 40
+        },
+        "type": "pointKernel"
+      },
+      "wallPts": {
+        "definitionVersion": 1,
+        "id": "wallPts",
+        "label": "wallpts1",
+        "parameters": {
+          "cols": 32,
+          "count": 576,
+          "rows": 18,
+          "sizeX": 8,
+          "sizeY": 4.2
+        },
+        "position": {
+          "x": -1560,
+          "y": 40
+        },
+        "type": "pointGrid"
+      },
+      "warm": {
+        "definitionVersion": 2,
+        "id": "warm",
+        "label": "warm1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": {
+            "bindings": {
+              "driven": {
+                "channel": "drive1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "stops": [
+            {
+              "color": [
+                1,
+                0.45,
+                0.08,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                0.12,
+                0.28,
+                1
+              ],
+              "position": 0.45
+            },
+            {
+              "color": [
+                0.62,
+                0.1,
+                0.85,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1860,
+          "y": 40
+        },
+        "resolution": {
+          "height": 144,
+          "mode": "fixed",
+          "width": 256
+        },
+        "type": "ramp"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E36 Facade",
+  "projectId": "example-e36-facade",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 36,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

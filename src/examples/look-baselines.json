@@ -109,6 +109,11 @@
     "range": 0.9962,
     "f0max": 0.9872
   },
+  "E36-Facade.loom.json": {
+    "motion": 0.00578,
+    "range": 0.739,
+    "f0max": 0.7611
+  },
   "E4-Bloom.loom.json": {
     "motion": 0.05572,
     "range": 0.9989,
