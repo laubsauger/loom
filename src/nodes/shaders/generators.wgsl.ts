@@ -92,7 +92,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   );
 
   let n = max(1u, min(MAX_STOPS, u32(params.count + 0.5)));
-  let raw = (rampCoordinate(uv) + params.phase) / max(abs(params.period), 1e-6);
+  /* T556: period MULTIPLIES — "how many times the ramp repeats across its axis", as
+     the parameter has always described itself. The old form divided, so period 4 showed
+     a quarter of ONE cycle stretched across the axis instead of four cycles — the
+     description promised tiling and the shader delivered magnification. Phase is in
+     CYCLE units, so 0.5 is half a ramp at any period. */
+  let raw = rampCoordinate(uv) * max(abs(params.period), 1e-6) + params.phase;
   let t = fract(raw);
 
   // Before the first stop and after the last: hold. A gradient that faded to black
