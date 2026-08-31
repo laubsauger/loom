@@ -554,5 +554,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       stepRef.current?.();
     }
-  }, [inputs.compiledOutputs]);
+    // The graph too, not just the plan: preview candidates read ui state (the P toggle,
+    // the pin), and a ui-only edit moves the document without moving the compiled
+    // outputs.
+  }, [inputs.compiledOutputs, inputs.graph]);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createFrameCoalescer } from "./coalesce.ts";
+import { createFrameCoalescer, rafScheduler } from "./coalesce.ts";
 import type { FrameScheduler } from "./coalesce.ts";
 
 /**
@@ -108,5 +108,61 @@ describe("frame coalescing", () => {
     coalescer.schedule("radius", 2);
     scheduler.frame();
     expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+describe("rafScheduler's hidden-window backstop (T634)", () => {
+  // Chrome SUSPENDS requestAnimationFrame for a hidden or occluded window — and an
+  // agent driving the app through CDP delivers pointer gestures to exactly such a
+  // window. Without the backstop a queued parameter value stayed pending until the tab
+  // was next looked at. jsdom + fake timers reproduce the suspension exactly: timers
+  // advance, rAF frames are simply never granted.
+  it("fires by timeout when no frame ever arrives, exactly once", () => {
+    vi.useFakeTimers();
+    // Vitest's fake rAF is a timer and would fire; a SUSPENDED rAF grants nothing at
+    // all, which is what these stubs reproduce.
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    try {
+      const callback = vi.fn();
+      rafScheduler(callback);
+      vi.advanceTimersByTime(249);
+      expect(callback).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2);
+      expect(callback).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1000);
+      expect(callback).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
+  it("the frame wins while rAF runs, and the backstop stays quiet", () => {
+    vi.useFakeTimers();
+    try {
+      const callback = vi.fn();
+      rafScheduler(callback);
+      vi.advanceTimersToNextFrame();
+      expect(callback).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1000);
+      expect(callback).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancel silences both doors", () => {
+    vi.useFakeTimers();
+    try {
+      const callback = vi.fn();
+      const cancel = rafScheduler(callback);
+      cancel();
+      vi.advanceTimersToNextFrame();
+      vi.advanceTimersByTime(1000);
+      expect(callback).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

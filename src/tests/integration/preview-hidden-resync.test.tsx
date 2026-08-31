@@ -10,6 +10,7 @@ import type { PreviewProgram } from "@runtime/previews/index.ts";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
 import { createPreviewSinkStore } from "../../app/preview-sinks.ts";
+import { useGraphBackground } from "../../app/use-graph-background.ts";
 import { useGraphCompile } from "../../app/use-graph-compile.ts";
 import { useNodePreviews } from "../../app/use-node-previews.ts";
 
@@ -192,5 +193,67 @@ describe("T620 — a hidden page's preview pipeline still follows the document",
       }
     }
     expect((latest?.passes ?? []).length).toBeGreaterThan(0);
+  });
+});
+
+describe("T634 — the graph background follows the document while hidden too", () => {
+  it("a node marked as background while hidden reaches the sink set with rAF never firing", async () => {
+    hidePage();
+    const runtime = newRuntime();
+    const previewSinks = createPreviewSinkStore();
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 1200, bottom: 900, width: 1200, height: 900 }) as DOMRect;
+    const canvasRef = { current: canvas };
+    const backend = fakeBackend(() => {});
+
+    const hook2 = renderHook(() => {
+      const compile = useGraphCompile(runtime, CAPABILITIES, previewSinks);
+      useGraphBackground({
+        backend,
+        canvasRef,
+        graph: compile.graph,
+        compiledOutputs: compile.compiled?.outputs ?? [],
+        previewSinks,
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      });
+      return compile;
+    });
+
+    let solidId = "";
+    await act(async () => {
+      const result = await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "seed",
+          operations: [{ op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 } }],
+        },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+      solidId = (result.output as { createdIds: Record<string, string> }).createdIds["$solid"] ?? "";
+    });
+    await act(async () => {
+      const result = await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "mark",
+          operations: [
+            { op: "setNodeUi", nodeId: solidId as NodeId, ui: { background: true } } as never,
+          ],
+        },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+    });
+
+    // Marking IS watching (T252): the mark registered the sink without a single rAF
+    // frame, so the recompile materializes the background's source.
+    expect(hook2.result.current.graph.nodes[solidId as NodeId]?.ui?.background).toBe(true);
+    expect(previewSinks.get().map((sink) => sink.nodeId)).toContain(solidId);
   });
 });

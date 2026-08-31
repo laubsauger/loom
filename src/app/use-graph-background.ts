@@ -73,6 +73,8 @@ export function backgroundRect(
 export function useGraphBackground(inputs: GraphBackgroundInputs): void {
   const inputsRef = useRef(inputs);
   inputsRef.current = inputs;
+  /** The live tick body, for the T634 hidden-page resync below. Null while not mounted. */
+  const stepRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = inputs.canvasRef.current;
@@ -86,9 +88,7 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
     let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
-    const tick = (): void => {
-      frameHandle = requestAnimationFrame(tick);
-
+    const step = (): void => {
       if (backend.status.deviceGeneration !== lastDeviceGeneration) {
         lastDeviceGeneration = backend.status.deviceGeneration;
         system.reset();
@@ -158,12 +158,31 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
       });
     };
 
+    const tick = (): void => {
+      frameHandle = requestAnimationFrame(tick);
+      step();
+    };
+    // T634 (T620's audit): the rAF loop is the cadence, not the only door — Chrome
+    // suspends rAF for a hidden or occluded window while edits and recompiles keep
+    // running, and this hook maintains preview sinks (marking IS watching, T252) and a
+    // preview program, both of which must follow the document. See use-node-previews.
+    stepRef.current = step;
     frameHandle = requestAnimationFrame(tick);
     return () => {
+      stepRef.current = null;
       cancelAnimationFrame(frameHandle);
       host.dispose();
     };
     // The ref carries per-tick inputs; the effect re-runs only for a new surface/backend.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputs.backend, inputs.canvasRef]);
+
+  // One resync step per landed plan while the page is hidden — rAF covers the visible
+  // case one frame later anyway (see the gate's rationale in use-node-previews.ts).
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      stepRef.current?.();
+    }
+    // The graph too, not just the plan: a mark is ui state, and a ui-only edit moves
+    // the document without moving the compiled outputs.
+  }, [inputs.compiledOutputs, inputs.graph]);
 }

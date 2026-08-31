@@ -19,8 +19,28 @@ export const rafScheduler: FrameScheduler = (callback) => {
     const timer = setTimeout(callback, 16);
     return () => clearTimeout(timer);
   }
-  const handle = requestAnimationFrame(() => callback());
-  return () => cancelAnimationFrame(handle);
+  /*
+   * T634 (T620's audit): rAF is SUSPENDED, not slow, for a hidden or occluded window —
+   * and an agent driving the app through CDP delivers pointer gestures to exactly such
+   * a window, so a value queued here would stay pending until the tab is next looked
+   * at. The backstop flushes it anyway; while rAF runs it always wins, so the visible
+   * cadence is untouched.
+   */
+  let settled = false;
+  const fire = (): void => {
+    if (settled) return;
+    settled = true;
+    cancelAnimationFrame(handle);
+    clearTimeout(backstop);
+    callback();
+  };
+  const handle = requestAnimationFrame(fire);
+  const backstop = setTimeout(fire, 250);
+  return () => {
+    settled = true;
+    cancelAnimationFrame(handle);
+    clearTimeout(backstop);
+  };
 };
 
 export interface FrameCoalescer<T> {
