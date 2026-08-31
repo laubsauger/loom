@@ -22,12 +22,19 @@ import type { PreviewRequest, PreviewSystem } from "@runtime/previews/index.ts";
  * touch on the pixels an export or viewer sees.
  *
  * The image letterboxes into the pane (§V118: never stretch — a background that
- * misrepresents aspect is worse than bars). Several marked nodes stack in document
- * order, later over earlier.
+ * misrepresents aspect is worse than bars). SEVERAL marked nodes TILE it (T677): a
+ * best-fit grid, each image letterboxed into its own cell, so they share the space
+ * without one hiding another and without any of them being stretched or cropped.
  */
 
-/** Backgrounds are big and behind everything; a handful is already a light show. */
-const BACKGROUND_TILE_CAPACITY = 4;
+/**
+ * Backgrounds are behind everything, so a handful is already a light show. T677 raises
+ * this 4 → 8 because the cost changed with the layout: a stack of full-pane backgrounds
+ * paid pane-sized rasterisation N times over, while eight TILES divide the same pane
+ * between them — the total area is the pane either way, and the reason to keep a ceiling
+ * at all is the per-preview bookkeeping rather than the pixels.
+ */
+const BACKGROUND_TILE_CAPACITY = 8;
 
 /** Refresh a background at preview cadence — it is ambience, not the picture. */
 export interface GraphBackgroundInputs {
@@ -68,6 +75,70 @@ export function backgroundRect(
   const width = size[0] * scale;
   const height = size[1] * scale;
   return { x: (surface.width - width) / 2, y: (surface.height - height) / 2, width, height };
+}
+
+/**
+ * T677 — SEVERAL marked nodes TILE the pane instead of stacking on top of each other.
+ * The owner's ask, verbatim: "tile them to have them share the space thats there without
+ * changing their aspect or cropping things. just like TD does it".
+ *
+ * BEST-FIT GRID, not a fixed column count, and that is the whole design decision. For
+ * each possible row count the column count follows (`ceil(n / rows)`), the tile width is
+ * whichever of the pane's two constraints binds — `min(W / cols, (H / rows) · aspect)` —
+ * and the layout that makes the tile BIGGEST wins. A fixed column count is what produces
+ * the small-tiles-with-large-margins result people recognise as wrong: two items in a
+ * wide pane want one row, four want two, and no constant serves both.
+ *
+ * Aspect and cropping are handled by construction rather than by care. The grid is sized
+ * from the items' aspect, so in the ordinary case the cell and the image are the same
+ * shape and there is no residue at all; and each image is then LETTERBOXED into its own
+ * cell through `backgroundRect`, so an item whose aspect differs — a per-node resolution
+ * override (§V50) is enough to do it — gets bars rather than a stretch or a crop. There
+ * is no code path here that can scale the two axes differently.
+ *
+ * The MEDIAN aspect picks the grid, not the first item's: one node with an override
+ * should not choose the layout for the rest. A short final row is centred against the
+ * rows above it, which is what "shares the space" looks like when n is not a multiple of
+ * the column count.
+ *
+ * n = 1 returns exactly what `backgroundRect` returned before this existed — the same
+ * call, not an equivalent one — so a single background is untouched (§V309).
+ */
+export function backgroundTiles(
+  surface: { width: number; height: number },
+  sizes: ReadonlyArray<readonly [number, number]>,
+): Array<{ x: number; y: number; width: number; height: number }> {
+  const count = sizes.length;
+  if (count === 0) return [];
+  if (count === 1) return [backgroundRect(surface, sizes[0]!)];
+
+  const aspects = sizes.map((size) => Math.max(size[0], 1) / Math.max(size[1], 1)).sort((a, b) => a - b);
+  const aspect = aspects[(aspects.length - 1) >> 1] ?? 1;
+
+  let best = { rows: 1, columns: count, tileWidth: -1 };
+  for (let rows = 1; rows <= count; rows += 1) {
+    const columns = Math.ceil(count / rows);
+    const tileWidth = Math.min(surface.width / columns, (surface.height / rows) * aspect);
+    if (tileWidth > best.tileWidth) best = { rows, columns, tileWidth };
+  }
+
+  const { rows, columns, tileWidth } = best;
+  const tileHeight = tileWidth / aspect;
+  const originY = (surface.height - rows * tileHeight) / 2;
+  return sizes.map((size, index) => {
+    const row = Math.floor(index / columns);
+    const column = index - row * columns;
+    const inThisRow = Math.min(columns, count - row * columns);
+    const originX = (surface.width - inThisRow * tileWidth) / 2;
+    const cell = { width: tileWidth, height: tileHeight };
+    const inner = backgroundRect(cell, size);
+    return {
+      x: originX + column * tileWidth + inner.x,
+      y: originY + row * tileHeight + inner.y,
+      width: inner.width,
+      height: inner.height,
+    };
+  });
 }
 
 export function useGraphBackground(inputs: GraphBackgroundInputs): void {
@@ -123,10 +194,16 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
       const surface = { x: 0, y: 0, width: rect.width, height: rect.height };
       const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
 
+      // T677: the DRAWN backgrounds are the materialized ones, so the grid is sized on
+      // those alone — a marked node still waiting on its recompile must not hold a cell
+      // open and shrink everything else for a frame.
+      const drawn = marks
+        .map((mark) => mark.output)
+        .filter((output): output is ResolvedOutput => output !== undefined);
+      const tiles = backgroundTiles(surface, drawn.map((output) => output.size));
+
       const requests: PreviewRequest[] = [];
-      for (const mark of marks) {
-        const output = mark.output;
-        if (output === undefined) continue;
+      for (const [index, output] of drawn.entries()) {
         requests.push({
           ref: { nodeId: output.nodeId, portId: output.portId },
           source: {
@@ -135,7 +212,7 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
             format: output.format,
             space: output.space,
           },
-          rect: backgroundRect(surface, output.size),
+          rect: tiles[index]!,
           area: { width: Math.round(surface.width), height: Math.round(surface.height) },
           visible: true,
           // A background is deliberately always on while marked — scrolling the graph
