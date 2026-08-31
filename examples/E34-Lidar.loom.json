@@ -1,0 +1,948 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-aim-cast": {
+        "id": "e-aim-cast",
+        "source": {
+          "nodeId": "aim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cast",
+          "portId": "points"
+        }
+      },
+      "e-carve-cast": {
+        "id": "e-carve-cast",
+        "source": {
+          "nodeId": "carve",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cast",
+          "portId": "field"
+        }
+      },
+      "e-carve-probe": {
+        "id": "e-carve-probe",
+        "source": {
+          "nodeId": "carve",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "probe",
+          "portId": "texture"
+        }
+      },
+      "e-carve-rebound": {
+        "id": "e-carve-rebound",
+        "source": {
+          "nodeId": "carve",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rebound",
+          "portId": "field"
+        }
+      },
+      "e-cast-mark": {
+        "id": "e-cast-mark",
+        "source": {
+          "nodeId": "cast",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mark",
+          "portId": "in"
+        }
+      },
+      "e-cast-ricochet": {
+        "id": "e-cast-ricochet",
+        "source": {
+          "nodeId": "cast",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ricochet",
+          "portId": "in"
+        }
+      },
+      "e-clip-halo": {
+        "id": "e-clip-halo",
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-cut-clip": {
+        "id": "e-cut-clip",
+        "source": {
+          "nodeId": "cut",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clip",
+          "portId": "input"
+        }
+      },
+      "e-fan-aim": {
+        "id": "e-fan-aim",
+        "source": {
+          "nodeId": "fan",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "aim",
+          "portId": "in"
+        }
+      },
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-halo-glow": {
+        "id": "e-halo-glow",
+        "order": 0,
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in2"
+        }
+      },
+      "e-mark-impacts": {
+        "id": "e-mark-impacts",
+        "source": {
+          "nodeId": "mark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "impacts",
+          "portId": "points"
+        }
+      },
+      "e-mark2-echoes": {
+        "id": "e-mark2-echoes",
+        "source": {
+          "nodeId": "mark2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "echoes",
+          "portId": "points"
+        }
+      },
+      "e-probe-raise": {
+        "id": "e-probe-raise",
+        "source": {
+          "nodeId": "probe",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "raise",
+          "portId": "in"
+        }
+      },
+      "e-raise-ground": {
+        "id": "e-raise-ground",
+        "source": {
+          "nodeId": "raise",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ground",
+          "portId": "points"
+        }
+      },
+      "e-rebound-mark2": {
+        "id": "e-rebound-mark2",
+        "source": {
+          "nodeId": "rebound",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mark2",
+          "portId": "in"
+        }
+      },
+      "e-relief-carve": {
+        "id": "e-relief-carve",
+        "source": {
+          "nodeId": "relief",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "carve",
+          "portId": "input"
+        }
+      },
+      "e-ricochet-rebound": {
+        "id": "e-ricochet-rebound",
+        "source": {
+          "nodeId": "ricochet",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rebound",
+          "portId": "points"
+        }
+      },
+      "e-sheet-unfold": {
+        "id": "e-sheet-unfold",
+        "source": {
+          "nodeId": "sheet",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "unfold",
+          "portId": "in"
+        }
+      },
+      "e-shot-cut": {
+        "id": "e-shot-cut",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cut",
+          "portId": "input"
+        }
+      },
+      "e-shot-glow": {
+        "id": "e-shot-glow",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in1"
+        }
+      },
+      "e-skyband-shot": {
+        "id": "e-skyband-shot",
+        "source": {
+          "nodeId": "skyband",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shot",
+          "portId": "environment"
+        }
+      },
+      "e-unfold-probe": {
+        "id": "e-unfold-probe",
+        "source": {
+          "nodeId": "unfold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "probe",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "aim": {
+        "definitionVersion": 1,
+        "id": "aim",
+        "label": "aim1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"direction\",\"type\":\"vec3f\",\"default\":[0,-1,0]}]",
+          "capacity": 240,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;\n  /* 0.60..1.10 rad (34°..63° below horizontal): the steep end lands well inside range,\n     the shallow end's slant exceeds it and the outer ring goes dark — and shallow\n     strikes reflect FORWARD off back-slopes, which is where the echoes come from. */\n  let tilt = 0.60 + ctx.value1 * 0.50;\n  q.position = vec3f(0.0, 3.3, 0.0);\n  q.direction = normalize(vec3f(\n    sin(azimuth) * cos(tilt),\n    -sin(tilt),\n    cos(azimuth) * cos(tilt),\n  ));\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "tiltwave1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -2240,
+          "y": 40
+        },
+        "type": "pointKernel"
+      },
+      "basalt": {
+        "definitionVersion": 1,
+        "id": "basalt",
+        "label": "basalt1",
+        "parameters": {
+          "color": [
+            0.14,
+            0.15,
+            0.18,
+            1
+          ],
+          "roughness": 0.82,
+          "shininess": 26,
+          "specular": [
+            0.3,
+            0.33,
+            0.4,
+            1
+          ]
+        },
+        "position": {
+          "x": -1600,
+          "y": -920
+        },
+        "type": "materialPhong"
+      },
+      "carve": {
+        "definitionVersion": 1,
+        "id": "carve",
+        "label": "carve1",
+        "parameters": {
+          "blacklevel": 0.36,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 0.62
+        },
+        "position": {
+          "x": -2560,
+          "y": -880
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "level"
+      },
+      "cast": {
+        "definitionVersion": 1,
+        "id": "cast",
+        "label": "cast1",
+        "parameters": {
+          "direction": [
+            0,
+            -1,
+            0
+          ],
+          "extent": 3.2,
+          "heightOffset": -0.6,
+          "heightScale": 2.6,
+          "maxDistance": 3.4,
+          "steps": 64
+        },
+        "position": {
+          "x": -1920,
+          "y": 40
+        },
+        "type": "pointRay"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "high": 6,
+          "low": 0,
+          "mode": "clamp",
+          "steps": 4
+        },
+        "position": {
+          "x": 320,
+          "y": -140
+        },
+        "type": "limit"
+      },
+      "cut": {
+        "definitionVersion": 1,
+        "id": "cut",
+        "label": "cut1",
+        "parameters": {
+          "blacklevel": 0.42,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1.15
+        },
+        "position": {
+          "x": 0,
+          "y": -140
+        },
+        "type": "level"
+      },
+      "echoes": {
+        "definitionVersion": 1,
+        "id": "echoes",
+        "label": "echoes1",
+        "parameters": {
+          "material": "spark1",
+          "mode": "instances",
+          "scale": 0.05,
+          "shape": "octahedron",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -640,
+          "y": 520
+        },
+        "type": "geometry"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            4.6,
+            3.1,
+            0
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 4.6
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.z": {
+            "bindings": {
+              "driven": {
+                "channel": "orbz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 40,
+          "fov": 46,
+          "lookAt": [
+            0,
+            0.55,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": -640,
+          "y": -440
+        },
+        "type": "camera"
+      },
+      "fan": {
+        "definitionVersion": 1,
+        "id": "fan",
+        "label": "fan1",
+        "parameters": {
+          "count": 240
+        },
+        "position": {
+          "x": -2560,
+          "y": 40
+        },
+        "type": "pointLine"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {},
+        "position": {
+          "x": 960,
+          "y": -140
+        },
+        "type": "add"
+      },
+      "ground": {
+        "definitionVersion": 1,
+        "id": "ground",
+        "label": "ground1",
+        "parameters": {
+          "material": "basalt1",
+          "mode": "surface",
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1280,
+          "y": -440
+        },
+        "type": "geometry"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 22
+        },
+        "position": {
+          "x": 640,
+          "y": -140
+        },
+        "type": "blur"
+      },
+      "impacts": {
+        "definitionVersion": 1,
+        "id": "impacts",
+        "label": "impacts1",
+        "parameters": {
+          "material": "spark1",
+          "mode": "instances",
+          "scale": 0.045,
+          "shape": "octahedron",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1280,
+          "y": 40
+        },
+        "type": "geometry"
+      },
+      "mark": {
+        "definitionVersion": 1,
+        "id": "mark",
+        "label": "mark1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hit\",\"type\":\"f32\",\"default\":[0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "capacity": 240,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = p.hitPosition;\n  /* distance re-derived from the one mast — see the attribute comment on why. */\n  let slant = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - slant / 3.4, 0.0, 1.0);\n  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (0.5 + 1.6 * near);\n  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * 0.32;\n  q.tint = mix(lost, ret, p.hit);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1600,
+          "y": 40
+        },
+        "type": "pointKernel"
+      },
+      "mark2": {
+        "definitionVersion": 1,
+        "id": "mark2",
+        "label": "mark2a",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hit\",\"type\":\"f32\",\"default\":[0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "capacity": 240,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let real = p.hit * step(-10.0, p.hitPosition.y);\n  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition, real > 0.5);\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */\n  let path = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - path / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * ((0.35 + 1.10 * near) * real);\n  return q;\n}"
+        },
+        "position": {
+          "x": -960,
+          "y": 520
+        },
+        "type": "pointKernel"
+      },
+      "moon": {
+        "definitionVersion": 1,
+        "id": "moon",
+        "label": "moon1",
+        "parameters": {
+          "color": [
+            0.72,
+            0.8,
+            1,
+            1
+          ],
+          "direction": [
+            0.35,
+            -0.7,
+            -0.42
+          ],
+          "intensity": 0.5,
+          "kind": "directional",
+          "shadowExtent": 4.5,
+          "shadows": true
+        },
+        "position": {
+          "x": -960,
+          "y": -920
+        },
+        "type": "light"
+      },
+      "orbx": {
+        "definitionVersion": 1,
+        "id": "orbx",
+        "label": "orbx1",
+        "parameters": {
+          "amplitude": 4.6,
+          "frequency": 0.019,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2880,
+          "y": 520
+        },
+        "type": "lfo"
+      },
+      "orbz": {
+        "definitionVersion": 1,
+        "id": "orbz",
+        "label": "orbz1",
+        "parameters": {
+          "amplitude": 4.6,
+          "frequency": 0.019,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2880,
+          "y": 1000
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1280,
+          "y": -140
+        },
+        "type": "output"
+      },
+      "probe": {
+        "definitionVersion": 1,
+        "id": "probe",
+        "label": "probe1",
+        "parameters": {},
+        "position": {
+          "x": -1920,
+          "y": -440
+        },
+        "type": "textureToAttribute"
+      },
+      "raise": {
+        "definitionVersion": 1,
+        "id": "raise",
+        "label": "raise1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
+          "capacity": 16384,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 3.2;\n  let worldZ = (v * 2.0 - 1.0) * 3.2;\n  q.position = vec3f(worldX, p.sample.r * 2.6 + (-0.6), worldZ);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1600,
+          "y": -440
+        },
+        "type": "pointKernel"
+      },
+      "rebound": {
+        "definitionVersion": 1,
+        "id": "rebound",
+        "label": "rebound1",
+        "parameters": {
+          "direction": [
+            0,
+            -1,
+            0
+          ],
+          "extent": 3.2,
+          "heightOffset": -0.6,
+          "heightScale": 2.6,
+          "maxDistance": 3.4,
+          "steps": 48
+        },
+        "position": {
+          "x": -1280,
+          "y": 520
+        },
+        "type": "pointRay"
+      },
+      "relief": {
+        "definitionVersion": 1,
+        "id": "relief",
+        "label": "relief1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": false,
+          "exp": 1,
+          "gain": 0.58,
+          "harmon": 4,
+          "mono": true,
+          "offset": 0,
+          "period": 0.4,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 11,
+          "speed": 0,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2880,
+          "y": -440
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "noise"
+      },
+      "ricochet": {
+        "definitionVersion": 1,
+        "id": "ricochet",
+        "label": "ricochet1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"direction\",\"type\":\"vec3f\",\"default\":[0,-1,0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"hitNormal\",\"type\":\"vec3f\",\"default\":[0,1,0]}]",
+          "capacity": 240,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let landed = slant < 3.4 - 0.01;\n  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition + p.hitNormal * 0.03, landed);\n  q.direction = normalize(reflect(p.direction, p.hitNormal) + vec3f(0.0, 0.0001, 0.0));\n  return q;\n}"
+        },
+        "position": {
+          "x": -1920,
+          "y": 520
+        },
+        "type": "pointKernel"
+      },
+      "sheet": {
+        "definitionVersion": 1,
+        "id": "sheet",
+        "label": "sheet1",
+        "parameters": {
+          "cols": 128,
+          "count": 16384,
+          "rows": 128
+        },
+        "position": {
+          "x": -2560,
+          "y": -440
+        },
+        "type": "pointGrid"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.5,
+            0.6,
+            0.92,
+            1
+          ],
+          "ambientIntensity": 0.16,
+          "background": [
+            0.006,
+            0.008,
+            0.016,
+            1
+          ],
+          "camera": "eye1",
+          "environmentIntensity": 1,
+          "lights": "moon1",
+          "scenes": "ground1 impacts1 echoes1"
+        },
+        "position": {
+          "x": -320,
+          "y": -140
+        },
+        "type": "render"
+      },
+      "skyband": {
+        "definitionVersion": 2,
+        "id": "skyband",
+        "label": "skyband1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.01,
+                0.014,
+                0.03,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.03,
+                0.052,
+                0.11,
+                1
+              ],
+              "position": 0.55
+            },
+            {
+              "color": [
+                0.085,
+                0.12,
+                0.22,
+                1
+              ],
+              "position": 0.78
+            },
+            {
+              "color": [
+                0.012,
+                0.016,
+                0.034,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -960,
+          "y": -1400
+        },
+        "resolution": {
+          "height": 128,
+          "mode": "fixed",
+          "width": 256
+        },
+        "type": "ramp"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1600,
+          "y": 520
+        },
+        "type": "materialUnlit"
+      },
+      "tiltwave": {
+        "definitionVersion": 1,
+        "id": "tiltwave",
+        "label": "tiltwave1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.045,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2880,
+          "y": 40
+        },
+        "type": "lfo"
+      },
+      "unfold": {
+        "definitionVersion": 1,
+        "id": "unfold",
+        "label": "unfold1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 16384,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 3.2;\n  let worldZ = (v * 2.0 - 1.0) * 3.2;\n  q.position = vec3f(worldX / 3.2, -worldZ / 3.2, 0.0);\n  return q;\n}"
+        },
+        "position": {
+          "x": -2240,
+          "y": -440
+        },
+        "type": "pointKernel"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E34 Lidar",
+  "projectId": "example-e34-lidar",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 34,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

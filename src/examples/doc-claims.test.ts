@@ -35,10 +35,22 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
       "T504: `audioFileIn` is now genuinely IN this graph (branch 1 of the Switch) so its exemption is gone, but the microphone is still only an instruction — a shipped `audioIn` opens the device on load, which an example must not do. The doc says how to add it as branch 2.",
   },
   {
+    doc: "E34-Lidar.md",
+    type: "renderPoints",
+    reason:
+      "the T642 deviation paragraph: it names the node whose group-predicate seam the lit scene path LACKS, to say the readings here are a workaround and not the idiom. A statement about an absent capability, deliberately about a node this graph cannot use.",
+  },
+  {
     doc: "E27-Relief.md",
     type: "audioIn",
     reason:
       "the UNDERSTUDY paragraph, generalising: the pattern this example establishes for `webcam` is what would let the two audio inputs be exampled under §V363 too. A statement about a FUTURE graph, deliberately not applied here — one example, one claim.",
+  },
+  {
+    doc: "E34-Lidar.md",
+    type: "renderPoints",
+    reason:
+      "the T642 deviation paragraph: it names the node whose group-predicate seam the lit scene path LACKS, to say the readings here are a workaround and not the idiom. A statement about an absent capability, deliberately about a node this graph cannot use.",
   },
   {
     doc: "E27-Relief.md",

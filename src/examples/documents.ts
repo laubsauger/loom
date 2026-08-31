@@ -6414,7 +6414,10 @@ const obolDocument = document(
           ambientColor: [0.62, 0.68, 0.84, 1],
           ambientIntensity: 0.62,
           background: [0.008, 0.009, 0.013, 1],
-          environmentIntensity: 7.00,
+          /* T643: the STATIC value matches the driven slot's rest (1.00) — 7.00 was the
+             Fresnel-era re-exposure left stranded under the slot after T636 brought the
+             constant home; the driven value always won, so this row was dead and lying. */
+          environmentIntensity: 1.00,
           ambientOcclusion: true,
           aoRadius: 0.50,
           aoIntensity: 0.55,
@@ -6495,6 +6498,379 @@ const obolDocument = document(
   ),
 );
 
+
+/**
+ * E34 — Lidar (T641). THE RAY POP, WORKING FOR ITS LIVING.
+ *
+ * A night survey: a mast at the origin sweeps a ring of 240 rays over a dark noise
+ * terrain. Every ray is AIMED BY AN ATTRIBUTE — `aim1` writes a vec3f `direction` per
+ * point (azimuth from the point's index, the ring's tilt breathing on a driven Value
+ * slot) — which is the reason Ray is a POP and not a SOP: a grid of downward rays is a
+ * heightmap lookup, a cloud of independently-aimed rays is an instrument.
+ *
+ * ## The central teaching: ONE texture, TWO mappings, made to agree
+ *
+ * The terrain the camera sees and the field the rays march are THE SAME noise texture,
+ * and nothing checks that for you. The bridge (`textureToAttribute`) samples at the
+ * point's clip xy with v INVERTED (uv = (x/2+0.5, 0.5−y/2), T512); the Ray field maps
+ * world x,z ∈ [−extent, +extent] with NO inversion (uv = (x,z)/(2·extent)+0.5). So
+ * `unfold1` parks the sample sheet at (X/extent, −Z/extent) — the minus sign IS the
+ * agreement — and `raise1` rebuilds (X, height, Z) from the same indices. Get that sign
+ * wrong and the scan line drapes over a terrain the picture mirrors front-to-back:
+ * plausible at a glance, wrong everywhere, invisible until a ray "hits" a valley.
+ *
+ * ## Reflection, literally (the owner's "raycasting / reflection ala TD POPs")
+ *
+ * TWO Ray nodes, chained. `ricochet1` reflects each hit's direction about its
+ * `hitNormal` and re-origins at the hit (lifted 0.03 along the normal so the second
+ * march does not start inside the ground it just found); `rebound1` casts again. A
+ * first-leg MISS keeps marching from its end — physically fine — and is masked out of
+ * the echo reading by `echo = hit₁` carried across the second cast, because the second
+ * Ray writes its own `hit` over the first one's.
+ *
+ * ## The readings (§V471 — and an honest deviation, T642)
+ *
+ * One cast, three readings: IMPACTS (hot amber, brightness by 1 − distance/range — the
+ * lidar return), OUT-OF-RANGE (the same ray set, `hit = 0`: faint steel points hanging
+ * at the ray ends, a cone rim in the air where the beam gave out — `maxDistance` is
+ * deliberately SHORTER than the shallow ring's slant, so the ring crosses the range
+ * boundary as it breathes and RIDGES come into range before valleys: the relief reads
+ * in the hit/miss boundary itself), and ECHOES (cyan, both legs hit). These readings
+ * are kernel-written TINT classes plus a parked-position cull (mark2 sends non-echoes
+ * to y = −60), NOT renderPoints group predicates: the lit scene path has no predicate
+ * seam (T642 tracks whether it should grow one), and a predicate-filtered 2D overlay
+ * under its own projection cannot sit on a 3D camera's picture.
+ *
+ * ## Why the dots are unlit and the ground is not
+ *
+ * A lidar return is an EMITTER on the display — `materialUnlit` × per-point tint —
+ * while the terrain is a dielectric under the whole T632/T636 stack: a shadowed cool
+ * key, an equirect night sky whose Fresnel reflection rims the ridges at grazing and
+ * whose diffuse irradiance (1 − F)(1 − metallic) fills the valleys the key never
+ * reaches. Kill the environment wire and the valleys go black; that is the diffuse
+ * half doing the work `ambientIntensity` used to fake.
+ *
+ * Free-running throughout (§V436): the sweep, the tilt and the orbit read absolute
+ * clocks, so a timeline lap never snaps the scan.
+ */
+const LIDAR_EXTENT = 3.2;
+const LIDAR_HEIGHT_SCALE = 2.6;
+const LIDAR_HEIGHT_OFFSET_V = -0.6;
+const LIDAR_MAST = 3.3;
+const LIDAR_HEIGHT_OFFSET = LIDAR_HEIGHT_OFFSET_V;
+const LIDAR_RANGE = 3.4;
+
+const LIDAR_SHEET_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+]);
+
+/* `sample` is declared to be READ — it binds the bridge's own pair upstream (T401),
+   exactly E20's dance. */
+const LIDAR_RAISE_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
+]);
+
+/* The sample sheet: place each grid point where the BRIDGE will read the texel the RAY
+   will march at (X, Z). Clip (X/extent, −Z/extent) — the minus is the v-inversion
+   agreement argued in the header. */
+const LIDAR_UNFOLD_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);
+  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
+  let worldX = (u * 2.0 - 1.0) * ${LIDAR_EXTENT};
+  let worldZ = (v * 2.0 - 1.0) * ${LIDAR_EXTENT};
+  q.position = vec3f(worldX / ${LIDAR_EXTENT}, -worldZ / ${LIDAR_EXTENT}, 0.0);
+  return q;
+}`;
+
+/* Rebuild (X, height, Z) from the SAME indices — the bridge's sample is the r channel
+   the Ray node reads, through the same y = r × scale + offset the Ray applies. */
+const LIDAR_RAISE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);
+  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
+  let worldX = (u * 2.0 - 1.0) * ${LIDAR_EXTENT};
+  let worldZ = (v * 2.0 - 1.0) * ${LIDAR_EXTENT};
+  q.position = vec3f(worldX, p.sample.r * ${LIDAR_HEIGHT_SCALE} + (${LIDAR_HEIGHT_OFFSET}), worldZ);
+  return q;
+}`;
+
+const LIDAR_AIM_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "direction", type: "vec3f", default: [0, -1, 0] },
+]);
+
+/* The instrument. Azimuth from the INDEX (240 rays around the full circle), the ring's
+   tilt on the driven value slot (T479): tiltwave1 breathes it steep↔shallow, and the
+   whole ring turns on the absolute clock. maxDistance is chosen against these angles —
+   see the ray node's comment. */
+const LIDAR_AIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;
+  /* 0.60..1.10 rad (34°..63° below horizontal): the steep end lands well inside range,
+     the shallow end's slant exceeds it and the outer ring goes dark — and shallow
+     strikes reflect FORWARD off back-slopes, which is where the echoes come from. */
+  let tilt = 0.60 + ctx.value1 * 0.50;
+  q.position = vec3f(0.0, ${LIDAR_MAST}, 0.0);
+  q.direction = normalize(vec3f(
+    sin(azimuth) * cos(tilt),
+    -sin(tilt),
+    cos(azimuth) * cos(tilt),
+  ));
+  return q;
+}`;
+
+/* FOUR attributes, and the count is load-bearing: each declared attribute costs a
+   read-and-write pair, and the WebGPU BASELINE grants 8 storage buffers per stage —
+   five attrs is ten bindings and a refused pipeline on any device that reports no
+   better. So hitDistance is NOT declared: every ray leaves one mast the kernel knows
+   (0, 2.7, 0), so distance = length(hitPosition − mast) — a miss carries the ray's
+   full-range end and the arithmetic still agrees. hit/hitPosition bind the Ray's own
+   pairs upstream (T401); position and tint are this kernel's writes. */
+const LIDAR_MARK_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "hit", type: "f32", default: [0] },
+  { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
+]);
+
+/* Reading one and two, from one cast: a hit is a RETURN (hot, brighter the nearer —
+   1 − d/range is the lidar intensity model at its crudest and reads instantly), a miss
+   is OUT OF RANGE (the ray's end hangs in the air, faint steel — the node's own
+   contract: "a miss carries the ray's end and the full distance"). */
+const LIDAR_MARK_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position = p.hitPosition;
+  /* distance re-derived from the one mast — see the attribute comment on why. */
+  let slant = length(p.hitPosition - vec3f(0.0, ${LIDAR_MAST}, 0.0));
+  let near = clamp(1.0 - slant / ${LIDAR_RANGE}, 0.0, 1.0);
+  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (0.5 + 1.6 * near);
+  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * 0.32;
+  q.tint = mix(lost, ret, p.hit);
+  return q;
+}`;
+
+/* FOUR again (see mark1's comment). Even the first leg's `hit` flag goes: a miss
+   carries the ray's FULL-RANGE end, so length(hitPosition − mast) says which leg this
+   was without a flag — the verdict travels as geometry. A first-leg miss is PARKED at
+   y = −80; its second cast from the parking depth hits instantly below the field, and
+   mark2 recognises the park by the hit's own y. Two selects instead of two buffers. */
+const LIDAR_RICOCHET_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "direction", type: "vec3f", default: [0, -1, 0] },
+  { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
+  { name: "hitNormal", type: "vec3f", default: [0, 1, 0] },
+]);
+
+/* The bounce: re-origin at the hit, lifted along the normal so the second march does
+   not begin inside the ground it just found; reflect the aim about the surface. A
+   first-leg miss parks (see the attribute comment above). */
+const LIDAR_RICOCHET_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let slant = length(p.hitPosition - vec3f(0.0, ${LIDAR_MAST}, 0.0));
+  let landed = slant < ${LIDAR_RANGE} - 0.01;
+  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition + p.hitNormal * 0.03, landed);
+  q.direction = normalize(reflect(p.direction, p.hitNormal) + vec3f(0.0, 0.0001, 0.0));
+  return q;
+}`;
+
+const LIDAR_MARK2_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "hit", type: "f32", default: [0] },
+  { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
+]);
+
+/* Reading three: an echo counts only when BOTH legs landed. The second leg's own
+   `hit`, gated by the parking depth — a ray parked at y = −80 (first leg missed) hits
+   instantly below the field, and its hit y betrays it. Everything else is PARKED —
+   the cull for a draw path with no predicate seam (T642). */
+const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let real = p.hit * step(-10.0, p.hitPosition.y);
+  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition, real > 0.5);
+  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */
+  let path = length(p.hitPosition - vec3f(0.0, ${LIDAR_MAST}, 0.0));
+  let near = clamp(1.0 - path / (${LIDAR_RANGE} * 1.8), 0.0, 1.0);
+  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * ((0.35 + 1.10 * near) * real);
+  return q;
+}`;
+
+const lidarDocument = document(
+  "e34-lidar",
+  "E34 Lidar",
+  settings({ outputResolution: { width: 1280, height: 720 }, randomSeed: 34 }),
+  graph(
+    [
+      /* ---- the terrain, once: one texture, two readers ------------------------ */
+      node("relief", "noise", [-2880, -440], {
+        type: "perlin4d", seed: 11, period: 0.40, harmon: 4, spread: 2, gain: 0.58,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: false,
+        t4d: 0.37, s4d: 1, speed: 0, /* static ground; T535's slice, off the lattice plane */
+      }, { label: "relief1", resolution: { mode: "fixed", width: 512, height: 512 } }),
+      /* E27's lesson, reapplied: four perlin harmonics sum to a SLIVER (measured here:
+         r in 0.63..0.80), and a terrain built on a sliver is a plain with a rumor of
+         hills. The stretch to full range happens ONCE, on the texture BOTH readers
+         share — the mesh and the rays march the same carved field by construction. */
+      node("carve", "level", [-2560, -880], {
+        /* the window is LINEAR (the ray and the mesh both read this target raw): the
+           harmonic sum lands in ~0.36..0.61 linear, measured — an early read of these
+           numbers through the OUTPUT node was display-encoded and off by a transfer
+           curve, which is exactly the trap §V56 keeps warning about. */
+        blacklevel: 0.36, whitelevel: 0.62, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+      }, { label: "carve1", resolution: { mode: "fixed", width: 512, height: 512 } }),
+
+      /* ---- the terrain MESH: unfold → sample → raise -------------------------- */
+      node("sheet", "pointGrid", [-2560, -440], { cols: 128, rows: 128, count: 16384 }, { label: "sheet1" }),
+      node("unfold", "pointKernel", [-2240, -440], {
+        capacity: 16384, attributes: LIDAR_SHEET_ATTRIBUTES, kernel: LIDAR_UNFOLD_KERNEL,
+      }, { label: "unfold1" }),
+      node("probe", "textureToAttribute", [-1920, -440], {}, { label: "probe1" }),
+      node("raise", "pointKernel", [-1600, -440], {
+        capacity: 16384, attributes: LIDAR_RAISE_ATTRIBUTES, kernel: LIDAR_RAISE_KERNEL,
+      }, { label: "raise1" }),
+      node("basalt", "materialPhong", [-1600, -920], {
+        color: [0.14, 0.15, 0.18, 1], specular: [0.30, 0.33, 0.40, 1], shininess: 26, roughness: 0.82,
+      }, { label: "basalt1" }),
+      node("ground", "geometry", [-1280, -440], {
+        mode: "surface", material: "basalt1", tint: [1, 1, 1, 1],
+      }, { label: "ground1" }),
+
+      /* ---- the instrument: aim → cast → readings ------------------------------ */
+      node("tiltwave", "lfo", [-2880, 40], {
+        shape: "sine", frequency: 0.045, amplitude: 0.5, offset: 0.5, phase: 0,
+      }, { label: "tiltwave1" }),
+      node("fan", "pointLine", [-2560, 40], { count: 240 }, { label: "fan1" }),
+      node("aim", "pointKernel", [-2240, 40], {
+        capacity: 240, attributes: LIDAR_AIM_ATTRIBUTES, kernel: LIDAR_AIM_KERNEL,
+      }, { label: "aim1", parameters: { value1: drivenSlot("tiltwave1", 0.5) } }),
+      /* RANGE 3.4 against a 2.7 m mast and 41°..73° tilts: the steep ring's slant
+         (~2.8) is inside range, the shallow ring's (~4.1) is not — the breathing ring
+         CROSSES the range boundary, and ridges (shorter slant) come into range before
+         valleys, so the relief reads in the hit/miss frontier itself. */
+      node("cast", "pointRay", [-1920, 40], {
+        steps: 64, maxDistance: LIDAR_RANGE, direction: [0, -1, 0],
+        extent: LIDAR_EXTENT, heightScale: LIDAR_HEIGHT_SCALE, heightOffset: LIDAR_HEIGHT_OFFSET,
+      }, { label: "cast1" }),
+      node("mark", "pointKernel", [-1600, 40], {
+        capacity: 240, attributes: LIDAR_MARK_ATTRIBUTES, kernel: LIDAR_MARK_KERNEL,
+      }, { label: "mark1" }),
+      node("spark", "materialUnlit", [-1600, 520], { color: [1, 1, 1, 1] }, { label: "spark1" }),
+      node("impacts", "geometry", [-1280, 40], {
+        mode: "instances", shape: "octahedron", scale: 0.045, material: "spark1",
+      }, {
+        label: "impacts1",
+        /* T478: the kernel's per-point verdict IS the colour — tint in MAP mode. */
+        parameters: {
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+
+      /* ---- the bounce: reflection, literally ---------------------------------- */
+      node("ricochet", "pointKernel", [-1920, 520], {
+        capacity: 240, attributes: LIDAR_RICOCHET_ATTRIBUTES, kernel: LIDAR_RICOCHET_KERNEL,
+      }, { label: "ricochet1" }),
+      node("rebound", "pointRay", [-1280, 520], {
+        steps: 48, maxDistance: LIDAR_RANGE, direction: [0, -1, 0],
+        extent: LIDAR_EXTENT, heightScale: LIDAR_HEIGHT_SCALE, heightOffset: LIDAR_HEIGHT_OFFSET,
+      }, { label: "rebound1" }),
+      node("mark2", "pointKernel", [-960, 520], {
+        capacity: 240, attributes: LIDAR_MARK2_ATTRIBUTES, kernel: LIDAR_MARK2_KERNEL,
+      }, { label: "mark2a" }),
+      node("echoes", "geometry", [-640, 520], {
+        mode: "instances", shape: "octahedron", scale: 0.05, material: "spark1",
+      }, {
+        label: "echoes1",
+        parameters: {
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+
+      /* ---- night: key, sky, camera -------------------------------------------- */
+      node("moon", "light", [-960, -920], {
+        kind: "directional", direction: [0.35, -0.70, -0.42], color: [0.72, 0.80, 1, 1],
+        intensity: 0.50, shadows: true, shadowExtent: 4.5,
+      }, { label: "moon1" }),
+      node("skyband", "ramp", [-960, -1400], {
+        type: "vertical", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0.0, color: [0.010, 0.014, 0.030, 1] },
+          { position: 0.55, color: [0.030, 0.052, 0.110, 1] },
+          { position: 0.78, color: [0.085, 0.120, 0.220, 1] },
+          { position: 1.0, color: [0.012, 0.016, 0.034, 1] },
+        ],
+      }, { label: "skyband1", definitionVersion: 2, resolution: { mode: "fixed", width: 256, height: 128 } }),
+      node("orbx", "lfo", [-2880, 520], {
+        shape: "sine", frequency: 0.019, amplitude: 4.6, offset: 0, phase: 0.25,
+      }, { label: "orbx1" }),
+      node("orbz", "lfo", [-2880, 1000], {
+        shape: "sine", frequency: 0.019, amplitude: 4.6, offset: 0, phase: 0,
+      }, { label: "orbz1" }),
+      node("eye", "camera", [-640, -440], {
+        eye: [4.6, 3.1, 0], lookAt: [0, 0.55, 0], fov: 46, near: 0.1, far: 40, ortho: false,
+      }, {
+        label: "eye1",
+        parameters: {
+          "eye.x": drivenSlot("orbx1", 4.6),
+          "eye.z": drivenSlot("orbz1", 0),
+        },
+      }),
+      node("shot", "render", [-320, -140], {
+        scenes: "ground1 impacts1 echoes1",
+        camera: "eye1",
+        lights: "moon1",
+        ambientColor: [0.50, 0.60, 0.92, 1],
+        ambientIntensity: 0.16,
+        background: [0.006, 0.008, 0.016, 1],
+        environmentIntensity: 1.0,
+      }, { label: "shot1" }),
+
+      /* ---- the returns glow --------------------------------------------------- */
+      node("cut", "level", [0, -140], {
+        blacklevel: 0.42, whitelevel: 1.15, gamma1: 1, contrast: 1, brightness: 1, opacity: 1,
+      }, { label: "cut1" }),
+      /* The clamp is LOAD-BEARING, not tidiness (E33's lesson, relearned the hard way):
+         Level is a SIGNED pipeline — below blacklevel it emits NEGATIVES, the blur
+         spreads them across the whole frame, and add then SUBTRACTS the halo from the
+         picture. On this night scene almost everything sits below the threshold, so the
+         un-clamped chain blacked out the entire film. */
+      node("clip", "limit", [320, -140], { mode: "clamp", low: 0, high: 6, steps: 4 }, { label: "clip1" }),
+      node("halo", "blur", [640, -140], { size: 22, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("glow", "add", [960, -140], {}, { label: "glow1" }),
+      node("out", "output", [1280, -140], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-sheet-unfold", ["sheet", "out"], ["unfold", "in"]),
+      edge("e-unfold-probe", ["unfold", "out"], ["probe", "points"]),
+      edge("e-relief-carve", ["relief", "out"], ["carve", "input"]),
+      edge("e-carve-probe", ["carve", "out"], ["probe", "texture"]),
+      edge("e-probe-raise", ["probe", "out"], ["raise", "in"]),
+      edge("e-raise-ground", ["raise", "out"], ["ground", "points"]),
+
+      edge("e-fan-aim", ["fan", "out"], ["aim", "in"]),
+      edge("e-aim-cast", ["aim", "out"], ["cast", "points"]),
+      edge("e-carve-cast", ["carve", "out"], ["cast", "field"]),
+      edge("e-cast-mark", ["cast", "out"], ["mark", "in"]),
+      edge("e-mark-impacts", ["mark", "out"], ["impacts", "points"]),
+
+      edge("e-cast-ricochet", ["cast", "out"], ["ricochet", "in"]),
+      edge("e-ricochet-rebound", ["ricochet", "out"], ["rebound", "points"]),
+      edge("e-carve-rebound", ["carve", "out"], ["rebound", "field"]),
+      edge("e-rebound-mark2", ["rebound", "out"], ["mark2", "in"]),
+      edge("e-mark2-echoes", ["mark2", "out"], ["echoes", "points"]),
+
+      edge("e-skyband-shot", ["skyband", "out"], ["shot", "environment"]),
+      edge("e-shot-cut", ["shot", "out"], ["cut", "input"]),
+      edge("e-cut-clip", ["cut", "out"], ["clip", "input"]),
+      edge("e-clip-halo", ["clip", "out"], ["halo", "input"]),
+      edge("e-shot-glow", ["shot", "out"], ["glow", "in1"]),
+      edge("e-halo-glow", ["halo", "out"], ["glow", "in2"], 0),
+      edge("e-glow-out", ["glow", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
   reactionDiffusionDocument,
@@ -6521,4 +6897,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   coronaDocument,
   obolDocument,
   pastureDocument,
+  lidarDocument,
 ];
