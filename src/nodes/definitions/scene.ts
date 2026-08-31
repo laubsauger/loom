@@ -675,6 +675,29 @@ export const renderNode: NodeDefinition = {
            without this skip a grid-topology cloud would cast its MESH's shadow, a ghost
            of a surface nobody drew). Stated here, not silently absent (§V403). */
         if (payload.mode === "points") return;
+        /*
+         * T666 — an UNLIT geometry exchanges no light IN EITHER DIRECTION, so it does
+         * not cast either. §V610 named the billboard half of this and stopped there;
+         * the general rule is what E34 found by looking: 480 unlit octahedra in
+         * INSTANCES mode (which the billboard skip does not reach) casting hard,
+         * texel-quantised shadows down every grazing slope, read as black combing that
+         * nobody could attribute to anything in the frame. Rendering the terrain alone
+         * showed it self-shadows almost nowhere — the whole of that example's shadow
+         * was the markers' artefact.
+         *
+         * The argument is the same one V610 makes and it is a MATERIAL fact, not a
+         * per-object switch (§V437): `materialUnlit` declares that this surface does
+         * not take part in lighting. A surface that ignores every light while blocking
+         * those same lights is incoherent — it is a light source, an overlay, a
+         * reading, a marker; it is not matter. The lit shader ALREADY declines ambient
+         * occlusion for an unlit model, so half of this symmetry was in place and the
+         * other half was missing.
+         *
+         * It reaches the AO sweep too, deliberately and for the same reason: occlusion
+         * is light that fails to arrive, and a thing that does not interact with light
+         * cannot stop it.
+         */
+        if (payload.material.model === "unlit") return;
         if (payload.mode === "instances") {
           let counted = countedByIndex.get(geometryIndex);
           if (counted === undefined && payload.count !== undefined) {
