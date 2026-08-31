@@ -1,9 +1,18 @@
-import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { RefObject } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { Handle, NodeResizer, Position } from "@xyflow/react";
+import { Handle, NodeResizer, Position, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { useStore } from "zustand";
 import { cx } from "@ui/cx.ts";
@@ -17,6 +26,8 @@ import type { CommandResult } from "@domain/types/commands.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import { previewablePort } from "@domain/graph/previewable.ts";
+import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order.ts";
+import type { GraphDocument } from "@domain/types/graph.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
@@ -103,6 +114,9 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     },
     [id, selection, toggleUi],
   );
+
+  const portsRef = useRef<HTMLDivElement | null>(null);
+  useHandleBoundsInSync(id, portsRef);
 
   if (node === undefined) return null;
 
@@ -435,7 +449,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           <div className={cx(styles.controls, "nodrag", "nopan")}>{renderControls(id)}</div>
         )}
 
-        <div className={styles.ports}>
+        <div className={styles.ports} ref={portsRef}>
           <ul className={cx(styles.column, styles.inputs)}>
             {/*
               T457 (V387): a reference-fed input is PLUMBING — the compiler synthesizes
@@ -446,9 +460,15 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             */}
             {(definition?.inputs ?? [])
               .filter((port) => sourceReferenceForInput(node.type, port.id) === undefined)
-              .map((port) => (
-                <PortRow key={port.id} port={port} side="input" />
-              ))}
+              .map((port) =>
+                // T695: a variadic input is N sockets plus a spare, not one socket that
+                // swallows everything. See `VariadicPortRows`.
+                port.variadic === true ? (
+                  <VariadicPortRows key={port.id} nodeId={id as NodeId} port={port} />
+                ) : (
+                  <PortRow key={port.id} port={port} side="input" />
+                ),
+              )}
           </ul>
           <ul className={cx(styles.column, styles.outputs)}>
             {(definition?.outputs ?? []).map((port) => (
@@ -746,9 +766,151 @@ function PreviewLensMark({ nodeId, source }: { nodeId: NodeId; source: PreviewLe
   );
 }
 
+/**
+ * KEEP REACT FLOW'S CACHED HANDLE BOUNDS EQUAL TO THE HANDLES THE BROWSER DREW (T694).
+ *
+ * React Flow draws an edge to `node.internals.handleBounds` — a per-node CACHE of where
+ * each socket sat when it was last measured — and it refreshes that cache from a
+ * `ResizeObserver` on the NODE ELEMENT. That observer is the whole of its coverage, and
+ * it has one blind spot, which is the bug:
+ *
+ *   **a handle can move while the node's own box does not change.**
+ *
+ * A `ResizeObserver` sees nothing then, the cache keeps the old rectangle, and the wire
+ * lands where the socket used to be. This is not hypothetical and it is not rare — it is
+ * the ordinary state of a node the user has RESIZED, which is exactly what the owner
+ * reported. Once `node.size` is set the outer box is FIXED and `.preview` absorbs every
+ * change of the content around it (§V117), so from then on the ports block slides up and
+ * down inside a box that never resizes: a diagnostic row appearing below it, a port row
+ * arriving on a variadic input (T695), a definition that gains or loses a socket. On an
+ * unsized node the same reflow changes the node's height and the observer catches it,
+ * which is why this only shows up after a resize.
+ *
+ * MEASURED, both halves (`src/tests/e2e/handle-alignment.spec.ts`): a plain resize drifts
+ * by 0px in @xyflow/react 12.11.5 — the observer really does cover it — and a 30px shift
+ * of the ports block inside an unchanged box drifts by exactly 30px.
+ *
+ * ## Why it measures rather than listing its triggers
+ *
+ * Naming the things that move a handle is how this bug comes back: the list is open, and
+ * the next entry is added by someone editing the JSX with no idea this file exists. So
+ * the effect runs after EVERY render of this node and asks the browser the same question
+ * React Flow's own measurement asks — where is each handle, relative to the node. If the
+ * answer changed, the cache is stale, whatever caused it.
+ *
+ * ## Why it is guarded rather than unconditional
+ *
+ * `updateNodeInternals` walks the node lookup and notifies the store on every call, and
+ * this component re-renders on the runtime channel at up to 10 Hz (§V16). Calling it
+ * unconditionally would put an O(nodes) pass behind every GPU-timing tick on every node
+ * on the canvas — trading a geometry bug for a performance one. The signature below is a
+ * handful of integers read from a layout React has just committed.
+ *
+ * Offsets are relative to the node and divided by the live scale, so neither panning nor
+ * zooming the canvas — which move and scale every rect on screen without moving one
+ * handle inside its node — can make this fire.
+ */
+function useHandleBoundsInSync(id: string, portsRef: RefObject<HTMLElement | null>): void {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const measured = useRef<string | null>(null);
+
+  const sync = useCallback(() => {
+    const ports = portsRef.current;
+    const nodeElement = ports?.closest<HTMLElement>(".react-flow__node");
+    if (ports === null || nodeElement === null || nodeElement === undefined) return;
+
+    const base = nodeElement.getBoundingClientRect();
+    // The viewport's CSS transform is on an ancestor, so every rect here is in screen
+    // pixels. `offsetWidth` is the same box unscaled, which makes the ratio the zoom.
+    const scale = nodeElement.offsetWidth > 0 ? base.width / nodeElement.offsetWidth : 1;
+    const signature = [...ports.querySelectorAll<HTMLElement>(".react-flow__handle")]
+      .map((dot) => {
+        const rect = dot.getBoundingClientRect();
+        const x = Math.round((rect.x - base.x) / scale);
+        const y = Math.round((rect.y - base.y) / scale);
+        return `${dot.dataset["handleid"] ?? ""}@${String(x)},${String(y)}`;
+      })
+      .join("|");
+
+    if (signature === measured.current) return;
+    // The FIRST measurement is recorded but not published: React Flow measures the node
+    // itself on mount, so re-asking on the first frame would be one wasted store pass per
+    // node on every document open.
+    const first = measured.current === null;
+    measured.current = signature;
+    if (!first) updateNodeInternals(id);
+  }, [id, portsRef, updateNodeInternals]);
+
+  useLayoutEffect(sync);
+
+  /*
+   * The second watcher, and it is not belt-and-braces — the two see different things.
+   *
+   * The effect above runs when THIS component renders, and `NodeView` is memoised on
+   * purpose (§V16): a child that holds its own subscription can re-render alone. That is
+   * exactly what `VariadicPortRows` does, so the gesture that adds a port row — the T695
+   * one, and the one most likely to move a handle — never reaches the parent at all.
+   * Measured: without this observer the second wire into a variadic input lands on the
+   * FIRST socket, because React Flow resolves the drop against bounds that still describe
+   * a port with one socket in it.
+   *
+   * A `ResizeObserver` on the ports block sees any child's row arriving or leaving; the
+   * render-time effect sees the block MOVING inside a node whose box is fixed, which no
+   * resize observer anywhere can see. Neither covers the other.
+   */
+  useEffect(() => {
+    const ports = portsRef.current;
+    if (ports === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(ports);
+    return () => {
+      observer.disconnect();
+    };
+  }, [portsRef, sync]);
+}
+
+/**
+ * A VARIADIC INPUT IS N SOCKETS PLUS A SPARE (T695).
+ *
+ * One socket taking every wire has no address the user can aim at, so the only gesture it
+ * supports is "add another" — which is the owner's report: "attaches multiple nodes to the
+ * same connector ... prevents us from drop replacing new connections onto existing ones".
+ * With a socket per edge the drop finally has a target: land on an occupied one and it
+ * REPLACES that wire, land on the spare and it appends and a new spare appears. The
+ * identity of a socket — slot k is the edge whose `order` is k — is worked out in
+ * `domain/graph/edge-order.ts`, which is also where the reasoning lives.
+ *
+ * Its own subscription, returning a NUMBER: this re-renders when the count of wires into
+ * THIS port changes and not when anything else in the document does (§V16). The count is
+ * taken from `incomingEdgesInOrder` rather than from a private filter, so the row count and
+ * the slot each edge is drawn to cannot come from two different readings of the same
+ * document (§V487).
+ */
+function VariadicPortRows({ nodeId, port }: { nodeId: NodeId; port: PortDefinition }) {
+  const { store } = useGraphCanvas();
+  const connected = useStore(
+    store,
+    useCallback(
+      (state: { graph: GraphDocument }) => incomingEdgesInOrder(state.graph, nodeId, port.id).length,
+      [nodeId, port.id],
+    ),
+  );
+  return (
+    <>
+      {Array.from({ length: connected + 1 }, (_unused, slot) => (
+        <PortRow key={slot} port={port} side="input" slot={slot} occupied={slot < connected} />
+      ))}
+    </>
+  );
+}
+
 interface PortRowProps {
   port: PortDefinition;
   side: "input" | "output";
+  /** Which socket of a variadic port this row is. Absent on an ordinary port. */
+  slot?: number;
+  /** T695 — false for the spare socket at the end, which is drawn quieter (§V90). */
+  occupied?: boolean;
 }
 
 /**
@@ -756,27 +918,38 @@ interface PortRowProps {
  * the same token the edges leaving it use, which is what makes the colour readable as a
  * type rather than as decoration.
  */
-const PortRow = memo(function PortRow({ port, side }: PortRowProps) {
+const PortRow = memo(function PortRow({ port, side, slot, occupied }: PortRowProps) {
   const description = describePortType(port.type);
+  // A variadic socket is addressed by slot, and the projection stamps the SAME id on the
+  // edge that lands there (`derive.ts`). An ordinary port stays its own plain id, so no
+  // document and no existing handle id changes shape (§V68).
+  const handleId = slot === undefined ? port.id : variadicHandleId(port.id, slot);
+  const label = slot === undefined ? port.label : `${port.label} ${String(slot + 1)}`;
   return (
     <li
       className={cx(styles.port, side === "input" ? styles.portIn : styles.portOut)}
       data-kind={port.type.kind}
+      data-slot={slot}
+      data-empty={slot !== undefined && occupied !== true ? true : undefined}
       style={cssVars({ "--port-color": portFamilyColor(port.type.kind) })}
     >
       <Handle
         type={side === "input" ? "target" : "source"}
         position={side === "input" ? Position.Left : Position.Right}
-        id={port.id}
+        id={handleId}
         className={styles.handle}
         // V19 — reachable and named. The connect *gesture* is pointer-only until the
         // keymap track lands a keyboard binding for it (T76/T77).
         tabIndex={0}
-        aria-label={`${side === "input" ? "Input" : "Output"} port ${port.label}, ${description}`}
-        title={`${port.label} — ${description}`}
+        aria-label={`${side === "input" ? "Input" : "Output"} port ${label}, ${description}`}
+        // A LABEL, not prose (§V90/§V91): the spare socket says it is spare and stops. What
+        // it affords — drop here to add, drop on a filled one to replace — is the gesture
+        // itself, and a sentence pinned to every variadic port in the graph is the chrome
+        // this project keeps deleting.
+        title={slot === undefined || occupied === true ? `${label} — ${description}` : `${label} — ${description}, empty`}
         isConnectable
       />
-      <span className={styles.portLabel}>{port.label}</span>
+      <span className={styles.portLabel}>{label}</span>
     </li>
   );
 });

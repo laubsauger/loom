@@ -332,6 +332,10 @@ export const graphPatchOperationSchema = z.discriminatedUnion("op", [
       ref: z.string().regex(/^\$/, "A patch-local ref must start with `$`.").optional(),
       source: patchPortRef,
       target: patchPortRef,
+      // T695: where on a VARIADIC input the new edge lands. Absent = append, which is what
+      // it meant before the field existed (§V68). Out-of-range is clamped at apply time
+      // rather than rejected here — the schema cannot know how many edges the port holds.
+      order: z.number().int().min(0).optional(),
     })
     .strict(),
   z.object({ op: z.literal("disconnect"), edgeIds: z.array(z.string().min(1)) }).strict(),

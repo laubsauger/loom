@@ -1,5 +1,6 @@
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
-import type { GraphNode } from "@domain/types/graph.ts";
+import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
+import { incomingEdgesInOrder } from "./edge-order.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { previewablePort } from "./previewable.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
@@ -151,11 +152,31 @@ export function nodeHasPreview(node: GraphNode, definition: NodeDefinition | und
  * would overstate the height of exactly the nodes E25 is full of — `render`, `geometry`,
  * `camera` — every one of which takes its scene, material and lights by name.
  */
-export function nodePortRows(node: GraphNode, definition: NodeDefinition | undefined): number {
+export function nodePortRows(
+  node: GraphNode,
+  definition: NodeDefinition | undefined,
+  /**
+   * T695: the document, where one is in hand. A variadic input renders one row per edge
+   * landing on it PLUS a spare, so a node's height depends on how it is wired — the first
+   * thing in this model that does. Omitting it models an UNWIRED node, which is correct
+   * for a probe (`placeFree` sizing a node that does not exist yet) and an undercount for
+   * anything else; `node-box.spec.ts` measures the real DOM and says so if a caller that
+   * had a graph did not pass it.
+   */
+  graph?: Pick<GraphDocument, "edges">,
+): number {
   if (definition === undefined) return 0;
-  const inputs = definition.inputs.filter(
+  const visible = definition.inputs.filter(
     (port) => sourceReferenceForInput(node.type, port.id) === undefined,
-  ).length;
+  );
+  const inputs = visible.reduce(
+    (rows, port) =>
+      rows +
+      (port.variadic === true && graph !== undefined
+        ? incomingEdgesInOrder(graph, node.id, port.id).length + 1
+        : 1),
+    0,
+  );
   return Math.max(inputs, definition.outputs.length);
 }
 
@@ -165,6 +186,8 @@ export function nodeBox(
   definition: NodeDefinition | undefined,
   /** From `previewAspectOf(settings)` wherever a document is in hand (T668). */
   previewAspect: number = DEFAULT_PREVIEW_ASPECT,
+  /** T695 — see `nodePortRows`. Pass it wherever the graph is in hand. */
+  graph?: Pick<GraphDocument, "edges">,
 ): NodeBox {
   // A node the user resized fills the box they dragged (T208/§V116) — the document says
   // so outright, and nothing derived can override a stated size.
@@ -177,7 +200,7 @@ export function nodeBox(
   if (nodeHasPreview(node, definition)) {
     height += Math.floor(contentWidth / previewAspect) + PREVIEW_BORDER;
   }
-  const rows = nodePortRows(node, definition);
+  const rows = nodePortRows(node, definition, graph);
   height += PORTS_PADDING + (rows === 0 ? 0 : rows * PORT_ROW_HEIGHT + (rows - 1) * PORT_ROW_GAP);
 
   return { x: node.position.x, y: node.position.y, width: NODE_WIDTH, height };

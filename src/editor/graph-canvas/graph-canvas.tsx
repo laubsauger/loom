@@ -26,6 +26,7 @@ import type {
 } from "@xyflow/react";
 import { useStore } from "zustand";
 import { arePortsCompatible } from "@domain/graph/port-compat.ts";
+import { incomingEdgesInOrder, parseHandleId } from "@domain/graph/edge-order.ts";
 import type { CommandResult, InvocationContext } from "@domain/types/commands.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -349,26 +350,53 @@ export function GraphCanvas({
       const { source, target, sourceHandle, targetHandle } = connection;
       if (sourceHandle === null || targetHandle === null) return;
 
+      // T695: a variadic input's handles are addressed by SLOT, so the handle id is not
+      // the port id. Everything below works in port-and-slot terms from here.
+      const { portId: targetPortId, slot } = parseHandleId(targetHandle);
+      const { portId: sourcePortId } = parseHandleId(sourceHandle);
+
       // §V14a: dropping onto an input that already holds a non-variadic edge REPLACES
       // it rather than being refused — the drop itself is the user's intent, and making
       // them hunt down the old edge to delete first is the wrong answer to that. Both
       // ops leave as one patch, so it is one atomic change and one undo entry (§V32, §V34).
       const targetNode = domainNodes[target];
       const targetPort =
-        targetNode === undefined ? undefined : registry.port(targetNode.type, targetHandle, "input");
+        targetNode === undefined ? undefined : registry.port(targetNode.type, targetPortId, "input");
       const operations: GraphPatchOperation[] = [];
+      let order: number | undefined;
       if (targetPort?.variadic !== true) {
         const displaced = Object.entries(domainEdges)
-          .filter(([, edge]) => edge.target.nodeId === target && edge.target.portId === targetHandle)
+          .filter(([, edge]) => edge.target.nodeId === target && edge.target.portId === targetPortId)
           .map(([edgeId]) => edgeId);
         if (displaced.length > 0) operations.push({ op: "disconnect", edgeIds: displaced });
+      } else if (slot !== undefined) {
+        /*
+         * T695 — the gesture the one-socket port could not express: a drop on an OCCUPIED
+         * socket replaces the wire in it, in place.
+         *
+         * `incomingEdgesInOrder` and not a filter of my own: this has to resolve "slot 2"
+         * to the same edge the node drew at slot 2 and the projection drew the wire to
+         * (§V487). The `order` on the connect is what puts the newcomer where the old one
+         * was — without it the disconnect would compact the survivors and the replacement
+         * would append, which counts right and wires wrong.
+         *
+         * A drop on the SPARE socket (slot === count) resolves to nothing here and falls
+         * through to a plain append, which is what it means.
+         */
+        const occupant = incomingEdgesInOrder({ edges: domainEdges }, target, targetPortId)[slot];
+        if (occupant !== undefined) {
+          if (occupant.source.nodeId === source && occupant.source.portId === sourcePortId) return;
+          operations.push({ op: "disconnect", edgeIds: [occupant.id] });
+          order = slot;
+        }
       }
       operations.push({
         op: "connect",
-        source: { nodeId: source, portId: sourceHandle },
-        target: { nodeId: target, portId: targetHandle },
+        source: { nodeId: source, portId: sourcePortId },
+        target: { nodeId: target, portId: targetPortId },
+        ...(order === undefined ? {} : { order }),
       });
-      dispatch(operations, "Connect ports");
+      dispatch(operations, order === undefined ? "Connect ports" : "Replace connection");
     },
     [dispatch, domainEdges, domainNodes, registry],
   );
@@ -413,7 +441,9 @@ export function GraphCanvas({
       if (edge === undefined) return;
       const operations = replaceEdgeOperations(graph, registry, edge, {
         nodeId: from.nodeId,
-        portId: fromPortId,
+        // T695 — the grabbed end may be one SOCKET of a variadic input; what the document
+        // records is the port.
+        portId: parseHandleId(fromPortId).portId,
         // React Flow's "source" handle is our output; "target" is our input.
         direction: from.type === "source" ? "output" : "input",
       });
@@ -436,8 +466,11 @@ export function GraphCanvas({
       const targetNode = domainNodes[target];
       if (sourceNode === undefined || targetNode === undefined) return false;
 
-      const sourcePort = registry.port(sourceNode.type, sourceHandle, "output");
-      const targetPort = registry.port(targetNode.type, targetHandle, "input");
+      // T695 — the handle id carries a slot on a variadic input; the PORT is what decides
+      // compatibility, and asking the registry for `in2#1` would answer `undefined` and
+      // refuse a legal drop under the cursor.
+      const sourcePort = registry.port(sourceNode.type, parseHandleId(sourceHandle).portId, "output");
+      const targetPort = registry.port(targetNode.type, parseHandleId(targetHandle).portId, "input");
       if (sourcePort === undefined || targetPort === undefined) return false;
       if (!arePortsCompatible(sourcePort.type, targetPort.type)) return false;
 

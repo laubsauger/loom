@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { GraphDocument } from "../types/graph.ts";
 import type { GraphPatchOperation } from "../types/patch.ts";
-import { compareEdgeOrder, incomingEdgesInOrder } from "../graph/edge-order.ts";
+import {
+  compareEdgeOrder,
+  incomingEdgesInOrder,
+  parseHandleId,
+  variadicHandleId,
+} from "../graph/edge-order.ts";
 import { operationClass, patchTouchedEntities } from "./patch-scope.ts";
 import { alice, contextFor, createHarness, patch, type Harness } from "./test-support.ts";
 
@@ -174,6 +179,87 @@ describe("variadic input order (T225, §V131)", () => {
     ]);
     expect(rejected.status).toBe("rejected");
     expect(rejected.diagnostics[0]?.code).toBe("port.notVariadic");
+  });
+});
+
+describe("a connection dropped on an occupied socket (T695)", () => {
+  it("replaces the layer in that socket IN PLACE, leaving the count and the others alone", async () => {
+    // The two halves are one claim and neither survives alone. A patch that only got the
+    // COUNT right is an append with an extra delete: three layers in, three layers out,
+    // and the user's new wire sitting at the bottom of a stack they aimed at the middle
+    // of. A patch that only got the ORDER right would have dropped or duplicated a layer.
+    const { comp, edges } = await threeLayers();
+    const [a, b, c] = edges;
+
+    const result = await apply([
+      solid("$d", 300),
+      { op: "disconnect", edgeIds: [b as string] },
+      {
+        op: "connect",
+        ref: "$ed",
+        source: { nodeId: "$d", portId: "out" },
+        target: { nodeId: comp, portId: "layers" },
+        // The socket the user released over. Without it the disconnect above compacts
+        // a and c to 0 and 1 and this appends at 2.
+        order: 1,
+      },
+    ]);
+    expect(result.status).toBe("applied");
+    const d = result.output?.createdIds["$ed"] as string;
+
+    const after = incomingEdgesInOrder(graph(), comp, "layers");
+    expect(after).toHaveLength(3);
+    expect(after.map((edge) => edge.id)).toEqual([a, d, c]);
+    // Dense, so the next drop resolves to the socket the user can see (T225).
+    expect(after.map((edge) => edge.order)).toEqual([0, 1, 2]);
+    expect(graph().edges[b as string]).toBeUndefined();
+  });
+
+  it("appends when the socket named is the empty one past the end", async () => {
+    // The spare socket is the append gesture, and it resolves to no edge — so the drop
+    // arrives with no order at all and lands where a new layer belongs. Naming a slot
+    // that no longer exists is clamped the same way rather than refused: the user has
+    // already released the pointer, and an off-by-one they cannot see is not their bug.
+    const { comp, edges } = await threeLayers();
+    const result = await apply([
+      solid("$d", 300),
+      { op: "connect", ref: "$ed", source: { nodeId: "$d", portId: "out" }, target: { nodeId: comp, portId: "layers" }, order: 9 },
+    ]);
+    const d = result.output?.createdIds["$ed"] as string;
+    expect(incomingEdgesInOrder(graph(), comp, "layers").map((edge) => edge.id)).toEqual([
+      ...edges,
+      d,
+    ]);
+    expect(orderOf(d)).toBe(3);
+  });
+
+  it("takes the FIRST socket when that is the one aimed at", async () => {
+    // Order 0 is the boundary the half-step placement has to get right: there is no
+    // edge below it to sort against, so a naive "insert before" that clamped at zero
+    // would tie with the layer already there and let the id tiebreak decide.
+    const { comp, edges } = await threeLayers();
+    const [a, b, c] = edges;
+    const result = await apply([
+      solid("$d", 300),
+      { op: "disconnect", edgeIds: [a as string] },
+      { op: "connect", ref: "$ed", source: { nodeId: "$d", portId: "out" }, target: { nodeId: comp, portId: "layers" }, order: 0 },
+    ]);
+    const d = result.output?.createdIds["$ed"] as string;
+    expect(incomingEdgesInOrder(graph(), comp, "layers").map((edge) => edge.id)).toEqual([d, b, c]);
+  });
+});
+
+describe("socket identity (T695)", () => {
+  it("round-trips a port through its handle id, and leaves a plain port id alone", () => {
+    // Every handle id in the editor goes through `parseHandleId`, including the plain
+    // ones — an ordinary port and every output still carry their bare id, and a parser
+    // that mangled those would refuse every non-variadic connection in the app.
+    expect(parseHandleId(variadicHandleId("in2", 0))).toEqual({ portId: "in2", slot: 0 });
+    expect(parseHandleId(variadicHandleId("layers", 12))).toEqual({ portId: "layers", slot: 12 });
+    expect(parseHandleId("in2")).toEqual({ portId: "in2", slot: undefined });
+    // Not a slot: no digits. The port keeps its whole name rather than being truncated
+    // to something the registry would answer `undefined` for.
+    expect(parseHandleId("odd#name")).toEqual({ portId: "odd#name", slot: undefined });
   });
 });
 

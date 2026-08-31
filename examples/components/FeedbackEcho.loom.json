@@ -132,7 +132,7 @@
               },
               "position": {
                 "x": 40,
-                "y": 140
+                "y": 152
               },
               "type": "feedback"
             },
@@ -341,7 +341,7 @@
         "parameters": {},
         "position": {
           "x": -160,
-          "y": 120
+          "y": 122
         },
         "type": "component:feedbackEcho@1"
       },

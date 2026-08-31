@@ -133,7 +133,12 @@ describe("V1 — the node renders the document, not a copy of it", () => {
 
     expect(screen.getByTitle("Composite")).toBeDefined();
     const rows = [...container.querySelectorAll("li[data-kind]")];
-    expect(rows.map((row) => row.textContent)).toEqual(["Layers", "Mask", "Out"]);
+    // T695/T227 — "Layers 1", not "Layers": a variadic input renders one NUMBERED socket
+    // per edge plus a spare, and here it is unwired, so the spare is the only one. The
+    // index is not decoration; it is the address the user aims a replacing drop at, and a
+    // socket the document orders (§V131) while the node refuses to say which one it is
+    // leaves "put this behind that" unsayable.
+    expect(rows.map((row) => row.textContent)).toEqual(["Layers 1", "Mask", "Out"]);
   });
 
   it("puts inputs on the left and outputs on the right (doc §17.2)", () => {

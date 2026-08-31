@@ -63,7 +63,9 @@ function placed(document: (typeof EXAMPLE_DOCUMENTS)[number]): readonly PlacedNo
     type: node.type,
     // T668: the slot follows the PROJECT's aspect, so the gate measures each example
     // with its own — a square document's previewing nodes are 177px tall, not 99.
-    box: nodeBox(node, registry.get(node.type), previewAspectOf(document.settings)),
+    // T695: and with its own WIRING — a variadic input grows a row per edge landing on
+    // it, so a Composite fed by two layers is a row taller than one fed by one.
+    box: nodeBox(node, registry.get(node.type), previewAspectOf(document.settings), document.graph),
   }));
 }
 

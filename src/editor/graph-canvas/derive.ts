@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order.ts";
 import type { GraphEdge, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { PortKind } from "@domain/types/ports.ts";
@@ -123,6 +124,39 @@ function isInactive(node: GraphNode | undefined): boolean {
   return node?.ui?.bypassed === true || node?.ui?.muted === true;
 }
 
+/**
+ * The handle each edge's TARGET end is drawn to (T695).
+ *
+ * A variadic input renders one socket per edge plus an empty one, so "the port" is no
+ * longer an address — slot k is, and slot k is the edge whose `order` is k. The map is
+ * built by walking `incomingEdgesInOrder` per (node, port), which is the SAME function the
+ * node's ports and the drop handler ask (§V487). Deriving the slot from `edge.order`
+ * directly would be a second answer, and would disagree the moment a document arrived with
+ * no orders on it (§V68) — every edge would claim slot `undefined`.
+ */
+function targetHandles(
+  edges: Readonly<Record<string, GraphEdge>>,
+  nodes: Readonly<Record<NodeId, GraphNode>>,
+  registry: NodeRegistryView,
+): Map<string, string> {
+  const handles = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const edge of Object.values(edges)) {
+    const key = `${edge.target.nodeId} ${edge.target.portId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const node = nodes[edge.target.nodeId];
+    if (node === undefined) continue;
+    if (registry.port(node.type, edge.target.portId, "input")?.variadic !== true) continue;
+    incomingEdgesInOrder({ edges }, edge.target.nodeId, edge.target.portId).forEach(
+      (occupant, slot) => {
+        handles.set(occupant.id, variadicHandleId(occupant.target.portId, slot));
+      },
+    );
+  }
+  return handles;
+}
+
 export function projectEdges(
   edges: Readonly<Record<string, GraphEdge>>,
   nodes: Readonly<Record<NodeId, GraphNode>>,
@@ -130,11 +164,13 @@ export function projectEdges(
   previous: readonly LoomEdge[] = [],
 ): LoomEdge[] {
   const before = new Map(previous.map((edge) => [edge.id, edge]));
+  const handles = targetHandles(edges, nodes, registry);
   const next = Object.keys(edges)
     .sort()
     .flatMap((edgeId): LoomEdge[] => {
       const domain = edges[edgeId];
       if (domain === undefined) return [];
+      const targetHandle = handles.get(edgeId) ?? domain.target.portId;
       const sourceNode = nodes[domain.source.nodeId];
       const port =
         sourceNode === undefined
@@ -151,7 +187,7 @@ export function projectEdges(
         prior.source === domain.source.nodeId &&
         prior.target === domain.target.nodeId &&
         prior.sourceHandle === domain.source.portId &&
-        prior.targetHandle === domain.target.portId &&
+        prior.targetHandle === targetHandle &&
         prior.data?.portKind === data.portKind &&
         prior.data.sourceNodeId === data.sourceNodeId &&
         prior.data.inactive === data.inactive
@@ -166,7 +202,7 @@ export function projectEdges(
           source: domain.source.nodeId,
           sourceHandle: domain.source.portId,
           target: domain.target.nodeId,
-          targetHandle: domain.target.portId,
+          targetHandle,
           data,
         },
       ];

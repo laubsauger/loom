@@ -47,7 +47,14 @@ function modelledBoxes(prefix: string): Record<string, { width: number; height: 
   if (document === undefined) throw new Error(`no shipped example named ${prefix}`);
   return Object.fromEntries(
     Object.values(document.graph.nodes).map((node) => {
-      const box = nodeBox(node, registry.get(node.type), previewAspectOf(document.settings));
+      const box = nodeBox(
+        node,
+        registry.get(node.type),
+        previewAspectOf(document.settings),
+        // T695: variadic inputs render one socket per edge plus a spare, so the model
+        // cannot predict a node's height from its definition alone any more.
+        document.graph,
+      );
       return [node.id, { width: box.width, height: box.height }];
     }),
   );

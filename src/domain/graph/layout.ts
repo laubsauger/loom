@@ -79,8 +79,14 @@ const sizeOf = (
   node: GraphNode,
   registry: NodeRegistryView,
   previewAspect?: number,
+  // T695: a variadic input grows a row per edge landing on it, so a node's height is a
+  // fact about the WIRING as well as the definition. Laying a graph out without the
+  // document would under-measure exactly the nodes that fan in — the Composites and
+  // Switches every example is built around — and the gutters would absorb the error until
+  // one of them did not.
+  graph?: Pick<GraphDocument, "edges">,
 ): { width: number; height: number } => {
-  const box = nodeBox(node, registry.get(node.type), previewAspect);
+  const box = nodeBox(node, registry.get(node.type), previewAspect, graph);
   return { width: box.width, height: box.height };
 };
 
@@ -160,7 +166,7 @@ export function layoutGraph(
   let x = origin.x;
   for (const rank of rankKeys) {
     const column = columns.get(rank) ?? [];
-    const boxes = column.map((nodeId) => sizeOf(graph.nodes[nodeId] as GraphNode, registry, options.previewAspect));
+    const boxes = column.map((nodeId) => sizeOf(graph.nodes[nodeId] as GraphNode, registry, options.previewAspect, graph));
     const widths = boxes.map((box) => box.width);
     const heights = boxes.map((box) => box.height);
     const totalHeight = heights.reduce((sum, height) => sum + height, 0) + rowGap * Math.max(0, column.length - 1);
@@ -211,7 +217,7 @@ export function placeFree(
 ): { x: number; y: number } {
   const nodes = Object.values(graph.nodes);
   if (nodes.length === 0) return { x: 0, y: 0 };
-  const boxes = nodes.map((node) => nodeBox(node, registry.get(node.type), previewAspect));
+  const boxes = nodes.map((node) => nodeBox(node, registry.get(node.type), previewAspect, graph));
   const right = Math.max(...boxes.map((box) => box.x + box.width));
   const top = Math.min(...boxes.map((box) => box.y));
   const probe: GraphNode = {
@@ -240,7 +246,7 @@ export function placeRelative(
 ): { x: number; y: number } {
   const anchor = graph.nodes[relativeTo];
   if (anchor === undefined) return { x: 0, y: 0 };
-  const { width, height } = sizeOf(anchor, registry, previewAspect);
+  const { width, height } = sizeOf(anchor, registry, previewAspect, graph);
   switch (direction) {
     case "left":
       return { x: anchor.position.x - width - RELATIVE_COLUMN_GAP, y: anchor.position.y };

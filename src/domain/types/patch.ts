@@ -24,7 +24,24 @@ export type GroupRef = GroupId | TempId;
 export type GraphPatchOperation =
   | { op: "addNode"; ref: NodeRef; type: string; position: { x: number; y: number }; parameters?: Record<string, StoredParameter>; label?: string }
   | { op: "removeNodes"; nodeIds: NodeId[] }
-  | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId } }
+  /**
+   * `order` places the new edge at a POSITION on a variadic input rather than at the end
+   * (T695, §V131).
+   *
+   * Absent means append, which is what every caller before T695 meant and what a new
+   * layer means: the end is the only placement that does not reinterpret the layers
+   * already there. It is present for exactly one gesture — a connection DROPPED ON AN
+   * OCCUPIED SOCKET, which replaces that edge and must leave the replacement where the
+   * old one was. Appending there would count right (three edges in, three edges out) and
+   * be wrong: the user aimed at layer 2 and the wire would land on layer 3.
+   *
+   * The semantics are INSERT, not overwrite: the edges at or after `order` shift up one.
+   * That is what makes the replace gesture one patch — the `disconnect` runs first and
+   * compacts the survivors, so by the time this lands the slot the user aimed at is held
+   * by the edge that used to follow it, and inserting is what puts the new wire back in
+   * front of it. Ignored on a non-variadic port, which has no position to carry.
+   */
+  | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId }; order?: number }
   | { op: "disconnect"; edgeIds: EdgeId[] }
   /**
    * The new order of the edges landing on one VARIADIC input port (T225, §V131).

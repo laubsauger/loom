@@ -562,8 +562,18 @@ function executeOperation(
         // placement that does not reinterpret the layers already there. An ordinary port
         // has no position to carry, and giving it one would put a number in every
         // document that means nothing (T225).
-        ...(targetPort.variadic === true ? { order: incoming.length } : {}),
+        //
+        // T695: unless the caller named a position — a connection dropped ON an occupied
+        // socket, which has to land where the wire it replaced was. The insertion pushes
+        // the edges at and after it up one, and the compaction below restamps the whole
+        // port so the orders stay dense whatever the caller asked for.
+        ...(targetPort.variadic === true
+          ? { order: placementFor(operation.order, incoming.length) }
+          : {}),
       };
+      if (targetPort.variadic === true) {
+        compactPortOrder(draft, targetNode.id, targetPort.id);
+      }
       return;
     }
 
@@ -1029,7 +1039,34 @@ function incomingEdges(draft: GraphDocument, nodeId: NodeId, portId: PortId): Gr
   return edges.sort(compareEdgeOrder);
 }
 
-/** Renumbers a variadic port's surviving edges to 0..n-1, preserving their relative order. */
+/**
+ * The `order` a newly connected edge takes on a variadic port (T695).
+ *
+ * A HALF STEP below the slot the caller asked for, so `compareEdgeOrder` places it in
+ * FRONT of the edge already sitting there without this having to renumber the siblings it
+ * displaced. `compactPortOrder` restamps the port to 0..n-1 immediately afterwards, so the
+ * fraction lives for the length of one sort and never reaches the document.
+ *
+ * An absent request appends, and so does one past the end: a caller naming a slot that no
+ * longer exists has described a graph that has moved on, and the end is where a new layer
+ * belongs (§V131). Clamping rather than rejecting because the alternative is refusing a
+ * drop the user has already made, over an off-by-one they cannot see.
+ */
+function placementFor(requested: number | undefined, count: number): number {
+  if (requested === undefined || requested >= count) return count;
+  return requested <= 0 ? -0.5 : requested - 0.5;
+}
+
+/**
+ * Renumbers a variadic port's surviving edges to 0..n-1, preserving their relative order.
+ *
+ * Also run after a `connect` since T695, which is what makes the half-step placement above
+ * disappear. It has a second effect worth naming: a port whose edges predate §V131 carries
+ * no orders at all, and connecting to it used to stamp `0` on the newcomer while the older
+ * edges kept sorting LAST — putting a new layer in front of every existing one. Restamping
+ * the whole port on the way through settles that in the direction §V68 promises: the
+ * document's existing order is preserved and made explicit.
+ */
 function compactPortOrder(draft: GraphDocument, nodeId: NodeId, portId: PortId): void {
   incomingEdges(draft, nodeId, portId).forEach((edge, position) => {
     if (edge.order !== position) edge.order = position;

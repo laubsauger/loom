@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { APP_VIEWPORT, addNode, connect, focusGraph, modKey, openApp } from "./app.ts";
+import { APP_VIEWPORT, addNode, connect, fitAll, focusGraph, modKey, moveNode, openApp } from "./app.ts";
 
 /**
  * T48 — shader editing, and the half of "error recovery" that this environment can run.
@@ -114,6 +114,13 @@ test("with no device the app says so, and invents no compile result (§V12)", as
 
   const fx = await addNode(page, "shader", "Custom WGSL");
   const output = await addNode(page, "output", "Output");
+  // Fit, then separate, exactly as `graph-editing.spec.ts` does and for its reason
+  // (T469): two library-added nodes overlap at this size, and the one painted on top
+  // buries the other's handle. The connect here is setup rather than the claim, which is
+  // why it went unnoticed — `connect` now refuses to release when it cannot tell which
+  // socket it is over, and said so.
+  await fitAll(page);
+  await moveNode(page, output, 260, 240);
   await connect(page, { nodeId: fx, portId: "out" }, { nodeId: output, portId: "input" });
 
   // §V12: with no capability report there is NO compile — the app does not invent a
