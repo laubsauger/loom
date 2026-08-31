@@ -6423,7 +6423,7 @@ const obolDocument = document(
         {
           label: "shot1",
           parameters: {
-            environmentIntensity: drivenSlot("envrest1", 7.00),
+            environmentIntensity: drivenSlot("envrest1", 1.00),
             aoIntensity: drivenSlot("aorest1", 0.55),
           },
         },
@@ -6451,18 +6451,18 @@ const obolDocument = document(
       node("aoswing", "valueMath", [-2080, 1560], { operation: "multiply", operand: 0.90 }, { label: "aoswing1" }),
       node("aorest", "valueMath", [-1760, 1560], { operation: "add", operand: 0.55 }, { label: "aorest1" }),
       /*
-       * T632 re-exposure. These two operands set the environment intensity — rest = the
-       * `add`, melted = add + multiply — and they were authored against a reflection
-       * with NO Fresnel term, where every fragment got the environment at full strength
-       * whatever way it faced. With Schlick in place a dielectric keeps only ~4% of it
-       * head-on, and 1.00/0.85 left the goo reading as unlit clay: this example's melted
-       * albedo is deliberately near-black (see the morph kernel above — "everything
-       * worth seeing in an oil surface arrives as a reflection"), so it has nothing else
-       * to be lit BY. 7.00/9.00 restores the exposure at the angles that now carry the
-       * reflection. Measured on frames 150 (emblem) and 484 (melted).
+       * BACK TO THE AUTHORED VALUES (T636), and the round trip is the story. These were
+       * 1.00/0.85; T632's Fresnel removed the head-on reflection from the dielectric
+       * goo and, with only a SPECULAR environment half, nothing physical was left to
+       * fill it — so T632 re-exposed to 7.00/9.00, a tuning constant doing a missing
+       * term's job. T636 added the missing term (diffuse irradiance along N, scaled by
+       * (1 − F)(1 − metallic)), and the constant comes home: measured on the same two
+       * frames T632 used, 1.00/0.85 puts the melted frame's environment contribution
+       * at 17.2 against the 17.3 that was judged (and the old 7× frame was blown to
+       * chalk — the fill reads as oil where the re-exposure read as plaster).
        */
-      node("envswing", "valueMath", [-2080, 1920], { operation: "multiply", operand: 9.00 }, { label: "envswing1" }),
-      node("envrest", "valueMath", [-1760, 1920], { operation: "add", operand: 7.00 }, { label: "envrest1" }),
+      node("envswing", "valueMath", [-2080, 1920], { operation: "multiply", operand: 0.85 }, { label: "envswing1" }),
+      node("envrest", "valueMath", [-1760, 1920], { operation: "add", operand: 1.00 }, { label: "envrest1" }),
       node("glossswing", "valueMath", [-2080, 2280], { operation: "multiply", operand: -0.105 }, { label: "glossswing1" }),
       node("glossrest", "valueMath", [-1760, 2280], { operation: "add", operand: 0.190 }, { label: "glossrest1" }),
     ],

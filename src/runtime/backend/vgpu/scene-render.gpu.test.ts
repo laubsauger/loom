@@ -638,3 +638,113 @@ describe("the environment reflection is VIEW-DEPENDENT for a dielectric and not 
     expect(grazing.metal).toBe(headOn.metal);
   }, 240_000);
 });
+
+/**
+ * T636 — the DIFFUSE half of the environment, at three points of `metallic`
+ * (§V147 exact values, §V461 a fixture able to distinguish each factor).
+ *
+ * The Fresnel work exposed the gap: with only a specular half, removing the head-on
+ * reflection from a dielectric left nothing physical to fill its shadows, and
+ * `environmentIntensity` stood in by hand (E33's 7× re-exposure). The new term is
+ * irradiance along N × albedo × (1 − F) × (1 − metallic) × intensity.
+ *
+ * EXACT BY CONSTRUCTION: the environment is a UNIFORM solid, so the five-tap cone
+ * average equals the solid's own value whatever directions the taps take; the grid is
+ * flat and the ortho camera on-axis, so N·V = 1 and F = F0 exactly; roughness is 1, so
+ * (1 − roughness) zeroes the specular term and the ONLY light in the frame is the term
+ * under test. Albedo is WHITE (display 1 = linear 1) so the product needs no transfer
+ * arithmetic.
+ *
+ *   metallic 0.0 → (1 − 0.04) × (1 − 0)   = 0.96 → 245   (the fill this task adds)
+ *   metallic 0.5 → (1 − 0.52) × (1 − 0.5) = 0.24 →  61   (both factors, distinguished:
+ *                                                   a missing (1 − metallic) reads 122)
+ *   metallic 1.0 → (1 − 1.00) × (1 − 1)   = 0    →   0   (a metal gains NOTHING)
+ *
+ * And §V361's cut: the same dielectric with no environment wired reads 0 — the fill
+ * came from the wire, not from an ambient constant.
+ */
+describe("the environment lights a dielectric's body and never a metal's (T636, §V147, §V461)", () => {
+  const flatGraph = (withEnvironment: boolean): GraphDocument => {
+    const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({
+      id,
+      type,
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters,
+      label,
+    });
+    return {
+      revision: 1,
+      nodes: Object.fromEntries(
+        [
+          node("grid", "pointGrid", { cols: 8, rows: 8, count: 64 }, "grid1"),
+          node("geo", "geometry", { mode: "surface", material: "matte1" }, "geo1"),
+          // WHITE albedo carries the diffuse term; roughness 1 zeroes the specular one.
+          node("matte", "materialPhong", { color: [1, 1, 1, 1], specular: [1, 1, 1, 1], shininess: 8, roughness: 1 }, "matte1"),
+          node("cam", "camera", { eye: [0, 0, 1000], lookAt: [0, 0, 0], ortho: true, orthoHeight: 2, near: 900, far: 1100 }, "cam1"),
+          node("sky", "solid", { color: [0, 0, 1, 1] }, "sky1"),
+          node(
+            "shot",
+            "render",
+            { scenes: "geo1", camera: "cam1", lights: "", ambientColor: [1, 1, 1, 1], ambientIntensity: 0 },
+            "shot1",
+          ),
+          node("out", "output", {}, "out1"),
+        ].map((entry) => [entry.id, entry]),
+      ),
+      edges: {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
+        ...(withEnvironment
+          ? { e3: { id: "e3", source: { nodeId: "sky", portId: "out" }, target: { nodeId: "shot", portId: "environment" } } }
+          : {}),
+        e4: { id: "e4", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    } as never;
+  };
+
+  const probe = async (withEnvironment: boolean, metallic: number): Promise<number> => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: flatGraph(withEnvironment),
+      settings: SETTINGS,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const passId = plan.passes.find((pass) => pass.kind === "draw" && pass.id.includes(":scene:"))?.id ?? "";
+    expect(passId).not.toBe("");
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      // §V5, the value path: only `metallic` moves between probes; roughness stays 1.
+      backend.updateUniforms({ passId, values: { specular: [0.8, 0.8, 0.8, 8], material: [metallic, 1, 0, 0] } });
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const image = await backend.readOutput("target:shot:out");
+      return image.bytes[(32 * 64 + 32) * 4 + 2] ?? -1;
+    } finally {
+      backend.dispose();
+    }
+  };
+
+  it("dielectric fills at 0.96, half-metal at 0.24, metal at zero — and nothing without the wire", async () => {
+    const dawn = await probeDawn();
+    if (!dawn.available) throw new Error(`Dawn unavailable: ${dawn.error}`);
+
+    expect(await probe(true, 0)).toBe(245);
+    expect(await probe(true, 0.5)).toBe(61);
+    expect(await probe(true, 1)).toBe(0);
+    expect(await probe(false, 0)).toBe(0);
+  }, 240_000);
+});

@@ -81,6 +81,63 @@ const FRESNEL_WGSL = `  let envF0 = mix(0.04, 1.0, params.material.x);
   let envFresnel = envF0 + (1.0 - envF0) * pow(max(1.0 - abs(dot(normal, viewDir)), 0.0), 5.0);
 `;
 
+/**
+ * T636 — the DIFFUSE half of the environment, shared verbatim by both generators.
+ *
+ * The gap the Fresnel work exposed: the IBL-lite had only the SPECULAR half, so when
+ * T632 correctly removed the head-on reflection from a dielectric there was nothing
+ * physical left to fill its shadows, and `environmentIntensity` had to stand in by
+ * hand — E33 needed a 7× re-exposure that was a tuning constant doing a missing
+ * term's job.
+ *
+ * The term is an irradiance lookup along N — five taps averaged over a wide cone,
+ * because the equirect has no prefiltered mips to sample and five texel fetches are
+ * the IBL-lite answer, an approximation stated as one — times the surface's DIFFUSE
+ * reflectance (`albedo`, never the specular tint), times `(1 − F) · (1 − metallic)`:
+ * energy the surface did not reflect specularly is what is available to the diffuse
+ * half, and a metal has none. That factor is also what finally makes `metallic` mean
+ * something for the diffuse term rather than only the specular one.
+ *
+ * Two properties, both deliberate and both gated:
+ *  - AT GRAZING THE TERM IS ZERO. (1 − F) → 0 exactly where the specular ceiling
+ *    (§V571) is doing its work, so the silhouette carries only what it carried
+ *    before — this term can add no edge glow, ever.
+ *  - A METAL GAINS NOTHING, at any angle: (1 − metallic) is a hard zero at
+ *    metallic = 1, so every metal stays byte-identical to what shipped.
+ *
+ * It DOES brighten dielectric bodies facing the environment — that is its entire
+ * job, it is what the hand-tuned intensity was standing in for, and it is why the
+ * blast radius was measured by hashing every example's pass WGSL rather than
+ * asserted (exactly the scenes that wire an environment change, nothing else).
+ *
+ * The sampling normal faces the viewer (`sign(dot(N, V))`) — the two-sided rule
+ * (T301) applied to irradiance: a back face is lit by the hemisphere it shows the
+ * camera, not by the one behind it. Roughness is deliberately absent: Lambertian
+ * irradiance does not sharpen with polish, and tying it in would re-dim rough
+ * dielectrics that this term exists to fill.
+ */
+const IRRADIANCE_WGSL = `  let envN = normal * select(-1.0, 1.0, dot(normal, viewDir) >= 0.0);
+  let envUp = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(envN.y) > 0.9);
+  let envTx = normalize(cross(envUp, envN));
+  let envTy = cross(envN, envTx);
+  let irradiance = (sampleEnvironment(envN)
+    + sampleEnvironment(normalize(envN + envTx))
+    + sampleEnvironment(normalize(envN - envTx))
+    + sampleEnvironment(normalize(envN + envTy))
+    + sampleEnvironment(normalize(envN - envTy))) / 5.0;
+`;
+
+/** The equirect fetch, shared by the reflection and the five irradiance taps (T636). */
+const ENV_SAMPLE_WGSL = `fn sampleEnvironment(direction: vec3f) -> vec3f {
+  let uv = vec2f(
+    atan2(direction.x, -direction.z) / 6.2831853 + 0.5,
+    acos(clamp(direction.y, -1.0, 1.0)) / 3.14159265,
+  );
+  let dims = vec2f(textureDimensions(environmentMap, 0));
+  return textureLoad(environmentMap, vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * (dims - vec2f(1.0))), 0).rgb;
+}
+`;
+
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const pointColor = options.pointColor === true;
@@ -120,7 +177,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const environment = options.environment === true && options.model === "phong";
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
-    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n`
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
   /* Equirect, documented exactly: u = atan2(R.x, −R.z)/2π + 0.5, v = acos(R.y)/π. */
@@ -133,14 +190,9 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     : "";
   const aoTerm = ambientOcclusion ? " * occlusion" : "";
   const envTerm = environment
-    ? `  let reflectDir = reflect(-viewDir, normal);
-  let envUv = vec2f(
-    atan2(reflectDir.x, -reflectDir.z) / 6.2831853 + 0.5,
-    acos(clamp(reflectDir.y, -1.0, 1.0)) / 3.14159265,
-  );
-  let envDims = vec2f(textureDimensions(environmentMap, 0));
-  let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
+    ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
 ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - roughness) * params.environment.x${aoTerm};
+${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 - params.material.x) * params.environment.x${aoTerm};
 `
     : "";
 
@@ -329,7 +381,7 @@ export function sceneInstancesWgsl(options: {
   const environment = options.environment === true && options.model === "phong";
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
-    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n`
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
   /* T624 — see the surface generator: bound after the environment, ambient and
@@ -341,14 +393,9 @@ export function sceneInstancesWgsl(options: {
     : "";
   const aoTerm = ambientOcclusion ? " * occlusion" : "";
   const envTerm = environment
-    ? `  let reflectDir = reflect(-viewDir, normal);
-  let envUv = vec2f(
-    atan2(reflectDir.x, -reflectDir.z) / 6.2831853 + 0.5,
-    acos(clamp(reflectDir.y, -1.0, 1.0)) / 3.14159265,
-  );
-  let envDims = vec2f(textureDimensions(environmentMap, 0));
-  let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
+    ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
 ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - params.material.y) * params.environment.x${aoTerm};
+${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 - params.material.x) * params.environment.x${aoTerm};
 `
     : "";
   const shadowFactor = (index: number): string => {

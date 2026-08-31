@@ -372,7 +372,7 @@
         "id": "envrest",
         "label": "envrest1",
         "parameters": {
-          "operand": 7,
+          "operand": 1,
           "operation": "add"
         },
         "position": {
@@ -386,7 +386,7 @@
         "id": "envswing",
         "label": "envswing1",
         "parameters": {
-          "operand": 9,
+          "operand": 0.85,
           "operation": "multiply"
         },
         "position": {
@@ -834,7 +834,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 7
+                "value": 1
               }
             },
             "mode": "driven"
