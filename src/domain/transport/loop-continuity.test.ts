@@ -297,6 +297,16 @@ function valueNodes(): readonly NodeDefinition[] {
  * its PLAYHEAD is timeline-anchored (where the track is in the piece). One entry per node
  * would have forced one of those two true statements to be dropped.
  *
+ * T586 — WHAT THIS TABLE CLASSIFIES IS NOT THE DEFAULT. The owner moved the `playMode`
+ * DEFAULT to free run; a media node therefore ARRIVES free-running. The classification is
+ * unchanged and deliberately so: it names the clock the playhead is DEFINED AGAINST — the
+ * anchor the node offers, the mode in which its position means "where the track is in the
+ * piece" and a scrub and an offline render reproduce. What §V453 gates is that an author
+ * DECIDED, not which mode a fresh node lands in, and both nodes still declare and document
+ * both clocks. The gap the flip opens — a project that arrives on the mode that does NOT
+ * reproduce — is closed at render time by `freeRunMediaNodes` naming the offenders, not by
+ * softening what the node says it is.
+ *
  * Derived from `hasMediaTransport`, which asks the node's own parameter schema — so media
  * node N+1 fails here until its author decides, with nothing to remember to update.
  */
@@ -463,6 +473,29 @@ describe("T489 — a surface cannot be added without declaring its clock", () =>
       expect((definition.description ?? "").toLowerCase(), `${definition.type}`).toContain(
         "timeline-anchored",
       );
+    }
+  });
+
+  /**
+   * T586 — and the node must ALSO say which mode it ARRIVES on, which the assertion above
+   * cannot see.
+   *
+   * §V453's rule is that the classification lives in the text the user reads, not only in
+   * the gate's table. The flip splits that in two: the node is timeline-anchored WHEN
+   * LOCKED, and free-running WHEN FRESH, and a description naming only the first is the
+   * shape §V338 objects to — true, and quietly missing the half that describes what will
+   * actually happen. So both halves are asserted, and a silent revert of the default in
+   * either direction now reddens the docs rather than only the arithmetic.
+   */
+  it("every media-transport node also states the mode it ARRIVES on, which is now free run", () => {
+    for (const definition of mediaTransportNodes()) {
+      const text = (definition.description ?? "").toLowerCase();
+      expect(text, `${definition.type} must name its default mode`).toContain("free run");
+      expect(text, `${definition.type} must say free run is the DEFAULT`).toContain("by default");
+      expect(
+        definition.parameters?.["playMode"],
+        `${definition.type}: the description and the manifest must agree about the default`,
+      ).toMatchObject({ default: "freeRun" });
     }
   });
 });

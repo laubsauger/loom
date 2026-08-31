@@ -285,7 +285,15 @@ describe("media sources reach the backend (T264)", () => {
           runtime={runtime}
           backend={backend}
           graph={graphWith({
-            movie: { type: "movieFileIn", parameters: { file: "blob:clip", speed: 2 } },
+            // T586 pins `playMode` EXPLICITLY. This case is about the plumbing — that a
+            // resolved `speed` reaches a real element — and its arithmetic only works out
+            // to a single exact number under the lock. It used to get that from the
+            // default; the default moved, and a test whose numbers depend on a mode should
+            // name the mode rather than inherit it.
+            movie: {
+              type: "movieFileIn",
+              parameters: { file: "blob:clip", speed: 2, playMode: "timeline" },
+            },
           })}
           environment={environment}
           onWiring={(value) => {
@@ -315,6 +323,68 @@ describe("media sources reach the backend (T264)", () => {
     // because a stopped loop produces no frames to be called from.
     act(() => (wiring as unknown as MediaWiring).setRunning(false));
     expect(element.paused).toBe(true);
+  });
+
+  /**
+   * T586 — THE SHIPPED DEFAULT, at the same seam.
+   *
+   * The case above now pins `playMode` by hand, which would leave the mode users actually
+   * GET untested here. This is the owner's complaint asserted one layer above
+   * `media-playback.test.ts`: a clip with nothing stored on it, and a TIMELINE THAT NEVER
+   * MOVES — every frame carries `timeSeconds: 3` — must still walk the element forward.
+   * Under T493's default the element would sit at 3 and never leave it.
+   */
+  it("a clip with NOTHING stored advances while the timeline stands still (T586)", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const element = fakeElement();
+    let wiring: MediaWiring | null = null;
+    const environment: MediaEnvironment = {
+      openFile: () => Promise.resolve(element as unknown as MediaElement),
+      openCamera: () => Promise.reject(new Error("not used")),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          // No `playMode`, no `speed`: exactly what dropping a file in gives you.
+          graph={graphWith({ movie: { type: "movieFileIn", parameters: { file: "blob:clip" } } })}
+          environment={environment}
+          onWiring={(value) => {
+            wiring = value;
+          }}
+        />,
+      );
+    });
+    await waitFor(() => expect(registered.has(mediaSourceIdFor("movie"))).toBe(true));
+
+    // Ten frames of 0.1s, all reporting the SAME timeline second. The step is chosen so
+    // the seek schedule is exact rather than landing mid-window: this fake element does
+    // not play on its own, so it only moves when the derived position has drifted past
+    // `SEEK_TOLERANCE_SECONDS` (0.15). At 0.1 per frame the drift alternates 0.1 / 0.2, so
+    // every even frame corrects and the tenth lands the element exactly on 1.0. At 1/60
+    // the last correction falls short of the accumulator by a frame or two, which is
+    // correct behaviour and a fixture that cannot state an exact number (§V147).
+    for (let index = 0; index < 10; index += 1) {
+      act(() =>
+        (wiring as unknown as MediaWiring).sync({
+          timeSeconds: 3,
+          deltaSeconds: 0.1,
+          frameIndex: 180,
+          mode: "realtime",
+          randomSeed: 1,
+        }),
+      );
+    }
+
+    // One second of accumulated delta at speed 1 is second 1.0 — and NOT 3, which is where
+    // a timeline-locked clip would have been pinned on the very first frame and stayed for
+    // all ten. Two exact, distinguishable numbers.
+    expect(element.currentTime).toBeCloseTo(1, 6);
+    expect(element.currentTime).not.toBeCloseTo(3, 6);
+    expect(element.paused).toBe(false);
   });
 
   it("unregisters when the node goes away", async () => {

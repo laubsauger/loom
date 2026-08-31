@@ -4,13 +4,19 @@ import {
   MEDIA_TRANSPORT_KEYS,
   MEDIA_TRANSPORT_PARAMETERS,
   createMediaClock,
+  freeRunMediaNodes,
+  freeRunRenderWarning,
   hasMediaTransport,
   mediaPlayhead,
   mediaTransportFrom,
   type MediaTransportValues,
 } from "./transport.ts";
+import type { GraphDocument } from "../types/graph.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import type { ParameterValue } from "../types/parameters.ts";
+import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
+import { createNodeRegistry } from "../../nodes/registry/registry.ts";
+import { resolveParameters } from "../parameters/index.ts";
 
 /**
  * T493 — the media transport, asserted at EXACT VALUES.
@@ -214,10 +220,15 @@ describe("T493 — the free-run clock is the only state, and only in free-run", 
 });
 
 describe("T493 — one vocabulary, read tolerantly (§V61, §V10)", () => {
-  it("a document with none of the keys reads the SCHEMA defaults, so an old file plays as before", () => {
+  it("a document with none of the keys reads the SCHEMA defaults, and the reader cannot drift from them", () => {
     const transport = mediaTransportFrom(() => undefined);
     expect(transport).toEqual({
-      playMode: "timeline",
+      // T586: free run, the owner's default. The `toMatchObject` pair below is what stops
+      // this and the manifest becoming two answers about what a missing key means — a
+      // document stores `playMode` only when the user picked one, so "missing" IS the
+      // default state and a divergence here is a node that plays differently depending on
+      // which reader looked at it.
+      playMode: "freeRun",
       play: true,
       speed: 1,
       cue: false,
@@ -242,7 +253,7 @@ describe("T493 — one vocabulary, read tolerantly (§V61, §V10)", () => {
     };
     const transport = mediaTransportFrom((key) => values[key]);
     expect(transport.speed).toBe(1);
-    expect(transport.playMode).toBe("timeline");
+    expect(transport.playMode).toBe("freeRun");
     expect(transport.extend).toBe("loop");
     expect(transport.cue).toBe(false);
   });
@@ -271,6 +282,40 @@ describe("T493 — §V146: a control that cannot act says so", () => {
     expect(reason).toBeTypeOf("string");
     expect(reason).toContain("Locked to Timeline");
     expect(inactive("play", "freeRun")).toBeNull();
+  });
+
+  /**
+   * T586 — THE OWNER'S SYMPTOM, asserted where it actually happens.
+   *
+   * The two cases above hand `inactiveWhen` a literal `playMode`, which can never see the
+   * bug the owner hit: they dropped in a file and found Play DIMMED, and the value that
+   * dimmed it came from `resolveParameters` filling in the manifest default for a node
+   * that stores nothing. So this goes through the real resolver on a real registry node —
+   * the same call `inspector.tsx` makes — and asserts the control is LIVE.
+   *
+   * §V146's logic is untouched and still right; it is simply now describing the mode you
+   * opted into rather than the one you were dropped in.
+   */
+  it("Play is ACTIVE on a freshly dropped-in node, through the resolver the inspector uses", () => {
+    const registry = createNodeRegistry(allNodeDefinitions);
+    for (const type of ["audioFileIn", "movieFileIn"]) {
+      const definition = registry.get(type);
+      const node = {
+        id: "n",
+        type,
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {},
+      } as unknown as Parameters<typeof resolveParameters>[0];
+      const resolved = resolveParameters(node, definition as NodeDefinition, {});
+      expect(resolved.values["playMode"], type).toBe("freeRun");
+      // The whole point of the flip: no dimming, no "this control cannot act" sentence.
+      expect(MEDIA_TRANSPORT_PARAMETERS["play"]?.inactiveWhen?.(resolved.values), type).toBeNull();
+      expect(
+        MEDIA_TRANSPORT_PARAMETERS["cuePulse"]?.inactiveWhen?.(resolved.values),
+        type,
+      ).toBeNull();
+    }
   });
 
   it("Cue Pulse is inactive under the lock, but Cue itself is NOT", () => {
@@ -307,5 +352,98 @@ describe("T493 — hasMediaTransport derives from the schema (§V316, §V453)", 
       "trimEnd",
       "trimStart",
     ]);
+  });
+});
+
+/**
+ * T586 — THE HONEST EDGE, asserted in BOTH directions.
+ *
+ * The flip's one real cost is that a free-run playhead is not a function of the frame, so
+ * an offline render does not reproduce what was heard (§V44/§V47). The requirement is that
+ * a project holding one SAYS SO at render time — and the test that only checks the warning
+ * FIRES would pass on an implementation that warns about every project, which would be the
+ * same as not warning at all. So the locked case is asserted just as hard as the free-run
+ * one (§V461: the fixture must be able to distinguish what it asserts).
+ */
+describe("T586 — a free-run media node is named at render time, and a locked one is not", () => {
+  const registry = createNodeRegistry(allNodeDefinitions);
+
+  const graphWith = (nodes: Record<string, unknown>): GraphDocument =>
+    ({ revision: 1, nodes, edges: {} }) as unknown as GraphDocument;
+
+  const mediaNode = (type: string, label: string, parameters: Record<string, unknown>) => ({
+    id: label,
+    type,
+    definitionVersion: 1,
+    position: { x: 0, y: 0 },
+    label,
+    parameters,
+  });
+
+  it("a node that stores NOTHING is free-running, so it warns — the default IS the case", () => {
+    // The case that matters: nobody opted into free run, they simply opened the app.
+    const graph = graphWith({ track1: mediaNode("audioFileIn", "track1", {}) });
+    expect(freeRunMediaNodes(graph, registry).map((node) => node.label)).toEqual(["track1"]);
+
+    const warning = freeRunRenderWarning(graph, registry);
+    expect(warning?.severity).toBe("warning");
+    expect(warning?.code).toBe("export.freeRunMedia");
+    expect(warning?.nodeId).toBe("track1");
+    // NAMED, not counted — §V338/§V403: the node, and the fix, in the text the user reads.
+    expect(warning?.message).toContain('Audio File In "track1"');
+    expect(warning?.suggestion).toContain('Audio File In "track1"');
+    expect(warning?.suggestion).toContain("Locked to Timeline");
+  });
+
+  it("a node LOCKED to the timeline produces NO warning — the fix actually works", () => {
+    const graph = graphWith({
+      track1: mediaNode("audioFileIn", "track1", { playMode: "timeline" }),
+    });
+    expect(freeRunMediaNodes(graph, registry)).toEqual([]);
+    expect(freeRunRenderWarning(graph, registry)).toBeNull();
+  });
+
+  it("a graph with no media at all produces no warning", () => {
+    const graph = graphWith({
+      n1: { id: "n1", type: "noise", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+    });
+    expect(freeRunRenderWarning(graph, registry)).toBeNull();
+  });
+
+  it("BOTH doors are covered, and a mixed graph names only the offender", () => {
+    const graph = graphWith({
+      clip1: mediaNode("movieFileIn", "clip1", {}),
+      track1: mediaNode("audioFileIn", "track1", { playMode: "timeline" }),
+    });
+    const warning = freeRunRenderWarning(graph, registry);
+    expect(warning?.message).toContain('Movie File In "clip1"');
+    // The half that stops it degenerating into "your project has media in it".
+    expect(warning?.message).not.toContain("track1");
+  });
+
+  it("names EVERY free-run node, because fixing one of three is not fixing it", () => {
+    const graph = graphWith({
+      clip1: mediaNode("movieFileIn", "clip1", {}),
+      track1: mediaNode("audioFileIn", "track1", { playMode: "freeRun" }),
+    });
+    const warning = freeRunRenderWarning(graph, registry);
+    expect(warning?.message).toContain('Movie File In "clip1"');
+    expect(warning?.message).toContain('Audio File In "track1"');
+    expect(warning?.message).toContain("are on Free Run");
+  });
+
+  it("a playMode reached by EXPRESSION is read the same way a typed one is (§V107)", () => {
+    // The proof that this goes through `resolveParameters` rather than peeking at the
+    // stored value: an expression resolving to the lock silences the warning.
+    const graph = graphWith({
+      track1: mediaNode("audioFileIn", "track1", {
+        playMode: {
+          mode: "expression",
+          bindings: { expression: { kind: "expression", source: "0" } },
+        },
+      }),
+    });
+    // Enum by index (§V107's resolver rule): index 0 is "timeline".
+    expect(freeRunRenderWarning(graph, registry)).toBeNull();
   });
 });

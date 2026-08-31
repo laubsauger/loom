@@ -1,5 +1,10 @@
+import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
+import type { GraphDocument } from "../types/graph.ts";
+import type { NodeId } from "../types/ids.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
+import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import { resolveParameters } from "../parameters/index.ts";
 
 /**
  * MEDIA TRANSPORT (T493, §V436, §V45, §V5) — one idea, two doors.
@@ -11,31 +16,43 @@ import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
  * `compileMedia` is shared between the movie node and the webcam, and the reason T434
  * shaped the audio file node as the movie node's analog in the first place.
  *
- * ## WHICH CLOCK (§V436, §V453) — TIMELINE-ANCHORED, and it is a decision
+ * ## WHICH CLOCK (§V436, §V453) — TWO, and the DEFAULT is FREE RUN (T586)
  *
  * `mediaPlayhead` is a PURE FUNCTION of (parameters, elapsed seconds, duration). There is
- * no accumulator, no `<video>.currentTime` read, no wall clock. In the default
- * `timeline` play mode the caller passes the TIMELINE clock, so the playhead is
- * `f(frame)`:
+ * no accumulator, no `<video>.currentTime` read, no wall clock. Which clock the caller
+ * feeds it is the design decision (§V436), and this node offers both:
  *
- *  - a SCRUB finds the same media frame every time, because the same timeline frame
- *    yields the same position by construction;
- *  - an OFFLINE RENDER reproduces byte-for-byte (§V45, §V47) — nothing about the
- *    position depends on how, or how fast, you arrived at the frame;
- *  - a LOOP wraps the position along with the timeline, which is what "timeline-anchored"
- *    MEANS. Frame one of the piece lands on the in point every lap. That is the same
- *    reasoning `audioPattern` states for itself, and media is the clearest case of it:
- *    a track scoring a bounded piece must start where the piece starts.
+ *  - LOCKED TO TIMELINE — the caller passes the TIMELINE clock, so the playhead is
+ *    `f(frame)`. A SCRUB finds the same media frame every time, because the same timeline
+ *    frame yields the same position by construction; an OFFLINE RENDER reproduces
+ *    byte-for-byte (§V45, §V47), because nothing about the position depends on how, or
+ *    how fast, you arrived at the frame; and a LOOP wraps the position along with the
+ *    timeline, which is what "timeline-anchored" MEANS — frame one of the piece lands on
+ *    the in point every lap, the same reasoning `audioPattern` states for itself.
+ *  - FREE RUN — the caller accumulates elapsed time of its own and passes that instead,
+ *    so `play`/`cuePulse` become expressible, and the position stops being a function of
+ *    the frame. A scrub no longer finds it and an offline render no longer reproduces it.
  *
- * The absolute clock (§V449, T489) is deliberately NOT what this reads. A media file has
- * a beginning; a free-running one would drift out of step with the picture it is scoring
- * and would have nowhere to be when you dragged the playhead.
+ * T586 — WHY FREE RUN IS THE DEFAULT, REVERSING T493's RULING. This is the OWNER'S CALL,
+ * not a discovery, and T493's argument was not wrong: position as a pure function of the
+ * frame is what buys scrubbing and reproducible renders, and TouchDesigner's own default
+ * is Locked to Timeline. What settles it is that TD's centre of gravity is a timeline and
+ * ours is a VJ set. Under the lock a freshly loaded track does NOTHING until the timeline
+ * runs, and `play`/`cuePulse` render DIMMED (§V146) — so someone drops in a file, presses
+ * Play, and finds the control disabled. That is the first thing a new user meets, and it
+ * reads as a broken node rather than as a design decision.
  *
- * `freeRun` is the explicit escape hatch and it PAYS FOR ITSELF IN DETERMINISM: the caller
- * accumulates elapsed time on its own and passes that instead, so play/pause and a cue
- * PULSE become expressible — and the position stops being a function of the frame, so a
- * scrub no longer finds it and an offline render no longer reproduces it. That cost is
- * stated in both node descriptions, where the user reads it, rather than only here.
+ * THE COST IS REAL AND IS NOT ALLOWED TO BE SILENT. A free-run playhead is not `f(frame)`,
+ * so a project holding one renders a take that does not reproduce what was heard. Neither
+ * silently diverging nor silently forcing the lock is acceptable — forcing it would make
+ * the take differ from the take the user approved, which is worse than a warning. So
+ * `freeRunMediaNodes` below names the offending nodes, and the render command turns that
+ * into a warning that says which node and that the lock is the fix (§V338, §V403: an
+ * absence or a caveat we report must name what would make it go away).
+ *
+ * The absolute clock (§V449, T489) is deliberately NOT what either mode reads. A media
+ * file has a beginning, and free run starts it at the in point rather than wherever the
+ * session happens to have got to.
  *
  * ## WHY `play` IS INACTIVE WHEN LOCKED TO THE TIMELINE (§V146)
  *
@@ -50,6 +67,11 @@ import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
  * `cue` is NOT inactive, because holding at a point is a pure function: `cue` on means
  * "the position is the cue point", in either mode. It is the momentary JUMP that needs
  * state, and that is `cuePulse`.
+ *
+ * T586 does NOT touch this logic, which was right: it is the reason the owner hit the
+ * confusion, not the confusion itself. Under the new default both controls are simply
+ * ACTIVE most of the time, which is the entire point of the flip — the dimming now marks
+ * the mode you deliberately opted into rather than the one you were dropped in.
  */
 
 export type MediaPlayMode = "timeline" | "freeRun";
@@ -276,10 +298,13 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
     type: "enum",
     label: "Play Mode",
     group: "Transport",
-    default: "timeline",
+    // T586, THE OWNER'S CALL: free run, so a file you just dropped in plays when you press
+    // Play. The lock is opt-in and loses nothing by being opt-in — `mediaPlayhead` is the
+    // same pure function under it.
+    default: "freeRun",
     options: [...PLAY_MODE_OPTIONS],
     description:
-      "Locked to Timeline derives the position from the frame, so scrubbing, looping and offline render all reproduce. Free Run gives the node its own playhead that Play and Cue Pulse drive — and gives up reproducibility to do it.",
+      "Free Run (the default) gives the node its own playhead that Play and Cue Pulse drive, so a file plays as soon as you press Play. Locked to Timeline instead derives the position from the frame, so scrubbing, looping and offline render all reproduce — free run gives up all three, and a render warns you by name when it is on.",
   },
   play: {
     type: "boolean",
@@ -382,6 +407,92 @@ export function hasMediaTransport(definition: NodeDefinition): boolean {
   return MEDIA_TRANSPORT_KEYS.every((key) => parameters[key] !== undefined);
 }
 
+/** One node whose playhead will not reproduce, and enough to name it to the user. */
+export interface FreeRunMediaNode {
+  readonly nodeId: NodeId;
+  /** The node's label if it has one, else its id — whatever the user sees in the graph. */
+  readonly label: string;
+  /** "Movie File In" / "Audio File In" — the definition's title, not the type key. */
+  readonly title: string;
+}
+
+/**
+ * T586's HONEST EDGE, as a pure function of the document (§V338, §V403).
+ *
+ * The flip makes free run the default, and a free-run playhead is not `f(frame)` — so a
+ * take rendered from a project holding one does not reproduce what was heard. The rule
+ * this satisfies is §V338's: not silently diverging, AND not silently forcing the lock,
+ * because forcing it would hand back a different take from the one the user approved.
+ * What is left is to SAY SO, per node, by name, with the fix named too — which is why this
+ * returns the LABEL rather than a count. "One media node is free-running" is the useless
+ * half of the warning.
+ *
+ * DERIVED, not a hand list (§V316, and the same derivation `hasMediaTransport` already
+ * powers): media node N+1 is covered the moment it declares the transport, with nothing to
+ * remember to update here. Read through `resolveParameters` (§V61) so a `playMode` on an
+ * expression or a bind answers the same way a typed one does — this is the one parameter
+ * read path, not a second opinion about what the document says.
+ */
+export function freeRunMediaNodes(
+  graph: GraphDocument,
+  registry: NodeRegistryView,
+): readonly FreeRunMediaNode[] {
+  const found: FreeRunMediaNode[] = [];
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    const definition = registry.get(node.type);
+    if (definition === undefined || !hasMediaTransport(definition)) continue;
+    const resolved = resolveParameters(node, definition, {});
+    const transport = mediaTransportFrom((key) => resolved.get(key)?.value);
+    if (transport.playMode !== "freeRun") continue;
+    found.push({
+      nodeId: nodeId as NodeId,
+      label: node.label !== undefined && node.label !== "" ? node.label : nodeId,
+      title: definition.title,
+    });
+  }
+  return found;
+}
+
+/**
+ * The warning itself, built HERE rather than in the render command (T586).
+ *
+ * The sentence is a statement about the INVARIANT — free run is not `f(frame)`, therefore
+ * the take does not reproduce — and the invariant lives beside the arithmetic that makes
+ * it true, not in the app layer that happens to be the first caller. It also means the
+ * message is a pure function of the document and can be asserted at exact text, which a
+ * `useCallback` inside a hook could not be (§V220's habit: the decision is testable
+ * without standing up the thing that calls it).
+ *
+ * WARNING, not error, and deliberately: an error reads as "this take failed", and the take
+ * is fine — it is simply not reproducible, which was the user's own choice. Returning
+ * `null` for a clean document is what lets the caller assert both directions.
+ */
+export function freeRunRenderWarning(
+  graph: GraphDocument,
+  registry: NodeRegistryView,
+): RuntimeDiagnostic | null {
+  const nodes = freeRunMediaNodes(graph, registry);
+  const first = nodes[0];
+  if (first === undefined) return null;
+  const named = nodes.map((node) => `${node.title} "${node.label}"`).join(", ");
+  const one = nodes.length === 1;
+  return {
+    severity: "warning",
+    code: "export.freeRunMedia",
+    message:
+      `${named} ${one ? "is" : "are"} on Free Run, so ${one ? "its playhead does" : "their playheads do"} ` +
+      `not derive from the frame. A take is rendered as fast as the frames encode rather than in ` +
+      `real time, so the media in this file will not line up with what you saw and heard live.`,
+    // The pane can point at one node; the message names every one of them.
+    nodeId: first.nodeId,
+    // §V338/§V403: the caveat names what would make it go away, per node, by name.
+    suggestion:
+      `Set Play Mode to "Locked to Timeline" on ${named} and render again — the position then ` +
+      `derives from the frame, so the take reproduces exactly. Leave Free Run on if the live ` +
+      `performance is what you wanted and this render is a rough.`,
+  };
+}
+
 const PLAY_MODES = new Set<string>(["timeline", "freeRun"]);
 const EXTENDS = new Set<string>(["loop", "hold", "mirror", "black"]);
 
@@ -391,8 +502,14 @@ const EXTENDS = new Set<string>(["loop", "hold", "mirror", "black"]);
  * Tolerant in the same way `urlOf` is: the app resolves through `resolveParameters`
  * (§V61) and gets real types, a headless test hands in a bare record, and an older
  * document may be missing keys entirely. A missing or wrong-typed key falls back to the
- * SCHEMA's default rather than to zero, so a document saved before T493 plays exactly as
- * it did — locked to the timeline, looping, at speed 1.
+ * SCHEMA's default rather than to zero.
+ *
+ * T586 — THIS FALLBACK MOVES WITH THE SCHEMA, and must: a document stores `playMode` only
+ * when the user set it, so "missing" and "default" are the same state and two answers
+ * about it would be a node that plays differently depending on which reader looked. A
+ * document saved between T493 and T586 without touching Play Mode therefore opens in free
+ * run — which is also how media behaved BEFORE T493, when the element simply played on its
+ * own clock. A document that explicitly chose the lock keeps it.
  */
 export function mediaTransportFrom(
   read: (key: string) => ParameterValue | undefined,
@@ -411,7 +528,7 @@ export function mediaTransportFrom(
     playMode:
       typeof playMode === "string" && PLAY_MODES.has(playMode)
         ? (playMode as MediaPlayMode)
-        : "timeline",
+        : "freeRun",
     play: boolean("play", true),
     speed: number("speed", 1),
     cue: boolean("cue", false),

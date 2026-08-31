@@ -189,14 +189,51 @@ describe("T493 — the runner reads the node's REAL parameters, through the real
       channels: () => undefined,
     });
 
-  it("a node with NO transport parameters stored still plays — the manifest defaults apply", () => {
+  it("a node with NO transport parameters stored reads the manifest default, which T586 moved to free run", () => {
     const stepped = runnerFor(graphWith({})).step(frame(2), 10);
-    expect(stepped?.transport.playMode).toBe("timeline");
-    expect(stepped?.head.position).toBe(2);
+    expect(stepped?.transport.playMode).toBe("freeRun");
   });
 
+  /**
+   * T586's CONSEQUENCE, which is the assertion that matters — "the default is free run"
+   * is trivially true the moment the literal is edited and would pass on a flip that did
+   * nothing (§V461: a fixture must be able to distinguish what it asserts).
+   *
+   * The owner's actual complaint is that a freshly dropped-in file DOES NOTHING until the
+   * timeline runs. So: hold the TIMELINE clock still — `timeSeconds` never moves, which is
+   * exactly a stopped transport — and feed real frame deltas. A free-run node advances
+   * anyway; a timeline-locked one is pinned. Under T493's default this test reads 0.
+   */
+  it("a freshly instantiated node advances its playhead with the TIMELINE STOPPED — the owner's ask", () => {
+    const runner = runnerFor(graphWith({}));
+    // Same `timeSeconds` every frame: the timeline is not moving. Only the delta is real.
+    const stopped = (): FrameEvaluationInput => ({ ...frame(0), deltaSeconds: 1 / 60 });
+    const positions = [1, 2, 3, 4].map(() => runner.step(stopped(), 10)?.head.position ?? -1);
+    for (let index = 1; index < positions.length; index += 1) {
+      expect(positions[index]).toBeGreaterThan(positions[index - 1] as number);
+    }
+    expect(positions[3]).toBeCloseTo(4 / 60, 6);
+  });
+
+  it("...and under the LOCK the same node is pinned, which is the cost the flip buys off", () => {
+    // The counter-example that proves the test above is measuring the mode and not the
+    // clock: identical frames, `playMode` opted back to the lock, and nothing moves.
+    const runner = runnerFor(graphWith({ playMode: "timeline" }));
+    const stopped = (): FrameEvaluationInput => ({ ...frame(0), deltaSeconds: 1 / 60 });
+    const positions = [1, 2, 3, 4].map(() => runner.step(stopped(), 10)?.head.position ?? -1);
+    expect(positions).toEqual([0, 0, 0, 0]);
+  });
+
+  /*
+   * The parameter-plumbing trio below pins `playMode: "timeline"` EXPLICITLY. They are
+   * about §V107 — that a static, an expression and a driven value each reach the playhead
+   * — and they used to lean on the default to make `elapsed === frame.timeSeconds`. T586
+   * moved that default out from under them, which is the right lesson to bank: a test
+   * whose arithmetic depends on a mode should say which mode.
+   */
+
   it("a STATIC speed reaches the playhead", () => {
-    const stepped = runnerFor(graphWith({ speed: 3 })).step(frame(2), 10);
+    const stepped = runnerFor(graphWith({ speed: 3, playMode: "timeline" })).step(frame(2), 10);
     expect(stepped?.head.position).toBe(6);
   });
 
@@ -205,6 +242,7 @@ describe("T493 — the runner reads the node's REAL parameters, through the real
     // code knows what an expression is, and one works anyway.
     const stepped = runnerFor(
       graphWith({
+        playMode: "timeline",
         trimStart: {
           mode: "expression",
           bindings: { expression: { kind: "expression", source: "1 + 2" } },
@@ -217,6 +255,7 @@ describe("T493 — the runner reads the node's REAL parameters, through the real
 
   it("a DRIVEN speed reaches it through the value graph's resolver", () => {
     const graph = graphWith({
+      playMode: "timeline",
       speed: { mode: "driven", bindings: { driven: { kind: "driven", channel: "rate" } } },
     });
     const runner = createMediaTransportRunner("m", {

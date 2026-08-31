@@ -90,17 +90,22 @@ function projectFeatures(audio: { level: number; low: number; lowMid: number; hi
  *  - the CHANNELS are clockless — they report what the analyser heard this frame, so a
  *    timeline lap passes straight through them;
  *  - the PLAYHEAD is timeline-anchored — where the track is in the piece is the point, so
- *    it wraps at the lap by design and a scrub finds the same second of the track.
+ *    it wraps at the lap by design and a scrub finds the same second of the track. T586
+ *    made that the OPT-IN mode rather than the default (the owner's call: a track you drop
+ *    in should play when you press Play), which changes which clock the node ARRIVES on,
+ *    not which clocks it owns. Free run reproduces nothing, and the render command names
+ *    this node when it is on rather than letting the take diverge quietly.
  */
 export const audioFileInNode: NodeDefinition = {
   type: "audioFileIn",
-  // Version 1 still: every T493 key carries a default, so a project saved before it opens
-  // playing exactly as it did. See the same note on `movieFileIn` (§V10).
+  // Version 1 still: every T493 key carries a default, so no stored data changed shape,
+  // and T586's move of the `playMode` default is a default read differently rather than
+  // anything a `migrate` could rewrite. See the same note on `movieFileIn` (§V10).
   version: 1,
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). NO beat or bar channels: nothing here knows an arbitrary file's tempo, and a bar count guessed from one would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there; it stays in step because both are timeline-anchored. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is TIMELINE-ANCHORED by default: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). NO beat or bar channels: nothing here knows an arbitrary file's tempo, and a bar count guessed from one would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there — lock this node's Play Mode to the timeline and the two stay in step across a lap, because Audio Pattern is timeline-anchored too. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
   tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],

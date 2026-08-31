@@ -90,16 +90,19 @@ function compileMedia(context: unknown): CompiledNodeDescription {
  */
 export const movieFileInNode: NodeDefinition = {
   type: "movieFileIn",
-  // Still version 1, deliberately (§V10): every added key carries a DEFAULT, so a project
-  // saved before T493 reads identically — locked to the timeline, looping, speed 1 — and
-  // nothing about its stored data changed shape. Bumping without a `migrate` would emit
-  // "nothing describes what changed" on every load of every old file, which would be a
-  // warning saying something false.
+  // Still version 1, deliberately (§V10): every T493 key carries a DEFAULT, so no stored
+  // data changed shape. Bumping without a `migrate` would emit "nothing describes what
+  // changed" on every load of every old file, which would be a warning saying something
+  // false. T586 moved that default from the timeline lock to free run and did NOT bump
+  // either: a document stores `playMode` only when the user set one, so a project that
+  // never touched it now opens free-running — which is how media behaved before T493 as
+  // well — and a project that DID choose the lock keeps it. There is nothing for a
+  // `migrate` to rewrite, only a default to read differently.
   version: 1,
   title: "Movie File In",
   category: "input",
   description:
-    "Plays a video or still image file, with a transport: play mode, speed, cue, trim and an at-end behaviour. Frames upload only when they change; black until a file is loaded. TIMELINE-ANCHORED by default (§V436): the position derives from the frame, so frame one of the clip lands on the in point, a scrub finds the same frame every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
+    "Plays a video or still image file, with a transport: play mode, speed, cue, trim and an at-end behaviour. Frames upload only when they change; black until a file is loaded. FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a clip you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead (§V436) — the position derives from the frame, so frame one of the clip lands on the in point, a scrub finds the same frame every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you saw.",
   tags: ["media", "video", "image", "file", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],

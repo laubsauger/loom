@@ -7,6 +7,7 @@ import type { ProjectSettings } from "@domain/types/graph.ts";
 import { frameRangeLength, projectFps, projectRange } from "@domain/types/graph.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import { freeRunRenderWarning } from "@domain/media/transport.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
@@ -39,6 +40,16 @@ export interface RenderRangeSession {
   readonly rendering: boolean;
   /** Frames the current range would produce. Zero when nothing can render. */
   readonly frames: number;
+  /**
+   * What the last take had to say about itself, for the problems pane (T586).
+   *
+   * A refusal already reaches the user through `reportRefusal`, which returns early on
+   * `applied` — so a take that SUCCEEDS has had no channel at all, and T586's warning is
+   * about a take that succeeds and is nonetheless not the take you think it is. Held until
+   * the next take rather than flashed, because the question it answers ("why does my
+   * render not match what I heard?") is asked AFTER the file exists.
+   */
+  readonly diagnostics: readonly RuntimeDiagnostic[];
 }
 
 export interface UseRenderRangeInputs {
@@ -87,6 +98,7 @@ function videoFileName(projectName: string, start: number, end: number): string 
 
 export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession {
   const [rendering, setRendering] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   // Every input is read through ONE ref, at the moment the command runs: a take is
   // started by a keypress or the palette, and the handlers must not need re-registering
   // on every compile to see the current graph.
@@ -137,6 +149,28 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
         const liveRange = projectRange(live.settings);
         renderingRef.current = true;
         setRendering(true);
+        // Cleared at the START of a take, so a warning that is still on screen always
+        // describes the take you are looking at — a stale one from two renders ago would
+        // be worse than none (§V421's shape, on a live surface).
+        const collected: RuntimeDiagnostic[] = [];
+        const onDiagnostic = (diagnostic: RuntimeDiagnostic): void => {
+          collected.push(diagnostic);
+        };
+        setDiagnostics([]);
+        /*
+         * T586's HONEST EDGE — the one thing a free-run default is not allowed to be
+         * silent about, emitted through the SAME channel the recorder's own diagnostics
+         * use so there is one answer to "what did this take have to say".
+         *
+         * The three options were: diverge silently, force the lock silently, or say so.
+         * Forcing it would hand back a DIFFERENT take from the one the user approved on
+         * screen, which is worse than a warning; diverging silently is exactly the class
+         * §V44/§V47 exists to prevent. So the take PROCEEDS and the warning names the
+         * nodes — which is also why this is not a `refuse()`: `RenderRangeOutcome.refused`
+         * is terminal by construction and would cancel the take.
+         */
+        const freeRun = freeRunRenderWarning(live.graph, live.registry);
+        if (freeRun !== null) onDiagnostic(freeRun);
         try {
           const rendered = await renderFrameRange({
             api,
@@ -144,6 +178,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
             range: liveRange,
             fps: projectFps(live.settings),
             encoder,
+            onDiagnostic,
             transport: {
               isPlaying: transport.isPlaying,
               togglePlay: transport.togglePlay,
@@ -183,6 +218,9 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
         } finally {
           renderingRef.current = false;
           setRendering(false);
+          // In `finally`, because a take that refused halfway still rendered frames under
+          // a free-run playhead and the user still deserves to be told which node.
+          setDiagnostics(collected);
         }
       },
     };
@@ -192,7 +230,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
     };
   }, [inputs.bus]);
 
-  return { rendering, frames: sink === null ? 0 : frameRangeLength(range) };
+  return { rendering, frames: sink === null ? 0 : frameRangeLength(range), diagnostics };
 }
 
 /**
