@@ -102,6 +102,7 @@ export const blurNode: NodeDefinition = {
       default: 8,
       min: 0,
       max: 128,
+      range: "floor",
       unit: "px",
       description:
         "Kernel radius in pixels of the input. Fully sampled to 42 (Gaussian) / 64 (box); wider blurs approximate.",
@@ -184,7 +185,8 @@ export const displaceNode: NodeDefinition = {
   version: 1,
   title: "Displace",
   category: "filter",
-  description: "Offsets each pixel by a value read from a displacement field. TD Displace TOP.",
+  description:
+    "Offsets each pixel by a value read from a displacement field: RED moves x, GREEN moves y. TD Displace TOP. A monochrome field has red == green, so it shears everything along one diagonal — feed a two-channel field (UV, a vector map) for a lens.",
   inputs: [
     { id: "source", label: "Source", type: RGBA_TEXTURE, description: "The image being displaced." },
     {
@@ -203,6 +205,7 @@ export const displaceNode: NodeDefinition = {
       default: [0.1, 0.1],
       min: -2,
       max: 2,
+      range: "soft",
       description: "How far a full-scale value moves a pixel, in uv units.",
     },
     offset: {
@@ -212,6 +215,7 @@ export const displaceNode: NodeDefinition = {
       default: [0.5, 0.5],
       min: -1,
       max: 1,
+      range: "soft",
       description: "The field value that means no displacement. 0.5 for a 0..1 field, 0 for a signed one.",
     },
     sourcex: {
@@ -409,6 +413,7 @@ export const edgeNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 10,
+      range: "floor",
       description: "Scales the gradient magnitude. Edges are often faint at 1.",
     },
     extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
@@ -479,6 +484,7 @@ export const convolveNode: NodeDefinition = {
       default: 0,
       min: -1,
       max: 1,
+      range: "soft",
       description: "Added after. A zero-sum kernel needs ~0.5 here to show negative results.",
     },
     extend: { type: "enum", label: "Extend", default: "hold", options: [...EXTEND_OPTIONS] },
@@ -587,6 +593,7 @@ export const slopeNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 20,
+      range: "floor",
       description: "Scales the gradient. A gentle height field needs more than 1 to show.",
     },
     zeropoint: {
@@ -595,6 +602,7 @@ export const slopeNode: NodeDefinition = {
       default: 0.5,
       min: -1,
       max: 1,
+      range: "soft",
       description:
         "What a flat area writes, in Slope and Emboss modes. 0.5 is Displace's neutral; use 0 for a float pipeline.",
     },
@@ -604,6 +612,7 @@ export const slopeNode: NodeDefinition = {
       default: 45,
       min: -180,
       max: 180,
+      range: "cyclic",
       unit: "degrees",
       description: "Emboss mode only: which direction the raking light comes from.",
     },
