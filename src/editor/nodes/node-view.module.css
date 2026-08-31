@@ -432,6 +432,41 @@
   box-shadow: 0 0 0 3px var(--bg-active);
 }
 
+/* ---- component instance identity (T603) ------------------------------- */
+
+/*
+ * The stacked-card silhouette: two offset sheets behind the node — the universal
+ * "contains more" shape, and it survives thumbnail scale where a glyph would not.
+ * Layered UNDER the status shadowing by being plain box-shadows on the same element.
+ */
+.node[data-component] {
+  box-shadow:
+    3px 3px 0 -1px var(--bg-base),
+    3px 3px 0 0 var(--border-color, color-mix(in srgb, currentColor 25%, transparent)),
+    6px 6px 0 -1px var(--bg-base),
+    6px 6px 0 0 color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* The linked-instance chip: presence = linked; text = pinned version; the arrow form
+ * (`v2→3`) plus the warning tone = an upgrade is available (T137's fact, on the node). */
+.componentChip {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-ui);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.componentChip[data-upgrade="true"] {
+  border-color: var(--warning, #d9a13c);
+  color: var(--warning, #d9a13c);
+  opacity: 1;
+}
+
 /* ---- component boundary leads (T607) ---------------------------------- */
 
 /*

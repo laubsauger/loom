@@ -412,6 +412,7 @@ function GraphPaneInner({
       <GraphMenuHost bus={bus} selection={selection}>
         <GraphCanvas
           bus={bus}
+          components={componentsView}
           invocation={invocation}
           runtime={nodeRuntime}
           renderPreview={renderPreview}

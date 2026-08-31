@@ -27,6 +27,7 @@ import type {
 import { useStore } from "zustand";
 import { arePortsCompatible } from "@domain/graph/port-compat.ts";
 import type { CommandResult, InvocationContext } from "@domain/types/commands.ts";
+import type { ComponentRegistryView } from "@domain/components/index.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
@@ -96,10 +97,13 @@ export interface GraphCanvasProps {
    * beneath every node and edge. The graph pane puts its background canvas here.
    */
   underlay?: ReactNode;
+  /** T603: the component catalogue — instance nodes read version/upgrade marks off it. */
+  components?: ComponentRegistryView;
 }
 
 export function GraphCanvas({
   bus,
+  components,
   invocation,
   runtime,
   renderPreview,
@@ -466,6 +470,15 @@ export function GraphCanvas({
     void bus.execute("ui.showProblems", {}, invocation);
   }, [bus, invocation]);
 
+  // T602: double-click enters a component — the same command the keymap (`i`) and the
+  // context menu run, so three doors, one implementation (§V78, §V307).
+  const diveIn = useCallback(
+    (nodeId: NodeId) => {
+      void bus.execute("graph.diveIn", { nodeId }, invocation);
+    },
+    [bus, invocation],
+  );
+
   /**
    * T415/B60 — the inline name editor's two halves.
    *
@@ -509,6 +522,8 @@ export function GraphCanvas({
       renderPreview,
       renderControls,
       showProblems,
+      diveIn,
+      components,
     }),
     [
       bus.store,
@@ -524,6 +539,8 @@ export function GraphCanvas({
       renderPreview,
       renderControls,
       showProblems,
+      diveIn,
+      components,
     ],
   );
 

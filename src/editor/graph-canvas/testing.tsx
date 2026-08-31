@@ -175,6 +175,8 @@ export function CanvasFixture({ value, children }: CanvasFixtureProps) {
 
 export interface FixtureContextOptions {
   showProblems?: () => void;
+  diveIn?: (nodeId: string) => void;
+  components?: GraphCanvasContextValue["components"];
   store: GraphCanvasContextValue["store"];
   registry: GraphCanvasContextValue["registry"];
   runtime?: NodeRuntimeStore;
@@ -206,6 +208,8 @@ export function fixtureContext(options: FixtureContextOptions): {
       selection: options.selection ?? [],
       toggleUi: options.toggleUi ?? (() => {}),
       showProblems: options.showProblems ?? (() => {}),
+      diveIn: options.diveIn ?? (() => {}),
+      ...(options.components === undefined ? {} : { components: options.components }),
       renameSession: options.renameSession ?? createRenameSessionStore(),
       beginRename: options.beginRename ?? (() => {}),
       // Deliberately a REFUSAL rather than a no-op: a fixture that silently "succeeds" at

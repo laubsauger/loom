@@ -7,6 +7,7 @@ import type { GraphStoreView } from "@domain/graph/store.ts";
 import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
 import type { RenameSessionStore } from "@editor/nodes/rename-session.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import type { ComponentRegistryView } from "@domain/components/index.ts";
 import type { NodeRuntimeSnapshot, NodeRuntimeSource } from "./node-runtime.ts";
 
 /**
@@ -69,6 +70,14 @@ export interface GraphCanvasContextValue {
    * node carries more diagnostics than its one message line can show.
    */
   showProblems: () => void;
+  /**
+   * T602: enter a component instance — double-click's door onto the SAME
+   * `graph.diveIn` the keymap and the context menu run (§V78, never a second
+   * implementation).
+   */
+  diveIn: (nodeId: NodeId) => void;
+  /** T603: catalogue view for instance marks (version, upgrade). Absent in bare fixtures. */
+  components?: ComponentRegistryView | undefined;
   /** Preview slot. Track J (T34) fills it; until then the region stays empty. */
   renderPreview?: ((nodeId: NodeId) => ReactNode) | undefined;
   /**

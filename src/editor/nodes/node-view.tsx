@@ -12,6 +12,7 @@ import { describePortType } from "@domain/graph/port-compat.ts";
 import { nameBaseFor } from "@domain/graph/names.ts";
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
 import { isComponentInputBoundary, isComponentOutputBoundary } from "@nodes/definitions/index.ts";
+import { isComponentNodeType, parseComponentNodeType } from "@domain/components/component-type.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import { previewablePort } from "@domain/graph/previewable.ts";
@@ -61,6 +62,8 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     renderPreview,
     renderControls,
     showProblems,
+    diveIn,
+    components,
   } = useGraphCanvas();
   // Own slice only (§V16): another node's edit does not re-render this one.
   const node = useStore(store, (state) => state.graph.nodes[id]);
@@ -104,6 +107,23 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   const message = unresolved
     ? `Unknown node type "${node.type}" — the definition is not installed.`
     : snapshot.message;
+
+  /*
+   * T603: a component instance must READ as one at a glance, at any zoom. Three facts,
+   * one treatment: component-ness is STRUCTURAL (`data-component` drives a stacked-card
+   * silhouette in CSS — the universal "contains more" shape, legible at thumbnail
+   * scale); linked-ness and the available upgrade share ONE chip in the header — the
+   * chip's presence says "linked instance" (a detached copy has no instance node at
+   * all), its text is the pinned version, and an available upgrade turns it into
+   * `v2→3` in the warning tone. T137's inspector said this; the node did not.
+   */
+  const instanceRef = parseComponentNodeType(node.type);
+  const latestVersion =
+    instanceRef === null || components === undefined
+      ? undefined
+      : components.latest(instanceRef.componentId)?.version;
+  const upgradeAvailable =
+    instanceRef !== null && latestVersion !== undefined && latestVersion > instanceRef.version;
 
   const bypassed = node.ui?.bypassed === true;
   const muted = node.ui?.muted === true;
@@ -215,6 +235,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
         // T607: a boundary node's dangling side wears a LEAD — the "dangling input
         // cable" of the owner's framing — saying "fed from outside" (In) or "feeds
         // the outside" (Out). Pure CSS off this attribute; see .node[data-boundary].
+        data-component={instanceRef !== null ? true : undefined}
         data-boundary={
           isComponentInputBoundary(node.type) ? "in" : isComponentOutputBoundary(node.type) ? "out" : undefined
         }
@@ -226,6 +247,18 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
         data-sized={node.size !== undefined}
         data-agent={agent?.kind ?? "none"}
         style={cssVars({ "--status-color": STATUS_TOKEN[status] })}
+        // T602: double-click ENTERS a component — TD's gesture, onto the same
+        // `graph.diveIn` the keymap (`i`) and the context menu run (§V78). Only for
+        // instances, so every other node keeps its plain double-click (the title's
+        // rename editor stops propagation before this sees it).
+        onDoubleClick={
+          isComponentNodeType(node.type)
+            ? (event) => {
+                event.stopPropagation();
+                diveIn(id as never);
+              }
+            : undefined
+        }
       >
         <header className={styles.title}>
           <span
@@ -258,7 +291,11 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
                 // the double-click, `n` and the menu's "Rename…" are one implementation
                 // (§V78); React Flow's own double-click zoom is off (`zoomOnDoubleClick`),
                 // so this cannot fight the canvas for the gesture.
-                onDoubleClick={() => beginRename(id)}
+                onDoubleClick={(event) => {
+                  // T602: the TITLE keeps rename; the dive gesture is the node body.
+                  event.stopPropagation();
+                  beginRename(id);
+                }}
               >
                 {displayName}
               </span>
@@ -269,6 +306,20 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
                   title={`${definition?.title ?? node.type} — this node's type`}
                 >
                   {typeLabel}
+                </span>
+              )}
+              {instanceRef === null ? null : (
+                <span
+                  className={styles.componentChip}
+                  data-testid={`node-component-${id}`}
+                  data-upgrade={upgradeAvailable}
+                  title={
+                    upgradeAvailable
+                      ? `Linked component instance, pinned to v${String(instanceRef.version)} — v${String(latestVersion)} is available. Editing the definition changes every linked instance; upgrading is explicit (§V84).`
+                      : `Linked component instance, v${String(instanceRef.version)}. Editing the definition changes every linked instance.`
+                  }
+                >
+                  {upgradeAvailable ? `v${String(instanceRef.version)}→${String(latestVersion)}` : `v${String(instanceRef.version)}`}
                 </span>
               )}
             </>

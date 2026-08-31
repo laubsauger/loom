@@ -42,6 +42,10 @@ interface Options {
   registry?: ReturnType<NodeRegistry["view"]>;
   /** T599: spy for the "+N more" chip's door. */
   showProblems?: () => void;
+  /** T602: spy for the double-click dive. */
+  diveIn?: (nodeId: string) => void;
+  /** T603: catalogue view for instance marks. */
+  components?: unknown;
 }
 
 /**
@@ -81,6 +85,8 @@ function mountNode(type: string, options: Options = {}) {
     ...(options.renderPreview === undefined ? {} : { renderPreview: options.renderPreview }),
     ...(options.renderControls === undefined ? {} : { renderControls: options.renderControls }),
     ...(options.showProblems === undefined ? {} : { showProblems: options.showProblems }),
+    ...(options.diveIn === undefined ? {} : { diveIn: options.diveIn }),
+    ...(options.components === undefined ? {} : { components: options.components as never }),
   });
 
   const view = render(
@@ -571,5 +577,88 @@ describe("T607 — a component boundary node wears its dangling lead", () => {
     expect(
       container.querySelector(`[data-testid="node-${nodeId}"]`)?.hasAttribute("data-boundary"),
     ).toBe(false);
+  });
+});
+
+describe("T602 — double-click enters a component instance, and only an instance", () => {
+  it("runs diveIn for an instance; a plain node's double-click stays plain; the title still renames", () => {
+    const dived: string[] = [];
+    const { nodeId, container } = mountNode("component:fx@1", {
+      graph: graphWith("component:fx@1"),
+      diveIn: (id) => dived.push(id),
+    });
+    const element = container.querySelector(`[data-testid="node-${nodeId}"]`);
+    fireEvent.doubleClick(element as Element);
+    expect(dived).toEqual([nodeId]);
+
+    // The TITLE keeps rename: its double-click must not also dive. (An UNRESOLVED
+    // instance type still renders the name span; match it by its displayed text.)
+    const title = [...container.querySelectorAll("header span")].find(
+      (span) => span.textContent !== null && span.textContent.length > 0 && span.getAttribute("title") !== null,
+    );
+    if (title !== undefined) {
+      fireEvent.doubleClick(title);
+      expect(dived).toHaveLength(1);
+    }
+
+    const plain = mountNode("test.blur", {
+      graph: graphWith("test.blur"),
+      diveIn: (id) => dived.push(id),
+    });
+    fireEvent.doubleClick(
+      plain.container.querySelector(`[data-testid="node-${plain.nodeId}"]`) as Element,
+    );
+    expect(dived).toHaveLength(1);
+  });
+});
+
+describe("T603 — a component instance reads as one at a glance", () => {
+  it("carries the structural mark, and the chip states linked + pinned version + upgrade", async () => {
+    const { createComponentSystem } = await import("@domain/components/index.ts");
+    const definitionOf = (version: number) =>
+      ({
+        componentId: "fx",
+        version,
+        name: "FX",
+        graph: {
+          revision: 1,
+          nodes: { inner: { id: "inner", type: "test.solid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} } },
+          edges: {},
+          groups: {},
+        },
+        inputs: [],
+        outputs: [{ externalId: "out", label: "Out", nodeId: "inner", portId: "out" }],
+        parameters: [],
+      }) as never;
+    const system = createComponentSystem(createTestRegistry().view(), [definitionOf(1)]);
+
+    const pinned = mountNode("component:fx@1", {
+      graph: graphWith("component:fx@1"),
+      registry: system.nodes,
+      components: system.components.view(),
+    });
+    const element = pinned.container.querySelector(`[data-testid="node-${pinned.nodeId}"]`);
+    expect(element?.hasAttribute("data-component")).toBe(true);
+    const chip = pinned.container.querySelector(`[data-testid="node-component-${pinned.nodeId}"]`);
+    expect(chip?.textContent).toBe("v1");
+    expect(chip?.getAttribute("data-upgrade")).toBe("false");
+
+    // A newer version registers: the SAME node now states the available upgrade.
+    system.components.register(definitionOf(2));
+    const behind = mountNode("component:fx@1", {
+      graph: graphWith("component:fx@1"),
+      registry: system.nodes,
+      components: system.components.view(),
+    });
+    const upgraded = behind.container.querySelector(`[data-testid="node-component-${behind.nodeId}"]`);
+    expect(upgraded?.textContent).toBe("v1\u21922");
+    expect(upgraded?.getAttribute("data-upgrade")).toBe("true");
+
+    // A plain node wears none of it — the treatment is identity, not decoration.
+    const plain = mountNode("test.blur", { graph: graphWith("test.blur") });
+    expect(
+      plain.container.querySelector(`[data-testid="node-${plain.nodeId}"]`)?.hasAttribute("data-component"),
+    ).toBe(false);
+    expect(plain.container.querySelector(`[data-testid="node-component-${plain.nodeId}"]`)).toBeNull();
   });
 });
