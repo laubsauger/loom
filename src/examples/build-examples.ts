@@ -7,7 +7,7 @@ import { buildExampleFiles } from "./example-files.ts";
 /**
  * Regenerates `examples/*.loom.json` and `examples/components/*.loom.json` (T153-T156, T190).
  *
- *   node --experimental-strip-types src/examples/build-examples.ts
+ *   node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
  *
  * Running this is the ONLY way an example changes: edit `documents.ts`, re-run, commit the
  * regenerated file. `sync.test.ts` fails the build if a shipped file and its source have

@@ -34,7 +34,7 @@ import { TIER_B_CAPABILITIES, messagesOf } from "./runner.ts";
  *
  * Fix a failure by editing `starter-components.ts` and re-running:
  *
- *   node --experimental-strip-types src/examples/build-examples.ts
+ *   node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
  */
 
 const shipped = new Map(listStarterComponentFiles().map((file) => [file.fileName, file.text]));
