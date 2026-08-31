@@ -99,7 +99,7 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
       // Widened at T708; the SEPARATION between them is gated below, which is the part
       // that survives the next deliberate re-pin of these values.
       "--bg-void": "#131821",
-      "--bg-panel": "#191e29",
+      "--bg-panel": "#161b25",
       "--bg-raise": "#232937",
       "--line": "#2e3646",
       "--divider-line": "#293040",

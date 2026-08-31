@@ -23,12 +23,14 @@
 
        --bg-sunken     L*  5.1   graph void, wells
        --bg-void       L*  8.1   app backdrop — see the note on it below
-       --bg-panel      L* 11.2   pane fill
+       --bg-panel      L*  9.7   pane fill
        --bg-raise      L* 16.6   node body, popover, menu
        --divider-line  L* 19.9   the seam BETWEEN panes
 
-     The surfaces a user actually sees meet are 5-6 L* apart, over the 4.0
-     floor the test enforces.
+     The surfaces a user actually sees meet are 4.6-6.9 L* apart, over the 4.0
+     floor the test enforces. Round three lowered the pane fill alone, on the
+     owner's "dial down the brightness of the surrounding UI a tiny little bit
+     more" — the graph void and the seam were deliberately left where they were.
 
      THE SEAM IS LIT, NOT RECESSED, and that is a deliberate reversal of the
      original T491 design. The owner's call, looking at the running app: "the
@@ -40,7 +42,7 @@
      and `tokens.test.ts` gates the seam EXCEEDING both neighbours so the
      relationship cannot quietly invert back. */
   --bg-void: #131821; /* canvas ground, app backdrop */
-  --bg-panel: #191e29; /* pane fill */
+  --bg-panel: #161b25; /* pane fill */
   --bg-raise: #232937; /* node body, popover, menu */
   --line: #2e3646; /* hairline */
   /* The inter-pane seam. Its own token rather than --bg-void because the two roles
@@ -57,7 +59,7 @@
   /* T708: raised with the ladder, not independently. Widening the surface steps
      lifts --bg-panel and --bg-raise, and dim text held at its old L* 55.7 would
      have fallen from 4.93:1 to 4.40:1 against the pane fill — below the 4.5:1
-     floor for 11px meta. At L* 61.6 it reads 5.55:1 on panel and 4.84:1 on
+     floor for 11px meta. At L* 61.6 it reads 6.06:1 on panel and 4.84:1 on
      raise, so the rebalance costs no legibility. */
   --text-dim: #8d95a7; /* labels, units, meta */
 
