@@ -57,4 +57,54 @@ describe("fitInsideRegion (§V118)", () => {
       height: 0,
     });
   });
+
+  /**
+   * T540 — THE SLOT IS 16:9 AND A 16:9 OUTPUT FILLS IT, WITH NOTHING SHOWING THROUGH.
+   *
+   * The owner: "theres an extra border inside the area of the preview that needs to go."
+   * MEASURED before choosing a cause, at 4.9× zoom on E4: 4 device px of ground down the
+   * left, 5 down the right, and a 1015×571 tile inside a 1024×576 slot.
+   *
+   * It was NOT T490's ladder — every rung is exactly 16:9 for a 1280×720 source (384→216,
+   * 576→324, 864→486, 1152→648, all integral). It was `.preview`: `aspect-ratio: 16 / 9`
+   * under the global `border-box`, so the hairline BELOW the tile came out of the 16:9
+   * height and the box this function is handed was 16:(9 − hairline). A 16:9 output
+   * letterboxed inside it by half a pixel per side — invisible at 1:1, a band at zoom.
+   *
+   * `.preview` is `box-sizing: content-box` now, so the ratio governs the box the tile is
+   * fitted into. This pins the arithmetic of that; `node-box.spec.ts` pins the same
+   * numbers against a real browser, and `layout.test.ts` against the model.
+   */
+  it("a 16:9 output fills a 16:9 slot exactly — no bars at all (T540)", () => {
+    // The real slot at the shipped node width: 178 − 2px node border = 176 content px,
+    // and 176 × 9/16 = 99 exactly. Both numbers measured in Chrome.
+    const slot = { width: 176, height: 99 };
+    expect(slot.width / slot.height).toBeCloseTo(16 / 9, 12);
+    expect(fitInsideRegion(slot, [1280, 720])).toEqual({ x: 0, y: 0, width: 176, height: 99 });
+    // Every ladder rung a budgeted tile can land on, for the same source.
+    for (const rung of [64, 96, 128, 192, 256, 384, 576, 864, 1152]) {
+      const tile: readonly [number, number] = [rung, Math.round((rung * 720) / 1280)];
+      expect([rung, fitInsideRegion(slot, tile)]).toEqual([
+        rung,
+        { x: 0, y: 0, width: 176, height: 99 },
+      ]);
+    }
+    // SENSITIVITY, as arithmetic: the box it used to be handed — one hairline shorter —
+    // is what put the band on screen. Naming the wrong number is what keeps it named.
+    const beforeT540 = { width: 176, height: 98 };
+    const fitted = fitInsideRegion(beforeT540, [1280, 720]);
+    expect(fitted.width).toBeLessThan(beforeT540.width);
+    expect(fitted.x).toBeGreaterThan(0);
+  });
+
+  /**
+   * And the letterbox that MUST stay: a synthesized preview is square (T502 — the base
+   * tile, 384×384), and squeezing it into a 16:9 slot would misrepresent the picture on
+   * exactly the node someone opened to look at it (§V118). The ground showing beside a
+   * square preview is the letterbox doing its job, not T540's band.
+   */
+  it("a square preview still letterboxes inside the 16:9 slot (§V118)", () => {
+    const fitted = fitInsideRegion({ width: 176, height: 99 }, [384, 384]);
+    expect(fitted).toEqual({ x: (176 - 99) / 2, y: 0, width: 99, height: 99 });
+  });
 });

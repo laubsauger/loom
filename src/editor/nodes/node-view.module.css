@@ -304,6 +304,16 @@
     pass, which is what made the ring redundant. (Naming the TOKEN, not its hex: the V17
     gate scans the file's text and a hex in a comment reads as a literal colour.)
   */
+  /*
+    T540: the RATIO GOVERNS THE CONTENT BOX, which is the box the tile is fitted into.
+    Under the global `border-box` the hairline below came out of the 16:9 height, so the
+    slot the preview system measures was 16:(9 - hairline) — and a 16:9 output letterboxed
+    inside it, leaving a band of `--bg-sunken` down each side. MEASURED at 4.9x zoom: 4
+    device px of ground on the left, 5 on the right, and the tile 1015x571 inside a
+    1024x576 slot. That band is the "extra border inside the preview area" the owner
+    reported; it is not a drawn line and no ring was involved.
+  */
+  box-sizing: content-box;
   border-bottom: var(--border-hairline);
   background: var(--bg-sunken);
   overflow: hidden;
