@@ -6,6 +6,7 @@ import { readComponentInstance } from "@domain/components/instance.ts";
 import { enterPath, parentPath } from "@domain/components/navigation.ts";
 import type { ResolvedComponentPath } from "@domain/components/navigation.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `graph.diveIn` / `graph.jumpUp` — subgraph navigation (T423, §V307, §V82).
@@ -110,14 +111,19 @@ export function createComponentNavigationStore(): {
   };
 }
 
-const holders = new WeakMap<object, { current: ComponentNavigation | null }>();
-
 export function navigationHolderFor(bus: ShaderloomBus): { current: ComponentNavigation | null } {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: { current: ComponentNavigation | null } = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  /*
+   * A HOLDER, not a store — and saying so is the point of converting it by hand.
+   *
+   * The two per-bus objects in this file look like the wave-2 stores beside them and are
+   * not: the STATE (the component path and its listeners) lives inside
+   * `createComponentNavigation`, which the canvas owns and mounts. What is shared per bus
+   * is only the slot the canvas publishes itself into. So this is a wave-1 conversion
+   * wearing wave-2 clothes, and a pattern-match that "converted the stores in this file"
+   * would have wrapped the wrong object — which is exactly the quiet failure this file
+   * was flagged for.
+   */
+  return commandHolder<ComponentNavigation>(bus, "graph.diveIn");
 }
 
 function warning(code: string, message: string, suggestion?: string): RuntimeDiagnostic {
@@ -284,14 +290,10 @@ export interface CreateComponentHolder {
   current: ((nodeIds: readonly NodeId[]) => void) | null;
 }
 
-const creationHolders = new WeakMap<object, CreateComponentHolder>();
-
 export function componentCreationHolderFor(bus: ShaderloomBus): CreateComponentHolder {
-  const existing = creationHolders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: CreateComponentHolder = { current: null };
-  creationHolders.set(bus, holder);
-  return holder;
+  // The second holder in this file, and a DIFFERENT key: two shared objects on one bus
+  // that must not collide (§V707 — the collision is asserted on the objects, not the keys).
+  return commandHolder<(nodeIds: readonly NodeId[]) => void>(bus, "ui.createComponent");
 }
 
 /** Idempotent, like the view and navigation registrars. */

@@ -68,11 +68,23 @@ const MODULES: readonly HolderEntry[] = [
    * object itself. Same identity question, reached through the door this module offers.
    */
   { label: "domain/state-queries", path: "src/domain/commands/state-queries.ts", load: () => import("./state-queries.ts"), accessor: "stateSourcesFor" },
+  // Wave 2. The two in `component-navigation.ts` are HOLDERS despite sitting beside the
+  // stores: the navigation state lives inside `current`, which the canvas owns.
+  { label: "graph.diveIn", path: "src/app/component-navigation.ts", load: () => import("@/app/component-navigation.ts"), accessor: "navigationHolderFor" },
+  { label: "ui.createComponent", path: "src/app/component-navigation.ts", load: () => import("@/app/component-navigation.ts"), accessor: "componentCreationHolderFor" },
+  { label: "ui.beginRename", path: "src/editor/nodes/rename-session.ts", load: () => import("@editor/nodes/rename-session.ts"), accessor: "renameSessionStoreFor" },
+  { label: "ui.setPreviewView#store", path: "src/editor/viewer/preview-view-store.ts", load: () => import("@editor/viewer/preview-view-store.ts"), accessor: "previewViewStoreFor" },
+  { label: "graph.toggleReferenceLines", path: "src/editor/edges/reference-lines-command.ts", load: () => import("@editor/edges/reference-lines-command.ts"), accessor: "referenceLinesStoreFor" },
 ];
 
 type Accessor = (bus: ShaderloomBus) => object;
 
-async function accessorFrom(entry: HolderEntry): Promise<Accessor> {
+/**
+ * Takes the minimal structural shape rather than `HolderEntry`, because the wave-2 store
+ * probes share the "how do I reach it" half without carrying a `path` — the completeness
+ * check keys on paths and the stores are already covered there through `MODULES`.
+ */
+async function accessorFrom(entry: Pick<HolderEntry, "label" | "load" | "accessor">): Promise<Accessor> {
   const module = await entry.load();
   const found = module[entry.accessor];
   if (typeof found !== "function") {
@@ -162,12 +174,10 @@ describe("§T719 — a re-executed command module keeps its surface", () => {
       .filter(({ text }) => /new WeakMap<object,/.test(text))
       .map(({ file }) => file)
       .sort();
-    expect(unconverted).toEqual([
-      "src/app/component-navigation.ts",
-      "src/editor/edges/reference-lines-command.ts",
-      "src/editor/nodes/rename-session.ts",
-      "src/editor/viewer/preview-view-store.ts",
-    ]);
+    // Wave 2 emptied this. It stays an assertion rather than being deleted: the list is
+    // how a NEW module-level `WeakMap<object, …>` announces itself, and an empty expected
+    // value is the strongest form of that check, not the absence of one.
+    expect(unconverted).toEqual([]);
 
     const usesSharedStore = sources
       .filter(({ file }) => file !== "src/domain/commands/command-holder.ts")
@@ -180,4 +190,127 @@ describe("§T719 — a re-executed command module keeps its surface", () => {
     expect(usesSharedStore.filter((file) => !covered.includes(file))).toEqual([]);
     expect(usesSharedStore).toEqual(covered);
   });
+});
+
+/**
+ * §T719 wave 2 — THE STORES, where identity is not the property.
+ *
+ * A holder is a slot: if the object survives, the surface that wrote itself into it is
+ * reachable, and that is the whole claim. A STORE is different, and this is the question
+ * wave 1's gate cannot answer:
+ *
+ *   A STORE CAN BE THE SAME OBJECT AND STILL HAVE LOST ITS SUBSCRIBERS.
+ *
+ * So the assertion is the one that names the damage: a subscriber registered through
+ * module instance A still fires for a notify issued through instance B. A store that came
+ * back fresh would leave every `useSyncExternalStore` in the app subscribed to an object
+ * nothing writes to any more — the title editor that stops repainting, the reference lines
+ * that toggle without redrawing, the preview badge that never updates. Each of those looks
+ * like a rendering bug and is not, which is precisely why it would cost a day.
+ *
+ * The state each store holds is named in its own docblock, because "does the state
+ * survive" is unanswerable until the state has a name.
+ */
+interface StoreProbe {
+  readonly label: string;
+  readonly load: () => Promise<Record<string, unknown>>;
+  readonly accessor: string;
+  /** Subscribe through one instance. Returns the unsubscribe. */
+  readonly subscribe: (store: object, listener: () => void) => () => void;
+  /**
+   * Change the state through the OTHER instance. `step` MUST produce a genuinely
+   * different state each time: the first draft called `begin(PROBE_NODE)` twice, and the
+   * second call was an idempotent no-op, so the unsubscribe assertion below held whether
+   * or not unsubscribe worked. The no-op-unsubscribe mutation caught nothing — which is a
+   * hole, not a safe area (§V707).
+   */
+  readonly mutate: (store: object, step: number) => void;
+  /** A reading of the state, so the VALUE is proven shared and not merely the object. */
+  readonly read: (store: object) => unknown;
+}
+
+const PROBE_NODE = "nd_t719probe";
+
+const STORES: readonly StoreProbe[] = [
+  {
+    label: "rename-session (which title is being edited)",
+    load: () => import("@editor/nodes/rename-session.ts"),
+    accessor: "renameSessionStoreFor",
+    subscribe: (store, listener) =>
+      (store as { subscribe(l: () => void): () => void }).subscribe(listener),
+    // A DIFFERENT node each step, because `begin` returns early on the one it is already
+    // editing — the guard that made the first draft of this probe vacuous.
+    mutate: (store, step) =>
+      (store as { begin(id: string): void }).begin(`${PROBE_NODE}${step}`),
+    read: (store) => (store as { get(): unknown }).get(),
+  },
+  {
+    label: "reference-lines (whether the lines are drawn)",
+    load: () => import("@editor/edges/reference-lines-command.ts"),
+    accessor: "referenceLinesStoreFor",
+    subscribe: (store, listener) =>
+      (store as { subscribe(l: () => void): () => void }).subscribe(listener),
+    mutate: (store) => {
+      (store as { toggle(): boolean }).toggle();
+    },
+    read: (store) => (store as { get(): unknown }).get(),
+  },
+  {
+    label: "preview-view (per-node lenses, with a listener bucket per node)",
+    load: () => import("@editor/viewer/preview-view-store.ts"),
+    accessor: "previewViewStoreFor",
+    // Per-NODE subscription — a different signature from the other two, which is why this
+    // table carries adapters rather than assuming one store shape.
+    subscribe: (store, listener) =>
+      (store as { subscribe(id: string, l: () => void): () => void }).subscribe(PROBE_NODE, listener),
+    mutate: (store, step) => {
+      // `exposureStops`, the store's real field name. The first draft of this probe said
+      // `exposure`, which is not a lens field: the patch changed nothing, the store
+      // correctly declined to notify, and the gate went red. A probe that does not
+      // actually mutate proves nothing about a store that does not actually notify
+      // (§V655) — and it was the GATE that caught the mistake, not review.
+      (store as { set(id: string, patch: object): unknown }).set(PROBE_NODE, {
+        exposureStops: step + 1,
+      });
+    },
+    read: (store) => (store as { isDefault(id: string): unknown }).isDefault(PROBE_NODE),
+  },
+];
+
+describe("§T719 wave 2 — a re-executed module keeps its store's SUBSCRIBERS", () => {
+  it.each(STORES.map((probe) => [probe.label, probe] as const))(
+    "%s: a subscriber from instance A fires for a notify from instance B",
+    async (_label, probe) => {
+      const { bus } = createHarness();
+
+      vi.resetModules();
+      const first = await accessorFrom(probe);
+      vi.resetModules();
+      const second = await accessorFrom(probe);
+      expect(first).not.toBe(second);
+
+      const a = first(bus);
+      const b = second(bus);
+
+      let fired = 0;
+      const unsubscribe = probe.subscribe(a, () => {
+        fired += 1;
+      });
+
+      // The notify comes through the OTHER instance — the surface that mounted after the
+      // hot update — while the subscriber belongs to the one that mounted before it.
+      probe.mutate(b, 0);
+
+      expect(fired).toBe(1);
+      // And the VALUE is shared, not just the notification: a store that forwarded events
+      // but kept two copies of the state would pass the assertion above and still be wrong.
+      expect(probe.read(a)).toEqual(probe.read(b));
+
+      // Unsubscribing through A really detaches, so the fix cannot be "never remove a
+      // listener" — that would leak a listener per hot update for the life of the session.
+      unsubscribe();
+      probe.mutate(b, 1);
+      expect(fired).toBe(1);
+    },
+  );
 });

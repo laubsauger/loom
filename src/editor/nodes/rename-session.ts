@@ -1,5 +1,6 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.beginRename` — the ONE way the inline name editor opens (T415, B60, §V307, §V342).
@@ -92,14 +93,15 @@ export function createRenameSessionStore(): RenameSessionStore {
  * same document (the floated graph pane, §V97) agree about which title is being edited
  * instead of opening two editors on one node.
  */
-const stores = new WeakMap<object, RenameSessionStore>();
-
 export function renameSessionStoreFor(bus: ShaderloomBus): RenameSessionStore {
-  const existing = stores.get(bus);
-  if (existing !== undefined) return existing;
-  const store = createRenameSessionStore();
-  stores.set(bus, store);
-  return store;
+  /*
+   * STATE HELD: which node's title is currently being edited (`NodeId | null`), and the
+   * set of listeners watching it. Naming it matters (§T719 wave 2): "does the state
+   * survive a re-executed module" is only answerable if the state has a name, and a
+   * store that came back as a fresh object would silently drop every subscriber while
+   * looking perfectly healthy — an open title editor that no longer repaints.
+   */
+  return sharedForBus<RenameSessionStore>(bus, BEGIN_RENAME_COMMAND, createRenameSessionStore);
 }
 
 /**

@@ -4,6 +4,7 @@ import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { DEFAULT_PREVIEW_LENS, isDefaultLens, viewForLens } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewView } from "@runtime/previews/index.ts";
+import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
  * Per-node preview LENS state (T336, §V255).
@@ -106,12 +107,18 @@ export function createPreviewViewStore(): PreviewViewStore {
  * threading a prop through the composition root. The bus is the per-document runtime identity
  * that all three already hold.
  */
-const stores = new WeakMap<object, PreviewViewStore>();
-
 export function previewViewStoreFor(bus: ShaderloomBus): PreviewViewStore {
-  const existing = stores.get(bus);
-  if (existing !== undefined) return existing;
-  const store = createPreviewViewStore();
-  stores.set(bus, store);
-  return store;
+  /*
+   * STATE HELD: the per-node lens map (only non-default entries — a default lens is
+   * stored as absence), plus one listener bucket PER NODE. The buckets are why identity
+   * alone is not the property here: three surfaces subscribe per node (the preview tick,
+   * the info popup, the slot badge), and a store that came back fresh would leave all
+   * three subscribed to an object nothing writes to any more.
+   *
+   * The key is a literal rather than `SET_PREVIEW_VIEW_COMMAND`: that constant lives in
+   * `preview-view-command.ts`, which imports THIS module, so naming it here would close
+   * an import cycle. `#store` distinguishes it from the `#target` holder that command
+   * keeps on the same bus.
+   */
+  return sharedForBus<PreviewViewStore>(bus, "ui.setPreviewView#store", createPreviewViewStore);
 }

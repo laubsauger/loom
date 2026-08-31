@@ -1,6 +1,7 @@
 // v16-allow-command-bus: registers `ui.toggleReferenceLines`, which makes no patch and opens
 // no undo group — whether a line is DRAWN is not something the document knows about.
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.toggleReferenceLines` — the ONE way the reference lines turn on and off (T248, §V153).
@@ -85,14 +86,17 @@ export function createReferenceLinesStore(): ReferenceLinesStore {
  * One store per bus — the bus is the per-document identity, and two canvases showing the
  * same document (the floated graph pane, §V97) must agree about what they are drawing.
  */
-const stores = new WeakMap<object, ReferenceLinesStore>();
-
 export function referenceLinesStoreFor(bus: ShaderloomBus): ReferenceLinesStore {
-  const existing = stores.get(bus);
-  if (existing !== undefined) return existing;
-  const store = createReferenceLinesStore();
-  stores.set(bus, store);
-  return store;
+  /*
+   * STATE HELD: one boolean — whether reference lines are drawn — and the listeners
+   * watching it. The smallest state of the four, and the one where a lost subscriber is
+   * least visible: the toggle would report the new value while no canvas repainted.
+   */
+  return sharedForBus<ReferenceLinesStore>(
+    bus,
+    TOGGLE_REFERENCE_LINES_COMMAND,
+    createReferenceLinesStore,
+  );
 }
 
 /**
