@@ -2,6 +2,7 @@ import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { MenuTarget } from "@domain/types/menus.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
+import { isComponentNodeType } from "@domain/components/component-type.ts";
 import { isParameterSlot, storedStaticValue } from "@domain/parameters/slots.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
@@ -35,7 +36,8 @@ export type MenuGuardName =
   | "isMuted"
   | "pinsPreview"
   | "showsBackground"
-  | "isOverridden";
+  | "isOverridden"
+  | "isComponentInstance";
 
 export function nodeForTarget(target: MenuTarget, context: MenuContext): GraphNode | undefined {
   return target.nodeId === undefined ? undefined : context.graph.nodes[target.nodeId];
@@ -102,6 +104,12 @@ const GUARDS: Record<MenuGuardName, (target: MenuTarget, context: MenuContext) =
   isMuted: (target, context) => flag(target, context, "muted"),
   pinsPreview: (target, context) => flag(target, context, "previewPinned"),
   showsBackground: (target, context) => flag(target, context, "background"),
+  // T639(a): dive-in is offered only where it can work. The command already refuses a
+  // base node by name; the AFFORDANCE offering it anyway is what read as broken.
+  isComponentInstance: (target, context) => {
+    const node = nodeForTarget(target, context);
+    return node !== undefined && isComponentNodeType(node.type);
+  },
   isOverridden: (target, context) => {
     const node = nodeForTarget(target, context);
     if (node === undefined || target.parameterKey === undefined) return false;
@@ -124,6 +132,7 @@ const GUARD_REASON: Record<MenuGuardName, string> = {
   pinsPreview: "This node's preview is not pinned.",
   showsBackground: "This node is not shown behind the graph.",
   isOverridden: "Already at its default value.",
+  isComponentInstance: "Only a component instance can be entered.",
 };
 
 export const MENU_GUARD_NAMES: readonly MenuGuardName[] = Object.keys(GUARDS) as MenuGuardName[];

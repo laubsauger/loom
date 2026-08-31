@@ -144,3 +144,30 @@ describe("T463 — showsBackground reads the node's background flag", () => {
     ).toBe(false);
   });
 });
+
+describe("isComponentInstance (T639a)", () => {
+  // The command already refused a base node BY NAME; the affordance offering dive-in
+  // anyway is what read as broken ("the component dive in thing on base components
+  // doesnt make sense" — owner). The guard asks the node's TYPE, the same question the
+  // double-click gate asks.
+  const node = (nodeId: string): MenuTarget => ({ surface: "node", nodeId });
+
+  it("passes on a component instance and refuses a base node, naming why", () => {
+    const context = fixture.context();
+    const withInstance = {
+      ...context,
+      graph: {
+        ...context.graph,
+        nodes: {
+          ...context.graph.nodes,
+          c1: { id: "c1", type: "component:fan@1", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        },
+      },
+    } as typeof context;
+    expect(evaluateMenuGuard("isComponentInstance", node("c1"), withInstance)).toEqual({ ok: true });
+
+    const verdict = evaluateMenuGuard("isComponentInstance", node(fixture.blur), withInstance);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok === false && verdict.reason).toContain("component instance");
+  });
+});

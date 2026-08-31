@@ -25,6 +25,7 @@
   --warn: #fbbf24;
   --error: #ff5c57;
   --ok: #34d399;
+  --component: #9a86e8; /* component-instance identity (T639c) — violet, no status hue */
 
   /* ---- derived surfaces --------------------------------------------
      No new hues: these interpolate between the ground steps above so the

@@ -207,7 +207,15 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
   const nameCarriesType =
     definition === undefined ||
     new RegExp(`^${nameBaseFor(node.type)}\\d+$`, "i").test(displayName);
-  const typeLabel = showTypeLabel && !nameCarriesType ? (definition?.title ?? null) : null;
+  /*
+   * T639(d)/T640: an instance's synthesized definition title is the COMPONENT'S OWN
+   * NAME (a component the owner called "animated" labelled its nodes "animated"), so
+   * the label repeated the name and said nothing about what the node IS. The kind is
+   * the useful fact, so the kind is the label.
+   */
+  const typeLabel = showTypeLabel && !nameCarriesType
+    ? (isComponentNodeType(node.type) ? "component" : (definition?.title ?? null))
+    : null;
 
   return (
     <>

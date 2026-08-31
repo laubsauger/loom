@@ -81,6 +81,11 @@ export interface GraphPaneProps {
    * being forced to wire a frame loop.
    */
   valueHistory?: ValueHistorySource;
+  /**
+   * T639(e): the component-editing path this pane is showing (instance chain from the
+   * root, innermost last). Only its TRANSITIONS matter here — see the effect below.
+   */
+  componentPath?: readonly NodeId[];
 }
 
 const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
@@ -111,6 +116,7 @@ function GraphPaneInner({
   previewLongEdge = 192,
   previewSinks,
   valueHistory,
+  componentPath,
 }: GraphPaneProps) {
   // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
   // from the runtime rather than threaded as a prop, because the runtime IS the loaded
@@ -367,6 +373,31 @@ function GraphPaneInner({
   // §V351/B66/B67: declaring the `graph` context and being able to hold focus are one
   // call. See `useKeymapPane` for why neither half works without the other.
   const paneProps = useKeymapPane<HTMLDivElement>("graph", surfaceRef);
+
+  /*
+   * T639(e): a dive round trip is two gestures, not five. The commands never required a
+   * selection or a click — `graph.jumpUp` takes no input at all — but the UI leaked
+   * both requirements in: entering a component moved focus off the pane (so `u` was
+   * dead until a canvas click), and leaving one cleared the selection (so the next
+   * `i` needed a hunt for the instance you were just inside). On every depth change
+   * the pane takes focus back; on the way UP, the instance just exited becomes the
+   * selection, so dive-in is immediately available again.
+   */
+  const pathRef = useRef<readonly NodeId[] | undefined>(componentPath);
+  useEffect(() => {
+    const before = pathRef.current;
+    pathRef.current = componentPath;
+    if (before === undefined || componentPath === undefined) return;
+    if (before.length === componentPath.length) return;
+    surfaceRef.current?.focus();
+    if (componentPath.length < before.length) {
+      const exited = before[componentPath.length];
+      if (exited !== undefined) {
+        flow.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: node.id === exited })));
+        onSelectionChange([exited]);
+      }
+    }
+  }, [componentPath, flow, onSelectionChange]);
 
   const onDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     // Without this the browser refuses the drop and the library drag does nothing.

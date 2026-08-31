@@ -1056,6 +1056,7 @@ export function App({
                 previewLongEdge={runtime.settings.previewLongEdge}
                 previewSinks={previewSinks}
                 valueHistory={valueHistory}
+                componentPath={editing.path}
               />
               </AppRuntimeContext.Provider>
             </NodeInfoHost>

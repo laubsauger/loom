@@ -439,6 +439,16 @@
  * "contains more" shape, and it survives thumbnail scale where a glyph would not.
  * Layered UNDER the status shadowing by being plain box-shadows on the same element.
  */
+/*
+ * T639(c): a glance-legible marker ON the node, not only behind it. The stacked cards
+ * survive thumbnail scale but did not read as "this opens" (owner); their suggestion —
+ * a distinct decoration colour on the TOP EDGE — takes a strip that is free (status is
+ * the dot in the title bar, never the edge) in a hue no status token uses.
+ */
+.node[data-component] {
+  border-top: 2px solid var(--component, #9a86e8);
+}
+
 .node[data-component] {
   box-shadow:
     3px 3px 0 -1px var(--bg-base),

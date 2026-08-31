@@ -146,7 +146,7 @@ export const NODE_MENU: MenuSchema = {
     {
       label: "Component",
       submenu: [
-        { command: "graph.diveIn", label: "Dive in" },
+        { command: "graph.diveIn", label: "Dive in", when: "isComponentInstance" },
         { command: "ui.createComponent", label: "Save as component…" },
       ],
     },

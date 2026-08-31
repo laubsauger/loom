@@ -662,3 +662,36 @@ describe("T603 — a component instance reads as one at a glance", () => {
     expect(plain.container.querySelector(`[data-testid="node-component-${plain.nodeId}"]`)).toBeNull();
   });
 });
+
+describe("T639(d)/T640 — an instance's type label says what the node IS", () => {
+  it("reads 'component', not the component's own name again", async () => {
+    // The synthesized definition's title is the component's NAME (definition.ts:95), so
+    // the old label repeated the name and said nothing — a component the owner called
+    // "animated" labelled its nodes "animated". The KIND is the useful fact.
+    const { createComponentSystem } = await import("@domain/components/index.ts");
+    const system = createComponentSystem(createTestRegistry().view(), [
+      {
+        componentId: "animated",
+        version: 1,
+        name: "animated",
+        graph: {
+          revision: 1,
+          nodes: { inner: { id: "inner", type: "test.solid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} } },
+          edges: {},
+          groups: {},
+        },
+        inputs: [],
+        outputs: [{ externalId: "out", label: "Out", nodeId: "inner", portId: "out" }],
+        parameters: [],
+      } as never,
+    ]);
+    const { nodeId, container } = mountNode("component:animated@1", {
+      graph: graphWith("component:animated@1"),
+      registry: system.nodes,
+      components: system.components.view(),
+    });
+    const label = container.querySelector(`[data-testid="node-type-${nodeId}"]`);
+    expect(label?.textContent).toBe("component");
+    expect(label?.textContent).not.toBe("animated");
+  });
+});
