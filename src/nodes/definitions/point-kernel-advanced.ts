@@ -264,6 +264,32 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     const spawnBlockSums = pointPairId(nodeId, "spawnBlockSums");
     const flagsPair = pointPairId(nodeId, FLAGS);
     const frameUniforms = { timeSeconds: 0, deltaSeconds: 0, frameIndex: 0 };
+    /**
+     * T510/§V182 — THE LIFECYCLE PASSES RESERVE `firstRun` TOO, and this line is the one
+     * that was missing.
+     *
+     * `TailParams` and `SpawnParams` both DECLARE `firstRun: u32` (`lifecycle.ts`), and the
+     * guards that read it are the two that matter: `clearDeadTail` takes the full capacity
+     * as live on a fresh buffer rather than the zero-initialised count (else the whole
+     * population is marked dead on its first frame), and `spawnFinalize` starts newborn ids
+     * at capacity rather than reusing the first generation's (§V73). Both were declared and
+     * neither was reserved, so the PLAN said the pass carried four members while its shader
+     * declared five, and `catalogue-chain`'s set-equality has been red at HEAD.
+     *
+     * The record is a NAME RESERVATION, never the value: `firstRun` is computed PER DISPATCH
+     * at render time from `pendingBufferClear ∪ freshStorage` and a plan record is written at
+     * compile and on parameter change (§V5/§V21) — it structurally cannot know. The backend
+     * publishes it by name onto every dispatch, exactly as it does the T172 frame fields and
+     * the absolute pair (§V182, one publisher). Reserving it here does not make that write
+     * redundant; it stops the next reader concluding the write is over-broad and SCOPING it,
+     * which would pin `firstRun` at 0 for ever — silently, in both guards (§V495/§V514).
+     *
+     * NOT folded into `frameUniforms`: the SPAWN HOOK spreads that and declares no
+     * `firstRun` at all (§V507 — a newborn on frame 900 is not a fresh buffer), and the same
+     * gate is exact in BOTH directions, so a record naming a member the shader does not
+     * declare fails just as loudly as one missing a member it does.
+     */
+    const lifecycleFrameParams = { ...frameUniforms, firstRun: 0 };
 
     /**
      * One binding-name→resource mapping for every lifecycle pass. The SPAWN scans run
@@ -337,7 +363,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           { binding: "liveCount", resourceId: counts },
           { binding: "aliveFlags", resourceId: flagsPair, half: "write" },
         ],
-        uniforms: { ...frameUniforms, capacity },
+        uniforms: { ...lifecycleFrameParams, capacity },
         uniformBinding: "params",
         nodeId,
       },
@@ -352,7 +378,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           buffers: pass.bindings.map((binding) => lifecycleBinding(pass.name, binding.name)),
           uniforms:
             pass.name.startsWith("spawnCopy") || pass.name === "spawnIdentity" || pass.name === "spawnFinalize"
-              ? { ...frameUniforms, capacity }
+              ? { ...lifecycleFrameParams, capacity }
               : { capacity },
           uniformBinding: "params",
           nodeId,

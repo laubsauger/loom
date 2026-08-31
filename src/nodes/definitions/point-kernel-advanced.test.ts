@@ -167,3 +167,107 @@ describe("spawn hook (T339)", () => {
     expect(result.diagnostics?.[0]?.code).toBe("node.points.spawn");
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * B122/T604 — EVERY pass mirrors its own block, including the ones the catalogue never
+ * compiles.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `catalogue-chain.test.ts` already asserts this property for the whole registry, and it
+ * is exact set-equality in BOTH directions: a record missing a member the shader declares
+ * is a silent zero (§V182 — vgpu writes by reflected name, so an unreserved member reads
+ * whatever it reads), and a record naming a member the shader does NOT declare is a value
+ * bound to nothing.
+ *
+ * THE HOLE THIS FILLS, and it is structural rather than an oversight: that gate builds one
+ * minimal graph per node type from DEFAULT parameters. `spawn` defaults to "", so the spawn
+ * HOOK pass does not exist there and has never been policed by anything. It is the one pass
+ * on this node whose block deliberately differs — §V507: the hook reports
+ * `usesFirstRun: false` because a newborn on frame 900 is not a fresh buffer — so it is
+ * exactly the pass a blanket "add firstRun to the frame uniforms" fix breaks, in the
+ * direction the catalogue cannot see. Measured: that fix passes `catalogue-chain`,
+ * `point-kernel-advanced.test.ts` and the Dawn suite, and fails only here.
+ *
+ * A pass that exists only under a non-default parameter needs a gate that sets one.
+ */
+describe("B122 — the plan reserves exactly what each generated block declares", () => {
+  /** Member names of the uniform struct a pass binds. Mirrors catalogue-chain's reader. */
+  const structMembers = (shader: string, binding: string): string[] => {
+    const structName = new RegExp(`var<uniform>\\s+${binding}\\s*:\\s*(\\w+)\\s*;`).exec(shader)?.[1];
+    if (structName === undefined) return [];
+    const body = new RegExp(`struct\\s+${structName}\\s*\\{([^}]*)\\}`).exec(shader)?.[1];
+    if (body === undefined) return [];
+    return body
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "")
+      .split(",")
+      .map((entry) => entry.split(":")[0]?.trim() ?? "")
+      .filter((name) => name.length > 0);
+  };
+
+  // A kernel that spawns and a hook that shapes the newborn — the configuration that
+  // brings the spawn-hook pass into existence at all.
+  const KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  if (q.id == 0u) { q.spawnCount = 1u; return q; }
+  q.position = q.position + vec3f(1.0, 0.0, 0.0);
+  if (q.position.x > 10.0) { q.alive = 0u; }
+  return q;
+}`;
+  const HOOK = `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  q.position = vec3f(0.0, 0.0, 0.0);
+  return q;
+}`;
+
+  type UniformPass = { id: string; kind: string; shader: string; uniformBinding?: string; uniforms?: Record<string, unknown> };
+  const passes = (): UniformPass[] =>
+    pointKernelAdvancedNode.compile(
+      compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 128, kernel: KERNEL, spawn: HOOK } }),
+    ).passes as unknown as UniformPass[];
+
+  it("the fixture actually produces the passes it claims to police (§V461)", () => {
+    // Without the hook parameter set there IS no spawn-hook pass, and this whole describe
+    // would assert over a pass list that cannot fail the way it is meant to fail.
+    const ids = passes().map((pass) => pass.id);
+    expect(ids).toContain("sim:spawnHook");
+    expect(ids).toContain("sim:clearDeadTail");
+    expect(ids).toContain("sim:spawnFinalize");
+  });
+
+  it("every dispatch pass's record equals its block, member for member", () => {
+    const drifted = passes()
+      .filter((pass) => pass.kind === "dispatch" && pass.uniformBinding !== undefined && pass.uniforms !== undefined)
+      .map((pass) => {
+        const declared = structMembers(pass.shader, pass.uniformBinding as string).sort();
+        const reserved = Object.keys(pass.uniforms ?? {}).sort();
+        return { id: pass.id, declared, reserved };
+      })
+      .filter((entry) => entry.declared.join(",") !== entry.reserved.join(","));
+    expect(
+      drifted.map((entry) => `${entry.id}: declares [${entry.declared.join(", ")}] reserves [${entry.reserved.join(", ")}]`),
+      "a generated pass's uniform record no longer matches its own block (§V182). Missing a " +
+        "declared member is a silent zero; naming an undeclared one binds a value to nothing.",
+    ).toEqual([]);
+  });
+
+  /**
+   * The two halves of B122 named individually, so a failure says WHICH direction broke
+   * rather than only that something did. `firstRun` is the member both guards read
+   * (`lifecycle.ts` — the live-count guard and the newborn-id base), and the one the
+   * lifecycle passes declared without reserving.
+   */
+  it("the lifecycle passes RESERVE firstRun — the name the backend fills per dispatch", () => {
+    const byId = new Map(passes().map((pass) => [pass.id, pass]));
+    for (const id of ["sim:clearDeadTail", "sim:spawnFinalize", "sim:spawnIdentity"]) {
+      expect(Object.keys(byId.get(id)?.uniforms ?? {}), `${id} must reserve firstRun`).toContain("firstRun");
+    }
+  });
+
+  it("the spawn HOOK does NOT reserve it — a newborn mid-simulation is not fresh (§V507)", () => {
+    const hook = passes().find((pass) => pass.id === "sim:spawnHook");
+    expect(Object.keys(hook?.uniforms ?? {})).not.toContain("firstRun");
+    expect(structMembers(hook?.shader ?? "", "kernelFrame")).not.toContain("firstRun");
+  });
+});
