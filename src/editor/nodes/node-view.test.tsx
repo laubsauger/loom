@@ -481,9 +481,16 @@ describe("T457 (V387) — reference-fed inputs render NO socket", () => {
 });
 
 describe("T462 (§V85) — a scene payload node owns a preview slot", () => {
-  it("camera, light and material render the slot; geometry deliberately does not", () => {
+  /**
+   * T532 replaced this case's last clause. It used to end "and geometry deliberately does
+   * not", and that decision is what left the geometry node with nothing to show: the
+   * compiler had no variant for it AND this slot, the candidate list and the layout model
+   * had all never heard of `scene`, so writing one variant alone would have changed
+   * nothing on screen — B65 verbatim.
+   */
+  it("every previewable payload kind renders the slot, geometry included (T532)", () => {
     const catalogue = createNodeRegistry(allNodeDefinitions).view();
-    for (const type of ["camera", "light", "materialPhong"]) {
+    for (const type of ["camera", "light", "materialPhong", "geometry"]) {
       const { container, unmount } = mountNode(type, {
         graph: graphWith(type),
         registry: catalogue,
@@ -494,11 +501,11 @@ describe("T462 (§V85) — a scene payload node owns a preview slot", () => {
       expect(container.querySelector("[data-testid^='node-preview-']"), type).not.toBeNull();
       unmount();
     }
-    const { container } = mountNode("geometry", {
-      graph: graphWith("geometry"),
-      registry: catalogue,
-      renderPreview: () => <div>tile</div>,
-    });
-    expect(container.querySelector("[data-testid^='node-preview-']")).toBeNull();
+    // NO NEGATIVE CONTROL, and that is a measurement rather than an omission: every
+    // definition in the shipped catalogue now produces a texture, a pointset, a scene
+    // payload or a channel, or is a declared sink, so no real node is one (the same
+    // finding `pointset-preview-slot.test.tsx` records). Sensitivity is proven the other
+    // way instead — drop `scene` from `PREVIEWABLE_PORT_KINDS` and the geometry case
+    // here goes red, along with the compiler sweep and the layout model's agreement gate.
   });
 });

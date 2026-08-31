@@ -6,6 +6,7 @@ import { cameraPayloadMatrix, directionalShadowMatrix } from "../../domain/geome
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
+import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-reference.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap } from "./points.ts";
 import {
@@ -418,9 +419,15 @@ export const renderNode: NodeDefinition = {
       }));
 
     // CAMERA. A render with no camera named is a picture nobody framed — refuse by name.
+    // T528: and a name that did NOT resolve gets its own words, rather than being told
+    // "no camera is named" when one plainly is. `camera-reference.ts` holds the rule the
+    // three renderers share; `render` differs only in having no inline camera to offer.
     const cameraBinding = sceneOf("camera")[0];
     if (cameraBinding === undefined) {
-      return refuse("node.scene.camera", `no camera is named — set the camera parameter to a camera node's name.`);
+      const dangling = danglingCameraRefusal(parameters, false);
+      return dangling === null
+        ? refuse("node.scene.camera", `no camera is named — set the camera parameter to a camera node's name.`)
+        : refuse("node.camera.reference", dangling, DANGLING_CAMERA_SUGGESTION);
     }
     if (cameraBinding.scene?.kind !== "camera") {
       return refuse(

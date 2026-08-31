@@ -1,10 +1,14 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import { cameraPayloadMatrix, viewProjection } from "../../domain/geometry/camera.ts";
-import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { CameraPayload } from "../../domain/types/scene.ts";
 import { INSTANCE_VERTEX_COUNT, RENDER_INSTANCES_WGSL, renderInstancesWgsl } from "../shaders/render-instances.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
+import {
+  DANGLING_CAMERA_SUGGESTION,
+  danglingCameraRefusal,
+  namedCameraWins,
+} from "./camera-reference.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, pointPairId, resolveColorMap, resolveGroupPredicate } from "./points.ts";
@@ -28,21 +32,6 @@ const SHAPE_INDEX: Record<string, number> = { quad: 0, box: 1, octahedron: 2 };
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
 
-/**
- * §V146 — a NAMED camera replaces these wholesale (T457), so while one is named the
- * inline eye/look/FOV cannot affect the output at all.
- *
- * B104/T500: the owner reported "any of the camera parameters are not really reflecting
- * in the output", and a renderer that shows a live-looking Camera Eye it is ignoring is
- * one honest way to see exactly that — the parameter is edited, the picture does not
- * move, and nothing says why. §V146 exists for this: the row dims and gives the reason,
- * and it stays editable, because setting the inline camera before clearing the name is a
- * normal way to work.
- */
-const namedCameraWins = (values: Readonly<Record<string, ParameterValue>>): string | null => {
-  const named = typeof values["camera"] === "string" ? values["camera"].trim() : "";
-  return named === "" ? null : `Camera "${named}" frames this render; its parameters replace this one.`;
-};
 
 export const renderInstancesNode: NodeDefinition = {
   type: "renderInstances",
@@ -151,6 +140,23 @@ export const renderInstancesNode: NodeDefinition = {
     // payload on the reference-fed edge and replaces the inline parameters wholesale;
     // unnamed keeps the inline eye/look/FOV exactly as before.
     const referenced = inputs["camera"]?.scene as CameraPayload | undefined;
+    // T528: the same refusal, in the same words, from `camera-reference.ts` — two
+    // renderers gave two answers to one question and this is the half that is honest.
+    const dangling = danglingCameraRefusal(parameters, referenced?.kind === "camera");
+    if (dangling !== null) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.camera.reference",
+            message: `Node "${nodeId}": ${dangling}`,
+            nodeId,
+            suggestion: DANGLING_CAMERA_SUGGESTION,
+          },
+        ],
+      };
+    }
     const eye = readVector(parameters, "eye", [0, 0, 3]);
     const center = readVector(parameters, "lookAt", [0, 0, 0]);
     const rotate = readVector(parameters, "rotate", [0, 0, 0]);

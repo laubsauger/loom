@@ -139,7 +139,7 @@ describe("layoutGraph (T279)", () => {
 /**
  * B84 — THE SIZE MODEL IS `node-box.ts`, AND THESE ARE THE NUMBERS.
  *
- * The old guess was 180 wide and 100 tall for every unsized node. A `solid` is 178×147:
+ * The old guess was 180 wide and 100 tall for every unsized node. A `solid` is 178×148:
  * it renders a 16:9 preview tile and a port row. So the vertical pitch the guess produced
  * was 140 where 187 is right — **47px of interpenetration on every stacked pair**, on a
  * layout whose entire job is to not do that. Exact values, not "greater than", because a
@@ -151,8 +151,11 @@ describe("B84 — layout sizes nodes through `node-box`, not a second guess", ()
     const graph = graphOf([node("a", { x: 0, y: 0 }, undefined, "solid"), node("b", { x: 0, y: 0 }, undefined, "solid")], []);
     const positions = layoutGraph(graph, catalogue);
 
-    expect(nodeBox(graph.nodes["a"]!, catalogue.get("solid")).height).toBe(147);
-    expect(positions["b"]!.y - positions["a"]!.y).toBe(147 + 40);
+    // 148 since T540: `.preview` sizes its CONTENT box to 16:9 and the hairline below is
+    // added rather than taken out of the tile, so a previewing node is one pixel taller
+    // and its tile fills its slot instead of letterboxing inside it.
+    expect(nodeBox(graph.nodes["a"]!, catalogue.get("solid")).height).toBe(148);
+    expect(positions["b"]!.y - positions["a"]!.y).toBe(148 + 40);
     // The number the old model would have produced, named so the regression is unmistakable.
     expect(positions["b"]!.y - positions["a"]!.y).not.toBe(100 + 40);
   });
@@ -172,7 +175,7 @@ describe("B84 — layout sizes nodes through `node-box`, not a second guess", ()
     // A layout blind to that stacks them as if they were the same node.
     const graph = graphOf([node("a", { x: 0, y: 0 }, undefined, "add"), node("b", { x: 0, y: 0 }, undefined, "add")], []);
     const positions = layoutGraph(graph, catalogue);
-    expect(positions["b"]!.y - positions["a"]!.y).toBe(163 + 40);
+    expect(positions["b"]!.y - positions["a"]!.y).toBe(164 + 40);
   });
 
   /**

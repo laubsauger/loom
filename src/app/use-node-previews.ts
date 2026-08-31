@@ -12,6 +12,9 @@ import { DEFAULT_PREVIEW_VIEW, createPreviewSystem, slotScreenRect } from "@runt
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+// T532: ONE list of previewable port kinds, shared with the slot, the compiler and the
+// layout model — see `previewable.ts` on why four private copies is how B65 happened.
+import { previewablePort } from "@domain/graph/previewable.ts";
 
 /**
  * Mounts the shared preview surface and feeds it every node's tile request (T185).
@@ -125,15 +128,6 @@ export interface PreviewCandidate {
   readonly on: boolean;
 }
 
-/** Output port kinds whose nodes preview (T373 textures/pointsets, T462 scene payloads). */
-const PREVIEWABLE_PORT_KINDS: ReadonlySet<string> = new Set([
-  "texture2d",
-  "pointset",
-  "camera",
-  "light",
-  "material",
-]);
-
 /** Exported for the T373 coverage gate — the product path itself only calls it below. */
 export function previewCandidates(
   graph: GraphDocument,
@@ -156,7 +150,7 @@ export function previewCandidates(
     // every present and future producer is a candidate by construction (§V316, §V319).
     // Geometry ("scene" kind) deliberately absent: its shape is upstream's splat, its
     // material is the material node's ball, and its pairing is its render's picture.
-    const port = definition.outputs.find((candidate) => PREVIEWABLE_PORT_KINDS.has(candidate.type.kind));
+    const port = previewablePort(definition.outputs);
     if (port !== undefined) found.push({ nodeId, portId: port.id, gated: true, on });
     else if (definition.sink === true && fed.has(nodeId)) {
       found.push({ nodeId, portId: SINK_TARGET_PORT, gated: false, on });

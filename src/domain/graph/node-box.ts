@@ -1,6 +1,7 @@
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
 import type { GraphNode } from "@domain/types/graph.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import { previewablePort } from "./previewable.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 
 /**
@@ -57,10 +58,20 @@ export const NODE_WIDTH = 178;
 const TITLE_HEIGHT = 24;
 
 /**
- * `.preview` is `aspect-ratio: 16 / 9`. Under `border-box` the ratio governs the BORDER
- * box, so the hairline is inside the derived height and is not added again.
+ * `.preview` is `aspect-ratio: 16 / 9`, and since T540 it is `box-sizing: content-box`,
+ * so the ratio governs the CONTENT box and the hairline below is ADDED to the derived
+ * height rather than taken out of it.
+ *
+ * That inversion is the whole of T540: while the ratio governed the border box, the box
+ * the preview system measures and fits its tile into was 16:(9 − hairline), so a 16:9
+ * output letterboxed inside its own slot and left a band of ground down each side —
+ * "an extra border inside the area of the preview". Measured in the real DOM at 178 px
+ * node width: content 176 × 99, border box 176 × 100.
  */
 const PREVIEW_ASPECT = 16 / 9;
+
+/** `.preview` — the hairline BELOW the tile, outside the ratio since T540. */
+const PREVIEW_BORDER = 1;
 
 /** `.ports` — `padding: var(--space-2) 0`, top and bottom. */
 const PORTS_PADDING = 4 * 2;
@@ -84,33 +95,30 @@ export interface NodeBox {
 /**
  * Does this node render a preview tile?
  *
- * The four kinds `node-view.tsx` enumerates, in the same order and for the same reasons:
- * a texture producer, a value node (its plot), a POINTSET producer (T373/B65 — pointsets
- * preview now, and the day they started every point node got ~100px taller), and a
- * declared SINK, which consumes rather than produces and still owns a target (§V25).
+ * Exactly what `node-view.tsx` renders, because both read the SAME list of previewable
+ * port kinds (T532): a previewable output, a value node (its plot), or a declared SINK,
+ * which consumes rather than produces and still owns a target (§V25).
  *
- * Keyed on the port KIND and the manifest's own `category`/`sink`, exactly as the
- * component is, so a new producer is covered by construction rather than by a list
- * somebody has to remember to extend (§V316).
+ * This model is what every shipped example's overlap gate is measured against, so a kind
+ * that grows a preview here grows the node by ~100px — which is what happened the day
+ * pointsets started previewing, and what would silently NOT have happened for geometry if
+ * this had kept its own copy of the list (§V316, §V437).
  */
 export function nodeHasPreview(node: GraphNode, definition: NodeDefinition | undefined): boolean {
   if (node.ui?.preview === false) return false;
   if (definition === undefined) return false;
-  const producesTexture = definition.outputs.some((port) => port.type.kind === "texture2d");
-  const producesPointset = definition.outputs.some((port) => port.type.kind === "pointset");
-  // T462 (§V85): scene payloads preview as stock scenes — geometry ("scene") does not.
-  const producesScenePayload = definition.outputs.some(
-    (port) => port.type.kind === "camera" || port.type.kind === "light" || port.type.kind === "material",
-  );
+  // T532: the ONE list, shared with the slot that renders it and the compiler that fills
+  // it. This used to enumerate kinds itself and geometry was missing from every copy —
+  // so a node that grew a preview would have kept its old modelled height and every
+  // shipped example's overlap gate would have gone green over a layout that had moved.
   // T438 (§V316): channel publication is declared, never read off the category shelf.
   return (
-    producesTexture ||
-    producesPointset ||
-    producesScenePayload ||
+    previewablePort(definition.outputs) !== undefined ||
     publishesValueChannels(definition) ||
     definition.sink === true
   );
 }
+
 
 /**
  * Port ROWS, which is the taller of the two columns — they sit side by side in a grid.
@@ -139,7 +147,7 @@ export function nodeBox(node: GraphNode, definition: NodeDefinition | undefined)
   const contentWidth = NODE_WIDTH - NODE_BORDER * 2;
   let height = NODE_BORDER * 2 + TITLE_HEIGHT;
   if (nodeHasPreview(node, definition)) {
-    height += Math.floor(contentWidth / PREVIEW_ASPECT);
+    height += Math.floor(contentWidth / PREVIEW_ASPECT) + PREVIEW_BORDER;
   }
   const rows = nodePortRows(node, definition);
   height += PORTS_PADDING + (rows === 0 ? 0 : rows * PORT_ROW_HEIGHT + (rows - 1) * PORT_ROW_GAP);

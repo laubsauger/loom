@@ -13,6 +13,7 @@ import { nameBaseFor } from "@domain/graph/names.ts";
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
+import { previewablePort } from "@domain/graph/previewable.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
@@ -128,48 +129,37 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    * `renderPreview` is the same seam for both; the composition root decides which surface
    * comes back, exactly as it already did for textures (T185).
    */
-  const producesTexture = (definition?.outputs ?? []).some((port) => port.type.kind === "texture2d");
   const producesValue = publishesValueChannels(definition);
-  /**
-   * B65 — a POINT producer shows its splat, and until T415 it showed nothing at all.
-   *
-   * T373 built the whole pointset preview path — the compiler synthesizes a splat target
-   * when a point output becomes a preview sink, `previewCandidates` makes every pointset
-   * output a candidate keyed on port kind, the sink gating keeps it free when off — and
-   * all of it fed a slot this component never created, because `hasPreview` enumerated
-   * three kinds of output and a pointset is a fourth. No div, so `PreviewSlotBounds` had
-   * nothing to publish; no bounds, so `useNodePreviews` registered no sink; no sink, so
-   * the compiler never materialized the target. The pipeline was complete and its last
-   * millimetre was missing.
-   *
-   * §V350: T373's own gate asserted the REQUEST side (is this node a preview candidate?)
-   * — true, and blind to the display side where the break was. Keyed on the port KIND
-   * like `previewCandidates` is, so a future point producer is covered by construction
-   * and not by a list of node types somebody has to remember to extend (§V316).
-   */
-  const producesPointset = (definition?.outputs ?? []).some((port) => port.type.kind === "pointset");
   /**
    * A declared SINK shows its picture too, and it is the picture that matters most.
    *
-   * An Output node publishes no port — it CONSUMES one — so `producesTexture` is false for
-   * it, and the node that presents the final image was the only one in the graph with an
+   * An Output node publishes no port — it CONSUMES one — so no output kind matches it,
+   * and the node that presents the final image was the only one in the graph with an
    * empty body. It does own a texture: the render target the compiler materializes for
    * every declared sink (§V25). Same slot, same host, same scheduler — the composition
    * root fills it from the compiled output like any other tile.
    */
   const presentsTexture = definition?.sink === true;
   /**
-   * T462 (§V85): a camera, light or material output previews as its own payload in a
-   * stock scene — B65's lesson applied BEFORE the bug this time: the compiler-side
-   * synthesis, the candidates and this slot all key on the same payload kinds, so the
-   * pipeline cannot be complete with its last millimetre missing again. Geometry
-   * ("scene" kind) is deliberately not here — see `previewCandidates`.
+   * EVERY PREVIEWABLE OUTPUT KIND, FROM THE ONE LIST (T532, §V437).
+   *
+   * This used to enumerate the kinds itself, and B65 is what that costs: T373 built the
+   * whole pointset splat path — compiler synthesis, candidates, sink gating — and it fed
+   * a slot this component never created, because the list here knew three kinds and a
+   * pointset was a fourth. No div, no measured bounds, no sink, no target. "The pipeline
+   * was complete and its last millimetre was missing."
+   *
+   * T532 found the same gap one kind further along: a geometry had no picture in the
+   * compiler, and writing one would still have shown nothing, because this copy, the
+   * candidate list and the layout model had all never heard of `scene` either. So the
+   * kinds live in `PREVIEWABLE_PORT_KINDS` now and every site reads them from there —
+   * which is the only version of this that a future kind cannot walk past.
+   *
+   * §V350: T373's own gate asserted the REQUEST side (is this node a preview candidate?)
+   * — true, and blind to the display side where the break was.
    */
-  const producesScenePayload = (definition?.outputs ?? []).some(
-    (port) => port.type.kind === "camera" || port.type.kind === "light" || port.type.kind === "material",
-  );
-  const hasPreview =
-    producesTexture || producesValue || producesPointset || producesScenePayload || presentsTexture;
+  const producesPreviewable = previewablePort(definition?.outputs ?? []) !== undefined;
+  const hasPreview = producesPreviewable || producesValue || presentsTexture;
   const agent = snapshot.agent;
 
   /**
