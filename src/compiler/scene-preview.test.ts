@@ -141,6 +141,10 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
     // tile) — the row carries the synthesis and the plan carries nothing.
     const row = rowById(compiled, "preview:scene:cam:out");
     expect(row?.synthesis?.depth).toBe(true);
+    // T561: a CAMERA payload is deliberately NOT orbitable — the tile draws through the
+    // payload's own matrix, and an inspection override would falsify the one thing it
+    // shows. Every other payload kind carries a basis (asserted in the kind sweep).
+    expect(row?.synthesis?.orbit).toBeUndefined();
     // The nominal square size the request path reads (T502's base-tile rule).
     expect(row?.size).toEqual([384, 384]);
     expect(mainPlanIsClean(compiled)).toBe(true);
@@ -274,6 +278,15 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
     );
     expect([kind, draws.length > 0]).toEqual([kind, true]);
     expect([kind, mainPlanIsClean(compiled)]).toEqual([kind, true]);
+    // T561: every kind is orbitable EXCEPT camera, whose tile shows the payload's own
+    // matrix. An orbitable kind's passIds name only the object pass — a geometry's
+    // backdrop has no camera to move.
+    const orbit = row?.synthesis?.orbit;
+    if (kind === "camera") {
+      expect([kind, orbit]).toEqual([kind, undefined]);
+    } else {
+      expect([kind, orbit?.passIds]).toEqual([kind, ["subject#scenePreview:out"]]);
+    }
   });
 });
 

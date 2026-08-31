@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { NodeId } from "@domain/types/ids.ts";
 import { useNodeRuntime } from "@editor/graph-canvas/index.ts";
 import type { NodeRuntimeSource } from "@editor/graph-canvas/index.ts";
 import { DEFAULT_PREVIEW_LENS } from "@runtime/previews/index.ts";
 import { NodePreview } from "./node-preview.tsx";
+import type { PreviewOrbitStore } from "./preview-orbit-store.ts";
 import type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
 import type { PreviewViewSource } from "./preview-view-store.ts";
 
@@ -36,11 +38,56 @@ export interface NodePreviewSlotProps {
    * embedding — is not forced to wire one; absent means every preview is the plain picture.
    */
   views?: PreviewViewSource | undefined;
+  /**
+   * T561: the pane's inspection-orbit store, plus whether THIS node's preview is a
+   * synthesized 3D picture at all (the compiler marks orbitable outputs; a texture
+   * preview has nothing to orbit and must keep its plain pointer behaviour).
+   */
+  orbits?: PreviewOrbitStore | undefined;
+  orbitable?: boolean;
 }
 
-export function NodePreviewSlot({ nodeId, runtime, bounds, views }: NodePreviewSlotProps) {
+export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbitable = false }: NodePreviewSlotProps) {
   const flow = useReactFlow();
   const ref = useRef<HTMLDivElement | null>(null);
+  /**
+   * T561: the inspection drag. Radians per CSS px, chosen so a full sweep across a
+   * 192px tile is about a half turn — the whole object inspectable in one gesture.
+   * The gesture is uncontested: the slot carries `nodrag`/`nopan` and the node view
+   * stops pointer-press propagation (§V20), so nothing here fights React Flow. The
+   * orbit is VIEW STATE — the store makes no document revision and the preview tick
+   * samples it per frame, so the drag repaints the tile and re-renders nothing.
+   */
+  const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const onPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!orbitable || orbits === undefined || event.button !== 0) return;
+      drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [orbitable, orbits],
+  );
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const active = drag.current;
+      if (active === null || active.pointerId !== event.pointerId || orbits === undefined) return;
+      const RADIANS_PER_PX = 0.016;
+      orbits.apply(nodeId, {
+        // Drag right walks the camera rightward around the object; drag up raises it.
+        azimuth: (event.clientX - active.x) * RADIANS_PER_PX,
+        elevation: (event.clientY - active.y) * -RADIANS_PER_PX,
+      });
+      active.x = event.clientX;
+      active.y = event.clientY;
+    },
+    [nodeId, orbits],
+  );
+  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === event.pointerId) drag.current = null;
+  }, []);
+  const onDoubleClick = useCallback(() => {
+    if (orbitable) orbits?.reset(nodeId);
+  }, [nodeId, orbitable, orbits]);
 
   useEffect(() => {
     const element = ref.current;
@@ -92,7 +139,15 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views }: NodePreviewS
   );
 
   return (
-    <div ref={ref} style={{ width: "100%", height: "100%" }}>
+    <div
+      ref={ref}
+      style={{ width: "100%", height: "100%", ...(orbitable ? { cursor: "grab", touchAction: "none" } : {}) }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onDoubleClick={onDoubleClick}
+    >
       {preview === null ? (
         /**
          * §V303 — a slot with nothing published still has to COVER.

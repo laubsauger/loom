@@ -20,6 +20,8 @@ export type { NodePreviewSlotProps } from "./node-preview-slot.tsx";
 
 export { createPreviewSlotBounds } from "./preview-slot-bounds.ts";
 export type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
+export { createPreviewOrbitStore } from "./preview-orbit-store.ts";
+export type { PreviewOrbitStore } from "./preview-orbit-store.ts";
 
 /**
  * The preview LENS (T336) — channel isolation, exposure and the tonemap, on the preview path

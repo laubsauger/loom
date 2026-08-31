@@ -14,7 +14,7 @@ import { useKeymapPane } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
-import { NodePreviewSlot, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
+import { NodePreviewSlot, createPreviewOrbitStore, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
@@ -123,6 +123,9 @@ function GraphPaneInner({
   // One store per mounted pane: `NodePreviewSlot` writes each node's measured slot
   // rect, the preview tick below reads it every frame (T185, design note §3).
   const previewBounds = useMemo(() => createPreviewSlotBounds(), []);
+  // T561: per-PANE inspection orbits — a second pane on the same node is a second
+  // camera, by construction (each mounted pane creates its own store).
+  const previewOrbits = useMemo(() => createPreviewOrbitStore(), []);
   // T336: the preview LENS. Registers `preview.setView`/`preview.resetView` and keeps their
   // default target on the selection while this pane is mounted — the pane that shows previews
   // is the one that can honestly offer a command for changing how they look (§V90).
@@ -156,6 +159,7 @@ function GraphPaneInner({
     compiledOutputs,
     nodeRuntime,
     views: previewViews,
+    orbits: previewOrbits,
     getViewport,
     getNodePosition,
     previewFps,
@@ -194,16 +198,23 @@ function GraphPaneInner({
               };
         return <ValuePlot nodeId={nodeId} history={valueHistory} source={source} />;
       }
+      // T561: orbitable iff the COMPILER marked this node's preview as a synthesized
+      // 3D picture with a camera to move — never inferred from the node type here.
+      const orbitable = compiledOutputs.some(
+        (output) => output.nodeId === nodeId && output.synthesis?.orbit !== undefined,
+      );
       return (
         <NodePreviewSlot
           nodeId={nodeId}
           runtime={nodeRuntime}
           bounds={previewBounds}
           views={previewViews}
+          orbits={previewOrbits}
+          orbitable={orbitable}
         />
       );
     },
-    [graph, nodeRuntime, previewBounds, previewViews, registry, settings, valueHistory],
+    [compiledOutputs, graph, nodeRuntime, previewBounds, previewOrbits, previewViews, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(

@@ -119,10 +119,11 @@ export function drawSynthesizedPreview(options: {
     stubCanvas(options.device, options.tileEdge, options.tileEdge) as never,
   );
   handle.setPreviewProgram(program);
-  const present = (): void => {
+  const present = (uniforms?: ReadonlyArray<{ passId: string; values: unknown }>): void => {
     handle.presentPreviews({
       refresh: synthesis.passes.map((pass) => pass.id),
       composite: [],
+      ...(uniforms === undefined ? {} : { uniforms }),
       surface: { size: [options.tileEdge, options.tileEdge], dpr: 1 },
     });
   };

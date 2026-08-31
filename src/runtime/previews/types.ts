@@ -2,6 +2,7 @@ import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { DrawPassDescriptor, EffectPassDescriptor, ResourceDescriptor, UniformValues } from "../backend/plan.ts";
+import type { OrbitCameraBasis, PreviewOrbit } from "./orbit.ts";
 
 /**
  * Shared vocabulary for the preview system (T34, T35, T36).
@@ -182,7 +183,15 @@ export interface PreviewRequest {
   readonly synthesis?: {
     readonly passes: ReadonlyArray<DrawPassDescriptor>;
     readonly depth: boolean;
+    /** T561: the stock framing's basis and the passes an inspection orbit re-cameras. */
+    readonly orbit?: OrbitCameraBasis & { readonly passIds: ReadonlyArray<string> };
   };
+  /**
+   * T561: this pane's inspection orbit for the synthesized picture — VIEW STATE, never
+   * document state (no revision, no `.loom.json`, no touching a scene's camera node).
+   * Identity deltas (or absence) show the compiler's baked framing.
+   */
+  readonly orbit?: PreviewOrbit;
 }
 
 export const SUSPEND_REASONS = [

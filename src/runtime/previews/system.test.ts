@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import { createPreviewSystem } from "./system.ts";
 import { previewPassId } from "./program.ts";
+import { DEFAULT_PREVIEW_ORBIT, orbitViewProjection } from "./orbit.ts";
 import { DEFAULT_PREVIEW_VIEW, previewKey } from "./types.ts";
 import type { PreviewFrameCommand, PreviewProgram, PreviewRequest, PreviewRuntimeHost } from "./types.ts";
 
@@ -213,6 +214,58 @@ describe("preview system", () => {
     // — and forces a refresh THIS tick, so a nudge is visible off-cadence.
     expect(host.commands[2]?.refresh).toContain(passId);
     expect(host.commands[3]?.uniforms).toEqual([]);
+  });
+
+  it("pushes the inspection camera onto the synthesis passes — a drag re-renders, never rebuilds (T561)", () => {
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    const basis = { eye: [1.7, 1.2, 2.4] as const, lookAt: [0, 0, 0] as const };
+    const synthPassId = "a#pointsPreview:out";
+    const synthesis = {
+      depth: false,
+      orbit: { ...basis, passIds: [synthPassId] },
+      passes: [
+        {
+          kind: "draw",
+          id: synthPassId,
+          shader: "fn x() {}",
+          target: "preview:points:a:out",
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 3,
+          uniformBinding: "params",
+          uniforms: { viewProjection: [] },
+        },
+      ],
+    } as never as NonNullable<PreviewRequest["synthesis"]>;
+    const synthesized = (orbit?: { azimuth: number; elevation: number; distance: number }) =>
+      request("a", {
+        synthesis,
+        ...(orbit === undefined ? {} : { orbit }),
+        source: { ...request("a").source, resourceId: "preview:points:a:out" },
+      });
+
+    run(system, [synthesized()], 2);
+    // The first tick pushes the IDENTITY camera once — the baked framing, so an
+    // untouched preview shows exactly what the compiler framed — then goes quiet.
+    const first = host.commands[0]?.uniforms?.find((update) => update.passId === synthPassId);
+    expect(first?.values["viewProjection"]).toEqual(orbitViewProjection(basis, DEFAULT_PREVIEW_ORBIT));
+    expect(host.commands[1]?.uniforms).toEqual([]);
+
+    // The drag. A new orbit is a VALUE: new matrix pushed, synth pass refreshed this
+    // tick so the gesture is live — and the program never rebuilds (§V5, §V330).
+    const orbit = { azimuth: 1, elevation: 0.2, distance: 1 };
+    run(system, [synthesized(orbit)], 1, { startIndex: 2 });
+    const push = host.commands[2]?.uniforms?.find((update) => update.passId === synthPassId);
+    expect(push?.values["viewProjection"]).toEqual(orbitViewProjection(basis, orbit));
+    expect(host.commands[2]?.refresh).toContain(synthPassId);
+    expect(host.programs).toHaveLength(1);
+
+    // Releasing back to default pushes the baked framing again — a reset is arithmetic,
+    // not a second copy of the default camera.
+    run(system, [synthesized()], 1, { startIndex: 3 });
+    const restored = host.commands[3]?.uniforms?.find((update) => update.passId === synthPassId);
+    expect(restored?.values["viewProjection"]).toEqual(orbitViewProjection(basis, DEFAULT_PREVIEW_ORBIT));
   });
 
   it("composites every active tile every frame but refreshes only the due ones", () => {

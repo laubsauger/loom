@@ -125,6 +125,12 @@ describe("a watched point generator previews as its own splat (T373, §V85, T563
     // The camera is a VALUE on the pass (§V5) — T379's viewer camera drives it later
     // without a structure change.
     expect(Array.isArray(pass?.uniforms?.["viewProjection"])).toBe(true);
+    // T561: the stock framing's basis rides the synthesis, so the inspection orbit
+    // reproduces it at identity and re-cameras exactly this pass.
+    const orbit = outputFor(compiled.outputs, "torus")?.synthesis?.orbit;
+    expect(orbit?.eye).toEqual([1.7, 1.2, 2.4]);
+    expect(orbit?.lookAt).toEqual([0, 0, 0]);
+    expect(orbit?.passIds).toEqual(["torus#pointsPreview:out"]);
   });
 
   it("an UNWATCHED pointset output synthesizes nothing — off costs zero (§V297, §V309)", () => {

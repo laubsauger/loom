@@ -71,6 +71,9 @@ export type { PreviewScheduler, PreviewSchedulerOptions, ScheduleInput } from ".
 
 export { PREVIEW_SAMPLER, buildPreviewProgram, previewPassId } from "./program.ts";
 
+export { DEFAULT_PREVIEW_ORBIT, isDefaultOrbit, orbitEye, orbitUniforms, orbitViewProjection } from "./orbit.ts";
+export type { OrbitCameraBasis, PreviewOrbit } from "./orbit.ts";
+
 export { createPreviewSystem } from "./system.ts";
 export type { PreviewSystem, PreviewSystemFrame, PreviewSystemResult } from "./system.ts";
 

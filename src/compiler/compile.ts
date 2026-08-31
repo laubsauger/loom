@@ -1364,6 +1364,14 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         temporal: false,
         synthesis: {
           depth: false,
+          // T561: the stock framing's basis, so the inspection orbit reproduces it at
+          // identity and replaces only the VALUE (§V5) — same numbers as
+          // POINTS_PREVIEW_CAMERA above.
+          orbit: {
+            eye: [1.7, 1.2, 2.4],
+            lookAt: [0, 0, 0],
+            passIds: [`${nodeId}#pointsPreview:${slot.portId}`],
+          },
           passes: [
             {
               kind: "draw",
@@ -1719,6 +1727,27 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           },
         });
       }
+      /*
+       * T561: the inspection orbit's basis, per rig. A CAMERA payload is deliberately
+       * not orbitable — its preview draws through the payload's own matrix, and
+       * overriding that would falsify the one thing the tile shows. The geometry rig is
+       * the pointset framing (default projection); the ball rig carries its own fovY
+       * and far plane. `passIds` names only the object pass — a geometry's backdrop has
+       * no camera to move.
+       */
+      const orbit =
+        payload.kind === "camera"
+          ? undefined
+          : payload.kind === "geometry"
+            ? { eye: [1.7, 1.2, 2.4] as const, lookAt: [0, 0, 0] as const, passIds: [`${nodeId}#scenePreview:${port.id}`] }
+            : {
+                eye: [0, 0, 2.6] as const,
+                lookAt: [0, 0, 0] as const,
+                fovY: Math.PI / 4,
+                near: 0.1,
+                far: 10,
+                passIds: [`${nodeId}#scenePreview:${port.id}`],
+              };
       // A surface-mode geometry whose topology could not be used pushes only the
       // backdrop — the refusal-by-name case keeps its honest empty frame.
       scenePreviewOutputs.set(key, {
@@ -1730,7 +1759,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
-        synthesis: { depth: true, passes: synthPasses },
+        synthesis: { depth: true, passes: synthPasses, ...(orbit === undefined ? {} : { orbit }) },
       });
     }
   }

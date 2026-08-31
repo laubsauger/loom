@@ -8,6 +8,7 @@ import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { probeDawn } from "./node-gpu-host.ts";
 import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
+import { orbitUniforms } from "../../previews/orbit.ts";
 
 /**
  * T373 on a REAL device: a watched point generator's synthesized splat pass actually
@@ -231,10 +232,43 @@ describe("pointset preview splat on Dawn (T373)", () => {
       // THE LADDER CROSSING, paused: a new program, a new (bigger) target — and the
       // splat repaints from the storage the paused plan left behind. Before T563 this
       // read ZERO lit texels and stayed zero until playback resumed.
-      drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge: 1152 });
+      const boosted = drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge: 1152 });
       await device.queue.onSubmittedWorkDone();
       const after = await lit();
       expect(after).toBeGreaterThan(before); // more picture, not black — and not a copy
+
+      // T561: the inspection ORBIT, still paused — a pushed camera VALUE moves the
+      // picture on the same program object (no setPreviewProgram call anywhere below).
+      // A quarter-turn looks down the line's own axis, so the spread collapses; pushing
+      // identity back restores the stock framing byte for byte, which is the "reset is
+      // arithmetic" half of the property.
+      const row = plan.outputs.find((entry) => entry.nodeId === "gen" && entry.portId === "out");
+      const basis = row?.synthesis?.orbit;
+      expect(basis).toBeDefined();
+      const stock = (await backend.readOutput(previewId)).bytes.slice();
+      boosted.present([
+        {
+          passId: "gen#pointsPreview:out",
+          values: orbitUniforms(basis as never, { azimuth: Math.PI / 2, elevation: 0, distance: 1 }),
+        },
+      ]);
+      await device.queue.onSubmittedWorkDone();
+      const orbited = (await backend.readOutput(previewId)).bytes;
+      let differing = 0;
+      for (let index = 0; index < stock.length; index += 4) {
+        if (orbited[index] !== stock[index]) differing += 1;
+      }
+      expect(differing).toBeGreaterThan(200); // the camera moved the picture, not a texel or two
+
+      boosted.present([
+        {
+          passId: "gen#pointsPreview:out",
+          values: orbitUniforms(basis as never, { azimuth: 0, elevation: 0, distance: 1 }),
+        },
+      ]);
+      await device.queue.onSubmittedWorkDone();
+      const restored = (await backend.readOutput(previewId)).bytes;
+      expect(restored).toEqual(stock);
       expect(errors).toEqual([]);
     } finally {
       backend.dispose();

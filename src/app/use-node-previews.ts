@@ -7,7 +7,7 @@ import { SINK_TARGET_PORT } from "@compiler/index.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { fitInsideRegion } from "@editor/nodes/index.ts";
-import type { PreviewSlotBoundsStore, PreviewViewSource } from "@editor/viewer/index.ts";
+import type { PreviewOrbitStore, PreviewSlotBoundsStore, PreviewViewSource } from "@editor/viewer/index.ts";
 import { DEFAULT_PREVIEW_VIEW, createPreviewSystem, slotScreenRect } from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
@@ -68,6 +68,8 @@ export interface NodePreviewInputs {
    * which is what a caller with no lens store means.
    */
   readonly views?: PreviewViewSource | undefined;
+  /** T561: per-node inspection orbit — this PANE's store; sampled per tick like bounds. */
+  readonly orbits?: PreviewOrbitStore | undefined;
   readonly graph: GraphDocument;
   readonly registry: NodeRegistryView;
   readonly compiledOutputs: ReadonlyArray<ResolvedOutput>;
@@ -327,6 +329,11 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           // T563: a synthesized preview's draw passes travel with the request — the
           // preview program owns their target and runs them on the preview cadence.
           ...(output.synthesis === undefined ? {} : { synthesis: output.synthesis }),
+          // T561: this pane's inspection orbit, when the user has set one.
+          ...(() => {
+            const orbit = current.orbits?.get(nodeId);
+            return orbit === undefined ? {} : { orbit };
+          })(),
         });
       }
 

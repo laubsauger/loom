@@ -118,6 +118,23 @@ export interface ResolvedOutput {
     readonly passes: ReadonlyArray<DrawPassDescriptor>;
     /** The synthesized target needs a depth attachment (scene payloads depth-test). */
     readonly depth: boolean;
+    /**
+     * T561: the stock framing's camera basis, published so the preview system can
+     * ORBIT it — the inspection camera is a per-pane view state whose matrix is pushed
+     * as a uniform VALUE onto exactly `passIds` (the passes whose `params` block takes
+     * `viewProjection`; a geometry's backdrop does not). Absent means not orbitable —
+     * deliberately so for a CAMERA payload, whose preview draws through the payload's
+     * own matrix, and overriding that would falsify the one thing the tile shows.
+     */
+    readonly orbit?: {
+      readonly eye: readonly [number, number, number];
+      readonly lookAt: readonly [number, number, number];
+      /** The stock framing's own projection, when it is not the default one. */
+      readonly fovY?: number;
+      readonly near?: number;
+      readonly far?: number;
+      readonly passIds: ReadonlyArray<string>;
+    };
   };
 }
 

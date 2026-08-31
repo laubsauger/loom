@@ -1,5 +1,6 @@
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import { previewUniforms } from "./debug-effects.ts";
+import { DEFAULT_PREVIEW_ORBIT, orbitUniforms } from "./orbit.ts";
 import { buildPreviewProgram, previewPassId } from "./program.ts";
 import { createPreviewScheduler } from "./schedule.ts";
 import type { PreviewScheduler } from "./schedule.ts";
@@ -147,10 +148,28 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       // read as a dead control at low preview fps, which is the bug this fixes.
       const values = previewUniforms(entry.request.view);
       const serialized = JSON.stringify(values);
-      const changed = lastPushed.get(passId) !== serialized;
+      let changed = lastPushed.get(passId) !== serialized;
       if (changed) {
         lastPushed.set(passId, serialized);
         uniforms.push({ passId, values });
+      }
+      /*
+       * T561: the inspection orbit rides the same push seam, onto the SYNTHESIS passes
+       * the compiler marked (`orbit.passIds`) — the splat and stock-scene cameras are
+       * uniform VALUES by construction (§V5, §V330), so a drag re-renders a tile and
+       * rebuilds nothing. Identity deltas reproduce the baked framing, so a reset (or a
+       * never-touched preview) pushes the same numbers the descriptor carries.
+       */
+      const orbitBasis = entry.request.synthesis?.orbit;
+      if (orbitBasis !== undefined) {
+        const orbitValues = orbitUniforms(orbitBasis, entry.request.orbit ?? DEFAULT_PREVIEW_ORBIT);
+        const orbitSerialized = JSON.stringify(orbitValues);
+        for (const orbitPassId of orbitBasis.passIds) {
+          if (lastPushed.get(orbitPassId) === orbitSerialized) continue;
+          lastPushed.set(orbitPassId, orbitSerialized);
+          uniforms.push({ passId: orbitPassId, values: orbitValues });
+          changed = true;
+        }
       }
       if (entry.due || changed) {
         // T563: a synthesized preview re-renders its source target first — the splat or
