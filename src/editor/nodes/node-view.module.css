@@ -446,7 +446,7 @@
  * the dot in the title bar, never the edge) in a hue no status token uses.
  */
 .node[data-component] {
-  border-top: 2px solid var(--component, #9a86e8);
+  border-top: 2px solid var(--component);
 }
 
 .node[data-component] {
@@ -472,8 +472,8 @@
 }
 
 .componentChip[data-upgrade="true"] {
-  border-color: var(--warning, #d9a13c);
-  color: var(--warning, #d9a13c);
+  border-color: var(--warn);
+  color: var(--warn);
   opacity: 1;
 }
 
