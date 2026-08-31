@@ -103,7 +103,12 @@ export interface ValueGraphSession {
   evaluate(
     graph: GraphDocument,
     frame: FrameEvaluationInput,
-    extras?: { pointer?: { x: number; y: number; buttons: number }; audio?: AudioFeatures },
+    extras?: {
+      pointer?: { x: number; y: number; buttons: number };
+      audio?: AudioFeatures;
+      /** T654: external channels (analyze, or anything published) for `channelIn`. */
+      channels?: (name: string) => number | undefined;
+    },
   ): ValueGraphResult;
   /** Clears every node's persistent state (§V181) — transport reset, backward seek. */
   reset(): void;
@@ -286,6 +291,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
               frame,
               ...(extras.pointer === undefined ? {} : { pointer: extras.pointer }),
               ...(extras.audio === undefined ? {} : { audio: extras.audio }),
+              ...(extras.channels === undefined ? {} : { channels: extras.channels }),
               state,
             });
           } else if (member.definition.valueChannel !== undefined) {

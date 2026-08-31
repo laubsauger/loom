@@ -430,8 +430,59 @@ export const valueStepNode: NodeDefinition = {
   compile: noPasses,
 };
 
+/**
+ * T654 — Channel In: a named channel as a value source. TD's Select CHOP shape.
+ *
+ * §V615's door-opener: §V144 promised image → parameter → image and the catalogue could
+ * not close it processed — analyze publishes a CHANNEL, not a port, so nothing could
+ * wire from it; the driven envelope is unity-gain; expressions cannot see channels. This
+ * node is the one crossing: it reads any published channel BY NAME through the resolver
+ * the composition already holds (the app's analyze half, handed into the session's
+ * extras — the same seam `audio` came through), and from here the whole value family
+ * applies: gain it, clamp it, lag it, trigger on it. A controller becomes buildable.
+ *
+ * It reads EXTERNAL channels only — the value graph's own chains are edges; wire them.
+ * A name nobody publishes (or a session with no resolver — a bare headless caller)
+ * yields the Fallback, loudly stated here: stale-or-fallback beats stalled (§V144), and
+ * the same document renders the same file twice (§V45).
+ */
+export const channelInNode: NodeDefinition = {
+  type: "channelIn",
+  version: 1,
+  title: "Channel In",
+  category: "value",
+  description:
+    "Reads a published channel by name — an Analyze node's measurement, or anything else the app publishes — as a value-graph source. Unpublished name = the Fallback value. CLOCKLESS (§V436).",
+  tags: ["value", "channel", "select", "measure", "reactive"],
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    channel: {
+      type: "string",
+      label: "Channel",
+      default: "",
+      description: "The published name to read — an Analyze node's own name, e.g. meter1.",
+    },
+    fallback: {
+      type: "number",
+      label: "Fallback",
+      default: 0,
+      step: 0.001,
+      description: "Published when the named channel is absent — before the first measurement lands, or with no name set.",
+    },
+  },
+  valueEvaluate: ({ values, channels }) => {
+    const name = typeof values["channel"] === "string" ? (values["channel"] as string).trim() : "";
+    const fallback = typeof values["fallback"] === "number" ? (values["fallback"] as number) : 0;
+    const measured = name === "" ? undefined : channels?.(name);
+    return { value: measured ?? fallback };
+  },
+  compile: noPasses,
+};
+
 export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
+  channelInNode,
   valueMathNode,
   valueLimitNode,
   valueSlopeNode,

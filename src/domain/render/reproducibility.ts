@@ -110,6 +110,15 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
    * carries the age and the node info popup shows it.
    */
   analyze: "async-cached",
+  // T654. `channelIn` reads whatever the composition PUBLISHES under a name — and its
+  // canonical diet is an Analyze measurement, which arrives on the readback's own
+  // schedule, one frame late by contract (§V144). The node itself is a pure lookup,
+  // but what it looks up is async-cached, and a classification must answer for the
+  // value a take actually renders, not for the machinery: a channelIn over analyze is
+  // stale-by-frames, and a channelIn over a pure LFO channel should be WIRED instead
+  // (its own docblock says external channels only). So: the cautious class, with
+  // staleness visible, same as the thing it exists to read.
+  channelIn: "async-cached",
 
   /*
    * PURE — a function of the frame and the document, and the reason the other four are

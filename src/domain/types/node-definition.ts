@@ -227,6 +227,14 @@ export interface ValueEvaluateContext {
   readonly audio?: AudioFeatures;
   /** Per-node persistent state (§V181). Mutate in place; cleared on transport reset. */
   readonly state: Record<string, unknown>;
+  /**
+   * T654: EXTERNAL channels by name — what `channelIn` reads. The analyze resolver (and
+   * anything else the composition publishes) arrives through the session's extras, the
+   * same seam `audio` came through; the value graph's OWN channels are deliberately not
+   * here (they are edges — wire them). Absent when the session has none, in which case
+   * a reader publishes its retained fallback, loudly documented, never a stall (§V144).
+   */
+  readonly channels?: (name: string) => number | undefined;
 }
 
 /**

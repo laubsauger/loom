@@ -246,3 +246,68 @@ describe("value nodes and the GPU plan (T273, §V179)", () => {
     expect(compiled.pruned).toEqual([]);
   });
 });
+
+describe("channelIn (T654, §V615) — the external crossing", () => {
+  // channelIn exists so a channel produced OUTSIDE the value graph (analyze's GPU
+  // readback, via session extras) can enter it, get processed, and drive a parameter.
+  // These gates pin the seam: extras.channels reaches valueEvaluate, the measured
+  // number flows through downstream math, and every absence lands on `fallback` —
+  // loudly steady, never NaN, never a stall.
+  it("reads an external channel through extras.channels and feeds downstream math", () => {
+    const graph = graphOf(
+      [
+        node("in1", "channelIn", { parameters: { channel: "meter1", fallback: 0.5 } }),
+        node("math1", "valueMath", { parameters: { operation: "multiply", operand: 2 } }),
+      ],
+      [["in1", "out", "math1", "a"]],
+    );
+    const session = createValueGraphSession(registry);
+    const result = session.evaluate(graph, frameAt(0), {
+      channels: (name) => (name === "meter1" ? 0.25 : undefined),
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.byName.get("in1")).toEqual({ value: 0.25 });
+    expect(result.byName.get("math1")).toEqual({ value: 0.5 });
+  });
+
+  it("falls back — resolver absent, name unanswered, or name blank — and says so with a steady number", () => {
+    const doc = (parameters: GraphNode["parameters"]) =>
+      graphOf([node("in1", "channelIn", { parameters })], []);
+    const session = createValueGraphSession(registry);
+
+    // No extras.channels at all: a headless evaluate that wired nothing.
+    expect(session.evaluate(doc({ channel: "meter1", fallback: 0.7 }), frameAt(0)).byName.get("in1")).toEqual({ value: 0.7 });
+
+    // A resolver that does not know the name.
+    expect(
+      session.evaluate(doc({ channel: "ghost", fallback: -1 }), frameAt(0), { channels: () => undefined }).byName.get("in1"),
+    ).toEqual({ value: -1 });
+
+    // A blank name never queries the resolver — an unconfigured node is fallback, not a lookup of "".
+    let asked = 0;
+    const result = session.evaluate(doc({ channel: "  ", fallback: 3 }), frameAt(0), {
+      channels: () => {
+        asked += 1;
+        return 9;
+      },
+    });
+    expect(result.byName.get("in1")).toEqual({ value: 3 });
+    expect(asked).toBe(0);
+  });
+
+  it("reads EXTERNAL channels only — a sibling value node's channel is not in scope", () => {
+    // The value graph's own channels travel by WIRE (§V349). channelIn naming a
+    // sibling lfo answers fallback, not the lfo — otherwise it would be a second,
+    // orderless way to plumb the same graph.
+    const graph = graphOf(
+      [
+        node("lfo1", "lfo", { parameters: { shape: "sine", frequency: 1, amplitude: 1, offset: 0, phase: 0 } }),
+        node("in1", "channelIn", { parameters: { channel: "lfo1", fallback: 42 } }),
+      ],
+      [],
+    );
+    const session = createValueGraphSession(registry);
+    const result = session.evaluate(graph, frameAt(0.25), { channels: () => undefined });
+    expect(result.byName.get("in1")).toEqual({ value: 42 });
+  });
+});

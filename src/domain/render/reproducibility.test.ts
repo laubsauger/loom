@@ -73,6 +73,9 @@ describe("T645 — every registered node type is classified, or this fails (§V4
     expect(notPure).toEqual([
       "analyze:async-cached",
       "audioIn:external-live",
+      // T654: the fifth, on purpose — channelIn's canonical diet is analyze's readback,
+      // so it wears the same class as the thing it reads (see the table's entry).
+      "channelIn:async-cached",
       "mouse:external-live",
       "webcam:external-live",
     ]);

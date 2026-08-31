@@ -351,6 +351,9 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
     amount: 1,
     minimum: 0,
     maximum: 0.5,
+    // T654: channelIn with no external resolver speaks its fallback — nonzero here so
+    // the sweep can hear it go silent. No other node has a `fallback` parameter.
+    fallback: 0.62,
   };
 
   const evaluateOne = (

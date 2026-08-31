@@ -259,7 +259,7 @@ export function App({
    * nothing. (T238's single-channel shorthand WAS live, so an LFO always worked — the bug
    * is smaller than "the value graph does nothing" and still real.)
    */
-  const valueGraph = useValueGraph(runtime);
+  const valueGraph = useValueGraph(runtime, analyze.resolver);
 
   /**
    * The rolling window every value node plots in its body (T344, §V275).

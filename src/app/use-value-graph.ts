@@ -120,7 +120,7 @@ const ZERO_FRAME: FrameEvaluationInput = {
   randomSeed: 0,
 };
 
-export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
+export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelResolver): ValueGraphBinding {
   // The store is the authority on the graph and is read AT evaluation time rather than
   // captured: the session must never be rebuilt on a document edit, because rebuilding it
   // would clear every stateful stage — an edit anywhere would reset every Lag in the
@@ -148,6 +148,20 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
         pointer: inputs.pointer,
         // T414: the same rule with sound — the ONE feature record the frame carries.
         ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
+        /*
+         * T654: the EXTERNAL channels a `channelIn` reads — the analyze resolver, whose
+         * values are last-COMPLETED readbacks (§V144: one frame late by contract), so
+         * there is no cycle here: the value graph consumes what the GPU finished, and
+         * what it drives renders after.
+         */
+        ...(externalChannels === undefined
+          ? {}
+          : {
+              channels: (name: string): number | undefined => {
+                const value = externalChannels(name, { frame: inputs.frame } as never);
+                return typeof value === "number" ? value : undefined;
+              },
+            }),
       });
       latest.current = result.resolver;
       latestBags.current = result.byId;
@@ -160,7 +174,7 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
       reported.current = signature;
       setDiagnostics(result.diagnostics.length === 0 ? NO_DIAGNOSTICS : [...result.diagnostics]);
     },
-    [session],
+    [externalChannels, session],
   );
 
   const channels = useCallback(() => latestBags.current, []);
