@@ -3879,14 +3879,34 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   // ---- THE SMOOTH PIPE -------------------------------------------------
   // pointgenerator1.radius is the only drivable number that reaches this
-  // kernel. Map a band energy onto radius 1.0 -> 1.6 and it arrives here
-  // as a continuous 0..1 control. Length is divided straight back out, so
-  // the audio never merely scales the blob - it changes its character.
+  // kernel, so the sphere's radius is the audio's way in: length is divided
+  // straight back out and what survives is a continuous 0..1 control.
+  //
+  // THESE TWO CONSTANTS ARE swell1's BIAS AND GAIN, and they are a SILENT
+  // COUPLING (T554). The radius is driven by swell1 = "lowMid x 1.25 + 0.68",
+  // so subtracting the bias and dividing by the gain is the only thing that
+  // makes a 0..1 band arrive here as a 0..1 control. They were 1.0 and 0.6 -
+  // swell1's values from BEFORE T547 lowered the bias to 0.68 - and the
+  // mismatch did not warn, it just quietly stopped delivering: MEASURED on
+  // the shipped Beat source, damp1:lowMid spans 0.152..0.327, so the radius
+  // spans 0.870..1.088 and the old "(inR - 1.0) / 0.6" yielded fromAudio
+  // 0.000..0.147 - CLAMPED FLAT AT ZERO for most of every beat. The eight
+  // post-processing pairs kept reacting, so the picture still moved and the
+  // severed kernel looked like a style choice. Retune swell1 and you MUST
+  // retune these in the same commit.
   let pin = p.position;
   let inR = max(1.0e-4, length(pin));
-  let fromAudio = clamp((inR - 1.0) / 0.6, 0.0, 1.0);
-  let drift = 0.30 + 0.28 * sin(t * 0.093);
-  let drive = clamp(fromAudio + drift, 0.0, 1.35);
+  let fromAudio = clamp((inR - 0.68) / 1.25, 0.0, 1.0);
+  // SILENCE HAS TO BE SILENT (T554, V477 in the kernel rather than in the
+  // value chain). This was "0.30 + 0.28 * sin(...)": with no audio at all
+  // "drive" still sat a third of the way up its range and swept 0.02..0.58
+  // over a 67-second cycle, which is most of the lobes-to-filaments
+  // crossfade happening on its own. The bias is the rest state, so it comes
+  // down to near zero - but not TO zero: a completely frozen rest state is
+  // its own failure (V427), and this keeps a slow shimmer under the
+  // rotation and the breath while leaving the EXTENT to the audio.
+  let drift = 0.05 + 0.04 * sin(t * 0.093);
+  let drive = clamp(fromAudio + drift, 0.0, 1.1);
 
   var s = normalize(pin);
 
@@ -3912,7 +3932,21 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let breath = 0.05 * sin(t * 0.60) + 0.03 * sin(t * 1.03 + 1.3);
   let amp = 0.24 + 0.32 * drive;
 
-  let rad = 1.0 + breath + amp * field + 0.055 * ripple * (0.25 + drive);
+  // T554 — THE EXTENT, and it is the term that was missing. The base here was
+  // a CONSTANT 1.0: "drive" moved "amp" and crossfaded lobes into creases, so
+  // the audio changed the creature's ROUGHNESS and CHARACTER and its SIZE
+  // never moved at all. No retune of the value chain could reach it, because
+  // there was nothing in the arithmetic for a retune to scale.
+  //
+  // Calibrated against the two ends rather than picked: the slope puts a LOUD
+  // passage back at the extent the constant 1.0 used to hold permanently, so
+  // nothing is lost at the top - the creature still fills the frame when the
+  // music is loud, it simply no longer does so in silence. MEASURED (99% of
+  // the luminance mass, as a fraction of half-frame-height): silence 0.47,
+  // Beat between hits 0.50, Beat on a hit 0.58, a loud passage 0.72. It was
+  // 0.71..0.72 at ALL FOUR before.
+  let core = 0.55 + 0.62 * drive;
+  let rad = core + breath + amp * field + 0.055 * ripple * (0.25 + drive);
   let p3 = s * rad * 0.90;
 
   let dcam = 4.5;
@@ -3931,11 +3965,12 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  * as the definition of the bar.
  *
  * A luminous organism turning in the dark: sixty-five thousand additive points on a sphere
- * that the audio pulls between two entirely different characters. Quiet, it is soft lobes
- * breathing — a slow deep-blue mass. Loud, the same points snap into RIDGED FILAMENTS, the
- * silhouette twists like taffy, orange crests light along the fastest creases and a cyan
- * frost picks out only the sharpest. Bloom, a seven-stop grade, trails and a 29-second hue
- * drift sit on top. Nothing about it is subtle and nothing about it is arbitrary.
+ * that the audio pulls between two entirely different characters. Quiet, it CONTRACTS to a
+ * small dim knot of soft lobes breathing. Loud, it throws itself outward and the same
+ * points snap into RIDGED FILAMENTS, the silhouette twists like taffy, orange crests light
+ * along the fastest creases and a cyan frost picks out only the sharpest. Bloom, a
+ * seven-stop grade, trails and a 29-second hue drift sit on top. Nothing about it is subtle
+ * and nothing about it is arbitrary.
  *
  * **Read this file before writing another example.** Eight ideas do the work, and none of
  * them is "add more nodes":
@@ -3967,10 +4002,16 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  * ## 3. GAIN AND BIAS PER BAND, NOT ONE REACTIVITY KNOB
  *
  * Eight `valueMath` multiply→add pairs, each mapping ONE band to ONE property with its own
- * scale and offset — `high` × 20 + 0.1 into the cyan band's gain is a completely different
- * curve from `level` × 0.95 + 0.62 into the trail persistence, and it has to be. A single
+ * scale and offset — `high` × 6 + 0.15 into the cyan band's gain is a completely different
+ * curve from `level` × 0.30 + 0.62 into the trail persistence, and it has to be. A single
  * master gain makes everything move together, which reads as one thing pumping. One
  * `valueLag` at 0.09 s sits between the audio and all eight, so nothing jitters.
+ *
+ * SEVEN of the eight land on a post-processing parameter and take effect directly. The
+ * eighth, `swell1`, is different in kind and T554 is the bill for not noticing: it drives
+ * the point generator's RADIUS, which exists only so the kernel can divide it back out and
+ * recover the band. That makes it a TRANSPORT with a decoder at the far end, and a
+ * transport whose two constants are duplicated in a WGSL string is a coupling no gate sees.
  *
  * ## 4. LAYERED POST, EACH STAGE DOING ONE JOB
  *
@@ -4007,6 +4048,31 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  * `valueSwitch` (T508) — index 0 plays on open with no asset, index 1 is your file. Same
  * treatment as E24, and for the same reason: two value sources on one port would merge and
  * one of them would silently vanish (§V457).
+ *
+ * ## What T554 changed: the audio finally moves the creature's SIZE
+ *
+ * The owner: *"when there's no source input or very low levels I'd expect the corona to
+ * collapse further inwards and vice versa."* Three defects, all in the kernel, and none of
+ * them reachable by retuning a value node:
+ *
+ * 1. **The extent was a CONSTANT.** `rad` started from a literal `1.0`. Audio moved `amp`
+ *    and crossfaded lobes into creases, so it owned the creature's ROUGHNESS and CHARACTER
+ *    and never its SIZE. A `core` term that rests at 0.55 and travels with `drive` is the
+ *    missing arithmetic; the slope is set so a loud passage lands where the constant used
+ *    to sit, which means the collapse is bought at no cost to the peak.
+ * 2. **Silence was not silent.** `drift` was `0.30 + 0.28·sin(t·0.093)`, so with no audio
+ *    at all `drive` sat a third of the way up its range and swept a 67-second sine across
+ *    most of the lobes→filaments crossfade. That is §V477 — bias is the rest state — living
+ *    in a WGSL string rather than in the value chain where T547 could see it. Now
+ *    `0.05 + 0.04·sin`: a shimmer, not a performance.
+ * 3. **The decoder had drifted off the encoder.** See the kernel comment: T547 lowered
+ *    `swell1`'s bias and the kernel kept subtracting the old one, which clamped the Beat
+ *    source's contribution flat at zero for most of every beat. Nothing warned, because the
+ *    other seven pairs went on reacting and the picture went on moving.
+ *
+ * The general lesson, and it is why this belongs in the calibration artefact: **a value
+ * chain can only retune what the shader already varies.** Before reaching for gains and
+ * biases, check that the quantity you want to move is a term in the arithmetic at all.
  *
  * Already clean and deliberately left alone: the kernel reads `ctx.absTime`, so the
  * rotation survives a timeline lap, and the LFO is free-running (§V436, B98).
@@ -4079,9 +4145,12 @@ const coronaDocument = document(
 
       // ---- the body ----------------------------------------------------------------
       /* `radius` is the ONLY drivable number that reaches a point kernel, so the owner used
-         it as the audio's way in: lowMid maps to radius 1.0..1.95, the kernel divides the
+         it as the audio's way in: lowMid maps to radius 0.68..1.93, the kernel divides the
          length straight back out, and what survives is a 0..1 CONTROL rather than a scale.
-         The audio therefore changes the creature's CHARACTER, not its size. */
+         T554 NOTE: because the kernel un-does this mapping exactly, this pair is a pure
+         TRANSPORT — its gain and bias cancel and cannot change the look. Every extent and
+         character decision lives in the kernel. What the pair still owes is the range check
+         (it drives a declared parameter) and AGREEMENT with the kernel's two constants. */
       node("gen", "pointGenerator", [-1240, 0], {
         shape: "sphere", cols: 256, rows: 256, count: CORONA_POINTS,
         radius2: 0.25, sizeX: 2, sizeY: 2, sizeZ: 2,

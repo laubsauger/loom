@@ -1,11 +1,11 @@
 # E31 — Corona
 
 A luminous organism turning in the dark. Sixty-five thousand additive points on a sphere
-that the sound pulls between two entirely different characters: quiet, it is soft lobes
-breathing, a slow deep-blue mass; loud, the same points snap into ridged **filaments**, the
-silhouette twists like taffy, orange crests light along the creases and a cyan frost picks
-out only the sharpest tips. Bloom, a seven-stop grade, trails, and a hue that takes
-twenty-nine seconds to go anywhere.
+that the sound pulls between two entirely different characters: quiet, it **contracts** to a
+small dim knot of soft lobes breathing; loud, it **throws itself outward** and the same
+points snap into ridged **filaments**, the silhouette twists like taffy, orange crests light
+along the creases and a cyan frost picks out only the sharpest tips. Bloom, a seven-stop
+grade, trails, and a hue that takes twenty-nine seconds to go anywhere.
 
 **This is the owner's own working file, adopted as an example and as the definition of the
 bar.** If you are about to build an example, read this one first — not for the picture, for
@@ -76,7 +76,7 @@ own scale and offset:
 
 | pair | band | × | + | drives |
 | --- | --- | --- | --- | --- |
-| `swell1` | lowMid | 1.25 | 0.68 | `gen1.radius` — the creature's character |
+| `swell1` | lowMid | 1.25 | 0.68 | `gen1.radius` — a **transport** into the kernel |
 | `glow1` | low | 1.8 | 0.45 | bloom gain |
 | `dot1` | level | 2.2 | 1.2 | body point size |
 | `heat1` | low | 2.2 | 0.25 | orange band gain |
@@ -141,6 +141,66 @@ A rest value at the top of its range is a still image with jitter, and the audio
 meaning anything. Check the rest state on the **Beat** source, not just on a loud track —
 the Beat is what most people see first.
 
+### …and a value chain can only retune what the shader already VARIES (T554)
+
+The owner came back: *"when there's no source input or very low levels I'd expect the
+corona to collapse further inwards and vice versa."* Retuning `swell1` again would not have
+moved it one pixel, and the reason is worth more than the fix.
+
+**The extent was a constant.** The kernel's radius began at a literal `1.0`:
+
+```wgsl
+let rad = 1.0 + breath + amp * field + 0.055 * ripple * (0.25 + drive);
+```
+
+`drive` moved `amp` and crossfaded the smooth lobes into the ridged creases, so the audio
+owned the creature's **roughness and character** — its **size never moved at all**. Measured
+across a whole beat, 99% of the luminance mass sat between 0.711 and 0.723 of half-frame-
+height: a 1.7% swing, which is nothing. There was no gain anywhere in the graph that could
+reach it, because there was no term in the arithmetic for a gain to scale. The fix is one
+line, and it is arithmetic rather than tuning:
+
+```wgsl
+let core = 0.55 + 0.62 * drive;
+let rad = core + breath + amp * field + 0.055 * ripple * (0.25 + drive);
+```
+
+The slope is calibrated so a **loud passage lands where the constant used to sit**. The
+collapse costs the peak nothing — the creature still fills the frame when the music is
+loud, it simply stops doing so in silence:
+
+| | r99 (fraction of half-height) | before |
+| --- | --- | --- |
+| silence, no source | **0.47** | 0.72 |
+| Beat, between hits | **0.50** | 0.71 |
+| Beat, on a hit | **0.58** | 0.72 |
+| a loud passage | **0.72** | 0.72 |
+
+**Silence was not silent.** `drift` was `0.30 + 0.28·sin(t·0.093)`, so with no audio
+connected at all `drive` still sat a third of the way up its range and swept a 67-second
+sine across most of the lobes→filaments crossfade. That is the bias-is-the-rest-state
+disease again, hiding **inside a WGSL string** where the value-chain retune above could not
+see it. Now `0.05 + 0.04·sin(t·0.093)`: enough shimmer that a silent frame is not frozen —
+the rotation and the breath are still running (§V427) — and no more.
+
+**And the decoder had drifted off the encoder.** `swell1` drives `gen1.radius` purely so the
+kernel can divide it back out and recover the band:
+
+```wgsl
+let fromAudio = clamp((inR - 0.68) / 1.25, 0.0, 1.0);   // swell1's bias and gain
+```
+
+Those two constants **are** `swell1`'s bias and gain, written out a second time in a string
+no typechecker reads. When the retune above lowered the bias from 1.0 to 0.68, the kernel
+kept subtracting 1.0. On the Beat source `damp1:lowMid` spans 0.152…0.327, so the radius
+spans 0.870…1.088 and the old expression yielded `fromAudio` of 0.000…0.147 — **clamped flat
+at zero for most of every beat.** The audio had almost stopped reaching the kernel, and
+nothing warned, because the other seven pairs went on driving the post chain and the picture
+went on moving. A severed input looks exactly like a style choice.
+
+**Seven of the eight pairs land on a parameter and are done. The eighth is a transport with
+a decoder at the far end.** If you build one of these, say so where both ends can see it.
+
 ## 4. Layered post, each stage doing one job
 
 Bloom (`blur 34` → `level` → `add`), grade (`lookup` ← a seven-stop `ramp`), two highlight
@@ -199,6 +259,15 @@ thing is `beat1`, deliberately: it stands in for a track, so bar one lands on th
 - **It gets boring after a minute** → `drift1.frequency` went up. 0.035 Hz is the number.
 - **It is bright and busy from the first frame and the beat does nothing** → a bias crept
   back up. Rest low and travel (§V477); check `swell1` and `grade1` first.
+- **The creature is the same SIZE loud and quiet** → the kernel's `core` term went back to a
+  constant, or `drift`'s bias climbed and is drowning the audio. Measure it rather than
+  squinting: 99% of the luminance mass should sit near 0.47 of half-frame-height in silence
+  and near 0.72 at a loud passage.
+- **The picture still reacts but the SHAPE does not** → the kernel's `(inR - 0.68) / 1.25`
+  fell out of step with `swell1`'s `× 1.25 + 0.68`. Those four numbers are one decision
+  written in two places; they always move together. Symptom on the Beat source is the
+  telling one, because `lowMid` there only reaches 0.33: a bias that is too high clamps
+  `fromAudio` to zero for most of the beat and the post chain hides it.
 - **The image stops decaying and blows out to white** → `trailg1`'s gain went back up and
   persistence is pinning at 1.0.
 - **A `parameter.range` problem in the problems pane** → a gain/bias pair overshot its
@@ -211,6 +280,14 @@ thing is `beat1`, deliberately: it stands in for a track, so bar one lands on th
 
 Rendered on Dawn at 1280×720 and inspected at frames 300 and 900 (§V383), through the
 corrected harness (V470 — the earlier one double-encoded and read a stop and a half pale).
+
+T554 re-ran it at **both ends**, which is the pass a single frame cannot do: silence, the
+Beat between hits, the Beat on a hit, and a loud passage fed through the frame driver's
+audio seam. The contrast is the deliverable, so it has to be looked at as a pair. Silent, it
+is a small contracted knot, dim and orange-blue, with the rotation and the breath the only
+motion. Loud, it is half again as wide, cyan and magenta filaments blazing off a white core.
+Between hits on the Beat it visibly draws back in. At 220 px in the gallery it still reads
+as a luminous creature, with more black around it than before — which is the point.
 
 **Beauty (§V420).** **Ships**, and it is the best frame in the set. Filaments and frost
 against black, real depth from three readings of one cloud, and nothing in it looks
