@@ -127,6 +127,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",
   },
   {
+    name: "createInferenceSources",
+    reason:
+      "T715 Phase 0 — built BEFORE its consumer, deliberately and with the semantics gated first (§V585/§V586), because two model nodes built on an unstated async contract is the failure the phase exists to prevent. It cannot be composed yet and wiring it would be ceremony: it needs an `InferenceRunner`, and there is no model, no backend ladder and no worker until T381/T382/T383; and `track` reads nodes declaring an `infer:` external texture, of which the shipped catalogue has NONE — the stand-in lives in `tests/fixtures/inference-stand-in.ts` on purpose. A hook constructed now would track an empty set forever, run nothing and publish nothing, which satisfies §V205's letter while being exactly the dead service it exists to catch. REMOVE THIS ENTRY when T385's depth node lands: that is the commit where the app hook becomes real, and the seam is gated meanwhile by `inference-sources.test.ts` (13), `inference-splice.test.ts` (6) against the real compiler, and `inference-feed.gpu.test.ts` (8) on Dawn.",
+  },
+  {
     name: "createNodeFrameRng",
     reason: "Same — a primitive over `createRng`, used by the compiler's seeding helpers.",
   },
