@@ -1,5 +1,6 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * Selection as a bus command (§V29, §V52).
@@ -29,14 +30,8 @@ export interface SelectionHolder {
   current: SelectionHandlers | null;
 }
 
-const holders = new WeakMap<object, SelectionHolder>();
-
 export function selectionHolderFor(bus: ShaderloomBus): SelectionHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: SelectionHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<SelectionHandlers>(bus, "graph.selectAll");
 }
 
 export function registerSelectionCommands(bus: ShaderloomBus): SelectionHolder {

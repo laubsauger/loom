@@ -1,6 +1,7 @@
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `project.compile` on the bus (T174, T220, §V39, §V29).
@@ -78,14 +79,8 @@ export interface CompileHolder {
   current: CompileHandlers | null;
 }
 
-const holders = new WeakMap<object, CompileHolder>();
-
 export function compileHolderFor(bus: ShaderloomBus): CompileHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: CompileHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<CompileHandlers>(bus, "project.compile");
 }
 
 const NO_COMPILER: RuntimeDiagnostic = {

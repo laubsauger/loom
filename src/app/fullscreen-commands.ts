@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
  * Fullscreen the viewer, as a bus command (T394, §V29, §V52, §V78, §V307).
@@ -59,14 +60,13 @@ export interface FullscreenHolder {
   app: FullscreenSurface | null;
 }
 
-const holders = new WeakMap<object, FullscreenHolder>();
-
 export function fullscreenHolderFor(bus: ShaderloomBus): FullscreenHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: FullscreenHolder = { current: null, app: null };
-  holders.set(bus, holder);
-  return holder;
+  // `sharedForBus`, not `commandHolder`: this holder has TWO slots (T551 added `app`
+  // beside the viewer's `current`), so the `{ current }` wrapper does not describe it.
+  return sharedForBus<FullscreenHolder>(bus, "view.toggleFullscreen", () => ({
+    current: null,
+    app: null,
+  }));
 }
 
 const NO_SURFACE = (target: FullscreenTarget) => ({

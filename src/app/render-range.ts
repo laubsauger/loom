@@ -5,6 +5,7 @@ import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
 import { createFrameRecorder } from "@runtime/export/index.ts";
 import type { RecordingReport, VideoEncoderSink } from "@runtime/export/index.ts";
 import type { TransportHandlers } from "./transport-commands.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * RENDERING THE TIMELINE OUT (T433, §V48, §V170).
@@ -67,14 +68,8 @@ export interface RenderRangeHolder {
   current: RenderRangeHandlers | null;
 }
 
-const holders = new WeakMap<object, RenderRangeHolder>();
-
 export function renderRangeHolderFor(bus: ShaderloomBus): RenderRangeHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: RenderRangeHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<RenderRangeHandlers>(bus, "export.renderRange");
 }
 
 /**

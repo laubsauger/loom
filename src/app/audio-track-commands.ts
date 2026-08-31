@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * Arming, disarming and saving an audio feature track (T452, §V352).
@@ -56,14 +57,8 @@ export interface AudioTrackHolder {
   current: AudioTrackHandlers | null;
 }
 
-const holders = new WeakMap<object, AudioTrackHolder>();
-
 export function audioTrackHolderFor(bus: ShaderloomBus): AudioTrackHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: AudioTrackHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<AudioTrackHandlers>(bus, "audio.toggleTrackRecording");
 }
 
 const NO_SESSION = {

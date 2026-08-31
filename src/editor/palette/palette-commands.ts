@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * The palette's own bus commands (§V52, §V29).
@@ -29,14 +30,8 @@ export interface PaletteHolder {
   current: PaletteHandlers | null;
 }
 
-const holders = new WeakMap<object, PaletteHolder>();
-
 export function paletteHolderFor(bus: ShaderloomBus): PaletteHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: PaletteHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<PaletteHandlers>(bus, "ui.openCommandPalette");
 }
 
 /** Registers `ui.openCommandPalette` / `ui.closeCommandPalette` once per bus. */

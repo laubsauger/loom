@@ -7,6 +7,7 @@ import { PREVIEW_LENSES } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewLensKind } from "@runtime/previews/index.ts";
 import { previewViewStoreFor } from "./preview-view-store.ts";
 import type { PreviewViewStore } from "./preview-view-store.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `preview.setView` / `preview.resetView` — the ONE way a preview's lens changes (T336).
@@ -66,14 +67,8 @@ export interface PreviewViewTargetHolder {
   current: NodeId | null;
 }
 
-const holders = new WeakMap<object, PreviewViewTargetHolder>();
-
 export function previewViewTargetFor(bus: ShaderloomBus): PreviewViewTargetHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: PreviewViewTargetHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<NodeId>(bus, `${SET_PREVIEW_VIEW_COMMAND}#target`);
 }
 
 function isLensKind(value: unknown): value is PreviewLensKind {

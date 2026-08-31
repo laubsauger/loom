@@ -1,6 +1,7 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import { SEEK_FRAME_LIMIT } from "@domain/types/graph.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * Transport as a bus command (§V29, §V52, T184).
@@ -91,14 +92,8 @@ export interface TransportHolder {
   current: TransportHandlers | null;
 }
 
-const holders = new WeakMap<object, TransportHolder>();
-
 export function transportHolderFor(bus: ShaderloomBus): TransportHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: TransportHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<TransportHandlers>(bus, "transport.togglePlay");
 }
 
 /**

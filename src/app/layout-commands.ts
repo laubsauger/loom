@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * The shell layout's bus commands (T436, §V78, §V307).
@@ -62,14 +63,8 @@ export interface LayoutCommandHolder {
   current: LayoutHandlers | null;
 }
 
-const holders = new WeakMap<object, LayoutCommandHolder>();
-
 export function layoutCommandHolderFor(bus: ShaderloomBus): LayoutCommandHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: LayoutCommandHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<LayoutHandlers>(bus, OPEN_LAYOUTS_COMMAND);
 }
 
 const NO_SHELL = {

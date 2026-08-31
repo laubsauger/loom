@@ -57,7 +57,7 @@ export interface CommandHolder<T> {
   current: T | null;
 }
 
-type HolderStore = WeakMap<object, Map<string, CommandHolder<unknown>>>;
+type HolderStore = WeakMap<object, Map<string, object>>;
 
 function store(): HolderStore {
   const root = globalThis as unknown as Record<symbol, unknown>;
@@ -69,13 +69,26 @@ function store(): HolderStore {
 }
 
 /**
- * The one holder for `key` on `bus`, whichever copy of whichever module asks.
+ * THE ONE `T` FOR `key` ON `bus`, whichever copy of whichever module asks.
  *
- * `key` is the COMMAND NAME. Two commands on one bus must not share a holder, and using
- * the command name means the key cannot drift from the thing it identifies — there is no
- * second string to keep in agreement.
+ * The primitive, and deliberately shaped around identity rather than around a field
+ * layout: what has to survive a re-executed module is the OBJECT, not its members. That
+ * matters because the modules being converted do not all hold the same thing —
+ * `FullscreenHolder` carries two slots (`current` for the viewer, `app` for the shell,
+ * T551), `state-queries` holds `{ sources }` and never a null, and wave 2's stores hold
+ * subscriber lists. Generalising here rather than reshaping sixteen published holder types
+ * is the difference between a conversion and a refactor of other people's surfaces.
+ *
+ * `create` runs at most once per key per bus, so a caller cannot accidentally reset live
+ * state by asking for its own holder twice.
+ *
+ * ⚠ `key` MUST BE UNIQUE ACROSS EVERY MODULE THAT ASKS. Two modules choosing one key share
+ * one object, and the last surface to mount answers for both — which is a worse failure
+ * than the one this module exists to fix, because it is silent AND wrong rather than
+ * silent and absent. `command-holder.test.ts` asserts that no two of them collide, by
+ * comparing the actual objects rather than by reviewing the strings.
  */
-export function commandHolder<T>(bus: object, key: string): CommandHolder<T> {
+export function sharedForBus<T extends object>(bus: object, key: string, create: () => T): T {
   const byBus = store();
   let byKey = byBus.get(bus);
   if (byKey === undefined) {
@@ -83,8 +96,21 @@ export function commandHolder<T>(bus: object, key: string): CommandHolder<T> {
     byBus.set(bus, byKey);
   }
   const existing = byKey.get(key);
-  if (existing !== undefined) return existing as CommandHolder<T>;
-  const holder: CommandHolder<T> = { current: null };
-  byKey.set(key, holder);
-  return holder;
+  if (existing !== undefined) return existing as T;
+  const made = create();
+  byKey.set(key, made);
+  return made;
+}
+
+/**
+ * The common case: a `{ current }` slot a mounted surface writes itself into.
+ *
+ * `key` is the COMMAND NAME wherever there is one command, because the bus already
+ * guarantees command names are unique — reusing that is cheaper than minting a second
+ * namespace to police. A module registering SEVERAL commands from one holder names its
+ * primary one, and a module holding two distinct things (`preview-view-command` holds a
+ * target holder beside its store) suffixes the second, since both are on one bus.
+ */
+export function commandHolder<T>(bus: object, key: string): CommandHolder<T> {
+  return sharedForBus<CommandHolder<T>>(bus, key, () => ({ current: null }));
 }

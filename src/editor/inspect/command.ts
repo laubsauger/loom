@@ -1,5 +1,6 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.showNodeInfo` — the ONE command every route to the node info popup names
@@ -56,14 +57,8 @@ export interface NodeInfoHolder {
   current: NodeInfoHandlers | null;
 }
 
-const holders = new WeakMap<object, NodeInfoHolder>();
-
 export function nodeInfoHolderFor(bus: ShaderloomBus): NodeInfoHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: NodeInfoHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<NodeInfoHandlers>(bus, SHOW_NODE_INFO_COMMAND);
 }
 
 export function registerNodeInfoCommand(bus: ShaderloomBus): NodeInfoHolder {

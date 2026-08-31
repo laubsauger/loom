@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `node.openViewer` — point the viewer at a node's output (T440, §V354).
@@ -48,14 +49,8 @@ export interface ViewerHolder {
   current: ViewerHandlers | null;
 }
 
-const holders = new WeakMap<object, ViewerHolder>();
-
 export function viewerHolderFor(bus: ShaderloomBus): ViewerHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: ViewerHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<ViewerHandlers>(bus, "node.openViewer");
 }
 
 const NO_OUTPUT = { nodeId: null, portId: null };

@@ -2,6 +2,7 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, NodeId, Revision } from "../types/ids.ts";
 import type { ProjectDocument } from "../types/graph.ts";
 import type { ShaderloomBus } from "./bus.ts";
+import { sharedForBus } from "./command-holder.ts";
 
 /**
  * Bus queries for state the graph document does not hold (T175, §V39).
@@ -139,14 +140,14 @@ interface SourceHolder {
   sources: StateSources;
 }
 
-const holders = new WeakMap<object, SourceHolder>();
-
 function holderFor(bus: ShaderloomBus): SourceHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: SourceHolder = { sources: {} };
-  holders.set(bus, holder);
-  return holder;
+  /*
+   * `sharedForBus`, not `commandHolder`: this holds `{ sources }` rather than a nullable
+   * `current`, and it backs several QUERIES rather than one command — so the key is the
+   * module's own name. It is still the same bug: a re-executed copy minted a second
+   * `sources` object and every query then read an empty one.
+   */
+  return sharedForBus<SourceHolder>(bus, "domain/state-queries", () => ({ sources: {} }));
 }
 
 /** What a bus currently has a source for. Exposed for the composition root and tests. */

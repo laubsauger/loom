@@ -1,5 +1,6 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `project.save` and `project.open` (T43, T139, §V29).
@@ -95,14 +96,8 @@ export interface ProjectHolder {
   current: ProjectHandlers | null;
 }
 
-const holders = new WeakMap<object, ProjectHolder>();
-
 export function projectHolderFor(bus: ShaderloomBus): ProjectHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: ProjectHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<ProjectHandlers>(bus, SAVE_PROJECT_COMMAND);
 }
 
 const NO_SURFACE: RuntimeDiagnostic = {

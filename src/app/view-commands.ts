@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `view.frameAll` / `view.frameSelected` — TouchDesigner's `F` and `f` (T430, §V354).
@@ -59,14 +60,8 @@ export interface ViewHolder {
   current: ViewHandlers | null;
 }
 
-const holders = new WeakMap<object, ViewHolder>();
-
 export function viewHolderFor(bus: ShaderloomBus): ViewHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: ViewHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<ViewHandlers>(bus, "view.frameAll");
 }
 
 const NO_CANVAS = {

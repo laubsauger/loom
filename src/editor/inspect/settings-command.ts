@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.openSettings` — the ONE command that opens project settings (T359, §V307, §V52).
@@ -45,14 +46,8 @@ export interface ProjectSettingsHolder {
   current: ProjectSettingsHandlers | null;
 }
 
-const holders = new WeakMap<object, ProjectSettingsHolder>();
-
 export function projectSettingsHolderFor(bus: ShaderloomBus): ProjectSettingsHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: ProjectSettingsHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<ProjectSettingsHandlers>(bus, OPEN_SETTINGS_COMMAND);
 }
 
 export function registerProjectSettingsCommand(bus: ShaderloomBus): ProjectSettingsHolder {

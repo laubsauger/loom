@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.openHelp` — the one command that opens the help panel (T200, §V52, §V90).
@@ -45,14 +46,8 @@ export interface HelpHolder {
   current: HelpHandlers | null;
 }
 
-const holders = new WeakMap<object, HelpHolder>();
-
 export function helpHolderFor(bus: ShaderloomBus): HelpHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: HelpHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<HelpHandlers>(bus, OPEN_HELP_COMMAND);
 }
 
 export function registerHelpCommand(bus: ShaderloomBus): HelpHolder {
