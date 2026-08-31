@@ -395,7 +395,7 @@
         },
         "position": {
           "x": -1620,
-          "y": 620
+          "y": 600
         },
         "type": "audioPattern"
       },
@@ -423,7 +423,7 @@
         },
         "position": {
           "x": -1620,
-          "y": 260
+          "y": 100
         },
         "type": "movieFileIn"
       },
@@ -437,7 +437,7 @@
         },
         "position": {
           "x": -580,
-          "y": 700
+          "y": 880
         },
         "type": "valueLimit"
       },
@@ -451,7 +451,7 @@
         },
         "position": {
           "x": -840,
-          "y": 700
+          "y": 880
         },
         "type": "valueMath"
       },
@@ -465,7 +465,7 @@
         },
         "position": {
           "x": -1100,
-          "y": 700
+          "y": 880
         },
         "type": "valueMath"
       },
@@ -523,7 +523,7 @@
         "parameters": {
           "extend": "hold",
           "filter": "gaussian",
-          "size": 34
+          "size": 16
         },
         "position": {
           "x": -60,
@@ -536,10 +536,10 @@
         "id": "haze",
         "label": "haze1",
         "parameters": {
-          "blacklevel": 0.58,
-          "brightness": 0.95,
+          "blacklevel": 0,
+          "brightness": 1.1,
           "contrast": 1,
-          "gamma1": 1,
+          "gamma1": 0.4,
           "invert": 0,
           "opacity": 1,
           "whitelevel": 1
@@ -560,7 +560,7 @@
         },
         "position": {
           "x": -580,
-          "y": 880
+          "y": 1140
         },
         "type": "valueLimit"
       },
@@ -574,7 +574,7 @@
         },
         "position": {
           "x": -840,
-          "y": 880
+          "y": 1140
         },
         "type": "valueMath"
       },
@@ -588,7 +588,7 @@
         },
         "position": {
           "x": -1100,
-          "y": 880
+          "y": 1140
         },
         "type": "valueMath"
       },
@@ -717,12 +717,12 @@
         "id": "petal",
         "label": "petal1",
         "parameters": {
-          "maximum": 12,
+          "maximum": 11,
           "minimum": 3
         },
         "position": {
           "x": -580,
-          "y": 520
+          "y": 620
         },
         "type": "valueLimit"
       },
@@ -736,7 +736,7 @@
         },
         "position": {
           "x": -840,
-          "y": 520
+          "y": 620
         },
         "type": "valueMath"
       },
@@ -750,7 +750,7 @@
         },
         "position": {
           "x": -1100,
-          "y": 520
+          "y": 620
         },
         "type": "valueMath"
       },
@@ -811,7 +811,7 @@
         },
         "position": {
           "x": -1360,
-          "y": 620
+          "y": 600
         },
         "type": "valueLag"
       },
@@ -828,7 +828,7 @@
         },
         "position": {
           "x": -1620,
-          "y": 440
+          "y": 340
         },
         "type": "lfo"
       },
@@ -839,12 +839,12 @@
         "parameters": {
           "amp": 2.6,
           "aspectcorrect": true,
-          "exp": 1,
+          "exp": 1.2,
           "gain": 0.58,
           "harmon": 4,
           "mono": true,
           "offset": 0,
-          "period": 0.115,
+          "period": 0.16,
           "rough": 0.5,
           "s4d": 1,
           "seed": 5,
@@ -855,7 +855,7 @@
         },
         "position": {
           "x": -1620,
-          "y": 40
+          "y": -200
         },
         "type": "noise"
       },
@@ -864,13 +864,13 @@
         "id": "trim",
         "label": "trim1",
         "parameters": {
-          "blacklevel": 0,
+          "blacklevel": 0.015,
           "brightness": 1,
-          "contrast": 1.06,
+          "contrast": 1.15,
           "gamma1": 1,
           "invert": 0,
           "opacity": 1,
-          "whitelevel": 1.18
+          "whitelevel": 1.05
         },
         "position": {
           "x": 460,

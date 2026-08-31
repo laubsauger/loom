@@ -114,9 +114,24 @@
     "range": 0.739,
     "f0max": 0.7611
   },
+  "E37-Sirocco.loom.json": {
+    "motion": 0.04189,
+    "range": 0.4129,
+    "f0max": 0.3781
+  },
+  "E39-Rosette.loom.json": {
+    "motion": 0.10256,
+    "range": 0.9703,
+    "f0max": 1
+  },
   "E4-Bloom.loom.json": {
     "motion": 0.05572,
     "range": 0.9989,
+    "f0max": 1
+  },
+  "E40-Wake.loom.json": {
+    "motion": 0.08784,
+    "range": 0.989,
     "f0max": 1
   },
   "E5-Kaleidoscope.loom.json": {

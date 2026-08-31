@@ -51,6 +51,30 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
     reason: "the file half of the same generalisation.",
   },
   {
+    doc: "E39-Rosette.md",
+    type: "audioFileIn",
+    reason:
+      "T729: an INSTRUCTION to the reader — swap the deterministic pattern for a real track. The graph ships `audioPattern` so it plays on open (§V363); a shipped `audioFileIn` would carry an asset the file cannot hold (§V363's session-only assets).",
+  },
+  {
+    doc: "E39-Rosette.md",
+    type: "webcam",
+    reason:
+      "T729: named as the third Switch branch the reader can add, generalising E27's understudy pattern (§V411). Not in this graph — a live camera opens the device on load, which an example must not do.",
+  },
+  {
+    doc: "E40-Wake.md",
+    type: "audioFileIn",
+    reason:
+      "T729: the same instruction as E39's, and it matters more here because the gain pairs are fitted to a measured field and the doc says which band drives what.",
+  },
+  {
+    doc: "E40-Wake.md",
+    type: "webcam",
+    reason:
+      "T729: named as the branch to add, and this is the graph where it pays off most — frame differencing on a live camera is what the technique was invented for. Still not shipped, for E27's reason.",
+  },
+  {
     doc: "E29-Descent.md",
     type: "audioFileIn",
     reason:

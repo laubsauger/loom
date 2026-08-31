@@ -132,6 +132,15 @@ describe("examples with a temporal loop", () => {
       // T660: Corona's sibling keeps the same shape — trails close on the final graded
       // output (`feedback1`, `source: "null2"`), §V471.5's idea inherited intact.
       "E35-Nova-Torus.loom.json",
+      // T729: E40's loop is the set's sixth use and the first fed by a DIFFERENCE rather
+      // than by a picture — only what moved between now and six frames ago ever enters it,
+      // so the still bed underneath never smears. Like E34 it therefore does NOT close on
+      // the final output (§V471.5's shape): it closes on `born1`, upstream of the Lookup,
+      // because grading BEFORE the accumulator makes the loop sum coloured light and the
+      // head pin white, while grading after it makes the palette a map of trail AGE.
+      // §V694 was found here: a Level with a positive blacklevel inside this loop drove
+      // empty pixels NEGATIVE in rgba16float and cancelled the base layer downstream.
+      "E40-Wake.loom.json",
       // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
       // moving point reads as a moving point rather than a stipple — the loop's fourth
       // use in the set, after a smear, a simulation and a zoom. Its persistence is a
