@@ -28,6 +28,7 @@ import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
 import { projectFps, projectRange } from "@domain/types/graph.ts";
 import { ComponentBar } from "./component-bar.tsx";
 import { useComponentEditing } from "./use-component-editing.ts";
+import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -724,8 +725,11 @@ export function App({
       // and is nonetheless not reproducible had no channel at all before this.
       ...renderRange.diagnostics,
     );
-    return list;
+    // T599: the message boundary — any quoted node id becomes the node's display label,
+    // so the pane says `blur1` like every other surface, not the minted receipt.
+    return humanizeDiagnostics(list, compile.graph);
   }, [
+    compile.graph,
     autosave.diagnostics,
     compile.diagnostics,
     frameLoop.diagnostics,

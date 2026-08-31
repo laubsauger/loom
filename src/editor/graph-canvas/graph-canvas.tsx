@@ -460,6 +460,12 @@ export function GraphCanvas({
     [bus, invocation],
   );
 
+  // T599: the node's "+N more" chip — same door as everything else, a bus command
+  // (§V29, §V307), so the palette and a keybinding get it for free.
+  const showProblems = useCallback(() => {
+    void bus.execute("ui.showProblems", {}, invocation);
+  }, [bus, invocation]);
+
   /**
    * T415/B60 — the inline name editor's two halves.
    *
@@ -502,6 +508,7 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
+      showProblems,
     }),
     [
       bus.store,
@@ -516,6 +523,7 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
+      showProblems,
     ],
   );
 

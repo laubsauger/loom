@@ -579,6 +579,21 @@ export function restoreRole(layout: PaneTreeLayout, role: PaneRole): PaneTreeLay
   return first === undefined ? layout : addTab(layout, first.id, role);
 }
 
+/**
+ * T599: bring a role's tab to the FRONT — restore it if closed, then make it the
+ * active tab of its leaf. The "+N more" chip on a node runs `ui.showProblems`, and a
+ * door that opens onto a tab hidden behind another tab is not a door. A floating tab
+ * is already its own window and is left where it is.
+ */
+export function revealRole(layout: PaneTreeLayout, role: PaneRole): PaneTreeLayout {
+  if (layout.floating.some((tab) => tab.role === role)) return layout;
+  const restored = restoreRole(layout, role);
+  const leaf = leavesOf(restored.root).find((entry) => entry.tabs.some((tab) => tab.role === role));
+  const key = leaf?.tabs.find((tab) => tab.role === role)?.key;
+  if (leaf === undefined || key === undefined) return restored;
+  return selectTab(restored, leaf.id, key);
+}
+
 /** A floating tab's home: the first leaf carrying its role, else the first leaf —
  *  role-shaped, where the flat model's homes were zone-shaped. */
 export function homeLeafFor(layout: PaneTreeLayout, role: PaneRole): PaneKey | null {

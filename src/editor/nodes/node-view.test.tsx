@@ -40,6 +40,8 @@ interface Options {
   selection?: readonly string[];
   /** T457: the REAL catalogue, for nodes whose behaviour keys off their true type. */
   registry?: ReturnType<NodeRegistry["view"]>;
+  /** T599: spy for the "+N more" chip's door. */
+  showProblems?: () => void;
 }
 
 /**
@@ -78,6 +80,7 @@ function mountNode(type: string, options: Options = {}) {
     },
     ...(options.renderPreview === undefined ? {} : { renderPreview: options.renderPreview }),
     ...(options.renderControls === undefined ? {} : { renderControls: options.renderControls }),
+    ...(options.showProblems === undefined ? {} : { showProblems: options.showProblems }),
   });
 
   const view = render(
@@ -507,5 +510,40 @@ describe("T462 (§V85) — a scene payload node owns a preview slot", () => {
     // finding `pointset-preview-slot.test.tsx` records). Sensitivity is proven the other
     // way instead — drop `scene` from `PREVIEWABLE_PORT_KINDS` and the geometry case
     // here goes red, along with the compiler sweep and the layout model's agreement gate.
+  });
+});
+
+describe("T599 — a node with more diagnostics than its one line owns a door to the rest", () => {
+  it("shows an honest '+N more' that fronts the problems pane, and only when there IS more", async () => {
+    const opened: number[] = [];
+    const { runtime, nodeId, container } = mountNode("test.blur", {
+      graph: graphWith("test.blur"),
+      showProblems: () => opened.push(1),
+    });
+
+    // One diagnostic: the message line suffices, no chip.
+    await publish(runtime, nodeId, {
+      status: "error",
+      errorCount: 1,
+      warningCount: 0,
+      message: 'Node "blur1" broke.',
+    });
+    expect(container.textContent).not.toContain("more");
+
+    // Five diagnostics: one message line, four unreachable — the chip is the door.
+    await publish(runtime, nodeId, {
+      status: "error",
+      errorCount: 2,
+      warningCount: 3,
+      message: 'Node "blur1" broke.',
+    });
+    const chip = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("+4 more"),
+    );
+    expect(chip).toBeDefined();
+    fireEvent.click(chip as HTMLButtonElement);
+    expect(opened).toHaveLength(1);
+    // `nodrag`: the click is a click, never the start of a node drag (§V20).
+    expect(chip?.className).toContain("nodrag");
   });
 });

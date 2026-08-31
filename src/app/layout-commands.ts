@@ -37,17 +37,25 @@ declare module "@domain/types/commands.ts" {
       input: Record<string, never>;
       output: { reset: boolean };
     };
+    /** Bring the problems pane to the front — restore its tab if closed (T599). */
+    "ui.showProblems": {
+      input: Record<string, never>;
+      output: { shown: boolean };
+    };
   }
 }
 
 export const OPEN_LAYOUTS_COMMAND = "ui.openLayouts";
 export const RESET_LAYOUT_COMMAND = "layout.reset";
+export const SHOW_PROBLEMS_COMMAND = "ui.showProblems";
 
 export interface LayoutHandlers {
   /** Shows the layout menu. */
   open(): void;
   /** Restores the built-in default arrangement. */
   reset(): void;
+  /** Brings the problems tab to the front (T599: the node's "+N more" door). */
+  showProblems(): void;
 }
 
 export interface LayoutCommandHolder {
@@ -113,6 +121,26 @@ export function registerLayoutCommands(bus: ShaderloomBus): LayoutCommandHolder 
       return { status: "applied" as const, revision, output: { reset: true } };
     },
     rejectionOutput: () => ({ reset: false }),
+  });
+
+  bus.registerCommand({
+    name: SHOW_PROBLEMS_COMMAND,
+    description: "Show the problems pane — bring its tab to the front, restoring it if closed.",
+    handler: (_input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) {
+        return {
+          status: "rejected" as const,
+          revision,
+          diagnostics: [NO_SHELL],
+          output: { shown: false },
+        };
+      }
+      if (context.dryRun) return { status: "applied" as const, revision, output: { shown: false } };
+      holder.current.showProblems();
+      return { status: "applied" as const, revision, output: { shown: true } };
+    },
+    rejectionOutput: () => ({ shown: false }),
   });
 
   return holder;

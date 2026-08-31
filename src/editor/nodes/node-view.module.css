@@ -435,8 +435,14 @@
 /* ---- diagnostics ------------------------------------------------------ */
 
 .message {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2);
+  /*
+   * T599: NO bottom padding on the clamped box. `overflow: hidden` clips at the
+   * PADDING box, and line-clamp only ellipsizes — the third line still lays out and
+   * painted, cut in half, inside the old `padding-bottom`. Bottom spacing is margin
+   * now (margins are outside the clip), so the clamp's cut and the visible edge agree.
+   */
+  padding: var(--space-2) var(--space-3) 0;
   border-top: var(--border-hairline);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
@@ -447,4 +453,26 @@
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+/* T599: the honest "+N more" — a real button that fronts the problems pane. */
+.moreDiagnostics {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2);
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-ui);
+  color: var(--status-color);
+  opacity: 0.75;
+}
+
+.moreDiagnostics:hover {
+  opacity: 1;
+  text-decoration: underline;
 }

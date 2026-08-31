@@ -33,6 +33,7 @@ import {
   spawnEdge,
   spawnableEdges,
   selectTab,
+  revealRole,
   setSplitRatio,
   splitLeaf,
   DEFAULT_PANE_TREE,
@@ -339,8 +340,14 @@ export function AppShell({
   const runtime = useContext(AppRuntimeContext);
   const bus = runtime?.bus ?? null;
   const commandHandlers = useMemo(
-    () => ({ open: () => onMenuOpenChange(true), reset: () => restoreLayout(DEFAULT_LAYOUT_ID) }),
-    [onMenuOpenChange, restoreLayout],
+    () => ({
+      open: () => onMenuOpenChange(true),
+      reset: () => restoreLayout(DEFAULT_LAYOUT_ID),
+      // T599: the node's "+N more" chip lands here — front the problems tab, restoring
+      // it first if the user closed it.
+      showProblems: () => applyLayout((layout) => revealRole(layout, "problems")),
+    }),
+    [applyLayout, onMenuOpenChange, restoreLayout],
   );
   useEffect(() => {
     if (bus === null) return;

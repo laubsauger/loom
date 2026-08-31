@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { compileGraph } from "@compiler/index.ts";
+import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
 import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
@@ -236,7 +237,8 @@ function publishNodeStatus(
     if (diagnostic.severity === "error") entry.errors += 1;
     else if (diagnostic.severity === "warning") entry.warnings += 1;
     else continue;
-    // Highest severity wins the one line the node badge can show.
+    // Highest severity wins the one line the node badge can show. (Already label-
+    // resolved: the T599 boundary rewrote the whole array before it reached here.)
     if (entry.message === null || diagnostic.severity === "error") entry.message = diagnostic.message;
   }
 
@@ -507,13 +509,18 @@ export function useGraphCompile(
       };
     }
 
-    const { compiled, diagnostics } = compileSafely(
+    const { compiled, diagnostics: rawDiagnostics } = compileSafely(
       graph,
       runtime,
       capabilities,
       { channels },
       previewSinks === undefined ? undefined : scheduledPreviews,
     );
+    // T599: the message boundary. Every UI surface reads THIS array (problems pane,
+    // inspector, shader pane, node badges), so quoted node ids resolve to display
+    // labels here, once — never in the 90-odd sites that mint the messages. The
+    // compiled plan's own diagnostics stay raw: agents address nodes by id.
+    const diagnostics = [...humanizeDiagnostics(rawDiagnostics, graph)];
     cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
     lastCompile.current = {
       graph,

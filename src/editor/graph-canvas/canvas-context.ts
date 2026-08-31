@@ -64,6 +64,11 @@ export interface GraphCanvasContextValue {
    * §V325 collision refusal happen in the one place they already happen.
    */
   renameNode: (nodeId: NodeId, label: string) => Promise<CommandResult<"node.rename">>;
+  /**
+   * T599: brings the problems pane to the front — the node's "+N more" chip, when a
+   * node carries more diagnostics than its one message line can show.
+   */
+  showProblems: () => void;
   /** Preview slot. Track J (T34) fills it; until then the region stays empty. */
   renderPreview?: ((nodeId: NodeId) => ReactNode) | undefined;
   /**

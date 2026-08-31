@@ -59,6 +59,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     renameNode,
     renderPreview,
     renderControls,
+    showProblems,
   } = useGraphCanvas();
   // Own slice only (§V16): another node's edit does not re-render this one.
   const node = useStore(store, (state) => state.graph.nodes[id]);
@@ -362,6 +363,26 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             {message}
           </p>
         )}
+        {/*
+          T599: the node shows ONE message; with several diagnostics the rest were
+          unreachable from the node entirely. An honest count, and a real door — the
+          chip runs `ui.showProblems`, which fronts the problems tab (restoring it if
+          closed). `nodrag` so the click is a click, not a node drag (§V20).
+        */}
+        {message !== null &&
+        message !== undefined &&
+        snapshot.errorCount + snapshot.warningCount > 1 ? (
+          <button
+            type="button"
+            className={cx("nodrag", styles.moreDiagnostics)}
+            onClick={(event) => {
+              event.stopPropagation();
+              showProblems();
+            }}
+          >
+            +{snapshot.errorCount + snapshot.warningCount - 1} more — open problems
+          </button>
+        ) : null}
       </div>
     </>
   );

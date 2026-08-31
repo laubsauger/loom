@@ -19,6 +19,7 @@ import {
   moveTab,
   repairPaneTree,
   restoreRole,
+  revealRole,
   selectTab,
   setSplitRatio,
   shellLayoutFromTree,
@@ -181,6 +182,32 @@ describe("the split/close algebra", () => {
     expect(findLeaf(moved, "leaf-rightBottom")?.tabs).toEqual([]);
     // A move to nowhere leaves the layout untouched — never a dropped tab.
     expect(moveTab(tree, inspector.key, "leaf-ghost")).toBe(tree);
+  });
+
+  it("revealRole fronts the problems tab, restores it when closed, leaves a float alone (T599)", () => {
+    const tree = DEFAULT_PANE_TREE;
+    const problems = allTabs(tree).find((tab) => tab.role === "problems")!;
+    const leafOf = (layout: typeof tree) =>
+      leavesOf(layout.root).find((leaf) => leaf.tabs.some((tab) => tab.role === "problems"))!;
+
+    // Hidden behind a sibling tab: reveal makes it the leaf's active tab.
+    const shader = leafOf(tree).tabs.find((tab) => tab.role === "shader")!;
+    const buried = selectTab(tree, leafOf(tree).id, shader.key);
+    const fronted = revealRole(buried, "problems");
+    expect(findLeaf(fronted, leafOf(fronted).id)?.active).toBe(problems.key);
+
+    // Closed entirely: reveal restores it AND fronts it — a door onto a closed pane
+    // that merely restored-in-the-back would still not show the diagnostics.
+    const closed = closeTab(tree, problems.key);
+    expect(allTabs(closed).some((tab) => tab.role === "problems")).toBe(false);
+    const restored = revealRole(closed, "problems");
+    const restoredLeaf = leafOf(restored);
+    expect(restoredLeaf.tabs.some((tab) => tab.role === "problems")).toBe(true);
+    expect(restoredLeaf.active).toBe(restoredLeaf.tabs.find((tab) => tab.role === "problems")!.key);
+
+    // Floating: already its own window — nothing to change.
+    const floated = floatTab(tree, problems.key);
+    expect(revealRole(floated, "problems")).toBe(floated);
   });
 
   it("selectTab activates only a tab the leaf actually holds", () => {

@@ -26,3 +26,4 @@ export type {
   HistoryOutcome,
   UndoGroup,
 } from "./store.ts";
+export { humanizeDiagnosticText, humanizeDiagnostics, nodeDisplayName } from "./diagnostic-names.ts";
