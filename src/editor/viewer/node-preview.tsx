@@ -119,15 +119,14 @@ export function NodePreview({ output, state, facts, lens }: NodePreviewProps) {
           {factsText === null ? null : <span className={styles.slotFacts}>{factsText}</span>}
         </span>
       )}
-      {marker === null ? null : (
-        <span
-          className={styles.lensMarker}
-          data-testid={`preview-lens-${previewKey(output)}`}
-          title={`Preview filtered: ${marker} — the node's output is unchanged`}
-        >
-          {marker}
-        </span>
-      )}
+      {/*
+        T685 — the lens marker USED to be drawn here, over the picture, and that is exactly
+        where it could not be seen: the shared preview surface composites the live tile
+        across this whole box (§V633), so §V70a's "this is not the node's output" warning
+        was legible only on previews that were not live. It is in the node header now
+        (`nodes/node-view.tsx`, `previewLens`). What stays here is the ACCESSIBLE name
+        below, which never depended on paint.
+      */}
     </div>
   );
 }

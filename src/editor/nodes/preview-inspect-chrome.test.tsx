@@ -8,7 +8,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import { createSequentialIdFactory } from "@domain/graph/ids.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import { CanvasFixture, fixtureContext, installFlowStubs, nodeProps } from "@editor/graph-canvas/testing.tsx";
-import type { PreviewInspectSource } from "@editor/graph-canvas/canvas-context.ts";
+import type { PreviewInspectSource, PreviewLensSource } from "@editor/graph-canvas/canvas-context.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { NodeView } from "./node-view.tsx";
 
@@ -94,7 +94,12 @@ const GRAPH: GraphDocument = {
   groups: {},
 };
 
-function mount(options: { orbitable: boolean }) {
+/** A stand-in for the pane's lens store — the two calls the header's mark uses. */
+function lensSource(marker: string | null): PreviewLensSource {
+  return { marker: () => marker, subscribe: () => () => {} };
+}
+
+function mount(options: { orbitable: boolean; lens?: string | null }) {
   const store = createGraphStore({ ids: createSequentialIdFactory("n"), initialGraph: GRAPH });
   const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
   const source = inspectSource();
@@ -105,6 +110,7 @@ function mount(options: { orbitable: boolean }) {
     // node renders a preview REGION at all, since that region is what a tile covers.
     renderPreview: () => <div data-testid={`preview-body-${NODE}`}>tile goes here</div>,
     previewInspect: () => (options.orbitable ? source : null),
+    previewLens: () => lensSource(options.lens ?? null),
   });
   render(
     <CanvasFixture value={value}>
@@ -182,5 +188,31 @@ describe("T675 — the inspection control is outside the tile it drives", () => 
     // And the other three are untouched, which is why this control is LAST in the row:
     // it is the one that comes and goes, so it must not move the ones that do not.
     expect(screen.getByLabelText("Preview")).toBeTruthy();
+  });
+});
+
+describe("T685 — the LENS warning is outside the tile too, and it mattered more", () => {
+  /**
+   * §V70a: a preview shown through a lens is not the node's output, and a display
+   * transform that outlives the inspection hides WHICH NODE IS WRONG. So the warning has
+   * to be visible on a live, filtered preview — and drawn in the tile's corner it was
+   * visible on exactly the previews that were NOT live. The toggle's version of §V633 cost
+   * a control; this one cost a true statement about what you were looking at.
+   */
+  it("renders in the header, never inside the preview slot", () => {
+    mount({ orbitable: false, lens: "A +1 EV" });
+    const mark = screen.getByTestId(`preview-lens-${NODE}`);
+    const slot = screen.getByTestId(`node-preview-${NODE}`);
+
+    expect(mark.textContent).toBe("A +1 EV");
+    expect(slot.contains(mark)).toBe(false);
+    expect(mark.closest("header")).not.toBeNull();
+  });
+
+  it("says nothing at all while the picture is unaltered (§V90)", () => {
+    // The quiet case has to stay quiet, or the warning stops meaning anything: a mark on
+    // every node is a mark on no node.
+    mount({ orbitable: false, lens: null });
+    expect(screen.queryByTestId(`preview-lens-${NODE}`)).toBeNull();
   });
 });

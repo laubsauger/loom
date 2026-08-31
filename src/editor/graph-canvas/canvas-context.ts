@@ -113,6 +113,29 @@ export interface GraphCanvasContextValue {
    * has nothing to inspect (§V527's store never enters the document, whichever it is).
    */
   previewInspect?: ((nodeId: NodeId) => PreviewInspectSource | null) | undefined;
+  /**
+   * T685 — the preview LENS marker, moved out of the tile for §V633's reason.
+   *
+   * It is §V70a's warning: a preview being shown through a lens is NOT the node's real
+   * output, and a display transform that outlives the inspection hides which node is
+   * wrong. It was drawn in the tile's bottom-right corner, which means it was occluded by
+   * the composited tile — invisible EXACTLY when the preview is live, which is the one
+   * case it exists to warn about. Strictly worse than the toggle's version of the same
+   * bug: a control you cannot find is a nuisance, a warning you cannot see is a wrong
+   * answer nobody is told about.
+   *
+   * A source rather than a rendered node, for the same reason `previewInspect` is one:
+   * the marker has to change when the lens does, and `@editor/viewer` imports this
+   * package, so its type cannot be named here.
+   */
+  previewLens?: ((nodeId: NodeId) => PreviewLensSource | null) | undefined;
+}
+
+/** T685: the marker text for this node's lens, and a subscription to changes in it. */
+export interface PreviewLensSource {
+  /** Null while the picture is unaltered — the quiet case stays quiet (§V90). */
+  marker(nodeId: NodeId): string | null;
+  subscribe(nodeId: NodeId, listener: () => void): () => void;
 }
 
 /** T675: the slice of the pane's inspection store the node header needs. */

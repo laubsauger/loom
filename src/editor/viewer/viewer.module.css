@@ -60,27 +60,14 @@
  * numbers arguing about the loudness of something that was not on screen. It now lives in
  * the node header (`nodes/node-view.tsx`, `previewInspect`), where nothing composites.
  *
- * `.lensMarker` below has the SAME defect and is NOT fixed here: it is the §V70a warning
- * that a preview is filtered, and it is occluded exactly when the preview is live. It
- * needs the same move and its own decision about where in the chrome it belongs.
+ * `.lensMarker` had the SAME defect and moved in the same pass (T685): it is §V70a's
+ * warning that a preview is filtered, and drawn here it was occluded exactly when the
+ * preview was live — the one case it exists to warn about.
  */
 
 /*
- * Lens marker (T336). Present ONLY while a preview is being shown through something other
- * than the plain picture, so the quiet case stays quiet (§V90) and an altered one cannot be
- * mistaken for the node's real output (§V70a's reason, one level in).
+ * T685 — the lens marker's rules are gone from here for §V633's reason, the same one that
+ * moved the inspect toggle: nothing painted inside this box survives the composited tile.
+ * It is `.lensMark` in `nodes/node-view.module.css` now, in the node header.
  */
-.lensMarker {
-  position: absolute;
-  right: var(--space-1);
-  bottom: var(--space-1);
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-  color: var(--signal);
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: var(--tracking-mono);
-  line-height: 1.4;
-  pointer-events: none;
-}
+

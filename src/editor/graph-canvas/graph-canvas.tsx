@@ -49,6 +49,7 @@ import type {
   GraphDispatch,
   NodeToggleCommand,
   PreviewInspectSource,
+  PreviewLensSource,
 } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
 import type { LoomEdge, LoomNode } from "./derive.ts";
@@ -90,6 +91,8 @@ export interface GraphCanvasProps {
   /** T675: the preview inspection control's source — see `canvas-context.ts` for why the
       control is in the node HEADER and not on the tile it drives. */
   previewInspect?: (nodeId: NodeId) => PreviewInspectSource | null;
+  /** T685: the preview lens marker's source — §V70a's warning, out from under the tile. */
+  previewLens?: (nodeId: NodeId) => PreviewLensSource | null;
   /** Patch outcomes, so a rejected gesture can surface instead of failing silently. */
   onPatchResult?: (result: CommandResult<"graph.applyPatch">) => void;
   /**
@@ -117,6 +120,7 @@ export function GraphCanvas({
   renderPreview,
   renderControls,
   previewInspect,
+  previewLens,
   onPatchResult,
   onSelectionChange,
   underlay,
@@ -531,6 +535,7 @@ export function GraphCanvas({
       renderPreview,
       renderControls,
       previewInspect,
+      previewLens,
       showProblems,
       diveIn,
       components,
@@ -549,6 +554,7 @@ export function GraphCanvas({
       renderPreview,
       renderControls,
       previewInspect,
+      previewLens,
       showProblems,
       diveIn,
       components,

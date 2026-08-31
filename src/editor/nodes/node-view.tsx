@@ -20,7 +20,11 @@ import { previewablePort } from "@domain/graph/previewable.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
-import type { NodeToggleCommand, PreviewInspectSource } from "@editor/graph-canvas/canvas-context.ts";
+import type {
+  NodeToggleCommand,
+  PreviewInspectSource,
+  PreviewLensSource,
+} from "@editor/graph-canvas/canvas-context.ts";
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import type { LoomNode } from "@editor/graph-canvas/derive.ts";
 import type { NodeRunStatus } from "@editor/graph-canvas/node-runtime.ts";
@@ -63,6 +67,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     renderPreview,
     renderControls,
     previewInspect,
+    previewLens,
     showProblems,
     diveIn,
     components,
@@ -191,6 +196,8 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    * The composition root answers; this file does not infer 3D-ness from a node type.
    */
   const inspect = hasPreview ? (previewInspect?.(id) ?? null) : null;
+  /** T685: §V70a's "this picture is not the node's output" warning, same seam shape. */
+  const lens = hasPreview ? (previewLens?.(id) ?? null) : null;
   const agent = snapshot.agent;
 
   /**
@@ -350,6 +357,7 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
               count. The statement lives in the node info popup, which is per-node and on
               demand. The badge's own `stale` prop stays — it derives from a real field the
               compile pipeline sets, and unwired is not the same as vacuous. */}
+          {lens === null ? null : <PreviewLensMark nodeId={id} source={lens} />}
           <ShaderStatusBadge
             errorCount={snapshot.errorCount}
             warningCount={snapshot.warningCount}
@@ -699,6 +707,42 @@ function PreviewInspectToggle({ nodeId, source }: { nodeId: NodeId; source: Prev
       pressed={mode === "adjustable"}
       onToggle={() => source.setMode(nodeId, mode === "adjustable" ? "home" : "adjustable")}
     />
+  );
+}
+
+/**
+ * T685 — the preview LENS marker, in the header rather than on the picture.
+ *
+ * §V70a's argument is why it exists at all: a display transform that outlives the
+ * inspection HIDES WHICH NODE IS WRONG, so a preview being shown through a lens has to
+ * say so. §V633 is why it is here: it used to sit in the tile's bottom-right corner, which
+ * the shared preview surface composites over — so the warning was legible only on a
+ * preview that was NOT live, i.e. only when there was no altered picture to warn about.
+ * That is the worst possible place for it, and it is not a matter of degree: the toggle's
+ * version of this bug cost the user a control, this one cost them a true statement.
+ *
+ * BEFORE the status badge and the timing, not after: this is a claim about what the
+ * picture IS, and it should be read before anything about how the picture is doing. It
+ * renders only while a lens is set (§V90 — the quiet case stays quiet), and its arrival is
+ * the direct consequence of an act the user just performed, so the reflow is legible
+ * rather than mysterious.
+ */
+function PreviewLensMark({ nodeId, source }: { nodeId: NodeId; source: PreviewLensSource }) {
+  const read = useCallback(() => source.marker(nodeId), [source, nodeId]);
+  const marker = useSyncExternalStore(
+    useCallback((listener: () => void) => source.subscribe(nodeId, listener), [source, nodeId]),
+    read,
+    read,
+  );
+  if (marker === null) return null;
+  return (
+    <span
+      className={styles.lensMark}
+      data-testid={`preview-lens-${nodeId}`}
+      title={`Preview filtered: ${marker} — the node's output is unchanged`}
+    >
+      {marker}
+    </span>
   );
 }
 

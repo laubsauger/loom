@@ -236,6 +236,25 @@
   color: var(--text-dim);
 }
 
+/*
+ * T685 — the preview LENS mark, in the header (§V633: nothing inside the tile is legible
+ * over it). Same rhythm as `.timing` beside it — mono, micro, tabular — because they are
+ * the same kind of thing: a small true statement about the picture. It is toned
+ * `--signal` rather than `--text-dim` because it is a WARNING, not a readout: the picture
+ * this node is showing is not the node's output (§V70a).
+ */
+.lensMark {
+  flex: 0 0 auto;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  line-height: 1.4;
+}
+
 .toggle {
   flex: 0 0 auto;
   width: 14px;

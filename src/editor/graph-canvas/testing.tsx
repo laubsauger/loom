@@ -190,6 +190,7 @@ export interface FixtureContextOptions {
   renderPreview?: GraphCanvasContextValue["renderPreview"];
   renderControls?: GraphCanvasContextValue["renderControls"];
   previewInspect?: GraphCanvasContextValue["previewInspect"];
+  previewLens?: GraphCanvasContextValue["previewLens"];
 }
 
 export function fixtureContext(options: FixtureContextOptions): {
@@ -219,6 +220,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       renderPreview: options.renderPreview,
       renderControls: options.renderControls,
       previewInspect: options.previewInspect,
+      previewLens: options.previewLens,
     },
   };
 }

@@ -16,7 +16,7 @@ import { useKeymapPane } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
-import { NodePreviewSlot, createPreviewOrbitStore, createPreviewSlotBounds, usePreviewViews } from "@editor/viewer/index.ts";
+import { NodePreviewSlot, createPreviewOrbitStore, createPreviewSlotBounds, lensMarker, usePreviewViews } from "@editor/viewer/index.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
@@ -210,6 +210,23 @@ function GraphPaneInner({
     (nodeId: NodeId) => (orbitableNodes.has(nodeId) ? previewOrbits : null),
     [orbitableNodes, previewOrbits],
   );
+
+  /**
+   * T685 — the lens marker's source for the node HEADER, §V633's move applied to §V70a's
+   * warning. The marker text is derived here rather than in the node view so that
+   * `NodeView` keeps its zero imports from the preview system; `lensMarker` is the same
+   * function the tile used to call, so there is one spelling of what a lens is called.
+   */
+  const lensSource = useMemo(
+    () => ({
+      marker: (nodeId: NodeId) => lensMarker(previewViews.get(nodeId)),
+      subscribe: (nodeId: NodeId, listener: () => void) => previewViews.subscribe(nodeId, listener),
+    }),
+    [previewViews],
+  );
+  // One source for every node — it is keyed by nodeId on every call, so a per-node object
+  // would only churn `useSyncExternalStore`'s subscription on each render.
+  const previewLens = useCallback(() => lensSource, [lensSource]);
 
   /**
    * One seam, two surfaces (T185, T344).
@@ -502,6 +519,7 @@ function GraphPaneInner({
           runtime={nodeRuntime}
           renderPreview={renderPreview}
           previewInspect={previewInspect}
+          previewLens={previewLens}
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
           onPatchResult={onPatchResult}

@@ -41,12 +41,26 @@ describe("lensMarker", () => {
 });
 
 describe("NodePreview", () => {
-  it("shows no marker on an unfiltered preview", () => {
+  /**
+   * T685 — the lens MARK moved to the node header, so what is asserted here changed.
+   *
+   * It used to be a chip in the tile's bottom-right corner. That corner is inside the rect
+   * the shared preview surface composites the live tile at (§V633), so §V70a's warning —
+   * this picture is NOT the node's output — was legible only while the preview was not
+   * live, which is the one case it does not need to warn about. Its visual half now lives
+   * in `nodes/node-view.tsx` and is gated by `preview-inspect-chrome.test.tsx`.
+   *
+   * The ACCESSIBLE half stays here and is asserted here, because it never depended on
+   * paint: a screen reader reads the slot's own name whatever is composited over it, and
+   * that name is the one channel through which the lens survived the bug.
+   */
+  it("says nothing about a lens on an unfiltered preview", () => {
     render(<NodePreview output={output} state={{ kind: "live" }} />);
     expect(screen.queryByTestId("preview-lens-n1:out")).toBeNull();
+    expect(screen.getByRole("img").getAttribute("aria-label")).not.toContain("lens");
   });
 
-  it("marks a filtered preview, and says so to a screen reader too (§V19)", () => {
+  it("names the lens to a screen reader, and paints no chip over the picture (§V19)", () => {
     render(
       <NodePreview
         output={output}
@@ -54,13 +68,14 @@ describe("NodePreview", () => {
         lens={{ lens: "b", exposureStops: 0, tonemap: false }}
       />,
     );
-    expect(screen.getByTestId("preview-lens-n1:out").textContent).toBe("B");
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("lens B");
+    // The negative half, and it is the fix: nothing is drawn inside the tile any more.
+    expect(screen.queryByTestId("preview-lens-n1:out")).toBeNull();
   });
 
-  it("keeps marking a preview that is suspended — the lens outlives the picture", () => {
-    // The trap this exists for is a lens left on and forgotten, and a scrolled-off preview is
-    // the easiest way to forget one.
+  it("keeps naming the lens on a SUSPENDED preview — the lens outlives the picture", () => {
+    // The trap this exists for is a lens left on and forgotten, and a scrolled-off preview
+    // is the easiest way to forget one.
     render(
       <NodePreview
         output={output}
@@ -69,6 +84,6 @@ describe("NodePreview", () => {
         lens={{ lens: "a", exposureStops: 0, tonemap: false }}
       />,
     );
-    expect(screen.getByTestId("preview-lens-n1:out").textContent).toBe("A");
+    expect(screen.getByRole("img").getAttribute("aria-label")).toContain("lens A");
   });
 });
