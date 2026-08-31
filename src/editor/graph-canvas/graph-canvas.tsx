@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import "./xyflow-theme.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -43,6 +43,12 @@ import {
 import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
 import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { NodeSearch } from "@editor/library/node-search.tsx";
+import {
+  OPEN_NODE_SEARCH_COMMAND,
+  registerNodeSearchCommand,
+} from "@editor/library/node-search-command.ts";
+import { resolveMenuTarget } from "@editor/menus/target.ts";
 import { parameterDependencies } from "@domain/graph/parameter-dependencies.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type {
@@ -202,6 +208,9 @@ export function GraphCanvas({
   const onInit = useCallback((instance: ReactFlowInstance<LoomNode, LoomEdge>) => {
     flowRef.current = instance;
   }, []);
+
+  /** The canvas element — the double-click boundary and the viewport-centre fallback. */
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * Live drag positions. React Flow reports a position on every move and then a final
@@ -546,6 +555,79 @@ export function GraphCanvas({
     [bus, invocation],
   );
 
+  /**
+   * T709 — the node browser, and the double-click that opens it.
+   *
+   * State is the GRAPH position only. The client anchor is derived from it at render
+   * time, so "the browser opened at the cursor" and "the node landed at the cursor" are
+   * one number used twice rather than two paths that must be kept in agreement.
+   */
+  const [nodeSearchAt, setNodeSearchAt] = useState<{ x: number; y: number } | null>(null);
+
+  const openNodeSearch = useCallback((position: { x: number; y: number } | undefined) => {
+    const flow = flowRef.current;
+    if (flow === null) return null;
+    let target = position;
+    if (target === undefined) {
+      // No cursor — a bare `tab`. The viewport centre is the honest stand-in.
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect === undefined) return null;
+      target = flow.screenToFlowPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      });
+    }
+    // §V66: an unlaid-out pane projects to NaN, and a NaN position reaches the document.
+    if (!(Number.isFinite(target.x) && Number.isFinite(target.y))) return null;
+    const settled = { x: target.x, y: target.y };
+    setNodeSearchAt(settled);
+    return settled;
+  }, []);
+
+  const nodeSearch = useMemo(() => registerNodeSearchCommand(bus), [bus]);
+  useEffect(() => {
+    nodeSearch.current = { open: openNodeSearch };
+    return () => {
+      if (nodeSearch.current?.open === openNodeSearch) nodeSearch.current = null;
+    };
+  }, [nodeSearch, openNodeSearch]);
+
+  /**
+   * The gesture. It does not open anything itself — it names the command, the way the
+   * middle-click node-info watcher does (§V78, §V307), so the palette and the `tab`
+   * binding stay the same door.
+   *
+   * `resolveMenuTarget` is what decides "this landed on the background": it reads React
+   * Flow's own DOM markers, so a double-click on a node still means dive-in or rename
+   * (node-view.tsx already owns those and stops propagation) and never opens a browser
+   * on top of the node you just double-clicked.
+   */
+  const onCanvasDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const element = canvasRef.current;
+      if (element === null) return;
+      const start = event.target instanceof Element ? event.target : null;
+      const resolved = resolveMenuTarget(start, { fallback: "canvas", boundary: element });
+      if (resolved === null || resolved.surface !== "canvas") return;
+      const flow = flowRef.current;
+      if (flow === null) return;
+      const position = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      void bus.execute(OPEN_NODE_SEARCH_COMMAND, { position }, invocation);
+    },
+    [bus, invocation],
+  );
+
+  const addSearchedNode = useCallback(
+    (type: string, position: { x: number; y: number }) => {
+      setNodeSearchAt(null);
+      dispatch(
+        [{ op: "addNode", ref: "$added", type, position: { x: position.x, y: position.y } }],
+        "Add node",
+      );
+    },
+    [dispatch],
+  );
+
   const reportEnter = useCallback(
     (_event: unknown, node: LoomNode) => onHoveredNodeChange?.(node.id),
     [onHoveredNodeChange],
@@ -596,7 +678,12 @@ export function GraphCanvas({
 
   return (
     <GraphCanvasContext.Provider value={context}>
-      <div className={styles.canvas} data-testid="graph-canvas">
+      <div
+        className={styles.canvas}
+        data-testid="graph-canvas"
+        ref={canvasRef}
+        onDoubleClick={onCanvasDoubleClick}
+      >
         <ReactFlow<LoomNode, LoomEdge>
           nodes={viewNodes}
           edges={viewEdges}
@@ -643,6 +730,16 @@ export function GraphCanvas({
           {underlay}
           <ReferenceLines dependencies={dependencies} />
         </ReactFlow>
+        {nodeSearchAt === null ? null : (
+          <NodeSearch
+            definitions={registry.list()}
+            /* Projected back from the graph position the browser will place at, so the
+               surface cannot appear anywhere other than where its node will land. */
+            anchor={flowRef.current?.flowToScreenPosition(nodeSearchAt) ?? nodeSearchAt}
+            onPick={(type) => addSearchedNode(type, nodeSearchAt)}
+            onClose={() => setNodeSearchAt(null)}
+          />
+        )}
       </div>
     </GraphCanvasContext.Provider>
   );

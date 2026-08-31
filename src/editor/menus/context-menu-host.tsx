@@ -178,6 +178,23 @@ export function ContextMenuHost({
 }: ContextMenuHostProps) {
   const run = useRunCommand();
   const hostRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Whether the menu is closing because an item was CHOSEN, as opposed to dismissed.
+   *
+   * B (found by T709): a menu row that opens a surface opened nothing at all. Measured on
+   * "Search nodes…" and reproduced on T145's "Info", which has been broken this way since
+   * it shipped — the command ran, the handler was reached with the right input, the
+   * surface set its state, and the popover was gone within a frame. Radix restores focus
+   * to the trigger as the menu closes, that restoration lands on the graph pane AFTER the
+   * new popover has mounted, and the popover's own dismissable layer reads it as focus
+   * moving outside itself and closes.
+   *
+   * So: when the user PICKED something, the menu must not yank focus back — whatever the
+   * command did now owns it. When the menu was dismissed with Escape or a click away,
+   * nothing else took focus and returning it to the trigger is exactly right (§V19), so
+   * that path is untouched.
+   */
+  const selectionRan = useRef(false);
   const [opened, setOpened] = useState<{ target: MenuTarget; context: MenuContext } | null>(null);
 
   const onContextMenu = useCallback(
@@ -229,6 +246,7 @@ export function ContextMenuHost({
             context: opened.context,
             hasCommand: (command) => bus.hasCommand(command),
             run: (command, input) => {
+              selectionRan.current = true;
               void run(command, input);
             },
           },
@@ -250,6 +268,10 @@ export function ContextMenuHost({
         <ContextMenuContent
           aria-label={`${schema.surface} menu`}
           data-menu-surface={schema.surface}
+          onCloseAutoFocus={(event) => {
+            if (selectionRan.current) event.preventDefault();
+            selectionRan.current = false;
+          }}
         >
           <MenuRuntimeContext.Provider value={runtime}>
             {schema.entries.map(renderEntry)}

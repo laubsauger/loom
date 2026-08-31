@@ -80,6 +80,12 @@ const APP_REGISTERED = [
   // document state, so the domain bus does not own it. Live, not planned: the menu row
   // that names it opens a real editor.
   "ui.beginRename",
+  // T709: registered by the mounted graph canvas (`src/editor/library/node-search-command.ts`),
+  // for the same reason as `ui.beginRename` — whether a browser is OPEN, and at which
+  // point, is view state and produces no patch, so the domain bus does not own it. The
+  // node it creates is a separate `graph.applyPatch`, and that is the one that undoes.
+  // Live, not planned: "Search nodes…", `tab` and the background double-click all open it.
+  "ui.openNodeSearch",
   // T423: registered by the mounted canvas chrome — `graph.diveIn`/`graph.jumpUp` by
   // `registerComponentNavigationCommands` (`src/app/component-navigation.ts`) and
   // `ui.createComponent` by `ComponentBar` (`src/app/component-bar.tsx`). WHICH component
@@ -122,11 +128,11 @@ describe("what the menus promise but nobody has built", () => {
     // would mean the walk broke rather than that the menus got finished.
     // T463 displaced the planned "Set colour…" row (still keymap-reachable) and B84 built
     // the canvas menu's "Layout", so the menus promised four unbuilt commands rather than
-    // six; T423 built "Dive in" and it is three. The floor tracks that number down as rows
-    // get built — it is a non-vacuity guard, not a quota, and the day it reaches zero this
-    // assertion should be DELETED along with the disabled-item machinery, not weakened to
-    // `>= 0`.
-    expect(missing.length).toBeGreaterThan(2);
+    // six; T423 built "Dive in" and it is three; T709 built "Search nodes…" and it is two.
+    // The floor tracks that number down as rows get built — it is a non-vacuity guard, not
+    // a quota, and the day it reaches zero this assertion should be DELETED along with the
+    // disabled-item machinery, not weakened to `>= 0`.
+    expect(missing.length).toBeGreaterThan(1);
   });
 
   it("every command it treats as live is really on a bus", () => {

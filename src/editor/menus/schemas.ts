@@ -81,7 +81,10 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
     surface: "canvas",
     entries: [
       { label: "Add node", submenu: addNodeSubmenu(registry) },
-      { command: planned("ui.openNodeSearch"), label: "Search nodes…" },
+      // T709: live since the graph canvas registers it. The row, the `tab` binding and
+      // the background double-click are the same command, so all three open one browser
+      // at one position (§V78, §V307).
+      { command: "ui.openNodeSearch", label: "Search nodes…" },
       { separator: true },
       { command: "graph.paste", label: "Paste" },
       { command: "graph.selectAll", label: "Select all" },
