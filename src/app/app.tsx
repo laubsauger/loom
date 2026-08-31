@@ -49,6 +49,7 @@ import { useAutosave } from "./use-autosave.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
+import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { useAudioInput } from "./use-audio-input.ts";
 import { useAudioTrack } from "./use-audio-track.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -292,6 +293,19 @@ export function App({
    * and the loop that samples hold the same object.
    */
   const pointer = useMemo(() => createPointerSource(), []);
+
+  /**
+   * T551: the whole APP as a fullscreen surface — the owner's "use the whole screen
+   * without the browser bar in the way". The document element IS the app here (this is
+   * the main window; a floated pane fullscreens through its own published viewer
+   * surface, §V97), so no ref plumbing: the shell fills the screen, Escape returns,
+   * and nothing persists — fullscreen is session state, not document state.
+   */
+  const appFullscreenSurface = useCallback(
+    () => (typeof document === "undefined" ? null : document.documentElement),
+    [],
+  );
+  useFullscreenSurface(runtime.bus, appFullscreenSurface, "app");
 
   /**
    * The cook policy, CONSTRUCTED (T326, B32, §V157).

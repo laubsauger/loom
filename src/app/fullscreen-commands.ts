@@ -35,10 +35,13 @@ declare module "@domain/types/commands.ts" {
     /**
      * Toggle, or force with `fullscreen`. The explicit form exists for the same reason
      * `transport.play` does (T292): a caller that cannot see the current state must not
-     * have "make it fullscreen" mean "leave fullscreen".
+     * have "make it fullscreen" mean "leave fullscreen". `target` picks WHICH surface
+     * fills the screen (T551): the viewer's picture (default, T394's behaviour
+     * unchanged), or the whole app shell — the owner's "use the whole screen without
+     * the browser bar in the way". Session state on purpose: nothing here persists.
      */
     "view.toggleFullscreen": {
-      input: { fullscreen?: boolean };
+      input: { fullscreen?: boolean; target?: "viewer" | "app" };
       output: { fullscreen: boolean };
     };
   }
@@ -47,8 +50,13 @@ declare module "@domain/types/commands.ts" {
 /** The element that fills the screen. Read at execute time — the viewer's ref moves. */
 export type FullscreenSurface = () => HTMLElement | null;
 
+export type FullscreenTarget = "viewer" | "app";
+
 export interface FullscreenHolder {
+  /** T394's original slot: the VIEWER surface. Named `current` for its existing callers. */
   current: FullscreenSurface | null;
+  /** T551: the app shell publishes itself here. */
+  app: FullscreenSurface | null;
 }
 
 const holders = new WeakMap<object, FullscreenHolder>();
@@ -56,16 +64,19 @@ const holders = new WeakMap<object, FullscreenHolder>();
 export function fullscreenHolderFor(bus: ShaderloomBus): FullscreenHolder {
   const existing = holders.get(bus);
   if (existing !== undefined) return existing;
-  const holder: FullscreenHolder = { current: null };
+  const holder: FullscreenHolder = { current: null, app: null };
   holders.set(bus, holder);
   return holder;
 }
 
-const NO_SURFACE = {
+const NO_SURFACE = (target: FullscreenTarget) => ({
   severity: "info" as const,
   code: "view.noFullscreenSurface",
-  message: "The viewer is not mounted, so there is no surface to fill the screen with.",
-};
+  message:
+    target === "app"
+      ? "The app shell has not published a fullscreen surface."
+      : "The viewer is not mounted, so there is no surface to fill the screen with.",
+});
 
 const UNSUPPORTED = {
   severity: "warning" as const,
@@ -88,9 +99,11 @@ export function registerFullscreenCommand(bus: ShaderloomBus): FullscreenHolder 
     description: "Fill the screen with the viewer's output, or leave fullscreen.",
     handler: async (input, context) => {
       const revision = context.store.getRevision();
-      const element = holder.current?.() ?? null;
+      const target: FullscreenTarget = input.target ?? "viewer";
+      const surface = target === "app" ? holder.app : holder.current;
+      const element = surface?.() ?? null;
       if (element === null) {
-        return { status: "rejected", revision, diagnostics: [NO_SURFACE], output: { fullscreen: false } };
+        return { status: "rejected", revision, diagnostics: [NO_SURFACE(target)], output: { fullscreen: false } };
       }
 
       // The document that actually CONTAINS the element — a floated viewer's child
@@ -142,15 +155,24 @@ export function registerFullscreenCommand(bus: ShaderloomBus): FullscreenHolder 
  * One hook so the two cannot drift apart — a published surface with no command is a
  * button that does nothing, and a command with no surface is the §V220 shape.
  */
-export function useFullscreenSurface(bus: ShaderloomBus, surface: FullscreenSurface): void {
+export function useFullscreenSurface(
+  bus: ShaderloomBus,
+  surface: FullscreenSurface,
+  target: FullscreenTarget = "viewer",
+): void {
   useEffect(() => {
     const holder = registerFullscreenCommand(bus);
-    holder.current = surface;
+    if (target === "app") holder.app = surface;
+    else holder.current = surface;
     return () => {
       // Only relinquish what is still ours: StrictMode runs mount → cleanup → mount, and
       // a cleanup that clears unconditionally would erase the newer mount's surface
       // (§V334, B51 — the same collision, one file over).
-      if (holder.current === surface) holder.current = null;
+      if (target === "app") {
+        if (holder.app === surface) holder.app = null;
+      } else if (holder.current === surface) {
+        holder.current = null;
+      }
     };
-  }, [bus, surface]);
+  }, [bus, surface, target]);
 }

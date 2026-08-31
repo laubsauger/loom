@@ -397,6 +397,18 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     description: "Fill the screen with the viewer's output. Escape returns.",
   },
   {
+    // T551: the whole APP, browser chrome gone — the owner's "use the whole screen
+    // without the browser bar in the way". `mod+alt+f` sits beside the viewer's
+    // `mod+shift+f`; F11 stays the browser's own key and is not rebindable reliably.
+    id: "view.fullscreenApp",
+    keys: "mod+alt+f",
+    context: "global",
+    command: "view.toggleFullscreen",
+    input: { target: "app" },
+    label: "Fullscreen app",
+    description: "Fill the screen with the whole app. Escape returns.",
+  },
+  {
     id: "runtime.resetFeedback",
     keys: "mod+shift+r",
     context: "global",

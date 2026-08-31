@@ -6,6 +6,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import { DEFAULT_BINDINGS, detectPlatform } from "@editor/keymap/index.ts";
 import { App } from "./app.tsx";
+import { DEFAULT_BINDINGS } from "@editor/keymap/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -252,6 +253,32 @@ describe("T394 — fullscreen the viewer", () => {
     expect(spy.requests, "asked for fullscreen again instead of leaving it").toEqual([surface]);
     expect(childDocument.fullscreenElement).toBeNull();
     runtime.dispose();
+  });
+
+  it("target 'app' fullscreens the DOCUMENT ELEMENT — the whole app, browser bar gone (T551)", async () => {
+    const runtime = await mountApp();
+    await act(async () => {
+      await runtime.bus.execute("view.toggleFullscreen", { target: "app" }, runtime.invocation);
+    });
+    await waitFor(() => expect(spy.requests).toEqual([document.documentElement]));
+    runtime.dispose();
+  });
+
+  it("the DEFAULT target is still the viewer — T394's behaviour is unchanged (T551)", async () => {
+    const runtime = await mountApp();
+    const surface = surfaceElement();
+    await act(async () => {
+      await runtime.bus.execute("view.toggleFullscreen", {}, runtime.invocation);
+    });
+    await waitFor(() => expect(spy.requests).toEqual([surface]));
+    runtime.dispose();
+  });
+
+  it("binds the app target to its own rebindable key (T551, §V307)", () => {
+    const binding = DEFAULT_BINDINGS.find((entry) => entry.id === "view.fullscreenApp");
+    expect(binding?.command).toBe("view.toggleFullscreen");
+    expect(binding?.input).toEqual({ target: "app" });
+    expect(binding?.keys.length).toBeGreaterThan(0);
   });
 
   it("refuses by NAME where the browser has no Fullscreen API (§V288)", async () => {
