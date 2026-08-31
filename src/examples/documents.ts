@@ -4516,7 +4516,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      is a POSITION read off a clock — the one shape that snaps at a timeline lap if it reads
      the wrapping one. On the absolute clock the fract() below is continuous forever: the
      ribs keep coming, a lap does nothing, and an hour behind a set is an hour of tunnel.
-     Deterministic too: absTime is frames-since-transport-start, zeroed at render (T467). */
+     Deterministic too: absTime is SECONDS since transport start (the manifest's own
+     contract - a reader who takes this for a frame count and retunes 0.052 to match
+     reproduces the E35 frozen-clock fault, §V645/§V637), zeroed at render (T467). */
   let depth = fract(rib + ctx.absTime * 0.052);
 
   /* ctx.value1 is the bass (T479): a value write per frame, never a rebuild (§V5). The bore
