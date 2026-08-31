@@ -1867,32 +1867,36 @@ describe("E27 Relief", () => {
 });
 
 /**
- * E33 Obol (T625/T624) — a yin-yang medallion BECOMING goo and back, in an ambient
- * studio, and the first example to switch on the render's ambient occlusion.
+ * E33 Obol (T625/T624, T673, T716) — a yin-yang medallion BECOMING goo and back, in an
+ * ambient studio, and the first example to switch on the render's ambient occlusion.
  *
- * The three claims its `.md` makes that a look pass could not hold onto.
+ * T716 deleted the mass. There is now ONE object — 1728 instanced tiles — and it is the
+ * medallion at one end of the morph and the drop at the other, so every claim below is
+ * about that one system carrying both ends.
+ *
+ * The claims its `.md` makes that a look pass could not hold onto.
  */
 describe("E33 Obol claims", () => {
   const { document, plan } = example("E33-Obol.loom.json");
   const passes = plan.passes as ReadonlyArray<{ id: string; shader?: string; textures?: ReadonlyArray<{ binding: string }> }>;
+  const tiles = () => String((document.graph.nodes["segs"] as GraphNode).parameters["kernel"]);
 
   /**
-   * BECOMING, NOT CROSS-FADING. The claim is structural, not aesthetic: ONE kernel
-   * holds BOTH configurations and mixes them per point by a locally-computed amount.
-   * A cross-fade would be two renders and a blend node, and it would look like two
-   * pictures at 50%. The mix and the per-point front are what make it one object.
+   * BECOMING, NOT CROSS-FADING. The claim is structural, not aesthetic: ONE kernel holds
+   * BOTH configurations and mixes them per element by a locally-computed amount. A
+   * cross-fade would be two renders and a blend node, and it would look like two pictures
+   * at 50%. The mix and the per-element front are what make it one object.
    */
-  it("blends two configurations inside one kernel, by a per-point front", () => {
-    const kernel = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
-    expect(kernel).toContain("let shape = mix(emblem, goo, melt);");
+  it("blends two configurations inside one kernel, by a per-element front", () => {
+    const kernel = tiles();
+    expect(kernel).toContain("q.position = obolYaw(mix(emblem, goo, melt) + lift, ctx.absTime);");
     // And a yaw on the ABSOLUTE clock, so the piece is not a still frame wherever the
-    // value graph is idle — which is exactly what the cook oracle renders. T673 moved the
-    // yaw into a shared helper so the mass and the segments cannot turn by different
-    // amounts, so the claim is now in two halves: the helper HOLDS the sway, and the
-    // caller HANDS IT the absolute clock. Asserting only the first would pass with the
-    // timeline clock wired in, which is the exact bug §V437 is about.
+    // value graph is idle — which is exactly what the cook oracle renders. The claim is in
+    // two halves: the helper HOLDS the sway, and the caller HANDS IT the absolute clock.
+    // Asserting only the first would pass with the timeline clock wired in, which is the
+    // exact bug §V437 is about.
     expect(kernel).toContain("let yaw = 0.21 * sin(t * 0.185);");
-    expect(kernel).toContain("obolYaw(shape, ctx.absTime)");
+    expect(kernel).toContain("obolYaw(mix(emblem, goo, melt) + lift, ctx.absTime)");
     // The front is spatial: it is built from `order`, and `order` is built from the
     // emblem's own dividing curve. A `melt` that read only ctx.value1 would be a
     // cross-fade wearing a kernel.
@@ -1902,9 +1906,9 @@ describe("E33 Obol claims", () => {
     expect(kernel).toMatch(
       /clamp\(min\(abs\(arcTop\), abs\(arcBot\)\) \/ [\d.]+, 0\.0, 1\.0\) \* [\d.]+ \+ length\(d\) \* [\d.]+/,
     );
-    // The colour is read in the MATERIAL coordinate `s`, never in the deformed
+    // The colour is read in the emblem's own DISC coordinate, never in the deformed
     // position — a tint read from `q.position` slides over the goo like a projection.
-    expect(kernel).toContain("let tone = taiji(s.xy);");
+    expect(kernel).toContain("let tone = taiji(disc);");
   });
 
   /**
@@ -1912,8 +1916,9 @@ describe("E33 Obol claims", () => {
    * High-frequency displacement changes surface texture and leaves the outline circular,
    * so "it is not a sphere" cannot be pinned by asserting that noise exists. What can be
    * pinned is the low-frequency term that moves the outline: a metaball with three offset
-   * charges. Measured, at the commit the .md names: radius CV vs angle 0.086 -> 0.234,
-   * convexity deficit 0.0054 -> 0.0492, over 12 orbit angles x 5 moments.
+   * charges. Re-measured at T716 on the object that now exists — the TILE CLOUD, because
+   * the mass whose surface T673 measured is deleted: radius CV vs angle 0.224, convexity
+   * deficit 0.0795, over 12 orbit angles x 5 moments (bc681b7).
    *
    * The CORE charge is asserted separately because losing it does not look like losing a
    * feature — it tears the mesh. Without it the three lobes separate, a ray from the
@@ -1921,7 +1926,7 @@ describe("E33 Obol claims", () => {
    * regions of the sphere.
    */
   it("builds the goo from a metaball with a core, and solves it from the outside in", () => {
-    const kernel = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
+    const kernel = tiles();
     expect(kernel).toContain("fn gooField(p: vec3f, t: f32) -> f32");
     // Three offset charges, and the core that keeps the form star-shaped about the origin.
     expect(kernel).toMatch(/var weights = array<f32, 3>\(/);
@@ -1934,57 +1939,96 @@ describe("E33 Obol claims", () => {
   });
 
   /**
-   * T673 — ONE definition of the emblem, read by TWO systems (§V471.1/.2). The mass and
-   * the segments have to agree about where the seam is, where the goo's surface is and
-   * how far the melt has got; two copies of that arithmetic is two chances for a slab to
-   * hover off the face it is inlaid into, and the drift would be a look bug with no
-   * failing test anywhere. So the prelude is shared TEXT, and both kernels are asserted
-   * to carry the same copy of it.
+   * T716 — ONE SET OF ELEMENTS CARRIES BOTH ENDS, AND EACH KEEPS ITS STATION.
+   *
+   * This claim REPLACES T673's "the mass and the segments share a byte-identical prelude".
+   * That one existed because two systems had to agree about where the seam was; the mass
+   * is deleted, there is no second system, and a claim that pins nothing is worse than no
+   * claim (§V465). What is worth pinning instead is the property the deletion created and
+   * that a still frame cannot show: the tiles are the WHOLE object at both ends, and the
+   * map between the two poses preserves each tile's identity.
+   *
+   * Both halves are asserted because either one alone passes a broken build. Two clouds
+   * cross-fading pass "one geometry"; an independently generated sphere direction passes
+   * "both configurations are in one kernel" and renders an IDENTICAL still frame while
+   * re-dealing every tile in motion.
    */
-  it("shares one prelude between the mass and the segments, and one channel", () => {
-    const mass = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
-    const segs = String((document.graph.nodes["segs"] as GraphNode).parameters["kernel"]);
-    for (const shared of ["fn meltOrder(d: vec2f) -> f32", "fn gooAt(", "fn emblemTilt(", "fn meltDrive("]) {
-      expect(mass, `the mass is missing ${shared}`).toContain(shared);
-      expect(segs, `the segments are missing ${shared}`).toContain(shared);
-    }
-    // Byte-identical, not merely both-present: a prelude that had been edited in one
-    // place is exactly the drift this claim exists to catch. Sliced at the LAST shared
-    // function rather than at `fn process`, because the segments declare one helper of
-    // their own between the two (`segRand`, which the mass has no use for).
-    const preludeOf = (kernel: string) => kernel.slice(0, kernel.indexOf("fn meltDrive("));
-    expect(preludeOf(segs)).toBe(preludeOf(mass));
-    expect(mass).toContain("return smoothstep(0.18, 0.82, v);");
-    expect(segs).toContain("return smoothstep(0.18, 0.82, v);");
-    // And they melt on the SAME clock: one channel into both value1 slots, so the wave
-    // that lifts a slab is the wave that softens the surface under it.
-    const channel = (id: string) =>
-      ((document.graph.nodes[id] as GraphNode).parameters["value1"] as { bindings?: { driven?: { channel?: string } } })
+  it("carries both ends on one set of elements, each keeping its station", () => {
+    // ONE object in the render besides the room. `body1` — the mass — is gone, and this
+    // is the half that is cheap; the half below is the one that matters.
+    const scenes = String((document.graph.nodes["shot"] as GraphNode).parameters["scenes"]).split(/\s+/);
+    expect(scenes).toEqual(["cyc1", "shards1"]);
+    const objectGeometries = Object.values(document.graph.nodes).filter(
+      (entry) => entry.type === "geometry" && entry.parameters["material"] === "oil1",
+    );
+    expect(objectGeometries).toHaveLength(1);
+
+    // THE MAP. `u` and `ang` are computed ONCE from the element's own index, and BOTH
+    // configurations are built from them: the disc radius is sqrt(u), and the sphere's
+    // latitude is 1 - 2u, which is the same Fibonacci sequence in a second pose. The
+    // azimuth is literally the same expression in both. That is what makes an individual
+    // tile followable across the morph rather than re-dealt.
+    const kernel = tiles();
+    expect(kernel).toContain("let u = (f32(ctx.index) + 0.5) / n;");
+    expect(kernel).toContain("let ang = f32(ctx.index) * 2.39996323;");
+    expect(kernel).toContain("let rr = sqrt(u) * 0.930;");
+    expect(kernel).toContain("let zc = 1.0 - 2.0 * u;");
+    expect(kernel).toContain("let sdir = vec3f(ring * cos(ang), ring * sin(ang), zc);");
+    // And one clock for the one object: the morph and the spectrum's phase.
+    const channel = (id: string, slot: string) =>
+      ((document.graph.nodes[id] as GraphNode).parameters[slot] as { bindings?: { driven?: { channel?: string } } })
         ?.bindings?.driven?.channel;
-    expect(channel("segs")).toBe("tide1");
-    expect(channel("segs")).toBe(channel("morph"));
+    expect(channel("segs", "value1")).toBe("tide1");
+    expect(channel("segs", "value2")).toBe("sheen1");
+    expect(kernel).toContain("return smoothstep(0.18, 0.82, v);");
   });
 
   /**
-   * T673, §V617 — THE SEGMENTS ARE MATTER, so they block light. An unlit geometry casts
-   * no shadow in any draw mode, because a surface that ignores light cannot stop it; the
-   * whole value of building the emblem out of parts is that the parts have gutters for a
-   * shadow and an occlusion pass to find, and that value evaporates silently if the
-   * material ever goes unlit. Measured with the bed removed so nothing else could cast:
-   * 28,643 pixels of the frame darken when the key's shadow is switched on.
+   * T716 — THE MOSAIC COVERS THE FACE WITHOUT CLOSING INTO A DISC, and both bounds are
+   * the point. With no bed behind them the tiles ARE the medallion, so the ratio of a
+   * tile's edge to the lattice's own pitch is what decides whether the emblem reads as a
+   * mosaic, as confetti, or as the solid disc the owner asked us to delete.
+   *
+   * A phyllotaxis lattice of N tiles over a face of radius 0.930 * 0.955 has a hexagonal
+   * nearest-neighbour spacing of 1.0746 * sqrt(pi * r^2 / N). Shipped: 1728 tiles, pitch
+   * 0.0407, tile edge 2 * 0.019 = 0.038, ratio 0.934. Past ~1.15 the tiles interpenetrate
+   * and the face fuses; below ~0.6 there is more room than tile. Neither failure has a
+   * red test anywhere else — both render a perfectly plausible picture.
    */
-  it("draws the segments as lit instances, so they cast and occlude", () => {
+  it("keeps the tile edge inside the band where the mosaic reads", () => {
+    const grid = (document.graph.nodes["segPts"] as GraphNode).parameters;
+    const count = (grid["cols"] as number) * (grid["rows"] as number);
+    expect(count).toBe(grid["count"] as number);
+    expect((document.graph.nodes["segs"] as GraphNode).parameters["capacity"]).toBe(count);
+    const faceRadius = 0.930 * 0.955;
+    const pitch = 1.0746 * Math.sqrt((Math.PI * faceRadius * faceRadius) / count);
+    const edge = 2 * ((document.graph.nodes["shards"] as GraphNode).parameters["scale"] as number);
+    const ratio = edge / pitch;
+    expect(ratio).toBeGreaterThan(0.6);
+    expect(ratio).toBeLessThan(1.15);
+  });
+
+  /**
+   * T673/T716, §V617 — THE TILES ARE MATTER, so they block light. An unlit geometry casts
+   * no shadow in any draw mode, because a surface that ignores light cannot stop it. This
+   * was worth having when the tiles sat on a bed; after T716 it is LOAD-BEARING, because
+   * self-shadowing is the only thing left giving the object a body. Measured with nothing
+   * else in the scene so nothing else could be casting: 22,016 pixels of the emblem frame
+   * and 11,710 of the goo frame darken when the key's shadow is switched on, and BOTH go
+   * to exactly 0 when the material is swapped for one that ignores light (bc681b7).
+   */
+  it("draws the tiles as lit instances, so they cast and occlude", () => {
     const shards = document.graph.nodes["shards"] as GraphNode;
     expect(shards.type).toBe("geometry");
     expect(shards.parameters["mode"]).toBe("instances");
-    // The material is the LIT one the mass wears. `materialUnlit` here would keep the
-    // picture and silently drop every shadow and every contact.
+    // The material is the LIT one. `materialUnlit` here would keep the picture and
+    // silently drop every shadow and every contact.
     expect(shards.parameters["material"]).toBe("oil1");
     expect((document.graph.nodes["oil"] as GraphNode).type).toBe("materialPhong");
     // The depth sweep therefore takes them: one shadow draw per casting light per
-    // geometry, and the segments' is present.
+    // geometry, and the tiles' is present.
     const shadowDraws = passes.filter((pass) => pass.id.includes(":shadow:"));
-    expect(shadowDraws.length).toBeGreaterThanOrEqual(3);
+    expect(shadowDraws.length).toBeGreaterThanOrEqual(2);
   });
 
   /**
@@ -1995,12 +2039,12 @@ describe("E33 Obol claims", () => {
   it("switches ambient occlusion on once and every geometry wears it", () => {
     expect(document.graph.nodes["shot"]?.parameters["ambientOcclusion"]).toBe(true);
     const lit = passes.filter((pass) => pass.id.includes(":scene:"));
-    // THREE since T673: the cyclorama, the mass, and the instanced segments. The count is
-    // asserted rather than the set iterated blindly, because a per-geometry opt-in passes
-    // a one-geometry check perfectly — and because the third one is an INSTANCED draw,
-    // which is a different generator with its own copy of the AO block (T624 gates it on
+    // TWO since T716: the cyclorama and the instanced tiles. The count is asserted rather
+    // than the set iterated blindly, because a per-geometry opt-in passes a one-geometry
+    // check perfectly — and because the second one is an INSTANCED draw, which is a
+    // different generator with its own copy of the AO block (T624 gates it on
     // `model !== "unlit"`, so an unlit mosaic would bind no occlusion map at all).
-    expect(lit).toHaveLength(3);
+    expect(lit).toHaveLength(2);
     for (const pass of lit) {
       expect(pass.shader).toContain("let occlusion = textureLoad(occlusionMap");
       expect((pass.textures ?? []).map((texture) => texture.binding)).toContain("occlusionMap");
@@ -2146,6 +2190,118 @@ describe("E34 Lidar claims", () => {
     const splat = plan.passes.find((entry) => entry.kind === "draw" && entry.nodeId === "poolmap");
     expect(splat, "poolmap1 must emit a sprite draw").toBeDefined();
     expect(nodes["poolmap"]?.parameters["blend"]).toBe("additive");
+  });
+
+  /**
+   * T711 — COLOUR COHERENCE, AND WHY IT NEEDS A TEST AT ALL.
+   *
+   * "A ray and the mark it produces share a colour" is a claim about a WIRE, not about a
+   * pixel, and a still frame with the wire broken still contains beams: they simply go
+   * back to being one flat colour that has nothing to do with what they hit. Both halves
+   * are pinned, because either alone restores the old picture — the tint has to be MAPPED
+   * (a static tint is the flat colour again) and the material has to be the IDENTITY
+   * (a coloured material multiplies the per-ray colour back into one hue).
+   */
+  it("gives every beam its own impact colour, through a material that is the identity", () => {
+    expect(nodes["haze"]?.parameters["color"]).toEqual([1, 1, 1, 1]);
+    expect(nodes["mist"]?.parameters["color"]).toEqual([0.85, 0.85, 0.85, 1]);
+    for (const id of ["rays", "bounce"]) {
+      const tint = nodes[id]?.parameters["tint"] as ParameterSlot;
+      expect(tint?.mode, `${id} must take its colour from the point, not a constant`).toBe("map");
+      expect(tint?.bindings["map"]).toEqual({ kind: "map", attribute: "tint" });
+    }
+    // and the beams read the KERNEL that writes that colour, not the cast directly.
+    const into = (nodeId: string) =>
+      Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === nodeId).map((edge) => edge.source.nodeId);
+    expect(into("rays")).toEqual(["sight"]);
+    expect(into("bounce")).toEqual(["mark2"]);
+  });
+
+  /**
+   * T711 — A RAY WITH NO RETURN IS NOT DRAWN, and this is the claim a COUNT would pass
+   * while the wrong rays were dropped. So the assertion names the CONDITION and the
+   * COLLAPSE TARGET rather than a number of beams.
+   *
+   * The condition is `slant < RANGE - 0.01` and the epsilon is not incidental: it is
+   * `mark1`'s own landed test, so the beam and the box it ends on change class on the
+   * SAME frame. Move it to `mark2a`'s 0.02 and a ray whose slant sits between them draws
+   * a beam to an impact that is already steel, which reads as a flicker and gets
+   * misdiagnosed as a rendering fault. The collapse target is `p.position` — both ends on
+   * one point is a zero-AREA beam — and it has to be that rather than a dim colour,
+   * because a beam is OPAQUE scene geometry: a faded beam is a black ribbon over lit
+   * terrain, not an absent one (§V668).
+   */
+  it("collapses a no-return beam to zero area on the same frame its impact goes steel", () => {
+    const sight = String(nodes["sight"]?.parameters["kernel"]);
+    const mark = String(nodes["mark"]?.parameters["kernel"]);
+    expect(sight).toContain("q.hitPosition = select(p.position, p.hitPosition, slant < 3.9 - 0.01);");
+    // the SAME frontier the impact uses, quoted from the other kernel so the two cannot drift.
+    expect(mark).toContain("slant < 3.9 - 0.01");
+    // and it is the beam's own endpoint attribute that carries the collapse.
+    expect(nodes["rays"]?.parameters["endpoint"]).toBe("hitPosition");
+  });
+
+  /**
+   * T711 — THE BOUNCE LEG INHERITS §V638's HOLD, which is the whole reason it is
+   * affordable at all. T681 measured this segment off `rebound1`'s raw verdict and
+   * rejected it; hung on `mark2a` it reads from a position that HOLDS and a level that
+   * fades, and the same measurement passes. Both halves of the predicate are pinned:
+   * `wake.w` is where the persistence comes from, `spoke` is the every-tenth subset, and
+   * losing either restores a failure that still contains bounce beams — without the hold
+   * they pop with the raw verdict (7.1% green hard-flip against the held 2.2%), without
+   * the subset all 240 legs draw and the basin is green spaghetti.
+   *
+   * And the far end is the FIRST hit, published through mark2a's own leaf `hitPosition`
+   * slot: four attributes is the whole budget (§V588), so a fifth pair is not available
+   * and the segment has to travel through a slot that already exists.
+   */
+  it("hangs the bounce leg on mark2a's hold, subset by the same spoke as the primaries", () => {
+    expect(nodes["bounce"]?.parameters["mode"]).toBe("beam");
+    expect(nodes["bounce"]?.parameters["group"]).toBe("p.wake.w > 0.03 && p.spoke > 0.5");
+    expect(String(nodes["mark2"]?.parameters["kernel"])).toContain("q.hitPosition = p.position;");
+    // mark2a stays at FOUR declared attributes — the budget is the reason for the line above.
+    expect(JSON.parse(String(nodes["mark2"]?.parameters["attributes"]))).toHaveLength(4);
+    const bounce = sceneDraw("bounce1");
+    const bindings = (bounce.buffers ?? []).map((buffer) => buffer.binding);
+    expect(bindings).toContain("endpoints");
+    expect(bindings).toContain("group_wake");
+    expect(bindings).toContain("group_spoke");
+  });
+
+  /**
+   * T711 — THE TRAIL IS SELECTIVE AND THE LOOP IS BOUNDED, and neither shows in a still.
+   *
+   * The threshold's position is the tuning decision: the terrain, moonlit AND lit by its
+   * own impact pool, tops out at linear luma 0.102, and softness 0.10 means the smoothstep
+   * runs 0.11 … 0.21, so the transition's FOOT clears the brightest ground there is. Drop
+   * the threshold under 0.10 and the whole hillside smears — a failure that still contains
+   * a trail. The floor is asserted rather than the threshold alone, because it is the foot
+   * and not the midpoint that decides whether the ground is in.
+   *
+   * §V631: steady state is injection ÷ (1 − persistence), so persistence must be BELOW 1
+   * — at 1.0 the loop genuinely diverges — and the gain must be positive, or §V630's
+   * sign-alternating oscillator is back. Both are decidable without rendering, which is
+   * why they are asserted here rather than left to a look call.
+   */
+  it("thresholds the trail above the lit ground and closes the loop below unity", () => {
+    expect(nodes["hot"]?.type).toBe("threshold");
+    expect(nodes["hot"]?.parameters["channel"]).toBe("luminance");
+    const threshold = Number(nodes["hot"]?.parameters["threshold"]);
+    const softness = Number(nodes["hot"]?.parameters["softness"]);
+    // the FOOT of the transition, against the measured 0.102 ceiling of the lit terrain.
+    expect(threshold - softness / 2).toBeGreaterThan(0.102);
+    const persistence = Number(nodes["trail"]?.parameters["persistence"]);
+    expect(persistence).toBeGreaterThan(0);
+    expect(persistence).toBeLessThan(1);
+    expect(nodes["trail"]?.parameters["source"]).toBe("smear1");
+    // The loop is SELECTIVE, so it closes on a side branch and not on the finished frame:
+    // `smear1` feeds glow1's stack, and glow1 is what the output shows.
+    const into = (nodeId: string) =>
+      Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === nodeId).map((edge) => edge.source.nodeId);
+    expect(into("stain").sort()).toEqual(["hot", "shot"]);
+    expect(into("smear").sort()).toEqual(["stain", "trail"]);
+    expect(into("glow").sort()).toEqual(["halo", "shot", "smear"]);
+    expect(into("out")).toEqual(["glow"]);
   });
 });
 
