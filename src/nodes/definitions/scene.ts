@@ -9,7 +9,7 @@ import { missingCompileResource, readCompileInputs } from "./compile-context.ts"
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-reference.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { countedDrawSupport, resolveColorMap } from "./points.ts";
+import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
 import {
   SHADOW_CLEAR_WGSL,
   backdropWgsl,
@@ -154,6 +154,7 @@ export const projectorNode: NodeDefinition = {
       default: 1.5,
       min: 0.3,
       max: 12,
+      step: 0.01,
       range: "floor",
       description: "Throw distance ÷ image width — the number printed on the lens. Smaller is wider.",
     },
@@ -163,6 +164,7 @@ export const projectorNode: NodeDefinition = {
       default: 1.7778,
       min: 0.4,
       max: 4,
+      step: 0.0001,
       range: "floor",
       description: "The projector's NATIVE image aspect (16:9 ≈ 1.778), not the project's.",
     },
@@ -433,7 +435,7 @@ export const geometryNode: NodeDefinition = {
           ? null
           : "Scale sizes instances and point billboards; a surface spans its grid.",
       description:
-        "Instances: the primitive's size. Points: the billboard's. Beam: its HALF-WIDTH — a beam takes its length from the data, so this is the only dimension left to set.",
+        "Instances: the primitive's size. Points: the billboard's. Beam: its HALF-WIDTH — a beam takes its length from the data, so this is the only dimension left to set. In Map mode an f32 attribute (or one channel of a float vector) MULTIPLIES this per point, so the number here stays the object's size and the attribute is a factor — size by depth for a circle of confusion, by age, by confidence.",
     },
     tint: {
       type: "color",
@@ -488,15 +490,15 @@ export const geometryNode: NodeDefinition = {
       };
     }
     // §V288: a map this stage cannot honour refuses BY NAME rather than drawing the
-    // retained static. `tint` is the one mappable parameter (T478).
-    const unhonoured = Object.keys(parameterMaps).filter((key) => key !== "tint").sort();
+    // retained static. `tint` (T478) and `scale` (T721) are the mappable ones.
+    const unhonoured = Object.keys(parameterMaps).filter((key) => key !== "tint" && key !== "scale").sort();
     if (unhonoured.length > 0) {
       return {
         passes: [],
         diagnostics: unhonoured.map((key) => ({
           severity: "error" as const,
           code: "node.parameter.map",
-          message: `Node "${nodeId}": ${key} is in map mode, but geometry maps only "tint".`,
+          message: `Node "${nodeId}": ${key} is in map mode, but geometry maps only "tint" and "scale".`,
           nodeId,
           suggestion: "Switch it back to Constant, or drive it through the value graph instead.",
         })),
@@ -533,6 +535,32 @@ export const geometryNode: NodeDefinition = {
        instance is true of a billboard and of a beam — a scale, a group predicate, no
        uv, no grid. Only `surface` is the odd one. */
     const perPoint = mode === "instances" || mode === "points" || mode === "beam";
+    /*
+     * T721 — SCALE in map mode: an f32 attribute (or one channel of a float vector)
+     * sizes each primitive, through the same resolver `renderPoints.sizePixels` uses
+     * (§V109: one answer to "what may drive a size"). It MULTIPLIES the authored Scale
+     * rather than replacing it — see the payload field for why — and it refuses on a
+     * SURFACE by name, because a surface has no per-point size to give: its Scale is
+     * already declared inactive there, and a map that silently did nothing is §V624's
+     * dead parameter wearing a wire.
+     */
+    if (!perPoint && parameterMaps["scale"] !== undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.parameter.map",
+            message: `Node "${nodeId}": scale is in map mode, but a surface spans its grid and has no per-point size.`,
+            nodeId,
+            suggestion: "Switch the mode to instances, points or beam, or set Scale back to Constant.",
+          },
+        ],
+      };
+    }
+    const resolvedScale = resolveScalarMap(nodeId, parameterMaps["scale"], pointset, "points", "scale");
+    if ("refusal" in resolvedScale) return resolvedScale.refusal;
+    const scaleMap = resolvedScale.map;
     /*
      * T642: the group predicate, resolved by the SAME function renderPoints uses
      * (§V349 by construction). Instances only, and the refusal says WHY (§V606: a
@@ -631,6 +659,7 @@ export const geometryNode: NodeDefinition = {
         : {}),
       ...(endpointPair === undefined ? {} : { endpoint: endpointPair }),
       ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
+      ...(scaleMap === undefined || !perPoint ? {} : { scaleAttribute: scaleMap }),
       ...(resolvedGroup === undefined ? {} : { group: resolvedGroup }),
       ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
       material,
@@ -997,6 +1026,16 @@ export const renderNode: NodeDefinition = {
             shader: shadowInstancesWgsl({
               ...depthOptions,
               ...(payload.group === undefined ? {} : { group: payload.group }),
+              /* T721: the depth sweep sizes each primitive exactly as the lit draw does,
+                 or the shadow is cast by a shape nothing in the picture has. */
+              ...(payload.scaleAttribute === undefined
+                ? {}
+                : {
+                    pointScale: {
+                      type: payload.scaleAttribute.type,
+                      ...(payload.scaleAttribute.channel === undefined ? {} : { channel: payload.scaleAttribute.channel }),
+                    },
+                  }),
             }),
             target: options.target,
             topology: "triangle-list",
@@ -1012,6 +1051,15 @@ export const renderNode: NodeDefinition = {
                     resourceId: bind.pair,
                     half: bind.half,
                   }))),
+              ...(payload.scaleAttribute === undefined
+                ? []
+                : [
+                    {
+                      binding: "pointScales",
+                      resourceId: payload.scaleAttribute.pair,
+                      half: payload.scaleAttribute.half,
+                    },
+                  ]),
             ],
             uniforms: {
               lightViewProjection: Array.from(options.matrix ?? []),
@@ -1377,6 +1425,16 @@ export const renderNode: NodeDefinition = {
             model,
             lightCount: lights.length,
             ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+            /* T721: the per-point size factor, structural in the SAME way the tint is —
+               a binding either exists or it does not, and the shader is generated for it. */
+            ...(payload.scaleAttribute === undefined
+              ? {}
+              : {
+                  pointScale: {
+                    type: payload.scaleAttribute.type,
+                    ...(payload.scaleAttribute.channel === undefined ? {} : { channel: payload.scaleAttribute.channel }),
+                  },
+                }),
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
             ...(environmentResource === undefined ? {} : { environment: true }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
@@ -1404,6 +1462,15 @@ export const renderNode: NodeDefinition = {
                     binding: "pointColors",
                     resourceId: payload.colorAttribute.pair,
                     half: payload.colorAttribute.half,
+                  },
+                ]),
+            ...(payload.scaleAttribute === undefined
+              ? []
+              : [
+                  {
+                    binding: "pointScales",
+                    resourceId: payload.scaleAttribute.pair,
+                    half: payload.scaleAttribute.half,
                   },
                 ]),
             // T642: one storage buffer per attribute the predicate reads. The compiler's

@@ -102,6 +102,9 @@ const VARIANTS: Readonly<
   // The grid sits exactly 3 away from the eye, so these two planes cut it wholesale.
   near: { params: { near: 3.5 }, probe: [0, 0, 0], effect: "clips" },
   far: { params: { far: 2.5 }, probe: [0, 0, 0], effect: "clips" },
+  // T706: a bank swings every off-axis point around the view axis; the centre is the
+  // one place a roll does nothing, so the probe sits in a corner.
+  roll: { params: { roll: 40 }, probe: [0.9, 0.9, 0], effect: "moves" },
 };
 
 /**
@@ -227,6 +230,7 @@ const payloadWith = (params: Record<string, unknown>): CameraPayload => ({
   ...(params["far"] === undefined ? {} : { far: params["far"] as number }),
   ...(params["ortho"] === undefined ? {} : { ortho: params["ortho"] as boolean }),
   ...(params["orthoHeight"] === undefined ? {} : { orthoHeight: params["orthoHeight"] as number }),
+  ...(params["roll"] === undefined ? {} : { roll: params["roll"] as number }),
 });
 
 describe("the camera link, as a property (B104/T500, §V437, §V372, §V147)", () => {

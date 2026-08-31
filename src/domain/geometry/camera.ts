@@ -219,10 +219,12 @@ export function projectorMatrix(
   projection[11] = -1;
   projection[14] = (near * far) / (near - far);
   projection[15] = 0;
-  // Off-axis shift: x_ndc = (m0·x + m8·z)/(−z) = m0·x/(−z) − m8, so writing −2·shift
-  // moves the whole image by `shift` image-widths without re-aiming the axis.
-  projection[8] = -2 * lens.shiftX;
-  projection[9] = -2 * lens.shiftY;
+  // Off-axis shift: x_ndc = (m0·x + m8·z)/(−z) = m0·x/(−z) − m8, so writing +2·shift
+  // slides the IMAGE by `shift` image-widths — positive = up/right in the world, the
+  // venue convention — without re-aiming the axis (the optical-axis point then lands
+  // at −2·shift ndc, because the frustum moved and the axis did not).
+  projection[8] = 2 * lens.shiftX;
+  projection[9] = 2 * lens.shiftY;
   // Keystone: shear x (and y) into the w row — after the divide, one side of the image
   // is nearer in projector terms than the other, which is exactly the trapezoid.
   const kH = Math.tan((lens.keystoneH * Math.PI) / 180);

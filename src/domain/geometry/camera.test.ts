@@ -160,9 +160,10 @@ describe("T704 — the projector's matrix speaks the lens sheet", () => {
 
   it("lens shift slides the image without re-aiming: centre moves by 2·shift ndc", () => {
     const m = projectorMatrix(POSE, { ...LENS, shiftX: 0.25 });
-    // The optical axis point now lands off-centre by exactly a quarter image width
-    // (= half an ndc unit): the body did not turn, the lens moved.
-    expect(project(m, [0, 0, 0])[0]).toBeCloseTo(0.5, 6);
+    // Positive shift slides the IMAGE right (the venue convention), so the optical
+    // axis point lands off-centre the OTHER way by a quarter image width (= half an
+    // ndc unit): the body did not turn, the lens moved.
+    expect(project(m, [0, 0, 0])[0]).toBeCloseTo(-0.5, 6);
     // Straight-through geometry is otherwise untouched: relative spans are preserved.
     const a = project(m, [4 / 3, 0, 0])[0];
     const b = project(m, [-4 / 3, 0, 0])[0];

@@ -720,7 +720,7 @@ function PreviewInspectToggle({ nodeId, source }: { nodeId: NodeId; source: Prev
       title={
         mode === "adjustable"
           ? "Adjusting — press, or h over the tile, to return home"
-          : "Adjust this preview's camera — or hold alt over the tile: drag orbits, shift-drag pans, wheel zooms"
+          : "Adjust camera (or alt on tile): drag orbits, shift pans"
       }
       short="C"
       testId={`preview-inspect-${nodeId}`}
