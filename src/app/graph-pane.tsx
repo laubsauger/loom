@@ -95,6 +95,37 @@ export interface GraphPaneProps {
 const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
 const EMPTY_OUTPUTS: ReadonlyArray<ResolvedOutput> = [];
 
+/**
+ * Same membership, same object (T714, §V16).
+ *
+ * A set derived from the COMPILE is recomputed on every document revision, so it is a new
+ * object sixty times a second during a drag even though its contents never move — and it
+ * keys a `useCallback` that keys the canvas CONTEXT, which re-renders every `NodeView`
+ * through its `memo` boundary. Measured in the shipped build on E24 (70 nodes): 174
+ * context changes and 29,118 node-view renders during one 200-frame drag, 146 per frame.
+ *
+ * Membership rather than deep equality because that is all the consumers ask: both sets
+ * are read with `.has(nodeId)` and nothing else. O(n) per compile against O(nodes × edits)
+ * repaints avoided.
+ */
+function useStableNodeSet(next: ReadonlySet<NodeId>): ReadonlySet<NodeId> {
+  const held = useRef(next);
+  const current = held.current;
+  if (current !== next) {
+    let same = current.size === next.size;
+    if (same) {
+      for (const id of next) {
+        if (!current.has(id)) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (!same) held.current = next;
+  }
+  return held.current;
+}
+
 export function GraphPane(props: GraphPaneProps) {
   // The canvas mounts its own provider when there is none; hoisting it here lets the
   // pane use the same store the canvas renders from, without editing the canvas.
@@ -190,13 +221,15 @@ function GraphPaneInner({
    * which is the owner's "inherit from a common thing": a new payload kind cannot reach
    * this line without having stated whether it has a camera.
    */
-  const orbitableNodes = useMemo(() => {
-    const nodes = new Set<NodeId>();
-    for (const output of compiledOutputs) {
-      if (output.synthesis?.orbit !== undefined) nodes.add(output.nodeId as NodeId);
-    }
-    return nodes;
-  }, [compiledOutputs]);
+  const orbitableNodes = useStableNodeSet(
+    useMemo(() => {
+      const nodes = new Set<NodeId>();
+      for (const output of compiledOutputs) {
+        if (output.synthesis?.orbit !== undefined) nodes.add(output.nodeId as NodeId);
+      }
+      return nodes;
+    }, [compiledOutputs]),
+  );
 
   /**
    * T692 — which tiles get the camera GIZMO: the compiler's own payload-kind
@@ -205,13 +238,15 @@ function GraphPaneInner({
    * document's matrix, §T639(a)) — which is exactly why the same gestures may WRITE
    * the document there: what moves on screen is the document moving.
    */
-  const cameraGizmoNodes = useMemo(() => {
-    const nodes = new Set<NodeId>();
-    for (const output of compiledOutputs) {
-      if (output.synthesis?.kind === "camera") nodes.add(output.nodeId as NodeId);
-    }
-    return nodes;
-  }, [compiledOutputs]);
+  const cameraGizmoNodes = useStableNodeSet(
+    useMemo(() => {
+      const nodes = new Set<NodeId>();
+      for (const output of compiledOutputs) {
+        if (output.synthesis?.kind === "camera") nodes.add(output.nodeId as NodeId);
+      }
+      return nodes;
+    }, [compiledOutputs]),
+  );
 
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -295,7 +330,12 @@ function GraphPaneInner({
    */
   const renderPreview = useCallback(
     (nodeId: NodeId) => {
-      const type = graph.nodes[nodeId]?.type;
+      // T714: the REF, so this function's identity does not move with the document.
+      // It is called during a node's own render, and a node re-renders on its own slice
+      // of the store (§V16) — so the read is as fresh as the render that asks for it,
+      // while closing over `graph` instead would re-key the canvas context on every
+      // revision and repaint all of them.
+      const type = graphRef.current.nodes[nodeId]?.type;
       const definition = type === undefined ? undefined : registry.get(type);
       // T438 (§V316): the DECLARED channel, not the category shelf — audio moved to
       // "input" and must keep its plot; a camera never earns one.
@@ -305,7 +345,7 @@ function GraphPaneInner({
         // whether it has a curve. The pure/stateful split lives THERE, in one place, so
         // there is exactly one thing to get right and one thing to test — a second copy
         // of the condition here would be redundant and, being redundant, untested.
-        const node = graph.nodes[nodeId];
+        const node = graphRef.current.nodes[nodeId];
         const source =
           node === undefined
             ? null
@@ -349,7 +389,7 @@ function GraphPaneInner({
         />
       );
     },
-    [cameraGizmoNodes, cameraGizmos, graph, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
+    [cameraGizmoNodes, cameraGizmos, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(
