@@ -220,6 +220,40 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const documentBoundaryRef = useRef(documentBoundary);
   documentBoundaryRef.current = documentBoundary;
   /**
+   * WORK OWED, not a flag observed (T733, B141).
+   *
+   * The two refs above are overwritten by EVERY render, and the code that acts on them
+   * runs inside a `.then` after `await backend.compile` — so what it read was whatever
+   * the newest render happened to say, never what accompanied the plan being installed.
+   * The comment on `valuesOnlyRef` claims these "change in lockstep with `compiled`".
+   * They do not, and B141 is the two ways that shows:
+   *
+   *  1. SUPERSESSION. A second compile starts while the load's is in flight, bumping
+   *     `generationRef`, so the boundary compile's `.then` returns early — and the
+   *     compile that does land belongs to the same document as its predecessor, so its
+   *     flag is false and nobody clears anything.
+   *  2. THE REF MOVING UNDER THE PROMISE. Even the boundary compile's own `.then` reads
+   *     `false` if any render committed while it was in flight, because the ref is not a
+   *     snapshot.
+   *
+   * MEASURED in the running app, loading E2-Reaction-Diffusion over
+   * E24-Audio-Reaction-Diffusion — the pair the owner named, eleven shared node ids: the
+   * load produced THREE compiles and every one of them read `documentBoundary: false`,
+   * including the first. Both Gray-Scott simulations, so E2's chemical field started from
+   * E24's contents (`backend.compile` carries resources over BY RESOURCE ID, §V62b/T143)
+   * and the picture is not a picture of E2. The first load of a session survives, which
+   * is why it presents as intermittent.
+   *
+   * A latch instead of a flag. It is SET when a compile carrying the work is scheduled
+   * and CLEARED only once the work has actually been done, so neither a superseding
+   * compile nor a re-render can lose it: whichever plan lands performs the rite, over the
+   * program that plan just installed — which is the same "after the install" order the
+   * block below has always required. A failed compile leaves it owed, which is the safe
+   * direction: a late clear costs a frame, a dropped one costs the picture.
+   */
+  const boundaryOwedRef = useRef(false);
+  const feedbackResetOwedRef = useRef(false);
+  /**
    * The plan the BACKEND has actually built, which is what the uniform pushes below write
    * into — so it starts null and is set only when a compile has completed. It used to be
    * seeded with the first `compiled`, which was harmless while every edit recompiled and
@@ -526,6 +560,11 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       }
     }
 
+    // T733/B141 — owed at SCHEDULE time, while the flags still belong to the plan being
+    // built. Reading them after the await is what dropped the work.
+    if (documentBoundaryRef.current) boundaryOwedRef.current = true;
+    if (resetFeedbackRef.current) feedbackResetOwedRef.current = true;
+
     const generation = (generationRef.current += 1);
     void backend
       .compile(compiled)
@@ -551,7 +590,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
          * Unscoped: a load invalidates every pair, not a named one, so this is the same
          * call `runtime.resetFeedback` makes with no `nodeIds` (§V126).
          */
-        if (documentBoundaryRef.current) {
+        if (boundaryOwedRef.current) {
           /**
            * T552/T510/T519 — the full rite for a LOAD, both halves of the audit
            * sentence moving together: zero the point pairs (silent — the load is its
@@ -560,10 +599,16 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
            * (`ctx.firstRun`, and the legacy frameIndex == 0 guard) fires over fresh
            * storage. A resolution edit takes the branch below instead: textures reset,
            * playback and simulations keep running.
+           *
+           * T733: the debt is discharged HERE and nowhere else. Clearing it before the
+           * call would reintroduce B141 with an extra step.
            */
+          boundaryOwedRef.current = false;
+          feedbackResetOwedRef.current = false;
           backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
           transportHolderFor(bus).current?.seek(0);
-        } else if (resetFeedbackRef.current) {
+        } else if (feedbackResetOwedRef.current) {
+          feedbackResetOwedRef.current = false;
           backend.resetTemporalHistory(undefined, { silent: true });
         }
       })
