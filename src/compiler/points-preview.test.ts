@@ -197,6 +197,12 @@ describe("every pointset-producing definition is covered by construction (§V316
   it("each registry definition with a pointset output synthesizes a preview when watched", () => {
     const producers = registry
       .list()
+      // T607: a PASSTHROUGH is a wire, never a producer — it splices away and its
+      // preview is its producer's, via the §V130 alias. The boundary In/Out points
+      // nodes are the first pointset-typed wires; a watched unfed wire compiles clean
+      // and honestly shows nothing, which is not the silent-empty-body defect this
+      // sweep exists to catch.
+      .filter((definition) => definition.passthrough === undefined)
       .filter((definition) => definition.outputs.some((port) => port.type.kind === "pointset"));
     // Non-vacuity: the catalogue really has point producers.
     expect(producers.length).toBeGreaterThan(5);

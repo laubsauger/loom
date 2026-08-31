@@ -112,6 +112,12 @@ describe("core catalogue (T70, T40)", () => {
       "textureToAttribute",
       "renderPoints",
       "null",
+      // T607: the component boundary sockets — the TD In/Out idiom, one per wired
+      // port kind (the deliberate scoping; a generic typed In is deferred, §V349).
+      "componentIn",
+      "componentOut",
+      "componentInPoints",
+      "componentOutPoints",
       "switch",
       "lfo",
       "constant",
@@ -185,6 +191,8 @@ describe("core catalogue (T70, T40)", () => {
         // channels, and the shelf name was doubling as the plot gate (§V316's exact
         // failure). Rendering is its own aisle now, and the gate keys on declarations.
         "render",
+        // T607: boundary sockets file beside component instances.
+        "component",
       ]),
     );
   });

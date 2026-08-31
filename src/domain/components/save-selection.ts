@@ -3,6 +3,8 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
 import type { ComponentId, EdgeId, NodeId, PortId } from "../types/ids.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import { boundaryTypeFor } from "../../nodes/definitions/component-io.ts";
+import { arePortsCompatible } from "../graph/port-compat.ts";
 
 /**
  * Save selection as a component (T129, §V79).
@@ -94,6 +96,41 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
   const takenIds = new Set<PortId>();
   /** One exposed output per internal source port, however many outside targets it feeds. */
   const outputByInternal = new Map<string, PortId>();
+  /**
+   * T607: one boundary node per unique OUTER SOURCE. This is the fan-in fix — before
+   * boundary nodes, one outer producer feeding three inner nodes minted THREE input
+   * sockets all wired back to the same producer, because an `ExposedPort` maps one
+   * external port to exactly one internal endpoint. A synthesized `In` gives the three
+   * inner consumers one internal producer to hang off, the register-time derivation
+   * turns it into ONE socket, and the compiler's passthrough splice erases it at zero
+   * cost. Synthesized ONLY when the port types are exactly compatible through the
+   * variant (§V13 — a rewire the connect validation would refuse must not be invented
+   * here); anything else keeps the legacy per-edge exposure row.
+   */
+  const inBoundaryBySource = new Map<string, { nodeId: NodeId; count: number }>();
+  const outBoundaryByInternal = new Map<string, NodeId>();
+  let boundarySerial = 0;
+  const freshBoundaryId = (prefix: string, name: string): NodeId => {
+    let id = `${prefix}_${name}` as NodeId;
+    while (id in nodes || input.graph.nodes[id] !== undefined) {
+      boundarySerial += 1;
+      id = `${prefix}_${name}_${String(boundarySerial)}` as NodeId;
+    }
+    return id;
+  };
+  const boundaryFits = (
+    variantType: string | undefined,
+    outerType: { kind: string } | undefined,
+    innerType: { kind: string } | undefined,
+  ): boolean => {
+    if (variantType === undefined || outerType === undefined || innerType === undefined) return false;
+    const variant = input.nodes.port(variantType, "in", "input");
+    if (variant === undefined) return false;
+    return (
+      arePortsCompatible(outerType as never, variant.type) &&
+      arePortsCompatible(variant.type, innerType as never)
+    );
+  };
 
   for (const edgeId of Object.keys(input.graph.edges).sort()) {
     const edge = input.graph.edges[edgeId];
@@ -111,11 +148,62 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
 
     if (targetInside) {
       const node = input.graph.nodes[edge.target.nodeId];
-      const port = node === undefined ? undefined : input.nodes.port(node.type, edge.target.portId, "input");
+      const targetPort = node === undefined ? undefined : input.nodes.port(node.type, edge.target.portId, "input");
+      const outerNode = input.graph.nodes[edge.source.nodeId];
+      const outerPort =
+        outerNode === undefined ? undefined : input.nodes.port(outerNode.type, edge.source.portId, "output");
+      const variantType =
+        outerPort === undefined ? undefined : boundaryTypeFor(outerPort.type.kind, "input");
+
+      const sourceKey = `${edge.source.nodeId}/${edge.source.portId}`;
+      const standing = inBoundaryBySource.get(sourceKey);
+      if (standing !== undefined && boundaryFits(variantType, outerPort?.type, targetPort?.type)) {
+        // Second (third, …) inner consumer of the SAME outer source: hang it off the
+        // one In. No new socket, no new wiring row — the fan-in fix itself.
+        standing.count += 1;
+        const feedId = `${standing.nodeId}_feed_${String(standing.count)}` as EdgeId;
+        edges[feedId] = {
+          id: feedId,
+          source: { nodeId: standing.nodeId, portId: "out" },
+          target: { ...edge.target },
+        };
+        continue;
+      }
+      if (standing === undefined && boundaryFits(variantType, outerPort?.type, targetPort?.type)) {
+        const name = uniqueId(takenIds, edge.target.portId);
+        const boundaryId = freshBoundaryId("in", name);
+        // Left of the consumer it feeds, so the entry reads left-to-right; stacked by
+        // creation order, which the y-sorted derivation then reads back as socket order.
+        const anchor = input.graph.nodes[edge.target.nodeId];
+        nodes[boundaryId] = {
+          id: boundaryId,
+          type: variantType as string,
+          definitionVersion: 1,
+          position: {
+            x: (anchor?.position.x ?? 0) - 240,
+            y: (anchor?.position.y ?? 0) + inBoundaryBySource.size * 8,
+          },
+          parameters: {},
+          label: name,
+        } as GraphNode;
+        inBoundaryBySource.set(sourceKey, { nodeId: boundaryId, count: 1 });
+        const feedId = `${boundaryId}_feed_1` as EdgeId;
+        edges[feedId] = {
+          id: feedId,
+          source: { nodeId: boundaryId, portId: "out" },
+          target: { ...edge.target },
+        };
+        // No exposure row: the register-time derivation mints the socket from the In
+        // node itself, named by its label — one mapping, not two (§V109).
+        inputWiring.push({ externalId: name, outer: { ...edge.source } });
+        continue;
+      }
+
+      // Legacy path: exotic or mismatched port types keep the direct exposure.
       const externalId = uniqueId(takenIds, edge.target.portId);
       inputs.push({
         externalId,
-        label: port?.label ?? edge.target.portId,
+        label: targetPort?.label ?? edge.target.portId,
         nodeId: edge.target.nodeId,
         portId: edge.target.portId,
       });
@@ -124,15 +212,55 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
     }
 
     const internalKey = `${edge.source.nodeId}/${edge.source.portId}`;
+    const node = input.graph.nodes[edge.source.nodeId];
+    const sourcePort = node === undefined ? undefined : input.nodes.port(node.type, edge.source.portId, "output");
+    const outerNode = input.graph.nodes[edge.target.nodeId];
+    const outerInputPort =
+      outerNode === undefined ? undefined : input.nodes.port(outerNode.type, edge.target.portId, "input");
+    const outVariant =
+      sourcePort === undefined ? undefined : boundaryTypeFor(sourcePort.type.kind, "output");
+
+    const standingOut = outBoundaryByInternal.get(internalKey);
+    if (standingOut !== undefined) {
+      outputWiring.push({
+        externalId: (nodes[standingOut] as GraphNode).label ?? standingOut,
+        outer: { ...edge.target },
+      });
+      continue;
+    }
+    if (boundaryFits(outVariant, sourcePort?.type, outerInputPort?.type)) {
+      const name = uniqueId(takenIds, edge.source.portId);
+      const boundaryId = freshBoundaryId("out", name);
+      const anchor = input.graph.nodes[edge.source.nodeId];
+      nodes[boundaryId] = {
+        id: boundaryId,
+        type: outVariant as string,
+        definitionVersion: 1,
+        position: {
+          x: (anchor?.position.x ?? 0) + 240,
+          y: (anchor?.position.y ?? 0) + outBoundaryByInternal.size * 8,
+        },
+        parameters: {},
+        label: name,
+      } as GraphNode;
+      outBoundaryByInternal.set(internalKey, boundaryId);
+      const feedId = `${boundaryId}_feed` as EdgeId;
+      edges[feedId] = {
+        id: feedId,
+        source: { ...edge.source },
+        target: { nodeId: boundaryId, portId: "in" },
+      };
+      outputWiring.push({ externalId: name, outer: { ...edge.target } });
+      continue;
+    }
+
     let externalId = outputByInternal.get(internalKey);
     if (externalId === undefined) {
-      const node = input.graph.nodes[edge.source.nodeId];
-      const port = node === undefined ? undefined : input.nodes.port(node.type, edge.source.portId, "output");
       externalId = uniqueId(takenIds, edge.source.portId);
       outputByInternal.set(internalKey, externalId);
       outputs.push({
         externalId,
-        label: port?.label ?? edge.source.portId,
+        label: sourcePort?.label ?? edge.source.portId,
         nodeId: edge.source.nodeId,
         portId: edge.source.portId,
       });

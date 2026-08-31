@@ -8,6 +8,7 @@ import type { PortDirection, NodeRegistryView } from "../../nodes/registry/regis
 import { NodeDefinitionError } from "../../nodes/registry/registry.ts";
 import { componentNodeType, parseComponentNodeType } from "./component-type.ts";
 import { componentNodeDefinition, validateComponentDefinition } from "./definition.ts";
+import { withBoundaryPorts } from "./boundary-ports.ts";
 import { describeRecursion, detectComponentRecursion } from "./recursion.ts";
 import type { ComponentGraphSource } from "./recursion.ts";
 
@@ -129,7 +130,11 @@ export function createComponentRegistry(options: ComponentRegistryOptions): Comp
   };
 
   const registry: ComponentRegistry = {
-    register(definition: GraphComponentDefinition): void {
+    register(raw: GraphComponentDefinition): void {
+      // T607: In/Out nodes inside the graph ARE sockets — folded in HERE, where a
+      // definition enters the system, so the flattener, the manifest and validation
+      // all read one effective interface (§V109).
+      const definition = withBoundaryPorts(raw);
       const diagnostics = validate(definition);
       const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
       if (errors.length > 0) {

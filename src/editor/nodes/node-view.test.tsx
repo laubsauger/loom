@@ -547,3 +547,29 @@ describe("T599 — a node with more diagnostics than its one line owns a door to
     expect(chip?.className).toContain("nodrag");
   });
 });
+
+describe("T607 — a component boundary node wears its dangling lead", () => {
+  it.each([
+    ["componentIn", "in"],
+    ["componentOut", "out"],
+    ["componentInPoints", "in"],
+    ["componentOutPoints", "out"],
+  ])("%s carries data-boundary=%s for the CSS lead", (type, side) => {
+    const { nodeId, container } = mountNode(type, {
+      graph: graphWith(type),
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+    });
+    const element = container.querySelector(`[data-testid="node-${nodeId}"]`);
+    expect(element?.getAttribute("data-boundary")).toBe(side);
+  });
+
+  it("an ordinary node carries no boundary attribute — the lead is not a default", () => {
+    const { nodeId, container } = mountNode("blur", {
+      graph: graphWith("blur"),
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+    });
+    expect(
+      container.querySelector(`[data-testid="node-${nodeId}"]`)?.hasAttribute("data-boundary"),
+    ).toBe(false);
+  });
+});

@@ -153,3 +153,4 @@ export type {
   ParsedComponentDefinition,
   ParsedComponentLibrary,
 } from "./schemas.ts";
+export { deriveBoundaryPorts, withBoundaryPorts } from "./boundary-ports.ts";

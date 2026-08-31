@@ -432,6 +432,58 @@
   box-shadow: 0 0 0 3px var(--bg-active);
 }
 
+/* ---- component boundary leads (T607) ---------------------------------- */
+
+/*
+ * The "dangling cable": a boundary In is fed from OUTSIDE the component, a boundary
+ * Out feeds the outside — the lead is that statement drawn on the node, a short
+ * dashed line ending in an open plug. Pseudo-elements, so the node's layout, hit
+ * area and drag behaviour are untouched.
+ */
+.node[data-boundary] {
+  overflow: visible;
+}
+
+.node[data-boundary="in"]::before,
+.node[data-boundary="out"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  border-top: 2px dashed color-mix(in srgb, var(--status-color, currentColor) 55%, transparent);
+  pointer-events: none;
+}
+
+.node[data-boundary="in"]::before {
+  left: -24px;
+}
+
+.node[data-boundary="out"]::before {
+  right: -24px;
+}
+
+.node[data-boundary="in"]::after,
+.node[data-boundary="out"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border: 2px solid color-mix(in srgb, var(--status-color, currentColor) 55%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+}
+
+.node[data-boundary="in"]::after {
+  left: -33px;
+}
+
+.node[data-boundary="out"]::after {
+  right: -33px;
+}
+
 /* ---- diagnostics ------------------------------------------------------ */
 
 .message {

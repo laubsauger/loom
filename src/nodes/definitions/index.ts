@@ -12,6 +12,7 @@ import { temporalNodes } from "./feedback.ts";
 import { cacheNode } from "./cache.ts";
 import { pointNodeDefinitions } from "./points.ts";
 import { nullNode } from "./null-node.ts";
+import { componentIoDefinitions } from "./component-io.ts";
 import { switchNode } from "./switch.ts";
 import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
@@ -30,6 +31,17 @@ import { slitScanNode } from "./slit-scan.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
+export {
+  boundaryTypeFor,
+  componentInput,
+  componentInputPoints,
+  componentIoDefinitions,
+  componentOutput,
+  componentOutputPoints,
+  isComponentBoundary,
+  isComponentInputBoundary,
+  isComponentOutputBoundary,
+} from "./component-io.ts";
 export { switchNode, resolveSwitchIndex } from "./switch.ts";
 export { pointSetInfoFor } from "./points.ts";
 export { lfoNode, constantNode, timerNode, lfoValue, valueNodeDefinitions } from "./values.ts";
@@ -155,6 +167,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   cacheNode,
   ...pointNodeDefinitions,
   nullNode,
+  ...componentIoDefinitions,
   switchNode,
   ...valueNodeDefinitions,
   analyzeNode,

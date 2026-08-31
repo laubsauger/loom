@@ -11,6 +11,7 @@ import type { GraphPatchResult } from "../types/patch.ts";
 import type { CommandContext, CommandOutcome, ShaderloomBus } from "../commands/bus.ts";
 import { applyGraphPatch } from "../commands/apply-patch.ts";
 import { renumberedName, rewriteNodeNameReferences } from "../graph/names.ts";
+import { withBoundaryPorts } from "./boundary-ports.ts";
 import { componentNodeType } from "./component-type.ts";
 import { readComponentInstance, PARENT_BINDINGS_STATE_KEY } from "./instance.ts";
 import { parseParentReference } from "./parent-scope.ts";
@@ -493,6 +494,9 @@ export function registerComponentCommands(bus: ShaderloomBus, options: Component
 
       if (!context.dryRun) components.register(built.definition);
 
+      // T607: the boundary-node sockets are folded in at registration; the reported
+      // lists must be the EFFECTIVE interface, not the pre-normalization rows.
+      const effective = withBoundaryPorts(built.definition);
       return {
         status: "applied",
         revision: applied.revision,
@@ -503,8 +507,8 @@ export function registerComponentCommands(bus: ShaderloomBus, options: Component
           componentId,
           version,
           instanceNodeId,
-          exposedInputs: built.definition.inputs.map((port) => port.externalId),
-          exposedOutputs: built.definition.outputs.map((port) => port.externalId),
+          exposedInputs: effective.inputs.map((port) => port.externalId),
+          exposedOutputs: effective.outputs.map((port) => port.externalId),
           diagnostics,
         },
       };

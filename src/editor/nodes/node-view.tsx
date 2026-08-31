@@ -11,6 +11,7 @@ import { portFamilyColor } from "@ui/ports.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
 import { nameBaseFor } from "@domain/graph/names.ts";
 import { sourceReferenceForInput } from "@domain/graph/source-references.ts";
+import { isComponentInputBoundary, isComponentOutputBoundary } from "@nodes/definitions/index.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import { previewablePort } from "@domain/graph/previewable.ts";
@@ -211,6 +212,12 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
         className={cx(styles.node, selected && styles.selected)}
         data-testid={`node-${id}`}
         data-status={status}
+        // T607: a boundary node's dangling side wears a LEAD — the "dangling input
+        // cable" of the owner's framing — saying "fed from outside" (In) or "feeds
+        // the outside" (Out). Pure CSS off this attribute; see .node[data-boundary].
+        data-boundary={
+          isComponentInputBoundary(node.type) ? "in" : isComponentOutputBoundary(node.type) ? "out" : undefined
+        }
         data-bypassed={bypassed}
         data-muted={muted}
         // §V117 — a resized node fills the box it was dragged to, and the PREVIEW is
