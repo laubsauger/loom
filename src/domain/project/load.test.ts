@@ -4,7 +4,7 @@ import type { GraphComponentDefinition } from "../types/components.ts";
 import type { MigrationResult } from "../types/node-definition.ts";
 import { bloomComponent, blurKnob, createComponentHarness } from "../components/test-support.ts";
 import { loadProject } from "./load.ts";
-import { buildProjectFile, projectFileName } from "./project-file.ts";
+import { buildProjectFile, nextProjectFileName, projectFileName } from "./project-file.ts";
 import { serializeProjectDocument } from "./serialize.ts";
 import { definitionSource, testDefinition, testDocument } from "./test-support.ts";
 
@@ -37,6 +37,43 @@ describe("round trip", () => {
     expect(projectFileName("My Bloom Rig")).toBe("My-Bloom-Rig.loom.json");
     expect(projectFileName("  ")).toBe("untitled.loom.json");
     expect(projectFileName("../../etc/passwd")).toBe("etcpasswd.loom.json");
+  });
+
+  describe("the name a second save offers (T697)", () => {
+    it("offers the same name again when this session has not written it", () => {
+      // The default case and the important one: a name we have NOT written is offered as
+      // it stands. A browser cannot read the directory, so anything else would be a guess
+      // dressed as a fact — and "bloom-2" beside a bloom that does not exist is worse
+      // than no suffix, because the user cannot tell which file is current.
+      expect(nextProjectFileName("bloom.loom.json", new Set())).toBe("bloom.loom.json");
+      expect(nextProjectFileName("bloom.loom.json", new Set(["other.loom.json"]))).toBe(
+        "bloom.loom.json",
+      );
+    });
+
+    it("counts up past the names this session has written", () => {
+      const written = new Set(["bloom.loom.json"]);
+      expect(nextProjectFileName("bloom.loom.json", written)).toBe("bloom-2.loom.json");
+      written.add("bloom-2.loom.json");
+      expect(nextProjectFileName("bloom.loom.json", written)).toBe("bloom-3.loom.json");
+    });
+
+    it("replaces a counter rather than stacking them", () => {
+      // The suggestion feeds back in: after saving `bloom-2`, the next save starts from
+      // `bloom-2` and must offer `bloom-3`, not `bloom-2-2`. Four saves in one session is
+      // an ordinary afternoon, and `bloom-2-2-2-2` is the version of this feature that
+      // gets turned off.
+      const written = new Set(["bloom.loom.json", "bloom-2.loom.json"]);
+      expect(nextProjectFileName("bloom-2.loom.json", written)).toBe("bloom-3.loom.json");
+    });
+
+    it("keeps the number in front of the extension, not after it", () => {
+      // `bloom.loom.json-2` is not a project file: the picker filters on the extension
+      // and the OS opens it with nothing. The whole double extension has to survive.
+      expect(nextProjectFileName("bloom.loom.json", new Set(["bloom.loom.json"]))).toMatch(
+        /\.loom\.json$/,
+      );
+    });
   });
 
   it("stamps updatedAt on every save so autosave and manual save agree", () => {

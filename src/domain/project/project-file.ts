@@ -82,6 +82,46 @@ export function projectFileName(projectName: string): string {
   return `${base === "" ? "untitled" : base}${PROJECT_FILE_EXTENSION}`;
 }
 
+/**
+ * THE NEXT NAME TO OFFER, GIVEN THE ONES WE KNOW WE HAVE WRITTEN (T697).
+ *
+ * The owner asked for two things: a save should suggest the file the project came FROM,
+ * and it should not silently offer to overwrite. The first is the caller's job — it holds
+ * the opened name. This is the second.
+ *
+ * ## The honest limit, which is the whole design
+ *
+ * **A browser cannot enumerate a directory.** There is no API that answers "is there
+ * already a `bloom.loom.json` next to the one I am about to write", and there is no way to
+ * get one without asking the user to grant a directory handle they never asked to grant.
+ * So `taken` is not "files on disk". It is **the names this session has actually written**
+ * — a fact we own outright — and the suffix means exactly that and nothing more.
+ *
+ * That distinction is the reason this takes a set instead of doing the check itself. A
+ * function that went looking for the answer would have to guess, and a confident `-2` on a
+ * name that was free is worse than no suffix at all: the user ends up with `bloom-2` and
+ * `bloom-3` and no `bloom`, and cannot tell which is current. Neither path is left
+ * unprotected by the gap, because both have a real collision handler underneath — the OS
+ * dialog on the picker path, and the browser's own `bloom (1).loom.json` on the download
+ * path. This is a courtesy on top of those, not a substitute for them.
+ *
+ * ## Suffixing
+ *
+ * The number goes before the extension, and an existing `-2` is replaced rather than
+ * appended to, so saving four times gives `-2`, `-3`, `-4` rather than `-2-2-2`. The scan
+ * is bounded by the set's own size: there cannot be more collisions than there are names.
+ */
+export function nextProjectFileName(fileName: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(fileName)) return fileName;
+  const extension = fileName.endsWith(PROJECT_FILE_EXTENSION) ? PROJECT_FILE_EXTENSION : "";
+  const stem = fileName.slice(0, fileName.length - extension.length).replace(/-\d+$/, "");
+  for (let counter = 2; counter <= taken.size + 2; counter += 1) {
+    const candidate = `${stem}-${String(counter)}${extension}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${stem}-${String(taken.size + 2)}${extension}`;
+}
+
 export interface DetachedLibrary {
   /** The document without the library key, so it round-trips through the store cleanly. */
   document: ProjectDocument;

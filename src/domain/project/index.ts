@@ -38,6 +38,7 @@ export {
   buildProjectFile,
   detachComponentLibrary,
   projectFileName,
+  nextProjectFileName,
   type BuildProjectFileInput,
   type DetachedLibrary,
   type ProjectFile,

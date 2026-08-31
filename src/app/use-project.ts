@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildProjectFile, loadProject } from "@domain/project/index.ts";
+import { buildProjectFile, loadProject, nextProjectFileName } from "@domain/project/index.ts";
 import type { LoadProjectSuccess } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -107,6 +107,21 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
+  /**
+   * T697 — what this SESSION knows about names on disk, which is all it can know.
+   *
+   * `name` is the file the project came from or was last written to, and it is what the
+   * next save offers. `written` is every name we actually put bytes into, and it is the
+   * only ground for offering a counter: a browser cannot list a directory, so a check
+   * against anything wider would be a guess presented as a fact.
+   *
+   * A ref rather than state because nothing renders from it and `save` reads it through a
+   * stable callback; `fileName` beside it is the same fact for the top bar, which does.
+   */
+  const fileSession = useRef<{ name: string | null; written: Set<string> }>({
+    name: null,
+    written: new Set<string>(),
+  });
   const [busy, setBusy] = useState(false);
 
   // Read through refs so the registered handlers never go stale without re-registering.
@@ -143,7 +158,32 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
       document: current.projectDocument(),
       components: current.components.all(),
     });
-    const outcome = await writeFile(file);
+    /*
+     * T697 — the name we offer is the file this project CAME FROM, counted up past the
+     * names this session has already written.
+     *
+     * `buildProjectFile` names the file after the project's `name` field, which is right
+     * for a project that has never been on disk and wrong the moment one has: a user who
+     * opened `bloom-final.loom.json` is offered `Bloom.loom.json` and has to retype it
+     * every save. `session.name` is what open and save both already record for the top
+     * bar; this is the same fact, used.
+     *
+     * `session.written` is deliberately only what WE wrote (see `nextProjectFileName`) —
+     * the browser cannot read the directory, so that is the whole of what can be claimed
+     * honestly. One suggestion, applied to `file.fileName`, so the picker's
+     * `suggestedName` and the download anchor's `download` — the two paths of §T43/§T139's
+     * ladder — cannot drift apart.
+     */
+    const session = fileSession.current;
+    const suggested = nextProjectFileName(session.name ?? file.fileName, session.written);
+    const outcome = await writeFile({ ...file, fileName: suggested });
+    if (outcome.kind === "saved") {
+      // The name the WRITE reports, not the one we offered: on the picker path the user
+      // may have typed something else entirely, and counting up past a name they never
+      // used would be inventing a collision.
+      session.written.add(outcome.fileName);
+      session.name = outcome.fileName;
+    }
 
     if (outcome.kind === "cancelled") {
       return { saved: false, fileName: null, diagnostics: [] };
@@ -214,6 +254,10 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
       }
 
       adopt(result);
+      // T697: the name a later save offers. NOT added to `written` — we read this file,
+      // we did not write it, and offering `bloom-2` for the first save of a file the user
+      // opened would be the counter claiming knowledge it does not have.
+      if (name !== null) fileSession.current.name = name;
       return { opened: true, fileName: name, diagnostics: result.diagnostics };
     },
     [],
@@ -297,6 +341,10 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
         }
         setDiagnostics([]);
         setFileName(null);
+        // T697: a new project is not a version of the old one, so it starts from its own
+        // name again. The written set stays — those files still exist, and this session
+        // still knows it made them.
+        fileSession.current.name = null;
         start();
         return { created: true, diagnostics: [] };
       },
