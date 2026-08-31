@@ -449,7 +449,11 @@ export function App({
 
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
-  const pulses = usePulseFiring(runtime, runtime.invocation);
+  const compileRef = useRef(compile);
+  compileRef.current = compile;
+  // T628: the pulse watcher reads driven parameters through the compile's own resolver
+  // (§V61) — without it an LFO wired to a reset pulse never fires.
+  const pulses = usePulseFiring(runtime, runtime.invocation, () => compileRef.current.channels);
 
   /**
    * The frame observer, shared (T214, T305).

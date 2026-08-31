@@ -39,7 +39,12 @@ export type ExpressionAst =
   /** A whitelisted function call (T370). Arity is checked at PARSE time; see `FUNCTIONS`. */
   | { kind: "call"; name: string; args: readonly ExpressionAst[] }
   | { kind: "unary"; operator: "-" | "+"; operand: ExpressionAst }
-  | { kind: "binary"; operator: "+" | "-" | "*" | "/" | "%" | "^"; left: ExpressionAst; right: ExpressionAst };
+  | {
+      kind: "binary";
+      operator: "+" | "-" | "*" | "/" | "%" | "^" | "==" | "!=" | "<" | "<=" | ">" | ">=";
+      left: ExpressionAst;
+      right: ExpressionAst;
+    };
 
 export type ExpressionScope = Readonly<Record<string, number>>;
 
@@ -77,7 +82,7 @@ export type NodeReferenceReader = (
  * below earns its place by one of two tests:
  *
  *  - the arithmetic grammar CANNOT express it (`sin`, `cos`, `min`, `max`, `floor`,
- *    `ceil`, `round`, `sign` — there are no comparisons and no series here); or
+ *    `ceil`, `round`, `sign` — no series here; comparisons joined the GRAMMAR in T628); or
  *  - it is the CORRECT form of something the arithmetic form gets subtly wrong
  *    (`clamp` is what a bounded parameter does to you silently, said out loud; `mod` is a
  *    true modulo where `%` is a remainder that goes negative below zero; `fract` is the
@@ -197,7 +202,7 @@ type Token =
   | { kind: "string"; value: string }
   | { kind: "dot" }
   | { kind: "comma" }
-  | { kind: "op"; value: "+" | "-" | "*" | "/" | "%" | "^" }
+  | { kind: "op"; value: "+" | "-" | "*" | "/" | "%" | "^" | "==" | "!=" | "<" | "<=" | ">" | ">=" }
   | { kind: "paren"; value: "(" | ")" };
 
 const OPERATORS = new Set(["+", "-", "*", "/", "%", "^"]);
@@ -228,6 +233,26 @@ function tokenize(input: string): Token[] | string {
       tokens.push({ kind: "comma" });
       index += 1;
       continue;
+    }
+
+    /*
+     * T628: comparisons. Two-character forms first, so `<=` never reads as `<` `=`.
+     * A bare `=` or `!` is refused with the spelling the author meant — the reset
+     * idiom this exists for is `frame % 120 == 0`, and "unexpected =" teaches nothing.
+     */
+    if (char === "=" || char === "!" || char === "<" || char === ">") {
+      const two = input.slice(index, index + 2);
+      if (two === "==" || two === "!=" || two === "<=" || two === ">=") {
+        tokens.push({ kind: "op", value: two });
+        index += 2;
+        continue;
+      }
+      if (char === "<" || char === ">") {
+        tokens.push({ kind: "op", value: char });
+        index += 1;
+        continue;
+      }
+      return char === "=" ? 'single "=" — comparison is written "=="' : 'single "!" — negation is written "!="';
     }
 
     if (OPERATORS.has(char)) {
@@ -300,6 +325,27 @@ function fail(reason: string): never {
   throw new ParseFailure(reason);
 }
 
+const COMPARISONS = new Set(["==", "!=", "<", "<=", ">", ">="]);
+
+/**
+ * T628: comparisons, one precedence level BELOW additive — `frame % 120 == 0` parses
+ * as `(frame % 120) == 0` with no parentheses, which is the pulse idiom this grammar
+ * existed without. The result is 1 or 0 (the evaluator's contract is finite numbers;
+ * there is no boolean type), so comparisons compose with arithmetic: `(t > 2) * gain`.
+ * Left-associative like everything here; `a < b < c` therefore means `(a < b) < c` —
+ * write the conjunction as a product instead: `(a < b) * (b < c)`.
+ */
+function parseComparison(cursor: Cursor): ExpressionAst {
+  let left = parseAdditive(cursor);
+  for (;;) {
+    const token = peek(cursor);
+    if (token === undefined || token.kind !== "op" || !COMPARISONS.has(token.value)) break;
+    cursor.index += 1;
+    left = { kind: "binary", operator: token.value, left, right: parseAdditive(cursor) };
+  }
+  return left;
+}
+
 function parseAdditive(cursor: Cursor): ExpressionAst {
   let left = parseMultiplicative(cursor);
   for (;;) {
@@ -362,7 +408,7 @@ function parsePrimary(cursor: Cursor): ExpressionAst {
   }
   if (token.kind === "paren" && token.value === "(") {
     cursor.index += 1;
-    const inner = parseAdditive(cursor);
+    const inner = parseComparison(cursor);
     const closing = peek(cursor);
     if (closing === undefined || closing.kind !== "paren" || closing.value !== ")") {
       fail("missing closing parenthesis");
@@ -403,7 +449,7 @@ function parseCall(cursor: Cursor, name: string): ExpressionAst {
     cursor.index += 1;
   } else {
     for (;;) {
-      args.push(parseAdditive(cursor));
+      args.push(parseComparison(cursor));
       const next = peek(cursor);
       if (next !== undefined && next.kind === "comma") {
         cursor.index += 1;
@@ -469,7 +515,7 @@ export function parseExpression(input: string): ParseResult {
 
   const cursor: Cursor = { tokens, index: 0 };
   try {
-    const ast = parseAdditive(cursor);
+    const ast = parseComparison(cursor);
     if (cursor.index !== tokens.length) {
       return { ok: false, reason: "trailing input after the expression" };
     }
@@ -561,6 +607,20 @@ function evaluateNode(
           return ast.operator === "/" ? left / right : left % right;
         case "^":
           return left ** right;
+        // T628: 1/0, never a boolean — the contract is finite numbers, and 1/0 is
+        // what lets a comparison drive an amount: `(frame % 120 == 0) * kick`.
+        case "==":
+          return left === right ? 1 : 0;
+        case "!=":
+          return left === right ? 0 : 1;
+        case "<":
+          return left < right ? 1 : 0;
+        case "<=":
+          return left <= right ? 1 : 0;
+        case ">":
+          return left > right ? 1 : 0;
+        case ">=":
+          return left >= right ? 1 : 0;
       }
     }
   }

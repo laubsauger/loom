@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { createPulseWatcher } from "@domain/parameters/pulse.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
@@ -30,13 +31,25 @@ export interface PulseFiring {
   observe: (frame: FrameEvaluationInput) => void;
 }
 
-export function usePulseFiring(runtime: AppRuntime, context: InvocationContext): PulseFiring {
+export function usePulseFiring(
+  runtime: AppRuntime,
+  context: InvocationContext,
+  /**
+   * T628: the compile's OWN channel resolver (§V61 — one read path, B46's rule). A
+   * getter, because the compile result re-mints per revision while this hook does not.
+   * Absent, driven pulse parameters resolve to their retained static — which is the
+   * silent never-fires this parameter exists to end (T593's class, fourth instance).
+   */
+  channels?: () => ChannelResolver | undefined,
+): PulseFiring {
   const bus = runtime.bus;
   const watcher = useMemo(() => createPulseWatcher(bus.registry), [bus]);
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
   const contextRef = useRef(context);
   contextRef.current = context;
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
 
   // A remount must not inherit the previous mount's armed levels: an expression that was
   // true when the pane went away would read as a rising edge when it comes back.
@@ -52,7 +65,11 @@ export function usePulseFiring(runtime: AppRuntime, context: InvocationContext):
       // idiom — `frame % 120 == 0` on a Feedback's reset — stopped working the moment
       // that Feedback was packaged into a component. The fires that come back name FLAT
       // ids; `parameter.pulse` resolves those through the same flattening (§V82).
-      const fires = watcher.step(runtimeRef.current.flattened.current().graph, frame);
+      const fires = watcher.step(
+        runtimeRef.current.flattened.current().graph,
+        frame,
+        channelsRef.current?.(),
+      );
       for (const fire of fires) {
         void bus
           .execute(

@@ -671,7 +671,20 @@ function resolveStored(
           ),
         );
       }
-      const checked = checkAgainstManifest(key, definition, supplied, node);
+      /*
+       * T628 (§V109, §V125): a channel delivers NUMBERS (an LFO, an audio feature), and
+       * a pulse or boolean armed by one follows the SAME ≠0 rule an expression result
+       * does — `coerceExpressionResult` is that rule's one home. Without this, a driven
+       * pulse hit the boolean-trigger manifest check, fell back to its retained static
+       * (always disarmed, §V124) and NEVER fired: an LFO wired to a reset was a wire
+       * that did nothing, every unit suite green.
+       */
+      const armedKinds = definition.type === "pulse" || definition.type === "boolean";
+      const value =
+        armedKinds && typeof supplied === "number" && Number.isFinite(supplied)
+          ? supplied !== 0
+          : supplied;
+      const checked = checkAgainstManifest(key, definition, value, node);
       if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
       return { value: checked.value, mode: "driven", source: "driven", driven: true, diagnostic: null };
     }

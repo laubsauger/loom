@@ -194,3 +194,42 @@ describe("the function whitelist", () => {
     expect(functionSignature("smoothstep")).toBeNull();
   });
 });
+
+describe("comparison operators (T628)", () => {
+  const value = (input: string, scope: Record<string, number> = {}) => {
+    const result = evaluateExpression(input, scope);
+    if (!result.ok) throw new Error(result.reason);
+    return result.value;
+  };
+
+  it("parses the pulse idiom without parentheses: comparison binds below additive", () => {
+    // The reset idiom our own pulse docblock names — previously did not parse at all.
+    expect(value("frame % 120 == 0", { frame: 240 })).toBe(1);
+    expect(value("frame % 120 == 0", { frame: 241 })).toBe(0);
+  });
+
+  it("returns 1/0 so comparisons compose with arithmetic", () => {
+    expect(value("(t > 2) * 10", { t: 3 })).toBe(10);
+    expect(value("(t > 2) * 10", { t: 1 })).toBe(0);
+    expect(value("1 <= 1")).toBe(1);
+    expect(value("1 >= 2")).toBe(0);
+    expect(value("3 != 3")).toBe(0);
+    expect(value("2 < 3")).toBe(1);
+  });
+
+  it("refuses the near-miss spellings with the correction in the message", () => {
+    const single = evaluateExpression("a = 1", { a: 1 });
+    expect(single.ok).toBe(false);
+    if (!single.ok) expect(single.reason).toContain('"=="');
+    const bang = evaluateExpression("!a", { a: 1 });
+    expect(bang.ok).toBe(false);
+    if (!bang.ok) expect(bang.reason).toContain('"!="');
+  });
+
+  it("chains left-associatively — a < b < c is (a < b) < c, stated not surprising", () => {
+    // 1 < 5 -> 1; 1 < 3 -> 1. The docblock tells authors to write the conjunction as
+    // a product; this pin is what keeps the meaning from silently changing later.
+    expect(value("1 < 5 < 3")).toBe(1);
+    expect(value("5 < 1 < 3")).toBe(1); // (5<1)=0, 0<3 -> 1
+  });
+});

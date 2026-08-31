@@ -8,6 +8,7 @@ import type {
 } from "../types/parameters.ts";
 import { isParameterSlot } from "./slots.ts";
 import { resolveParameter } from "./resolve.ts";
+import type { ChannelResolver } from "./resolve.ts";
 
 /**
  * Pulse mechanics (T214, §V123, §V124, §V125).
@@ -102,7 +103,12 @@ export interface PulseWatcher {
    * that is already true must not reset on load (§V124's "would wipe your work every
    * open", reached by the other road).
    */
-  step: (graph: GraphDocument, frame: FrameEvaluationInput) => readonly PulseFire[];
+  step: (
+    graph: GraphDocument,
+    frame: FrameEvaluationInput,
+    /** T628: the §V61 channel resolver — absent, a DRIVEN pulse reads its retained static and never fires. */
+    channels?: ChannelResolver,
+  ) => readonly PulseFire[];
   /** Forget every armed state. Used when the document is replaced. */
   reset: () => void;
 }
@@ -134,7 +140,7 @@ export function createPulseWatcher(registry: SchemaSource): PulseWatcher {
     reset() {
       armed = new Map();
     },
-    step(graph, frame) {
+    step(graph, frame, channels) {
       const fires: PulseFire[] = [];
       const next = new Map<string, boolean>();
 
@@ -145,7 +151,17 @@ export function createPulseWatcher(registry: SchemaSource): PulseWatcher {
         if (schema === undefined) continue;
         for (const { key, definition } of pulseParametersOf(schema)) {
           if (!isWatchable(node, key)) continue;
-          const resolved = resolveParameter(node, key, definition, { frame, schema });
+          /*
+           * T628 (T593's class, fourth instance): the CHANNEL RESOLVER rides along, or
+           * a DRIVEN pulse silently resolves to its retained static and never fires —
+           * an LFO wired to a reset pulse was a wire that did nothing, with every unit
+           * suite green because each was handed the resolver it was testing.
+           */
+          const resolved = resolveParameter(node, key, definition, {
+            frame,
+            schema,
+            ...(channels === undefined ? {} : { channels }),
+          });
           const isArmed = isPulseArmed(resolved.value);
           const mapKey = armedKey(nodeId, key);
           next.set(mapKey, isArmed);

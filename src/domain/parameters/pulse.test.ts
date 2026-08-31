@@ -155,3 +155,42 @@ describe("the watcher fires on the rising edge, not the level (§V125)", () => {
     expect(watcher.step(graph, frameAt(3))).toHaveLength(0);
   });
 });
+
+describe("a DRIVEN pulse fires through the channel resolver (T628, T593's class)", () => {
+  const drivenNode = (): GraphNode => ({
+    id: "n1",
+    type: "feedback",
+    definitionVersion: 1,
+    position: { x: 0, y: 0 },
+    parameters: {
+      resetPulse: {
+        mode: "driven",
+        bindings: {
+          driven: { kind: "driven", channel: "lfo1" },
+          static: { kind: "static", value: 0 },
+        },
+      },
+    },
+  } as never);
+
+  it("fires on the channel's rising edge WITH the resolver, and never without it (§V461)", () => {
+    // The channel: 0 on even frames, 1 on odd — an LFO wired to the reset.
+    const channels = (name: string, context: { frame: FrameEvaluationInput }) =>
+      name === "lfo1" ? context.frame.frameIndex % 2 : undefined;
+
+    const wired = createPulseWatcher(registry);
+    const graph = graphWith(drivenNode());
+    expect(wired.step(graph, frameAt(0), channels as never)).toEqual([]); // first sighting
+    expect(wired.step(graph, frameAt(1), channels as never)).toHaveLength(1);
+    expect(wired.step(graph, frameAt(2), channels as never)).toHaveLength(0);
+    expect(wired.step(graph, frameAt(3), channels as never)).toHaveLength(1);
+
+    // WITHOUT the resolver the driven parameter reads its retained static forever —
+    // the silent never-fires this parameter ended. Both worlds pinned: remove the
+    // resolver plumbing and the wired half above is what catches it.
+    const unwired = createPulseWatcher(registry);
+    for (let index = 0; index < 4; index += 1) {
+      expect(unwired.step(graph, frameAt(index))).toEqual([]);
+    }
+  });
+});
