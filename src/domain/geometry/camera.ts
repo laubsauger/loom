@@ -128,6 +128,120 @@ export function orthographic(height: number, aspect: number, near: number, far: 
 }
 
 /**
+ * T706/T704 — the ONE guarded, rolled up-vector (§V437). The camera's view and the
+ * projector's throw share it: the degenerate-pole guard swaps to [0,0,1] exactly as the
+ * shadow path does, and `roll` banks the result around the view axis (Rodrigues).
+ */
+export function guardedRolledUp(
+  eye: readonly [number, number, number],
+  lookAt3: readonly [number, number, number],
+  rollDeg: number,
+): [number, number, number] {
+  const view3 = ((): [number, number, number] => {
+    const dx = lookAt3[0] - eye[0];
+    const dy = lookAt3[1] - eye[1];
+    const dz = lookAt3[2] - eye[2];
+    const length = Math.hypot(dx, dy, dz) || 1;
+    return [dx / length, dy / length, dz / length];
+  })();
+  let up: [number, number, number] = Math.abs(view3[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
+  if (rollDeg !== 0) {
+    const theta = (rollDeg * Math.PI) / 180;
+    const c = Math.cos(theta);
+    const sn = Math.sin(theta);
+    const k = view3;
+    const kCrossUp: [number, number, number] = [
+      k[1] * up[2] - k[2] * up[1],
+      k[2] * up[0] - k[0] * up[2],
+      k[0] * up[1] - k[1] * up[0],
+    ];
+    const kDotUp = k[0] * up[0] + k[1] * up[1] + k[2] * up[2];
+    up = [
+      up[0] * c + kCrossUp[0] * sn + k[0] * kDotUp * (1 - c),
+      up[1] * c + kCrossUp[1] * sn + k[1] * kDotUp * (1 - c),
+      up[2] * c + kCrossUp[2] * sn + k[2] * kDotUp * (1 - c),
+    ];
+  }
+  return up;
+}
+
+/** The optics a venue spec lists (T704). All of it is geometry — no light math here. */
+export interface ProjectorLens {
+  /** Throw distance ÷ image width — the number printed on the lens. */
+  readonly throwRatio: number;
+  /** The projector's NATIVE aspect (width/height of the image it throws). */
+  readonly aspect: number;
+  /** Lens shift, as fractions of image width/height. Off-axis, not a re-aim. */
+  readonly shiftX: number;
+  readonly shiftY: number;
+  /** Keystone, degrees. Applied as the trapezoid it actually is (w-row shear). */
+  readonly keystoneH: number;
+  readonly keystoneV: number;
+}
+
+/**
+ * T704 — the projector's viewProjection: what the venue's lens sheet says, as a matrix.
+ *
+ * fovX comes from the throw ratio (tan(fovX/2) = 0.5/throw); fovY from the native
+ * aspect. Near/far derive from the throw DISTANCE (|eye − lookAt|) so the frustum
+ * brackets the surface being hit without another parameter to explain: near at 2% of
+ * the distance, far at 8×. Lens shift is a true off-axis offset (the image moves, the
+ * body does not re-aim) — implemented on the projection's z-column so it survives the
+ * perspective divide as a constant NDC offset. Keystone is the trapezoid a tilted
+ * screen produces: a shear INTO THE W ROW, so one side of the image genuinely scales
+ * against the other rather than merely sliding.
+ */
+export function projectorMatrix(
+  pose: {
+    readonly eye: readonly [number, number, number];
+    readonly lookAt: readonly [number, number, number];
+    readonly roll?: number;
+  },
+  lens: ProjectorLens,
+): Mat4 {
+  const distance = Math.max(
+    0.05,
+    Math.hypot(
+      pose.lookAt[0] - pose.eye[0],
+      pose.lookAt[1] - pose.eye[1],
+      pose.lookAt[2] - pose.eye[2],
+    ),
+  );
+  const near = Math.max(0.01, distance * 0.02);
+  const far = distance * 8;
+  const tanHalfX = 0.5 / Math.max(lens.throwRatio, 0.05);
+  const tanHalfY = tanHalfX / Math.max(lens.aspect, 0.05);
+
+  const projection = identity();
+  projection[0] = 1 / tanHalfX;
+  projection[5] = 1 / tanHalfY;
+  projection[10] = far / (near - far);
+  projection[11] = -1;
+  projection[14] = (near * far) / (near - far);
+  projection[15] = 0;
+  // Off-axis shift: x_ndc = (m0·x + m8·z)/(−z) = m0·x/(−z) − m8, so writing −2·shift
+  // moves the whole image by `shift` image-widths without re-aiming the axis.
+  projection[8] = -2 * lens.shiftX;
+  projection[9] = -2 * lens.shiftY;
+  // Keystone: shear x (and y) into the w row — after the divide, one side of the image
+  // is nearer in projector terms than the other, which is exactly the trapezoid.
+  const kH = Math.tan((lens.keystoneH * Math.PI) / 180);
+  const kV = Math.tan((lens.keystoneV * Math.PI) / 180);
+  if (kH !== 0 || kV !== 0) {
+    projection[3] = kH * (projection[0] ?? 0);
+    projection[7] = kV * (projection[5] ?? 0);
+  }
+
+  const up = guardedRolledUp(pose.eye, pose.lookAt, pose.roll ?? 0);
+  const view = lookAt(
+    [pose.eye[0], pose.eye[1], pose.eye[2]],
+    [pose.lookAt[0], pose.lookAt[1], pose.lookAt[2]],
+    up,
+  );
+  return multiply(projection, view);
+}
+
+/**
  * T457: one camera VALUE to one matrix, composed where the aspect is known (§V198).
  * Every consumer of a camera payload — Render, renderSurface, renderInstances — goes
  * through this, so a camera node means the same picture wherever it is named (V387).
@@ -159,32 +273,7 @@ export function cameraPayloadMatrix(
    * look-at vector's job and orientation is complete: eye + lookAt + roll is a full
    * rotation representation, which is what the positioning gizmo (T692) writes into.
    */
-  const view3 = ((): [number, number, number] => {
-    const dx = camera.lookAt[0] - camera.eye[0];
-    const dy = camera.lookAt[1] - camera.eye[1];
-    const dz = camera.lookAt[2] - camera.eye[2];
-    const length = Math.hypot(dx, dy, dz) || 1;
-    return [dx / length, dy / length, dz / length];
-  })();
-  let up: [number, number, number] = Math.abs(view3[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
-  const rollDeg = camera.roll ?? 0;
-  if (rollDeg !== 0) {
-    const theta = (rollDeg * Math.PI) / 180;
-    const c = Math.cos(theta);
-    const sn = Math.sin(theta);
-    const k = view3;
-    const kCrossUp: [number, number, number] = [
-      k[1] * up[2] - k[2] * up[1],
-      k[2] * up[0] - k[0] * up[2],
-      k[0] * up[1] - k[1] * up[0],
-    ];
-    const kDotUp = k[0] * up[0] + k[1] * up[1] + k[2] * up[2];
-    up = [
-      up[0] * c + kCrossUp[0] * sn + k[0] * kDotUp * (1 - c),
-      up[1] * c + kCrossUp[1] * sn + k[1] * kDotUp * (1 - c),
-      up[2] * c + kCrossUp[2] * sn + k[2] * kDotUp * (1 - c),
-    ];
-  }
+  const up = guardedRolledUp(camera.eye, camera.lookAt, camera.roll ?? 0);
   const view = lookAt(
     [camera.eye[0], camera.eye[1], camera.eye[2]],
     [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],

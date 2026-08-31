@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cameraPayloadMatrix, identity, lookAt, multiply, perspective, transformPoint, viewProjection } from "./camera.ts";
+import { cameraPayloadMatrix, identity, lookAt, multiply, perspective, projectorMatrix, transformPoint, viewProjection } from "./camera.ts";
 
 /**
  * §V198: the composition order is PUBLISHED (clip = projection × view × world,
@@ -129,5 +129,73 @@ describe("T706 — the camera can aim anywhere and bank (cameraPayloadMatrix)", 
     // And the aim did not move: the look-at point projects to centre in both.
     expect(apply(flat, [0, 0, 0])[0]).toBeCloseTo(0, 6);
     expect(apply(rolled, [0, 0, 0])[0]).toBeCloseTo(0, 6);
+  });
+});
+
+describe("T704 — the projector's matrix speaks the lens sheet", () => {
+  const project = (m: Float32Array, p: [number, number, number]) => {
+    const w = (m[3] ?? 0) * p[0] + (m[7] ?? 0) * p[1] + (m[11] ?? 0) * p[2] + (m[15] ?? 0);
+    return [
+      ((m[0] ?? 0) * p[0] + (m[4] ?? 0) * p[1] + (m[8] ?? 0) * p[2] + (m[12] ?? 0)) / w,
+      ((m[1] ?? 0) * p[0] + (m[5] ?? 0) * p[1] + (m[9] ?? 0) * p[2] + (m[13] ?? 0)) / w,
+      ((m[2] ?? 0) * p[0] + (m[6] ?? 0) * p[1] + (m[10] ?? 0) * p[2] + (m[14] ?? 0)) / w,
+    ] as const;
+  };
+  const LENS = { throwRatio: 1.5, aspect: 16 / 9, shiftX: 0, shiftY: 0, keystoneH: 0, keystoneV: 0 };
+  const POSE = { eye: [0, 0, 4] as const, lookAt: [0, 0, 0] as const };
+
+  it("throw ratio IS the frustum: the image edge lands at ndc ±1, exactly", () => {
+    // Throw 1.5 at distance z: image width = z/1.5, so the half-width point at the
+    // look-at plane (z_view = -4) sits at x = 4/(2·1.5) = 4/3 — and must project to
+    // ndc x = 1 to the arithmetic, because that IS what "throw ratio 1.5" prints.
+    const m = projectorMatrix(POSE, LENS);
+    const edge = project(m, [4 / 3, 0, 0]);
+    expect(edge[0]).toBeCloseTo(1, 6);
+    expect(project(m, [-4 / 3, 0, 0])[0]).toBeCloseTo(-1, 6);
+    // The vertical edge follows the NATIVE aspect: half-height = half-width / aspect.
+    expect(project(m, [0, (4 / 3) / (16 / 9), 0])[1]).toBeCloseTo(1, 6);
+    // And the axis point projects dead centre.
+    expect(project(m, [0, 0, 0])[0]).toBeCloseTo(0, 6);
+  });
+
+  it("lens shift slides the image without re-aiming: centre moves by 2·shift ndc", () => {
+    const m = projectorMatrix(POSE, { ...LENS, shiftX: 0.25 });
+    // The optical axis point now lands off-centre by exactly a quarter image width
+    // (= half an ndc unit): the body did not turn, the lens moved.
+    expect(project(m, [0, 0, 0])[0]).toBeCloseTo(0.5, 6);
+    // Straight-through geometry is otherwise untouched: relative spans are preserved.
+    const a = project(m, [4 / 3, 0, 0])[0];
+    const b = project(m, [-4 / 3, 0, 0])[0];
+    expect(a - b).toBeCloseTo(2, 6);
+  });
+
+  it("keystone is a trapezoid, not a slide: mirror points scale asymmetrically", () => {
+    const m = projectorMatrix(POSE, { ...LENS, keystoneH: 15 });
+    const right = project(m, [1, 0.5, 0]);
+    const left = project(m, [-1, 0.5, 0]);
+    // A horizontal keystone makes one side of the image effectively nearer: the same
+    // world height projects TALLER on one side than the other.
+    expect(Math.abs(right[1])).not.toBeCloseTo(Math.abs(left[1]), 3);
+    // Zero keystone restores symmetry — the term is the trapezoid, nothing else.
+    const flat = projectorMatrix(POSE, LENS);
+    expect(project(flat, [1, 0.5, 0])[1]).toBeCloseTo(project(flat, [-1, 0.5, 0])[1], 6);
+  });
+
+  it("near and far bracket the throw distance, derived rather than asked for", () => {
+    const m = projectorMatrix(POSE, LENS);
+    // At the look-at plane, depth is comfortably inside (0..1); at 8× the distance it
+    // has left the frustum. No near/far parameters exist to mis-set.
+    const atTarget = project(m, [0, 0, 0])[2];
+    expect(atTarget).toBeGreaterThan(0);
+    expect(atTarget).toBeLessThan(1);
+    expect(project(m, [0, 0, -40])[2]).toBeGreaterThan(1);
+  });
+
+  it("shares the camera's guarded, rolled basis (§V437) — straight down still works", () => {
+    const m = projectorMatrix({ eye: [0, 5, 0], lookAt: [0, 0, 0] }, LENS);
+    const px = project(m, [1, 0, 0]);
+    const pz = project(m, [0, 0, 1]);
+    expect(Math.hypot(px[0], px[1])).toBeGreaterThan(0.01);
+    expect(Math.hypot(px[0] - pz[0], px[1] - pz[1])).toBeGreaterThan(0.01);
   });
 });
