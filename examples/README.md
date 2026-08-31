@@ -27,6 +27,7 @@ happened:
 | [E11 Gradient Remap](./E11-Gradient-Remap.md) | Ramp into Lookup: a multi-stop palette remapping an image by luminance; per-entry colour decode (T270, §V196) |
 | [E12 Fluid](./E12-Fluid.md) | two temporal states — a velocity field carrying a dye; advection as a Displace; the pointer stirs both halves (§V182, §V236) |
 | [E13 Prism](./E13-Prism.md) | the showcase: dispersion through three refractions, per-point colour, LFO → Lag, Mouse → Lag, an expression (T364, §V179, §V71) |
+| [E14 Self-Regulating Bloom](./E14-Self-Regulating-Bloom.md) | the first CLOSED image → parameter → image loop (§V144, §V615): analyze meters the finished frame, channelIn subtracts it from a setpoint, and a P-controller with a measured loop gain of 0.7 rings, settles at its honest residual, and fights an LFO disturbance — with the open loop one valueSwitch away (T408, §V616) |
 | [E16 Murmuration](./E16-Murmuration.md) | the SOP-chain showcase: generator → flock kernel → pointer kernel → instances; mixed §V197 ownership, by-reference tint across a node, draw-time group cull (T401, T333) |
 | [E20 Gooeyball](./E20-Gooeyball.md) | the 2D→3D crossing: animated noise → per-point attribute → displacement along the normal → a closed surface whose seam is a topology claim (T417, T301/T302) |
 | [E24 Audio Reaction-Diffusion](./E24-Audio-Reaction-Diffusion.md) | the capstone: audio-driven substeps (the beat makes the chemistry FASTER), safe-bounded feed/kill, a genuinely temporal RGB delay off three cache taps, wind inside the loop (T425, T414, T437) |
