@@ -54,6 +54,20 @@ on screen it is the gold flash bursting through the magenta body on a high trans
 which reads as the intended accent, not as a blowout. Judged on the display-encoded
 tile (§V618), where all of this file's look calls were made.
 
+## The clock that was running at 1/1000th speed
+
+The saved kernel read `ctx.absTime * 0.001` — a milliseconds assumption, but
+`absTime` is seconds — so every motion the owner had already authored inside it (a
+tilted-axis tumble, a travelling colour band, three morphing cross-section profiles)
+ran at a thousandth of its designed rate: real code, frozen picture. The turntable the
+owner asked for (T683) was already written; unfreezing the clock is the whole change.
+The layers now visibly turn against each other — the cyan band sweeps the ring while
+the warm body tumbles — and the gate asserts the RELATIVE phase between the two colour
+populations moves, not that any layer's own angle advances: a torus is rotationally
+symmetric about its axis, so a per-layer angle can advance invisibly, but a
+relationship cannot hide. The clock is `ctx.absTime` by contract (§V436): it keeps
+counting across a timeline lap, so the tumble cannot snap at the loop point.
+
 ## What to look at
 
 - **The tube breathing with the lowMid** — thickness, not size. Watch the hole: it
@@ -65,4 +79,6 @@ tile (§V618), where all of this file's look calls were made.
   screen blend.
 - **The two-second hue shimmer** over everything — fast on purpose; Corona holds the
   slow-cycle end of that axis.
+- **The tumble and the band sweeping against it** — the turntable: watch the cyan band
+  lap the ring while the whole braid slowly changes attitude.
 - Drop your own track on `audiofilein1`, set `source1.index` to 1.
