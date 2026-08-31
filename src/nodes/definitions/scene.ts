@@ -65,6 +65,17 @@ export const cameraNode: NodeDefinition = {
     fov: { type: "number", label: "FOV", default: 55, min: 1, max: 179, range: "bounded", unit: "degrees" },
     near: { type: "number", label: "Near", default: 0.1, min: 0.001, range: "floor" },
     far: { type: "number", label: "Far", default: 100, min: 0.01, range: "floor" },
+    roll: {
+      type: "number",
+      label: "Roll",
+      default: 0,
+      min: -180,
+      max: 180,
+      range: "cyclic",
+      unit: "degrees",
+      description:
+        "Bank around the view axis. Aim stays Look At's job — eye, Look At and Roll together are the full orientation (T706), so drive this to tilt the horizon without moving the shot.",
+    },
     ortho: { type: "boolean", label: "Orthographic", default: false },
     orthoHeight: {
       type: "number",
@@ -86,6 +97,7 @@ export const cameraNode: NodeDefinition = {
       far: readNumber(parameters, "far", 100),
       ortho: parameters["ortho"] === true,
       orthoHeight: readNumber(parameters, "orthoHeight", 2),
+      roll: readNumber(parameters, "roll", 0),
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
   },

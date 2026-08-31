@@ -141,13 +141,54 @@ export function cameraPayloadMatrix(
     readonly far: number;
     readonly ortho: boolean;
     readonly orthoHeight: number;
+    /** Degrees of bank around the view axis (T706). Absent = 0, the old behaviour. */
+    readonly roll?: number;
   },
   aspect: number,
 ): Mat4 {
+  /*
+   * T706 — the missing third guard, and the roll that finally reaches the node.
+   *
+   * Of the three lookAt call sites this was the only one that took the default up with
+   * NO degenerate-basis guard (directionalShadowMatrix swaps at |d.y| > 0.999,
+   * scene.ts's environment basis at 0.99) — so a camera aimed straight down or up fed
+   * cross([0,1,0],[0,1,0]) = 0 into the view basis and rendered a collapsed frame.
+   * The guard picks [0,0,1] exactly as the shadow path does.
+   *
+   * `roll` banks the guarded up around the view axis (Rodrigues), so aim stays the
+   * look-at vector's job and orientation is complete: eye + lookAt + roll is a full
+   * rotation representation, which is what the positioning gizmo (T692) writes into.
+   */
+  const view3 = ((): [number, number, number] => {
+    const dx = camera.lookAt[0] - camera.eye[0];
+    const dy = camera.lookAt[1] - camera.eye[1];
+    const dz = camera.lookAt[2] - camera.eye[2];
+    const length = Math.hypot(dx, dy, dz) || 1;
+    return [dx / length, dy / length, dz / length];
+  })();
+  let up: [number, number, number] = Math.abs(view3[1]) > 0.999 ? [0, 0, 1] : [0, 1, 0];
+  const rollDeg = camera.roll ?? 0;
+  if (rollDeg !== 0) {
+    const theta = (rollDeg * Math.PI) / 180;
+    const c = Math.cos(theta);
+    const sn = Math.sin(theta);
+    const k = view3;
+    const kCrossUp: [number, number, number] = [
+      k[1] * up[2] - k[2] * up[1],
+      k[2] * up[0] - k[0] * up[2],
+      k[0] * up[1] - k[1] * up[0],
+    ];
+    const kDotUp = k[0] * up[0] + k[1] * up[1] + k[2] * up[2];
+    up = [
+      up[0] * c + kCrossUp[0] * sn + k[0] * kDotUp * (1 - c),
+      up[1] * c + kCrossUp[1] * sn + k[1] * kDotUp * (1 - c),
+      up[2] * c + kCrossUp[2] * sn + k[2] * kDotUp * (1 - c),
+    ];
+  }
   const view = lookAt(
     [camera.eye[0], camera.eye[1], camera.eye[2]],
     [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],
-    [0, 1, 0],
+    up,
   );
   const projection = camera.ortho
     ? orthographic(camera.orthoHeight, aspect, camera.near, camera.far)

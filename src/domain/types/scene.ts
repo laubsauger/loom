@@ -22,6 +22,8 @@ export interface CameraPayload {
   readonly ortho: boolean;
   /** World-units height of the ortho frustum (width follows aspect). */
   readonly orthoHeight: number;
+  /** Degrees of bank around the view axis (T706). Optional: absent reads as 0. */
+  readonly roll?: number;
 }
 
 export interface LightPayload {

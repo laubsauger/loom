@@ -81,6 +81,8 @@ const hasBounds = (parameter: NumericParameter): boolean =>
  * same meaning, so it gains a slider and loses nothing.
  */
 const CYCLIC = [
+  // T706: a camera bank wraps — rolling past 180 is the same horizon from the other side.
+  "camera.roll",
   "hsv.hueoffset",
   "lfo.phase",
   "mirror.rotate",
