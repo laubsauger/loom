@@ -34,12 +34,17 @@ export function useRuntimeCommands(inputs: {
   backendRef.current = inputs.backend;
   const compiledRef = useRef(inputs.compiled);
   compiledRef.current = inputs.compiled;
-  const registered = useRef(new Set<ShaderloomBus>());
 
   useEffect(() => {
     const { bus } = inputs;
-    if (registered.current.has(bus)) return;
-    registered.current.add(bus);
+    // T531 (§V467): ask the BUS, not a ref. `registerCommand` THROWS on a duplicate, and
+    // the guard this replaced was a per-component-instance `useRef(new Set<bus>())` — it
+    // knew only what THIS instance had done, so a SECOND App mounted on the same bus
+    // (which is what an integration test, a split pane, or StrictMode does) sailed past
+    // it and took the mount down. A duplicate-registration guard has to be scoped to the
+    // thing being registered INTO. This is the idiom every other command module here
+    // already uses; T493 reached for it under `media.*` rather than fix this one.
+    if (bus.hasCommand("runtime.resetFeedback")) return;
     bus.registerCommand({
       name: "runtime.resetFeedback",
       description: "Clear temporal (feedback) history — one node's pair, or all of them.",
