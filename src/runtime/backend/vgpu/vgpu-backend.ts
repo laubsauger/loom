@@ -1047,7 +1047,20 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // Presentation surfaces own their pane (a viewer, a perform window): opaque is
         // CORRECT here — an output should never show the page through unrendered pixels.
         // Only the preview overlay surface is transparent (V106).
-        p.surface = surface(active.gpu, p.canvas as unknown as SurfaceCanvas, p.label === undefined ? {} : { label: p.label });
+        //
+        // T674: `alphaMode` must be PASSED, not left to the default. This comment has
+        // claimed "opaque" since T87 while vgpu defaults to `"premultiplied"`
+        // (`vgpu/dist/surface.js`), so the viewer has been compositing the sink's
+        // STRAIGHT alpha all along — and the catalogue's arithmetic blends carry alpha
+        // per channel, so a sink alpha outside [0,1] is ordinary. E9-Ember's
+        // screen-through-feedback loop drives it to ±65504 alternating every frame:
+        // negative alpha clamps to 0, the pane goes fully transparent, and the owner
+        // sees the picture flicker to black at 60Hz. The preview tiles never showed it
+        // because every lens shader writes `a = 1.0` (`debug-effects.wgsl.ts`).
+        p.surface = surface(active.gpu, p.canvas as unknown as SurfaceCanvas, {
+          alphaMode: "opaque",
+          ...(p.label === undefined ? {} : { label: p.label }),
+        });
       }
       const source = presentationSource(p.outputId);
       if (source === undefined) {
