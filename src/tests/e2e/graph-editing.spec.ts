@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { APP_VIEWPORT, addNode, connect, focusGraph, handle, modKey, moveNode, openApp } from "./app.ts";
+import { APP_VIEWPORT, addNode, connect, fitAll, focusGraph, handle, modKey, moveNode, openApp } from "./app.ts";
 
 /**
  * T48 — the connect gesture, and undo/redo, driven through a real browser (§V15, §V29).
@@ -25,6 +25,11 @@ test("dragging from an output port to an input port creates one edge", async ({ 
 
   const noise = await addNode(page, "generator", "Noise");
   const output = await addNode(page, "output", "Output");
+  // T469: fit FIRST, then move — the screen-px drag then lands as a bigger graph-space
+  // delta at the fitted zoom, clearing today's ~514px nodes; moving first left the two
+  // overlapped, and the node on top buried the other's out handle (measured: the press
+  // landed on a name span, dragged the node, and no edge formed).
+  await fitAll(page);
   await moveNode(page, output, 260, 240);
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 
@@ -70,6 +75,9 @@ test("undo and redo walk the whole edit history, one entry at a time (§V15)", a
   // "positions are just presentation" reading would drop on the floor.
   const noise = await addNode(page, "generator", "Noise");
   const output = await addNode(page, "output", "Output");
+  // T469: fit BEFORE the baseline box — the camera must not move again between the
+  // measurement and the undo that is compared against it.
+  await fitAll(page);
   const placed = page.locator(`.react-flow__node[data-id="${output}"]`);
   const beforeMove = await placed.boundingBox();
   await moveNode(page, output, 260, 240);
@@ -125,9 +133,11 @@ test("mod+z inside the shader editor edits text and never the graph (§V53)", as
   await page.locator(`.react-flow__node[data-id="${fx}"]`).click({ position: { x: 40, y: 8 } });
   await page.getByRole("tab", { name: /shader editor/ }).click();
 
-  const editor = page.getByTestId("shader-editor-surface");
+  // T469: T492 put a second CodeMirror in the inspector — scope to the dock pane.
+  const dock = page.getByRole("region", { name: "Bottom dock" });
+  const editor = dock.getByTestId("shader-editor-surface");
   await expect(editor).toBeVisible();
-  await page.locator(".cm-content").click();
+  await dock.locator(".cm-content").click();
   await page.keyboard.insertText("// a comment nobody asked for");
 
   // The graph must be untouched by an undo aimed at the text context. The node count is

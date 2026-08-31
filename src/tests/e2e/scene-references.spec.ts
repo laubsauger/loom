@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { APP_VIEWPORT, addNode, moveNode, openApp, selectNode } from "./app.ts";
+import { APP_VIEWPORT, addNode, fitAll, moveNode, openApp, selectNode } from "./app.ts";
 
 /**
  * T457 (V387) — the plumbing is invisible, and the picture that replaces it PAINTS.
@@ -26,14 +26,21 @@ test("a render node offers no input sockets, and a named camera paints a hued re
   // Overlapping nodes also draw no line: between intersecting rects there is no
   // exterior segment, and not drawing one is correct.
   const cam = await addNode(page, "render", "Camera");
-  await moveNode(page, cam, -350, -180);
+  await moveNode(page, cam, -520, -320);
 
   const render = await addNode(page, "render", "Render");
-  await moveNode(page, render, 300, 200);
+  await moveNode(page, render, 450, 280);
+  // T469: nodes are hundreds of px each now — fit, so neither buries the other's
+  // header and every click lands on the node it aims at.
+  await fitAll(page);
 
-  // (a) Every input of Render is reference-fed plumbing: no target handle exists to
-  // invite a wire apply-patch would refuse (port.sourceReference). The output stays.
-  await expect(page.locator(`.react-flow__handle.target[data-nodeid="${render}"]`)).toHaveCount(0);
+  // (a) Render's scene/camera/light inputs are reference-fed plumbing: no target handle
+  // exists to invite a wire apply-patch would refuse (port.sourceReference). T482 then
+  // added ONE real wire — the environment texture, because pixels are data (V372) — so
+  // exactly that handle exists and it is the environment's (T469 updated this claim).
+  const targets = page.locator(`.react-flow__handle.target[data-nodeid="${render}"]`);
+  await expect(targets).toHaveCount(1);
+  await expect(targets).toHaveAttribute("data-handleid", "environment");
   await expect(page.locator(`.react-flow__handle.source[data-nodeid="${render}"]`)).toHaveCount(1);
   const camName = (await page.getByTestId(`node-name-${cam}`).innerText()).trim();
   expect(camName.length).toBeGreaterThan(0);

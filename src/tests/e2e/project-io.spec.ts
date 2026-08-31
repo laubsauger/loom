@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { APP_VIEWPORT, addNode, connect, moveNode, openApp, selectNode } from "./app.ts";
+import { APP_VIEWPORT, addNode, connect, fitAll, moveNode, openApp, selectNode } from "./app.ts";
 
 /**
  * T48 — save and reload, through the browser's real file paths (§V10, §V88 in spirit).
@@ -39,6 +39,7 @@ test("a project saves to a file and reloads with its nodes, edges and parameters
   // that fits in two nodes.
   const noise = await addNode(page, "generator", "Noise");
   const output = await addNode(page, "output", "Output");
+  await fitAll(page); // T469: fit first — see graph-editing.spec.ts for the geometry
   await moveNode(page, output, 260, 240);
   await connect(page, { nodeId: noise, portId: "out" }, { nodeId: output, portId: "input" });
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
@@ -110,10 +111,14 @@ test("opening a malformed file reports it and leaves the open project alone (§V
 
   const chooserPromise = page.waitForEvent("filechooser");
   await page.getByTestId("project-open").click();
+  // T469: opening over a dirty project asks first — a deliberate guard this spec
+  // predates. Discarding is the point here: the malformed file must then leave the
+  // project alone anyway.
+  await page.getByRole("button", { name: "Discard" }).click();
   await (await chooserPromise).setFiles(badPath);
 
   // The document that was open is still open — a failed load must not clear the canvas.
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page.getByRole("tab", { name: /problems/ }).click();
-  await expect(page.getByRole("tabpanel")).toContainText(/could not|failed|invalid/i);
+  await expect(page.getByRole("tabpanel", { name: "problems" })).toContainText(/could not|failed|invalid/i);
 });

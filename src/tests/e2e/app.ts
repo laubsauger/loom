@@ -42,8 +42,12 @@ export async function openApp(page: Page): Promise<void> {
   // so a spec that let them through would hang. Both fallbacks are real shipped paths.
   await page.addInitScript(() => {
     const win = window as unknown as Record<string, unknown>;
-    delete win["showSaveFilePicker"];
-    delete win["showOpenFilePicker"];
+    // ASSIGN undefined rather than delete (T469): the pickers live on the Window
+    // prototype in current Chromium, so `delete` on the instance removed nothing and
+    // the app still saw a function — the native dialog opened and the filechooser
+    // event the spec waits for never fired. An own undefined shadows the prototype.
+    win["showSaveFilePicker"] = undefined;
+    win["showOpenFilePicker"] = undefined;
   });
   await page.goto("/");
   await expect(page.getByTestId("graph-canvas")).toBeVisible();
@@ -122,9 +126,26 @@ export async function moveNode(page: Page, nodeId: string, dx: number, dy: numbe
   await page.mouse.up();
 }
 
+/**
+ * Zoom-to-fit — the keymap's own F (T469).
+ *
+ * Nodes render at hundreds of px each since the design system landed, so absolute drag
+ * offsets overflow any fixed viewport eventually (measured: a connect target handle at
+ * y=1162 in a 1000px window — every mouse event aimed at it landed nowhere). Fitting
+ * after layout puts every handle on screen at whatever size nodes are this year.
+ */
+export async function fitAll(page: Page): Promise<void> {
+  await focusGraph(page);
+  // "F" is frame-ALL; lowercase "f" is frame-selected and a no-op with nothing selected.
+  await page.keyboard.press("Shift+F");
+}
+
 /** Selects a node so the inspector shows its parameters. Clicks the header, not the body. */
 export async function selectNode(page: Page, nodeId: string): Promise<void> {
-  await page.locator(`.react-flow__node[data-id="${nodeId}"]`).click({ position: { x: 40, y: 8 } });
+  // The NAME element, not a fixed header offset (T469): after a fit the node's top
+  // few px can sit under the dock's tab strip, and a click at {40,8} lands on the
+  // strip instead. The name is what a user clicks, and it is always inside the header.
+  await page.getByTestId(`node-name-${nodeId}`).click();
   // The inspector lives in a dock tab panel titled by its pane (T436 layout shell).
   await expect(page.getByRole("tabpanel", { name: "inspector" })).toContainText(nodeId);
 }

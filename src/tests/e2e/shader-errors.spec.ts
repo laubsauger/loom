@@ -42,21 +42,24 @@ test("editing WGSL commits through the bus as one undo entry (§V29, §V34)", as
   await page.locator(`.react-flow__node[data-id="${fx}"]`).click({ position: { x: 40, y: 8 } });
   await page.getByRole("tab", { name: /shader editor/ }).click();
 
-  const editor = page.getByTestId("shader-editor-surface");
+  // T492 put a second CodeMirror in the inspector, so every editor locator scopes to
+  // the dock pane this test actually opened (T469).
+  const dock = page.getByRole("region", { name: "Bottom dock" });
+  const editor = dock.getByTestId("shader-editor-surface");
   await expect(editor).toBeVisible();
   // The pane says what is true about this build rather than claiming a compile happened.
-  await expect(page.getByRole("tabpanel")).toContainText(/shader compile/i);
+  await expect(dock.getByRole("tabpanel")).toContainText(/shader compile/i);
 
-  await page.locator(".cm-content").click();
+  await dock.locator(".cm-content").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.insertText("\n// edited by the e2e suite");
-  await expect(page.getByRole("tabpanel")).toContainText("unsaved");
+  await expect(dock.getByRole("tabpanel")).toContainText("unsaved");
 
   // Blur to the library's search box: somewhere neutral that does NOT clear the node
   // selection. Clicking the canvas would also blur the editor — and would lose the edit;
   // that is its own test below.
   await page.locator('input[aria-label="Search nodes"]').click();
-  await expect(page.getByRole("tabpanel")).toContainText("saved");
+  await expect(dock.getByRole("tabpanel")).toContainText("saved");
   await expect(editor).toContainText("edited by the e2e suite");
 
   // ONE undo takes the whole typing burst back and leaves the node in place. A
@@ -95,17 +98,21 @@ test("a shader edit survives clicking away onto the canvas", async ({ page }) =>
   await page.locator(`.react-flow__node[data-id="${fx}"]`).click({ position: { x: 40, y: 8 } });
   await page.getByRole("tab", { name: /shader editor/ }).click();
 
-  await page.locator(".cm-content").click();
+  // T469: scoped to the dock (T492's inspector editor would strict-violate a bare
+  // locator) so that when this gate fails, it fails on the ASSERTION it exists for —
+  // the data loss — and never on selector noise in front of it.
+  const dock = page.getByRole("region", { name: "Bottom dock" });
+  await dock.locator(".cm-content").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.insertText("\n// typed, then clicked away");
-  await expect(page.getByRole("tabpanel")).toContainText("unsaved");
+  await expect(dock.getByRole("tabpanel")).toContainText("unsaved");
 
   await focusGraph(page);
   await page.locator(`.react-flow__node[data-id="${fx}"]`).click({ position: { x: 40, y: 8 } });
   await page.getByRole("tab", { name: /shader editor/ }).click();
 
   await expect(
-    page.getByTestId("shader-editor-surface"),
+    dock.getByTestId("shader-editor-surface"),
     "the edit was discarded when the canvas click cleared the selection",
   ).toContainText("typed, then clicked away");
 });
@@ -121,7 +128,8 @@ test("with no device the app says so, and invents no compile result (§V12)", as
   // device to validate against. That is why no compiler diagnostic can appear here, and
   // why the §V27 attribution below is a fixme rather than a weakened assertion.
   await page.getByRole("tab", { name: /problems/ }).click();
-  const problems = page.getByRole("tabpanel");
+  // T469: the pane tree renders one tabpanel per pane; name the one this test opened.
+  const problems = page.getByRole("tabpanel", { name: "problems" });
   await expect(problems).toContainText(/webgpu/i);
   await expect(problems).toContainText(/editing still works/i);
 

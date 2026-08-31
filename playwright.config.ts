@@ -22,6 +22,14 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",
+    /*
+     * T469: nodes render at ~514x427 device px at the default zoom since the design
+     * system landed, so two nodes plus a drag offset overflow the 1280x720 default —
+     * measured: the connect target handle sat at y=883, outside the viewport, and every
+     * mouse event aimed at it landed nowhere. The suite drags real pixels, so the
+     * window must hold the furniture.
+     */
+    viewport: { width: 1920, height: 1200 },
   },
   projects: [
     {
