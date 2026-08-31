@@ -231,6 +231,28 @@ describe("one socket fans out to every inner consumer — through the real compi
       ),
     ).toEqual([]);
   });
+
+  it("a WATCHED unwired boundary node warns nothing about itself (T607 splice fix)", () => {
+    // Pre-existing with the Null and loud with boundary nodes: a preview sink on a
+    // wire that reaches no producer used to survive the splice while its node did
+    // not, so resolveSinks warned sink-unknown about a node visibly on the canvas.
+    // The splice now drops the sink — nothing to watch is nothing, not a mystery.
+    const system = createComponentSystem(registry, [fanComponent()]);
+    for (const type of ["componentIn", "componentOut", "null"]) {
+      const graph = graphOf([node("w1", type, { x: 0, y: 0 })], []);
+      const compiled = compileGraph({
+        graph,
+        settings: SETTINGS,
+        registry: system.nodes,
+        capabilities: CAPABILITIES,
+        sinks: [{ nodeId: "w1" as NodeId, portId: "out", kind: "preview" }],
+      });
+      expect(
+        compiled.diagnostics.filter((entry) => entry.code === "compiler/sink-unknown"),
+        type,
+      ).toEqual([]);
+    }
+  });
 });
 
 describe("selection-save synthesizes boundary nodes (T607) — the fan-in fix at the source", () => {

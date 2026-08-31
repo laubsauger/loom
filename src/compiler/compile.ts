@@ -576,7 +576,8 @@ interface PassthroughSplice {
   readonly aliases: ReadonlyArray<
     [{ nodeId: NodeId; portId: PortId }, { nodeId: NodeId; portId: PortId }]
   >;
-  readonly redirectSink: (sink: ActiveSink) => ActiveSink;
+  /** Null: the sink watched a wire that reaches no producer — there is nothing to watch. */
+  readonly redirectSink: (sink: ActiveSink) => ActiveSink | null;
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 }
 
@@ -652,7 +653,7 @@ function splicePassthroughNodes(validated: {
       nodes: validated.nodes,
       edges: validated.edges,
       aliases: [],
-      redirectSink: (sink) => sink,
+      redirectSink: (sink): ActiveSink | null => sink,
       diagnostics: bypassDiagnostics,
     };
   }
@@ -731,11 +732,19 @@ function splicePassthroughNodes(validated: {
     if (producer !== undefined) aliases.push([{ nodeId: wireId, portId: wire.output }, producer]);
   }
 
-  const redirectSink = (sink: ActiveSink): ActiveSink => {
+  const redirectSink = (sink: ActiveSink): ActiveSink | null => {
     const wire = wires.get(sink.nodeId);
     if (wire === undefined) return sink;
     const producer = producers.get(sink.nodeId);
-    if (producer === undefined) return sink; // stays; resolves to nothing like any dangling sink
+    /*
+     * T607: DROPPED, not kept. This used to return the sink unchanged ("resolves to
+     * nothing like any dangling sink") — but the wire node is spliced OUT of the
+     * post-splice graph, so `resolveSinks` then warned `sink-unknown` about a node id
+     * the user can see right there on the canvas. A watched wire with no producer has
+     * NOTHING to watch, and with boundary In/Out nodes (unwired constantly while
+     * authoring) the misleading warning fired on every freshly dropped node.
+     */
+    if (producer === undefined) return null;
     return { ...sink, nodeId: producer.nodeId, portId: producer.portId };
   };
 
@@ -750,10 +759,16 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   // flat logical graph: pruning, ordering and resource assignment never learn what a
   // component is. Without a component registry there is nothing to flatten against, and
   // an instance falls through to the manifest's `component.notFlattened` tripwire.
+  // T615: a flattening the caller ALREADY holds is reused rather than redone. It is a
+  // pure function of `(graph, catalogue)` and costs 5–7× the value graph it feeds, so the
+  // per-frame values-only compile recomputing it was the largest CPU cost in an animated
+  // component document. Reusing it also means the CPU layer and the plan are looking at
+  // the SAME flattening, which is what stops the two drifting apart (§V529, §V437).
   const flattened =
-    request.components === undefined
+    request.flattened ??
+    (request.components === undefined
       ? undefined
-      : flattenComponents({ graph: request.graph, registry, components: request.components });
+      : flattenComponents({ graph: request.graph, registry, components: request.components }));
   const sources = flattened?.sources ?? new Map<NodeId, ComponentSource>();
   const sourceRows = [...sources.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId));
   const stamp = (collected: ReadonlyArray<RuntimeDiagnostic>): RuntimeDiagnostic[] =>
@@ -802,7 +817,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const splice = splicePassthroughNodes(validatedRaw);
   diagnostics.push(...splice.diagnostics);
   const validated = { nodes: splice.nodes, edges: splice.edges };
-  const redirectedSinks = explicitSinks?.map((sink) => splice.redirectSink(sink));
+  const redirectedSinks = explicitSinks
+    ?.map((sink) => splice.redirectSink(sink))
+    .filter((sink): sink is ActiveSink => sink !== null);
 
   // 2. active sinks and pruning (T26, §V25)
   const sinkResolution = resolveSinks(validated.nodes, redirectedSinks);
