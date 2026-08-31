@@ -6,7 +6,6 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import { DEFAULT_BINDINGS, detectPlatform } from "@editor/keymap/index.ts";
 import { App } from "./app.tsx";
-import { DEFAULT_BINDINGS } from "@editor/keymap/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { GpuStatus } from "./gpu-status.ts";
