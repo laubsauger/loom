@@ -397,3 +397,18 @@ describe("noteFrame's ran set (T255, §V85)", () => {
     expect(hub.nodeTelemetry("b").renderedThisFrame).toBe(true); // absent = all ran
   });
 });
+
+describe("T304 — the hub remembers when frames happened", () => {
+  it("noteFrame accumulates recent timestamps and prunes old ones", () => {
+    const hub = createTelemetryHub();
+    expect(hub.recentFrameTimes()).toEqual([]);
+    hub.noteFrame(0);
+    hub.noteFrame(1);
+    const times = hub.recentFrameTimes();
+    expect(times).toHaveLength(2);
+    // Monotonic and recent — the verdict's window can trust them.
+    expect(times[1]).toBeGreaterThanOrEqual(times[0] ?? 0);
+    const now = typeof performance === "undefined" ? Date.now() : performance.now();
+    for (const at of times) expect(now - at).toBeLessThan(1000);
+  });
+});

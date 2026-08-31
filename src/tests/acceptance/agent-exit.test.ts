@@ -396,6 +396,7 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
         metrics: (): AgentRuntimeMetrics => {
           const snapshot = hub.snapshot();
           return {
+            frameClock: { kind: "paused" as const },
             timingAvailable: snapshot.timingAvailable,
             framesRendered: snapshot.framesRendered,
             lastFrameIndex: snapshot.lastFrameIndex,

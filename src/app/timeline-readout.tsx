@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FrameInputs } from "@domain/types/backend.ts";
+import type { FrameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { wallDeltaSecondsOf } from "@domain/types/frame.ts";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import styles from "./timeline-readout.module.css";
@@ -60,6 +61,11 @@ const FPS_WINDOW = 8;
 export interface TimelineReadoutProps {
   /** Reads the last rendered frame. A REF read, never a subscription (§V16). */
   readonly latestFrame: () => FrameInputs | null;
+  /**
+   * T304: why-is-nothing-moving, judged in frame-clock.ts and read on the same 10 Hz
+   * sample as everything else. Absent = no verdict surface (a caller with no hub).
+   */
+  readonly frameClock?: () => FrameClockVerdict;
   /** Runs `transport.seek`. Absent = the field is read-only, because nothing can seek. */
   readonly onSeek?: ((frameIndex: number) => void) | undefined;
   readonly intervalMs?: number;
@@ -73,14 +79,16 @@ interface Sample {
   readonly fps: number | null;
 }
 
-export function TimelineReadout({ latestFrame, onSeek, intervalMs = READOUT_INTERVAL_MS }: TimelineReadoutProps) {
+export function TimelineReadout({ latestFrame, frameClock, onSeek, intervalMs = READOUT_INTERVAL_MS }: TimelineReadoutProps) {
   const [sample, setSample] = useState<Sample | null>(null);
+  const [clock, setClock] = useState<FrameClockVerdict | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const deltasRef = useRef<number[]>([]);
   const lastIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     const tick = () => {
+      setClock(frameClock?.() ?? null);
       const frame = latestFrame();
       if (frame === null) return;
       // Only count a frame once: while paused the same inputs stay in the ref, and
@@ -102,7 +110,7 @@ export function TimelineReadout({ latestFrame, onSeek, intervalMs = READOUT_INTE
     tick();
     const timer = setInterval(tick, intervalMs);
     return () => clearInterval(timer);
-  }, [intervalMs, latestFrame]);
+  }, [frameClock, intervalMs, latestFrame]);
 
   const commit = useCallback(() => {
     const text = draft;
@@ -159,6 +167,24 @@ export function TimelineReadout({ latestFrame, onSeek, intervalMs = READOUT_INTE
           {sample?.fps == null ? EM_DASH : sample.fps.toFixed(1)}
         </span>
       </div>
+
+      {/* T304: the frame clock's verdict, BY NAME (§V541) — "throttled" is the browser
+          suspending a hidden window's clock (bring it to the front), "behind" is the
+          machine missing the project rate. Not a problems-pane entry on purpose: it
+          changes per second and would eat the ring (§V537); this strip and
+          get_runtime_metrics are its two homes (§V437). */}
+      {clock !== null && (clock.kind === "browser-throttled" || clock.kind === "running-behind") ? (
+        <Tooltip label={clock.suggestion}>
+          <span
+            className={styles.clockNotice}
+            data-kind={clock.kind}
+            data-testid="frame-clock-notice"
+            role="status"
+          >
+            {clock.kind === "browser-throttled" ? "throttled by the browser" : "running behind"}
+          </span>
+        </Tooltip>
+      ) : null}
 
     </div>
   );

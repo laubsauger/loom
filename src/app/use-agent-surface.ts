@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { createAgentToolSurface } from "@agent/index.ts";
 import type { AgentPorts, AgentRuntimeMetrics, AgentToolSurface } from "@agent/index.ts";
+import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -52,6 +53,8 @@ export const AGENT_ACTOR: Actor = { kind: "agent", id: "assistant", label: "Assi
 
 export interface AgentSurfaceState {
   readonly selection: readonly NodeId[];
+  /** T304: whether the transport is playing — the frame-clock verdict's first fact. */
+  readonly playing: boolean;
   /** Everything the problems surface shows: compile, runtime, autosave, project (§I.diag). */
   readonly diagnostics: readonly RuntimeDiagnostic[];
   /**
@@ -84,7 +87,21 @@ export function useAgentSurface(
         // §V16: sampled from the hub on demand. Nothing is pushed, and no per-frame data
         // enters the document store on the way.
         const snapshot = runtime.telemetry.snapshot();
+        /*
+         * T304: the frame-clock verdict, judged in ONE place (frame-clock.ts) and fed
+         * this surface's local facts. The agent is the MORE important reader: a
+         * CDP-driven session is hidden by default, and an agent reading zeros here has
+         * repeatedly concluded the tool was broken (§V434 x9, §V560).
+         */
+        const frameClock = frameClockVerdict({
+          playing: stateRef.current.playing,
+          hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+          settings: runtime.settings,
+          recentFrameTimes: runtime.telemetry.recentFrameTimes(),
+          now: typeof performance === "undefined" ? Date.now() : performance.now(),
+        });
         return {
+          frameClock,
           timingAvailable: snapshot.timingAvailable,
           framesRendered: snapshot.framesRendered,
           lastFrameIndex: snapshot.lastFrameIndex,

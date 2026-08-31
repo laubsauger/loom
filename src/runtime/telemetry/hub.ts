@@ -181,6 +181,12 @@ export interface TelemetryHub extends TelemetrySource {
    * "cooking every frame?" honest through that transition.
    */
   noteFrame(frameIndex: number, ran?: ReadonlySet<NodeId>): void;
+  /**
+   * T304: performance.now()-domain timestamps of recently rendered frames — the raw
+   * half of the frame-clock verdict (`frame-clock.ts` judges; this only remembers).
+   * Pruned to the verdict's window on every note, so it never grows.
+   */
+  recentFrameTimes(): readonly number[];
   /** Component aggregate over flattened source paths (T146, §V87). */
   componentTiming(instanceId: NodeId): ComponentTiming;
   /** Plain-node aggregate: own passes only. */
@@ -208,6 +214,8 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
   let build: TelemetryBuildStats | null = null;
   let framesRendered = 0;
   let lastFrameIndex: number | null = null;
+  /** T304: see `recentFrameTimes` on the interface. */
+  const frameTimes: number[] = [];
   let readbacksPerformed: number | null = null;
 
   /** Most recent GPU span per pass id, ms. Only ever written from `onPassTimings`. */
@@ -459,9 +467,19 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       return () => detachTiming?.();
     },
 
+    recentFrameTimes() {
+      return [...frameTimes];
+    },
     noteFrame(frameIndex, ran) {
       framesRendered += 1;
       lastFrameIndex = frameIndex;
+      {
+        const at = typeof performance === "undefined" ? Date.now() : performance.now();
+        frameTimes.push(at);
+        // Prune anything past double the verdict window; the array stays tiny.
+        const cutoff = at - 3000;
+        while (frameTimes.length > 0 && (frameTimes[0] ?? 0) < cutoff) frameTimes.shift();
+      }
       for (const nodeId of ran ?? activeNodes) {
         if (!activeNodes.has(nodeId)) continue; // a stale caller set never invents nodes
         const entry = counters.get(nodeId);

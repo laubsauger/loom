@@ -1552,8 +1552,15 @@ describe("T619 — get_runtime_metrics tells the truth about a rendering documen
     await waitFor(() => {
       expect(runtime.telemetry.snapshot().framesRendered).toBeGreaterThan(0);
     });
-    const after = (await built.callTool("get_runtime_metrics", {})).data as { framesRendered: number };
+    const after = (await built.callTool("get_runtime_metrics", {})).data as {
+      framesRendered: number;
+      frameClock?: { kind: string };
+    };
     expect(after.framesRendered).toBeGreaterThan(0);
+    /* T304: the frame-clock verdict reaches the agent surface through the REAL app —
+       the judgment is unit-gated in frame-clock.test.ts; this pins the WIRING (§V437's
+       two-surfaces-one-derivation, agent half). */
+    expect(["live", "paused", "browser-throttled", "running-behind"]).toContain(after.frameClock?.kind);
   });
 });
 

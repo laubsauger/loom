@@ -173,3 +173,35 @@ describe("the frame field seeks (§V170)", () => {
     expect(screen.queryByLabelText("Go to start")).toBeNull();
   });
 });
+
+describe("T304 — the readout says why nothing is moving, by name", () => {
+  it("shows the throttle chip with its remedy, and no chip when live", () => {
+    const frame = {
+      frame: { frameIndex: 5, timeSeconds: 0.08, deltaSeconds: 1 / 60, mode: "live", randomSeed: 7 },
+    } as never;
+    const { rerender } = render(
+      <TooltipProvider>
+        <TimelineReadout
+          latestFrame={() => frame}
+          frameClock={() => ({
+            kind: "browser-throttled",
+            observedFps: 0,
+            suggestion: "The browser suspends the frame clock for a hidden or occluded window.",
+          })}
+          intervalMs={5}
+        />
+      </TooltipProvider>,
+    );
+    const chip = screen.getByTestId("frame-clock-notice");
+    expect(chip.textContent).toBe("throttled by the browser");
+    expect(chip.getAttribute("data-kind")).toBe("browser-throttled");
+
+    // LIVE: the chip is GONE — the notice must be able to turn off (§V461).
+    rerender(
+      <TooltipProvider>
+        <TimelineReadout latestFrame={() => frame} frameClock={() => ({ kind: "live", observedFps: 60 })} intervalMs={5} />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId("frame-clock-notice")).toBeNull();
+  });
+});

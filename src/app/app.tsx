@@ -40,6 +40,7 @@ import { NoticeStrip } from "./notices.tsx";
 import type { Notice } from "./notices.tsx";
 import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
 import { TimelineReadout } from "./timeline-readout.tsx";
+import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { TimelineScrubber } from "./timeline-scrubber.tsx";
 import { TopBar } from "./top-bar.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
@@ -784,7 +785,7 @@ export function App({
     runtime,
     // T596: the revision the COMPILE half of `problems` was derived from, so a reader can
     // tell "clean at your edit" from "not looked at your edit yet" (§V338).
-    { selection, diagnostics: problems, diagnosticsRevision: compile.graph.revision },
+    { selection, playing: frameLoop.playing, diagnostics: problems, diagnosticsRevision: compile.graph.revision },
     agentPorts,
   );
   // T397/§V338: publishing the surface to a transport AND reporting what that publication
@@ -943,7 +944,19 @@ export function App({
               recordingAudioTrack={audioTrack.recording}
               audioTrackFrames={audioTrack.frames}
               timeline={
-                <TimelineReadout latestFrame={frameLoop.latestFrame} onSeek={onSeek} />
+                <TimelineReadout
+                  latestFrame={frameLoop.latestFrame}
+                  frameClock={() =>
+                    frameClockVerdict({
+                      playing: frameLoop.playing,
+                      hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+                      settings: runtime.settings,
+                      recentFrameTimes: runtime.telemetry.recentFrameTimes(),
+                      now: typeof performance === "undefined" ? Date.now() : performance.now(),
+                    })
+                  }
+                  onSeek={onSeek}
+                />
               }
               trailing={
                 <ProjectActions

@@ -107,6 +107,19 @@ export interface ToolResult<TData = unknown> {
  * provider's business; the tool just reads whatever the provider last published).
  */
 export interface AgentRuntimeMetrics {
+  /**
+   * T304: why-is-nothing-moving, answered by name (§V541). "browser-throttled" means
+   * the page is hidden/occluded and the browser suspended the frame clock — the
+   * DEFAULT state for an automation-driven session, expected, nothing is broken
+   * (§V560); "running-behind" means the machine cannot hold the project rate;
+   * "paused" means press play. Zeros elsewhere in this object are explained here
+   * before they are believed.
+   */
+  readonly frameClock:
+    | { readonly kind: "live"; readonly observedFps: number }
+    | { readonly kind: "paused" }
+    | { readonly kind: "browser-throttled"; readonly observedFps: number; readonly suggestion: string }
+    | { readonly kind: "running-behind"; readonly observedFps: number; readonly suggestion: string };
   /** False when the device has no timestamp query — every ms figure is then null (§V86). */
   readonly timingAvailable: boolean;
   readonly framesRendered: number;
