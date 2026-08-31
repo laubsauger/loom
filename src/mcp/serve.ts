@@ -5,6 +5,9 @@ import { createDomainBus } from "../domain/commands/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createAgentToolSurface } from "../agent/surface.ts";
+import { attachStateSources } from "../domain/commands/index.ts";
+import { registerCompileCommand } from "../app/compile-command.ts";
+import { registerResetFeedbackCommand } from "../app/runtime-commands.ts";
 import { compileGraph } from "../compiler/index.ts";
 import type { ProjectSettings } from "../domain/types/graph.ts";
 import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
@@ -118,6 +121,41 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
     projectId: "mcp-session",
     ports,
   });
+
+  /*
+   * T597 (§V39): the headless twin registers the SAME commands and queries the page
+   * registers, with headless-truthful sources — so an in-page agent and a desktop
+   * client are told one story about one product. `selection.get` answers empty (no
+   * editor is open, and empty IS the truth); `diagnostics.get` reports the last
+   * compile; `runtime.metrics` counts the offline frames this server rendered.
+   * `project.compile` and `runtime.resetFeedback` come from the same registration
+   * modules the app uses, never a re-implementation. What is NOT registered is waived
+   * BY NAME in the T597 parity gates: transport.play/pause (there is no frame loop —
+   * this server renders one offline frame per change), project.save (the page's save
+   * targets a browser project store this process does not have), and graph.setOutput
+   * (a deliberate stub on every surface, see mutate.ts).
+   */
+  attachStateSources(bus, {
+    selection: () => ({ nodeIds: [], edgeIds: [] }),
+    diagnostics: () => ({
+      diagnostics: compiled?.diagnostics ?? [],
+      revision: store.view.getGraph().revision,
+    }),
+    metrics: () => ({
+      timingAvailable: false,
+      framesRendered: frameIndex,
+      lastFrameIndex: frameIndex - 1,
+      frameGpuMs: null,
+      passCount: compiled?.passes.length ?? 0,
+      nodeCount: compiled?.order.length ?? 0,
+      prunedCount: compiled?.pruned.length ?? 0,
+      estimatedResourceBytes: compiled?.estimatedResourceBytes ?? null,
+      memoryBudgetBytes: HEADLESS_SETTINGS.limits.memoryBudgetBytes,
+      overBudget: false,
+    }),
+  });
+  const compileHolder = registerCompileCommand(bus);
+  registerResetFeedbackCommand(bus, { backend: () => backend, compiled: () => compiled });
 
   // T334 (§V38): export — pixels and readbacks leaving the process — is granted only
   // when the INVOCATION carried --grant-export. Default-OFF fails loudly (the refusal
@@ -242,6 +280,25 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
       return;
     }
     backend = live;
+    // T597: project.compile becomes live once a device report exists (§V12 — no
+    // capabilities, no compile; before this point the command is registered and
+    // rejects with its own reason, exactly as the page does before its first compile).
+    compileHolder.current = {
+      compileNow: () => {
+        const capabilities = live.capabilities;
+        if (capabilities === null || capabilities === undefined) {
+          return { compiled: null, diagnostics: [] };
+        }
+        const plan = compileGraph({
+          graph: store.view.getGraph(),
+          settings: HEADLESS_SETTINGS,
+          registry,
+          capabilities,
+        });
+        compiled = plan;
+        return { compiled: plan, diagnostics: [...plan.diagnostics] };
+      },
+    };
     Object.assign(
       ports,
       createAgentPorts({

@@ -1499,3 +1499,56 @@ describe("B68 — the reference-lines toggle is reachable from the canvas menu (
     expect(on.output.shown).toBe(true);
   });
 });
+
+/**
+ * T597 — §V39, ENFORCED: one tool surface, complete in EVERY environment.
+ *
+ * §V39 keeps the catalogue single (both transports derive {name, schema} from the same
+ * zod), but a tool is only real where its `requires` are satisfied — and each
+ * environment boots its own registrations. Nothing asserted that both environments boot
+ * ALL of them, so an in-page agent and a desktop client could be told two different
+ * stories about one product and each story would be locally true. These gates make the
+ * property fail loudly: every catalogue tool must be AVAILABLE — commands registered,
+ * queries attached, read sources mounted — on the composed PAGE surface (here) and on
+ * the headless server (`server.test.ts`'s twin gate). A tool that genuinely cannot
+ * exist in an environment must be waived BY NAME with the reason, not left to drift.
+ */
+describe("T597/§V39 — the page surface is complete: every tool available", () => {
+  it("no tool on the composed page surface is unavailable", async () => {
+    const runtime = newRuntime();
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, runtime, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("no agent surface");
+
+    const listings = built.listTools();
+    // Non-vacuous: the whole catalogue, not a subset that happens to pass.
+    expect(listings.length).toBeGreaterThanOrEqual(29);
+    /**
+     * WAIVED BY NAME, with the reason — never by drift. `set_output` is a deliberate
+     * stub on EVERY surface: there is no `graph.setOutput` command anywhere because the
+     * document has no port-scoped output designation to write (§V59; mutate.ts states
+     * it at the tool). Everything else must be available, here and on the headless
+     * twin (`server.test.ts` holds the twin gate with its own waivers).
+     */
+    const waived = new Set(["set_output"]);
+    const unavailable = listings
+      .filter((tool) => !tool.available && !waived.has(tool.name))
+      .map(
+        (tool) =>
+          `${tool.name} — commands:[${tool.missing.commands.join(",")}] queries:[${tool.missing.queries.join(",")}] ports:[${tool.missing.ports.join(",")}]`,
+      );
+    expect(
+      unavailable,
+      "a catalogue tool is dead on the page: its command/query/port never registered at app boot (§V39)",
+    ).toEqual([]);
+    // The waiver list cannot rot into a blanket: a waived tool that becomes available
+    // must be un-waived, loudly.
+    for (const name of waived) {
+      expect(
+        listings.find((tool) => tool.name === name)?.available,
+        `"${name}" is waived as unavailable but the surface now offers it — delete the waiver`,
+      ).toBe(false);
+    }
+  });
+});

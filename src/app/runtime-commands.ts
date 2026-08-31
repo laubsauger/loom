@@ -25,32 +25,26 @@ declare module "@domain/types/commands.ts" {
   }
 }
 
-export function useRuntimeCommands(inputs: {
-  bus: ShaderloomBus;
-  backend: ShaderloomBackend | undefined;
-  compiled: CompiledGraph | null;
-}): void {
-  const backendRef = useRef(inputs.backend);
-  backendRef.current = inputs.backend;
-  const compiledRef = useRef(inputs.compiled);
-  compiledRef.current = inputs.compiled;
-
-  useEffect(() => {
-    const { bus } = inputs;
-    // T531 (§V467): ask the BUS, not a ref. `registerCommand` THROWS on a duplicate, and
-    // the guard this replaced was a per-component-instance `useRef(new Set<bus>())` — it
-    // knew only what THIS instance had done, so a SECOND App mounted on the same bus
-    // (which is what an integration test, a split pane, or StrictMode does) sailed past
-    // it and took the mount down. A duplicate-registration guard has to be scoped to the
-    // thing being registered INTO. This is the idiom every other command module here
-    // already uses; T493 reached for it under `media.*` rather than fix this one.
-    if (bus.hasCommand("runtime.resetFeedback")) return;
-    bus.registerCommand({
+/**
+ * T597: the registration as a PURE function, so the headless MCP server registers the
+ * SAME command from the same body (§V39) — the hook below wraps it with refs.
+ */
+export function registerResetFeedbackCommand(
+  bus: ShaderloomBus,
+  sources: {
+    backend: () => ShaderloomBackend | undefined;
+    compiled: () => CompiledGraph | null;
+  },
+): void {
+  // T531 (§V467): ask the BUS, not a ref — the guard is scoped to the thing being
+  // registered INTO, so a second mount (or the headless server) cannot double-register.
+  if (bus.hasCommand("runtime.resetFeedback")) return;
+  bus.registerCommand({
       name: "runtime.resetFeedback",
       description: "Clear temporal (feedback) history — one node's pair, or all of them.",
       handler: (input) => {
-        const backend = backendRef.current;
-        const feedback = compiledRef.current?.feedback ?? [];
+        const backend = sources.backend();
+        const feedback = sources.compiled()?.feedback ?? [];
         if (backend === undefined) {
           return {
             status: "rejected",
@@ -72,7 +66,7 @@ export function useRuntimeCommands(inputs: {
         // by the scratch id's own `scratch:<nodeId>:<key>` shape — without this the
         // node's reset pulse would be a button that lies (§V123), which is exactly the
         // reason the other stateful nodes are listed as gaps rather than given one.
-        const rings = (compiledRef.current?.resources ?? []).filter(
+        const rings = (sources.compiled()?.resources ?? []).filter(
           (resource): resource is typeof resource & { kind: "ring" } => resource.kind === "ring",
         );
         const ringIds = rings
@@ -100,6 +94,23 @@ export function useRuntimeCommands(inputs: {
           diagnostics: [],
         };
       },
+    });
+}
+
+export function useRuntimeCommands(inputs: {
+  bus: ShaderloomBus;
+  backend: ShaderloomBackend | undefined;
+  compiled: CompiledGraph | null;
+}): void {
+  const backendRef = useRef(inputs.backend);
+  backendRef.current = inputs.backend;
+  const compiledRef = useRef(inputs.compiled);
+  compiledRef.current = inputs.compiled;
+
+  useEffect(() => {
+    registerResetFeedbackCommand(inputs.bus, {
+      backend: () => backendRef.current,
+      compiled: () => compiledRef.current,
     });
   }, [inputs.bus]);
 }

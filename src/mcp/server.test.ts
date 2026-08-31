@@ -379,3 +379,59 @@ describe("tools/list_changed (T294)", () => {
     expect(changedCount()).toBe(1);
   });
 });
+
+/**
+ * T597/§V39 — THE HEADLESS TWIN IS COMPLETE: every catalogue tool available, except
+ * the ones waived BY NAME with a reason. The page gate lives in
+ * `composition-wiring.test.tsx` with its own (smaller) waiver set; between them the
+ * property §V39 promises — one tool surface, whichever transport an agent arrives by —
+ * fails loudly instead of drifting one registration at a time. Measured before the
+ * fix: NINE tools were dead headless (selection/diagnostics/metrics queries,
+ * project.compile, runtime.resetFeedback among them) while every one worked in-page.
+ */
+describe("T597/§V39 — the headless server offers the full catalogue", () => {
+  it("no tool is unavailable beyond the named waivers", async () => {
+    const { createHeadlessMcpServer } = await import("./serve.ts");
+    let captured: Record<string, unknown> | undefined;
+    const server = createHeadlessMcpServer({
+      send: (message) => {
+        if (message["id"] === 1) captured = message;
+      },
+    });
+    try {
+      await server.ready.catch(() => {});
+      await server.receive({ jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+      await server.receive({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+      const tools = (captured?.["result"] as { tools: Array<{ name: string; description: string }> })
+        .tools;
+      expect(tools.length).toBeGreaterThanOrEqual(29);
+
+      /**
+       * WAIVED BY NAME (the serve.ts registration comment states each reason):
+       *  - set_output: a deliberate stub on EVERY surface — no graph.setOutput exists.
+       *  - play/pause: this server has no frame loop; it renders one offline frame per
+       *    change, so a transport verb would be a button that lies (§V123).
+       *  - save_project: the page's save targets a browser project store this process
+       *    does not have.
+       */
+      const waived = new Set(["set_output", "play", "pause", "save_project"]);
+      const marker = "currently unavailable";
+      const dead = tools
+        .filter((tool) => tool.description.includes(marker) && !waived.has(tool.name))
+        .map((tool) => `${tool.name}: ${tool.description.split(marker)[1] ?? ""}`);
+      expect(
+        dead,
+        "a catalogue tool is dead on the headless server: register its command/query/source in serve.ts or waive it by name with the reason (§V39)",
+      ).toEqual([]);
+      // Waivers cannot rot: a waived tool that becomes available must be un-waived.
+      for (const name of waived) {
+        expect(
+          tools.find((tool) => tool.name === name)?.description.includes(marker),
+          `"${name}" is waived as unavailable but the server now offers it — delete the waiver`,
+        ).toBe(true);
+      }
+    } finally {
+      server.dispose();
+    }
+  }, 60_000);
+});
