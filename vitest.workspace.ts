@@ -33,6 +33,9 @@ export default defineWorkspace([
     test: {
       name: "browser",
       environment: "jsdom",
+      // T592: fills jsdom's URL.revokeObjectURL and Range-geometry gaps, so the suite
+      // stops exiting 1 on "0 failed" (§V469 — the report and the exit code disagreed).
+      setupFiles: ["src/tests/jsdom-setup.ts"],
       include: ["src/**/*.test.tsx"],
     },
   },
