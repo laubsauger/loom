@@ -212,7 +212,7 @@ describe("B118 — a pushed lens value reaches the preview pixel without a rebui
         composite: [
           { ref: request.ref, resourceId: program.passes[0]?.target ?? "", dest: { x: 0, y: 0, width: SIZE, height: SIZE } },
         ],
-        uniforms,
+        ...(uniforms === undefined ? {} : { uniforms }),
         surface: { size: [SIZE, SIZE], dpr: 1 },
       });
       const centre = async (): Promise<readonly number[]> => {

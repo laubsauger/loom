@@ -91,7 +91,7 @@ export function drawSynthesizedPreview(options: {
   readonly nodeId: string;
   readonly portId: string;
   readonly tileEdge: number;
-}): { previewId: string; present(): void; dispose(): void } {
+}): { previewId: string; present(uniforms?: ReadonlyArray<{ passId: string; values: unknown }>): void; dispose(): void } {
   const row = options.outputs.find(
     (output) => output.nodeId === options.nodeId && output.portId === options.portId,
   );

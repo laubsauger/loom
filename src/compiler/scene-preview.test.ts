@@ -321,7 +321,7 @@ describe("T546 — the camera preview follows the renderer that names it", () =>
       },
     );
 
-  const rowFor = (compiled: { outputs: ReadonlyArray<{ nodeId: string; portId: string; resourceId: string }> }, nodeId: string) =>
+  const rowFor = (compiled: { outputs: ReadonlyArray<ResolvedOutput> }, nodeId: string) =>
     compiled.outputs.find((output) => output.nodeId === nodeId && output.portId === "out");
 
   it("EXACTLY ONE renderer: the camera's preview row IS that renderer's picture, at zero cost", () => {

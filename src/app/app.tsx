@@ -275,7 +275,16 @@ export function App({
 
   const sampleValueHistory = useCallback(
     (frame: FrameEvaluationInput) => {
-      const graph = runtime.bus.store.getGraph();
+      // T615: the FLATTENED document, and the bags keyed by FLAT NODE ID.
+      //
+      // Both halves matter. The flat document is what brings a value node inside a
+      // component into the window at all — a root node's flat id IS its document id, so
+      // every existing plot is untouched. The id key is the hazard: B41's
+      // `withUniqueNames` makes an instance's inner label depend on what else is in the
+      // document, so adding a root node called `wob` renames instance 1's `wob` to `wob1`
+      // and shifts the rest along. A name-keyed lookup would then quietly draw a
+      // different instance's trajectory. Ids do not move.
+      const graph = runtime.flattened.current().graph;
       const bags = valueGraph.channels();
       const live = new Set<NodeId>();
       for (const [nodeId, node] of Object.entries(graph.nodes)) {
@@ -283,13 +292,16 @@ export function App({
         // history from the "input" shelf; a camera never had a channel to sample.
         if (!publishesValueChannels(runtime.registry.get(node.type))) continue;
         live.add(nodeId);
-        const name = node.label;
-        if (name === undefined) continue;
-        const bag = bags.get(name);
+        const bag = bags.get(nodeId);
         if (bag !== undefined) {
           valueHistory.push(nodeId, bag, frame.timeSeconds);
           continue;
         }
+        // Analyze is the exception: its value is a GPU readback published under the
+        // node's NAME (§V144), and in the flat document that name is the uniqued one —
+        // the same one `analyzeChannelEntries` tracked from this same graph.
+        const name = node.label;
+        if (name === undefined) continue;
         const measured = analyze.resolver(name, { frame } as never);
         if (typeof measured === "number") valueHistory.push(nodeId, { value: measured }, frame.timeSeconds);
       }
@@ -378,8 +390,12 @@ export function App({
   // PLAN (whether the reduction buffer was actually allocated), so it is re-derived where
   // both are known — after every compile, never per frame.
   useEffect(() => {
-    analyze.track(compile.graph, compile.compiled);
-  }, [analyze, compile.graph, compile.compiled]);
+    // T615: the FLAT document. `analyzeChannelEntries` on the raw one returned [] for an
+    // Analyze inside a component, so the reduction buffer the plan had ALLOCATED was
+    // never read back and the channel never published — the CPU half missing, the GPU
+    // half present, and no diagnostic anywhere.
+    analyze.track(compile.flatGraph, compile.compiled);
+  }, [analyze, compile.flatGraph, compile.compiled]);
 
   /**
    * `BackendStatus.lastBuild` → the hub (T41, T143).
@@ -421,7 +437,11 @@ export function App({
   const media = useMediaSources(
     runtime,
     backend ?? null,
-    compile.graph,
+    // T615: the FLAT document — the same class of gap as the value graph. A movie or a
+    // text node inside a component was never opened, because nothing ever saw it; and
+    // the plan's external-texture source id is the FLAT node id, which is the id the
+    // element has to be registered under for the upload to land.
+    compile.flatGraph,
     compile.compiled,
     undefined,
     mediaControls,
@@ -429,7 +449,7 @@ export function App({
 
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
-  const pulses = usePulseFiring(runtime.bus, runtime.invocation);
+  const pulses = usePulseFiring(runtime, runtime.invocation);
 
   /**
    * The frame observer, shared (T214, T305).
@@ -448,7 +468,9 @@ export function App({
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
   const audioInput = useAudioInput(
-    () => runtime.bus.store.getGraph(),
+    // T615: the FLAT document, for the same reason — an `audioIn` inside a component
+    // declared a capture nothing opened.
+    () => runtime.flattened.current().graph,
     runtime.registry,
     mediaControls,
   );
@@ -727,7 +749,7 @@ export function App({
     );
     // T599: the message boundary — any quoted node id becomes the node's display label,
     // so the pane says `blur1` like every other surface, not the minted receipt.
-    return humanizeDiagnostics(list, compile.graph);
+    return [...humanizeDiagnostics(list, compile.graph)];
   }, [
     compile.graph,
     autosave.diagnostics,
