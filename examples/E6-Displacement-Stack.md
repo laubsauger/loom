@@ -1,23 +1,39 @@
 # E6 — Displacement Stack
 
-A checkerboard displaced by a field that is built up over three nodes. The point is not the
-warp; it is that the field arrives at `displace.disp` as **the numbers the Noise node
+A checkerboard melting under a field that is built up over three nodes. The point is not
+the warp; it is that the field arrives at `displace.disp` as **the numbers the Noise node
 produced**, with nothing converted along the way.
 
 ## Graph
 
 ```
 plate(checker) ────────────────────────────► warp.source ─► warp(displace) ─► output
-field(noise) ─► shape(level) ─► place(transform) ─► warp.disp
+field(noise, perlin4d) ─► shape(level) ─► place(transform) ─► warp.disp
+      speed 0.1                              r ← abstime
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
 | `plate` | `checker` | the image being displaced |
-| `field` | `noise` | simplex2d, 2 harmonics — the raw field |
+| `field` | `noise` | perlin4d, 2 harmonics, `speed 0.1` — the raw field, evolving |
 | `shape` | `level` | remaps the field's usable range |
-| `place` | `transform` | rotates and scales the field relative to the plate |
-| `warp` | `displace` | `weight [0.08, 0.05]`, `offset [0.5, 0.5]`, x←red, y←green |
+| `place` | `transform` | scales the field and turns it at 4°/s relative to the plate |
+| `warp` | `displace` | `weight [0.18, 0.13]`, `offset [0.5, 0.5]`, x←red, y←green |
+
+## Two motions, because the branch has two jobs (T518)
+
+The field was `simplex2d`, which has no time axis — `speed` advances a noise field's
+*fourth* dimension — so the plate was frozen: mean |Δ| of exactly 0.00 between rendered
+frames. It is `perlin4d` now.
+
+But there are deliberately **two** things moving, and they are the argument for the stack
+being a stack. The field **evolves** (that is `field.speed`, and `shape` decides what range
+of it is usable) and it is separately **placed** (that is `place.r`, which decides where it
+lands over the plate). Watching those two independently is the clearest statement of why
+shaping and placing are different nodes.
+
+`place.r` reads `abstime`, the absolute clock, so the rotation carries through a timeline
+loop instead of snapping back.
 
 ## What it proves
 
@@ -55,6 +71,11 @@ come from the port type rather than from the format. Until then this is the hone
   displacement". For a signed field it would be 0. Together with `sourcex`/`sourcey` these
   three parameters are the entire contract between the two branches; leaving them at their
   defaults happens to work here and would not if the field were signed.
+- **`shape`'s window is 0.33–0.67, and its midpoint is the part that matters.** A 4D
+  perlin's usable range is narrower than a 2D simplex's, so the old 0.2–0.8 window gave a
+  visibly weaker warp on the new field at the same weight. The window narrowed and the
+  **centre stayed at 0.5** — because `warp.offset` above is 0.5 and means "no
+  displacement", and that contract survives only while the shaping stays centred.
 - **`shape` before `place`, not after.** Level remaps values; Transform moves them. Shaping
   after placing would shape the *resampled* field, including its edge behaviour, which is
   how a displacement stack picks up seams nobody can find.

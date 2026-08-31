@@ -1,21 +1,24 @@
 # E5 — Kaleidoscope
 
-Four sampling nodes, no filters, no compositing — running at 2048×2048 on a 1280×720
-project. The example is about **edges** and about **resolution**.
+A colour wheel turning slowly inside a pair of counter-rotating mirrors. Four sampling
+nodes plus two LFOs, no filters, no compositing — running at 2048×2048 on a 1280×720
+project. The example is about **edges**, about **resolution**, and about the fact that a
+kaleidoscope is nothing until something drifts through it.
 
 ## Graph
 
 ```
-source(circle) ─► fold(transform) ─► facets(tile) ─► spin(transform) ─► output
-   2048×2048         extend: mirror     mirror x+y      extend: repeat
+source(ramp, circular) ─► fold(transform) ─► facets(tile) ─► spin(transform) ─► output
+   2048×2048                extend: mirror     mirror x+y      extend: repeat
+   phase ← abstime          r ← abstime        offset ← lfo×2  r ← abstime
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
-| `source` | `circle` | signed-distance disc, warm on deep blue. **Resolution override: fixed 2048×2048** |
-| `fold` | `transform` | rotate 30°, scale 0.5, `extend: mirror` |
-| `facets` | `tile` | repeat 3×3 with `mirrorx` and `mirrory` |
-| `spin` | `transform` | rotate −15°, `extend: repeat` |
+| `source` | `ramp` | `circular`, `period 0.5`, six cyclic stops, `phase` scrolling. **Resolution override: fixed 2048×2048** |
+| `fold` | `transform` | translate 0.12, scale 0.5, rotate at 5°/s, `extend: mirror` |
+| `facets` | `tile` | repeat 2×2 with `mirrorx` and `mirrory`, `offset` drifting on two LFOs |
+| `spin` | `transform` | counter-rotate at 2.5°/s, `extend: repeat` |
 
 ## What it proves
 
@@ -41,13 +44,44 @@ source(circle) ─► fold(transform) ─► facets(tile) ─► spin(transform)
   than something this file asks for, so the gate pins the *chain's* resolution and
   deliberately says nothing about the sink's.
 - **`facets.offset`.** Shifting the tile grid off the origin is what breaks the four-fold
-  symmetry into something that reads as a kaleidoscope rather than as wallpaper.
+  symmetry into something that reads as a kaleidoscope rather than as wallpaper. It is
+  driven by two LFOs at 0.023 and 0.031 Hz — rates that do not close, so the grid never
+  returns to an arrangement it has already shown.
+- **`fold.t` is what makes `fold.r` mean anything.** A circular ramp centred on the frame
+  is rotationally symmetric, so spinning it about its own centre is a perfect no-op — the
+  plan would be identical, every structural assertion would pass, and not one pixel would
+  differ (§V361). Translated off-centre, it turns.
+- **The tile count is even, and that is a fix rather than a preference.** A mirrored tiling
+  alternates flipped and unflipped cells, so it is periodic across the frame boundary only
+  at even counts. At the old 3×3 the `repeat` extend on `spin` wrapped an unmirrored edge
+  onto a mirrored one and drew a hard diagonal seam sweeping across the frame — present in
+  every rotated capture, absent from every unrotated one, which is precisely the failure
+  an example about edge modes must not ship.
 - **`spin.xord` is `rst`, not `srt`.** Transform order changes the result whenever more than
   one of translate/rotate/scale is non-default. TD's menu is reproduced exactly, abbreviation
   and all.
-- **`source.mode` is `distance`, not `fill`.** A signed-distance field gives the folds
-  something continuous to work with; a hard fill would give the tiler a binary mask and the
-  seams would be the only thing visible.
+- **`source` is a `circular` ramp, and the choice is structural.** Its coordinate is the
+  *angle* about the centre, so it is periodic: at `period 0.5` the palette wraps twice
+  around the circle and the pattern arrives with rotational symmetry already in it, before
+  the fold and the tile add theirs. The stops are **cyclic** — the last colour equals the
+  first — because `phase` scrolls a ramp by `fract((coord + phase) / period)`, and a
+  palette whose ends disagree jumps every time the scroll wraps.
+
+## What was wrong before (T518)
+
+Two faults, and the owner reported the first: *"caleidoscope is unanimated and really
+should use translate rotation or something"*. Every transform parameter was a literal, so
+nothing in the file moved at all — mean |Δ| of exactly 0.00 between rendered frames. The
+instinct behind the request is right: a kaleidoscope's whole appeal is the slow drift of a
+source through fixed mirror lines, and both rotations, the tile offset and the palette
+phase now move. They all read the **absolute** clock, so nothing snaps at the loop.
+
+The second fault had gone unreported and was worse. The source was a `circle` in
+`distance` mode, and `distance` publishes the signed distance in **red** and leaves green
+and blue at zero — so `fillcolor` and `bgcolor` were never reaching the picture. What
+shipped was a single-hue red field whose brightest pixel measured **43 out of 255**, and
+the paragraph on this page describing "warm on deep blue" was describing something the file
+had never rendered.
 
 ## Verified by
 

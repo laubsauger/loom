@@ -3,10 +3,21 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
-      "e-field-scan": {
-        "id": "e-field-scan",
+      "e-body-now": {
+        "id": "e-body-now",
         "source": {
-          "nodeId": "field",
+          "nodeId": "body",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "now",
+          "portId": "in1"
+        }
+      },
+      "e-body-scan": {
+        "id": "e-body-scan",
+        "source": {
+          "nodeId": "body",
           "portId": "out"
         },
         "target": {
@@ -25,46 +36,91 @@
           "portId": "map"
         }
       },
-      "e-scan-out": {
-        "id": "e-scan-out",
+      "e-now-out": {
+        "id": "e-now-out",
         "source": {
-          "nodeId": "scan",
+          "nodeId": "now",
           "portId": "out"
         },
         "target": {
           "nodeId": "out",
           "portId": "input"
         }
+      },
+      "e-scan-now": {
+        "id": "e-scan-now",
+        "source": {
+          "nodeId": "scan",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "now",
+          "portId": "in2"
+        }
       }
     },
     "groups": {},
     "nodes": {
-      "field": {
+      "body": {
         "definitionVersion": 1,
-        "id": "field",
-        "label": "noise1",
+        "id": "body",
+        "label": "body1",
         "parameters": {
-          "amp": 1,
           "aspectcorrect": true,
-          "exp": 1,
-          "gain": 0.5,
-          "harmon": 3,
-          "mono": false,
-          "offset": 0,
-          "period": 0.5,
-          "rough": 0.5,
-          "s4d": 1,
-          "seed": 9,
-          "speed": 0.8,
-          "spread": 2,
-          "t4d": 0,
-          "type": "perlin4d"
+          "bgcolor": [
+            0.05,
+            0.045,
+            0.14,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "swingx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "swingy1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "fillcolor": [
+            1,
+            0.8,
+            0.42,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.15,
+            0.15
+          ],
+          "softness": 0.1
         },
         "position": {
-          "x": -640,
+          "x": -900,
           "y": -120
         },
-        "type": "noise"
+        "type": "circle"
       },
       "gradient": {
         "definitionVersion": 2,
@@ -74,10 +130,23 @@
           "type": "vertical"
         },
         "position": {
-          "x": -640,
-          "y": 140
+          "x": -900,
+          "y": 160
         },
         "type": "ramp"
+      },
+      "now": {
+        "definitionVersion": 1,
+        "id": "now",
+        "label": "add1",
+        "parameters": {
+          "opacity": 0.55
+        },
+        "position": {
+          "x": -260,
+          "y": -60
+        },
+        "type": "add"
       },
       "out": {
         "definitionVersion": 1,
@@ -85,8 +154,8 @@
         "label": "out1",
         "parameters": {},
         "position": {
-          "x": 120,
-          "y": 0
+          "x": 40,
+          "y": -60
         },
         "type": "output"
       },
@@ -99,10 +168,44 @@
           "frames": 48
         },
         "position": {
-          "x": -260,
+          "x": -560,
           "y": 0
         },
         "type": "slitScan"
+      },
+      "swingx": {
+        "definitionVersion": 1,
+        "id": "swingx",
+        "label": "swingx1",
+        "parameters": {
+          "amplitude": 0.36,
+          "frequency": 0.62,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1160,
+          "y": -240
+        },
+        "type": "lfo"
+      },
+      "swingy": {
+        "definitionVersion": 1,
+        "id": "swingy",
+        "label": "swingy1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.4,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1160,
+          "y": -20
+        },
+        "type": "lfo"
       }
     },
     "revision": 1

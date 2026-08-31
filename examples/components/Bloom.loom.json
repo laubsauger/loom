@@ -18,21 +18,10 @@
                 "portId": "input"
               }
             },
-            "e-glow-combine": {
-              "id": "e-glow-combine",
+            "e-floor-bright": {
+              "id": "e-floor-bright",
               "source": {
-                "nodeId": "glow",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "combine",
-                "portId": "in1"
-              }
-            },
-            "e-hot-bright": {
-              "id": "e-hot-bright",
-              "source": {
-                "nodeId": "hot",
+                "nodeId": "floor",
                 "portId": "out"
               },
               "target": {
@@ -40,15 +29,59 @@
                 "portId": "input"
               }
             },
-            "e-hot-combine": {
-              "id": "e-hot-combine",
+            "e-floor-combine": {
+              "id": "e-floor-combine",
               "source": {
-                "nodeId": "hot",
+                "nodeId": "floor",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "combine",
                 "portId": "in2"
+              }
+            },
+            "e-glow-tint": {
+              "id": "e-glow-tint",
+              "source": {
+                "nodeId": "glow",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tint",
+                "portId": "source"
+              }
+            },
+            "e-hot-floor": {
+              "id": "e-hot-floor",
+              "source": {
+                "nodeId": "hot",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "floor",
+                "portId": "input"
+              }
+            },
+            "e-palette-tint": {
+              "id": "e-palette-tint",
+              "source": {
+                "nodeId": "palette",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tint",
+                "portId": "lookup"
+              }
+            },
+            "e-tint-combine": {
+              "id": "e-tint-combine",
+              "source": {
+                "nodeId": "tint",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "combine",
+                "portId": "in1"
               }
             }
           },
@@ -64,12 +97,12 @@
               "parameters": {
                 "channel": "luminance",
                 "compare": "greater",
-                "softness": 0.12,
-                "threshold": 0.9
+                "softness": 0.22,
+                "threshold": 1.1
               },
               "position": {
-                "x": -40,
-                "y": -120
+                "x": -240,
+                "y": -160
               },
               "type": "threshold"
             },
@@ -81,13 +114,32 @@
               },
               "id": "combine",
               "parameters": {
-                "opacity": 0.85
+                "opacity": 1
               },
               "position": {
-                "x": 440,
+                "x": 540,
                 "y": 0
               },
               "type": "add"
+            },
+            "floor": {
+              "definitionVersion": 1,
+              "format": {
+                "format": "rgba16float",
+                "mode": "fixed"
+              },
+              "id": "floor",
+              "parameters": {
+                "high": 4,
+                "low": 0,
+                "mode": "clamp",
+                "steps": 4
+              },
+              "position": {
+                "x": -500,
+                "y": 260
+              },
+              "type": "limit"
             },
             "glow": {
               "definitionVersion": 1,
@@ -99,11 +151,11 @@
               "parameters": {
                 "extend": "hold",
                 "filter": "gaussian",
-                "size": 36
+                "size": 40
               },
               "position": {
-                "x": 200,
-                "y": -120
+                "x": 20,
+                "y": -160
               },
               "type": "blur"
             },
@@ -115,15 +167,105 @@
               },
               "id": "hot",
               "parameters": {
-                "blacklevel": 0.35,
-                "contrast": 1.2,
-                "whitelevel": 0.72
+                "blacklevel": 0.605,
+                "contrast": 1,
+                "whitelevel": 0.65
               },
               "position": {
-                "x": -280,
+                "x": -500,
                 "y": 0
               },
               "type": "level"
+            },
+            "palette": {
+              "definitionVersion": 2,
+              "id": "palette",
+              "parameters": {
+                "interp": "smooth",
+                "period": 1,
+                "phase": 0,
+                "stops": [
+                  {
+                    "color": [
+                      0,
+                      0,
+                      0,
+                      1
+                    ],
+                    "position": 0
+                  },
+                  {
+                    "color": [
+                      0.3,
+                      0.04,
+                      0.36,
+                      1
+                    ],
+                    "position": 0.02
+                  },
+                  {
+                    "color": [
+                      0.9,
+                      0.16,
+                      0.26,
+                      1
+                    ],
+                    "position": 0.06
+                  },
+                  {
+                    "color": [
+                      1,
+                      0.5,
+                      0.14,
+                      1
+                    ],
+                    "position": 0.12
+                  },
+                  {
+                    "color": [
+                      1,
+                      0.88,
+                      0.55,
+                      1
+                    ],
+                    "position": 0.22
+                  },
+                  {
+                    "color": [
+                      1,
+                      1,
+                      0.96,
+                      1
+                    ],
+                    "position": 0.4
+                  }
+                ],
+                "type": "horizontal"
+              },
+              "position": {
+                "x": 20,
+                "y": 120
+              },
+              "type": "ramp"
+            },
+            "tint": {
+              "definitionVersion": 1,
+              "format": {
+                "format": "rgba16float",
+                "mode": "fixed"
+              },
+              "id": "tint",
+              "parameters": {
+                "channel": "luminance",
+                "offset": 0,
+                "row": 0.5,
+                "scale": 1
+              },
+              "position": {
+                "x": 280,
+                "y": -160
+              },
+              "type": "lookup"
             }
           },
           "revision": 0
@@ -148,7 +290,7 @@
         "parameters": [
           {
             "definition": {
-              "default": 0.9,
+              "default": 1.1,
               "label": "Threshold",
               "max": 2,
               "min": -1,
@@ -164,7 +306,7 @@
           },
           {
             "definition": {
-              "default": 0.12,
+              "default": 0.22,
               "description": "Width of the threshold transition. 0 gives a hard, aliased edge.",
               "label": "Knee",
               "max": 1,
@@ -181,7 +323,7 @@
           },
           {
             "definition": {
-              "default": 36,
+              "default": 40,
               "label": "Radius",
               "max": 128,
               "min": 0,
@@ -198,7 +340,7 @@
           },
           {
             "definition": {
-              "default": 0.85,
+              "default": 1,
               "label": "Intensity",
               "max": 1,
               "min": 0,
@@ -251,8 +393,8 @@
         "id": "nd_bloom1",
         "parameters": {},
         "position": {
-          "x": 80,
-          "y": -60
+          "x": -54,
+          "y": -14
         },
         "type": "component:bloom@1"
       },
@@ -261,7 +403,7 @@
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 680,
+          "x": 800,
           "y": 0
         },
         "type": "output"
@@ -271,15 +413,23 @@
         "id": "source",
         "parameters": {
           "amp": 1,
-          "exp": 2.2,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
           "harmon": 4,
           "mono": true,
-          "period": 0.16,
+          "offset": 0,
+          "period": 0.12,
+          "rough": 0.5,
+          "s4d": 1,
           "seed": 11,
-          "type": "perlin2d"
+          "speed": 0.12,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
         },
         "position": {
-          "x": -520,
+          "x": -760,
           "y": 0
         },
         "type": "noise"

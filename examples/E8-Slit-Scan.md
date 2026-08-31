@@ -1,20 +1,51 @@
 # E8 — Slit Scan
 
-Per-pixel time. Every **row** of the output shows a different moment of the input's
-history — the classic slit-scan smear, made of nothing but a ring and a gradient.
+Per-pixel time. A disc travels a path; every **row** of the output shows it at a different
+moment, so its history is drawn as a ribbon whose shape *is* its path — the classic
+slit-scan smear, made of nothing but a ring and a gradient.
 
 ## Graph
 
 ```
-noise1(noise, perlin4d) ─► slitscan1.input ─┐
-ramp1(ramp, vertical) ──► slitscan1.map  ───┴─► slitscan1(slitScan) ─► out1(output)
+swingx(lfo) ─┬─► body1.center.x
+swingy(lfo) ─┴─► body1.center.y
+body1(circle) ─┬─► slitscan1.input ─┐
+               │                    ├─► slitscan1(slitScan) ─┐
+ramp1(ramp, vertical) ─► .map ──────┘                        ├─► now(add) ─► out1(output)
+               └─────────────────────────────────────────────┘
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
-| `noise1` | `noise` | `perlin4d`, `speed: 0.8` — a field that visibly evolves |
+| `swingx`, `swingy` | `lfo` | 0.62 Hz and 0.4 Hz — the disc's two coordinates |
+| `body1` | `circle` | a soft warm disc on deep blue: the subject |
 | `ramp1` | `ramp` | vertical black→white: the TOP row says "now", the bottom says "0.8 s ago" |
 | `slitscan1` | `slitScan` | records 48 frames of history; each pixel reads the frame its map value names |
+| `now` | `add` | the present, composited back over its own past |
+
+## Why the subject is a disc and not noise (T518)
+
+The owner's report was *"slit scan example is barely visible what it even does. not good
+enough"*, and the cause is §V427 exactly. A slit scan reveals the **history of something
+that has identity**. Noise is smooth at every scale, so smearing it produces more
+smoothness: what shipped lived entirely between 0.35 and 0.61 in linear — a pastel wash
+with no edge in it anywhere — and there was nothing in the picture for the smear to be a
+smear *of*.
+
+A disc on a path has identity. Its history draws a ribbon, and the per-row time
+quantisation shows up as a visible **staircase** along the ribbon's edge. That staircase is
+the node's mechanism made literal, and it is the thing the old file could not show.
+
+The LFO frequencies are set against the ring's depth rather than by feel: 48 frames at
+60fps is 0.8 s of history, and 0.62 Hz puts about half a swing inside that window — the
+longest ribbon that still reads as a single gesture.
+
+### `now`, and the black first frame
+
+Compositing the live source back over the scan is a composition choice — you see the
+subject *and* the trail it is leaving — and it also fixes a real defect. Before the ring
+has archived anything there is no oldest frame for §V229's clamp to hold, so frame 0
+rendered **completely black**. A gallery thumbnail is usually frame 0.
 
 ## What it proves
 

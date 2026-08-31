@@ -10,7 +10,7 @@ import {
   serializeProjectDocument,
 } from "../domain/project/index.ts";
 import type { GraphComponentDefinition } from "../domain/types/components.ts";
-import type { ParameterValue } from "../domain/types/parameters.ts";
+import type { ParameterSlot, ParameterValue } from "../domain/types/parameters.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { listStarterComponentFiles } from "./catalogue.ts";
@@ -148,6 +148,44 @@ describe("every starter component renders (§V89)", () => {
  * This is the one property of the set that no schema, byte comparison or compile can
  * catch, because every one of those is equally happy with a wrong number.
  */
+/**
+ * T518 — WHAT A PUBLISHED DEFAULT IS ACTUALLY BEING COMPARED AGAINST, once a host node's
+ * parameter is a SLOT rather than a bare number.
+ *
+ * E5's fold and spin angles and E6's field rotation are `expression` slots now, because an
+ * example has to move (T402). A slot is not a number, so a naive comparison against the
+ * published default can never match and the check would have to be deleted — which is the
+ * wrong repair, because the property it guards is real.
+ *
+ * The right comparison is the slot's STATIC binding, and §V108 says why: `retained` is what
+ * any host WITHOUT that channel attached resolves to, and a component instance in someone
+ * else's project is exactly such a host. So the retained value IS the value a fresh
+ * instance gets, and matching the published default to it is precisely the "the shipped
+ * demo matches the shipped component" property.
+ *
+ * A slot with no static binding still FAILS, loudly: there is no value for a component
+ * instance to fall back to, and silently publishing a default over it would be inventing
+ * one.
+ */
+function retainedValueOf(
+  authored: ParameterValue | ParameterSlot | undefined,
+  where: string,
+): ParameterValue | undefined {
+  if (authored === null || typeof authored !== "object" || Array.isArray(authored)) {
+    return authored as ParameterValue | undefined;
+  }
+  if (!("mode" in authored) || !("bindings" in authored)) return authored as ParameterValue;
+  const slot = authored as ParameterSlot;
+  const staticBinding = slot.bindings.static;
+  if (staticBinding === undefined || staticBinding.kind !== "static") {
+    throw new Error(
+      `${where} is a ${slot.mode} slot with no static binding, so a component instance ` +
+        `has nothing to fall back to (§V108). Give it a retained value, or do not publish it.`,
+    );
+  }
+  return staticBinding.value;
+}
+
 describe("a published default matches the internal value it drives (§V80)", () => {
   it.each(STARTER_COMPONENT_SPECS.map((spec) => spec.name))("%s", (name) => {
     const spec = STARTER_COMPONENT_SPECS.find((entry) => entry.name === name);
@@ -157,7 +195,10 @@ describe("a published default matches the internal value it drives (§V80)", () 
     for (const published of spec.publish) {
       for (const target of published.targets) {
         const node = spec.host.graph.nodes[target.nodeId];
-        const authored = node?.parameters[target.key] as ParameterValue | undefined;
+        const authored = retainedValueOf(
+          node?.parameters[target.key] as ParameterValue | ParameterSlot | undefined,
+          `${spec.name}.${target.nodeId}.${target.key}`,
+        );
         // Through `defaultValueOf`, which is what a fresh instance actually gets.
         const fallback = defaultValueOf(published.definition);
         if (JSON.stringify(authored) !== JSON.stringify(fallback)) {

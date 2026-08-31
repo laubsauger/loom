@@ -213,7 +213,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     publish: [
       {
         key: "persistence",
-        definition: { type: "number", label: "Persistence", default: 0.94, min: 0, max: 1 },
+        definition: { type: "number", label: "Persistence", default: 0.997, min: 0, max: 1 },
         targets: [{ nodeId: "echo", key: "persistence" }],
       },
       {
@@ -229,7 +229,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "drift",
-        definition: { type: "vector", size: 2, label: "Drift", default: [0, -0.006], min: -1, max: 1 },
+        definition: { type: "vector", size: 2, label: "Drift", default: [0, -0.0008], min: -1, max: 1 },
         targets: [{ nodeId: "drift", key: "t" }],
       },
       {
@@ -237,7 +237,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         definition: {
           type: "number",
           label: "Spin",
-          default: 3.5,
+          default: 0.25,
           min: -360,
           max: 360,
           unit: "degrees",
@@ -246,7 +246,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "softness",
-        definition: { type: "number", label: "Softness", default: 2.5, min: 0, max: 128, unit: "px" },
+        definition: { type: "number", label: "Softness", default: 1.4, min: 0, max: 128, unit: "px" },
         targets: [{ nodeId: "soften", key: "size" }],
       },
     ],
@@ -256,13 +256,17 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     name: "Bloom",
     description: "Threshold, blur and add back — highlight glow with the range to carry it.",
     host: bloomDocument,
-    // The four nodes carry E4's rgba16float overrides with them, which is the whole
-    // reason the glow survives the threshold instead of clipping at the first target.
-    selection: ["hot", "bright", "glow", "combine"],
+    // Every node carries E4's rgba16float overrides with it, which is the whole reason
+    // the glow survives the threshold instead of clipping at the first target. T518 added
+    // three: `floor` (without which the composite SUBTRACTS the glow — a Level's black
+    // point is a subtraction, and a float target keeps the negatives an 8-bit one clamps),
+    // and `palette`/`tint`, which give the halo its chromatic falloff. The selection has
+    // to stay CONTIGUOUS or the carved component is a chain with holes in it.
+    selection: ["hot", "floor", "bright", "glow", "palette", "tint", "combine"],
     publish: [
       {
         key: "threshold",
-        definition: { type: "number", label: "Threshold", default: 0.9, min: -1, max: 2 },
+        definition: { type: "number", label: "Threshold", default: 1.1, min: -1, max: 2 },
         targets: [{ nodeId: "bright", key: "threshold" }],
       },
       {
@@ -270,7 +274,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         definition: {
           type: "number",
           label: "Knee",
-          default: 0.12,
+          default: 0.22,
           min: 0,
           max: 1,
           description: "Width of the threshold transition. 0 gives a hard, aliased edge.",
@@ -279,12 +283,12 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "radius",
-        definition: { type: "number", label: "Radius", default: 36, min: 0, max: 128, unit: "px" },
+        definition: { type: "number", label: "Radius", default: 40, min: 0, max: 128, unit: "px" },
         targets: [{ nodeId: "glow", key: "size" }],
       },
       {
         key: "intensity",
-        definition: { type: "number", label: "Intensity", default: 0.85, min: 0, max: 1 },
+        definition: { type: "number", label: "Intensity", default: 1, min: 0, max: 1 },
         targets: [{ nodeId: "combine", key: "opacity" }],
       },
     ],
@@ -302,7 +306,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           type: "vector",
           size: 2,
           label: "Segments",
-          default: [3, 3],
+          default: [2, 2],
           min: 0.01,
           max: 64,
         },
@@ -355,7 +359,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           type: "vector",
           size: 2,
           label: "Amount",
-          default: [0.08, 0.05],
+          default: [0.18, 0.13],
           min: -2,
           max: 2,
         },

@@ -55,10 +55,10 @@
           "rough": 0.5,
           "s4d": 1,
           "seed": 3,
-          "speed": 0,
+          "speed": 0.08,
           "spread": 2,
-          "t4d": 0,
-          "type": "perlin2d"
+          "t4d": 0.37,
+          "type": "perlin4d"
         },
         "position": {
           "x": -640,
@@ -84,49 +84,70 @@
         "parameters": {
           "interp": "smooth",
           "period": 1,
-          "phase": 0,
+          "phase": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "abstime * 0.04 % 1"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
           "stops": [
             {
               "color": [
-                0.04,
-                0.03,
-                0.18,
+                0.02,
+                0.02,
+                0.09,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.45,
-                0.09,
-                0.52,
+                0.22,
+                0.06,
+                0.42,
                 1
               ],
-              "position": 0.3
+              "position": 0.2
             },
             {
               "color": [
-                0.86,
-                0.24,
-                0.29,
+                0.85,
+                0.18,
+                0.32,
                 1
               ],
-              "position": 0.55
+              "position": 0.4
             },
             {
               "color": [
-                0.98,
-                0.62,
-                0.16,
+                1,
+                0.63,
+                0.22,
+                1
+              ],
+              "position": 0.6
+            },
+            {
+              "color": [
+                0.32,
+                0.78,
+                0.72,
                 1
               ],
               "position": 0.8
             },
             {
               "color": [
-                1,
-                0.95,
-                0.78,
+                0.02,
+                0.02,
+                0.09,
                 1
               ],
               "position": 1
@@ -146,9 +167,9 @@
         "label": "lookup1",
         "parameters": {
           "channel": "luminance",
-          "offset": 0,
+          "offset": -0.86,
           "row": 0.5,
-          "scale": 1
+          "scale": 2.6
         },
         "position": {
           "x": -260,

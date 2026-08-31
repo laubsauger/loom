@@ -42,13 +42,39 @@
                   0.15,
                   0.05
                 ],
+                "offset.x": {
+                  "bindings": {
+                    "driven": {
+                      "channel": "driftx1",
+                      "kind": "driven"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.15
+                    }
+                  },
+                  "mode": "driven"
+                },
+                "offset.y": {
+                  "bindings": {
+                    "driven": {
+                      "channel": "drifty1",
+                      "kind": "driven"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.05
+                    }
+                  },
+                  "mode": "driven"
+                },
                 "repeat": [
-                  3,
-                  3
+                  2,
+                  2
                 ]
               },
               "position": {
-                "x": 0,
+                "x": -240,
                 "y": 0
               },
               "type": "tile"
@@ -63,7 +89,19 @@
                   0,
                   0
                 ],
-                "r": 30,
+                "r": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "abstime * 5 % 360"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 30
+                    }
+                  },
+                  "mode": "expression"
+                },
                 "s": [
                   0.5,
                   0.5
@@ -75,7 +113,7 @@
                 "xord": "srt"
               },
               "position": {
-                "x": -260,
+                "x": -500,
                 "y": 0
               },
               "type": "transform"
@@ -90,7 +128,19 @@
                   0,
                   0
                 ],
-                "r": -15,
+                "r": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "360 - abstime * 2.5 % 360"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": -15
+                    }
+                  },
+                  "mode": "expression"
+                },
                 "s": [
                   1,
                   1
@@ -102,7 +152,7 @@
                 "xord": "rst"
               },
               "position": {
-                "x": 260,
+                "x": 20,
                 "y": 0
               },
               "type": "transform"
@@ -131,8 +181,8 @@
           {
             "definition": {
               "default": [
-                3,
-                3
+                2,
+                2
               ],
               "label": "Segments",
               "max": 64,
@@ -236,12 +286,46 @@
     },
     "groups": {},
     "nodes": {
+      "driftx": {
+        "definitionVersion": 1,
+        "id": "driftx",
+        "label": "driftx1",
+        "parameters": {
+          "amplitude": 0.25,
+          "frequency": 0.023,
+          "offset": 0.15,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -240,
+          "y": 260
+        },
+        "type": "lfo"
+      },
+      "drifty": {
+        "definitionVersion": 1,
+        "id": "drifty",
+        "label": "drifty1",
+        "parameters": {
+          "amplitude": 0.25,
+          "frequency": 0.031,
+          "offset": 0.05,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -240,
+          "y": 470
+        },
+        "type": "lfo"
+      },
       "nd_kaleidoscope1": {
         "definitionVersion": 1,
         "id": "nd_kaleidoscope1",
         "parameters": {},
         "position": {
-          "x": 0,
+          "x": -240,
           "y": 0
         },
         "type": "component:kaleidoscope@1"
@@ -251,41 +335,90 @@
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 520,
+          "x": 280,
           "y": 0
         },
         "type": "output"
       },
       "source": {
-        "definitionVersion": 1,
+        "definitionVersion": 2,
         "id": "source",
         "parameters": {
-          "aspectcorrect": true,
-          "bgcolor": [
-            0.03,
-            0.05,
-            0.12,
-            1
+          "interp": "smooth",
+          "period": 0.5,
+          "phase": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "abstime * 0.06 % 1"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "stops": [
+            {
+              "color": [
+                0.02,
+                0.02,
+                0.09,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.22,
+                0.06,
+                0.42,
+                1
+              ],
+              "position": 0.2
+            },
+            {
+              "color": [
+                0.85,
+                0.18,
+                0.32,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                1,
+                0.63,
+                0.22,
+                1
+              ],
+              "position": 0.6
+            },
+            {
+              "color": [
+                0.32,
+                0.78,
+                0.72,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                0.02,
+                0.02,
+                0.09,
+                1
+              ],
+              "position": 1
+            }
           ],
-          "center": [
-            0.32,
-            0.42
-          ],
-          "fillcolor": [
-            0.95,
-            0.4,
-            0.15,
-            1
-          ],
-          "mode": "distance",
-          "radius": [
-            0.18,
-            0.11
-          ],
-          "softness": 0.05
+          "type": "circular"
         },
         "position": {
-          "x": -520,
+          "x": -760,
           "y": 0
         },
         "resolution": {
@@ -293,7 +426,7 @@
           "mode": "fixed",
           "width": 2048
         },
-        "type": "circle"
+        "type": "ramp"
       }
     },
     "revision": 2

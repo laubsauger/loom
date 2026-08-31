@@ -65,13 +65,21 @@
         "definitionVersion": 1,
         "id": "field",
         "parameters": {
+          "amp": 1,
           "aspectcorrect": true,
+          "exp": 1,
           "gain": 0.55,
           "harmon": 2,
           "mono": true,
+          "offset": 0,
           "period": 0.3,
+          "rough": 0.5,
+          "s4d": 1,
           "seed": 5,
-          "type": "simplex2d"
+          "speed": 0.1,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
         },
         "position": {
           "x": -520,
@@ -99,7 +107,19 @@
             0,
             0
           ],
-          "r": 12,
+          "r": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "abstime * 4 % 360"
+              },
+              "static": {
+                "kind": "static",
+                "value": 12
+              }
+            },
+            "mode": "expression"
+          },
           "s": [
             1.4,
             1.4
@@ -151,10 +171,10 @@
         "definitionVersion": 1,
         "id": "shape",
         "parameters": {
-          "blacklevel": 0.2,
+          "blacklevel": 0.33,
           "contrast": 1.1,
           "gamma1": 1.2,
-          "whitelevel": 0.8
+          "whitelevel": 0.67
         },
         "position": {
           "x": -260,
@@ -174,8 +194,8 @@
           "sourcex": "red",
           "sourcey": "green",
           "weight": [
-            0.08,
-            0.05
+            0.18,
+            0.13
           ]
         },
         "position": {

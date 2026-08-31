@@ -58,7 +58,7 @@
               "definitionVersion": 1,
               "id": "decay",
               "parameters": {
-                "blacklevel": 0.015,
+                "blacklevel": 0.0015,
                 "opacity": 1,
                 "whitelevel": 1
               },
@@ -78,14 +78,14 @@
                   0,
                   0
                 ],
-                "r": 3.5,
+                "r": 0.25,
                 "s": [
-                  0.985,
-                  0.985
+                  0.999,
+                  0.999
                 ],
                 "t": [
                   0,
-                  -0.006
+                  -0.0008
                 ],
                 "xord": "srt"
               },
@@ -105,7 +105,7 @@
                   0,
                   0
                 ],
-                "persistence": 0.94,
+                "persistence": 0.997,
                 "source": "over1"
               },
               "position": {
@@ -133,7 +133,7 @@
               "parameters": {
                 "extend": "zero",
                 "filter": "gaussian",
-                "size": 2.5
+                "size": 1.4
               },
               "position": {
                 "x": -360,
@@ -164,7 +164,7 @@
         "parameters": [
           {
             "definition": {
-              "default": 0.94,
+              "default": 0.997,
               "label": "Persistence",
               "max": 1,
               "min": 0,
@@ -203,7 +203,7 @@
             "definition": {
               "default": [
                 0,
-                -0.006
+                -0.0008
               ],
               "label": "Drift",
               "max": 1,
@@ -221,7 +221,7 @@
           },
           {
             "definition": {
-              "default": 3.5,
+              "default": 0.25,
               "label": "Spin",
               "max": 360,
               "min": -360,
@@ -238,7 +238,7 @@
           },
           {
             "definition": {
-              "default": 2.5,
+              "default": 1.4,
               "label": "Softness",
               "max": 128,
               "min": 0,
@@ -307,6 +307,40 @@
         },
         "type": "output"
       },
+      "pathx": {
+        "definitionVersion": 1,
+        "id": "pathx",
+        "label": "pathx1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.31,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -620,
+          "y": -160
+        },
+        "type": "lfo"
+      },
+      "pathy": {
+        "definitionVersion": 1,
+        "id": "pathy",
+        "label": "pathy1",
+        "parameters": {
+          "amplitude": 0.24,
+          "frequency": 0.23,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -620,
+          "y": 40
+        },
+        "type": "lfo"
+      },
       "source": {
         "definitionVersion": 1,
         "id": "source",
@@ -319,8 +353,34 @@
           ],
           "center": [
             0.5,
-            0.32
+            0.5
           ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "pathx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "pathy1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
           "fillcolor": [
             1,
             0.72,
@@ -329,8 +389,8 @@
           ],
           "mode": "fill",
           "radius": [
-            0.045,
-            0.045
+            0.055,
+            0.055
           ],
           "softness": 0.02
         },
