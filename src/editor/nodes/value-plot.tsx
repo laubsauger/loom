@@ -75,7 +75,28 @@ export interface ValuePlotProps {
    * Absent, or not a pure periodic source, and the plot falls back to history.
    */
   readonly source?: ValuePlotSource | null;
+  /**
+   * This node is OFF (T576) — why, or null when it is running.
+   *
+   * §V504: a muted node is NOT COOKED. The value graph skips it before inputs,
+   * parameters, state or diagnostics (T541), so it publishes no bag and nothing here has
+   * anything to draw. The FUNCTION plot did not notice, because T459 evaluates a pure
+   * source's curve independently of the value graph — the curve is a property of the
+   * node, and a property survives being switched off. So a muted LFO kept drawing a live
+   * waveform with a moving playhead, in the node body, which is the one place in this app
+   * that means LIVE OUTPUT (§V91: a display that keeps reading when its source is off is
+   * a display that lies). A stateful node's history plot had the matching defect from the
+   * other side: the ring stops being pushed and the last window just freezes there.
+   *
+   * One question — "what does a value node show while it is off" — and now one answer for
+   * both halves (§V109). The curve as a DIAGRAM of the node is still a good idea; the node
+   * body, beside a running graph, is not where it belongs.
+   */
+  readonly silence?: ValueSilence | null;
 }
+
+/** Why a value node is off. The word the body prints, and the reason it is off. */
+export type ValueSilence = "muted" | "bypassed";
 
 export interface ValuePlotSource {
   readonly definition: NodeDefinition;
@@ -129,7 +150,7 @@ function rangeOf(history: ValueHistory): PlotRange {
   return { low, high };
 }
 
-export function ValuePlot({ nodeId, history, source = null }: ValuePlotProps) {
+export function ValuePlot({ nodeId, history, source = null, silence = null }: ValuePlotProps) {
   const subscribe = useCallback(
     (listener: () => void) => history.subscribe(nodeId, listener),
     [history, nodeId],
@@ -139,6 +160,19 @@ export function ValuePlot({ nodeId, history, source = null }: ValuePlotProps) {
   // Held across renders, per node, because the whole point is that it does NOT follow
   // every window. Declared above the empty-state return so the hook order is fixed.
   const heldRange = useRef<PlotRange | null>(null);
+
+  // T576: OFF, before either picture. Ahead of the function plot because that one does
+  // not need the value graph to draw and would otherwise keep running; ahead of the
+  // history plot because the ring holds the window this node had when it was switched off
+  // and a frozen tail reads as a live-but-still signal. Named, never blank (§V91) — the
+  // same shape a preview's OFF state uses rather than an empty box.
+  if (silence !== null) {
+    return (
+      <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+        <span className={styles.empty}>{silence}</span>
+      </div>
+    );
+  }
 
   // Re-sampled per tick rather than memoised: 96 evaluations of a pure arithmetic
   // function, ten times a second, is beneath measurement, and a memo keyed on a fresh

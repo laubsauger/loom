@@ -6,6 +6,7 @@ import type { ShaderloomBus } from "@domain/commands/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
+import { bypassPassthroughPorts } from "@domain/graph/bypass.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
@@ -205,7 +206,27 @@ function GraphPaneInner({
                 values: plotValues(definition, node.parameters),
                 randomSeed: settings.randomSeed,
               };
-        return <ValuePlot nodeId={nodeId} history={valueHistory} source={source} />;
+        /*
+         * T576 — a node that is OFF says so instead of drawing.
+         *
+         * The same question the value graph asks, asked once (§V109). MUTE is
+         * unconditional there — `if (node.ui?.muted === true) continue`, before inputs,
+         * parameters, state or diagnostics (T541, §V504) — so a muted value node of any
+         * kind publishes nothing. BYPASS is not the same question: a node with a coherent
+         * passthrough keeps publishing (its input's bag, unchanged), and its plot is then
+         * TRUE. Only a bypassed node with nothing to pass through is silent, which is
+         * exactly what `bypassPassthroughPorts` returning undefined means — the same
+         * predicate the value graph and the texture compiler splice by.
+         */
+        const silence =
+          node?.ui?.muted === true
+            ? "muted"
+            : node?.ui?.bypassed === true && bypassPassthroughPorts(definition) === undefined
+              ? "bypassed"
+              : null;
+        return (
+          <ValuePlot nodeId={nodeId} history={valueHistory} source={source} silence={silence} />
+        );
       }
       // T561: orbitable iff the COMPILER marked this node's preview as a synthesized
       // 3D picture with a camera to move — never inferred from the node type here.

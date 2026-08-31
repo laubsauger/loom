@@ -242,3 +242,127 @@ describe("T459 — a pure source draws its function, a stateful one draws its hi
     fastRuntime.dispose();
   });
 });
+
+/**
+ * T576 — a value node that is OFF says so, and both halves say the same thing.
+ *
+ * ## The inconsistency
+ *
+ * §V504: a muted node is NOT COOKED. The value graph's first act is `if (node.ui?.muted
+ * === true) continue`, before inputs, parameters, state or diagnostics (T541), so a muted
+ * node publishes no bag at all. Neither plot noticed, in opposite ways:
+ *
+ *  - a PURE source (LFO, Constant, Timer) keeps drawing, because T459 evaluates its curve
+ *    from the definition and the parameters and never asks the value graph — the curve is
+ *    a property of the node, and a property survives the node being switched off;
+ *  - a STATEFUL node stops being pushed, and its ring holds the window it had at the
+ *    moment of the mute — a FROZEN TAIL that reads as a live-but-still signal.
+ *
+ * One question, two answers (§V109). The node body is the one place in this app that
+ * means LIVE OUTPUT — a texture node's body goes dark when the compiler drops it — so a
+ * waveform with a moving playhead on a muted node is §V91's display that keeps reading
+ * after its source is off. The curve as a DIAGRAM of what an LFO is remains a good idea;
+ * the node body, beside a running graph, is not where it belongs.
+ *
+ * ## Why the bypass cases are here too
+ *
+ * Because they are what stops this being a blanket "any flag blanks the plot". BYPASS is
+ * not the same question as mute: a node with a coherent passthrough keeps publishing its
+ * input's bag unchanged, so its plot is TRUE and must survive. Only a bypassed node with
+ * nothing to pass through is silent — `bypassPassthroughPorts` returning undefined, the
+ * same predicate the value graph and the texture compiler splice by. The LFO (a source)
+ * and the Lag (value in, value out) sit on opposite sides of it, and both are asserted.
+ */
+describe("T576 — a muted value node's body says it is off, whichever plot it had", () => {
+  const setUi = async (
+    runtime: AppRuntime,
+    nodeId: string,
+    ui: Record<string, unknown>,
+  ): Promise<void> => {
+    await act(async () => {
+      const result = await seed(runtime, [{ op: "setNodeUi", nodeId, ui }]);
+      expect(result.status).toBe("applied");
+    });
+  };
+
+  const bodyText = (nodeId: string): string =>
+    screen.getByTestId(`value-plot-${nodeId}`).textContent ?? "";
+
+  it("stops the pure source's CURVE, which the value graph never gated", async () => {
+    const runtime = newRuntime();
+    const { lfo } = await seedPlots(runtime, 1);
+    const gpu = fixture();
+    await mount(runtime, gpu.backend);
+    await run(gpu, 12);
+
+    // Non-vacuity: it really was drawing a live instrument first.
+    expect(screen.queryByTestId(`value-playhead-${lfo}`)).not.toBeNull();
+    expect(curveOf(lfo)).not.toBe("");
+
+    await setUi(runtime, lfo, { muted: true });
+    await run(gpu, 12);
+
+    expect(
+      screen.queryByTestId(`value-playhead-${lfo}`),
+      "a muted node still has a moving playhead — the body claims it is running",
+    ).toBeNull();
+    expect(curveOf(lfo)).toBe("");
+    expect(bodyText(lfo)).toContain("muted");
+    runtime.dispose();
+  });
+
+  it("stops the stateful node's FROZEN TAIL, so both halves agree", async () => {
+    const runtime = newRuntime();
+    const { lag } = await seedPlots(runtime, 1);
+    const gpu = fixture();
+    await mount(runtime, gpu.backend);
+    await run(gpu, 24);
+
+    expect(curveOf(lag), "the Lag never drew a history tail to begin with").not.toBe("");
+
+    await setUi(runtime, lag, { muted: true });
+    await run(gpu, 12);
+
+    // The ring is not cleared by a mute — it is simply no longer pushed — so without this
+    // the last window sits there looking like a signal that has gone quiet.
+    expect(curveOf(lag)).toBe("");
+    expect(bodyText(lag)).toContain("muted");
+    runtime.dispose();
+  });
+
+  it("blanks a BYPASSED source, because it has nothing to pass through", async () => {
+    const runtime = newRuntime();
+    const { lfo } = await seedPlots(runtime, 1);
+    const gpu = fixture();
+    await mount(runtime, gpu.backend);
+    await run(gpu, 12);
+    expect(curveOf(lfo)).not.toBe("");
+
+    await setUi(runtime, lfo, { bypassed: true });
+    await run(gpu, 12);
+
+    expect(curveOf(lfo)).toBe("");
+    expect(bodyText(lfo)).toContain("bypassed");
+    runtime.dispose();
+  });
+
+  it("LEAVES a bypassed passthrough alone, because it still publishes its input", async () => {
+    // The discriminating case. A bypassed Lag is a wire: the value graph splices its input
+    // straight to its output and the node keeps publishing, so its plot is true and must
+    // survive. A rule that blanked on any flag would fail here.
+    const runtime = newRuntime();
+    const { lag } = await seedPlots(runtime, 1);
+    const gpu = fixture();
+    await mount(runtime, gpu.backend);
+    await run(gpu, 24);
+
+    await setUi(runtime, lag, { bypassed: true });
+    await run(gpu, 24);
+
+    expect(curveOf(lag), "a bypassed passthrough was blanked — it is a wire, not silence").not.toBe(
+      "",
+    );
+    expect(bodyText(lag)).not.toContain("bypassed");
+    runtime.dispose();
+  });
+});
