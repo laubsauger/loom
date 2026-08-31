@@ -9,6 +9,7 @@ import type {
 import type { ParameterSlot, ParameterValue } from "../domain/types/parameters.ts";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
 import { FLUID_VELOCITY_WGSL } from "./shaders/fluid-velocity.wgsl.ts";
+import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
 import { GRAY_SCOTT_WGSL } from "./shaders/gray-scott.wgsl.ts";
 
 /**
@@ -2131,7 +2132,8 @@ const fluidDocument = document(
  * failure is a band quietly leaving the spectrum rather than a wrong picture. 37° keeps
  * 3.3° of margin at the violet end.
  *
- * ONE SOURCE, TWO READINGS (§V471.1). `optics1` writes 63 points — the shaft, the ghost,
+ * ONE SOURCE, TWO READINGS (§V471.1). `optics1` writes 65 points — the shaft, the ghost,
+ * the drawn internal segment and its TIR continuation (T718),
  * and 61 bands — and two Geometries read the same pointset through a GROUP PREDICATE,
  * because they need different tapers: `shaft1` takes `p.role < 0.5` at taper 1, a
  * parallel-sided ribbon, and `fan1` takes `p.role > 0.5` at taper 0.06, because 61 beams
@@ -2264,93 +2266,19 @@ const PRISM_OPTICS_ATTRIBUTES = JSON.stringify([
 ]);
 
 /**
- * THE OPTICS — Snell's law twice per band, vectorially, in the prism's cross-section.
- * This is the difference between a working prism and a picture of one: nothing here is
- * an authored angle, and the fan's spread falls out of the same arithmetic that decides
- * each band's colour, because n and hue are the SAME parameter t.
+ * THE OPTICS — T718: a TRACED ray, not a picture of one. The kernel lives in
+ * `shaders/prism-trace.wgsl.ts` (imported like GRAY_SCOTT_WGSL) and emits the full
+ * three-segment path: the shaft meets the entry face; a DRAWN internal segment crosses
+ * the body at the refracted angle — the piece the previous optics computed and never
+ * drew, and the owner's exact words for what was missing ("the ray visible in the
+ * interior"); and the fan opens at each band's OWN exit point on the exit face. Total
+ * internal reflection is a PATH now, not a deletion: past the critical angle a band
+ * reflects at the exit face, crosses to the base and Snells there. Nothing is an
+ * authored angle, and the §V683 gates (prism-trace.gpu.test.ts) hold every segment
+ * against scalar Snell computed from the domain, including the TIR and apex cases.
+ * RI is the same PRISM_RC/2 identity the mesh shares; the extra two slots are the
+ * internal segment and its TIR continuation (zero-length when the ray exits cleanly).
  */
-const PRISM_OPTICS_KERNEL = `const PI: f32 = 3.14159265358979323846;
-/* The two refracting faces, as outward normals, and the offset they share. */
-const NR: vec2f = vec2f(0.86602540, 0.5);
-const NL: vec2f = vec2f(-0.86602540, 0.5);
-const RI: f32 = ${(PRISM_RC / 2).toFixed(3)};
-/* The beams are drawn 0.05 IN FRONT of the front face — a shift along the extrusion
-   axis, which is the one direction the cross-section does not use, so the optics are
-   untouched and the solid cannot swallow either end. */
-const PLANE: f32 = 0.60;
-/* Where on the entry face the beam lands, as a tangent coordinate. The face runs
-   +/-0.578, so this sits low on it — the reference's beam enters LOW. */
-const ENTRY: f32 = -0.28;
-const SHAFT_LEN: f32 = 2.10;
-const GHOST_LEN: f32 = 0.90;
-const FAN_LEN: f32 = 2.25;
-const N_RED: f32 = 1.50;
-/* 37 and not lower: at n = 1.585 the critical angle is 39.1 degrees and the internal ray
-   reaches it at about 33.7, where the violet end goes into TOTAL INTERNAL REFLECTION. */
-const THETA_LO: f32 = 37.0;
-const THETA_HI: f32 = 62.0;
-const AIM_POINTER: f32 = 0.55;
-
-/* WGSL's own refract, in 2D. A zero return IS total internal reflection, and a beam
-   whose two ends coincide draws zero area (T680) — so the failure is a band leaving the
-   spectrum, never a wrong ray. */
-fn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {
-  let d = dot(n, i);
-  let k = 1.0 - eta * eta * (1.0 - d * d);
-  if (k < 0.0) { return vec2f(0.0); }
-  return i * eta - n * (eta * d + sqrt(k));
-}
-
-fn process(p: Point, ctx: PointCtx) -> Point {
-  var q = p;
-  /* The LFO and the pointer are ADDED HERE, not merged on a wire: a value graph merges
-     channel BAGS, and an LFO's channel and a pointer's x share no name. value3 is 0
-     until a pointer moves, so every gate sees the LFO's picture exactly. */
-  let aim = clamp(ctx.value1 + AIM_POINTER * ctx.value3, 0.0, 1.0);
-  let theta = mix(THETA_HI, THETA_LO, aim) * PI / 180.0;
-  let inward = -NR;
-  let cs = cos(-theta);
-  let sn = sin(-theta);
-  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);
-  let pe = NR * RI + vec2f(-NR.y, NR.x) * ENTRY;
-
-  if (ctx.index == 0u) {
-    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);
-    q.tip = vec3f(pe, PLANE);
-    q.tint = vec4f(1.0, 1.0, 1.0, 1.0);
-    q.role = 0.0;
-    return q;
-  }
-  if (ctx.index == 1u) {
-    /* The GHOST: the share the face sent back, by Schlick on the same incidence the
-       refraction uses. 4.3% at 37 degrees, 8.3% at 62 — so the streak brightens as the
-       fan narrows, out of one number rather than a second knob. */
-    let r = dIn - NR * (2.0 * dot(dIn, NR));
-    let c = abs(dot(dIn, NR));
-    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);
-    q.position = vec3f(pe, PLANE);
-    q.tip = vec3f(pe + r * GHOST_LEN, PLANE);
-    q.tint = vec4f(vec3f(fr), 1.0);
-    q.role = 0.0;
-    return q;
-  }
-  /* t is BOTH the refractive index and the hue: value2 is the glass's dispersive power
-     (real crown glass is about a sixth of this), and the colour comes from the ramp on
-     the field input at u = t. Mute value2 and the fan collapses to one ray. */
-  let t = f32(ctx.index - 2u) / f32(ctx.count - 3u);
-  let n = N_RED + ctx.value2 * t;
-  let d2 = refract2(dIn, NR, 1.0 / n);
-  let den = dot(d2, NL);
-  let s = (RI - dot(pe, NL)) / max(den, 1.0e-4);
-  let px = pe + d2 * s;
-  let d3 = refract2(d2, -NL, n);
-  q.position = vec3f(px, PLANE);
-  q.tip = vec3f(px + d3 * FAN_LEN, PLANE);
-  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);
-  q.role = 1.0;
-  return q;
-}`;
-
 const prismDocument = document(
   "e13-prism",
   "E13 Prism",
@@ -2403,9 +2331,9 @@ const prismDocument = document(
         ],
       }, { label: "spectrum1", definitionVersion: 2, resolution: { mode: "fixed", width: 256, height: 8 } }),
       node("optics", "pointKernel", [-1560, 100], {
-        capacity: PRISM_BANDS + 2,
+        capacity: PRISM_BANDS + 4,
         attributes: PRISM_OPTICS_ATTRIBUTES,
-        kernel: PRISM_OPTICS_KERNEL,
+        kernel: prismTraceKernel((PRISM_RC / 2).toFixed(3)),
         // The glass's DISPERSIVE POWER, and the one number the whole effect rests on:
         // n runs 1.500 (red) to 1.585 (violet). Set it to 0 and the fan collapses to a
         // single ray, which is what the gate asserts.

@@ -34,6 +34,12 @@ import { requireExample } from "./runner.ts";
 
 const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
   {
+    doc: "E13-Prism.md",
+    type: "materialGlass",
+    reason:
+      "T718: a statement about a FUTURE graph, exactly the sanctioned shape — the doc says the T725 glass material now exists and that wearing it on the prism's body is a separate look decision the orchestrator holds open. If that pass lands, the node joins the graph and this exemption must be deleted with it (§V421).",
+  },
+  {
     doc: "E24-Audio-Reaction-Diffusion.md",
     type: "audioIn",
     reason:

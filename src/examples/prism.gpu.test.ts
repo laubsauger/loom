@@ -428,8 +428,18 @@ describe("E13 Prism — the picture", () => {
 
       // The shaft reaches the glass ...
       expect(overlap(shaftMask, near)).toBeGreaterThan(0);
-      // ... and stops there. Neither beam is inside the solid.
-      expect(overlap(shaftMask, deep)).toBe(0);
+      /* ... and since T718, CONTINUES THROUGH IT: the shaft draw now carries the traced
+         internal segment, so the glass interior must hold a real population of its
+         pixels — this half of the claim INVERTED when the trace landed, deliberately.
+         "No shaft pixel inside the solid" was the gate for beams placed cosmetically
+         against the body; the trace makes the interior path the feature the owner asked
+         for by name, and an empty interior is now the failure (a kernel that stopped
+         emitting slot 2 would render the old disconnected picture and pass every other
+         assertion here). Measured at the T718 swap: 743 interior pixels. The geometry-
+         agreement duty the old zero carried — mesh and optics reading one constant —
+         lives on in prism-trace.gpu.test.ts's exact connectivity assertions (§V683).
+         The FAN keeps the no-burial claim: it starts ON the exit face and leaves. */
+      expect(overlap(shaftMask, deep)).toBeGreaterThan(300);
       expect(overlap(fanMask, deep)).toBe(0);
 
       /**

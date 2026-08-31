@@ -4,10 +4,15 @@ Deep black. A triangular block of glass, drawn entirely by the light caught on i
 A white beam enters low from the right, and a spectrum fans out to the left — and the fan
 opens and closes as the beam swings, because the fan is Snell's law and not a drawing.
 
-We have no refraction and no glass material, and this file does not pretend otherwise. It
-is built on the fact that makes a prism paintable without either: **a prism reads as glass
-through its edges, not its volume.** The body is nearly black; what says "glass" is a thin
-bright rim along every silhouette and a dim sheen on the faces.
+The optics are a TRACED RAY (T718): the shaft meets the entry face, a visible internal
+segment crosses the body at the refracted angle — which is neither the incoming nor the
+outgoing one — and the fan opens at each wavelength's own exit point. Past the critical
+angle a band reflects at the exit face, crosses to the base and Snells out *there* —
+total internal reflection is a path, not a deletion. The BODY, though, is still not a
+glass material: it reads as glass through its edges — a thin bright Fresnel rim along
+every silhouette — while the interior stays near-black except where the traced beam
+crosses it. (T725's `materialGlass` exists now; whether this body should wear it is a
+separate look decision.)
 
 ## Graph
 
@@ -141,7 +146,8 @@ spectrum, never a wrong ray. 37° keeps 3.3° of margin.
 
 ### One source, two readings
 
-`optics1` writes 63 points — the shaft, its ghost, and 61 bands — and two Geometries read
+`optics1` writes 65 points — the shaft, its ghost, the drawn internal segment, its TIR
+continuation (zero-length whenever the central ray exits cleanly), and 61 bands — and two Geometries read
 that one pointset through a **group predicate** (§V471's first idea, structure from
 selection rather than from more nodes). The split is not cosmetic: `shaft1` wants taper 1,
 a parallel-sided ribbon, and `fan1` wants taper 0.06, because 61 beams leaving the same
@@ -186,9 +192,12 @@ sweeping through grazing. The picture still renders a triangle; §V640's split f
 the optics, and the *only* thing making them agree is that both read one circumradius.
 Nothing in the compiler checks it. Move one and the picture stays entirely plausible — a
 prism, a beam, a spectrum — while the beam either floats beside the glass or drives through
-the middle of it. Both directions are gated, and both were verified by making them happen:
-growing the mesh from 0.76 to 0.95 puts 123 fan pixels inside an 8px erosion of the prism;
-shrinking it to 0.45 moves the shaft's tip 30px off the glass.
+the middle of it. Since T718 the interior is SUPPOSED to carry the traced segment, so the
+pixel gate holds the fan out of the solid and demands a real population of shaft-group
+pixels inside it (743 measured at the swap); the exact mesh/optics agreement lives in
+`prism-trace.gpu.test.ts`, which holds every segment against scalar Snell computed from the
+domain (§V683) — entry angle, internal angle, per-band exit angle, the TIR case leaving
+through the base, and the apex case shortening the internal path.
 
 **The clamp between the Level and the blur.** Level is a signed pipeline: below
 `blacklevel` it emits negatives, the blur spreads them across the whole frame, and `add`
@@ -203,11 +212,16 @@ project's full 1280×720, with the output space read from the plan.
 
 ## Where the seams still show
 
-- **There is no caustic on the base.** The owner's reference has one. We have no
-  refraction, so a caustic here would be light we invented and placed, and §V617 means a
-  beam cannot cast one either — an unlit primitive takes no part in shadowing. The glow
-  under the prism is bloom spilling off the exit face, which is a real thing that happens,
-  and it is all this file claims.
+- **There is still no caustic on the base.** The owner's reference has one. The BEAM
+  refracts now (T718), but a caustic is refracted light LANDING on another surface, and
+  the fan's ribbons are unlit primitives that take no part in shadowing or lighting
+  (§V617) — so a caustic would still be light invented and placed. The glow under the
+  prism is bloom spilling off the exit face, which is a real thing that happens. What
+  changed with T718, measured rather than asserted (§V642): the interior now carries the
+  traced segment (743 interior beam pixels where the gate previously held zero), the look
+  baseline's motion row moved 0.04247 → 0.04351 (+2.4% — the opening frames were already
+  dominated by the sweep), and every T710 pixel gate except the deliberately inverted
+  burial claim held unchanged.
 - **The beams are drawn in a plane 0.05 in front of the front face.** The optics are solved
   in the cross-section, which does not use the extrusion axis at all, so this is a shift
   along exactly the direction the physics ignores — but it is a shift, and it is what stops
