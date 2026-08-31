@@ -63,7 +63,8 @@ WHERE THE ORGANISM LIVES — one disc, read twice, never drawn:
 broad1 ─► warp1 ◄─ detail1     state(feedback, source: pack1)      sow1 ─► gate1
               │                     │                                          │
               ▼                     ▼                                          ▼
- shape1 ─► dish1 ─────────► pack1 ◄─ inject1(screen, 512²) ◄─ rd1 ◄─ wind1 ◄─ (the loop)
+ shape1 ─► dish1 ─────────► pack1 ◄─ inject1(screen, 512²) ◄─ rd1 ◄─ wind1(displace) ◄─ (the loop)
+                                                                       └─ swell1(noise, mono off) — the flow field
               │                            │
               └─► chem1(invert) ─► blend1(add) ◄─┘
                                        └─► tint1 ◄─ palette1
@@ -471,9 +472,36 @@ the middle of its own palette never on screen. The added continuous term moves e
 ground to its own place on the ramp and carries its fronts with it: **the hue now says
 which chemistry you are looking at, and V says how far along the reaction is.**
 
-**Wind, inside the loop.** `wind1` rotates the state a hair per ITERATION (state → wind
-→ rd), and because substeps multiply iterations, the bass literally stirs the dish
-faster. The loop stays a NAME (`source: "pack1"`, T350) while its body grew a node.
+**Wind, inside the loop — and it advects, it does not rotate (T734, §V626).** `wind1` sits
+between the Feedback and the kernel (state → wind → rd), and because substeps multiply
+iterations it runs seventeen to twenty-four times a frame, so the bass literally stirs the
+dish faster. The loop stays a NAME (`source: "pack1"`, T350) while its body grew a node.
+
+For most of this file's life that node was a **Transform with `r: 0.02`** — a rigid rotation
+applied twenty-odd times per frame. It looked like stirring and it was not: a Gray-Scott
+lattice is stable because its substrate is stationary, and a rotation carries the substrate
+*with* the pattern, so nothing shears. It turned the lattice and left it a lattice. That is
+the mechanism behind "gets very lame and boring and evenly covering the screen very early
+on" — the plate had reached its lattice and the wind was decorative.
+
+It is now a **Displace at weight 0.0002**, fed by `swell1`, a slow two-channel perlin
+(`mono: false` — one channel offsets every texel identically, which translates the dish
+rather than shearing it). The chemistry map is not carried along: `pack1` repaints blue from
+`dish1` *after* the reaction, so the state slides across a stationary parameter field, which
+is the thing that shears. Same slot, same edge out, different kind. Measured at frame 1800:
+frame-pair motion **0.0462 → 0.0624** and live spot count **238 → 907**, and it beats the
+rotation on motion at every age measured. Zeroing the weight renders a perfectly plausible
+picture and collapses moved pixels three-to-twelve fold, which is why it is gated on pixels
+rather than on structure alone.
+
+**Weather was measured here too, and rejected.** E2 documents the whole comparison; the
+short version is that this file's in-disc map already swings across the band on its own
+(median 0.672 → 0.386 → 0.305 across frames 300/900/1800), and multiplying a travelling
+front into it walks the chemistry *down* — toward the dense-labyrinth end, which is the most
+screen-filling regime there is. Measured after the advection landed, in-disc tile CV went
+0.430/0.237/0.307 to 0.300/0.232/0.249 and in-disc spot count went 462/907/470 to
+1120/2472/1631: three times the spots, finer and flatter. That is the complaint restated,
+not fixed. E2 and E24 both carry the single mechanism.
 
 **The RGB delay is TIME, not space.** Three cache rings tap the coloured output at 2, 4
 and 7 frames back; two Reorders wear one channel from each. Moving fronts fringe into

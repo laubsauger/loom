@@ -35,8 +35,8 @@
     "f0max": 0.3596
   },
   "E2-Reaction-Diffusion.loom.json": {
-    "motion": 0.12634,
-    "range": 0.8521,
+    "motion": 0.133,
+    "range": 0.8391,
     "f0max": 0.9344
   },
   "E20-Gooeyball.loom.json": {
@@ -45,8 +45,8 @@
     "f0max": 0.6839
   },
   "E24-Audio-Reaction-Diffusion.loom.json": {
-    "motion": 0.01002,
-    "range": 0.9821,
+    "motion": 0.01809,
+    "range": 0.9794,
     "f0max": 0
   },
   "E25-Stage.loom.json": {

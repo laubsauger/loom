@@ -25,6 +25,17 @@
           "portId": "disp"
         }
       },
+      "e-flow-rd": {
+        "id": "e-flow-rd",
+        "source": {
+          "nodeId": "flow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd",
+          "portId": "input"
+        }
+      },
       "e-palette-tint": {
         "id": "e-palette-tint",
         "source": {
@@ -69,15 +80,27 @@
           "portId": "in2"
         }
       },
-      "e-state-rd": {
-        "id": "e-state-rd",
+      "e-state-flow": {
+        "id": "e-state-flow",
         "source": {
           "nodeId": "state",
           "portId": "out"
         },
         "target": {
-          "nodeId": "rd",
-          "portId": "input"
+          "nodeId": "flow",
+          "portId": "source"
+        }
+      },
+      "e-swell-flow": {
+        "id": "e-swell-flow",
+        "order": 0,
+        "source": {
+          "nodeId": "swell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "flow",
+          "portId": "disp"
         }
       },
       "e-tint-out": {
@@ -174,6 +197,34 @@
           "y": 117
         },
         "type": "noise"
+      },
+      "flow": {
+        "definitionVersion": 1,
+        "id": "flow",
+        "label": "flow1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.00035,
+            0.00035
+          ]
+        },
+        "position": {
+          "x": -120,
+          "y": 380
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "displace"
       },
       "out": {
         "definitionVersion": 1,
@@ -322,6 +373,38 @@
           "width": 512
         },
         "type": "feedback"
+      },
+      "swell": {
+        "definitionVersion": 1,
+        "id": "swell",
+        "label": "swell1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0,
+          "period": 0.55,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 41,
+          "speed": 0.035,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -380,
+          "y": 380
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "noise"
       },
       "tint": {
         "definitionVersion": 1,

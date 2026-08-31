@@ -201,9 +201,12 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
   async function simulate(
     mutate: (graph: GraphDocument) => GraphDocument,
     captures: ReadonlyArray<number>,
+    // T734: E24 shares this kernel VERBATIM and shares E2's fault, so it shares the
+    // instrument too — same state target, same readout, same V channel.
+    fileName = "E2-Reaction-Diffusion.loom.json",
   ): Promise<ReadonlyArray<Float32Array>> {
-    const file = listExamples().find((entry) => entry.fileName === "E2-Reaction-Diffusion.loom.json");
-    if (file === undefined) throw new Error("E2 is not shipped");
+    const file = listExamples().find((entry) => entry.fileName === fileName);
+    if (file === undefined) throw new Error(`${fileName} is not shipped`);
     const { document } = requireExample(file);
     const plan = compileGraph({
       graph: mutate(document.graph),
@@ -334,6 +337,87 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
     const [varied] = await simulate((graph) => graph, [300]);
     expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(low as Float32Array));
     expect(featureSpread(varied as Float32Array)).toBeGreaterThan(featureSpread(high as Float32Array));
+  }, 300_000);
+
+  /**
+   * T734 / §V626 / §V681 — THE COMPOSITION DOES NOT DIE, AND THE ADVECTION IS WHY.
+   *
+   * The owner's complaint was that E2 "becomes a static field of sorts". It never froze:
+   * the composition did. On the file this replaces, tile CV over a 16x16 grid of 32px tiles
+   * fell 0.695 at frame 60 to 0.137 at frame 600 and then sat between 0.099 and 0.177 for
+   * the next fifty seconds — an evenly covered screen with nothing left to look at.
+   *
+   * §V681 is why the assertions below are shaped the way they are. "Becomes static" is a
+   * claim about CHANGE OVER TIME, and no still-frame instrument can see it: a collapsed E2
+   * still renders a handsome maze, and §V678 has ten structural breakages surviving the
+   * look baseline, so the baseline is not the gate for this either. So the claim is made at
+   * a LATE age (frame 900, fifteen seconds — well past where the old file had settled) and
+   * against a CONTROL that removes exactly the mechanism and nothing else.
+   *
+   * The control is `flow1`'s weight set to zero. That is a graph with the same nodes, the
+   * same passes, the same twenty substeps and the same wire — it renders a plausible
+   * picture, and every structural assertion in `concepts.test.ts` still passes on it. Only
+   * these two numbers see the difference.
+   *
+   * Measured on Dawn while writing this, at frame 900 of a 512x512 simulation:
+   *
+   *              featureSpread   moved over 10 frames
+   *   shipped        257.7             149,582
+   *   weight 0       106.2               3,268
+   *
+   * — composition 2.4x and motion 46x. The bands below are set well inside both.
+   */
+  it("keeps its composition alive at fifteen seconds, and the advection is what does it", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const [live, liveLater] = await simulate((graph) => graph, [900, 910]);
+    const [still, stillLater] = await simulate(withNode("flow", { weight: [0, 0] }), [900, 910]);
+
+    // COMPOSITION. Feature density still varies region to region at fifteen seconds; with
+    // the flow removed the plate has relaxed into one texture everywhere, which is the
+    // "static field of sorts" as a number rather than as an opinion.
+    expect(featureSpread(live as Float32Array)).toBeGreaterThan(
+      featureSpread(still as Float32Array) * 1.8,
+    );
+
+    // MOTION, across a FRAME PAIR (§V681) — the half of the claim a still cannot carry.
+    // A lattice in a stationary substrate is a fixed point, so this is the number that
+    // separates "slowly evolving" from "arrived".
+    expect(moved(live as Float32Array, liveLater as Float32Array)).toBeGreaterThan(
+      moved(still as Float32Array, stillLater as Float32Array) * 10,
+    );
+  }, 300_000);
+
+  /**
+   * T734 — THE SAME CLAIM ON E24, WHOSE WIND WAS DOING THE WRONG THING FOR TWO HUNDRED
+   * TASKS.
+   *
+   * E24 shares `GRAY_SCOTT_WGSL` verbatim, so it shares E2's band and E2's fault. It also
+   * already HAD a node in §V626's slot — `wind1`, a Transform rotating 0.02 per iteration,
+   * seventeen to twenty-four times a frame — and §V626 is precisely that a rotation turns a
+   * lattice and leaves it a lattice. The stirring was decorative; the plate never sheared.
+   *
+   * Only the MOTION half is asserted here. E24's frame is mostly black outside `bowl1`'s
+   * disc, so featureSpread over the whole frame measures the vignette rather than the
+   * picture — and it is measurably blind to this: with the flow removed it goes UP, from
+   * 191.9 to 233.9, because a relaxed plate has cleaner tile-to-tile edges. A number that
+   * moves the wrong way under the mutation is not a gate, so it is not used as one.
+   *
+   * Measured at frame 900, 512x512, over ten frames: 17,369 pixels moved against 3,745 with
+   * `wind1`'s weight zeroed — 4.6x. Rendered without a value graph, so `substeps` sits on
+   * its retained 14 rather than the bass-driven 17-24; that makes this deterministic and
+   * understates the shipped number, which is the safe direction for a floor.
+   */
+  it("stirs E24's plate by advection, not by spinning it (§V626)", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const E24 = "E24-Audio-Reaction-Diffusion.loom.json";
+    const [live, liveLater] = await simulate((graph) => graph, [900, 910], E24);
+    const [still, stillLater] = await simulate(withNode("wind", { weight: [0, 0] }), [900, 910], E24);
+
+    expect(moved(live as Float32Array, liveLater as Float32Array)).toBeGreaterThan(
+      moved(still as Float32Array, stillLater as Float32Array) * 3,
+    );
   }, 300_000);
 });
 

@@ -601,7 +601,19 @@
         },
         "target": {
           "nodeId": "wind",
-          "portId": "input"
+          "portId": "source"
+        }
+      },
+      "e-swell-wind": {
+        "id": "e-swell-wind",
+        "order": 0,
+        "source": {
+          "nodeId": "swell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wind",
+          "portId": "disp"
         }
       },
       "e-tapb-fringe": {
@@ -1939,6 +1951,38 @@
         },
         "type": "feedback"
       },
+      "swell": {
+        "definitionVersion": 1,
+        "id": "swell",
+        "label": "swell1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0,
+          "period": 0.55,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 41,
+          "speed": 0.035,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -440,
+          "y": -140
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "noise"
+      },
       "tapB": {
         "definitionVersion": 1,
         "id": "tapB",
@@ -2255,28 +2299,28 @@
         "id": "wind",
         "label": "wind1",
         "parameters": {
-          "aspectcorrect": true,
-          "extend": "mirror",
-          "p": [
-            0,
-            0
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
           ],
-          "r": 0.02,
-          "s": [
-            1,
-            1
-          ],
-          "t": [
-            0,
-            0
-          ],
-          "xord": "srt"
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.0002,
+            0.0002
+          ]
         },
         "position": {
           "x": -440,
           "y": 120
         },
-        "type": "transform"
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "displace"
       },
       "xgain": {
         "definitionVersion": 1,

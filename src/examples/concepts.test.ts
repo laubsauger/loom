@@ -247,6 +247,10 @@ describe("E2 Reaction-Diffusion", () => {
       plan.passes.findIndex((pass) => pass.kind === "loop" && pass.edge === "end"),
     );
     expect(inside.map((pass) => (pass.kind === "effect" ? pass.nodeId : pass.kind))).toEqual([
+      // T734: the advection is INSIDE the loop, which is the whole reason it works — and
+      // is also its cost, stated here so nobody has to rediscover it: twenty extra
+      // displace passes per displayed frame, not one.
+      "flow",
       "rd",
       "pack",
       "state",
@@ -257,6 +261,77 @@ describe("E2 Reaction-Diffusion", () => {
     const end = plan.passes.findIndex((pass) => pass.kind === "loop" && pass.edge === "end");
     expect(effectIndex("out")).toBeGreaterThan(end);
     expect(effectIndex("broad")).toBeLessThan(end);
+  });
+
+  /**
+   * T734 / §V626 — TO BREAK A PATTERN, MOVE THE MEDIUM.
+   *
+   * The owner's complaint was that E2 "becomes a static field of sorts". It never literally
+   * froze; the COMPOSITION died. Measured on the shipped file before this change, the tile
+   * CV of a 16x16 grid of 32px tiles fell 0.695 at frame 60 to 0.137 at frame 600 and then
+   * sat between 0.099 and 0.177 for the next fifty seconds — an evenly covered screen, which
+   * is the second half of what the owner reported.
+   *
+   * §V554's corrected band says why: this kernel's regimes are dense labyrinth below 0.30,
+   * open labyrinth to 0.55, a REGULAR SPOT LATTICE from 0.55 to 0.85, and dead above 0.90 —
+   * and motion falls monotonically across it. A lattice is stable because its substrate is
+   * stationary, so the fix is to move the substrate. Two things make that advection rather
+   * than decoration, and both are asserted here because both fail silently:
+   *
+   *   1. The flow field is TWO CHANNELS. `mono: true` gives every texel the same offset in
+   *      x and y, which translates the picture instead of shearing it. Measured: flipping
+   *      that one flag costs 45% of the moved-pixel count.
+   *   2. The chemistry map is repainted from the map chain AFTER the reaction, so the state
+   *      moves and its parameters do not. If the map were carried along with the state, the
+   *      lattice would ride its own chemistry and nothing would shear.
+   */
+  it("advects the STATE through a static chemistry map, rather than rotating the pattern", () => {
+    // §V626's slot: between the Feedback and the kernel, and a DISPLACE, not a Transform.
+    // E24 shipped a Transform here for two hundred tasks and it turned the lattice without
+    // breaking it — a rotation leaves a lattice a lattice.
+    expect(document.graph.nodes["flow"]?.type).toBe("displace");
+
+    // A zero weight is a wire that renders identically and advects nothing (§V147's shape),
+    // and BOTH axes have to carry it — one axis is a shear along a line, not a flow.
+    const weight = effectFor(plan, "flow").uniforms?.["weight"];
+    expect(Array.isArray(weight) ? weight : []).toHaveLength(2);
+    for (const axis of weight as readonly number[]) expect(Math.abs(axis)).toBeGreaterThan(0);
+
+    // The flow field is its own noise, animated, and NOT one of the map's two noises —
+    // sharing one would tie the flow to the chemistry it is supposed to slide across.
+    const swell = effectFor(plan, "swell");
+    expect(swell.uniforms?.["speed"]).not.toBe(0);
+    expect(swell.sharedBinding).toBe("frameU");
+    for (const id of ["broad", "detail"]) {
+      expect(effectFor(plan, id).uniforms?.["seed"], id).not.toBe(swell.uniforms?.["seed"]);
+    }
+    // TWO CHANNELS. `mono` collapses the field to one, and a displace driven by one channel
+    // offsets every texel identically: a translation, not a flow.
+    expect(swell.uniforms?.["mono"]).toBeFalsy();
+
+    // The state goes in and the flow field displaces it; nothing else reaches this node.
+    const intoFlow = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === "flow");
+    expect(intoFlow.map((edge) => `${edge.source.nodeId}->${edge.target.portId}`).sort()).toEqual([
+      "state->source",
+      "swell->disp",
+    ]);
+
+    // And the MAP is not carried with it. The chemistry coordinate reaches blue from the
+    // map chain through the Reorder, which runs AFTER the kernel, so the parameters the
+    // reaction reads are a function of PLACE while the state slides across them.
+    const mapIntoPack = Object.values(document.graph.edges).find(
+      (edge) => edge.target.nodeId === "pack" && edge.target.portId === "in2",
+    );
+    expect(mapIntoPack).toBeDefined();
+    const reachesFlow = (from: string, seen = new Set<string>()): boolean => {
+      if (from === "flow" || from === "state") return true;
+      if (seen.has(from)) return false;
+      seen.add(from);
+      return Object.values(document.graph.edges)
+        .filter((edge) => edge.target.nodeId === from)
+        .some((edge) => reachesFlow(edge.source.nodeId, seen));
+    };
+    expect(reachesFlow(mapIntoPack!.source.nodeId)).toBe(false);
   });
 
   /**
@@ -319,7 +394,11 @@ describe("E2 Reaction-Diffusion", () => {
     // texture. If this ever grows a second input, the Reorder is no longer load-bearing.
     const intoKernel = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === "rd");
     expect(intoKernel).toHaveLength(1);
-    expect(intoKernel[0]?.source).toEqual({ nodeId: "state", portId: "out" });
+    // T734: the state now reaches the kernel THROUGH the advection, so the single input is
+    // `flow1` rather than `state` — still one input, still the Reorder carrying the map.
+    expect(intoKernel[0]?.source).toEqual({ nodeId: "flow", portId: "out" });
+    const intoFlow = Object.values(document.graph.edges).find((edge) => edge.target.nodeId === "flow" && edge.target.portId === "source");
+    expect(intoFlow?.source).toEqual({ nodeId: "state", portId: "out" });
   });
 
   /** §V45: the initial state is a hash of a constant seed, not of anything ambient. */
@@ -1564,6 +1643,52 @@ describe("E24 Audio Reaction-Diffusion", () => {
     expect(begin).toBeGreaterThanOrEqual(0);
     expect(windIndex).toBeGreaterThan(begin);
     expect(windIndex).toBeLessThan(end);
+  });
+
+  /**
+   * T734 / §V626 — AND THE WIND ADVECTS, IT DOES NOT ROTATE.
+   *
+   * This node shipped for a long time as a Transform with `r: 0.02`, a rigid rotation
+   * applied seventeen to twenty-four times per frame depending on the bass. §V626 is that
+   * a rotation TURNS a lattice and leaves it a lattice: the substrate stays stationary
+   * relative to the pattern, so nothing shears. That is why E24 "gets very lame and boring
+   * and evenly covers the screen very early on" — the stirring was decorative.
+   *
+   * Advection through the static chemistry map shears instead, and it beats the rotation at
+   * every age measured: at frame 1800, motion 0.0462 to 0.0624 and live spot count 238 to
+   * 907. The mutation that proves the claim is `weight: [0, 0]`, which renders a plausible
+   * picture and collapses the moved-pixel count three to twelve fold.
+   */
+  it("advects the state rather than rotating it — the wind is a flow, not a spin", () => {
+    expect(document.graph.nodes["wind"]?.type).toBe("displace");
+
+    // Both axes carry weight, or this is a shear along a line rather than a flow.
+    const weight = effectFor(plan, "wind").uniforms?.["weight"];
+    expect(Array.isArray(weight) ? weight : []).toHaveLength(2);
+    for (const axis of weight as readonly number[]) expect(Math.abs(axis)).toBeGreaterThan(0);
+
+    // TWO CHANNELS in the flow field. `mono` offsets every texel identically, which is a
+    // translation of the whole dish and shears nothing.
+    const swell = effectFor(plan, "swell");
+    expect(swell.uniforms?.["mono"]).toBeFalsy();
+    expect(swell.uniforms?.["speed"]).not.toBe(0);
+
+    // The state goes in on `source`, the flow on `disp`, and nothing else reaches it.
+    const into = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === "wind");
+    expect(into.map((edge) => `${edge.source.nodeId}->${edge.target.portId}`).sort()).toEqual([
+      "state->source",
+      "swell->disp",
+    ]);
+    // …and the kernel still reads the wind's output, so the slot is unchanged downstream.
+    const out = Object.values(document.graph.edges).filter((edge) => edge.source.nodeId === "wind");
+    expect(out.map((edge) => `${edge.target.nodeId}.${edge.target.portId}`)).toEqual(["rd.input"]);
+
+    // The chemistry map is NOT carried along: `dish1` reaches blue through the Reorder,
+    // which runs after the kernel, so the state slides across a stationary parameter field.
+    const mapIntoPack = Object.values(document.graph.edges).find(
+      (edge) => edge.target.nodeId === "pack" && edge.target.portId === "in2",
+    );
+    expect(mapIntoPack?.source.nodeId).toBe("dish");
   });
 
   /**

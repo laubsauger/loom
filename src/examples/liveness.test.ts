@@ -121,6 +121,16 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  * from, kept because the thresholds' provenance matters and frozen because §V643 gave
  * the live numbers a home that can actually go red.
  *
+ * T734 IS A CLEAN DEMONSTRATION OF WHAT THIS GATE CANNOT SEE (§V678). E2's reported fault
+ * was that its composition died over the first ten seconds — measured, tile CV fell 0.695
+ * at frame 60 to 0.137 at frame 600 and stayed there for the next fifty. Rebuilding it
+ * around an advection took frame-pair motion at frame 1800 from 0.018 to 0.19, a factor of
+ * ten in the picture a viewer actually watches. This gate's motion row moved 0.12634 to
+ * 0.13300 — five percent — because it measures frames 60 to 180, which is BEFORE the
+ * collapse it was blind to. The baseline was never wrong; it was answering a different
+ * question. The claim that sees this lives in `examples.gpu.test.ts`, at frame 900,
+ * against a control with the mechanism removed.
+ *
  * LIVENESS_FLOOR is 0.002. The gap it lives in is enormous and asymmetric: a genuinely
  * static plan reads EXACTLY zero (asserted below, so this is measured and not assumed),
  * and the slowest live example in the catalogue reads 0.00570 — nearly three times the

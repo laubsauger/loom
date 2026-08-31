@@ -410,6 +410,17 @@ export const reactionDiffusionDocument = document(
         gamma1: 1,
       }, { label: "shape1" }),
       /*
+       * T734 — AND NOT A TRAVELLING FRONT, which was built, measured and REJECTED here.
+       * E32's second half (§V625) is weather: an LFO-driven ramp multiplied into the map so
+       * a region walks down the band and back. It is the obvious idea, it works on E32, and
+       * on THIS example it makes the picture worse — the whole comparison is in the md.
+       * Short version: multiply walks the chemistry coordinate DOWN, and §V554's corrected
+       * band says down is DENSE LABYRINTH, so the front pushes regions into the most
+       * screen-filling regime there is. Against advection alone it cost 22% of tile CV to
+       * buy 6% of motion, and the slow swing it was for turned out to be identical without
+       * it, because the advection already produces one that size (§V709, §V710).
+       */
+      /*
        * THE STATE. `substeps: 20` is T387: twenty iterations of this loop per displayed
        * frame. At one iteration a frame — everything this product could do before — the
        * pattern takes minutes to develop, which is the "too slow" the owner reported. It
@@ -426,6 +437,51 @@ export const reactionDiffusionDocument = document(
           format: { mode: "fixed", format: "rgba16float" },
         },
       ),
+      /*
+       * ADVECTION (T734, §V626). To break a pattern, MOVE THE MEDIUM — do not rotate the
+       * pattern. Gray-Scott's spot lattice is stable because its substrate is stationary;
+       * carrying the state along a slow flow while the chemistry map underneath it stays
+       * PUT shears the lattice apart, and a rigid rotation would only turn it and leave it
+       * a lattice. `pack1` repaints blue from the map AFTER the reaction, which is what
+       * makes this advection THROUGH a static parameter field: the field moves, its
+       * parameters do not.
+       *
+       * `mono: false` is load-bearing — a mono field gives every texel the same offset in
+       * x and y, which is a translation, not a flow.
+       *
+       * COST: this displace sits INSIDE the Feedback's 20 substeps, so it is twenty extra
+       * passes per displayed frame, not one.
+       *
+       * The weight is the DENSITY knob and it has an OPTIMUM, not merely a ceiling: dark
+       * fraction rises monotonically with it, but motion PEAKS near 0.00025 and falls above
+       * ~0.0005, because past that the flow removes the material that was doing the moving.
+       */
+      node("swell", "noise", [-380, 380], {
+        type: "perlin4d",
+        seed: 41,
+        period: 0.55,
+        harmon: 2,
+        spread: 2,
+        gain: 0.55,
+        rough: 0.5,
+        exp: 1,
+        amp: 1,
+        offset: 0,
+        mono: false, // two independent channels, or this is a translation rather than a flow
+        aspectcorrect: true,
+        t4d: 0.37, // T535: off the 4D lattice plane, where t4d=0 collapses amplitude
+        s4d: 1,
+        speed: 0.035, // slower than either map noise: the flow should outlive the shapes it carries
+      }, { label: "swell1", resolution: { mode: "fixed", width: 512, height: 512 } }),
+      node("flow", "displace", [-120, 380], {
+        weight: [0.00035, 0.00035],
+        offset: [0.5, 0.5],
+        sourcex: "red",
+        sourcey: "green",
+        // `hold` and not `mirror`: the state's edge is a boundary condition of the
+        // simulation, and mirroring it folds chemistry back in as a phantom neighbour.
+        extend: "hold",
+      }, { label: "flow1", resolution: { mode: "fixed", width: 512, height: 512 } }),
       node("rd", "customWgsl", [140, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
       /*
        * THE PACK. Red and green are the chemicals the kernel just stepped; blue is the
@@ -475,7 +531,10 @@ export const reactionDiffusionDocument = document(
       edge("e-detail-warp", ["detail", "out"], ["warp", "disp"]),
       edge("e-warp-shape", ["warp", "out"], ["shape", "input"]),
       edge("e-shape-pack", ["shape", "out"], ["pack", "in2"]),
-      edge("e-state-rd", ["state", "out"], ["rd", "input"]),
+      // T734: the state is advected on its way into the reaction (§V626).
+      edge("e-state-flow", ["state", "out"], ["flow", "source"]),
+      edge("e-swell-flow", ["swell", "out"], ["flow", "disp"], 0),
+      edge("e-flow-rd", ["flow", "out"], ["rd", "input"]),
       edge("e-rd-pack", ["rd", "out"], ["pack", "in1"]),
       edge("e-rd-tint", ["rd", "out"], ["tint", "source"]),
       edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
@@ -2613,9 +2672,11 @@ const GOOEY_GOO_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  *    rings tap the coloured output at 2, 5 and 9 frames back, and a Reorder wears one
  *    channel from each — motion fringes into rainbow, stillness stays clean. The naive
  *    per-channel-scaling translation would be chromatic aberration, the wrong effect.
- *  · WIND. A Transform INSIDE the loop (state → wind → rd), rotating a hair per
- *    iteration. Substeps multiply it, so the bass literally stirs faster — the T350
+ *  · WIND. A Displace INSIDE the loop (state → wind → rd), advecting the state a hair
+ *    per iteration. Substeps multiply it, so the bass literally stirs faster — the T350
  *    reference keeps the loop a name (`source: "pack1"`) while the body grows a node.
+ *    T734 changed this node's KIND: it was a Transform rotating 0.02 per iteration, and
+ *    §V626 is that rotating a lattice leaves it a lattice. Advection shears it.
  *  · SILENCE IS A PICTURE, NOT A FAILURE (§V329). Unbound audio reads all-zero
  *    channels: substeps rest at their base, the chemistry sits mid-band, the palette
  *    breathes on its own LFO — the example ANIMATES (T402) with no track bound, and
@@ -2942,11 +3003,28 @@ const audioRdDocument = document(
         format: { mode: "fixed", format: "rgba16float" },
         parameters: { substeps: drivenSlot("steps1:low", 14) },
       }),
-      // The wind: a hair of rotation per ITERATION, inside the loop — substeps
-      // multiply it, so the bass stirs the dish faster, which is the point.
-      node("wind", "transform", [-440, 120], {
-        t: [0, 0], r: 0.02, s: [1, 1], p: [0, 0], xord: "srt", extend: "mirror", aspectcorrect: true,
-      }, { label: "wind1" }),
+      /*
+       * THE WIND. A hair of flow per ITERATION, inside the loop — substeps multiply it, so
+       * the bass stirs the dish faster, which is the point.
+       *
+       * T734: this used to be a Transform with `r: 0.02`, a RIGID ROTATION applied 17-24
+       * times per frame, and §V626 says exactly what that buys: a rotation turns a lattice
+       * and leaves it a lattice. Advecting the state along a slow two-channel flow shears
+       * it instead, and it beats the rotation on motion at EVERY age — at frame 1800,
+       * motion 0.0462 -> 0.0624 and live spot count 238 -> 907.
+       *
+       * `mono: false` is load-bearing: one channel means one offset for every texel, which
+       * is a translation. The chemistry map is NOT carried along — `pack1` repaints blue
+       * from `dish1` after the reaction — so this is advection through a static parameter
+       * field, which is the thing that shears.
+       */
+      node("swell", "noise", [-440, -140], {
+        type: "perlin4d", seed: 41, period: 0.55, harmon: 2, spread: 2, gain: 0.55, rough: 0.5,
+        exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true, t4d: 0.37, s4d: 1, speed: 0.035,
+      }, { label: "swell1", resolution: { mode: "fixed", width: 512, height: 512 } }),
+      node("wind", "displace", [-440, 120], {
+        weight: [0.0002, 0.0002], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold",
+      }, { label: "wind1", resolution: { mode: "fixed", width: 512, height: 512 } }),
       node("rd", "customWgsl", [-200, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
 
       /* ---- T560: THE BEAT SEEDS THE PLATE ---------------------------------------------
@@ -3355,7 +3433,10 @@ const audioRdDocument = document(
       edge("e-shape-dish", ["shape", "out"], ["dish", "in2"], 0),
       edge("e-dish-pack", ["dish", "out"], ["pack", "in2"]),
       // the loop, wind inside it, and the beat's seed screened into the state
-      edge("e-state-wind", ["state", "out"], ["wind", "input"]),
+      // T734: `wind1` is a displace now, so the state arrives on `source` and the flow
+      // field on `disp`. The edge OUT of the slot is unchanged.
+      edge("e-state-wind", ["state", "out"], ["wind", "source"]),
+      edge("e-swell-wind", ["swell", "out"], ["wind", "disp"], 0),
       edge("e-wind-rd", ["wind", "out"], ["rd", "input"]),
       edge("e-spark-sow", ["spark", "out"], ["sow", "in1"]),
       edge("e-bowl-sow", ["bowl", "out"], ["sow", "in2"], 0),
