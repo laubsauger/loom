@@ -3,6 +3,12 @@
 A velocity field carrying a dye. Point at it and it stirs: the pointer sits in the eye of
 a vortex, the flow drags the ink around, and the ink shows you where the flow went.
 
+Since T661, "point at it and it stirs" is a gate rather than a hope: the headless
+harness can now feed a scripted pointer through the same seam the app's events use, and
+`pointer-replay.gpu.test.ts` drives a cursor across this file and pins the ink to it —
+before that seam existed, every offline render of this example was a still fluid that
+passed everything.
+
 Deliberately not another reaction-diffusion. E2 is a chemistry and **blooms** — its pattern
 is generated where the pattern is. A fluid **flows**, because the pattern is *carried*, and
 that difference is structural rather than cosmetic: this file has **two** temporal states

@@ -17,7 +17,7 @@ import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
 import { analyzeChannelEntries, createAnalyzeChannels } from "../../runtime/execution/analyze-channels.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
-import { createPointerSource } from "../../runtime/execution/pointer.ts";
+import { createPointerSource, type PointerState } from "../../runtime/execution/pointer.ts";
 import { OUTPUT_NODE_ID, paritySettings } from "../fixtures/parity-graphs.ts";
 
 /**
@@ -85,6 +85,17 @@ export interface HeadlessRenderRequest {
    * READ, not what some upstream stage computed.
    */
   readonly recordAudio?: FeatureTrackRecorder;
+  /**
+   * T661: FEED the pointer — the audio seam's shape, pointer edition, and the fifth
+   * reader-that-cannot-see in this file's history (T630, T633, T650, T655): the source
+   * below existed since T69 and nothing ever fed it, so E12-Fluid — whose every force
+   * is the pointer — rendered offline as a still fluid with the blob parked at the
+   * origin, and passed every gate. Returning `null` HOLDS the previous state (§V236's
+   * own semantics); returning a partial updates only the named fields.
+   */
+  readonly pointer?: (frameIndex: number) => Partial<PointerState> | null;
+  /** T661: the capture half, mirroring `recordAudio` — what the engine READ, per frame. */
+  readonly recordPointer?: (frameIndex: number, state: PointerState) => void;
   /**
    * The component catalogue (T615, §V47).
    *
@@ -353,12 +364,15 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
             return features;
           };
 
+    // T661: ONE pointer source, hoisted so the loop below can feed it — the same object
+    // the driver publishes into `frameU.pointer` and `inputs.pointer`, never a second.
+    const pointerSource = createPointerSource();
     const driver = createFrameDriver({
       backend,
       ...(audioSeam === undefined ? {} : { audio: audioSeam }),
       // §V45: the seed is the project's, not the transport's own invention.
       transport: offlineTransport({ fps, seed: settings.randomSeed, mode: "fixed-step" }),
-      pointer: createPointerSource(),
+      pointer: pointerSource,
       resolution: () => [settings.outputResolution.width, settings.outputResolution.height],
       ...(valueSession === null || animator === null
         ? {}
@@ -370,6 +384,11 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
               // T615: the FLATTENED document, and the SAME one every frame — so a value
               // node inside a component evaluates here exactly as it does live.
               const evaluated = valueSession.evaluate(logicalGraph, inputs.frame, {
+                // T661/§V182: the SAME pointer the shaders read — the app passes
+                // `inputs.pointer` here (use-value-graph.ts) and this harness never
+                // did, so a `mouse` node evaluated to zeros even when a test fed the
+                // driver's source.
+                pointer: inputs.pointer,
                 ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
                 // T655/T654: analyze readbacks enter the value graph here — the same
                 // extras.channels seam `useValueGraph` threads live, number-narrowed
@@ -409,7 +428,15 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     const wanted = new Set(capture);
     for (let index = 0; index < frameCount; index += 1) {
       steppingFrame = index;
+      // T661: the pointer for THIS frame is set before the step that reads it, and
+      // what gets recorded is the state the engine actually read — the audio seam's
+      // record-what-crossed contract, pointer edition.
+      if (request.pointer !== undefined) {
+        const next = request.pointer(index);
+        if (next !== null) pointerSource.set(next);
+      }
       driver.step();
+      request.recordPointer?.(index, pointerSource.state);
       if (analyze !== null) {
         // Between frames, §V48's sanctioned window — then settle every copy this call
         // issued before the next step, so the value frame N+1 reads is frame N's
