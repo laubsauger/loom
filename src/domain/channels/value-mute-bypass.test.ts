@@ -134,12 +134,17 @@ describe("B114 — a muted value source stops driving what is wired to it (T541)
     const result = session.evaluate(musicIntoSwitch({}), frameAt(1.37));
 
     const music = bag(result, "music1");
-    expect(music?.["low"]).toBeCloseTo(0.137789, 6);
+    // T701 moved `low` from 0.137789 to the analyser's dB domain — same kick envelope,
+    // published as `(dB + 100) / 70` the way `getByteFrequencyData` would report it.
+    // `level` is UNCHANGED at 0.1383246 and that is the tell: it is amplitude on both
+    // paths (§V648) and is still summed from the linear envelopes, so a domain change to
+    // the four bands has to leave it exactly where it was.
+    expect(music?.["low"]).toBeCloseTo(0.729061, 6);
     expect(music?.["level"]).toBeCloseTo(0.1383246, 6);
     // The switch passes it through unchanged — the screenshot's "identical values", which
     // are CORRECT here and only wrong once the source is muted.
     expect(bag(result, "source1")).toEqual(music);
-    expect(result.resolver("source1:low", {} as never)).toBeCloseTo(0.137789, 6);
+    expect(result.resolver("source1:low", {} as never)).toBeCloseTo(0.729061, 6);
   });
 
   it("MUTE: the source publishes nothing and the switch sees its port as UNWIRED", () => {

@@ -155,13 +155,73 @@ export const audioFileInNode: NodeDefinition = {
  * — so a low display rate under a high bpm honestly reports 2 events in one frame,
  * which makes this the first source to exercise T437's interval semantics beyond 0|1.
  */
+/**
+ * T701 — THE PATTERN'S BANDS LIVE IN THE ANALYSER'S DOMAIN, WHICH IS DECIBELS.
+ *
+ * `getByteFrequencyData` maps [-100, -30] dB onto 0..255, so an `audioIn` band channel
+ * is literally `(dB + 100) / 70` — a LOGARITHM of amplitude. This node used to
+ * synthesize its bands LINEAR in amplitude, and the two are different FUNCTIONS of the
+ * same sound rather than the same function mis-scaled: a best-fit affine map between
+ * them leaves 62-78% of the analyser's variance unexplained (T700), because no affine
+ * map inverts a logarithm.
+ *
+ * What that cost, and why it is a defect rather than a taste gap (§V647): the pattern's
+ * REST was real music's PEAK. Measured on E32, `low` sat at mean 0.25 / p01 0.12 under
+ * the pattern and mean 0.89 / p01 0.72 under music, so every gain+bias pair fitted to
+ * the pattern pinned against its ceiling the moment a real track was swapped in, and
+ * §V477's "the bias is the rest state" was being satisfied against the wrong rest.
+ * The node's own docblock promises that "swapping a real source in is replacing one
+ * node" — the edges survived that swap and the MEANING did not.
+ *
+ * CONFIRMED LIVE, not modelled (T702, `src/tests/e2e/audio-analyser-domain.spec.ts`):
+ * a real Chromium `AnalyserNode` reproduces the byte mapping on 20480/20480 bins with
+ * zero error, and each band moves a fixed 0.142-0.144 per 10 dB against the predicted
+ * 20/70 = 0.1429. The slope below is that measurement, not an assumption.
+ *
+ * ONE CONSTANT PER BAND, and it has to be per band. Music is not flat: across three
+ * recorded tracks the analyser reads `low` at mean 0.88-0.91 but `high` at 0.03-0.42,
+ * so a single calibration taken from `low` would fix the bottom and break the top.
+ * Each reference is set so the band's FULL STRIKE lands on music's measured p99, and
+ * the strike's own decay then places the rest — a real dB slope throughout, which is
+ * what keeps `amount` behaving like the gain it claims to be (a halved `amount` is
+ * -6 dB and costs 6/70 of every channel, exactly as it would on a live source).
+ *
+ * Resulting pattern distribution vs. the three tracks' p01 / mean / p99, all inside:
+ *   low     rest 0.713 mean 0.775 peak 0.975 | music 0.69-0.83 / 0.88-0.91 / 0.96-0.98
+ *   lowMid  rest 0.548 mean 0.573 peak 0.746 | music 0.39-0.45 / 0.54-0.64 / 0.71-0.77
+ *   highMid rest 0.557 mean 0.572 peak 0.712 | music 0.05-0.37 / 0.19-0.57 / 0.50-0.72
+ *   high    rest 0.381 mean 0.401 peak 0.574 | music 0.00-0.09 / 0.03-0.42 / 0.28-0.60
+ *
+ * `level` is deliberately NOT mapped: it is amplitude on BOTH paths already — the
+ * analyser takes a time-domain RMS and this node sums linear envelopes — and it is the
+ * control that made the diagnosis a measurement rather than an inference (§V648). It
+ * is therefore computed from the LINEAR envelopes below, not from the published bands.
+ */
+const ANALYSER_DB_SPAN = 70;
+
+/**
+ * dB inside the analyser's window at which each band's full strike sits, chosen from
+ * real music's p99: `low` 0.975 (strike is linear 1.0), `lowMid` 0.746 (0.74),
+ * `highMid` 0.712 (0.35), `high` 0.574 (0.285). Measured on three recorded feature
+ * tracks — clankz / factory / hollowed, 2370 frames each after the silent lead-in.
+ */
+const BAND_REFERENCE_DB = { low: 68.25, lowMid: 54.84, highMid: 58.96, high: 51.08 } as const;
+
+/** Linear band amplitude → the analyser's byte-fraction domain. Silence reads 0, as it does live. */
+function toAnalyserDomain(linear: number, referenceDb: number): number {
+  if (linear <= 0) return 0;
+  const channel = (20 * Math.log10(linear) + referenceDb) / ANALYSER_DB_SPAN;
+  if (channel <= 0) return 0;
+  return channel >= 1 ? 1 : channel;
+}
+
 export const audioPatternNode: NodeDefinition = {
   type: "audioPattern",
   version: 1,
   title: "Audio Pattern",
   category: "value",
   description:
-    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Publishes the same level/band/onset channels as Audio In, so swapping in a live source is one node, PLUS the musical structure only a node that knows its own tempo can publish: beat and bar count from the in point, beatPhase and barPhase ramp 0..1 inside each. Wire bar into Step to hold a value for a phrase. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
+    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Publishes the same level/band/onset channels as Audio In, so swapping in a live source is one node — the bands are published in the ANALYSER'S OWN DECIBEL DOMAIN (T701), calibrated so a full strike lands where real music's peaks land, which is what makes a parameter tuned here still have range under a real track. PLUS the musical structure only a node that knows its own tempo can publish: beat and bar count from the in point, beatPhase and barPhase ramp 0..1 inside each. Wire bar into Step to hold a value for a phrase. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
   tags: ["value", "audio", "test", "beat", "pattern", "deterministic"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -197,10 +257,19 @@ export const audioPatternNode: NodeDefinition = {
     const hatPhase = beats * 2 - Math.floor(beats * 2);
     const hat = Math.exp(-hatPhase * 14) * 0.5;
 
-    const low = (0.12 + 0.88 * kick) * amount;
-    const lowMid = (0.15 + 0.55 * snare + 0.15 * kick) * amount;
-    const highMid = (0.1 + 0.5 * hat) * amount;
-    const high = (0.06 + 0.45 * hat) * amount;
+    /*
+     * The strike envelopes, LINEAR in amplitude — the physical quantity `amount` gains.
+     * They are the input to the dB map above, and `level`'s RMS-like sum still reads
+     * them directly: only the four BAND channels are published in the analyser's domain.
+     */
+    const lowAmplitude = (0.12 + 0.88 * kick) * amount;
+    const lowMidAmplitude = (0.15 + 0.55 * snare + 0.15 * kick) * amount;
+    const highMidAmplitude = (0.1 + 0.5 * hat) * amount;
+    const highAmplitude = (0.06 + 0.45 * hat) * amount;
+    const low = toAnalyserDomain(lowAmplitude, BAND_REFERENCE_DB.low);
+    const lowMid = toAnalyserDomain(lowMidAmplitude, BAND_REFERENCE_DB.lowMid);
+    const highMid = toAnalyserDomain(highMidAmplitude, BAND_REFERENCE_DB.highMid);
+    const high = toAnalyserDomain(highAmplitude, BAND_REFERENCE_DB.high);
     /* T437's interval semantics, honestly: a slow frame under a fast bpm counts 2. */
     const onsetCount = Math.max(0, Math.floor(beats) - Math.floor(Math.max(beatsBefore, 0)));
     const onset = Math.max(kick, snare, hat) * amount;
@@ -231,7 +300,7 @@ export const audioPatternNode: NodeDefinition = {
     const barPosition = Math.max(0, beats) / beatsPerBar;
 
     return {
-      level: 0.3 * low + 0.3 * lowMid + 0.2 * highMid + 0.2 * high,
+      level: 0.3 * lowAmplitude + 0.3 * lowMidAmplitude + 0.2 * highMidAmplitude + 0.2 * highAmplitude,
       low,
       lowMid,
       highMid,
