@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 
+import { createUniformAnimator } from "../../app/animate-parameters.ts";
 import { compileGraph } from "../../compiler/compile.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
+import type { ParameterResolution } from "../../compiler/validate.ts";
 import { createGraphStore } from "../../domain/graph/store.ts";
 import { createDomainBus } from "../../domain/commands/index.ts";
 import type { GraphPatchOperation } from "../../domain/types/patch.ts";
+import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
+import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { InvocationContext } from "../../domain/types/commands.ts";
 import type { CookPolicy, ShaderloomBackend } from "../../runtime/backend/backend-types.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
@@ -270,12 +274,22 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
   const { bus } = createDomainBus({ store, registry: request.registry });
   const backend = createVgpuBackend({ host: nodeGpuHost() });
   const digests: string[] = [];
+  /*
+   * T633: the oracle evaluates the VALUE GRAPH, exactly as the live session and
+   * `renderHeadless({ animate: true })` do. Without a resolver every driven parameter
+   * fell back to its static value and a value-graph-only example hashed all frames
+   * identical — E33's first build did exactly that, and the oracle could not tell "no
+   * animation" from "animation the oracle cannot see", which is the one distinction it
+   * exists to make.
+   */
+  const valueSession = createValueGraphSession(request.registry);
+  const animator = createUniformAnimator();
 
   try {
     await backend.initialize({});
     backend.setCookPolicy(request.policy);
 
-    const compileNow = () =>
+    const compileNow = (resolution?: ParameterResolution) =>
       compileGraph({
         graph: store.view.getGraph(),
         settings: request.settings,
@@ -287,6 +301,7 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
           timestampQuery: false,
           limits: { maxTextureDimension2D: 8192 },
         },
+        ...(resolution === undefined ? {} : { resolution }),
       });
 
     let plan = compileNow();
@@ -316,16 +331,30 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
       if (edited) {
         plan = compileNow();
         compiled = await backend.compile(plan);
+        // The per-frame push below diffs against the newest structural plan (§V5) —
+        // reset together with it, as the live frame loop does.
+        animator.reset();
       }
 
+      const frame: FrameEvaluationInput & {
+        mode: "offline";
+        randomSeed: number;
+      } = {
+        timeSeconds: frameIndex / 60,
+        deltaSeconds: frameIndex === 0 ? 0 : 1 / 60,
+        frameIndex,
+        mode: "offline",
+        randomSeed: request.settings.randomSeed,
+      };
+
+      // T340's order, exactly as renderHeadless keeps it: channels advance, the
+      // per-frame plan re-resolves, and only changed VALUES are pushed (§V5).
+      const evaluated = valueSession.evaluate(store.view.getGraph(), frame);
+      const next = compileNow({ frame, channels: evaluated.resolver });
+      animator.push(backend, plan, next);
+
       backend.render(compiled, {
-        frame: {
-          timeSeconds: frameIndex / 60,
-          deltaSeconds: frameIndex === 0 ? 0 : 1 / 60,
-          frameIndex,
-          mode: "offline",
-          randomSeed: request.settings.randomSeed,
-        },
+        frame,
         pointer: { x: 0, y: 0, buttons: 0 },
         resolution: [request.settings.outputResolution.width, request.settings.outputResolution.height],
       });

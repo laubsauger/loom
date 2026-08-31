@@ -110,7 +110,14 @@ export interface HeadlessRenderResult {
   /** Readback count seen by the backend. Playback itself must never add to this (§V7). */
   readonly readbacks: number;
   readonly outputResourceId: string;
-  /** Everything the backend reported. A silent diagnostic is a silently broken render. */
+  /**
+   * Everything the COMPILER and the backend reported, in that order. A silent
+   * diagnostic is a silently broken render — and this harness is what every example
+   * agent verifies with, so it must not be quieter than the app's problems pane (T630:
+   * backend-only reporting let three builds ship believing substeps worked while a
+   * `compiler/substeps-refused` warning sat unread on `plan.diagnostics` and the render
+   * was byte-identical to one step).
+   */
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 }
 
@@ -289,7 +296,10 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       capabilities,
       readbacks: backend.status.readbacks,
       outputResourceId,
-      diagnostics,
+      // Compiler diagnostics FIRST: they are about the plan the render ran, and the
+      // errors among them already threw above — what travels here is the warnings,
+      // which are exactly what a byte-identical-but-wrong render hides (T630).
+      diagnostics: [...plan.diagnostics, ...diagnostics],
     };
   } finally {
     backend.dispose();

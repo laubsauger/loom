@@ -80,3 +80,68 @@ describe("cook oracle (T249, §V157)", () => {
     }
   }, 120_000);
 });
+
+describe("the oracle SEES the value graph (T633)", () => {
+  const registry = exampleRegistry();
+
+  /**
+   * A value-graph-only animation: nothing edits the document, the ONLY motion is an LFO
+   * driving a circle's softness through the channel resolver. Before T633 the oracle
+   * rendered with no resolver, every driven parameter fell back to its static value, and
+   * a graph like this hashed all frames identical — E33's first build did exactly that,
+   * so the oracle waved through the one failure class it exists to catch.
+   */
+  it("an LFO-driven parameter moves the pixels with an EMPTY script", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const node = (id: string, type: string, extra: Record<string, unknown> = {}) =>
+      ({ id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, ...extra }) as never;
+    const graph = {
+      revision: 1,
+      groups: {},
+      edges: {
+        e1: { id: "e1", source: { nodeId: "shape", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      nodes: {
+        // §V129: the LFO's NAME is its channel.
+        lfo: node("lfo", "lfo", { label: "lfo1", parameters: { shape: "sine", frequency: 3, amplitude: 0.45, offset: 0.5, phase: 0 } }),
+        shape: node("shape", "circle", {
+          parameters: {
+            mode: "fill",
+            center: [0.5, 0.5],
+            radius: [0.3, 0.3],
+            softness: { mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1" } } },
+            aspectcorrect: true,
+          },
+        }),
+        out: node("out", "output", {}),
+      },
+    } as never;
+
+    const settings = {
+      outputResolution: { width: 128, height: 72 },
+      workingFormat: "rgba8unorm",
+      randomSeed: 7,
+      previewLongEdge: 192,
+      previewFps: 20,
+      limits: { maxResolution: 4096, maxDispatch: 65_535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+    } as never;
+
+    const digests = await renderUnderPolicy({
+      graph,
+      settings,
+      registry,
+      policy: "always",
+      script: [],
+      frames: 12,
+    });
+
+    // MOTION, not just "ran": the driven softness rewrites a band of texels every frame.
+    expect(new Set(digests).size).toBeGreaterThan(1);
+    // And determinism holds with the resolver in the loop: the same run twice is
+    // byte-identical (§V44/§V45) — the resolver must not have smuggled in a wall clock.
+    const again = await renderUnderPolicy({ graph, settings, registry, policy: "always", script: [], frames: 12 });
+    expect(again).toEqual(digests);
+  }, 120_000);
+});
