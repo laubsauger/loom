@@ -6,6 +6,7 @@ import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { NodeLibrary } from "./node-library.tsx";
 import { readNodeDragPayload } from "./drag-payload.ts";
 import type { DragDataCarrier } from "./drag-payload.ts";
+import type { NodeDefinition } from "@domain/types/node-definition.ts";
 
 beforeAll(installDomStubs);
 afterEach(cleanup);
@@ -84,6 +85,65 @@ describe("T39 — node library pane", () => {
     const dataTransfer = fakeDataTransfer();
     fireEvent.dragStart(screen.getByText("Blur"), { dataTransfer });
     expect(readNodeDragPayload(dataTransfer)).toEqual({ type: "test.blur" });
+  });
+});
+
+/**
+ * T427 (§V90). The owner's report was that the category badges "eat the top-left", and
+ * the shape of the fix matters more than the pixels: a strip of one chip per category is
+ * sized BY THE CATALOGUE, so shrinking today's twelve only buys time — at eighty node
+ * types it is crowded again. What is gated here is therefore the BOUND, not the look.
+ *
+ * The fixture runs the same assertion at two catalogue sizes an order of magnitude
+ * apart, because the claim is about GROWTH and one size can only ever report a count
+ * (§V461): "three categories cost one control" is consistent with a wall that has not
+ * grown yet. The chips live in a Radix PORTAL, so `container` is exactly the pane's own
+ * chrome, and counting inside it is counting what sits in the top-left.
+ *
+ * NOT gated here: the popover's own ceiling, which is `max-height` + scroll on the
+ * popover primitive. jsdom does no layout, so that one is verified in the running app.
+ */
+describe("T427 — the filter is bounded by the pane, not sized by the catalogue (§V90)", () => {
+  function catalogueOf(categories: number): NodeDefinition[] {
+    return Array.from({ length: categories }, (_, index) => ({
+      type: `test.cat${index}`,
+      version: 1,
+      title: `Node ${index}`,
+      category: `category-${String(index).padStart(2, "0")}`,
+      inputs: [],
+      outputs: [{ id: "out", label: "Out", type: rgba }],
+      parameters: {},
+      compile: () => ({ passes: [] }),
+    }));
+  }
+
+  it("costs the pane ONE control at 3 categories and still ONE at 40", () => {
+    for (const size of [3, 40]) {
+      const { container } = render(<NodeLibrary definitions={catalogueOf(size)} />);
+      // The trigger, and nothing else: `aria-pressed` is what a category chip carries,
+      // so a strip of them in the toolbar would count here and does not.
+      expect(container.querySelectorAll("[aria-expanded]")).toHaveLength(1);
+      expect(container.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+      cleanup();
+    }
+  });
+
+  it("moves the set out of the way without shrinking it — all 40 are one click away", () => {
+    render(<NodeLibrary definitions={catalogueOf(40)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter by category" }));
+    // 40 categories, plus "all" — which is the pressed one while nothing is filtered.
+    expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(40);
+    expect(screen.getAllByRole("button", { pressed: true })).toHaveLength(1);
+  });
+
+  it("names the ACTIVE filter on the trigger, so the pane still says what it is showing", () => {
+    render(<NodeLibrary definitions={catalogueOf(40)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter by category" }));
+    fireEvent.click(screen.getByRole("button", { name: "category-07" }));
+    const trigger = screen.getByRole("button", { name: "Category: category-07" });
+    // One name, not a list: the trigger's label is O(1) in the catalogue too.
+    expect(trigger.textContent).toBe("category-07");
+    expect(screen.getByRole("region", { name: "category-07" })).toBeDefined();
   });
 });
 
