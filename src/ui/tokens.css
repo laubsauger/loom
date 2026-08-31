@@ -110,6 +110,7 @@
   --port-scene: #38bdf8; /* sky-400 — sits beside geometry blue: the 3D container */
   --port-material: #fb923c; /* orange-400 — warm surface, clear of amber matrix */
   --port-light: #fde047; /* yellow-300 — one tier lighter on purpose, to separate from matrix */
+  --port-projector: #facc15; /* yellow-400 — the light family's cousin (T704): same warm hue, one tier deeper so the two wires stay tellable apart */
   --port-transform3d: #a3e635; /* lime-400 — the one wide-open hue gap in the set */
   --port-value: #cbd5e1; /* slate-300 — the CHOP wire: number-family like scalar, one tier lighter so a value chain reads as its own layer */
   --port-unknown: var(--text-dim);

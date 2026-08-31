@@ -65,6 +65,7 @@ export type PortType =
   | { kind: "material"; model: "unlit" | "pbr" | "custom" }
   | { kind: "camera" }
   | { kind: "light" }
+  | { kind: "projector" }
   | { kind: "transform3d" }
   | { kind: "event" }
   | { kind: "audioFeatures" }

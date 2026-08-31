@@ -68,6 +68,7 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
     case "scene":
     case "camera":
     case "light":
+    case "projector":
     case "transform3d":
     case "event":
     case "audioFeatures":

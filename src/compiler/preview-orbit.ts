@@ -84,6 +84,11 @@ export const PREVIEW_ORBIT_RIGS = {
    * which is the same failure §T639(a) removed from the dive-in affordance.
    */
   camera: null,
+  /* T704: same reasoning as the camera, one row down — a projector tile draws the stock
+     scene through its OWN throw, and an inspection override would falsify the aim,
+     shift and keystone it exists to show. (A document-writing gizmo, T692's shape, is
+     the legitimate future control here, not an orbit.) */
+  projector: null,
   /* The pointset splat and the geometry rig are the SAME framing, and that is not a
      coincidence to be maintained in two places: a geometry preview is the pointset
      framing with surfaces in it. One row, read by both call sites. */

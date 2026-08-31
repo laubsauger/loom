@@ -1,9 +1,9 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
-import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePairRef, ScenePayload } from "../../domain/types/scene.ts";
+import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ProjectorPayload, ScenePairRef, ScenePayload } from "../../domain/types/scene.ts";
 import { resolveGroupPredicate } from "./points.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
-import { cameraPayloadMatrix, directionalShadowMatrix, lookAt } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, directionalShadowMatrix, lookAt, projectorMatrix } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -98,6 +98,159 @@ export const cameraNode: NodeDefinition = {
       ortho: parameters["ortho"] === true,
       orthoHeight: readNumber(parameters, "orthoHeight", 2),
       roll: readNumber(parameters, "roll", 0),
+    };
+    return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
+  },
+};
+
+/**
+ * T704 — a projector: a camera pose that THROWS a texture into the scene.
+ *
+ * Referenced by a Render exactly as lights are (its `projectors` list), because to the
+ * renderer this IS a light wearing a cookie: its contribution is ADDITIVE radiance —
+ * never the albedo-multiply path, which would black the building everywhere outside
+ * the beam (§V644). The pose is deliberately T706's trio (eye / lookAt / roll), so the
+ * document has ONE orientation representation and T692's tile gizmo extends here. The
+ * optics are the numbers a venue lens sheet prints — throw ratio, native aspect, lens
+ * shift, keystone — not cone angles; that vocabulary is what makes this previz rather
+ * than a demo. Occlusion is on by default because it is the honesty of the tool: a
+ * surface the projector cannot see receives nothing, so a parapet shadows the face
+ * below it — which is precisely the question people are on site to answer.
+ */
+export const projectorNode: NodeDefinition = {
+  type: "projector",
+  version: 1,
+  title: "Projector",
+  category: "render",
+  description:
+    "Throws its Cookie input into the scene the way a projector on site would: aim with Eye/Look At/Roll, set the lens by Throw Ratio, Aspect, Lens Shift and Keystone, and reference it from a Render's projectors list (any number — overlap zones simply add). Brightness is nominal at the Look At distance, falling off inverse-square beyond it; surfaces the projector cannot see receive nothing, so architecture shadows itself honestly.",
+  tags: ["3d", "scene", "projector", "previz", "light"],
+  inputs: [
+    {
+      id: "cookie",
+      label: "Cookie",
+      type: RGBA_TEXTURE,
+      optional: true,
+      description: "The projected content. Unwired, the projector throws plain white — a focus light.",
+    },
+  ],
+  outputs: [{ id: "out", label: "Out", type: { kind: "projector" } }],
+  parameters: {
+    eye: { type: "vector", size: 3, label: "Eye", default: [2, 2, 3] },
+    lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
+    roll: {
+      type: "number",
+      label: "Roll",
+      default: 0,
+      min: -180,
+      max: 180,
+      range: "cyclic",
+      unit: "degrees",
+      description: "Bank around the throw axis — a projector mounted sideways is a rolled projector.",
+    },
+    throwRatio: {
+      type: "number",
+      label: "Throw Ratio",
+      default: 1.5,
+      min: 0.3,
+      max: 12,
+      range: "floor",
+      description: "Throw distance ÷ image width — the number printed on the lens. Smaller is wider.",
+    },
+    aspect: {
+      type: "number",
+      label: "Aspect",
+      default: 1.7778,
+      min: 0.4,
+      max: 4,
+      range: "floor",
+      description: "The projector's NATIVE image aspect (16:9 ≈ 1.778), not the project's.",
+    },
+    shiftX: {
+      type: "number",
+      label: "Lens Shift X",
+      default: 0,
+      min: -1,
+      max: 1,
+      range: "soft",
+      description: "Slides the image sideways by fractions of its width WITHOUT re-aiming — the off-axis shift a real install turns.",
+    },
+    shiftY: {
+      type: "number",
+      label: "Lens Shift Y",
+      default: 0,
+      min: -1,
+      max: 1,
+      range: "soft",
+      description: "Slides the image up/down by fractions of its height, off-axis.",
+    },
+    keystoneH: {
+      type: "number",
+      label: "Keystone H",
+      default: 0,
+      min: -30,
+      max: 30,
+      range: "soft",
+      unit: "degrees",
+      description: "Horizontal trapezoid correction — one side of the image scales against the other.",
+    },
+    keystoneV: {
+      type: "number",
+      label: "Keystone V",
+      default: 0,
+      min: -30,
+      max: 30,
+      range: "soft",
+      unit: "degrees",
+      description: "Vertical trapezoid correction.",
+    },
+    brightness: {
+      type: "number",
+      label: "Brightness",
+      default: 1,
+      min: 0,
+      range: "floor",
+      description: "Nominal at the Look At distance; inverse-square beyond it when Falloff is on.",
+    },
+    color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
+    falloff: {
+      type: "boolean",
+      label: "Distance Falloff",
+      default: true,
+      description: "Physical inverse-square about the throw distance. Off = the beam carries flat, a stylisation.",
+    },
+    occlusion: {
+      type: "boolean",
+      label: "Occlusion",
+      default: true,
+      description: "Surfaces the projector cannot see receive nothing — a parapet shadows the wall below. Off is a decal that lies about the site; sometimes that is wanted.",
+    },
+  },
+  resolutionPolicy: { kind: "project" },
+  formatPolicy: { kind: "project" },
+  compile(context): CompiledNodeDescription {
+    const { parameters } = readCompileInputs(context);
+    const cookieInput = (context as { inputs?: Record<string, ReadonlyArray<{ resourceId?: string }>> })
+      .inputs?.["cookie"]?.[0];
+    const cookieResource =
+      typeof cookieInput?.resourceId === "string" ? cookieInput.resourceId : undefined;
+    const color = readColor(parameters, "color", [1, 1, 1, 1]);
+    const payload: ProjectorPayload = {
+      kind: "projector",
+      eye: vec3(parameters, "eye", [2, 2, 3]),
+      lookAt: vec3(parameters, "lookAt", [0, 0, 0]),
+      roll: readNumber(parameters, "roll", 0),
+      throwRatio: readNumber(parameters, "throwRatio", 1.5),
+      aspect: readNumber(parameters, "aspect", 1.7778),
+      shiftX: readNumber(parameters, "shiftX", 0),
+      shiftY: readNumber(parameters, "shiftY", 0),
+      keystoneH: readNumber(parameters, "keystoneH", 0),
+      keystoneV: readNumber(parameters, "keystoneV", 0),
+      brightness: readNumber(parameters, "brightness", 1),
+      color: [color[0] ?? 1, color[1] ?? 1, color[2] ?? 1],
+      falloff: parameters["falloff"] !== false,
+      occlusion: parameters["occlusion"] !== false,
+      ...(cookieResource === undefined ? {} : { cookieResource }),
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
   },
@@ -502,6 +655,8 @@ export const renderNode: NodeDefinition = {
     { id: "scenes", label: "Scenes", optional: true, variadic: true, type: { kind: "scene" } },
     { id: "camera", label: "Camera", optional: true, type: { kind: "camera" } },
     { id: "lights", label: "Lights", optional: true, variadic: true, type: { kind: "light" } },
+    // T704: projectors reference like lights do — any number, list order is slot order.
+    { id: "projectors", label: "Projectors", optional: true, variadic: true, type: { kind: "projector" } },
     {
       // T482: a real WIRE, because pixels are data (V372). Sampled as an equirect along
       // the reflection vector by phong and pbr materials, scaled by (1 − roughness) and
@@ -529,11 +684,13 @@ export const renderNode: NodeDefinition = {
     { parameter: "scenes", input: "scenes", list: true },
     { parameter: "camera", input: "camera" },
     { parameter: "lights", input: "lights", list: true },
+    { parameter: "projectors", input: "projectors", list: true },
   ],
   parameters: {
     scenes: { type: "string", label: "Scenes", default: "", description: "Space-separated geometry names, in draw order." },
     camera: { type: "string", label: "Camera", default: "", description: "Name of a camera node." },
     lights: { type: "string", label: "Lights", default: "", description: "Space-separated light names, in order." },
+    projectors: { type: "string", label: "Projectors", default: "", description: "Space-separated projector names, in order. Each throws its cookie into the scene as an additive light." },
     ambientColor: { type: "color", label: "Ambient", default: [1, 1, 1, 1], space: "display" },
     ambientIntensity: { type: "number", label: "Ambient Intensity", default: 0.12, min: 0, max: 1, range: "bounded" },
     background: { type: "color", label: "Background", default: [0, 0, 0, 1], space: "display" },
@@ -664,6 +821,19 @@ export const renderNode: NodeDefinition = {
       lights.push(binding.scene.light);
     }
 
+    // T704: PROJECTORS, in LIST order — referenced exactly as lights are.
+    const projectors: ProjectorPayload[] = [];
+    for (const binding of sceneOf("projectors")) {
+      if (binding.scene?.kind !== "projector") {
+        return refuse(
+          "node.scene.reference",
+          `projectors names "${binding.source?.nodeId ?? "?"}", which publishes no projector.`,
+          "Projectors must name projector nodes.",
+        );
+      }
+      projectors.push(binding.scene);
+    }
+
     // GEOMETRIES, in draw order.
     const geometries: Array<{ payload: GeometryPayload; source: string }> = [];
     for (const binding of sceneOf("scenes")) {
@@ -745,6 +915,8 @@ export const renderNode: NodeDefinition = {
       readonly target: string;
       readonly matrix: Float32Array | undefined;
       readonly linearDepth: boolean;
+      /** T704: store fragment-z (z ÷ w) — a projector's frustum is perspective. */
+      readonly perspective?: boolean;
       readonly extraUniforms: Readonly<Record<string, ReadonlyArray<number>>>;
     }): void => {
       // The far plate: depth 1.0 everywhere first, the backdrop pattern (T444) —
@@ -760,7 +932,10 @@ export const renderNode: NodeDefinition = {
         vertexCount: 6,
         clear: true,
       } as DrawPassDescriptor);
-      const depthOptions = options.linearDepth ? { linearDepth: true } : {};
+      const depthOptions = {
+        ...(options.linearDepth ? { linearDepth: true } : {}),
+        ...(options.perspective === true ? { perspective: true } : {}),
+      };
       geometries.forEach(({ payload }, geometryIndex) => {
         const position = payload.pairs["position"];
         if (position === undefined) return; // the lit loop refuses this by name
@@ -889,6 +1064,56 @@ export const renderNode: NodeDefinition = {
       });
     };
     emitShadowPasses();
+
+    /*
+     * T704 — the PROJECTOR phase: matrices, uniforms, textures and (for occluding
+     * projectors) one perspective depth sweep each, priced exactly as T481 priced a
+     * casting light. The sweep is the SAME parameterised depth pass with fragment-z
+     * stored (the ortho shadow's undivided clip z is not a depth under a perspective
+     * frustum) — the lit read side does the matching w-divide. Everything a projector
+     * IS travels as values (§V5: re-aiming animates); what it BINDS — a cookie, a
+     * depth map — is structural, like a casting light's map.
+     */
+    const projectorMatrices = projectors.map((proj) => projectorMatrix(proj, proj));
+    const projectorDepthTargetOf = (index: number): string => `scratch:${nodeId}:projectorDepth${index}`;
+    projectors.forEach((proj, index) => {
+      if (!proj.occlusion) return;
+      scratch.push({ key: `projectorDepth${index}`, scale: 2, format: "r32float", depth: true });
+      emitDepthSweep({
+        prefix: `projector:${index}`,
+        target: projectorDepthTargetOf(index),
+        matrix: projectorMatrices[index],
+        linearDepth: false,
+        perspective: true,
+        extraUniforms: {},
+      });
+    });
+    const projectorOptions = projectors.map((proj) => ({
+      cookie: proj.cookieResource !== undefined,
+      occlusion: proj.occlusion,
+    }));
+    const projectorUniforms = Object.fromEntries(
+      projectors.flatMap((proj, index) => {
+        const nominal = Math.max(
+          Math.hypot(proj.lookAt[0] - proj.eye[0], proj.lookAt[1] - proj.eye[1], proj.lookAt[2] - proj.eye[2]),
+          1e-4,
+        );
+        return [
+          [`projector${index}Matrix`, Array.from(projectorMatrices[index] ?? [])],
+          [`projector${index}Pos`, [proj.eye[0], proj.eye[1], proj.eye[2], proj.brightness]],
+          [`projector${index}Color`, [proj.color[0], proj.color[1], proj.color[2], proj.falloff ? 1 : 0]],
+          [`projector${index}Meta`, [nominal, 0, 0, 0]],
+        ] as Array<[string, number[]]>;
+      }),
+    );
+    const projectorTextures = projectors.flatMap((proj, index) => [
+      ...(proj.cookieResource === undefined
+        ? []
+        : [{ binding: `projectorCookie${index}`, resourceId: proj.cookieResource, sampled: "unfiltered" as const }]),
+      ...(proj.occlusion
+        ? [{ binding: `projectorDepth${index}`, resourceId: projectorDepthTargetOf(index), sampled: "unfiltered" as const }]
+        : []),
+    ]);
 
     /*
      * T624 — the AMBIENT OCCLUSION phase. Three passes, all of them BEFORE the backdrop
@@ -1112,6 +1337,8 @@ export const renderNode: NodeDefinition = {
         /* T624: an unlit material has no ambient term to occlude, so it binds nothing —
            the shader generator makes the same call, and the two must agree. */
         const aoActive = aoEnabled && model !== "unlit";
+        /* T704: a projector is a LIGHT — unlit takes none, and binds none. */
+        const projActive = projectorOptions.length > 0 && model !== "unlit";
         const specularColor =
           material.model === "pbr"
             ? ([
@@ -1153,6 +1380,7 @@ export const renderNode: NodeDefinition = {
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
             ...(environmentResource === undefined ? {} : { environment: true }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
+            ...(projActive ? { projectors: projectorOptions } : {}),
             ...(payload.group === undefined ? {} : { group: payload.group }),
             ...(billboard ? { billboard: true } : {}),
             ...(beam ? { beam: true } : {}),
@@ -1224,8 +1452,9 @@ export const renderNode: NodeDefinition = {
             ...(environmentResource === undefined || model !== "phong"
               ? {}
               : { environment: [environmentIntensity, 0, 0, 0] }),
+            ...(projActive ? projectorUniforms : {}),
           },
-          ...(casting.length === 0 && environmentResource === undefined && !aoActive
+          ...(casting.length === 0 && environmentResource === undefined && !aoActive && !projActive
             ? {}
             : {
                 textures: [
@@ -1240,6 +1469,7 @@ export const renderNode: NodeDefinition = {
                   ...(aoActive
                     ? [{ binding: "occlusionMap", resourceId: aoTargetId, sampled: "unfiltered" as const }]
                     : []),
+                  ...(projActive ? projectorTextures : []),
                 ],
               }),
           uniformBinding: "params",
@@ -1292,6 +1522,8 @@ export const renderNode: NodeDefinition = {
       const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
       /* T624: see the instances branch — unlit binds no occlusion map. */
       const aoActive = aoEnabled && model !== "unlit";
+      /* T704: see the instances branch — unlit takes no projectors. */
+      const projActive = projectorOptions.length > 0 && model !== "unlit";
       /*
        * T428: PBR through the Blinn-Phong path, honestly — metallic tints the
        * highlight toward the base colour (a metal's reflection is its own colour),
@@ -1323,6 +1555,7 @@ export const renderNode: NodeDefinition = {
           ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
           ...(environmentResource === undefined ? {} : { environment: true }),
           ...(aoActive ? { ambientOcclusion: true } : {}),
+          ...(projActive ? { projectors: projectorOptions } : {}),
         }),
         target,
         topology: "triangle-list",
@@ -1344,6 +1577,7 @@ export const renderNode: NodeDefinition = {
         material.maps.roughness === undefined &&
         casting.length === 0 &&
         !aoActive &&
+        !projActive &&
         (environmentResource === undefined || model !== "phong")
           ? {}
           : {
@@ -1365,6 +1599,7 @@ export const renderNode: NodeDefinition = {
                 ...(aoActive
                   ? [{ binding: "occlusionMap", resourceId: aoTargetId, sampled: "unfiltered" as const }]
                   : []),
+                ...(projActive ? projectorTextures : []),
               ],
             }),
         uniforms: {
@@ -1388,6 +1623,7 @@ export const renderNode: NodeDefinition = {
           ...(environmentResource === undefined || model !== "phong"
             ? {}
             : { environment: [environmentIntensity, 0, 0, 0] }),
+          ...(projActive ? projectorUniforms : {}),
         },
         uniformBinding: "params",
         clear: false,
@@ -1509,6 +1745,7 @@ export const materialPbrNode: NodeDefinition = {
 export const sceneNodeDefinitions: readonly NodeDefinition[] = [
   cameraNode,
   lightNode,
+  projectorNode,
   geometryNode,
   renderNode,
   materialUnlitNode,

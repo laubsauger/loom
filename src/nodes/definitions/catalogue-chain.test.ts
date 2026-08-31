@@ -73,7 +73,7 @@ function errorsOf(diagnostics: ReadonlyArray<{ severity: string; message: string
  * claim rewrite (T302), and the scene THINGS (T447): a camera, a light or a geometry
  * publishes resolved CPU values the Render consumes; the render pass is the Render's.
  */
-const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "geometry", "materialUnlit", "materialPhong", "materialPbr"]);
+const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "projector", "geometry", "materialUnlit", "materialPhong", "materialPbr"]);
 
 describe("the catalogue compiles through the real compiler", () => {
   it("registers the whole catalogue in one registry with no type collisions", () => {
@@ -522,6 +522,7 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
     } else if (
       firstOutput.type.kind === "camera" ||
       firstOutput.type.kind === "light" ||
+      firstOutput.type.kind === "projector" ||
       firstOutput.type.kind === "scene" ||
       firstOutput.type.kind === "material"
     ) {
@@ -538,7 +539,13 @@ function minimalGraphFor(definition: NodeDefinition): GraphDocument {
       const scenes = firstOutput.type.kind === "scene" ? "subject1" : "obsgeo1";
       const camera = firstOutput.type.kind === "camera" ? "subject1" : "obscam1";
       const lights = firstOutput.type.kind === "light" ? "subject1" : "obslight1";
-      nodes["observe"] = node("observe", "render", { scenes, camera, lights });
+      // T704: a projector is observed the same way — a render that names it.
+      nodes["observe"] = node("observe", "render", {
+        scenes,
+        camera,
+        lights,
+        ...(firstOutput.type.kind === "projector" ? { projectors: "subject1" } : {}),
+      });
       edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
     } else {
       edges["sink"] = edge("sink", ["subject", firstOutput.id], ["sink", "input"]);

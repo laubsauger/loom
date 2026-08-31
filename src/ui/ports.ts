@@ -19,6 +19,8 @@ export const PORT_FAMILY_VAR: Readonly<Record<PortKind, string>> = {
   material: "--port-material",
   camera: "--port-camera",
   light: "--port-light",
+  // T704: the projector is the light family's cousin — same warm tier, its own token.
+  projector: "--port-projector",
   transform3d: "--port-transform3d",
   event: "--port-event",
   audioFeatures: "--port-audioFeatures",

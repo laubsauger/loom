@@ -53,6 +53,7 @@ export type ParameterDependencyKind =
    */
   | "camera"
   | "light"
+  | "projector"
   | "scene"
   | "material";
 
@@ -158,6 +159,8 @@ function sourceReferenceDependency(
           ? "camera"
           : spec.input === "lights"
             ? "light"
+            : spec.input === "projectors"
+              ? "projector"
             : spec.input === "material"
               ? "material"
               : "scene";

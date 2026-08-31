@@ -64,11 +64,19 @@ describe("T675 — every preview payload kind has a stated orbit decision", () =
     expect(previewOrbitBasis("camera", BASIS_OPTIONS)).toBeUndefined();
   });
 
+  it("PROJECTOR is refused for the same reason — the tile shows its own throw (T704)", () => {
+    // Same rule as the camera: the tile draws through the projector's OWN frustum, so
+    // an inspection orbit would falsify the aim/lens picture the tile exists to show.
+    // The document-writing gizmo (T692's shape) is the legitimate control here.
+    expect(PREVIEW_ORBIT_RIGS.projector).toBeNull();
+    expect(previewOrbitBasis("projector", BASIS_OPTIONS)).toBeUndefined();
+  });
+
   it("every other kind is orbitable, and carries its OWN stock framing", () => {
     // The T663 coupling, asserted rather than commented: the basis must reproduce the
     // rig the stock matrix was baked from, optics included, or an orbit at identity
     // renders through a projection the target does not share — i.e. stretched.
-    const orbitable = ALL_KINDS.filter((kind) => kind !== "camera");
+    const orbitable = ALL_KINDS.filter((kind) => kind !== "camera" && kind !== "projector");
     for (const kind of orbitable) {
       const basis = previewOrbitBasis(kind, BASIS_OPTIONS);
       expect([kind, basis?.aspect]).toEqual([kind, 16 / 9]);

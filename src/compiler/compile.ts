@@ -60,7 +60,7 @@ import {
   cameraPreviewWgsl,
   scenePreviewBallWgsl,
 } from "../nodes/shaders/scene-preview.wgsl.ts";
-import { cameraPayloadMatrix, viewProjection } from "../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, viewProjection , projectorMatrix } from "../domain/geometry/camera.ts";
 import type { Mat4 } from "../domain/geometry/camera.ts";
 import { DEFAULT_MATERIAL } from "../domain/types/scene.ts";
 import { applySubstepLoops, planSubstepLoops } from "./substeps.ts";
@@ -1779,6 +1779,30 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             },
           });
         }
+      } else if (payload.kind === "projector") {
+        // T704: the stock reference scene THROUGH THE THROW — the camera tile's own
+        // idiom (§T614: the payload's matrix, so the tile shows the projector's truth):
+        // where this frustum points, what its shift slides and its keystone warps. The
+        // cookie itself is not composited here — the tile answers "where does it land",
+        // and the Render answers "what does it look like".
+        synthPasses.push({
+          ...passBase,
+          shader: cameraPreviewWgsl(),
+          vertexCount: CAMERA_PREVIEW_VERTEX_COUNT,
+          uniforms: {
+            viewProjection: Array.from(
+              projectorMatrix(payload, {
+                throwRatio: payload.throwRatio,
+                aspect: payload.aspect,
+                shiftX: payload.shiftX,
+                shiftY: payload.shiftY,
+                keystoneH: payload.keystoneH,
+                keystoneV: payload.keystoneV,
+              }),
+            ),
+            background: [...SCENE_PREVIEW_BACKGROUND],
+          },
+        });
       } else {
         // Material: the tilted TORUS under the fixed warm key and cool fill (T665 —
         // the ball hid concavity, self-occlusion, silhouette and a map's tiling) — the

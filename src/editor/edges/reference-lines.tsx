@@ -65,6 +65,9 @@ const KIND_COLOR: Record<ParameterDependencyKind, string> = {
   // apart at a glance — and apart from feedback's temporal hue.
   camera: "var(--port-vector)",
   light: "var(--port-scalar)",
+  // T704: a projector reference reads in the light family's hue — it IS a light to the
+  // renderer, and a separate hue would imply a separate assembly concept.
+  projector: "var(--port-scalar)",
   scene: "var(--port-pointset)",
   material: "var(--text-dim)",
 };

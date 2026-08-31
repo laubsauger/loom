@@ -44,6 +44,7 @@ export const portTypeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("material"), model: z.enum(["unlit", "pbr", "custom"]) }),
   z.object({ kind: z.literal("camera") }),
   z.object({ kind: z.literal("light") }),
+  z.object({ kind: z.literal("projector") }),
   z.object({ kind: z.literal("transform3d") }),
   z.object({ kind: z.literal("event") }),
   z.object({ kind: z.literal("audioFeatures") }),

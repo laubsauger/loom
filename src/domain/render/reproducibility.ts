@@ -189,6 +189,9 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   pointTopology: "pure",
   // Scene: a 3D pass is as deterministic as a 2D one.
   camera: "pure",
+  // T704: a projector is geometry + a texture reference — a pure function of the
+  // document and its cookie input, like the camera it shares a pose with.
+  projector: "pure",
   light: "pure",
   geometry: "pure",
   render: "pure",

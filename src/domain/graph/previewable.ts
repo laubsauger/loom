@@ -46,6 +46,8 @@ export const PREVIEWABLE_PORT_KINDS: ReadonlySet<PortKind> = new Set<PortKind>([
   "camera",
   /** T462: the stock ball lit by ONLY this light, zero ambient. */
   "light",
+  /** T704: the stock reference scene through the projector's own throw. */
+  "projector",
   /** T462: the shaded ball under the fixed key and fill. */
   "material",
   /**

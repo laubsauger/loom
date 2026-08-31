@@ -42,6 +42,92 @@ export interface SceneShadingOptions {
    * whether or not the neighbourhood is enclosed. Absent emits byte-identical text.
    */
   readonly ambientOcclusion?: boolean;
+  /**
+   * T704: PROJECTORS, in reference order — each an additive LIGHT whose beam carries
+   * its cookie (§V644: light contribution, never an albedo tint). Slot p owns the
+   * `projector{p}…` uniform rows and its optional cookie/depth textures, numbered
+   * after the AO map. Unlit materials ignore projectors exactly as they ignore
+   * lights. Empty or absent emits byte-identical text (§V309).
+   */
+  readonly projectors?: ReadonlyArray<SceneProjectorOption>;
+}
+
+/** T704: what is STRUCTURAL about one referenced projector — its bindings. */
+export interface SceneProjectorOption {
+  /** A cookie texture is wired; unwired projects plain white (a focus light). */
+  readonly cookie: boolean;
+  /** A depth map is bound and compared — surfaces the projector cannot see get nothing. */
+  readonly occlusion: boolean;
+}
+
+/**
+ * T704 — the projector uniform rows, bindings and fragment term, shared verbatim by
+ * both generators (§V349: the surface and the instances cannot drift apart).
+ *
+ * The read side is the T481 shadow read PLUS THE W-DIVIDE: a projector's matrix is a
+ * perspective frustum, so `pc.xyz / pc.w` is the step the ortho shadow read never
+ * needed, and the depth it compares is the fragment-z the perspective depth sweep
+ * stores (`input.position.z`, already divided by the rasterizer). Falloff is
+ * inverse-square about the THROW DISTANCE — brightness is nominal AT the look-at —
+ * and it is a value switch (`Color.w`), not a shader variant, so toggling it animates.
+ */
+function projectorBlocks(
+  projectors: ReadonlyArray<SceneProjectorOption>,
+  baseBinding: number,
+): { fields: string; bindings: string; term: string; bindingCount: number } {
+  let binding = baseBinding;
+  const fields = projectors
+    .map(
+      (_, p) => `  projector${p}Matrix: mat4x4f,
+  projector${p}Pos: vec4f,    // xyz = lens position, w = brightness (nominal at look-at)
+  projector${p}Color: vec4f,  // rgb = tint, w = falloff switch (0 off, 1 inverse-square)
+  projector${p}Meta: vec4f,   // x = throw distance |lookAt - eye|, yzw reserved
+`,
+    )
+    .join("");
+  const bindings = projectors
+    .map((proj, p) => {
+      const cookie = proj.cookie ? `@group(0) @binding(${binding++}) var projectorCookie${p}: texture_2d<f32>;\n` : "";
+      const depth = proj.occlusion ? `@group(0) @binding(${binding++}) var projectorDepth${p}: texture_2d<f32>;\n` : "";
+      return cookie + depth;
+    })
+    .join("");
+  const term = projectors
+    .map((proj, p) => {
+      const cookieExpr = proj.cookie
+        ? `textureLoad(projectorCookie${p}, vec2i(clamp(puv, vec2f(0.0), vec2f(1.0)) * (vec2f(textureDimensions(projectorCookie${p}, 0)) - vec2f(1.0))), 0).rgb`
+        : "vec3f(1.0)";
+      const occlusionBlock = proj.occlusion
+        ? `      let ddims = vec2f(textureDimensions(projectorDepth${p}, 0));
+      let stored = textureLoad(projectorDepth${p}, vec2i(puv * (ddims - vec2f(1.0))), 0).r;
+      /* The T624 slope-scaled bias, reused: fragment-z on both sides of the compare. */
+      let bias = 0.0015 + 0.012 * (1.0 - plambert);
+      if (pndc.z - bias > stored) { beam = 0.0; }
+`
+        : "";
+      return `  {
+    let pc = params.projector${p}Matrix * vec4f(input.world, 1.0);
+    /* Behind the lens (w <= 0) is outside the beam — the divide would mirror it in. */
+    if (pc.w > 1e-4) {
+      let pndc = pc.xyz / pc.w;
+      let puv = vec2f(pndc.x * 0.5 + 0.5, 0.5 - pndc.y * 0.5);
+      if (puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 && puv.y <= 1.0 && pndc.z >= 0.0 && pndc.z <= 1.0) {
+        let poffset = params.projector${p}Pos.xyz - input.world;
+        let pdist = max(length(poffset), 1e-4);
+        /* Two-sided, like every light here (T301's rule). */
+        let plambert = abs(dot(normal, poffset / pdist));
+        var beam = 1.0;
+${occlusionBlock}        let nominal = max(params.projector${p}Meta.x, 1e-4);
+        let pfalloff = select(1.0, (nominal * nominal) / (pdist * pdist), params.projector${p}Color.w > 0.5);
+        let cookie = ${cookieExpr};
+        lit += albedo.rgb * cookie * params.projector${p}Color.rgb * params.projector${p}Pos.w * pfalloff * plambert * beam;
+      }
+    }
+  }
+`;
+    })
+    .join("");
+  return { fields, bindings, term, bindingCount: binding - baseBinding };
 }
 
 /**
@@ -263,6 +349,12 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     ? `@group(0) @binding(${aoBinding}) var occlusionMap: texture_2d<f32>;\n`
     : "";
   const aoTerm = ambientOcclusion ? " * occlusion" : "";
+  /* T704: projectors are LIGHTS, so an unlit material takes none (mirrors the light
+     blocks, which unlit never reaches). Bound after the AO map. */
+  const projectors = projectorBlocks(
+    options.model === "unlit" ? [] : options.projectors ?? [],
+    aoBinding + (ambientOcclusion ? 1 : 0),
+  );
   const envTerm = environment
     ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
 ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - roughness) * params.environment.x${aoTerm};
@@ -338,7 +430,7 @@ ${
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}${envTerm}  return vec4f(lit, albedo.a);`;
+}${projectors.term}${envTerm}  return vec4f(lit, albedo.a);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -348,11 +440,11 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,          // rgb specular colour, w = shininess
   material: vec4f,          // x = metallic, y = roughness, zw reserved
   grid: vec4f,              // cols, rows, wrapU, wrapV
-${lightField}${shadowFields}${envField}};
+${lightField}${shadowFields}${envField}${projectors.fields}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}${aoDeclarations}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -481,6 +573,8 @@ export function sceneInstancesWgsl(options: {
   environment?: boolean;
   /** T624: an occlusion map is bound — see SceneShadingOptions.ambientOcclusion. */
   ambientOcclusion?: boolean;
+  /** T704: referenced projectors — see SceneShadingOptions.projectors. */
+  projectors?: ReadonlyArray<SceneProjectorOption>;
   /**
    * T642: §V471's selection idiom through the shared camera and depth buffer. The SAME
    * {expression, binds} `resolveGroupPredicate` hands renderPoints (§V349: one
@@ -538,10 +632,15 @@ export function sceneInstancesWgsl(options: {
     ? `@group(0) @binding(${aoBinding}) var occlusionMap: texture_2d<f32>;\n`
     : "";
   const aoTerm = ambientOcclusion ? " * occlusion" : "";
+  /* T704: projector textures after the AO map — see the surface generator. */
+  const projectors = projectorBlocks(
+    options.model === "unlit" ? [] : options.projectors ?? [],
+    aoBinding + (ambientOcclusion ? 1 : 0),
+  );
   /* T642: the group binds come last in the numbering, after every optional texture. */
   const group = groupBlocks(
     options.group,
-    aoBinding + (ambientOcclusion ? 1 : 0),
+    aoBinding + (ambientOcclusion ? 1 : 0) + projectors.bindingCount,
     `    var gated: VertexOut;
     gated.position = vec4f(2.0, 2.0, 2.0, 1.0);
     gated.normal = vec3f(0.0, 0.0, 1.0);
@@ -621,7 +720,7 @@ ${
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}${envTerm}  return vec4f(lit, albedo.a);`;
+}${projectors.term}${envTerm}  return vec4f(lit, albedo.a);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -631,7 +730,7 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,
   material: vec4f,
   instance: vec4f,          // x = scale (beam: HALF-WIDTH), y = shape (0 quad, 1 box, 2 octahedron), z = beam taper
-${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightField}${shadowFields}${envField}};
+${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightField}${shadowFields}${envField}${projectors.fields}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
@@ -640,7 +739,7 @@ ${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4
        everything optional is numbered after them — so the beam's second position buffer
        lands in a hole rather than shifting a single existing slot. */
     beam ? "@group(0) @binding(3) var<storage, read> endpoints: array<vec3f>;\n" : ""
-  }${shadowBindings}${envDeclarations}${aoDeclarations}${group.bindings}
+  }${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}${group.bindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -810,6 +909,13 @@ fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }`;
  */
 export interface DepthPassOptions {
   readonly linearDepth?: boolean;
+  /**
+   * T704: store FRAGMENT-Z (`input.position.z` — clip z ÷ w, done by the rasterizer)
+   * instead of the interpolated clip z. For the ortho shadow matrices w is 1 and the
+   * two are identical; a PROJECTOR's frustum is perspective, where undivided clip z is
+   * not a depth at all. The read side does the matching divide (`pc.xyz / pc.w`).
+   */
+  readonly perspective?: boolean;
 }
 
 /** The surface mesh from the light's view — grid arithmetic identical to the lit draw. */
@@ -870,7 +976,7 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
 
 @fragment
 fn fs(input: VertexOut) -> @location(0) vec4f {
-  return vec4f(input.depth, 0.0, 0.0, 1.0);
+  return vec4f(${options.perspective === true ? "input.position.z" : "input.depth"}, 0.0, 0.0, 1.0);
 }`;
 }
 
@@ -966,6 +1072,6 @@ ${group.gate}  let shape = u32(params.instance.y);
 
 @fragment
 fn fs(input: VertexOut) -> @location(0) vec4f {
-  return vec4f(input.depth, 0.0, 0.0, 1.0);
+  return vec4f(${options.perspective === true ? "input.position.z" : "input.depth"}, 0.0, 0.0, 1.0);
 }`;
 }

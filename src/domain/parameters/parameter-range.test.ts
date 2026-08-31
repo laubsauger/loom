@@ -83,6 +83,8 @@ const hasBounds = (parameter: NumericParameter): boolean =>
 const CYCLIC = [
   // T706: a camera bank wraps — rolling past 180 is the same horizon from the other side.
   "camera.roll",
+  // T704: same bank, same wrap, on the projector's throw axis.
+  "projector.roll",
   "hsv.hueoffset",
   "lfo.phase",
   "mirror.rotate",
@@ -101,6 +103,10 @@ const BOUNDED_DEGREES: Readonly<Record<string, string>> = {
   "camera.fov": "the projection matrix is singular at 0° and at 180°",
   "renderInstances.fov": "the projection matrix is singular at 0° and at 180°",
   "renderSurface.fov": "the projection matrix is singular at 0° and at 180°",
+  "projector.keystoneH":
+    "a keystone is a CORRECTION range, not an angle that wraps — ±30° covers real installs and tan() blows up toward 90°",
+  "projector.keystoneV":
+    "same as keystoneH: a correction range with a tan() in it, never a wrap",
 };
 
 describe("§B111 — every numeric parameter declares whether its bounds are a limit", () => {

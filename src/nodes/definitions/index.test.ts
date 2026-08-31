@@ -149,6 +149,7 @@ describe("core catalogue (T70, T40)", () => {
       // T447: the scene family — assembly by NAME, data by wire (V372).
       "camera",
       "light",
+      "projector",
       "geometry",
       "render",
       "materialUnlit",

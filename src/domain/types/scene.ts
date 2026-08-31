@@ -148,7 +148,41 @@ export interface MaterialPayload {
   };
 }
 
-export type ScenePayload = CameraPayload | LightPayload | GeometryPayload | MaterialPayload;
+/**
+ * T704 — a projector: a camera pose throwing a texture INTO the scene, occlusion-aware.
+ * The pose is deliberately T706's trio (eye/lookAt/roll — one orientation
+ * representation everywhere); the optics are the numbers a venue lens sheet prints.
+ * To the renderer it is a LIGHT with a cookie: its contribution is ADDITIVE radiance,
+ * never an albedo multiply (§V644 — everything outside the beam stays lit by the rig).
+ */
+export interface ProjectorPayload {
+  readonly kind: "projector";
+  readonly eye: readonly [number, number, number];
+  readonly lookAt: readonly [number, number, number];
+  readonly roll: number;
+  readonly throwRatio: number;
+  readonly aspect: number;
+  readonly shiftX: number;
+  readonly shiftY: number;
+  readonly keystoneH: number;
+  readonly keystoneV: number;
+  readonly brightness: number;
+  /** Linear-space tint over the cookie. */
+  readonly color: readonly [number, number, number];
+  /** Inverse-square about the throw distance (brightness is nominal AT lookAt). */
+  readonly falloff: boolean;
+  /** Depth-compare against the projector's own map — a parapet shadows the wall. */
+  readonly occlusion: boolean;
+  /** The projected content's resource, when the cookie input is wired. */
+  readonly cookieResource?: string;
+}
+
+export type ScenePayload =
+  | CameraPayload
+  | LightPayload
+  | GeometryPayload
+  | MaterialPayload
+  | ProjectorPayload;
 
 /**
  * Every scene-payload kind, as a value (T532).
@@ -164,7 +198,7 @@ export type ScenePayload = CameraPayload | LightPayload | GeometryPayload | Mate
  * — so the new kind then fails a test until someone writes one. Neither half can be
  * skipped, and neither is a list anyone has to remember to update.
  */
-export const SCENE_PAYLOAD_KINDS = ["camera", "light", "geometry", "material"] as const;
+export const SCENE_PAYLOAD_KINDS = ["camera", "light", "geometry", "material", "projector"] as const;
 
 export type ScenePayloadKind = (typeof SCENE_PAYLOAD_KINDS)[number];
 

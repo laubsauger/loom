@@ -40,6 +40,7 @@ const PORT_TYPE_BY_KIND = {
   material: { kind: "material", model: "unlit" },
   camera: { kind: "camera" },
   light: { kind: "light" },
+  projector: { kind: "projector" },
   transform3d: { kind: "transform3d" },
   event: { kind: "event" },
   audioFeatures: { kind: "audioFeatures" },

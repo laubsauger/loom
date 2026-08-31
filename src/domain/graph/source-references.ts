@@ -41,6 +41,8 @@ export const SOURCE_REFERENCE_PARAMETERS: Readonly<Record<string, ReadonlyArray<
     { parameter: "scenes", input: "scenes", list: true },
     { parameter: "camera", input: "camera" },
     { parameter: "lights", input: "lights", list: true },
+    // T704: projectors reference exactly as lights do.
+    { parameter: "projectors", input: "projectors", list: true },
   ],
   // T457 (V387): the point renderers share the SAME camera-by-name model as Render —
   // one camera node can frame instances, a surface and a scene render at once.

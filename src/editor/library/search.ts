@@ -194,6 +194,8 @@ export function friendlyPortLabel(type: PortType): string {
       return "camera";
     case "light":
       return "light";
+    case "projector":
+      return "projector";
     case "transform3d":
       return "transform";
     case "event":

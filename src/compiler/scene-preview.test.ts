@@ -254,6 +254,7 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
   const fixtures: Readonly<Record<ScenePayloadKind, () => GraphDocument>> = {
     camera: () => graphOf([node("subject", "camera", {}, "subject1")]),
     light: () => graphOf([node("subject", "light", {}, "subject1")]),
+    projector: () => graphOf([node("subject", "projector", {}, "subject1")]),
     material: () => graphOf([node("subject", "materialPhong", {}, "subject1")]),
     geometry: () =>
       graphOf(
@@ -279,11 +280,11 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
     );
     expect([kind, draws.length > 0]).toEqual([kind, true]);
     expect([kind, mainPlanIsClean(compiled)]).toEqual([kind, true]);
-    // T561: every kind is orbitable EXCEPT camera, whose tile shows the payload's own
-    // matrix. An orbitable kind's passIds name only the object pass — a geometry's
-    // backdrop has no camera to move.
+    // T561: every kind is orbitable EXCEPT the ones whose tile shows the payload's own
+    // matrix — camera, and the projector's throw (T704). An orbitable kind's passIds
+    // name only the object pass — a geometry's backdrop has no camera to move.
     const orbit = row?.synthesis?.orbit;
-    if (kind === "camera") {
+    if (kind === "camera" || kind === "projector") {
       expect([kind, orbit]).toEqual([kind, undefined]);
     } else {
       expect([kind, orbit?.passIds]).toEqual([kind, ["subject#scenePreview:out"]]);
