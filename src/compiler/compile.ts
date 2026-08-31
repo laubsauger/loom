@@ -53,6 +53,7 @@ import {
   scenePreviewBallWgsl,
 } from "../nodes/shaders/scene-preview.wgsl.ts";
 import { cameraPayloadMatrix, viewProjection } from "../domain/geometry/camera.ts";
+import type { Mat4 } from "../domain/geometry/camera.ts";
 import { DEFAULT_MATERIAL } from "../domain/types/scene.ts";
 import { applySubstepLoops, planSubstepLoops } from "./substeps.ts";
 import { orderNodes } from "./topology.ts";
@@ -105,32 +106,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "dispatch", "draw"]);
 
+/** The eye every pointset and geometry preview looks from (T373). */
+const POINTS_PREVIEW_EYE = [1.7, 1.2, 2.4] as const;
+
 /**
  * The default framing every pointset preview shares (T373): an isometric-ish orbit at
- * the origin, aspect 1 for the square tile. One constant, not per-node state — the
- * viewer camera (T379) replaces the VALUE later, never the structure (§V5, §V330).
+ * the origin. One rig, not per-node state — the inspection camera (T561/T656) replaces
+ * the VALUE later, never the structure (§V5, §V330).
+ *
+ * T663 — the ASPECT is the project's, not 1.
+ *
+ * Owner: "maybe we should render the previews for points in project aspect ratio instead
+ * of square when the output is wide and vice versa... basically always according to
+ * resolution settings and aspect etc which is auto by default so should be inherited."
+ * A texture preview already inherits its texture's shape, so a project-resolution texture
+ * previews at the project's aspect while a pointset previewed SQUARE — the two kinds of
+ * preview disagreed about what the output looks like, and the synthesized one was the one
+ * that was wrong. A preview exists to predict the output; a square one predicts a square
+ * output nobody asked for. Taking the aspect here rather than at each call site is what
+ * keeps the projection and the target agreeing (an orbited preview through a mismatched
+ * projection renders STRETCHED, and T656's zoom would compound it).
  */
-const POINTS_PREVIEW_CAMERA = viewProjection([1.7, 1.2, 2.4], [0, 0, 0], { aspect: 1 });
+const pointsPreviewCamera = (aspect: number): Mat4 =>
+  viewProjection(POINTS_PREVIEW_EYE, [0, 0, 0], { aspect });
 
 /** Clip-space disc half-extent — ~3px on a 192px tile, readable without occluding. */
 const POINTS_PREVIEW_POINT_SIZE = 0.03;
 
 /**
- * T462: the stock rig every scene-payload preview shares. The ball camera looks
- * straight down -z so the ball's centre texel faces the viewer exactly — which is what
- * makes the §V147 pins below arithmetic instead of screenshots. The fill light's
+ * T462: the stock rig every scene-payload preview shares. The camera looks straight
+ * down -z, so the LIGHT stock's ball presents its centre texel to the viewer exactly —
+ * which is what makes the §V147 pins arithmetic instead of screenshots. The fill light's
  * direction has no z component, so its lambert term is ZERO at that centre texel: the
  * key alone sets the pinned value, and the fill only models the terminator.
+ *
+ * T665: the MATERIAL stock is a torus of the same outer radius (0.72 + 0.28 = 1.0), so
+ * this framing is unchanged by it — but its centre texel is the HOLE, i.e. background,
+ * which is the sharpest falsifiable difference from the ball and is gated as one.
  */
-const SCENE_PREVIEW_CAMERA = viewProjection([0, 0, 2.6], [0, 0, 0], {
-  fovY: Math.PI / 4,
-  aspect: 1,
-  near: 0.1,
-  far: 10,
-});
+const SCENE_PREVIEW_BALL_RIG = { eye: [0, 0, 2.6] as const, fovY: Math.PI / 4, near: 0.1, far: 10 };
+/** T663: the ball rig at the PROJECT's aspect — see `pointsPreviewCamera` for why. */
+const scenePreviewCamera = (aspect: number): Mat4 =>
+  viewProjection(SCENE_PREVIEW_BALL_RIG.eye, [0, 0, 0], {
+    fovY: SCENE_PREVIEW_BALL_RIG.fovY,
+    aspect,
+    near: SCENE_PREVIEW_BALL_RIG.near,
+    far: SCENE_PREVIEW_BALL_RIG.far,
+  });
 const SCENE_PREVIEW_EYE = [0, 0, 2.6, 0] as const;
 const SCENE_PREVIEW_BACKGROUND = [0.055, 0.06, 0.075, 1] as const;
-/** The eye `POINTS_PREVIEW_CAMERA` looks from — the geometry preview's specular needs it. */
+/** The eye `pointsPreviewCamera` looks from — the geometry preview's specular needs it. */
 const GEOMETRY_PREVIEW_EYE = [1.7, 1.2, 2.4, 0] as const;
 /**
  * T532/T444 (§V384): one full-target triangle pair at far depth, painting the backdrop.
@@ -861,8 +886,54 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
    * while paused) cannot recur by construction. This edge is now only the NOMINAL size
    * the projection reports for a synthesized output.
    */
-  const previewTargetEdge = (): number =>
+  const previewTargetLongEdge = (): number =>
     Math.max(1, Math.round(settings.previewLongEdge)) * MAX_TILE_SCALE;
+
+  /**
+   * T663 — and the LONG EDGE is still the rule above; only the SHORT one is new.
+   *
+   * Owner: "maybe we should render the previews for points in project aspect ratio
+   * instead of square when the output is wide and vice versa? ... we do that for video
+   * textures so probably would be good to do this for points and 3d and all the things
+   * right? basically always according to resolution settings and aspect etc which is
+   * auto by default so should be inherited."
+   *
+   * A texture preview's source IS the node's output, so it inherits the project's shape
+   * for free; a synthesized one had no source to inherit from and was hard-coded square.
+   * The two disagreed about what the output looks like — a 16:9 project previewed its
+   * pointsets square, pillarboxed inside a 16:9 slot, and the framing shown was not the
+   * framing that would be rendered. A preview exists to predict the output.
+   *
+   * INHERITED, never configured: there is no preview-aspect setting and there should not
+   * be one. `outputResolution` is already the project's answer to "what shape is this",
+   * and asking twice is how the two answers drift.
+   *
+   * The size is NOMINAL either way (T502/T563 — the preview program owns the real target
+   * and sizes it to the granted tile), but it is what fixes the ASPECT all the way down:
+   * `tileSizeFor` derives the tile from this source size, `fitInsideRegion` letterboxes
+   * against it, and the projections below are built at the aspect this returns rather
+   * than at 1 — the same number, so an orbited or zoomed preview cannot come out
+   * stretched (§T561, §T656).
+   */
+  const previewTargetSize = (): [number, number] => {
+    const long = previewTargetLongEdge();
+    const { width, height } = settings.outputResolution;
+    if (!(width > 0) || !(height > 0)) return [long, long];
+    return width >= height
+      ? [long, Math.max(1, Math.round((long * height) / width))]
+      : [Math.max(1, Math.round((long * width) / height)), long];
+  };
+
+  /**
+   * The aspect of the size above — taken from the ROUNDED target rather than from the
+   * raw project resolution, so the projection matches the pixels it is drawn into
+   * exactly. A projection built at the un-rounded aspect would stretch by a fraction of
+   * a pixel, which is invisible and therefore the kind of thing that survives for years.
+   */
+  const previewTargetAspect = (): number => {
+    const [width, height] = previewTargetSize();
+    return width / height;
+  };
   const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks);
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
 
@@ -1368,14 +1439,15 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       // T502/T563: the size here is NOMINAL — the preview program owns the target now
       // and sizes it to the granted tile, so a zoom boost buys real pixels and a
       // ladder-crossing rebuild happens outside the frame, transport-independent.
-      const edgePx = previewTargetEdge();
+      const previewSize = previewTargetSize();
+      const previewAspect = previewTargetAspect();
       const previewId = pointsPreviewResourceId(nodeId, slot.portId);
       pointsPreviewOutputs.set(key, {
         nodeId,
         portId: slot.portId,
         resourceId: previewId,
         resourceKind: "target",
-        size: [edgePx, edgePx],
+        size: previewSize,
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
@@ -1383,10 +1455,12 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           depth: false,
           // T561: the stock framing's basis, so the inspection orbit reproduces it at
           // identity and replaces only the VALUE (§V5) — same numbers as
-          // POINTS_PREVIEW_CAMERA above.
+          // `pointsPreviewCamera` above, and T663's same ASPECT: an orbit through a
+          // projection the target does not share renders stretched.
           orbit: {
-            eye: [1.7, 1.2, 2.4],
+            eye: [...POINTS_PREVIEW_EYE],
             lookAt: [0, 0, 0],
+            aspect: previewAspect,
             passIds: [`${nodeId}#pointsPreview:${slot.portId}`],
           },
           passes: [
@@ -1411,7 +1485,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
               uniforms: {
                 // Fixed default framing for now; T379's viewer camera can drive this as a
                 // VALUE update — the uniform is data, never structure (§V5, §V330).
-                viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+                viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
                 pointSize: POINTS_PREVIEW_POINT_SIZE,
               },
               uniformBinding: "params",
@@ -1512,7 +1586,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       // T502: same rule, same helper — a camera, light or material preview is synthesized
       // exactly like the splat, so it renders at the same size. This is the half of §V437
       // that matters: the policy reaches the NEXT preview kind by construction.
-      const edgePx = previewTargetEdge();
+      const previewSize = previewTargetSize();
+      const previewAspect = previewTargetAspect();
       const previewId = scenePreviewResourceId(nodeId, port.id);
       // T563: the target and these passes belong to the PREVIEW PROGRAM (see the
       // `synthesis` docblock in types.ts) — the main plan carries neither.
@@ -1533,7 +1608,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           shader: cameraPreviewWgsl(),
           vertexCount: CAMERA_PREVIEW_VERTEX_COUNT,
           uniforms: {
-            viewProjection: Array.from(cameraPayloadMatrix(payload, 1)),
+            // T663: the payload's OWN matrix (§T614) at the PROJECT's aspect — which is the
+            // aspect the Render naming this camera uses, so the tile keeps predicting it.
+            viewProjection: Array.from(cameraPayloadMatrix(payload, previewAspect)),
             background: [...SCENE_PREVIEW_BACKGROUND],
           },
         });
@@ -1543,10 +1620,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         const light = payload.light;
         synthPasses.push({
           ...passBase,
-          shader: scenePreviewBallWgsl({ model: "lambert", lightCount: 1 }),
+          shader: scenePreviewBallWgsl({ stock: "ball", model: "lambert", lightCount: 1 }),
           vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
           uniforms: {
-            viewProjection: Array.from(SCENE_PREVIEW_CAMERA),
+            viewProjection: Array.from(scenePreviewCamera(previewAspect)),
             eye: [...SCENE_PREVIEW_EYE],
             ambientColor: [0, 0, 0, 0],
             baseColor: [...DEFAULT_MATERIAL.baseColor],
@@ -1613,7 +1690,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           clear: true,
         });
         const geometryUniforms = {
-          viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+          viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
           eye: [...GEOMETRY_PREVIEW_EYE],
           ambientColor: [1, 1, 1, SCENE_PREVIEW_AMBIENT],
           baseColor: [...material.baseColor],
@@ -1645,7 +1722,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
                 : [{ binding: "counts", resourceId: payload.count.buffer }]),
             ],
             uniforms: {
-              viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+              viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
               pointSize: POINTS_PREVIEW_POINT_SIZE,
             },
             blend: "alpha",
@@ -1694,7 +1771,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           });
         }
       } else {
-        // Material: the shaded ball under the fixed warm key and cool fill — the
+        // Material: the tilted TORUS under the fixed warm key and cool fill (T665 —
+        // the ball hid concavity, self-occlusion, silhouette and a map's tiling) — the
         // model/specular mapping is the scene Render's own (T428's pbr-through-phong).
         const model =
           payload.model === "unlit" ? "unlit" : payload.model === "phong" || payload.model === "pbr" ? "phong" : "lambert";
@@ -1713,7 +1791,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         };
         synthPasses.push({
           ...passBase,
-          shader: scenePreviewBallWgsl({ model, lightCount: 2, maps }),
+          shader: scenePreviewBallWgsl({ stock: "torus", model, lightCount: 2, maps }),
           vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
           ...(payload.maps.albedo === undefined && payload.maps.roughness === undefined
             ? {}
@@ -1728,7 +1806,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
                 ],
               }),
           uniforms: {
-            viewProjection: Array.from(SCENE_PREVIEW_CAMERA),
+            viewProjection: Array.from(scenePreviewCamera(previewAspect)),
             eye: [...SCENE_PREVIEW_EYE],
             ambientColor: [1, 1, 1, SCENE_PREVIEW_AMBIENT],
             baseColor: [...payload.baseColor],
@@ -1756,13 +1834,19 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         payload.kind === "camera"
           ? undefined
           : payload.kind === "geometry"
-            ? { eye: [1.7, 1.2, 2.4] as const, lookAt: [0, 0, 0] as const, passIds: [`${nodeId}#scenePreview:${port.id}`] }
-            : {
-                eye: [0, 0, 2.6] as const,
+            ? {
+                eye: [...POINTS_PREVIEW_EYE] as [number, number, number],
                 lookAt: [0, 0, 0] as const,
-                fovY: Math.PI / 4,
-                near: 0.1,
-                far: 10,
+                aspect: previewAspect,
+                passIds: [`${nodeId}#scenePreview:${port.id}`],
+              }
+            : {
+                eye: [...SCENE_PREVIEW_BALL_RIG.eye] as [number, number, number],
+                lookAt: [0, 0, 0] as const,
+                fovY: SCENE_PREVIEW_BALL_RIG.fovY,
+                near: SCENE_PREVIEW_BALL_RIG.near,
+                far: SCENE_PREVIEW_BALL_RIG.far,
+                aspect: previewAspect,
                 passIds: [`${nodeId}#scenePreview:${port.id}`],
               };
       // A surface-mode geometry whose topology could not be used pushes only the
@@ -1772,7 +1856,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         portId: port.id,
         resourceId: previewId,
         resourceKind: "target",
-        size: [edgePx, edgePx],
+        size: previewSize,
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { compileGraph } from "./index.ts";
 import { MAX_TILE_SCALE } from "../runtime/previews/geometry.ts";
+import { DEFAULT_PREVIEW_ORBIT, orbitViewProjection } from "../runtime/previews/orbit.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import type { BackendCapabilities } from "../domain/types/backend.ts";
@@ -40,23 +41,34 @@ import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
  * The synthesis lives in the PREVIEW PROGRAM now: the real target is sized to the
  * GRANTED tile (the boost finally reaches it), and it rebuilds outside the frame, so
  * the paused-black failure that kept T502 on the base tile cannot recur. What this file
- * still governs is the compiler's half: the NOMINAL row size (`previewTargetEdge`, the
- * base §V454 reserves — `previewLongEdge × MAX_TILE_SCALE`) that the request path reads
- * for aspect, kept to one reader; and the absence — no compile may put a synthesized
- * preview target or pass into the main plan, swept across the whole catalogue.
+ * still governs is the compiler's half: the NOMINAL row size (`previewTargetSize`, whose
+ * long edge is the base §V454 reserves — `previewLongEdge × MAX_TILE_SCALE`) that the
+ * request path reads for aspect, kept to one reader; and the absence — no compile may put
+ * a synthesized preview target or pass into the main plan, swept across the catalogue.
+ *
+ * ## T663: the OTHER edge
+ *
+ * The row used to be square, and the owner reported what that costs: a texture preview
+ * inherits the project's shape and a synthesized one did not, so the two kinds of preview
+ * disagreed about what the output looks like. The long edge is still the budget's; the
+ * short one is now the project's. That makes this file's old SQUARE fixture actively
+ * dangerous (§V461) — it could not distinguish the new rule from the old — so it is wide
+ * now, with portrait and square cases beside it.
  *
  * ## The mechanism, and this gate
  *
  * There is exactly ONE place in the compiler that decides how big a synthesized preview
- * renders — `previewTargetEdge`. Two assertions make that a mechanism, not a convention:
+ * renders — `previewTargetSize`. Two assertions make that a mechanism, not a convention:
  *
  *  1. BEHAVIOUR, over the whole shipped catalogue with no list of kinds anywhere: every
  *     definition, every output port that has no picture of its own. Anything the compile
  *     SYNTHESIZES must be at the base tile. Kind N+1 is covered because the enumerator is
  *     the registry.
- *  2. SOURCE: `settings.previewLongEdge` is read in exactly one place in `compile.ts`.
- *     Kind N+1 that sizes its own target from the raw setting fails here even if it
- *     somehow compiles to nothing in (1).
+ *  2. SOURCE: `settings.previewLongEdge` is read in exactly one place in `compile.ts`,
+ *     and that reader is called from exactly one place — `previewTargetSize`, which is
+ *     what applies the aspect. Kind N+1 that sizes its own target from the raw setting,
+ *     or that takes the long edge and squares it, fails here even if it somehow compiles
+ *     to nothing in (1).
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +76,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PREVIEW_LONG_EDGE = 192;
 /** The BASE tile every preview is guaranteed (§V454): `previewLongEdge × MAX_TILE_SCALE`. */
 const BASE_TILE = PREVIEW_LONG_EDGE * MAX_TILE_SCALE;
+/**
+ * T663 — the SHORT edge, at the fixture project's aspect.
+ *
+ * §V461, and it is the whole reason this file's fixture changed: the settings below used
+ * to be 64x64, and a SQUARE project cannot tell "inherited the project's aspect" from
+ * "hard-coded square". Every assertion in this file would have stayed green through a
+ * complete failure to implement T663. The fixture is 1280x720 now — the shipped default,
+ * and wide — so the two answers differ, and `inherits the project's aspect` below adds a
+ * PORTRAIT one so the relationship is proven in both directions rather than at one point.
+ */
+const BASE_SHORT = 216;
 
 const CAPABILITIES: BackendCapabilities = {
   tier: "B",
@@ -74,7 +97,8 @@ const CAPABILITIES: BackendCapabilities = {
 };
 
 const SETTINGS: ProjectSettings = {
-  outputResolution: { width: 64, height: 64 },
+  // 1280x720, the shipped default — WIDE, so a square result is distinguishable (§V461).
+  outputResolution: { width: 1280, height: 720 },
   workingFormat: "rgba8unorm",
   randomSeed: 7,
   previewLongEdge: PREVIEW_LONG_EDGE,
@@ -98,8 +122,9 @@ function oneNode(type: string): GraphDocument {
  * with their nominal sizes. That is the definition of "synthesized" — no list of
  * resource-id prefixes, no knowledge of which kinds synthesize anything. T563: the
  * synthesis rides the OUTPUT ROW (the preview program owns the real target, sized to
- * the granted tile); the row's `size` is the nominal square this rule governs, and the
- * plan itself must stay clean of preview targets — asserted per compile, every time.
+ * the granted tile); the row's `size` is the nominal size this rule governs — long edge
+ * from the budget, short edge from the project (T663) — and the plan itself must stay
+ * clean of preview targets, asserted per compile, every time.
  */
 function synthesizedFor(type: string, portId: string, settings: ProjectSettings = SETTINGS) {
   const graph = oneNode(type);
@@ -155,7 +180,7 @@ describe("T502 — a synthesized preview renders at the step the budget granted"
       for (const target of synthesizedFor(type, portId)) {
         covered.push(`${type}.${portId}`);
         kinds.add(kind);
-        if (target.size[0] !== BASE_TILE || target.size[1] !== BASE_TILE) {
+        if (target.size[0] !== BASE_TILE || target.size[1] !== BASE_SHORT) {
           wrong.push(`${type}.${portId} -> ${target.id} ${target.size.join("x")}`);
         }
       }
@@ -178,8 +203,9 @@ describe("T502 — a synthesized preview renders at the step the budget granted"
   it("a synthesized preview is never below the base tile — the upscale at rest is gone", () => {
     // Before T502 this read [192, 192]: the guaranteed tile is 384 at dpr 2, so every
     // point, camera, light and material preview was a 2× blow-up before anyone zoomed.
+    // The LONG edge is what the budget governs; T663 only decides the other one.
     expect(synthesizedFor("pointTorus", "out").map((target) => target.size)).toEqual([
-      [BASE_TILE, BASE_TILE],
+      [BASE_TILE, BASE_SHORT],
     ]);
     expect(BASE_TILE).toBe(384);
   });
@@ -188,11 +214,65 @@ describe("T502 — a synthesized preview renders at the step the budget granted"
     const half: ProjectSettings = { ...SETTINGS, previewLongEdge: 96 };
     const big: ProjectSettings = { ...SETTINGS, previewLongEdge: 576 };
     expect(synthesizedFor("pointTorus", "out", half).map((target) => target.size)).toEqual([
-      [192, 192],
+      [192, 108],
     ]);
     expect(synthesizedFor("pointTorus", "out", big).map((target) => target.size)).toEqual([
-      [1152, 1152],
+      [1152, 648],
     ]);
+  });
+
+  it("inherits the project's ASPECT — wide, portrait and square, from one relationship", () => {
+    /**
+     * T663. Owner: "maybe we should render the previews for points in project aspect
+     * ratio instead of square when the output is wide and vice versa... basically always
+     * according to resolution settings and aspect etc which is auto by default so should
+     * be inherited."
+     *
+     * "and vice versa" is why PORTRAIT is here and not just wide: a fixture that only
+     * ever widens cannot tell "follows the project" from "is 16:9", the same way the old
+     * square fixture could not tell it from "is square" (§V461). The long edge is the
+     * budget's, unchanged, in all three.
+     */
+    const portrait: ProjectSettings = { ...SETTINGS, outputResolution: { width: 720, height: 1280 } };
+    const square: ProjectSettings = { ...SETTINGS, outputResolution: { width: 512, height: 512 } };
+    const ultrawide: ProjectSettings = { ...SETTINGS, outputResolution: { width: 2560, height: 720 } };
+
+    expect(synthesizedFor("pointTorus", "out").map((t) => t.size)).toEqual([[384, 216]]);
+    expect(synthesizedFor("pointTorus", "out", portrait).map((t) => t.size)).toEqual([[216, 384]]);
+    expect(synthesizedFor("pointTorus", "out", square).map((t) => t.size)).toEqual([[384, 384]]);
+    expect(synthesizedFor("pointTorus", "out", ultrawide).map((t) => t.size)).toEqual([[384, 108]]);
+
+    // And it reaches every SYNTHESIZED kind, not just the splat (§V437: a policy
+    // delivered kind by kind is not delivered). A camera, a light and a material.
+    expect(synthesizedFor("camera", "out", portrait).map((t) => t.size)).toEqual([[216, 384]]);
+    expect(synthesizedFor("light", "out", portrait).map((t) => t.size)).toEqual([[216, 384]]);
+    expect(synthesizedFor("materialPhong", "out", portrait).map((t) => t.size)).toEqual([[216, 384]]);
+  });
+
+  it("the PROJECTION is built at the target's aspect, or the picture comes out stretched", () => {
+    /**
+     * The coupling T663 names, asserted rather than trusted: the stock matrix baked into
+     * the synthesized draw, and the basis T561/T656's inspection camera re-derives from,
+     * must both be at the TARGET's aspect. A projection at aspect 1 into a 16:9 target
+     * renders stretched — and the failure is silent, because it looks like a picture.
+     */
+    const graph = oneNode("pointTorus");
+    const wide = compileGraph({
+      graph, settings: SETTINGS, registry, capabilities: CAPABILITIES,
+      sinks: [{ nodeId: "n1", portId: "out", kind: "preview" }],
+    });
+    const row = wide.outputs.find((output) => output.synthesis !== undefined);
+    const [width, height] = row?.size ?? [0, 0];
+    expect(row?.synthesis?.orbit?.aspect).toBeCloseTo(width! / height!, 12);
+    expect(row?.synthesis?.orbit?.aspect).not.toBe(1);
+
+    // The baked matrix agrees with that basis at IDENTITY — §V528's short-circuit is
+    // what makes "an untouched preview and a reset one are the same picture" true, and
+    // it is only true if the two were built at the same aspect.
+    const basis = row?.synthesis?.orbit;
+    const baked = row?.synthesis?.passes.find((pass) => pass.id.includes("#pointsPreview"))
+      ?.uniforms?.["viewProjection"] as number[] | undefined;
+    expect(baked).toEqual(orbitViewProjection(basis as never, DEFAULT_PREVIEW_ORBIT));
   });
 
   it("the synthesized pool is bounded by the tile pool it mirrors (§V454)", () => {
@@ -212,6 +292,11 @@ describe("T502 — a synthesized preview renders at the step the budget granted"
     const source = readFileSync(resolve(HERE, "compile.ts"), "utf8");
     const readers = source.split("settings.previewLongEdge").length - 1;
     expect(readers).toBe(1);
-    expect(source.includes("const previewTargetEdge")).toBe(true);
+    expect(source.includes("const previewTargetLongEdge")).toBe(true);
+    // T663 strengthens the same mechanism: the long edge is reachable only THROUGH the
+    // sizer that applies the project's aspect, so a kind N+1 cannot take the budget's
+    // number and square it. One call site, inside `previewTargetSize`.
+    expect(source.split("previewTargetLongEdge()").length - 1).toBe(1);
+    expect(source.includes("const previewTargetSize")).toBe(true);
   });
 });

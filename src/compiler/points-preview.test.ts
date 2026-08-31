@@ -103,7 +103,9 @@ describe("a watched point generator previews as its own splat (T373, §V85, T563
     const output = outputFor(compiled.outputs, "torus");
     expect(output?.resourceKind).toBe("target");
     expect(output?.resourceId).toBe(pointsPreviewResourceId("torus", "out"));
-    // Square NOMINAL size (aspect for the request path); the real edge is the tile's.
+    // The NOMINAL size the request path reads for aspect; the real edge is the tile's.
+    // Square HERE because this fixture's project is 64x64 — T663 makes the short edge the
+    // project's, and `preview-resolution.test.ts` is where that relationship is pinned.
     expect(output?.size).toEqual([384, 384]);
     expect(output?.format).toBe("rgba8unorm");
     expect(output?.synthesis?.depth).toBe(false);

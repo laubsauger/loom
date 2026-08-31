@@ -104,6 +104,25 @@ describe("the inspection PAN (T656)", () => {
     expect(orbitEye(POINTS, { ...DEFAULT_PREVIEW_ORBIT, panX: 0.1 })).not.toEqual(POINTS.eye);
   });
 
+  it("builds the projection at the TARGET's aspect, so an orbit is not stretched (T663)", () => {
+    /**
+     * The coupling T663 names. The synthesized target is the project's shape now, and a
+     * projection built at aspect 1 into a wide target renders stretched — silently,
+     * because it still looks like a picture. §V461: the fixture is WIDE, so "used the
+     * basis" and "assumed square" give different numbers.
+     */
+    const wide = { ...POINTS, aspect: 16 / 9 };
+    expect(orbitViewProjection(wide, DEFAULT_PREVIEW_ORBIT)).toEqual(
+      Array.from(viewProjection([1.7, 1.2, 2.4], [0, 0, 0], { aspect: 16 / 9 })),
+    );
+    expect(orbitViewProjection(wide, DEFAULT_PREVIEW_ORBIT)).not.toEqual(
+      orbitViewProjection(POINTS, DEFAULT_PREVIEW_ORBIT),
+    );
+    // And it survives a real gesture: zoom and pan go through the same projection.
+    const moved = { ...DEFAULT_PREVIEW_ORBIT, azimuth: 0.4, distance: 0.7, panX: 0.2 };
+    expect(orbitViewProjection(wide, moved)).not.toEqual(orbitViewProjection(POINTS, moved));
+  });
+
   it("pan clamps, so the object cannot be pushed off frame and lost", () => {
     const far = orbitPose(BALL, { ...DEFAULT_PREVIEW_ORBIT, panX: 50 });
     expect(far.lookAt[0]).toBeCloseTo(2 * 2.6, 10);

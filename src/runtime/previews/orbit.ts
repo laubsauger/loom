@@ -61,6 +61,14 @@ export interface OrbitCameraBasis {
   readonly fovY?: number;
   readonly near?: number;
   readonly far?: number;
+  /**
+   * T663: the SYNTHESIZED TARGET's aspect, which is the project's — never 1, unless the
+   * project is square. The compiler bakes its stock matrix at exactly this number, so
+   * identity deltas still reproduce it float for float; getting it wrong here does not
+   * fail loudly, it renders the orbited picture STRETCHED against an unstretched stock
+   * one, which is why the compiler passes it rather than each caller assuming.
+   */
+  readonly aspect?: number;
 }
 
 /** Just short of the poles: `lookAt`'s up is +y, and gimbal flip reads as a glitch. */
@@ -164,7 +172,8 @@ export function orbitViewProjection(basis: OrbitCameraBasis, orbit: PreviewOrbit
   const pose = orbitPose(basis, orbit);
   return Array.from(
     viewProjection(pose.eye, pose.lookAt, {
-      aspect: 1,
+      // T663: the target's aspect, defaulting to square for a basis that names none.
+      aspect: basis.aspect ?? 1,
       ...(basis.fovY === undefined ? {} : { fovY: basis.fovY }),
       ...(basis.near === undefined ? {} : { near: basis.near }),
       ...(basis.far === undefined ? {} : { far: basis.far }),

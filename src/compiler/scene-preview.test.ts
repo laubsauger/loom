@@ -145,7 +145,8 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
     // payload's own matrix, and an inspection override would falsify the one thing it
     // shows. Every other payload kind carries a basis (asserted in the kind sweep).
     expect(row?.synthesis?.orbit).toBeUndefined();
-    // The nominal square size the request path reads (T502's base-tile rule).
+    // The nominal size the request path reads (T502's base-tile rule). Square because
+    // this fixture's project is square; T663 makes the short edge the project's.
     expect(row?.size).toEqual([384, 384]);
     expect(mainPlanIsClean(compiled)).toBe(true);
   });
@@ -270,7 +271,7 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
     const compiled = compile(fixtures[kind](), [{ nodeId: "subject", portId: "out" }]);
     expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
     // T563: the row carries everything — the target id the preview program creates
-    // (nominal square size for the request path) and the draws that render it.
+    // (nominal size for the request path; square only because this project is) and the draws.
     const row = rowById(compiled, "preview:scene:subject:out");
     expect([kind, row?.size]).toEqual([kind, [384, 384]]);
     const draws = (row?.synthesis?.passes ?? []).filter(

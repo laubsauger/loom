@@ -65,19 +65,27 @@ export function buildPreviewProgram(
     if (tile === undefined) continue;
     /*
      * T563: a SYNTHESIZED preview's source target lives HERE, not in the main plan —
-     * sized to the granted tile (square: the stock framings are square), so a zoom
-     * boost buys real pixels, and rebuilt outside the frame like every other program
-     * resource, so a ladder crossing repaints even with the transport paused. The draw
-     * passes render it on the preview cadence; the lens pass below reads it exactly as
-     * it reads a main-plan texture.
+     * sized to the granted tile, so a zoom boost buys real pixels, and rebuilt outside
+     * the frame like every other program resource, so a ladder crossing repaints even
+     * with the transport paused. The draw passes render it on the preview cadence; the
+     * lens pass below reads it exactly as it reads a main-plan texture.
+     *
+     * T663 — the tile's OWN size, not the square it used to be forced into.
+     *
+     * This was `[max(w, h), max(w, h)]` while the stock framings were square, and it was
+     * the last place the squareness actually lived: `tileSizeFor` already derives the
+     * tile from the source's aspect, so once the compiler stopped nominating a square
+     * source, everything upstream of here was project-shaped and this line alone would
+     * have stretched it back. The three sites have to agree — the compiler's nominal
+     * size, the granted tile, and this target — or the picture is drawn at one aspect
+     * and shown at another.
      */
     const synthesis = entry.request.synthesis;
     if (synthesis !== undefined) {
-      const edge = Math.max(1, tile.size[0] ?? 1, tile.size[1] ?? 1);
       synthesized.push({
         kind: "target",
         id: entry.request.source.resourceId,
-        size: [edge, edge],
+        size: [Math.max(1, tile.size[0] ?? 1), Math.max(1, tile.size[1] ?? 1)],
         format: "rgba8unorm",
         ...(synthesis.depth ? { depth: true } : {}),
         label: `${key} synthesized preview`,

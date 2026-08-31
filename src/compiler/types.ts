@@ -153,6 +153,12 @@ export interface ResolvedOutput {
       readonly fovY?: number;
       readonly near?: number;
       readonly far?: number;
+      /**
+       * T663: the synthesized TARGET's aspect, which is the project's. The stock matrix
+       * in `passes` is baked at exactly this, so identity deltas reproduce it float for
+       * float and an orbited or zoomed preview is not stretched against it.
+       */
+      readonly aspect?: number;
       readonly passIds: ReadonlyArray<string>;
     };
   };

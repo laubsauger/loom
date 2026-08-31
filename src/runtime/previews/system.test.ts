@@ -269,6 +269,45 @@ describe("preview system", () => {
     expect(restored?.values["viewProjection"]).toEqual(orbitViewProjection(basis, DEFAULT_PREVIEW_ORBIT));
   });
 
+  it("gives a synthesized preview the GRANTED TILE's own shape, not a square (T663)", () => {
+    /**
+     * The last place the squareness lived. `tileSizeFor` has always derived the tile from
+     * the source's aspect, and T663 made the compiler nominate a project-shaped source —
+     * but `buildPreviewProgram` allocated `[max(w,h), max(w,h))]`, so the picture would
+     * have been drawn square and shown wide, which is a stretch and looks like a picture.
+     *
+     * §V461's distinguishing fixture, and it has to be stated: the source here is 1280x720
+     * and the assertion is that the target is NOT square. A square source could not tell
+     * "took the tile's shape" from "squared it", which is exactly how this survived.
+     */
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    const synthesis = {
+      depth: false,
+      passes: [
+        {
+          kind: "draw",
+          id: "a#pointsPreview:out",
+          shader: "fn x() {}",
+          target: "preview:points:a:out",
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 3,
+          uniformBinding: "params",
+          uniforms: {},
+        },
+      ],
+    } as never as NonNullable<PreviewRequest["synthesis"]>;
+
+    run(system, [request("a", { synthesis, source: { ...request("a").source, resourceId: "preview:points:a:out" } })], 1);
+    const target = host.programs[0]?.resources.find(
+      (resource): resource is Extract<typeof resource, { size: readonly [number, number] }> =>
+        resource.id === "preview:points:a:out" && "size" in resource,
+    );
+    // dpr 2 on a 192px area is 384, snapped; the 16:9 source makes the short edge 216.
+    expect(target?.size).toEqual([384, 216]);
+  });
+
   it("composites every active tile every frame but refreshes only the due ones", () => {
     const host = fakeHost();
     const system = createPreviewSystem({ host, capacity: 8 });
