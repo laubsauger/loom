@@ -3,6 +3,28 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
+      "e-bgain-bright": {
+        "id": "e-bgain-bright",
+        "source": {
+          "nodeId": "bgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bright",
+          "portId": "a"
+        }
+      },
+      "e-blend-tint": {
+        "id": "e-blend-tint",
+        "source": {
+          "nodeId": "blend",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "source"
+        }
+      },
       "e-broad-warp": {
         "id": "e-broad-warp",
         "source": {
@@ -12,6 +34,18 @@
         "target": {
           "nodeId": "warp",
           "portId": "source"
+        }
+      },
+      "e-chem-blend": {
+        "id": "e-chem-blend",
+        "order": 0,
+        "source": {
+          "nodeId": "chem",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "blend",
+          "portId": "in2"
         }
       },
       "e-detail-warp": {
@@ -47,14 +81,14 @@
           "portId": "a"
         }
       },
-      "e-fringe-out": {
-        "id": "e-fringe-out",
+      "e-fringe-glow": {
+        "id": "e-fringe-glow",
         "source": {
           "nodeId": "fringe",
           "portId": "out"
         },
         "target": {
-          "nodeId": "out",
+          "nodeId": "glow",
           "portId": "input"
         }
       },
@@ -69,25 +103,113 @@
           "portId": "in1"
         }
       },
-      "e-kgain-kscale": {
-        "id": "e-kgain-kscale",
+      "e-gadd-grade": {
+        "id": "e-gadd-grade",
         "source": {
-          "nodeId": "kgain",
+          "nodeId": "gadd",
           "portId": "out"
         },
         "target": {
-          "nodeId": "kscale",
+          "nodeId": "grade",
+          "portId": "in"
+        }
+      },
+      "e-gate-inject": {
+        "id": "e-gate-inject",
+        "source": {
+          "nodeId": "gate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "inject",
+          "portId": "in1"
+        }
+      },
+      "e-ggain-gadd": {
+        "id": "e-ggain-gadd",
+        "source": {
+          "nodeId": "ggain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gadd",
           "portId": "a"
         }
       },
-      "e-kick-kgain": {
-        "id": "e-kick-kgain",
+      "e-glow-hue": {
+        "id": "e-glow-hue",
         "source": {
-          "nodeId": "kick",
+          "nodeId": "glow",
           "portId": "out"
         },
         "target": {
-          "nodeId": "kgain",
+          "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-hue-out": {
+        "id": "e-hue-out",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-inject-blend": {
+        "id": "e-inject-blend",
+        "source": {
+          "nodeId": "inject",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "blend",
+          "portId": "in1"
+        }
+      },
+      "e-inject-pack": {
+        "id": "e-inject-pack",
+        "source": {
+          "nodeId": "inject",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in1"
+        }
+      },
+      "e-lagain-lena": {
+        "id": "e-lagain-lena",
+        "source": {
+          "nodeId": "lagain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lena",
+          "portId": "a"
+        }
+      },
+      "e-lbgain-lenb": {
+        "id": "e-lbgain-lenb",
+        "source": {
+          "nodeId": "lbgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lenb",
+          "portId": "a"
+        }
+      },
+      "e-lcgain-lenc": {
+        "id": "e-lcgain-lenc",
+        "source": {
+          "nodeId": "lcgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lenc",
           "portId": "a"
         }
       },
@@ -146,26 +268,16 @@
           "portId": "lookup"
         }
       },
-      "e-rd-pack": {
-        "id": "e-rd-pack",
+      "e-rd-inject": {
+        "id": "e-rd-inject",
+        "order": 0,
         "source": {
           "nodeId": "rd",
           "portId": "out"
         },
         "target": {
-          "nodeId": "pack",
-          "portId": "in1"
-        }
-      },
-      "e-rd-tint": {
-        "id": "e-rd-tint",
-        "source": {
-          "nodeId": "rd",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "tint",
-          "portId": "source"
+          "nodeId": "inject",
+          "portId": "in2"
         }
       },
       "e-sbase-scap": {
@@ -179,6 +291,17 @@
           "portId": "in"
         }
       },
+      "e-seedamt-seedcut": {
+        "id": "e-seedamt-seedcut",
+        "source": {
+          "nodeId": "seedamt",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "seedcut",
+          "portId": "a"
+        }
+      },
       "e-sgain-sbase": {
         "id": "e-sgain-sbase",
         "source": {
@@ -188,6 +311,17 @@
         "target": {
           "nodeId": "sbase",
           "portId": "a"
+        }
+      },
+      "e-shape-chem": {
+        "id": "e-shape-chem",
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chem",
+          "portId": "input"
         }
       },
       "e-shape-pack": {
@@ -201,6 +335,61 @@
           "portId": "in2"
         }
       },
+      "e-snap-bgain": {
+        "id": "e-snap-bgain",
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bgain",
+          "portId": "a"
+        }
+      },
+      "e-snap-ggain": {
+        "id": "e-snap-ggain",
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ggain",
+          "portId": "a"
+        }
+      },
+      "e-snap-lagain": {
+        "id": "e-snap-lagain",
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lagain",
+          "portId": "a"
+        }
+      },
+      "e-snap-lbgain": {
+        "id": "e-snap-lbgain",
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lbgain",
+          "portId": "a"
+        }
+      },
+      "e-snap-lcgain": {
+        "id": "e-snap-lcgain",
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lcgain",
+          "portId": "a"
+        }
+      },
       "e-source-env": {
         "id": "e-source-env",
         "source": {
@@ -209,6 +398,17 @@
         },
         "target": {
           "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-source-snap": {
+        "id": "e-source-snap",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "snap",
           "portId": "in"
         }
       },
@@ -221,6 +421,17 @@
         "target": {
           "nodeId": "trig",
           "portId": "in"
+        }
+      },
+      "e-spark-gate": {
+        "id": "e-spark-gate",
+        "source": {
+          "nodeId": "spark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gate",
+          "portId": "input"
         }
       },
       "e-state-wind": {
@@ -289,15 +500,15 @@
           "portId": "in2"
         }
       },
-      "e-trig-kick": {
-        "id": "e-trig-kick",
+      "e-trig-seedamt": {
+        "id": "e-trig-seedamt",
         "source": {
           "nodeId": "trig",
           "portId": "out"
         },
         "target": {
-          "nodeId": "kick",
-          "portId": "in"
+          "nodeId": "seedamt",
+          "portId": "a"
         }
       },
       "e-warp-shape": {
@@ -402,6 +613,45 @@
     },
     "groups": {},
     "nodes": {
+      "bgain": {
+        "definitionVersion": 1,
+        "id": "bgain",
+        "label": "bgain1",
+        "parameters": {
+          "operand": 1.35,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 1700
+        },
+        "type": "valueMath"
+      },
+      "blend": {
+        "definitionVersion": 1,
+        "id": "blend",
+        "label": "blend1",
+        "parameters": {},
+        "position": {
+          "x": 60,
+          "y": 500
+        },
+        "type": "add"
+      },
+      "bright": {
+        "definitionVersion": 1,
+        "id": "bright",
+        "label": "bright1",
+        "parameters": {
+          "operand": 0.93,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 1700
+        },
+        "type": "valueMath"
+      },
       "broad": {
         "definitionVersion": 1,
         "id": "broad",
@@ -411,10 +661,10 @@
           "aspectcorrect": true,
           "exp": 1.25,
           "gain": 0.55,
-          "harmon": 2,
+          "harmon": 3,
           "mono": true,
           "offset": 0,
-          "period": 0.62,
+          "period": 0.3,
           "rough": 0.5,
           "s4d": 1,
           "seed": 5,
@@ -429,6 +679,25 @@
         },
         "type": "noise"
       },
+      "chem": {
+        "definitionVersion": 1,
+        "id": "chem",
+        "label": "chem1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 0.11,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 0,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -200,
+          "y": 700
+        },
+        "type": "level"
+      },
       "cycle": {
         "definitionVersion": 1,
         "id": "cycle",
@@ -440,8 +709,8 @@
           "shape": "sine"
         },
         "position": {
-          "x": -200,
-          "y": 560
+          "x": 60,
+          "y": 900
         },
         "type": "lfo"
       },
@@ -472,6 +741,23 @@
         },
         "type": "noise"
       },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 15,
+          "frequency": 0.033,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 2140,
+          "y": 820
+        },
+        "type": "lfo"
+      },
       "env": {
         "definitionVersion": 1,
         "id": "env",
@@ -481,7 +767,7 @@
         },
         "position": {
           "x": -1440,
-          "y": 460
+          "y": 450
         },
         "type": "valueLag"
       },
@@ -496,7 +782,7 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 1620,
+          "x": 1880,
           "y": 600
         },
         "type": "reorder"
@@ -512,49 +798,233 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 1360,
+          "x": 1620,
           "y": 330
         },
         "type": "reorder"
       },
-      "kgain": {
+      "gadd": {
         "definitionVersion": 1,
-        "id": "kgain",
-        "label": "kgain1",
+        "id": "gadd",
+        "label": "gadd1",
         "parameters": {
-          "operand": 0.9,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -740,
-          "y": 740
-        },
-        "type": "valueMath"
-      },
-      "kick": {
-        "definitionVersion": 1,
-        "id": "kick",
-        "label": "kick1",
-        "parameters": {
-          "lag": 0.35
-        },
-        "position": {
-          "x": -980,
-          "y": 740
-        },
-        "type": "valueLag"
-      },
-      "kscale": {
-        "definitionVersion": 1,
-        "id": "kscale",
-        "label": "kscale1",
-        "parameters": {
-          "operand": 2.4,
+          "operand": 1.83,
           "operation": "add"
         },
         "position": {
+          "x": -740,
+          "y": 1500
+        },
+        "type": "valueMath"
+      },
+      "gate": {
+        "definitionVersion": 1,
+        "id": "gate",
+        "label": "gate1",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0.06,
+          "threshold": {
+            "bindings": {
+              "driven": {
+                "channel": "seedcut1:onsetCount",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -200,
+          "y": -400
+        },
+        "type": "threshold"
+      },
+      "ggain": {
+        "definitionVersion": 1,
+        "id": "ggain",
+        "label": "ggain1",
+        "parameters": {
+          "operand": 4.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 1500
+        },
+        "type": "valueMath"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "bright1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.08
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 2140,
+          "y": 600
+        },
+        "type": "level"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "grade1",
+        "parameters": {
+          "maximum": 3.2,
+          "minimum": 1.2
+        },
+        "position": {
           "x": -500,
-          "y": 740
+          "y": 1500
+        },
+        "type": "valueLimit"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.08,
+          "value": 1
+        },
+        "position": {
+          "x": 2400,
+          "y": 600
+        },
+        "type": "hsv"
+      },
+      "inject": {
+        "definitionVersion": 1,
+        "id": "inject",
+        "label": "inject1",
+        "parameters": {
+          "opacity": 0.6
+        },
+        "position": {
+          "x": 60,
+          "y": 240
+        },
+        "type": "screen"
+      },
+      "lagain": {
+        "definitionVersion": 1,
+        "id": "lagain",
+        "label": "lagain1",
+        "parameters": {
+          "operand": 0.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 900
+        },
+        "type": "valueMath"
+      },
+      "lbgain": {
+        "definitionVersion": 1,
+        "id": "lbgain",
+        "label": "lbgain1",
+        "parameters": {
+          "operand": 0.105,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "lcgain": {
+        "definitionVersion": 1,
+        "id": "lcgain",
+        "label": "lcgain1",
+        "parameters": {
+          "operand": 0.12,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 1300
+        },
+        "type": "valueMath"
+      },
+      "lena": {
+        "definitionVersion": 1,
+        "id": "lena",
+        "label": "lena1",
+        "parameters": {
+          "operand": 0.018,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 900
+        },
+        "type": "valueMath"
+      },
+      "lenb": {
+        "definitionVersion": 1,
+        "id": "lenb",
+        "label": "lenb1",
+        "parameters": {
+          "operand": 0.002,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "lenc": {
+        "definitionVersion": 1,
+        "id": "lenc",
+        "label": "lenc1",
+        "parameters": {
+          "operand": 0,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 1300
         },
         "type": "valueMath"
       },
@@ -580,8 +1050,8 @@
           "type": "perlin4d"
         },
         "position": {
-          "x": 60,
-          "y": 700
+          "x": 320,
+          "y": 860
         },
         "type": "noise"
       },
@@ -607,8 +1077,8 @@
           "type": "perlin4d"
         },
         "position": {
-          "x": 320,
-          "y": 700
+          "x": 580,
+          "y": 860
         },
         "type": "noise"
       },
@@ -634,8 +1104,8 @@
           "type": "perlin4d"
         },
         "position": {
-          "x": 580,
-          "y": 700
+          "x": 840,
+          "y": 860
         },
         "type": "noise"
       },
@@ -658,7 +1128,7 @@
         "id": "out",
         "parameters": {},
         "position": {
-          "x": 1880,
+          "x": 2660,
           "y": 600
         },
         "type": "output"
@@ -674,7 +1144,7 @@
           "outr": "in1r"
         },
         "position": {
-          "x": 60,
+          "x": 320,
           "y": 120
         },
         "type": "reorder"
@@ -690,45 +1160,63 @@
           "stops": [
             {
               "color": [
-                0.01,
-                0.02,
-                0.07,
+                0.004,
+                0.006,
+                0.025,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.03,
-                0.2,
-                0.38,
+                0.012,
+                0.025,
+                0.09,
                 1
               ],
-              "position": 0.32
+              "position": 0.16
             },
             {
               "color": [
-                0.24,
-                0.6,
+                0.07,
+                0.19,
                 0.5,
                 1
               ],
-              "position": 0.58
+              "position": 0.34
             },
             {
               "color": [
-                0.95,
-                0.62,
-                0.24,
+                0.44,
+                0.18,
+                0.66,
                 1
               ],
-              "position": 0.8
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.98,
+                0.36,
+                0.26,
+                1
+              ],
+              "position": 0.7
             },
             {
               "color": [
                 1,
-                0.95,
-                0.85,
+                0.7,
+                0.3,
+                1
+              ],
+              "position": 0.87
+            },
+            {
+              "color": [
+                1,
+                0.96,
+                0.9,
                 1
               ],
               "position": 1
@@ -737,8 +1225,8 @@
           "type": "horizontal"
         },
         "position": {
-          "x": -200,
-          "y": 380
+          "x": 60,
+          "y": 700
         },
         "type": "ramp"
       },
@@ -783,6 +1271,34 @@
         },
         "type": "valueLimit"
       },
+      "seedamt": {
+        "definitionVersion": 1,
+        "id": "seedamt",
+        "label": "seedamt1",
+        "parameters": {
+          "operand": -1.28,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -980,
+          "y": 1900
+        },
+        "type": "valueMath"
+      },
+      "seedcut": {
+        "definitionVersion": 1,
+        "id": "seedcut",
+        "label": "seedcut1",
+        "parameters": {
+          "operand": 2,
+          "operation": "add"
+        },
+        "position": {
+          "x": -740,
+          "y": 1900
+        },
+        "type": "valueMath"
+      },
       "sgain": {
         "definitionVersion": 1,
         "id": "sgain",
@@ -802,10 +1318,10 @@
         "id": "shape",
         "label": "shape1",
         "parameters": {
-          "blacklevel": 0.235,
+          "blacklevel": 0.451,
           "brightness": 1,
-          "contrast": 1.5,
-          "gamma1": 0.93,
+          "contrast": 1,
+          "gamma1": 1.25,
           "whitelevel": {
             "bindings": {
               "driven": {
@@ -814,7 +1330,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.72
+                "value": 0.543
               }
             },
             "mode": "driven"
@@ -825,6 +1341,19 @@
           "y": -60
         },
         "type": "level"
+      },
+      "snap": {
+        "definitionVersion": 1,
+        "id": "snap",
+        "label": "snap1",
+        "parameters": {
+          "lag": 0.04
+        },
+        "position": {
+          "x": -1440,
+          "y": 1200
+        },
+        "type": "valueLag"
       },
       "source": {
         "definitionVersion": 1,
@@ -838,6 +1367,33 @@
           "y": 460
         },
         "type": "valueSwitch"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 1,
+          "mono": true,
+          "offset": 0,
+          "period": 0.035,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 313,
+          "speed": 0.9,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -460,
+          "y": -400
+        },
+        "type": "noise"
       },
       "state": {
         "definitionVersion": 1,
@@ -885,12 +1441,12 @@
         "id": "tapB",
         "label": "tapb1",
         "parameters": {
-          "frames": 10,
-          "index": 9,
+          "frames": 8,
+          "index": 7,
           "scale": 1
         },
         "position": {
-          "x": 1100,
+          "x": 1360,
           "y": 760
         },
         "type": "cache"
@@ -900,12 +1456,12 @@
         "id": "tapG",
         "label": "tapg1",
         "parameters": {
-          "frames": 7,
-          "index": 5,
+          "frames": 5,
+          "index": 4,
           "scale": 1
         },
         "position": {
-          "x": 1100,
+          "x": 1360,
           "y": 500
         },
         "type": "cache"
@@ -920,7 +1476,7 @@
           "scale": 1
         },
         "position": {
-          "x": 1100,
+          "x": 1360,
           "y": 240
         },
         "type": "cache"
@@ -948,19 +1504,19 @@
           "scale": {
             "bindings": {
               "driven": {
-                "channel": "kscale1:onsetCount",
+                "channel": "grade1:highMid",
                 "kind": "driven"
               },
               "static": {
                 "kind": "static",
-                "value": 2.4
+                "value": 2.25
               }
             },
             "mode": "driven"
           }
         },
         "position": {
-          "x": 60,
+          "x": 320,
           "y": 380
         },
         "type": "lookup"
@@ -987,7 +1543,7 @@
         },
         "position": {
           "x": -1440,
-          "y": 740
+          "y": 1900
         },
         "type": "valueTrigger"
       },
@@ -1026,13 +1582,35 @@
           ],
           "sourcex": "red",
           "sourcey": "green",
-          "weight": [
-            0.062,
-            0.062
-          ]
+          "weight.x": {
+            "bindings": {
+              "driven": {
+                "channel": "lena1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.062
+              }
+            },
+            "mode": "driven"
+          },
+          "weight.y": {
+            "bindings": {
+              "driven": {
+                "channel": "lena1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.062
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
-          "x": 320,
+          "x": 580,
           "y": 380
         },
         "type": "displace"
@@ -1049,13 +1627,35 @@
           ],
           "sourcex": "red",
           "sourcey": "green",
-          "weight": [
-            0.024,
-            0.024
-          ]
+          "weight.x": {
+            "bindings": {
+              "driven": {
+                "channel": "lenb1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.024
+              }
+            },
+            "mode": "driven"
+          },
+          "weight.y": {
+            "bindings": {
+              "driven": {
+                "channel": "lenb1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.024
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
-          "x": 580,
+          "x": 840,
           "y": 380
         },
         "type": "displace"
@@ -1072,13 +1672,35 @@
           ],
           "sourcex": "red",
           "sourcey": "green",
-          "weight": [
-            0.009,
-            0.009
-          ]
+          "weight.x": {
+            "bindings": {
+              "driven": {
+                "channel": "lenc1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.009
+              }
+            },
+            "mode": "driven"
+          },
+          "weight.y": {
+            "bindings": {
+              "driven": {
+                "channel": "lenc1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.009
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
-          "x": 840,
+          "x": 1100,
           "y": 380
         },
         "type": "displace"
@@ -1088,12 +1710,12 @@
         "id": "wbase",
         "label": "wbase1",
         "parameters": {
-          "operand": 0.64,
+          "operand": 0.534,
           "operation": "add"
         },
         "position": {
           "x": -740,
-          "y": 540
+          "y": 560
         },
         "type": "valueMath"
       },
@@ -1102,12 +1724,12 @@
         "id": "wcap",
         "label": "wlevel1",
         "parameters": {
-          "maximum": 0.8,
-          "minimum": 0.62
+          "maximum": 0.566,
+          "minimum": 0.528
         },
         "position": {
           "x": -500,
-          "y": 540
+          "y": 560
         },
         "type": "valueLimit"
       },
@@ -1116,12 +1738,12 @@
         "id": "wgain",
         "label": "wgain1",
         "parameters": {
-          "operand": 0.16,
+          "operand": 0.06,
           "operation": "multiply"
         },
         "position": {
           "x": -980,
-          "y": 540
+          "y": 560
         },
         "type": "valueMath"
       },

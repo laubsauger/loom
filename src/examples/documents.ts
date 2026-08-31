@@ -2171,9 +2171,6 @@ const GOOEY_GOO_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  *    rings tap the coloured output at 2, 5 and 9 frames back, and a Reorder wears one
  *    channel from each — motion fringes into rainbow, stillness stays clean. The naive
  *    per-channel-scaling translation would be chromatic aberration, the wrong effect.
- *  · KICK → COLOUR. onsetCount (T437: rising events, not a beat claim) through
- *    Trigger, then a Lag turns each pulse into a decaying envelope that bumps the
- *    palette row — the gradient jumps warm on a hit and eases back.
  *  · WIND. A Transform INSIDE the loop (state → wind → rd), rotating a hair per
  *    iteration. Substeps multiply it, so the bass literally stirs faster — the T350
  *    reference keeps the loop a name (`source: "pack1"`) while the body grows a node.
@@ -2181,6 +2178,80 @@ const GOOEY_GOO_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  *    channels: substeps rest at their base, the chemistry sits mid-band, the palette
  *    breathes on its own LFO — the example ANIMATES (T402) with no track bound, and
  *    binding one adds the instrument on top.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T560 / T562 — TWO CLOCKS, BECAUSE THE OWNER COULD NOT SEE THE AUDIO AND THE FIELD
+ * WAS ONE TEXTURE. Both complaints, and both are measurements before they are opinions.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * "I don't even see the audio reactivity. Maybe some stuttering, but nothing compelling."
+ * "The reaction diffusion already felt pretty dense and regular instead of interesting
+ *  with sparser regions sprinkled in."
+ *
+ * ## T560 — every audio path ran through a SLOW INTEGRATOR, so transients vanished
+ *
+ * Everything the sound touched was either Gray-Scott's feed/kill (a reaction that
+ * INTEGRATES a beat into a gradual regime change over dozens of frames) or the substep
+ * count (the same, one level up). Measured on the shipped file across the beat at frame
+ * 194: p90 luminance moved 0.0599 → 0.0615 and p99 moved 0.4000 → 0.4036. Under one
+ * percent. The audio was connected; the MEDIUM ate it.
+ *
+ * The one path that was supposed to be fast was arithmetically dead. `trig1` (a
+ * one-frame pulse) fed a `valueLag` of 0.35 s, and a one-pole smoother answers a
+ * single-frame impulse with `1 - exp(-dt/tau)` — 0.047 at 60fps. So the palette's
+ * driven scale travelled 2.4000 → 2.4535 on a hit: a 2% swing, sold in the comments as
+ * "the kick PUNCHES the lookup's gain". That is §V481(b) from the other side — an
+ * impulse into a smoother is an impulse DIVIDED BY THE FRAME RATE — and it is why the
+ * seeding below drives from the RAW trigger and nothing lags it.
+ *
+ * The fix is §V471 transplanted from E31, which drives EIGHT properties and most of them
+ * respond in the frame they are given: a SECOND, fast lag (`snap1`, 0.04 s) beside the
+ * slow one, and one band to one property with its own gain and bias —
+ *   low     → the broad lens weight     (the picture swells)
+ *   lowMid  → the mid lens weight       (the fronts sway)
+ *   high    → the fine lens weight      (the ridges shiver)
+ *   highMid → the palette's scale       (§V471.7 — the ramp breathes)
+ *   level   → the output Level's gain   (a one-frame lift over everything)
+ * and, on the trigger, a SEED into the simulation state (below). §V477 governs every
+ * pair: the bias is where silence sits and the gain is the swing, so all five rest LOW.
+ *
+ * ## T562 — the chemistry map was a FIELD in name and a CONSTANT in fact
+ *
+ * The kernel reads `centre.b` per fragment, so the chemistry coordinate has always been
+ * per-pixel — the graph paints it and the Reorder packs it. It just had nothing in it.
+ * Measured at frame 322, the shipped map's own histogram: 0.45 … 1.00, median 0.645,
+ * with HALF of every frame inside 0.60 … 0.69. Across the band that is feed 0.0364 to
+ * 0.0377, and Gray-Scott is famously sensitive at the THOUSANDTH. Every region of the
+ * picture was therefore running the same chemistry, which is exactly what "dense and
+ * regular" looks like — and worse, `detail1` only ever WARPED `broad1`, so the map had
+ * one spatial scale, and that scale (period 0.62) was bigger than the frame. The
+ * rendered map was a flat pale cloud.
+ *
+ * Two changes, both on the map and neither on the shader:
+ *   · `broad1` gets a smaller period and a third octave, so the map has REGIONS —
+ *     features at roughly 150, 75 and 38 pixels of a 512 frame, which is several
+ *     Gray-Scott features per region rather than one region per frame.
+ *   · `shape1`'s window is narrowed onto the field's actual spread and its gamma lifts
+ *     the midtones, so the map SPANS the band instead of hugging one end of it. §V474
+ *     sets the direction and it is the direction that was got wrong once already: the
+ *     HIGH corner is spots and mitosis and that is where empty field lives, so the map
+ *     rests HIGH and dips into the low (labyrinth) corner in patches. Sparse ground,
+ *     dense veins, several regimes in one frame.
+ * The smoothed envelope still moves the white point, so the regions BREATHE across the
+ * band together while sitting at different points on it.
+ *
+ * ## The other two asks in the same breath
+ *
+ *  · ONE SOURCE, SEVERAL READINGS (§V471.1). E31 draws one point cloud three times and
+ *    splits it by group predicate. The texture analogue is here: the chemistry map is
+ *    read a SECOND time, dimmed, and added to the simulation's V before the palette
+ *    lookup — so a region's chemistry sets its base hue while V rides on top of it. The
+ *    field was monochrome because V is near-binary and a near-binary coordinate visits
+ *    exactly two stops of a five-stop ramp; adding a continuous term is what makes the
+ *    middle of the ramp exist.
+ *  · COLOUR EVOLUTION OVER TIME. The palette's own LFO stays; a second, SLOWER one
+ *    (0.033 Hz — a 30-second lap, §V471.8) drives an HSV hue offset over the finished
+ *    picture, so an hour of it never sits in one place. Free-running (§V436, B98).
  */
 const audioRdDocument = document(
   "e24-audio-reaction-diffusion",
@@ -2223,21 +2294,90 @@ const audioRdDocument = document(
            in a way the texture Switch's variadic port is not (§V131). */
         index: 0,
       }, { label: "source1" }),
-      node("env", "valueLag", [-1440, 460], { lag: 0.12 }, { label: "env1" }),
+      /* ---- TWO LAGS AND A TRIGGER, because the piece has three timescales -------------
+       *
+       * E31 smooths once at the source and drives everything from that one Lag, and its
+       * comment gives the reason: the bands are noisy, so one Lag means every driven
+       * property agrees about what "now" is. That is right when every property is doing
+       * the same JOB. Here they are not (T560/T562): the chemistry and the substep count
+       * are STRUCTURE and want the beat blurred into a swell, while the lenses, the
+       * palette and the output gain are EVENTS and want the transient intact. One Lag
+       * cannot be both, and the shipped file only had the slow one — which is most of why
+       * a beat was invisible.
+       *
+       * `trig1` is the third: not a timescale at all but an INSTANT, and the seeding
+       * below reads it raw. §V481(b) says light a persistent loop with a trigger rather
+       * than a level, and the arithmetic says the same thing from the other end — the
+       * shipped file put this pulse through a 0.35 s Lag, which answers a one-frame
+       * impulse with 0.047 of it.
+       */
+      node("env", "valueLag", [-1440, 450], { lag: 0.12 }, { label: "env1" }),
+      node("snap", "valueLag", [-1440, 1200], { lag: 0.04 }, { label: "snap1" }),
+      node("trig", "valueTrigger", [-1440, 1900], { threshold: 0.5 }, { label: "trig1" }),
+
+      // ---- SLOW: structure ------------------------------------------------------------
       // Substeps: low band, scaled 0..20 over a base of 14, fenced 1..34.
       node("sgain", "valueMath", [-980, 340], { operation: "multiply", operand: 20 }, { label: "sgain1" }),
       node("sbase", "valueMath", [-740, 340], { operation: "add", operand: 14 }, { label: "sbase1" }),
       node("scap", "valueLimit", [-500, 340], { minimum: 1, maximum: 34 }, { label: "steps1" }),
-      // Chemistry: lowMid nudges the white point 0.64..0.80, hard-fenced to the band
-      // where the pattern SURVIVES (the tutorial's "so the pattern doesn't disappear").
-      node("wgain", "valueMath", [-980, 540], { operation: "multiply", operand: 0.16 }, { label: "wgain1" }),
-      node("wbase", "valueMath", [-740, 540], { operation: "add", operand: 0.64 }, { label: "wbase1" }),
-      node("wcap", "valueLimit", [-500, 540], { minimum: 0.62, maximum: 0.8 }, { label: "wlevel1" }),
-      // Kick: onset EVENTS through Trigger, then Lag makes each pulse a decaying bump.
-      node("trig", "valueTrigger", [-1440, 740], { threshold: 0.5 }, { label: "trig1" }),
-      node("kick", "valueLag", [-980, 740], { lag: 0.35 }, { label: "kick1" }),
-      node("kgain", "valueMath", [-740, 740], { operation: "multiply", operand: 0.9 }, { label: "kgain1" }),
-      node("kscale", "valueMath", [-500, 740], { operation: "add", operand: 2.4 }, { label: "kscale1" }),
+      /* Chemistry: lowMid moves the map's white point, hard-fenced to the band where the
+         pattern SURVIVES (the tutorial's "so the pattern doesn't disappear"). T562 moved
+         the fence with the window below: the map's Level now sits on a much narrower
+         window (see `shape1`), so the same fractional swing needs a much narrower fence —
+         0.62..0.80 around a white point of 0.543 would have been the whole picture. */
+      node("wgain", "valueMath", [-980, 560], { operation: "multiply", operand: 0.06 }, { label: "wgain1" }),
+      node("wbase", "valueMath", [-740, 560], { operation: "add", operand: 0.534 }, { label: "wbase1" }),
+      node("wcap", "valueLimit", [-500, 560], { minimum: 0.528, maximum: 0.566 }, { label: "wlevel1" }),
+
+      /* ---- FAST: events. §V471.3's idiom — one band, one property, its own gain+bias ---
+       *
+       * Five pairs off `snap1`, and the numbers are MEASURED against the Beat pattern
+       * rather than intended: on that source `low` rests near 0.14 and peaks near 0.55
+       * through this Lag, `lowMid` 0.15/0.45, `highMid` 0.10/0.23, `high` 0.06/0.19 and
+       * `level` 0.12/0.36. §V477 is the rule every bias here obeys — the bias is the REST
+       * state and the gain is the SWING, so silence sits at the bottom of each range and
+       * a hit has somewhere to travel to. Biasing into the interesting part is what made
+       * E31 read as permanently peaking, and it is the failure that is easy to ship.
+       */
+      // The three lens weights (T507). Coarse lens on the kick, mid on the snare, fine on
+      // the hats — the same split the three noises were BUILT with, now audible.
+      node("lagain", "valueMath", [-980, 900], { operation: "multiply", operand: 0.2 }, { label: "lagain1" }),
+      node("lena", "valueMath", [-740, 900], { operation: "add", operand: 0.018 }, { label: "lena1" }),
+      node("lbgain", "valueMath", [-980, 1100], { operation: "multiply", operand: 0.105 }, { label: "lbgain1" }),
+      node("lenb", "valueMath", [-740, 1100], { operation: "add", operand: 0.002 }, { label: "lenb1" }),
+      node("lcgain", "valueMath", [-980, 1300], { operation: "multiply", operand: 0.12 }, { label: "lcgain1" }),
+      node("lenc", "valueMath", [-740, 1300], { operation: "add", operand: 0 }, { label: "lenc1" }),
+      /* §V471.7 — THE PALETTE SCALE ITSELF IS DRIVEN, so the ramp breathes instead of
+         being a fixed grade. The third fence is T544's amendment and E31's scar: a
+         gain+bias pair has to be range-checked against its TARGET or the idiom ships a
+         clamp. ×4.2 over a 0..1 band spans 1.83..6.03 against a Lookup Scale declared
+         -4..4, so the Limit is what keeps the value legible in the graph rather than
+         silently clipped at the parameter. */
+      node("ggain", "valueMath", [-980, 1500], { operation: "multiply", operand: 4.2 }, { label: "ggain1" }),
+      node("gadd", "valueMath", [-740, 1500], { operation: "add", operand: 1.83 }, { label: "gadd1" }),
+      node("grade", "valueLimit", [-500, 1500], { minimum: 1.2, maximum: 3.2 }, { label: "grade1" }),
+      // The whole picture lifts for a frame. Rest 0.86 — DARKER than unity on purpose, so
+      // the calm state has headroom and the hit is a lift rather than a clip.
+      node("bgain", "valueMath", [-980, 1700], { operation: "multiply", operand: 1.35 }, { label: "bgain1" }),
+      node("bright", "valueMath", [-740, 1700], { operation: "add", operand: 0.93 }, { label: "bright1" }),
+
+      /* ---- EVENT: the seed, and it is the one thing that makes a beat legible ---------
+       *
+       * A beat that nudges a rate is a rate change. A beat that SPAWNS STRUCTURE is an
+       * event, and Gray-Scott is unusually good at it: drop V into the plate and the
+       * reaction grows it for the next second on its own. So the trigger does not light
+       * anything — it opens a Threshold for exactly one frame and the simulation keeps
+       * the consequence. §V481(b) is the general form; this is the version where the loop
+       * is a chemistry rather than a trail.
+       *
+       * The trigger drives the Threshold's CUT rather than a brightness, so the mask is a
+       * clean 0..1 and a closed gate is EXACTLY zero. A Level would have gone negative
+       * below its black point, and a negative through `screen` brightens — a DC term in a
+       * persistent loop, which is the failure §V481(b) is about.
+       * Rest 2.0: nothing in a 0..1 field is above 2.0, so between hits the gate is shut.
+       */
+      node("seedamt", "valueMath", [-980, 1900], { operation: "multiply", operand: -1.28 }, { label: "seedamt1" }),
+      node("seedcut", "valueMath", [-740, 1900], { operation: "add", operand: 2 }, { label: "seedcut1" }),
 
       // ---- the chemistry map (E2's, verbatim in spirit) -------------------------
       /* T535: `t4d` is 0.37, not 0. Zero sits ON a lattice plane of the 4D noise, where the
@@ -2247,8 +2387,14 @@ const audioRdDocument = document(
          `exp` above 1 is T507's negative space at the SOURCE: a power on a 0..1 field pulls
          the midtones down, so the chemistry map has broad quiet plains with peaks standing
          out of them instead of a uniform mid-grey everywhere. */
+      /* T562 — THE MAP NEEDED REGIONS, and period 0.62 with two octaves gave it none: one
+         feature bigger than the frame, so the rendered map was a flat pale cloud and every
+         part of the picture ran the same chemistry. 0.30 with THREE octaves puts features
+         at roughly 150, 75 and 38 pixels of a 512 frame — several Gray-Scott features per
+         region, which is the scale at which "this area is spots and that one is labyrinth"
+         is a thing the eye can see rather than a statistic. */
       node("broad", "noise", [-1460, -140], {
-        type: "perlin4d", seed: 5, period: 0.62, harmon: 2, spread: 2, gain: 0.55,
+        type: "perlin4d", seed: 5, period: 0.3, harmon: 3, spread: 2, gain: 0.55,
         rough: 0.5, exp: 1.25, amp: 1, offset: 0, mono: true, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.05,
       }, { label: "broad1" }),
@@ -2273,11 +2419,26 @@ const audioRdDocument = document(
            them. Measured at four settings; 0.09 was too sparse to be a picture, 0.46 was
            the fingerprint, and this sits where a coherent organism has a void around it.
            §V427 is the reason to fix it HERE rather than by masking the output: the
-           structure is the simulation's, and giving it room is a chemistry decision. */
-        blacklevel: 0.235, contrast: 1.5, brightness: 1, gamma1: 0.93,
+           structure is the simulation's, and giving it room is a chemistry decision.
+
+           T562 — AND THE WINDOW WAS THE OTHER HALF OF IT. Measured, the shipped settings
+           put the map at median 0.645 with half of every frame inside 0.60..0.69 — one
+           twentieth of the band, which across feed/kill is 0.0013 and therefore one
+           chemistry everywhere. The warped field's own p10..p90 is 0.465..0.539 — an
+           interquartile of 0.039 — so a window of 0.485 was twelve times wider than the
+           signal in it and the Level was mostly moving DC around. 0.451..0.543 is fitted
+           to the field's MEASURED spread, which is what makes the map span; contrast
+           goes back to 1 because a narrow window IS the contrast and two controls doing
+           one job is how the first set got so hard to reason about; and gamma 1.25 lifts
+           the midtones so the map RESTS in the high (spots, empty ground) corner and dips
+           into the low (labyrinth) corner in patches, which is §V474's direction. The
+           tails fall OUTSIDE the window on purpose — the kernel clamps the coordinate, so
+           the deepest patches sit at the labyrinth end and the airiest at the mitosis end
+           rather than everything crowding the middle. */
+        blacklevel: 0.451, contrast: 1, brightness: 1, gamma1: 1.25,
       }, {
         label: "shape1",
-        parameters: { whitelevel: drivenSlot("wlevel1:lowMid", 0.72) },
+        parameters: { whitelevel: drivenSlot("wlevel1:lowMid", 0.543) },
       }),
 
       // ---- the simulation loop, with wind ---------------------------------------
@@ -2292,31 +2453,103 @@ const audioRdDocument = document(
         t: [0, 0], r: 0.02, s: [1, 1], p: [0, 0], xord: "srt", extend: "mirror", aspectcorrect: true,
       }, { label: "wind1" }),
       node("rd", "customWgsl", [-200, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
-      node("pack", "reorder", [60, 120], {
+
+      /* ---- T560: THE BEAT SEEDS THE PLATE ---------------------------------------------
+       *
+       * A sparse field, gated open for exactly the frame the trigger fires, SCREENED into
+       * the simulation's state. Screen is the operator this wants and not a convenience:
+       * `1-(1-a)(1-b)` takes U and V to 1 where the mask is 1 and leaves them untouched
+       * where it is 0, and (U=1, V=1) in a small patch is LITERALLY the kernel's own
+       * `seededState` — the classic Gray-Scott starting plate. So a hit does not brighten
+       * the picture, it drops new chemistry into it, and the reaction spends the next
+       * second growing what the beat put there. That is the difference between an event
+       * you can see and a rate you cannot.
+       *
+       * The lookup reads THIS node rather than `rd1`, so the seed is in the frame it
+       * lands on rather than one frame later.
+       *
+       * `speed: 0.9` is what keeps consecutive beats from seeding the same places: the
+       * field has moved most of a feature between hits, so the constellation is new every
+       * time. Free-running (§V436) like every other field here.
+       */
+      node("spark", "noise", [-460, -400], {
+        type: "perlin4d", seed: 313, period: 0.035, harmon: 1, spread: 2, gain: 0.5,
+        rough: 0.5, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
+        t4d: 0.37, s4d: 1, speed: 0.9,
+      }, { label: "spark1" }),
+      node("gate", "threshold", [-200, -400], {
+        softness: 0.06, channel: "luminance", compare: "greater",
+      }, {
+        label: "gate1",
+        parameters: { threshold: drivenSlot("seedcut1:onsetCount", 2) },
+      }),
+      /* THE MASK IS THE FRONT and the simulation is the back, which looks backwards for a
+         commutative operator and is not: Composite's `opacity` scales the FRONT only, so
+         wiring it this way turns `opacity` into "how much V a hit drops into the plate" —
+         the seed's amplitude, on the node that does the seeding, with no extra node to
+         hold it. At 0.5 the strike is strong enough to start a colony and short of the
+         saturating V=1 that made every seed read as a white-hot pop for one frame. */
+      node("inject", "screen", [60, 240], { opacity: 0.6 }, { label: "inject1" }),
+
+      node("pack", "reorder", [320, 120], {
         outr: "in1r", outg: "in1g", outb: "in2lum", outa: "in1a",
       }, { label: "pack1" }),
 
       // ---- colour, then TIME ----------------------------------------------------
-      node("palette", "ramp", [-200, 380], {
+      /* SEVEN STOPS THAT TRAVEL (§V471.6): near-black, near-black navy, blue, violet,
+         crimson, gold, cream. E31's arc, and the reason it is worth copying is that it
+         crosses HUE as well as brightness — a ramp from navy to cream through nothing
+         gives a monochrome picture however many stops it has. The shipped ramp had five
+         and was perfectly good; the reason it read as two colours is below, and it is not
+         the ramp's fault. */
+      node("palette", "ramp", [60, 700], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
         stops: [
-          { position: 0, color: [0.01, 0.02, 0.07, 1] },
-          { position: 0.32, color: [0.03, 0.2, 0.38, 1] },
-          { position: 0.58, color: [0.24, 0.6, 0.5, 1] },
-          { position: 0.8, color: [0.95, 0.62, 0.24, 1] },
-          { position: 1, color: [1, 0.95, 0.85, 1] },
+          { position: 0, color: [0.004, 0.006, 0.025, 1] },
+          { position: 0.16, color: [0.012, 0.025, 0.09, 1] },
+          { position: 0.34, color: [0.07, 0.19, 0.5, 1] },
+          { position: 0.52, color: [0.44, 0.18, 0.66, 1] },
+          { position: 0.7, color: [0.98, 0.36, 0.26, 1] },
+          { position: 0.87, color: [1, 0.7, 0.3, 1] },
+          { position: 1, color: [1, 0.96, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
-      node("cycle", "lfo", [-200, 560], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+      node("cycle", "lfo", [60, 900], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
         label: "lfo1",
       }),
-      node("tint", "lookup", [60, 380], { channel: "green", row: 0.5 }, {
+      /* ---- §V471.1: THE CHEMISTRY MAP, READ A SECOND TIME — as COLOUR -----------------
+       *
+       * E31 gets its richness from drawing ONE point cloud three times and splitting it by
+       * group predicate: structure from SELECTION, not from more nodes. The texture
+       * analogue is a second reading of a field already in the graph, and the field that
+       * earns it is the chemistry map, because it is the thing that differs from region to
+       * region.
+       *
+       * Why it is needed at all: the Lookup's coordinate was V alone, and V in Gray-Scott
+       * is NEAR-BINARY — empty plate or front, nothing in between. A near-binary
+       * coordinate visits exactly two positions on a ramp however many stops that ramp
+       * has, which is why the shipped file was cream fronts on navy and the blue and teal
+       * in the middle of its palette were never on screen. Adding a dimmed, CONTINUOUS
+       * term moves each region's ground to its own place on the ramp and carries its
+       * fronts with it: the hue now says which chemistry you are looking at, and V says
+       * how far along the reaction is. Opacity 0 so the add contributes colour and no
+       * coverage. */
+      node("chem", "level", [-200, 700], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0,
+        brightness: 0.11, opacity: 0,
+      }, { label: "chem1" }),
+      node("blend", "add", [60, 500], {}, { label: "blend1" }),
+      node("tint", "lookup", [320, 380], { channel: "green", row: 0.5 }, {
         label: "tint1",
         parameters: {
           offset: drivenSlot("lfo1", 0),
-          // The kick PUNCHES the lookup's gain: every front shifts down-ramp for the
-          // length of the lag's decay — a colour pulse the whole image shares.
-          scale: drivenSlot("kscale1:onsetCount", 2.4),
+          /* §V471.7 — the grade BREATHES with highMid. Rest at 2.25 puts the FRONTS
+             in the crimson and leaves the gold and cream as somewhere for a loud passage
+             to reach, while the ground — V is near zero over most of the frame — sits down
+             in the navy whatever the music does. The shipped 2.4 rest had the fronts
+             already at cream, which is §V477's "always in blast mode" and the reason a hit
+             had nowhere to go. */
+          scale: drivenSlot("grade1:highMid", 2.25),
         },
       }),
       /* ---- T507: THREE LENSES, and the point is that they are at different SCALES ----
@@ -2342,73 +2575,139 @@ const audioRdDocument = document(
        *
        * They sit AFTER the palette and BEFORE the cache rings, so the RGB delay tastes the
        * lens motion: glass that moves disperses, and the fringing follows the warp.
+       *
+       * T560 — AND ALL THREE AMOUNTS ARE NOW ON THE AUDIO, one band each, which is the
+       * whole T507 structure finally being audible. They were built at genuinely
+       * different scales and rates; driving them from ONE envelope would have collapsed
+       * that back into a single pump. Coarse on `low` (the picture swells on the kick),
+       * mid on `lowMid` (the fronts sway with the snare), fine on `high` (the ridges
+       * shiver with the hats). The retained values below are the shipped weights, so
+       * every host without the channel attached still gets the picture T507 tuned.
        */
-      node("lensA", "noise", [60, 700], {
+      node("lensA", "noise", [320, 860], {
         type: "perlin4d", seed: 71, period: 1.15, harmon: 1, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.018,
       }, { label: "lensa1" }),
-      node("warpA", "displace", [320, 380], {
-        weight: [0.062, 0.062], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
-      }, { label: "warpa1" }),
-      node("lensB", "noise", [320, 700], {
+      node("warpA", "displace", [580, 380], {
+        offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, {
+        label: "warpa1",
+        parameters: {
+          "weight.x": drivenSlot("lena1:low", 0.062),
+          "weight.y": drivenSlot("lena1:low", 0.062),
+        },
+      }),
+      node("lensB", "noise", [580, 860], {
         type: "perlin4d", seed: 137, period: 0.42, harmon: 2, spread: 2, gain: 0.55,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.046,
       }, { label: "lensb1" }),
-      node("warpB", "displace", [580, 380], {
-        weight: [0.024, 0.024], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
-      }, { label: "warpb1" }),
-      node("lensC", "noise", [580, 700], {
+      node("warpB", "displace", [840, 380], {
+        offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, {
+        label: "warpb1",
+        parameters: {
+          "weight.x": drivenSlot("lenb1:lowMid", 0.024),
+          "weight.y": drivenSlot("lenb1:lowMid", 0.024),
+        },
+      }),
+      node("lensC", "noise", [840, 860], {
         type: "perlin4d", seed: 211, period: 0.14, harmon: 1, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.115,
       }, { label: "lensc1" }),
-      node("warpC", "displace", [840, 380], {
-        weight: [0.009, 0.009], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
-      }, { label: "warpc1" }),
+      node("warpC", "displace", [1100, 380], {
+        offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "mirror",
+      }, {
+        label: "warpc1",
+        parameters: {
+          "weight.x": drivenSlot("lenc1:high", 0.009),
+          "weight.y": drivenSlot("lenc1:high", 0.009),
+        },
+      }),
 
       // The RGB delay: three taps into time, one per channel. Full scale — this ring
       // is read for its colour, not just its motion.
-      node("tapR", "cache", [1100, 240], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
-      node("tapG", "cache", [1100, 500], { frames: 7, index: 5, scale: 1 }, { label: "tapg1" }),
-      node("tapB", "cache", [1100, 760], { frames: 10, index: 9, scale: 1 }, { label: "tapb1" }),
+      node("tapR", "cache", [1360, 240], { frames: 4, index: 2, scale: 1 }, { label: "tapr1" }),
+      node("tapG", "cache", [1360, 500], { frames: 5, index: 4, scale: 1 }, { label: "tapg1" }),
+      node("tapB", "cache", [1360, 760], { frames: 8, index: 7, scale: 1 }, { label: "tapb1" }),
       // Reorder is two-input, so the three taps braid in two steps: red-with-green
       // first, then the blue tap joins.
-      node("fringeRG", "reorder", [1360, 330], {
+      node("fringeRG", "reorder", [1620, 330], {
         outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a",
       }, { label: "fringerg1" }),
-      node("fringe", "reorder", [1620, 600], {
+      node("fringe", "reorder", [1880, 600], {
         outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a",
       }, { label: "fringe1" }),
-      node("out", "output", [1880, 600]),
+      /* T560 — THE ONE-FRAME LIFT. The fastest path in the file: `level` on the finished
+         picture, its Brightness on the `level` band through the fast Lag. Nothing
+         integrates it, so it is up and down inside the beat. Rest 1.08 against a hit at 1.44 is
+         §V477 again — the calm state is deliberately UNDER unity so the hit is a lift
+         rather than a clip, and the picture has a floor to come back to. */
+      node("glow", "level", [2140, 600], {
+        blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "glow1", parameters: { brightness: drivenSlot("bright1:level", 1.08) } }),
+      /* §V471.8 — A LONG CYCLE. 0.033 Hz is a 30-SECOND lap, slower than anyone's
+         attention span, which is most of why an hour of E31 is watchable. The palette's
+         own LFO above moves the ramp's offset a hair at 0.05 Hz; this one turns the whole
+         graded picture through ±15° of hue, so the piece never sits in one colour.
+         Free-running (§V436, B98): a timeline lap must not restart the drift. */
+      node("drift", "lfo", [2140, 820], {
+        shape: "sine", frequency: 0.033, amplitude: 15, offset: 0, phase: 0,
+      }, { label: "drift1" }),
+      node("hue", "hsv", [2400, 600], { saturation: 1.08, value: 1 }, {
+        label: "hue1",
+        parameters: { hueoffset: drivenSlot("drift1", 0) },
+      }),
+      node("out", "output", [2660, 600]),
     ],
     [
       // sound. BOTH sources reach the Switch; exactly one leaves it.
       edge("e-music-source", ["music", "out"], ["source", "in1"]),
       edge("e-track-source", ["track", "out"], ["source", "in2"]),
+      // three timescales off ONE switch: slow structure, fast events, instant seeding.
       edge("e-source-env", ["source", "out"], ["env", "in"]),
+      edge("e-source-snap", ["source", "out"], ["snap", "in"]),
+      edge("e-source-trig", ["source", "out"], ["trig", "in"]),
       edge("e-env-sgain", ["env", "out"], ["sgain", "a"]),
       edge("e-sgain-sbase", ["sgain", "out"], ["sbase", "a"]),
       edge("e-sbase-scap", ["sbase", "out"], ["scap", "in"]),
       edge("e-env-wgain", ["env", "out"], ["wgain", "a"]),
       edge("e-wgain-wbase", ["wgain", "out"], ["wbase", "a"]),
       edge("e-wbase-wcap", ["wbase", "out"], ["wcap", "in"]),
-      edge("e-source-trig", ["source", "out"], ["trig", "in"]),
-      edge("e-trig-kick", ["trig", "out"], ["kick", "in"]),
-      edge("e-kick-kgain", ["kick", "out"], ["kgain", "a"]),
-      edge("e-kgain-kscale", ["kgain", "out"], ["kscale", "a"]),
+      // five fast pairs, one band each (§V471.3)
+      edge("e-snap-lagain", ["snap", "out"], ["lagain", "a"]),
+      edge("e-lagain-lena", ["lagain", "out"], ["lena", "a"]),
+      edge("e-snap-lbgain", ["snap", "out"], ["lbgain", "a"]),
+      edge("e-lbgain-lenb", ["lbgain", "out"], ["lenb", "a"]),
+      edge("e-snap-lcgain", ["snap", "out"], ["lcgain", "a"]),
+      edge("e-lcgain-lenc", ["lcgain", "out"], ["lenc", "a"]),
+      edge("e-snap-ggain", ["snap", "out"], ["ggain", "a"]),
+      edge("e-ggain-gadd", ["ggain", "out"], ["gadd", "a"]),
+      edge("e-gadd-grade", ["gadd", "out"], ["grade", "in"]),
+      edge("e-snap-bgain", ["snap", "out"], ["bgain", "a"]),
+      edge("e-bgain-bright", ["bgain", "out"], ["bright", "a"]),
+      // the seed gate: raw trigger, no lag between it and the Threshold's cut.
+      edge("e-trig-seedamt", ["trig", "out"], ["seedamt", "a"]),
+      edge("e-seedamt-seedcut", ["seedamt", "out"], ["seedcut", "a"]),
       // chemistry map
       edge("e-broad-warp", ["broad", "out"], ["warp", "source"]),
       edge("e-detail-warp", ["detail", "out"], ["warp", "disp"]),
       edge("e-warp-shape", ["warp", "out"], ["shape", "input"]),
       edge("e-shape-pack", ["shape", "out"], ["pack", "in2"]),
-      // the loop, wind inside it
+      // the loop, wind inside it, and the beat's seed screened into the state
       edge("e-state-wind", ["state", "out"], ["wind", "input"]),
       edge("e-wind-rd", ["wind", "out"], ["rd", "input"]),
-      edge("e-rd-pack", ["rd", "out"], ["pack", "in1"]),
-      // colour then time
-      edge("e-rd-tint", ["rd", "out"], ["tint", "source"]),
+      edge("e-spark-gate", ["spark", "out"], ["gate", "input"]),
+      edge("e-gate-inject", ["gate", "out"], ["inject", "in1"]),
+      edge("e-rd-inject", ["rd", "out"], ["inject", "in2"], 0),
+      edge("e-inject-pack", ["inject", "out"], ["pack", "in1"]),
+      // colour then time. The map is read a SECOND time, as colour (§V471.1).
+      edge("e-shape-chem", ["shape", "out"], ["chem", "input"]),
+      edge("e-inject-blend", ["inject", "out"], ["blend", "in1"]),
+      edge("e-chem-blend", ["chem", "out"], ["blend", "in2"], 0),
+      edge("e-blend-tint", ["blend", "out"], ["tint", "source"]),
       edge("e-palette-tint", ["palette", "out"], ["tint", "lookup"]),
       // three lenses, coarse to fine, in series
       edge("e-tint-warpa", ["tint", "out"], ["warpA", "source"]),
@@ -2424,7 +2723,9 @@ const audioRdDocument = document(
       edge("e-tapg-fringerg", ["tapG", "out"], ["fringeRG", "in2"]),
       edge("e-fringerg-fringe", ["fringeRG", "out"], ["fringe", "in1"]),
       edge("e-tapb-fringe", ["tapB", "out"], ["fringe", "in2"]),
-      edge("e-fringe-out", ["fringe", "out"], ["out", "input"]),
+      edge("e-fringe-glow", ["fringe", "out"], ["glow", "input"]),
+      edge("e-glow-hue", ["glow", "out"], ["hue", "input"]),
+      edge("e-hue-out", ["hue", "out"], ["out", "input"]),
     ],
   ),
 );
