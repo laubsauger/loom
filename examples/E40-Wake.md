@@ -106,6 +106,22 @@ Persistence is already the decay and it cannot go negative, so the node is gone 
 fixed. E39's bloom hit the same trap from the other direction; between them they are why
 §V694 is stated about black levels rather than about loops.
 
+That rule is now a structural claim rather than a paragraph — and it went red on **this**
+document within the hour, twice. `gain1` carried a black level of 0.02, which sent a zero
+pixel to −0.00917 and compounded to a −0.1835 floor inside the accumulator. `under1`
+carried 0.06, which sent a **black source pixel** to −0.064.
+
+They were not equally bad, and the difference is the useful part. `gain1`'s negative was
+**contained**: `paint1` is a Lookup, a Lookup clamps by indexing, so a negative index reads
+the first stop and the value never escaped `born1`. `under1`'s was not — it feeds `lay1`
+directly, so it darkened the finished frame. And it was invisible here only because the
+synthetic bed sits near 0.6 luma. It would have shown up the moment someone pointed `clip1`
+at footage with real blacks, as a wake that thins over the dark parts of their video for no
+visible reason, and it would have been reported as "the trails are broken on my clip".
+
+Both are zero now; `whitelevel` and `brightness` already carried the range each was
+nominally buying.
+
 ## What the audio actually does
 
 Four gain-and-bias pairs, each ending in a `valueLimit` that states its range out loud:

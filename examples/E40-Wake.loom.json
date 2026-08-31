@@ -561,7 +561,7 @@
         "id": "gain",
         "label": "gain1",
         "parameters": {
-          "blacklevel": 0.02,
+          "blacklevel": 0,
           "brightness": 1,
           "contrast": 1,
           "gamma1": 1,
@@ -1125,7 +1125,7 @@
         "id": "under",
         "label": "under1",
         "parameters": {
-          "blacklevel": 0.06,
+          "blacklevel": 0,
           "brightness": 0.2,
           "contrast": 1.4,
           "gamma1": 1,

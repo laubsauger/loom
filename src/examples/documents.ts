@@ -8977,6 +8977,22 @@ const rosetteDocument = document(
  * the compositor being broken. Persistence is already the decay and it cannot go negative,
  * so the node is gone rather than fixed.
  *
+ * ## §V703 — the guard found two of these in this very file
+ *
+ * The structural claim "no Level on the feedback path carries a positive blacklevel" went
+ * red on this document within an hour of §V694 being written. `gain1` had 0.02, which sent
+ * a zero pixel to -0.00917 and compounded to a -0.1835 floor in the accumulator; `under1`
+ * had 0.06, which sent a BLACK source pixel to -0.064 and subtracted it from the wake.
+ *
+ * They are not equally bad, and the difference is worth knowing. `gain1`'s negative was
+ * CONTAINED — `paint1` is a Lookup, and a Lookup clamps by indexing, so a negative index
+ * reads the first stop and the value never escapes `born1`. `under1`'s was not contained:
+ * it feeds `lay1` directly, so it darkened the finished frame. And it was invisible here
+ * because the synthetic bed sits near 0.6 luma; it would have appeared the moment someone
+ * pointed `clip1` at footage with real blacks, as a wake that thins over the dark parts of
+ * their video for no visible reason. Both are 0 now, and `whitelevel` and `brightness`
+ * already carried the range each was nominally buying.
+ *
  * ## The gain pairs are fitted to a MEASURED field (§V696)
  *
  * `bite1` sets `gain1.whitelevel`, and the honest number depends entirely on what the
@@ -9027,7 +9043,7 @@ const wakeDocument = document(
       node("past", "cache", [-1100, 320], { frames: 8, index: 6, scale: 1 }, { label: "past1" }),
       node("moved", "difference", [-840, 150], {}, { label: "moved1" }),
       node("gain", "level", [-580, 150], {
-        blacklevel: 0.02,
+        blacklevel: 0,
         gamma1: 1,
         contrast: 1,
         brightness: 1,
@@ -9100,7 +9116,7 @@ const wakeDocument = document(
 
       // ── the subject, held down under its own wake ────────────────────────
       node("under", "level", [-1100, -140], {
-        blacklevel: 0.06,
+        blacklevel: 0,
         whitelevel: 1,
         gamma1: 1,
         contrast: 1.4,
