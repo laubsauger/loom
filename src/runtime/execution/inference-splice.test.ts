@@ -3,14 +3,15 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../compiler/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
-import { readCompileInputs } from "../../nodes/definitions/compile-context.ts";
-import { RGBA_TEXTURE } from "../../nodes/definitions/common-ports.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
-import { inferenceSourceIdFor } from "./inference-sources.ts";
+import {
+  INPUT_KEY,
+  INPUT_SIDE,
+  RESULT_KEY,
+  inferenceStandIn,
+} from "../../tests/fixtures/inference-stand-in.ts";
 import type { BackendCapabilities } from "../../domain/types/backend.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
-import type { DispatchPassDescriptor, EffectPassDescriptor } from "../backend/plan.ts";
 
 /**
  * THE SPLICE, against the real compiler (T715/T384, §V585).
@@ -45,101 +46,6 @@ const capabilities: BackendCapabilities = {
   formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float", "depth24plus"],
   timestampQuery: false,
   limits: { maxTextureDimension2D: 8192 },
-};
-
-/** The model's input side length. Small on purpose: the readback is bytes, not megabytes. */
-const INPUT_SIDE = 256;
-const INPUT_KEY = "modelInput";
-const RESULT_KEY = "modelResult";
-
-const PREPROCESS_WGSL = `struct P { side: f32 };
-@group(0) @binding(0) var<uniform> params: P;
-@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
-@group(0) @binding(2) var<storage, read_write> modelInput: array<vec4f>;
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let side = u32(params.side);
-  if (gid.x >= side || gid.y >= side) { return; }
-  let dims = vec2i(textureDimensions(sourceTexture, 0));
-  let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / params.side;
-  let texel = clamp(vec2i(uv * vec2f(dims)), vec2i(0), dims - vec2i(1));
-  modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
-}`;
-
-const RESULT_BLIT_WGSL = `@group(0) @binding(0) var resultSampler: sampler;
-@group(0) @binding(1) var resultTexture: texture_2d<f32>;
-
-@fragment
-fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSampleLevel(resultTexture, resultSampler, uv, 0.0);
-}`;
-
-/**
- * The Phase 4 shape, with the model removed.
- *
- * §V585: it must NOT declare `sink: true`. Analyze does, because its entire product is a
- * published channel and nothing downstream consumes a texture from it. An inference node
- * has a real texture output, so ordinary pruning applies — and that is what makes a
- * DISCONNECTED model node cost zero and, later, download nothing.
- */
-const inferenceStandIn: NodeDefinition = {
-  type: "inferenceStandIn",
-  version: 1,
-  title: "Inference Stand-In",
-  category: "filter",
-  description:
-    "Phase 0's compile-shape stand-in: resamples its input into a model-input buffer and blits whatever the CPU half uploaded back. No model, no download.",
-  tags: ["test"],
-  inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
-  outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
-  parameters: {},
-  resolutionPolicy: { kind: "inherit", input: "input" },
-  compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, outputs } = readCompileInputs(context);
-    const source = inputs["input"];
-    const target = outputs["out"];
-    if (source === undefined || target === undefined) return { passes: [] };
-
-    // IN — analyze's route, just bigger: a compute pass writes an ordinary scratch
-    // BUFFER the CPU half reads with `backend.readBuffer` between frames.
-    const preprocess: DispatchPassDescriptor = {
-      kind: "dispatch",
-      id: `${nodeId}:preprocess`,
-      shader: PREPROCESS_WGSL,
-      entryPoint: "main",
-      workgroups: [INPUT_SIDE / 8, INPUT_SIDE / 8, 1],
-      buffers: [{ binding: "modelInput", resourceId: scratchResourceId(nodeId, INPUT_KEY) }],
-      textures: [{ binding: "sourceTexture", resourceId: source.resource, sampled: "unfiltered" }],
-      uniforms: { side: INPUT_SIDE },
-      uniformBinding: "params",
-      nodeId,
-    };
-
-    // OUT — media's route: an `external` texture someone else fills, blitted to the port.
-    const blit: EffectPassDescriptor = {
-      kind: "effect",
-      id: `${nodeId}:result`,
-      shader: RESULT_BLIT_WGSL,
-      target,
-      samplers: [{ binding: "resultSampler", resourceId: "sampler:linear" }],
-      textures: [{ binding: "resultTexture", resourceId: scratchResourceId(nodeId, RESULT_KEY) }],
-      nodeId,
-    };
-
-    return {
-      passes: [preprocess, blit],
-      scratch: [
-        { key: INPUT_KEY, kind: "buffer", stride: 16, capacity: INPUT_SIDE * INPUT_SIDE },
-        {
-          key: RESULT_KEY,
-          kind: "external",
-          sourceId: inferenceSourceIdFor(nodeId),
-          format: "rgba8unorm",
-        },
-      ],
-    };
-  },
 };
 
 const registry = createNodeRegistry([...allNodeDefinitions, inferenceStandIn]).view();

@@ -5,7 +5,7 @@ import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/typ
 import type { TransportSource } from "../../domain/types/frame.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
-import type { TextureFormat } from "../../domain/types/node-definition.ts";
+import type { NodeDefinition, TextureFormat } from "../../domain/types/node-definition.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
@@ -16,6 +16,7 @@ import type { FeatureTrackRecorder } from "../../domain/audio/feature-track.ts";
 import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
 import { analyzeChannelEntries, createAnalyzeChannels } from "../../runtime/execution/analyze-channels.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
+import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
 import { createPointerSource, type PointerState } from "../../runtime/execution/pointer.ts";
 import { OUTPUT_NODE_ID, paritySettings } from "../fixtures/parity-graphs.ts";
@@ -107,6 +108,27 @@ export interface HeadlessRenderRequest {
    * as `app/flattened-graph.ts` does for the live session.
    */
   readonly components?: ComponentRegistryView;
+  /**
+   * T715/T384: FEED a recorded inference result, per node, per frame.
+   *
+   * The audio seam's shape, one layer over. A gate must not run a model — it would not be
+   * hermetic, and different backends give different numbers for the same input, so the
+   * output is not byte-comparable across machines. What replays is the RESULT.
+   *
+   * Absent, every `infer:` texture gets the declared-synthetic banded stand-in, because an
+   * unfed external texture renders black and silence is how this file earned five
+   * reader-that-cannot-see rows. Returning `null` means "no result yet" — the state a
+   * machine still acquiring a model is in, and worth gating rather than only surviving.
+   */
+  readonly inference?: (nodeId: string, frameIndex: number) => Uint8Array | null;
+  /**
+   * Extra node definitions, merged over the shipped catalogue (T715).
+   *
+   * The catalogue was hardcoded here, so a node under construction could not be rendered
+   * offline until it shipped — which is backwards for anything whose whole risk is what
+   * it looks like. Same role `components` plays for instances.
+   */
+  readonly nodes?: Iterable<NodeDefinition>;
 }
 
 export interface HarnessControl {
@@ -133,8 +155,10 @@ export interface HeadlessRenderResult {
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 }
 
-function registry() {
-  return createNodeRegistry(allNodeDefinitions).view();
+function registry(extra?: Iterable<NodeDefinition>) {
+  return createNodeRegistry(
+    extra === undefined ? allNodeDefinitions : [...allNodeDefinitions, ...extra],
+  ).view();
 }
 
 /** The resource the sink presents into, resolved from the plan rather than reconstructed. */
@@ -223,8 +247,122 @@ export function syntheticMediaFrame(
   return bytes;
 }
 
-/** Registers a test-card source for every external texture the plan declares, except text's. */
-function registerSyntheticMediaSources(
+/**
+ * T715/T384 — THE INFERENCE FEED, and why it is not the media test card.
+ *
+ * `registerSyntheticMediaSources` below claims every `media:`-prefixed external texture.
+ * An inference result declares its own `infer:` namespace (`inferenceSourceIdFor`) for
+ * exactly that reason: on the media prefix, a depth node would have collected DIAGONAL
+ * TEST-CARD BARS in every Dawn gate — plausible, green, and wrong in a way that surfaces
+ * three weeks later as "why does depth look striped". When a harness fakes a whole
+ * prefix, the prefix is an interface.
+ *
+ * ## The stand-in is SYNTHETIC and says so
+ *
+ * There is no model here and there is not meant to be: a gate that downloaded 50MB and
+ * ran an inference would be neither hermetic nor reproducible, because different backends
+ * give different numbers for the same input. So a gate replays a RESULT — T431's contract
+ * for audio, applied one seam over: what must replay identically is what the engine READ,
+ * not what some upstream stage computed.
+ *
+ * Until a real model exists to record from, the default stand-in is a BANDED radial ramp:
+ * depth-SHAPED, so a Displace downstream of it does something legible, but quantized hard
+ * enough that nobody mistakes it for a monocular depth estimate. That distinction matters
+ * — §V647's lesson is that tuning against a synthetic stand-in fits the stand-in's
+ * distribution rather than the real one, so this is a WIRING fixture and never a
+ * BEHAVIOUR one. Phase 4 replaces it with bytes recorded from a real model, through the
+ * `inference` closure, which is why that closure exists before there is anything to put
+ * in it.
+ */
+/** Derived, never spelled twice: the prefix the node compiles with is the one claimed here. */
+const INFERENCE_PREFIX = inferenceSourceIdFor("");
+
+export function syntheticInferenceFrame(
+  sourceId: string,
+  size: readonly [number, number],
+  frameIndex: number,
+): Uint8Array {
+  const [width, height] = size;
+  const bytes = new Uint8Array(width * height * 4);
+  let salt = 0;
+  for (const char of sourceId) salt = (salt * 31 + char.charCodeAt(0)) >>> 0;
+  const cx = width / 2;
+  const cy = height / 2;
+  const longest = Math.max(1, Math.hypot(cx, cy));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const distance = Math.hypot(x - cx, y - cy) / longest;
+      // Eight hard bands, drifting one band per frame: near is bright, far is dark, which
+      // is the convention a depth map carries and the one Displace reads.
+      const band = Math.floor((1 - distance) * 8 + frameIndex + (salt % 8)) % 8;
+      const level = ((band + 8) % 8) * 32;
+      const offset = (y * width + x) * 4;
+      bytes[offset] = level;
+      bytes[offset + 1] = level;
+      bytes[offset + 2] = level;
+      bytes[offset + 3] = 255;
+    }
+  }
+  // Row 0, first pixel: the frame index, so "the result is f(frame)" is assertable to the
+  // byte and an off-by-one is visible rather than plausible (the media card's own trick).
+  bytes[0] = frameIndex & 255;
+  bytes[1] = (frameIndex >> 8) & 255;
+  bytes[2] = 85;
+  bytes[3] = 255;
+  return bytes;
+}
+
+/**
+ * Registers a result source for every `infer:` external texture the plan declares.
+ *
+ * Registering by DEFAULT is the point. An unfed external texture keeps its contents —
+ * black — so a depth node in a Dawn gate would render nothing, silently, which is the
+ * reader-that-cannot-see family (T630, T633, T650, T655, T661) that this file's history
+ * is made of. Those are all closed; inference must not reopen one.
+ *
+ * A `feed` returning `null` means "no result for this frame", which is a real state worth
+ * gating: it is what a machine still acquiring the model shows, and the node must render
+ * its identity fallback rather than a hole.
+ */
+export function registerInferenceSources(
+  backend: {
+    registerMediaSource(
+      sourceId: string,
+      source: { currentFrame(): { frameId: number; bytes: Uint8Array } | undefined },
+    ): () => void;
+  },
+  plan: CompiledGraph,
+  frameOf: () => number,
+  feed: ((nodeId: string, frameIndex: number) => Uint8Array | null) | undefined,
+): void {
+  for (const resource of plan.resources) {
+    const entry = resource as { kind?: string; sourceId?: string; size?: readonly [number, number] };
+    if (entry.kind !== "externalTexture" || entry.sourceId === undefined || entry.size === undefined) continue;
+    if (!entry.sourceId.startsWith(INFERENCE_PREFIX)) continue;
+    const sourceId = entry.sourceId;
+    const nodeId = sourceId.slice(INFERENCE_PREFIX.length);
+    const size = entry.size;
+    backend.registerMediaSource(sourceId, {
+      currentFrame: () => {
+        const frameId = frameOf();
+        const recorded = feed?.(nodeId, frameId);
+        if (recorded === null) return undefined;
+        return { frameId, bytes: recorded ?? syntheticInferenceFrame(sourceId, size, frameId) };
+      },
+    });
+  }
+}
+
+/**
+ * Registers a test-card source for every MEDIA external texture, except text's.
+ *
+ * T715: it claims the `media:` prefix and ONLY that prefix. It used to register a card
+ * for every external texture whatever its sourceId, which was harmless while media was
+ * the only producer and became wrong the moment a second one existed — an inference
+ * result would have rendered diagonal bars in every Dawn gate. The prefix is the
+ * interface between the two feeds, so it is checked rather than assumed.
+ */
+export function registerSyntheticMediaSources(
   backend: { registerMediaSource(sourceId: string, source: { currentFrame(): { frameId: number; bytes: Uint8Array } | undefined }): () => void },
   plan: CompiledGraph,
   graph: GraphDocument,
@@ -233,8 +371,9 @@ function registerSyntheticMediaSources(
   for (const resource of plan.resources) {
     const entry = resource as { kind?: string; sourceId?: string; size?: readonly [number, number] };
     if (entry.kind !== "externalTexture" || entry.sourceId === undefined || entry.size === undefined) continue;
-    const nodeId = entry.sourceId.startsWith("media:") ? entry.sourceId.slice("media:".length) : undefined;
-    if (nodeId !== undefined && graph.nodes[nodeId as keyof typeof graph.nodes]?.type === "text") continue;
+    if (!entry.sourceId.startsWith("media:")) continue;
+    const nodeId = entry.sourceId.slice("media:".length);
+    if (graph.nodes[nodeId as keyof typeof graph.nodes]?.type === "text") continue;
     const sourceId = entry.sourceId;
     const size = entry.size;
     backend.registerMediaSource(sourceId, {
@@ -274,7 +413,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
         ? undefined
         : flattenComponents({
             graph: request.graph,
-            registry: registry(),
+            registry: registry(request.nodes),
             components: request.components,
           });
     /** What the value graph and every compile read. §V437: the raw document is not it. */
@@ -283,7 +422,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     const plan = compileGraph({
       graph: request.graph,
       settings,
-      registry: registry(),
+      registry: registry(request.nodes),
       capabilities,
       ...(flattened === undefined ? {} : { flattened }),
     });
@@ -297,6 +436,8 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
 
     // T650: media draws SOMETHING attributable in headless, or nothing by stated design.
     registerSyntheticMediaSources(backend, plan, logicalGraph, () => steppingFrame);
+    // T715: the inference feed, beside the media one and claiming a different prefix.
+    registerInferenceSources(backend, plan, () => steppingFrame, request.inference);
 
     const control: HarnessControl = {
       resize: (outputId, size) => {
@@ -326,7 +467,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       request.animate === true
         ? (() => {
             const allocated = new Set(plan.resources.map((resource) => resource.id));
-            return analyzeChannelEntries(logicalGraph, registry()).filter((entry) =>
+            return analyzeChannelEntries(logicalGraph, registry(request.nodes)).filter((entry) =>
               allocated.has(entry.resourceId),
             );
           })()
@@ -344,7 +485,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
           });
     analyze?.track(analyzeEntries);
 
-    const valueSession = request.animate === true ? createValueGraphSession(registry()) : null;
+    const valueSession = request.animate === true ? createValueGraphSession(registry(request.nodes)) : null;
     const animator = request.animate === true ? createUniformAnimator() : null;
     // One closure serves both directions, so a render can replay a track and record what
     // it replayed — which is what makes "record, replay, record again, compare" a test of
@@ -405,7 +546,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
               const next = compileGraph({
                 graph: request.graph,
                 settings,
-                registry: registry(),
+                registry: registry(request.nodes),
                 capabilities,
                 ...(flattened === undefined ? {} : { flattened }),
                 resolution: {
