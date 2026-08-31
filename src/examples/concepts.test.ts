@@ -1828,18 +1828,105 @@ describe("E33 Obol claims", () => {
     const kernel = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
     expect(kernel).toContain("let shape = mix(emblem, goo, melt);");
     // And a yaw on the ABSOLUTE clock, so the piece is not a still frame wherever the
-    // value graph is idle — which is exactly what the cook oracle renders.
-    expect(kernel).toContain("let yaw = 0.21 * sin(ctx.absTime * 0.185);");
+    // value graph is idle — which is exactly what the cook oracle renders. T673 moved the
+    // yaw into a shared helper so the mass and the segments cannot turn by different
+    // amounts, so the claim is now in two halves: the helper HOLDS the sway, and the
+    // caller HANDS IT the absolute clock. Asserting only the first would pass with the
+    // timeline clock wired in, which is the exact bug §V437 is about.
+    expect(kernel).toContain("let yaw = 0.21 * sin(t * 0.185);");
+    expect(kernel).toContain("obolYaw(shape, ctx.absTime)");
     // The front is spatial: it is built from `order`, and `order` is built from the
     // emblem's own dividing curve. A `melt` that read only ctx.value1 would be a
     // cross-fade wearing a kernel.
     expect(kernel).toMatch(/front = clamp\(drive \* [\d.]+ - order \* [\d.]+/);
-    expect(kernel).toContain("let arcTop = distance(s.xy, vec2f(0.0, 0.5)) - 0.5;");
+    expect(kernel).toContain("let arcTop = distance(d, vec2f(0.0, 0.5)) - 0.5;");
     // Both halves of the spike fix (see the .md): the cap, and the radius blend.
-    expect(kernel).toMatch(/clamp\(min\(abs\(arcTop\), abs\(arcBot\)\) \/ [\d.]+, 0\.0, 1\.0\) \* [\d.]+ \+ rho \* [\d.]+/);
+    expect(kernel).toMatch(
+      /clamp\(min\(abs\(arcTop\), abs\(arcBot\)\) \/ [\d.]+, 0\.0, 1\.0\) \* [\d.]+ \+ length\(d\) \* [\d.]+/,
+    );
     // The colour is read in the MATERIAL coordinate `s`, never in the deformed
     // position — a tint read from `q.position` slides over the goo like a projection.
     expect(kernel).toContain("let tone = taiji(s.xy);");
+  });
+
+  /**
+   * T673 — THE GOO IS LOBED BY CONSTRUCTION, and this is a claim about the SILHOUETTE.
+   * High-frequency displacement changes surface texture and leaves the outline circular,
+   * so "it is not a sphere" cannot be pinned by asserting that noise exists. What can be
+   * pinned is the low-frequency term that moves the outline: a metaball with three offset
+   * charges. Measured, at the commit the .md names: radius CV vs angle 0.086 -> 0.234,
+   * convexity deficit 0.0054 -> 0.0492, over 12 orbit angles x 5 moments.
+   *
+   * The CORE charge is asserted separately because losing it does not look like losing a
+   * feature — it tears the mesh. Without it the three lobes separate, a ray from the
+   * origin misses the field entirely, and `gooRadius` falls to its 0.10 floor for whole
+   * regions of the sphere.
+   */
+  it("builds the goo from a metaball with a core, and solves it from the outside in", () => {
+    const kernel = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
+    expect(kernel).toContain("fn gooField(p: vec3f, t: f32) -> f32");
+    // Three offset charges, and the core that keeps the form star-shaped about the origin.
+    expect(kernel).toMatch(/var weights = array<f32, 3>\(/);
+    expect(kernel).toMatch(/var f = [\d.]+ \/ max\(dot\(p, p\), 1e-5\);/);
+    // OUTERMOST crossing, scanned inward. A bracketed bisection converges on whichever
+    // crossing it traps, and a ray through three charges can cross three times — so
+    // neighbouring directions land on different crossings and the surface cracks.
+    expect(kernel).toContain("fn gooRadius(s: vec3f, t: f32) -> f32");
+    expect(kernel).toContain("let r = top - f32(i) * step;");
+  });
+
+  /**
+   * T673 — ONE definition of the emblem, read by TWO systems (§V471.1/.2). The mass and
+   * the segments have to agree about where the seam is, where the goo's surface is and
+   * how far the melt has got; two copies of that arithmetic is two chances for a slab to
+   * hover off the face it is inlaid into, and the drift would be a look bug with no
+   * failing test anywhere. So the prelude is shared TEXT, and both kernels are asserted
+   * to carry the same copy of it.
+   */
+  it("shares one prelude between the mass and the segments, and one channel", () => {
+    const mass = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
+    const segs = String((document.graph.nodes["segs"] as GraphNode).parameters["kernel"]);
+    for (const shared of ["fn meltOrder(d: vec2f) -> f32", "fn gooAt(", "fn emblemTilt(", "fn meltDrive("]) {
+      expect(mass, `the mass is missing ${shared}`).toContain(shared);
+      expect(segs, `the segments are missing ${shared}`).toContain(shared);
+    }
+    // Byte-identical, not merely both-present: a prelude that had been edited in one
+    // place is exactly the drift this claim exists to catch. Sliced at the LAST shared
+    // function rather than at `fn process`, because the segments declare one helper of
+    // their own between the two (`segRand`, which the mass has no use for).
+    const preludeOf = (kernel: string) => kernel.slice(0, kernel.indexOf("fn meltDrive("));
+    expect(preludeOf(segs)).toBe(preludeOf(mass));
+    expect(mass).toContain("return smoothstep(0.18, 0.82, v);");
+    expect(segs).toContain("return smoothstep(0.18, 0.82, v);");
+    // And they melt on the SAME clock: one channel into both value1 slots, so the wave
+    // that lifts a slab is the wave that softens the surface under it.
+    const channel = (id: string) =>
+      ((document.graph.nodes[id] as GraphNode).parameters["value1"] as { bindings?: { driven?: { channel?: string } } })
+        ?.bindings?.driven?.channel;
+    expect(channel("segs")).toBe("tide1");
+    expect(channel("segs")).toBe(channel("morph"));
+  });
+
+  /**
+   * T673, §V617 — THE SEGMENTS ARE MATTER, so they block light. An unlit geometry casts
+   * no shadow in any draw mode, because a surface that ignores light cannot stop it; the
+   * whole value of building the emblem out of parts is that the parts have gutters for a
+   * shadow and an occlusion pass to find, and that value evaporates silently if the
+   * material ever goes unlit. Measured with the bed removed so nothing else could cast:
+   * 28,643 pixels of the frame darken when the key's shadow is switched on.
+   */
+  it("draws the segments as lit instances, so they cast and occlude", () => {
+    const shards = document.graph.nodes["shards"] as GraphNode;
+    expect(shards.type).toBe("geometry");
+    expect(shards.parameters["mode"]).toBe("instances");
+    // The material is the LIT one the mass wears. `materialUnlit` here would keep the
+    // picture and silently drop every shadow and every contact.
+    expect(shards.parameters["material"]).toBe("oil1");
+    expect((document.graph.nodes["oil"] as GraphNode).type).toBe("materialPhong");
+    // The depth sweep therefore takes them: one shadow draw per casting light per
+    // geometry, and the segments' is present.
+    const shadowDraws = passes.filter((pass) => pass.id.includes(":shadow:"));
+    expect(shadowDraws.length).toBeGreaterThanOrEqual(3);
   });
 
   /**
@@ -1847,10 +1934,15 @@ describe("E33 Obol claims", () => {
    * names. Asserted over both of them, because a per-geometry opt-in passes a
    * one-geometry check perfectly.
    */
-  it("switches ambient occlusion on once and both geometries wear it", () => {
+  it("switches ambient occlusion on once and every geometry wears it", () => {
     expect(document.graph.nodes["shot"]?.parameters["ambientOcclusion"]).toBe(true);
     const lit = passes.filter((pass) => pass.id.includes(":scene:"));
-    expect(lit).toHaveLength(2);
+    // THREE since T673: the cyclorama, the mass, and the instanced segments. The count is
+    // asserted rather than the set iterated blindly, because a per-geometry opt-in passes
+    // a one-geometry check perfectly — and because the third one is an INSTANCED draw,
+    // which is a different generator with its own copy of the AO block (T624 gates it on
+    // `model !== "unlit"`, so an unlit mosaic would bind no occlusion map at all).
+    expect(lit).toHaveLength(3);
     for (const pass of lit) {
       expect(pass.shader).toContain("let occlusion = textureLoad(occlusionMap");
       expect((pass.textures ?? []).map((texture) => texture.binding)).toContain("occlusionMap");

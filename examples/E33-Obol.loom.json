@@ -116,6 +116,40 @@
           "portId": "points"
         }
       },
+      "e-rim-studio": {
+        "id": "e-rim-studio",
+        "order": 2,
+        "source": {
+          "nodeId": "rimBand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "studio",
+          "portId": "in2"
+        }
+      },
+      "e-segpts-segs": {
+        "id": "e-segpts-segs",
+        "source": {
+          "nodeId": "segPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "segs",
+          "portId": "in"
+        }
+      },
+      "e-segs-shards": {
+        "id": "e-segs-shards",
+        "source": {
+          "nodeId": "segs",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shards",
+          "portId": "points"
+        }
+      },
       "e-shell-morph": {
         "id": "e-shell-morph",
         "source": {
@@ -459,11 +493,11 @@
             1
           ],
           "direction": [
-            -0.8,
-            -0.06,
-            -0.6
+            -0.85,
+            -0.1,
+            -0.52
           ],
-          "intensity": 0.11,
+          "intensity": 0.22,
           "kind": "directional"
         },
         "position": {
@@ -496,8 +530,8 @@
           ],
           "mode": "fill",
           "radius": [
-            0.048,
-            0.115
+            0.11,
+            0.22
           ],
           "softness": 0.26
         },
@@ -573,13 +607,13 @@
             1
           ],
           "direction": [
-            0.55,
-            -0.62,
-            -0.56
+            0.42,
+            -0.72,
+            -0.55
           ],
-          "intensity": 0.26,
+          "intensity": 0.55,
           "kind": "directional",
-          "shadowExtent": 2.8,
+          "shadowExtent": 3.2,
           "shadows": true
         },
         "position": {
@@ -612,8 +646,8 @@
           ],
           "mode": "fill",
           "radius": [
-            0.15,
-            0.052
+            0.28,
+            0.13
           ],
           "softness": 0.22
         },
@@ -647,7 +681,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"default\":[1,1,1,1]}]",
           "capacity": 33280,
-          "kernel": "const TAU: f32 = 6.28318530717958647692;\nconst PI: f32 = 3.14159265358979323846;\n\n/* Integer value noise. An integer hash rather than the usual fract(sin(...)) because\n   sin's precision is implementation-defined and this field decides GEOMETRY — a browser\n   and Dawn that disagreed about it would disagree about the silhouette (§V47). */\nfn ihash(cell: vec3i) -> f32 {\n  let q = vec3u(cell + vec3i(4096));\n  var n = (q.x * 1597334673u) ^ (q.y * 3812015801u) ^ (q.z * 2246822519u);\n  n = (n ^ (n >> 15u)) * 2246822519u;\n  n = (n ^ (n >> 13u)) * 3266489917u;\n  return f32(n ^ (n >> 16u)) * 2.3283064e-10;\n}\n\nfn vnoise(p: vec3f) -> f32 {\n  let base = floor(p);\n  let f = p - base;\n  let w = f * f * (3.0 - 2.0 * f);\n  let c = vec3i(base);\n  let x00 = mix(ihash(c + vec3i(0, 0, 0)), ihash(c + vec3i(1, 0, 0)), w.x);\n  let x10 = mix(ihash(c + vec3i(0, 1, 0)), ihash(c + vec3i(1, 1, 0)), w.x);\n  let x01 = mix(ihash(c + vec3i(0, 0, 1)), ihash(c + vec3i(1, 0, 1)), w.x);\n  let x11 = mix(ihash(c + vec3i(0, 1, 1)), ihash(c + vec3i(1, 1, 1)), w.x);\n  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z) * 2.0 - 1.0;\n}\n\nfn fbm(p: vec3f) -> f32 {\n  /* Weighted hard toward the FIRST octave. The first build ran 0.56/0.30/0.14 and the\n     goo came back as crumpled tinfoil: high-frequency radial displacement on a closed\n     surface reads as creases, not as fluid. Goo is a few big lobes. */\n  return vnoise(p) * 0.74 + vnoise(p * 2.07 + vec3f(19.1, 7.3, 31.7)) * 0.20\n       + vnoise(p * 4.19 + vec3f(41.7, 63.1, 11.9)) * 0.06;\n}\n\n/* Six stops, and they GO somewhere: midnight, indigo, violet, magenta, amber, gold.\n   §V471.6 — a two-stop ramp is a tint; this is a journey, and only the melt FRONT\n   wears it, which is what keeps the emblem's own two tones intact behind it. */\nfn spectrum(t: f32) -> vec3f {\n  var stops = array<vec3f, 6>(\n    vec3f(0.014, 0.020, 0.058),\n    vec3f(0.048, 0.098, 0.290),\n    vec3f(0.235, 0.086, 0.372),\n    vec3f(0.556, 0.108, 0.276),\n    vec3f(0.812, 0.372, 0.104),\n    vec3f(0.972, 0.836, 0.560),\n  );\n  let x = clamp(t, 0.0, 1.0) * 5.0;\n  let lo = u32(floor(x));\n  let hi = min(lo + 1u, 5u);\n  return mix(stops[lo], stops[hi], x - floor(x));\n}\n\n/* The emblem's own field, read in the disc coordinate the medallion is built on.\n   1 is the light half, 0 the dark, dots included. Built out of SIGNED DISTANCES rather\n   than four ifs: this is a per-VERTEX attribute on a 208x160 grid, and a hard step\n   there arrives on screen as the octagonal stair the first look pass showed on both\n   dots. The edge width is a little under one cell, so the boundary is one cell of ramp\n   — an inlaid edge, not a jagged one. */\nfn taiji(p: vec2f) -> f32 {\n  let e = 0.030;\n  let dTop = distance(p, vec2f(0.0, 0.5));\n  let dBot = distance(p, vec2f(0.0, -0.5));\n  var tone = smoothstep(-e, e, p.x);\n  tone = max(tone, smoothstep(e, -e, dTop - 0.5));\n  tone = min(tone, smoothstep(-e, e, dBot - 0.5));\n  tone = min(tone, smoothstep(-e, e, dTop - 0.142));\n  tone = max(tone, smoothstep(e, -e, dBot - 0.142));\n  return tone;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* The sphere the whole piece is parameterised on. The generator's tube topology\n     supplies wrapU, so column 0 and column cols-1 are the SAME seam and the surface\n     closes; the pole axis is z, which is what makes the medallion face the camera. */\n  let lon = f32(ctx.dim.i) / f32(ctx.dim.cols) * TAU;\n  let lat = f32(ctx.dim.j) / f32(max(ctx.dim.rows - 1u, 1u)) * PI;\n  let s = vec3f(sin(lat) * cos(lon), sin(lat) * sin(lon), cos(lat));\n\n  /* ---- CONFIGURATION A: the emblem. A medallion — the unit sphere pressed flat on\n     z, with a smoothstep profile so the faces are plateaus and the rim is a bevel a\n     highlight can run along. */\n  let face = sqrt(max(0.0, 1.0 - s.x * s.x - s.y * s.y));\n  let plateau = smoothstep(0.0, 0.72, face);\n  let coin = vec3f(s.x, s.y, select(-1.0, 1.0, s.z >= 0.0) * plateau * 0.19) * 1.02;\n  /* TILTED, and the first look pass is why. A flat medallion seen dead-on is\n     PIXEL-IDENTICAL in silhouette to a sphere, and the whole point of the emblem state\n     is that it reads as a hard, made, FLAT thing. Leaning it 17 degrees puts the rim\n     bevel on screen as a lit edge and the disc becomes a disc. */\n  let tilt = 0.30;\n  let emblem = vec3f(coin.x, coin.y * cos(tilt) - coin.z * sin(tilt), coin.y * sin(tilt) + coin.z * cos(tilt));\n\n  /* ---- CONFIGURATION B: the goo. The same sphere, radius pushed by a two-octave\n     field that TURNS relative to the body (the field rotates, not the emblem — the\n     emblem has to come back to the same orientation it left), plus a sag, because a\n     living thing under gravity is not symmetric and the yin-yang is nothing but. */\n  let spin = ctx.absTime * 0.115;\n  let turned = vec3f(s.x * cos(spin) - s.z * sin(spin), s.y, s.x * sin(spin) + s.z * cos(spin));\n  let coarse = fbm(turned * 1.02 + vec3f(0.0, ctx.absTime * 0.085, 0.0));\n  let fine = fbm(turned * 2.35 - vec3f(ctx.absTime * 0.061, 0.0, 0.0));\n  let swell = 0.870 + 0.305 * coarse + 0.060 * fine;\n  var goo = s * swell;\n  goo.y = goo.y - 0.235 * (1.0 - s.y * 0.5) * (0.55 + 0.45 * coarse);\n  goo.x = goo.x + 0.055 * sin(ctx.absTime * 0.27);\n\n  /* ---- THE SEAM, and the order things melt in. §V471.1/.2: the kernel writes the\n     attribute downstream selection reads, and here that attribute is free — it is the\n     emblem's own dividing curve. \"order\" is built from the two circles the S-curve\n     is built from, so the melt front LEAVES THE SEAM and travels outward: the boundary\n     between yin and yang is the first thing to go and the last thing to come back.\n     That is the difference between becoming and cross-fading. */\n  let rho = length(s.xy);\n  let arcTop = distance(s.xy, vec2f(0.0, 0.5)) - 0.5;\n  let arcBot = distance(s.xy, vec2f(0.0, -0.5)) - 0.5;\n  /* CAPPED, and then blended with radius, and both halves of that were paid for by a\n     look pass. Raw distance-to-the-arcs has a conical LOCAL MAXIMUM at each dot's\n     centre — so each dot was the last thing left un-melted and got drawn out into a\n     literal spike with a specular on it. The cap flattens those peaks into a plateau;\n     the radius term gives the front a global outward sweep so there is no interior\n     maximum left for the surface to be pulled towards. The seam still leads, which is\n     what the eye reads. */\n  let order = clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + rho * 0.4;\n  let drive = smoothstep(0.06, 0.94, ctx.value1);\n  let front = clamp(drive * 2.15 - order * 1.15, 0.0, 1.0);\n  let melt = front * front * (3.0 - 2.0 * front);\n\n  /*\n   * A SLOW YAW, on the absolute clock, and it is not decoration — it is the piece's\n   * only motion that does NOT come through the value graph. The cook oracle renders\n   * every example without a channel resolver, so an LFO-only piece is a still frame\n   * there and its 80-frame run hashes identical; this one did, and that is a real\n   * fragility rather than a harness artefact (an idle value graph in the app is the\n   * same picture). It also earns its place visually: a turntable sway keeps the\n   * softbox reflections travelling across the surface, which is what says \"wet\".\n   */\n  let yaw = 0.21 * sin(ctx.absTime * 0.185);\n  let shape = mix(emblem, goo, melt);\n  q.position = vec3f(\n    shape.x * cos(yaw) + shape.z * sin(yaw),\n    shape.y,\n    -shape.x * sin(yaw) + shape.z * cos(yaw),\n  );\n\n  /* ---- COLOUR. Two tones painted in the MATERIAL coordinate, so the pattern travels\n     with the surface and stretches as the surface does — a tint read from the DEFORMED\n     position would slide over the goo like a projection and the whole illusion dies. */\n  let tone = taiji(s.xy);\n  let porcelain = vec3f(0.400, 0.388, 0.360);\n  let ink = vec3f(0.0180, 0.0205, 0.0295);\n  let rest = mix(ink, porcelain, tone);\n  /* Melted, both tones sink toward oil: nearly black, because everything worth seeing\n     in an oil surface arrives as a reflection, not as a diffuse colour. */\n  /* Melted, both tones sink toward oil — but not to the SAME oil. Losing the emblem\n     entirely at full melt made the goo a featureless dark lump; keeping the two tones\n     as a marbling inside the film is what says \"this used to be the emblem\". */\n  let oil = mix(vec3f(0.0130, 0.0125, 0.0205), vec3f(0.0620, 0.0580, 0.0520), tone);\n  /* The FRONT itself — a band, not the whole body — wears the spectrum, phase driven\n     so the ramp breathes rather than sitting (§V471.7). */\n  let band = 1.0 - abs(melt * 2.0 - 1.0);\n  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));\n  /* The front's spectrum is held back on the LIGHT half — an already-bright porcelain\n     plus a full-strength ramp clips to white and the ramp stops meaning anything. */\n  let colour = mix(rest, oil, melt) + irid * band * band * 0.26 * (1.0 - tone * 0.55);\n  q.tint = vec4f(colour, 1.0);\n  return q;\n}",
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\nconst PI: f32 = 3.14159265358979323846;\n\nfn ihash(cell: vec3i) -> f32 {\n  let q = vec3u(cell + vec3i(4096));\n  var n = (q.x * 1597334673u) ^ (q.y * 3812015801u) ^ (q.z * 2246822519u);\n  n = (n ^ (n >> 15u)) * 2246822519u;\n  n = (n ^ (n >> 13u)) * 3266489917u;\n  return f32(n ^ (n >> 16u)) * 2.3283064e-10;\n}\n\nfn vnoise(p: vec3f) -> f32 {\n  let base = floor(p);\n  let f = p - base;\n  let w = f * f * (3.0 - 2.0 * f);\n  let c = vec3i(base);\n  let x00 = mix(ihash(c + vec3i(0, 0, 0)), ihash(c + vec3i(1, 0, 0)), w.x);\n  let x10 = mix(ihash(c + vec3i(0, 1, 0)), ihash(c + vec3i(1, 1, 0)), w.x);\n  let x01 = mix(ihash(c + vec3i(0, 0, 1)), ihash(c + vec3i(1, 0, 1)), w.x);\n  let x11 = mix(ihash(c + vec3i(0, 1, 1)), ihash(c + vec3i(1, 1, 1)), w.x);\n  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z) * 2.0 - 1.0;\n}\n\nfn fbm(p: vec3f) -> f32 {\n  return vnoise(p) * 0.74 + vnoise(p * 2.07 + vec3f(19.1, 7.3, 31.7)) * 0.20\n       + vnoise(p * 4.19 + vec3f(41.7, 63.1, 11.9)) * 0.06;\n}\n\nfn spectrum(t: f32) -> vec3f {\n  var stops = array<vec3f, 6>(\n    vec3f(0.014, 0.020, 0.058),\n    vec3f(0.048, 0.098, 0.290),\n    vec3f(0.235, 0.086, 0.372),\n    vec3f(0.556, 0.108, 0.276),\n    vec3f(0.812, 0.372, 0.104),\n    vec3f(0.972, 0.836, 0.560),\n  );\n  let x = clamp(t, 0.0, 1.0) * 5.0;\n  let lo = u32(floor(x));\n  let hi = min(lo + 1u, 5u);\n  return mix(stops[lo], stops[hi], x - floor(x));\n}\n\nfn taiji(p: vec2f) -> f32 {\n  let e = 0.030;\n  let dTop = distance(p, vec2f(0.0, 0.5));\n  let dBot = distance(p, vec2f(0.0, -0.5));\n  var tone = smoothstep(-e, e, p.x);\n  tone = max(tone, smoothstep(e, -e, dTop - 0.5));\n  tone = min(tone, smoothstep(-e, e, dBot - 0.5));\n  tone = min(tone, smoothstep(-e, e, dTop - 0.142));\n  tone = max(tone, smoothstep(e, -e, dBot - 0.142));\n  return tone;\n}\n\n/* ---- THE ORDER OF THE MELT, in the emblem's own disc coordinate. Built from the two\n   circles the S-curve is built from, so the front LEAVES THE SEAM and travels outward.\n   The mass and the segments both read it, so a tile lifts exactly as the surface under\n   it goes soft. */\nfn meltOrder(d: vec2f) -> f32 {\n  let arcTop = distance(d, vec2f(0.0, 0.5)) - 0.5;\n  let arcBot = distance(d, vec2f(0.0, -0.5)) - 0.5;\n  return clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + length(d) * 0.4;\n}\n\n/* ---- THE GOO, as a FOUR-CHARGE METABALL. This is the answer to \"still too much like a\n   sphere\", and the reason it is a field rather than more noise: displacement on a sphere\n   changes TEXTURE, and the eye reads shape from the OUTLINE. Only a low-frequency term\n   moves the outline, so the lobes are the whole point and the noise below is a skin.\n   The CORE charge is load-bearing: without it the three lobes separate and a ray from\n   the origin misses entirely, which is a radius of zero and a torn mesh. */\nfn gooCentre(k: u32, t: f32) -> vec3f {\n  var dirs = array<vec3f, 3>(\n    vec3f( 0.895,  0.264,  0.113),\n    vec3f(-0.680, -0.566,  0.321),\n    vec3f( 0.039,  0.877, -0.479),\n  );\n  let d = dirs[k] * 0.66;\n  let a = t * 0.115 + f32(k) * 2.094;\n  return vec3f(\n    d.x * cos(a) - d.z * sin(a),\n    d.y + 0.10 * sin(t * 0.21 + f32(k) * 1.7),\n    d.x * sin(a) + d.z * cos(a),\n  );\n}\n\nfn gooField(p: vec3f, t: f32) -> f32 {\n  var weights = array<f32, 3>(0.130, 0.107, 0.081);\n  var f = 0.085 / max(dot(p, p), 1e-5);\n  for (var k = 0u; k < 3u; k = k + 1u) {\n    let d = p - gooCentre(k, t);\n    f = f + weights[k] / max(dot(d, d), 1e-5);\n  }\n  return f;\n}\n\n/* The radius along s where the field crosses 1, found from the OUTSIDE IN. A bracketed\n   bisection would converge on whichever crossing it happened to trap, and a ray through\n   three charges can cross three times — neighbouring directions landing on different\n   crossings is a CRACK in the mesh. Scanning inward always takes the outermost. */\nfn gooRadius(s: vec3f, t: f32) -> f32 {\n  let top = 1.70;\n  let step = top / 30.0;\n  var lo = 0.0;\n  var hi = 0.0;\n  for (var i = 1u; i <= 30u; i = i + 1u) {\n    let r = top - f32(i) * step;\n    if (gooField(s * r, t) > 1.0) { lo = r; hi = r + step; break; }\n  }\n  if (hi == 0.0) { return 0.10; }\n  for (var j = 0u; j < 7u; j = j + 1u) {\n    let mid = (lo + hi) * 0.5;\n    if (gooField(s * mid, t) > 1.0) { lo = mid; } else { hi = mid; }\n  }\n  return (lo + hi) * 0.5;\n}\n\n/* The goo's surface point along s: the lobed radius, a small high-frequency skin (texture,\n   NOT outline), and a differential sag so the thing hangs rather than floats. */\nfn gooAt(s: vec3f, t: f32) -> vec3f {\n  let r = gooRadius(s, t) * (1.0 + 0.050 * fbm(s * 2.60 + vec3f(0.0, t * 0.090, 0.0)));\n  var g = s * r;\n  g.y = g.y - 0.105 * (1.0 - s.y * 0.55);\n  g.x = g.x + 0.045 * sin(t * 0.27);\n  return g;\n}\n\n/* The medallion's own tilt — 17 degrees, so the rim bevel is on screen as a lit edge and\n   a disc seen dead-on cannot be mistaken for a sphere. Shared: a tile that did not wear\n   the same tilt would float off the face it is inlaid into. */\nfn emblemTilt(p: vec3f) -> vec3f {\n  let tilt = 0.30;\n  return vec3f(p.x, p.y * cos(tilt) - p.z * sin(tilt), p.y * sin(tilt) + p.z * cos(tilt));\n}\n\n/* The object's slow yaw. On the ABSOLUTE clock and applied last, to both readings. */\nfn obolYaw(p: vec3f, t: f32) -> vec3f {\n  let yaw = 0.21 * sin(t * 0.185);\n  return vec3f(p.x * cos(yaw) + p.z * sin(yaw), p.y, -p.x * sin(yaw) + p.z * cos(yaw));\n}\n\n/* ---- THE STAGING. A sine never HOLDS, and a morph the eye cannot register the ends of\n   reads as a crossfade. Squeezing the drive to the middle of the LFO's travel parks the\n   piece at each configuration for about a third of the cycle each and spends the rest\n   travelling — so there is a medallion, then an event, then a goo. */\nfn meltDrive(v: f32) -> f32 {\n  return smoothstep(0.18, 0.82, v);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  let lon = f32(ctx.dim.i) / f32(ctx.dim.cols) * TAU;\n  let lat = f32(ctx.dim.j) / f32(max(ctx.dim.rows - 1u, 1u)) * PI;\n  let s = vec3f(sin(lat) * cos(lon), sin(lat) * sin(lon), cos(lat));\n\n  /* CONFIGURATION A — the emblem: the unit sphere pressed flat on z, plateau faces and a\n     bevelled rim a highlight can run along. */\n  let face = sqrt(max(0.0, 1.0 - s.x * s.x - s.y * s.y));\n  let plateau = smoothstep(0.0, 0.72, face);\n  /* FLATTER and TIGHTER than it shipped. The bed is now read against a mosaic that IS\n     flat, so a 0.19 dome next to it stopped reading as a coin and started reading as a\n     bubble the tiles were embedded in; and its rim is pulled in to 0.955 so it frames\n     the segments as a bevel rather than surrounding them as a halo. */\n  let coin = vec3f(s.x, s.y, select(-1.0, 1.0, s.z >= 0.0) * plateau * 0.125) * 0.955;\n  let emblem = emblemTilt(coin);\n\n  /* CONFIGURATION B — the goo: three lobes and a core. */\n  let goo = gooAt(s, ctx.absTime);\n\n  let order = meltOrder(s.xy);\n  let drive = meltDrive(ctx.value1);\n  let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);\n  let melt = front * front * (3.0 - 2.0 * front);\n\n  let shape = mix(emblem, goo, melt);\n  q.position = obolYaw(shape, ctx.absTime);\n\n  let tone = taiji(s.xy);\n  let porcelain = vec3f(0.400, 0.388, 0.360);\n  let ink = vec3f(0.0180, 0.0205, 0.0295);\n  let rest = mix(ink, porcelain, tone);\n  /* Melted, both tones sink toward oil — and FURTHER than they used to. The marbling that\n     survived at full melt was the emblem still legible in the goo, which is exactly the\n     \"endpoints too alike\" complaint; the memory of the emblem is now carried by the\n     SEGMENTS, which travel, so the mass is free to become one wet black thing. */\n  let oil = mix(vec3f(0.0125, 0.0120, 0.0195), vec3f(0.0335, 0.0315, 0.0290), tone);\n  let band = 1.0 - abs(melt * 2.0 - 1.0);\n  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));\n  let colour = mix(rest, oil, melt) + irid * band * band * 0.26 * (1.0 - tone * 0.55);\n  q.tint = vec4f(colour, 1.0);\n  return q;\n}",
           "seed": 33,
           "value1": {
             "bindings": {
@@ -737,17 +771,17 @@
         "label": "plaster1",
         "parameters": {
           "color": [
-            0.185,
-            0.195,
-            0.235,
+            0.085,
+            0.09,
+            0.108,
             1
           ],
           "roughness": 0.58,
           "shininess": 40,
           "specular": [
-            0.22,
-            0.23,
-            0.29,
+            0.101,
+            0.106,
+            0.133,
             1
           ]
         },
@@ -756,6 +790,134 @@
           "y": 1060
         },
         "type": "materialPhong"
+      },
+      "rimBand": {
+        "definitionVersion": 1,
+        "id": "rimBand",
+        "label": "rimband1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            0.74,
+            0.84,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.5,
+            0.16
+          ],
+          "softness": 0.55
+        },
+        "position": {
+          "x": -2400,
+          "y": 180
+        },
+        "type": "circle"
+      },
+      "segPts": {
+        "definitionVersion": 1,
+        "id": "segPts",
+        "label": "segpts1",
+        "parameters": {
+          "cols": 36,
+          "count": 720,
+          "rows": 20,
+          "sizeX": 2,
+          "sizeY": 2
+        },
+        "position": {
+          "x": -2080,
+          "y": 1280
+        },
+        "type": "pointGrid"
+      },
+      "segs": {
+        "definitionVersion": 1,
+        "id": "segs",
+        "label": "segs1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"default\":[1,1,1,1]}]",
+          "capacity": 720,
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\nconst PI: f32 = 3.14159265358979323846;\n\nfn ihash(cell: vec3i) -> f32 {\n  let q = vec3u(cell + vec3i(4096));\n  var n = (q.x * 1597334673u) ^ (q.y * 3812015801u) ^ (q.z * 2246822519u);\n  n = (n ^ (n >> 15u)) * 2246822519u;\n  n = (n ^ (n >> 13u)) * 3266489917u;\n  return f32(n ^ (n >> 16u)) * 2.3283064e-10;\n}\n\nfn vnoise(p: vec3f) -> f32 {\n  let base = floor(p);\n  let f = p - base;\n  let w = f * f * (3.0 - 2.0 * f);\n  let c = vec3i(base);\n  let x00 = mix(ihash(c + vec3i(0, 0, 0)), ihash(c + vec3i(1, 0, 0)), w.x);\n  let x10 = mix(ihash(c + vec3i(0, 1, 0)), ihash(c + vec3i(1, 1, 0)), w.x);\n  let x01 = mix(ihash(c + vec3i(0, 0, 1)), ihash(c + vec3i(1, 0, 1)), w.x);\n  let x11 = mix(ihash(c + vec3i(0, 1, 1)), ihash(c + vec3i(1, 1, 1)), w.x);\n  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z) * 2.0 - 1.0;\n}\n\nfn fbm(p: vec3f) -> f32 {\n  return vnoise(p) * 0.74 + vnoise(p * 2.07 + vec3f(19.1, 7.3, 31.7)) * 0.20\n       + vnoise(p * 4.19 + vec3f(41.7, 63.1, 11.9)) * 0.06;\n}\n\nfn spectrum(t: f32) -> vec3f {\n  var stops = array<vec3f, 6>(\n    vec3f(0.014, 0.020, 0.058),\n    vec3f(0.048, 0.098, 0.290),\n    vec3f(0.235, 0.086, 0.372),\n    vec3f(0.556, 0.108, 0.276),\n    vec3f(0.812, 0.372, 0.104),\n    vec3f(0.972, 0.836, 0.560),\n  );\n  let x = clamp(t, 0.0, 1.0) * 5.0;\n  let lo = u32(floor(x));\n  let hi = min(lo + 1u, 5u);\n  return mix(stops[lo], stops[hi], x - floor(x));\n}\n\nfn taiji(p: vec2f) -> f32 {\n  let e = 0.030;\n  let dTop = distance(p, vec2f(0.0, 0.5));\n  let dBot = distance(p, vec2f(0.0, -0.5));\n  var tone = smoothstep(-e, e, p.x);\n  tone = max(tone, smoothstep(e, -e, dTop - 0.5));\n  tone = min(tone, smoothstep(-e, e, dBot - 0.5));\n  tone = min(tone, smoothstep(-e, e, dTop - 0.142));\n  tone = max(tone, smoothstep(e, -e, dBot - 0.142));\n  return tone;\n}\n\n/* ---- THE ORDER OF THE MELT, in the emblem's own disc coordinate. Built from the two\n   circles the S-curve is built from, so the front LEAVES THE SEAM and travels outward.\n   The mass and the segments both read it, so a tile lifts exactly as the surface under\n   it goes soft. */\nfn meltOrder(d: vec2f) -> f32 {\n  let arcTop = distance(d, vec2f(0.0, 0.5)) - 0.5;\n  let arcBot = distance(d, vec2f(0.0, -0.5)) - 0.5;\n  return clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + length(d) * 0.4;\n}\n\n/* ---- THE GOO, as a FOUR-CHARGE METABALL. This is the answer to \"still too much like a\n   sphere\", and the reason it is a field rather than more noise: displacement on a sphere\n   changes TEXTURE, and the eye reads shape from the OUTLINE. Only a low-frequency term\n   moves the outline, so the lobes are the whole point and the noise below is a skin.\n   The CORE charge is load-bearing: without it the three lobes separate and a ray from\n   the origin misses entirely, which is a radius of zero and a torn mesh. */\nfn gooCentre(k: u32, t: f32) -> vec3f {\n  var dirs = array<vec3f, 3>(\n    vec3f( 0.895,  0.264,  0.113),\n    vec3f(-0.680, -0.566,  0.321),\n    vec3f( 0.039,  0.877, -0.479),\n  );\n  let d = dirs[k] * 0.66;\n  let a = t * 0.115 + f32(k) * 2.094;\n  return vec3f(\n    d.x * cos(a) - d.z * sin(a),\n    d.y + 0.10 * sin(t * 0.21 + f32(k) * 1.7),\n    d.x * sin(a) + d.z * cos(a),\n  );\n}\n\nfn gooField(p: vec3f, t: f32) -> f32 {\n  var weights = array<f32, 3>(0.130, 0.107, 0.081);\n  var f = 0.085 / max(dot(p, p), 1e-5);\n  for (var k = 0u; k < 3u; k = k + 1u) {\n    let d = p - gooCentre(k, t);\n    f = f + weights[k] / max(dot(d, d), 1e-5);\n  }\n  return f;\n}\n\n/* The radius along s where the field crosses 1, found from the OUTSIDE IN. A bracketed\n   bisection would converge on whichever crossing it happened to trap, and a ray through\n   three charges can cross three times — neighbouring directions landing on different\n   crossings is a CRACK in the mesh. Scanning inward always takes the outermost. */\nfn gooRadius(s: vec3f, t: f32) -> f32 {\n  let top = 1.70;\n  let step = top / 30.0;\n  var lo = 0.0;\n  var hi = 0.0;\n  for (var i = 1u; i <= 30u; i = i + 1u) {\n    let r = top - f32(i) * step;\n    if (gooField(s * r, t) > 1.0) { lo = r; hi = r + step; break; }\n  }\n  if (hi == 0.0) { return 0.10; }\n  for (var j = 0u; j < 7u; j = j + 1u) {\n    let mid = (lo + hi) * 0.5;\n    if (gooField(s * mid, t) > 1.0) { lo = mid; } else { hi = mid; }\n  }\n  return (lo + hi) * 0.5;\n}\n\n/* The goo's surface point along s: the lobed radius, a small high-frequency skin (texture,\n   NOT outline), and a differential sag so the thing hangs rather than floats. */\nfn gooAt(s: vec3f, t: f32) -> vec3f {\n  let r = gooRadius(s, t) * (1.0 + 0.050 * fbm(s * 2.60 + vec3f(0.0, t * 0.090, 0.0)));\n  var g = s * r;\n  g.y = g.y - 0.105 * (1.0 - s.y * 0.55);\n  g.x = g.x + 0.045 * sin(t * 0.27);\n  return g;\n}\n\n/* The medallion's own tilt — 17 degrees, so the rim bevel is on screen as a lit edge and\n   a disc seen dead-on cannot be mistaken for a sphere. Shared: a tile that did not wear\n   the same tilt would float off the face it is inlaid into. */\nfn emblemTilt(p: vec3f) -> vec3f {\n  let tilt = 0.30;\n  return vec3f(p.x, p.y * cos(tilt) - p.z * sin(tilt), p.y * sin(tilt) + p.z * cos(tilt));\n}\n\n/* The object's slow yaw. On the ABSOLUTE clock and applied last, to both readings. */\nfn obolYaw(p: vec3f, t: f32) -> vec3f {\n  let yaw = 0.21 * sin(t * 0.185);\n  return vec3f(p.x * cos(yaw) + p.z * sin(yaw), p.y, -p.x * sin(yaw) + p.z * cos(yaw));\n}\n\n/* ---- THE STAGING. A sine never HOLDS, and a morph the eye cannot register the ends of\n   reads as a crossfade. Squeezing the drive to the middle of the LFO's travel parks the\n   piece at each configuration for about a third of the cycle each and spends the rest\n   travelling — so there is a medallion, then an event, then a goo. */\nfn meltDrive(v: f32) -> f32 {\n  return smoothstep(0.18, 0.82, v);\n}\n\n/* Stable per-segment noise. NOT pointRand: that hash is salted with the FRAME index by\n   contract, so a \"random\" draw taken per point changes every frame — a per-element\n   constant has to come from the element's own index. */\nfn segRand(i: u32, salt: u32) -> f32 {\n  var n = (i * 1597334673u) ^ (salt * 2246822519u);\n  n = (n ^ (n >> 15u)) * 2246822519u;\n  n = (n ^ (n >> 13u)) * 3266489917u;\n  return f32(n ^ (n >> 16u)) * 2.3283064e-10;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* PHYLLOTAXIS, not a grid. A polar lattice crowds at the centre and a square one leaves\n     a stepped rim; the golden angle gives even spacing at every radius, so the slab size\n     can be one number and the mosaic still has no seam. */\n  let n = f32(max(ctx.count, 1u));\n  let i = f32(ctx.index);\n  let rr = sqrt((i + 0.5) / n) * 0.930;\n  let ang = i * 2.39996323;\n  let disc = vec2f(rr * cos(ang), rr * sin(ang));\n\n  /* CONFIGURATION A — the slab, standing proud of the medallion's front face. */\n  let face = sqrt(max(0.0, 1.0 - dot(disc, disc)));\n  let plateau = smoothstep(0.0, 0.36, face);\n  let emblem = emblemTilt(vec3f(disc.x, disc.y, plateau * 0.125 + 0.030) * 0.955);\n\n  /* CONFIGURATION B — a place INSIDE the goo. Each segment keeps its angular station and\n     is lifted onto the sphere, so its travel is legible as travel; the depth it is sent to\n     is its own constant, which is what fans a flat disc out into a volume. */\n  let depth = 0.42 + 0.58 * segRand(ctx.index, 11u);\n  let sdir = normalize(vec3f(disc.x, disc.y, face * depth + 0.06));\n  let surface = gooAt(sdir, ctx.absTime);\n\n  let order = meltOrder(disc);\n  let drive = meltDrive(ctx.value1);\n  let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);\n  let melt = front * front * (3.0 - 2.0 * front);\n\n  /* SINKING is what ends the journey. A slab left riding the surface is a barnacle on an\n     oil drop; a slab drawn UNDER it is gone, and the goo end is one wet mass — which is\n     the whole reason the two endpoints now look nothing like each other. */\n  let sink = mix(1.020, 0.680, smoothstep(0.40, 1.0, front));\n  let goo = surface * sink;\n\n  /* The ARC. Straight-line travel between two configurations is a crossfade with extra\n     steps; lifting each slab off its own normal at the half-way point makes the change a\n     FLIGHT, and the band peaks exactly where the mass is at its softest. */\n  let band = 1.0 - abs(melt * 2.0 - 1.0);\n  let lift = normalize(emblem - vec3f(0.0, -0.12, 0.0)) * band * band * (0.16 + 0.10 * segRand(ctx.index, 29u));\n\n  q.position = obolYaw(mix(emblem, goo, melt) + lift, ctx.absTime);\n\n  let tone = taiji(disc);\n  let porcelain = vec3f(0.400, 0.388, 0.360);\n  let ink = vec3f(0.0180, 0.0205, 0.0295);\n  let oil = mix(vec3f(0.0125, 0.0120, 0.0195), vec3f(0.0335, 0.0315, 0.0290), tone);\n  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));\n  let colour = mix(mix(ink, porcelain, tone), oil, melt) + irid * band * band * 0.34 * (1.0 - tone * 0.55);\n  q.tint = vec4f(colour, 1.0);\n  return q;\n}",
+          "seed": 33,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "tide1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "sheen1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1760,
+          "y": 1280
+        },
+        "type": "pointKernel"
+      },
+      "shards": {
+        "definitionVersion": 1,
+        "id": "shards",
+        "label": "shards1",
+        "parameters": {
+          "material": "oil1",
+          "mode": "instances",
+          "scale": 0.026,
+          "shape": "box",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1440,
+          "y": 1280
+        },
+        "type": "geometry"
       },
       "sheen": {
         "definitionVersion": 1,
@@ -802,7 +964,7 @@
             0.84,
             1
           ],
-          "ambientIntensity": 0.62,
+          "ambientIntensity": 0.2,
           "ambientOcclusion": true,
           "aoIntensity": {
             "bindings": {
@@ -818,7 +980,7 @@
             "mode": "driven"
           },
           "aoQuality": "high",
-          "aoRadius": 0.5,
+          "aoRadius": 0.34,
           "background": [
             0.008,
             0.009,
@@ -840,7 +1002,7 @@
             "mode": "driven"
           },
           "lights": "key1 fill1 crown1",
-          "scenes": "cyc1 body1"
+          "scenes": "cyc1 body1 shards1"
         },
         "position": {
           "x": -800,
@@ -859,36 +1021,36 @@
           "stops": [
             {
               "color": [
-                0.66,
-                0.72,
-                0.86,
+                0.277,
+                0.302,
+                0.361,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.17,
-                0.19,
-                0.26,
+                0.071,
+                0.08,
+                0.109,
                 1
               ],
               "position": 0.4
             },
             {
               "color": [
-                0.06,
-                0.065,
-                0.085,
+                0.025,
+                0.027,
+                0.036,
                 1
               ],
               "position": 0.62
             },
             {
               "color": [
-                0.03,
-                0.031,
-                0.038,
+                0.013,
+                0.013,
+                0.016,
                 1
               ],
               "position": 1
@@ -920,7 +1082,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
           "capacity": 6144,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Sized so the cove leaves the FRAME before it leaves the mesh: at the camera's\n     widest swing the far lip of an 8-unit rise was still on screen as a dark arc in\n     the top corner. Measured against the 42-degree frustum at the deepest row. */\n  let across = p.position.x * 15.0;\n  let run = (p.position.y * 0.5 + 0.5);\n  let depth = 2.5 - run * 18.5;\n  let rise = clamp((-2.0 - depth) / 13.0, 0.0, 1.0);\n  q.position = vec3f(across, -1.04 + 11.0 * rise * rise, depth);\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let across = p.position.x * 19.0;\n  let run = (p.position.y * 0.5 + 0.5);\n  let depth = 2.5 - run * 23.0;\n  let rise = clamp((-2.0 - depth) / 16.0, 0.0, 1.0);\n  q.position = vec3f(across, -1.04 + 14.0 * rise * rise, depth);\n  return q;\n}",
           "seed": 3
         },
         "position": {

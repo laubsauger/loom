@@ -6207,15 +6207,25 @@ const OBOL_ROWS = 160;
 const OBOL_POINTS = OBOL_COLS * OBOL_ROWS;
 
 /**
- * E33's kernel. Every line of it is one of two shapes and the rule for travelling
- * between them; nothing here is decoration.
+ * THE SEGMENTS. 720 of them, and the number is a size rather than a taste: a phyllotaxis
+ * disc of N slabs over a radius of 0.93 spaces them sqrt(pi*0.93^2/N) apart, so 720 gives
+ * 0.061 of world spacing and a 0.052 slab leaves a 0.009 gutter — about 13 screen pixels
+ * of slab and 2 of shadow at 1280x720. Fewer and the emblem's dots stop being circles;
+ * many more and the mosaic reads as noise rather than as parts.
  */
-const OBOL_KERNEL = `const TAU: f32 = 6.28318530717958647692;
+const OBOL_SEG_COLS = 36;
+const OBOL_SEG_ROWS = 20;
+const OBOL_SEG_POINTS = OBOL_SEG_COLS * OBOL_SEG_ROWS;
+
+/**
+ * E33's SHARED WGSL. One definition of the emblem's field, the melt's order and the goo's
+ * field, pasted into BOTH kernels below — the mass and the segments have to agree about
+ * where the seam is and where the goo's surface is, and two copies of that arithmetic is
+ * two chances for a slab to hover off the face it is inlaid into.
+ */
+const OBOL_PRELUDE = `const TAU: f32 = 6.28318530717958647692;
 const PI: f32 = 3.14159265358979323846;
 
-/* Integer value noise. An integer hash rather than the usual fract(sin(...)) because
-   sin's precision is implementation-defined and this field decides GEOMETRY — a browser
-   and Dawn that disagreed about it would disagree about the silhouette (§V47). */
 fn ihash(cell: vec3i) -> f32 {
   let q = vec3u(cell + vec3i(4096));
   var n = (q.x * 1597334673u) ^ (q.y * 3812015801u) ^ (q.z * 2246822519u);
@@ -6237,16 +6247,10 @@ fn vnoise(p: vec3f) -> f32 {
 }
 
 fn fbm(p: vec3f) -> f32 {
-  /* Weighted hard toward the FIRST octave. The first build ran 0.56/0.30/0.14 and the
-     goo came back as crumpled tinfoil: high-frequency radial displacement on a closed
-     surface reads as creases, not as fluid. Goo is a few big lobes. */
   return vnoise(p) * 0.74 + vnoise(p * 2.07 + vec3f(19.1, 7.3, 31.7)) * 0.20
        + vnoise(p * 4.19 + vec3f(41.7, 63.1, 11.9)) * 0.06;
 }
 
-/* Six stops, and they GO somewhere: midnight, indigo, violet, magenta, amber, gold.
-   §V471.6 — a two-stop ramp is a tint; this is a journey, and only the melt FRONT
-   wears it, which is what keeps the emblem's own two tones intact behind it. */
 fn spectrum(t: f32) -> vec3f {
   var stops = array<vec3f, 6>(
     vec3f(0.014, 0.020, 0.058),
@@ -6262,12 +6266,6 @@ fn spectrum(t: f32) -> vec3f {
   return mix(stops[lo], stops[hi], x - floor(x));
 }
 
-/* The emblem's own field, read in the disc coordinate the medallion is built on.
-   1 is the light half, 0 the dark, dots included. Built out of SIGNED DISTANCES rather
-   than four ifs: this is a per-VERTEX attribute on a 208x160 grid, and a hard step
-   there arrives on screen as the octagonal stair the first look pass showed on both
-   dots. The edge width is a little under one cell, so the boundary is one cell of ramp
-   — an inlaid edge, not a jagged one. */
 fn taiji(p: vec2f) -> f32 {
   let e = 0.030;
   let dTop = distance(p, vec2f(0.0, 0.5));
@@ -6280,100 +6278,220 @@ fn taiji(p: vec2f) -> f32 {
   return tone;
 }
 
+/* ---- THE ORDER OF THE MELT, in the emblem's own disc coordinate. Built from the two
+   circles the S-curve is built from, so the front LEAVES THE SEAM and travels outward.
+   The mass and the segments both read it, so a tile lifts exactly as the surface under
+   it goes soft. */
+fn meltOrder(d: vec2f) -> f32 {
+  let arcTop = distance(d, vec2f(0.0, 0.5)) - 0.5;
+  let arcBot = distance(d, vec2f(0.0, -0.5)) - 0.5;
+  return clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + length(d) * 0.4;
+}
+
+/* ---- THE GOO, as a FOUR-CHARGE METABALL. This is the answer to "still too much like a
+   sphere", and the reason it is a field rather than more noise: displacement on a sphere
+   changes TEXTURE, and the eye reads shape from the OUTLINE. Only a low-frequency term
+   moves the outline, so the lobes are the whole point and the noise below is a skin.
+   The CORE charge is load-bearing: without it the three lobes separate and a ray from
+   the origin misses entirely, which is a radius of zero and a torn mesh. */
+fn gooCentre(k: u32, t: f32) -> vec3f {
+  var dirs = array<vec3f, 3>(
+    vec3f( 0.895,  0.264,  0.113),
+    vec3f(-0.680, -0.566,  0.321),
+    vec3f( 0.039,  0.877, -0.479),
+  );
+  let d = dirs[k] * 0.66;
+  let a = t * 0.115 + f32(k) * 2.094;
+  return vec3f(
+    d.x * cos(a) - d.z * sin(a),
+    d.y + 0.10 * sin(t * 0.21 + f32(k) * 1.7),
+    d.x * sin(a) + d.z * cos(a),
+  );
+}
+
+fn gooField(p: vec3f, t: f32) -> f32 {
+  var weights = array<f32, 3>(0.130, 0.107, 0.081);
+  var f = 0.085 / max(dot(p, p), 1e-5);
+  for (var k = 0u; k < 3u; k = k + 1u) {
+    let d = p - gooCentre(k, t);
+    f = f + weights[k] / max(dot(d, d), 1e-5);
+  }
+  return f;
+}
+
+/* The radius along s where the field crosses 1, found from the OUTSIDE IN. A bracketed
+   bisection would converge on whichever crossing it happened to trap, and a ray through
+   three charges can cross three times — neighbouring directions landing on different
+   crossings is a CRACK in the mesh. Scanning inward always takes the outermost. */
+fn gooRadius(s: vec3f, t: f32) -> f32 {
+  let top = 1.70;
+  let step = top / 30.0;
+  var lo = 0.0;
+  var hi = 0.0;
+  for (var i = 1u; i <= 30u; i = i + 1u) {
+    let r = top - f32(i) * step;
+    if (gooField(s * r, t) > 1.0) { lo = r; hi = r + step; break; }
+  }
+  if (hi == 0.0) { return 0.10; }
+  for (var j = 0u; j < 7u; j = j + 1u) {
+    let mid = (lo + hi) * 0.5;
+    if (gooField(s * mid, t) > 1.0) { lo = mid; } else { hi = mid; }
+  }
+  return (lo + hi) * 0.5;
+}
+
+/* The goo's surface point along s: the lobed radius, a small high-frequency skin (texture,
+   NOT outline), and a differential sag so the thing hangs rather than floats. */
+fn gooAt(s: vec3f, t: f32) -> vec3f {
+  let r = gooRadius(s, t) * (1.0 + 0.050 * fbm(s * 2.60 + vec3f(0.0, t * 0.090, 0.0)));
+  var g = s * r;
+  g.y = g.y - 0.105 * (1.0 - s.y * 0.55);
+  g.x = g.x + 0.045 * sin(t * 0.27);
+  return g;
+}
+
+/* The medallion's own tilt — 17 degrees, so the rim bevel is on screen as a lit edge and
+   a disc seen dead-on cannot be mistaken for a sphere. Shared: a tile that did not wear
+   the same tilt would float off the face it is inlaid into. */
+fn emblemTilt(p: vec3f) -> vec3f {
+  let tilt = 0.30;
+  return vec3f(p.x, p.y * cos(tilt) - p.z * sin(tilt), p.y * sin(tilt) + p.z * cos(tilt));
+}
+
+/* The object's slow yaw. On the ABSOLUTE clock and applied last, to both readings. */
+fn obolYaw(p: vec3f, t: f32) -> vec3f {
+  let yaw = 0.21 * sin(t * 0.185);
+  return vec3f(p.x * cos(yaw) + p.z * sin(yaw), p.y, -p.x * sin(yaw) + p.z * cos(yaw));
+}
+
+/* ---- THE STAGING. A sine never HOLDS, and a morph the eye cannot register the ends of
+   reads as a crossfade. Squeezing the drive to the middle of the LFO's travel parks the
+   piece at each configuration for about a third of the cycle each and spends the rest
+   travelling — so there is a medallion, then an event, then a goo. */
+fn meltDrive(v: f32) -> f32 {
+  return smoothstep(0.18, 0.82, v);
+}
+`;
+
+/**
+ * THE MASS. Every line of it is one of two shapes and the rule for travelling between
+ * them; nothing here is decoration.
+ */
+const OBOL_KERNEL = `${OBOL_PRELUDE}
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
 
-  /* The sphere the whole piece is parameterised on. The generator's tube topology
-     supplies wrapU, so column 0 and column cols-1 are the SAME seam and the surface
-     closes; the pole axis is z, which is what makes the medallion face the camera. */
   let lon = f32(ctx.dim.i) / f32(ctx.dim.cols) * TAU;
   let lat = f32(ctx.dim.j) / f32(max(ctx.dim.rows - 1u, 1u)) * PI;
   let s = vec3f(sin(lat) * cos(lon), sin(lat) * sin(lon), cos(lat));
 
-  /* ---- CONFIGURATION A: the emblem. A medallion — the unit sphere pressed flat on
-     z, with a smoothstep profile so the faces are plateaus and the rim is a bevel a
-     highlight can run along. */
+  /* CONFIGURATION A — the emblem: the unit sphere pressed flat on z, plateau faces and a
+     bevelled rim a highlight can run along. */
   let face = sqrt(max(0.0, 1.0 - s.x * s.x - s.y * s.y));
   let plateau = smoothstep(0.0, 0.72, face);
-  let coin = vec3f(s.x, s.y, select(-1.0, 1.0, s.z >= 0.0) * plateau * 0.19) * 1.02;
-  /* TILTED, and the first look pass is why. A flat medallion seen dead-on is
-     PIXEL-IDENTICAL in silhouette to a sphere, and the whole point of the emblem state
-     is that it reads as a hard, made, FLAT thing. Leaning it 17 degrees puts the rim
-     bevel on screen as a lit edge and the disc becomes a disc. */
-  let tilt = 0.30;
-  let emblem = vec3f(coin.x, coin.y * cos(tilt) - coin.z * sin(tilt), coin.y * sin(tilt) + coin.z * cos(tilt));
+  /* FLATTER and TIGHTER than it shipped. The bed is now read against a mosaic that IS
+     flat, so a 0.19 dome next to it stopped reading as a coin and started reading as a
+     bubble the tiles were embedded in; and its rim is pulled in to 0.955 so it frames
+     the segments as a bevel rather than surrounding them as a halo. */
+  let coin = vec3f(s.x, s.y, select(-1.0, 1.0, s.z >= 0.0) * plateau * 0.125) * 0.955;
+  let emblem = emblemTilt(coin);
 
-  /* ---- CONFIGURATION B: the goo. The same sphere, radius pushed by a two-octave
-     field that TURNS relative to the body (the field rotates, not the emblem — the
-     emblem has to come back to the same orientation it left), plus a sag, because a
-     living thing under gravity is not symmetric and the yin-yang is nothing but. */
-  let spin = ctx.absTime * 0.115;
-  let turned = vec3f(s.x * cos(spin) - s.z * sin(spin), s.y, s.x * sin(spin) + s.z * cos(spin));
-  let coarse = fbm(turned * 1.02 + vec3f(0.0, ctx.absTime * 0.085, 0.0));
-  let fine = fbm(turned * 2.35 - vec3f(ctx.absTime * 0.061, 0.0, 0.0));
-  let swell = 0.870 + 0.305 * coarse + 0.060 * fine;
-  var goo = s * swell;
-  goo.y = goo.y - 0.235 * (1.0 - s.y * 0.5) * (0.55 + 0.45 * coarse);
-  goo.x = goo.x + 0.055 * sin(ctx.absTime * 0.27);
+  /* CONFIGURATION B — the goo: three lobes and a core. */
+  let goo = gooAt(s, ctx.absTime);
 
-  /* ---- THE SEAM, and the order things melt in. §V471.1/.2: the kernel writes the
-     attribute downstream selection reads, and here that attribute is free — it is the
-     emblem's own dividing curve. "order" is built from the two circles the S-curve
-     is built from, so the melt front LEAVES THE SEAM and travels outward: the boundary
-     between yin and yang is the first thing to go and the last thing to come back.
-     That is the difference between becoming and cross-fading. */
-  let rho = length(s.xy);
-  let arcTop = distance(s.xy, vec2f(0.0, 0.5)) - 0.5;
-  let arcBot = distance(s.xy, vec2f(0.0, -0.5)) - 0.5;
-  /* CAPPED, and then blended with radius, and both halves of that were paid for by a
-     look pass. Raw distance-to-the-arcs has a conical LOCAL MAXIMUM at each dot's
-     centre — so each dot was the last thing left un-melted and got drawn out into a
-     literal spike with a specular on it. The cap flattens those peaks into a plateau;
-     the radius term gives the front a global outward sweep so there is no interior
-     maximum left for the surface to be pulled towards. The seam still leads, which is
-     what the eye reads. */
-  let order = clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + rho * 0.4;
-  let drive = smoothstep(0.06, 0.94, ctx.value1);
-  let front = clamp(drive * 2.15 - order * 1.15, 0.0, 1.0);
+  let order = meltOrder(s.xy);
+  let drive = meltDrive(ctx.value1);
+  let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);
   let melt = front * front * (3.0 - 2.0 * front);
 
-  /*
-   * A SLOW YAW, on the absolute clock, and it is not decoration — it is the piece's
-   * only motion that does NOT come through the value graph. The cook oracle renders
-   * every example without a channel resolver, so an LFO-only piece is a still frame
-   * there and its 80-frame run hashes identical; this one did, and that is a real
-   * fragility rather than a harness artefact (an idle value graph in the app is the
-   * same picture). It also earns its place visually: a turntable sway keeps the
-   * softbox reflections travelling across the surface, which is what says "wet".
-   */
-  let yaw = 0.21 * sin(ctx.absTime * 0.185);
   let shape = mix(emblem, goo, melt);
-  q.position = vec3f(
-    shape.x * cos(yaw) + shape.z * sin(yaw),
-    shape.y,
-    -shape.x * sin(yaw) + shape.z * cos(yaw),
-  );
+  q.position = obolYaw(shape, ctx.absTime);
 
-  /* ---- COLOUR. Two tones painted in the MATERIAL coordinate, so the pattern travels
-     with the surface and stretches as the surface does — a tint read from the DEFORMED
-     position would slide over the goo like a projection and the whole illusion dies. */
   let tone = taiji(s.xy);
   let porcelain = vec3f(0.400, 0.388, 0.360);
   let ink = vec3f(0.0180, 0.0205, 0.0295);
   let rest = mix(ink, porcelain, tone);
-  /* Melted, both tones sink toward oil: nearly black, because everything worth seeing
-     in an oil surface arrives as a reflection, not as a diffuse colour. */
-  /* Melted, both tones sink toward oil — but not to the SAME oil. Losing the emblem
-     entirely at full melt made the goo a featureless dark lump; keeping the two tones
-     as a marbling inside the film is what says "this used to be the emblem". */
-  let oil = mix(vec3f(0.0130, 0.0125, 0.0205), vec3f(0.0620, 0.0580, 0.0520), tone);
-  /* The FRONT itself — a band, not the whole body — wears the spectrum, phase driven
-     so the ramp breathes rather than sitting (§V471.7). */
+  /* Melted, both tones sink toward oil — and FURTHER than they used to. The marbling that
+     survived at full melt was the emblem still legible in the goo, which is exactly the
+     "endpoints too alike" complaint; the memory of the emblem is now carried by the
+     SEGMENTS, which travel, so the mass is free to become one wet black thing. */
+  let oil = mix(vec3f(0.0125, 0.0120, 0.0195), vec3f(0.0335, 0.0315, 0.0290), tone);
   let band = 1.0 - abs(melt * 2.0 - 1.0);
   let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));
-  /* The front's spectrum is held back on the LIGHT half — an already-bright porcelain
-     plus a full-strength ramp clips to white and the ramp stops meaning anything. */
   let colour = mix(rest, oil, melt) + irid * band * band * 0.26 * (1.0 - tone * 0.55);
+  q.tint = vec4f(colour, 1.0);
+  return q;
+}`;
+
+/* The SEGMENTS. The owner's own idea, and the reason it is a second reading rather than a
+   second object: the medallion is not decorated with tiles, it is BUILT of them — a
+   phyllotaxis lattice of little slabs standing proud of the bed, each one carrying its own
+   piece of the emblem's two tones, each one melting on the same wave the mass melts on and
+   arriving a moment apart. What that buys, in order: the eye can follow ONE element
+   through the change instead of watching a blob deform; the gaps between slabs are real
+   geometry for the key light to throw shadows into and for the occlusion pass to find;
+   and the emblem end of the morph becomes hard, faceted and made, which is as far from a
+   smooth wet lobe as this piece can get. */
+const OBOL_SEG_KERNEL = `${OBOL_PRELUDE}
+/* Stable per-segment noise. NOT pointRand: that hash is salted with the FRAME index by
+   contract, so a "random" draw taken per point changes every frame — a per-element
+   constant has to come from the element's own index. */
+fn segRand(i: u32, salt: u32) -> f32 {
+  var n = (i * 1597334673u) ^ (salt * 2246822519u);
+  n = (n ^ (n >> 15u)) * 2246822519u;
+  n = (n ^ (n >> 13u)) * 3266489917u;
+  return f32(n ^ (n >> 16u)) * 2.3283064e-10;
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+
+  /* PHYLLOTAXIS, not a grid. A polar lattice crowds at the centre and a square one leaves
+     a stepped rim; the golden angle gives even spacing at every radius, so the slab size
+     can be one number and the mosaic still has no seam. */
+  let n = f32(max(ctx.count, 1u));
+  let i = f32(ctx.index);
+  let rr = sqrt((i + 0.5) / n) * 0.930;
+  let ang = i * 2.39996323;
+  let disc = vec2f(rr * cos(ang), rr * sin(ang));
+
+  /* CONFIGURATION A — the slab, standing proud of the medallion's front face. */
+  let face = sqrt(max(0.0, 1.0 - dot(disc, disc)));
+  let plateau = smoothstep(0.0, 0.36, face);
+  let emblem = emblemTilt(vec3f(disc.x, disc.y, plateau * 0.125 + 0.030) * 0.955);
+
+  /* CONFIGURATION B — a place INSIDE the goo. Each segment keeps its angular station and
+     is lifted onto the sphere, so its travel is legible as travel; the depth it is sent to
+     is its own constant, which is what fans a flat disc out into a volume. */
+  let depth = 0.42 + 0.58 * segRand(ctx.index, 11u);
+  let sdir = normalize(vec3f(disc.x, disc.y, face * depth + 0.06));
+  let surface = gooAt(sdir, ctx.absTime);
+
+  let order = meltOrder(disc);
+  let drive = meltDrive(ctx.value1);
+  let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);
+  let melt = front * front * (3.0 - 2.0 * front);
+
+  /* SINKING is what ends the journey. A slab left riding the surface is a barnacle on an
+     oil drop; a slab drawn UNDER it is gone, and the goo end is one wet mass — which is
+     the whole reason the two endpoints now look nothing like each other. */
+  let sink = mix(1.020, 0.680, smoothstep(0.40, 1.0, front));
+  let goo = surface * sink;
+
+  /* The ARC. Straight-line travel between two configurations is a crossfade with extra
+     steps; lifting each slab off its own normal at the half-way point makes the change a
+     FLIGHT, and the band peaks exactly where the mass is at its softest. */
+  let band = 1.0 - abs(melt * 2.0 - 1.0);
+  let lift = normalize(emblem - vec3f(0.0, -0.12, 0.0)) * band * band * (0.16 + 0.10 * segRand(ctx.index, 29u));
+
+  q.position = obolYaw(mix(emblem, goo, melt) + lift, ctx.absTime);
+
+  let tone = taiji(disc);
+  let porcelain = vec3f(0.400, 0.388, 0.360);
+  let ink = vec3f(0.0180, 0.0205, 0.0295);
+  let oil = mix(vec3f(0.0125, 0.0120, 0.0195), vec3f(0.0335, 0.0315, 0.0290), tone);
+  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));
+  let colour = mix(mix(ink, porcelain, tone), oil, melt) + irid * band * band * 0.34 * (1.0 - tone * 0.55);
   q.tint = vec4f(colour, 1.0);
   return q;
 }`;
@@ -6391,85 +6509,177 @@ const OBOL_SWEEP_POINTS = OBOL_SWEEP_COLS * OBOL_SWEEP_ROWS;
  */
 const OBOL_SWEEP_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* Sized so the cove leaves the FRAME before it leaves the mesh: at the camera's
-     widest swing the far lip of an 8-unit rise was still on screen as a dark arc in
-     the top corner. Measured against the 42-degree frustum at the deepest row. */
-  let across = p.position.x * 15.0;
+  let across = p.position.x * 19.0;
   let run = (p.position.y * 0.5 + 0.5);
-  let depth = 2.5 - run * 18.5;
-  let rise = clamp((-2.0 - depth) / 13.0, 0.0, 1.0);
-  q.position = vec3f(across, -1.04 + 11.0 * rise * rise, depth);
+  let depth = 2.5 - run * 23.0;
+  let rise = clamp((-2.0 - depth) / 16.0, 0.0, 1.0);
+  q.position = vec3f(across, -1.04 + 14.0 * rise * rise, depth);
   return q;
 }`;
 
 /**
- * E33 — Obol (T625/T624).
+ * E33 — Obol (T625/T624, reworked T673).
  *
- * WHAT YOU SEE. A yin-yang medallion standing on a dark studio sweep under two
- * softboxes. Its dividing curve softens, then flows; the emblem loses its edges from
- * the seam outward and becomes a slick black blob that breathes and sags; then the
- * whole thing runs backwards and the medallion reassembles. One 16-second breath,
- * both directions, forever.
+ * WHAT YOU SEE. A yin-yang medallion — a MOSAIC of seven hundred little slabs standing
+ * proud of a bevelled bed — turns slowly on a dark studio sweep under two softboxes it
+ * can see in itself. It holds. Then its dividing curve goes soft, and the slabs lift off
+ * the face in a wave that leaves the seam and travels outward, arc, and sink; what they
+ * sink into is not a ball but a three-lobed mass of black oil that pinches between its
+ * lobes and hangs. It holds there too. Then the whole thing runs backwards and the
+ * medallion reassembles, slab by slab. One sixteen-second breath, both directions.
  *
- * **The morph is a deformation with a FRONT, not a cross-fade.** Every point carries
- * two configurations — a place on the medallion and a place on the goo — and ONE
- * kernel decides how far along each point has travelled, from its distance to the
- * emblem's own dividing curve. The seam melts first and re-forms last, so the picture
- * is always ONE object changing shape, never two pictures fading through each other.
- * A cross-fade cannot do this: at 50% it would show a ghost of both, and this shows a
- * medallion whose middle has already gone liquid while its rim is still a hard edge.
+ * **The morph is a deformation with a FRONT, not a cross-fade.** Every point carries two
+ * configurations — a place on the medallion and a place on the goo — and ONE rule decides
+ * how far along it has travelled, from its distance to the emblem's own dividing curve.
+ * The seam melts first and re-forms last, so the picture is always ONE object changing
+ * shape. A cross-fade at 50% shows a ghost of both; this shows a medallion whose middle
+ * has already gone liquid while its rim is still a hard edge, with its own tiles in the
+ * air between the two states.
+ *
+ * ## What T673 changed, and why each was a defect rather than a preference
+ *
+ * The owner's verdict was "not looking interesting enough… the morph does not read too
+ * well and the target is still too much like a sphere". Four things, three of them
+ * measurable.
+ *
+ * **"TOO MUCH LIKE A SPHERE" WAS A SILHOUETTE FAULT, NOT A SHADING ONE.** The eye reads
+ * shape from the OUTLINE, and high-frequency displacement changes surface TEXTURE while
+ * leaving the outline circular — so a sphere with noise on it stays a sphere however well
+ * it is lit. The goo is now a FOUR-CHARGE METABALL: three lobes far enough apart that the
+ * surface between them pinches, plus a core charge that keeps the form star-shaped about
+ * the origin so no ray from the centre misses and no radius collapses to zero. Measured
+ * over 12 orbit angles x 5 moments, on the same 208x160 directions the kernel uses:
+ *
+ *   | silhouette                       | shipped | T673  | perfect sphere |
+ *   | -------------------------------- | ------- | ----- | -------------- |
+ *   | radius CV vs angle (mean)        | 0.086   | 0.234 | 0.000          |
+ *   | radius CV vs angle (WORST angle) | 0.049   | 0.191 | 0.000          |
+ *   | convexity deficit (mean)         | 0.0054  | 0.049 | 0.000          |
+ *   | max/min radius (mean)            | 1.375   | 2.171 | 1.000          |
+ *
+ * The row that matters is the second: T673's WORST orbit angle is more non-circular than
+ * the shipped file's BEST one, so this is a shape that is lobed from everywhere rather
+ * than from the angle somebody happened to render.
+ *
+ * **THE MORPH DID NOT READ BECAUSE ITS ENDPOINTS WERE TOO ALIKE.** A morph is legible in
+ * proportion to the distance between its two ends, and the shipped goo kept the emblem's
+ * two tones as marbling over a smooth ball — so the verb was "the disc inflates". Both
+ * ends were pushed apart: the emblem is flatter (a 0.36 bevel where it was 0.72, so the
+ * face is a plateau to within 6% of the rim rather than a dome) and made of hard-edged
+ * parts; the goo is lobed, self-occluding, and its marbling is halved so the mass can be
+ * one wet black thing. The memory of the emblem is carried by the SLABS instead, which
+ * travel — and travel is something an eye can follow.
+ *
+ * And the transition is STAGED. `meltDrive` squeezes the LFO's travel into its middle
+ * (smoothstep 0.18..0.82 where it was 0.06..0.94), so the piece parks at each
+ * configuration for about a third of the cycle and spends the rest moving: there is a
+ * medallion, then an EVENT, then a goo, rather than a continuous ooze the eye reads as a
+ * dissolve.
+ *
+ * **THE EMBLEM IS NOW MADE OF PARTS** — the owner's own idea, and the strongest one in
+ * the note. `segs1` is a second point system whose 720 slabs are laid out by golden angle
+ * (a polar lattice crowds at the centre; a square one leaves a stepped rim), each wearing
+ * its own piece of `taiji` and each melting on the same `meltOrder` wave the mass melts
+ * on, so a slab lifts exactly as the surface under it goes soft. Two things fall out of
+ * it that a single smooth body could not give: motion becomes readable PER ELEMENT, and
+ * the gutters between slabs are real geometry for the shadow pass and the occlusion pass
+ * to bite on.
+ *
+ * **THE LIGHTING WAS FLAT BECAUSE THE AMBIENT WAS DOING THE WORK.** 0.62 of ambient
+ * against 0.26 of key is a rig with its contrast turned off — and ambient is the one term
+ * that cannot describe a shape, as well as being the term AO multiplies. Ambient is now
+ * 0.20, the key is 0.55 and casts over a wider volume, the room's albedo is down to 46%
+ * of what it was, and the sky is dimmed to 42% while the softboxes keep their brightness
+ * and grow. Measured against a render of the same frame with the object removed, on the
+ * DISPLAY-ENCODED output (§V618, and the space read off the plan per §V470):
+ *
+ *   | goo frame (484)                        | shipped | T673 |
+ *   | -------------------------------------- | ------- | ---- |
+ *   | object median luma                     | 60.7    | 72.5 |
+ *   | backdrop median luma                   | 62.3    | 34.3 |
+ *   | separation                             | 1.6     | 38.2 |
+ *   | p99 (the highlight)                    | 127.4   | 196.7|
+ *   | object pixels within 12 luma of backdrop| 36.2%  | 15.3%|
+ *
+ * A separation of 1.6 luma is §V618's "dark blob" in the shipped file's own pixels: the
+ * goo was carried by its cast shadow and nothing else.
+ *
+ * Both columns measured at 154ddf1, minutes apart on one tree (§V641) — an absolute with
+ * no commit behind it cannot be told apart from a table stale since authoring, which is
+ * T689. The silhouette table above is exempt: it is computed from the kernel's own
+ * arithmetic in TypeScript and never rendered, so no shader change can move it.
+ *
+ * ## The rim is not a light, and that is a fact about this renderer
+ *
+ * "Rim light" is the standard answer to "make it look wet", and it is unavailable here:
+ * the diffuse term is TWO-SIDED by rule (`lambert = abs(dot(N, L))`, T301) and so is the
+ * highlight, so a directional light behind the subject lights the faces pointing at the
+ * camera exactly as hard as the ones pointing away. One at 1.60 blew the emblem's light
+ * half to white and produced no edge at all.
+ *
+ * What rims in this engine is the environment's Schlick term (T632): `envFresnel` rises
+ * to 1 at grazing, and at grazing the reflection vector points away from the camera — so
+ * the silhouette samples the equirect at its horizon, (0.5, 0.5), where nothing had ever
+ * been put. `rimband1` is that texel — and it is a RIM ON THE GOO and a FILL ON THE
+ * EMBLEM, which is the Fresnel term working rather than a compromise: on the goo frame
+ * the silhouette ring moves 45.8 luma against the body's 25.9, and on the emblem frame
+ * 14.5 against 19.5. A flat disc facing the camera has almost no grazing surface for a
+ * Fresnel rim to land on, which is the same fact as "the emblem end is flat".
  *
  * ## Graph
  *
- *   ramp ─┐                          ┌── level ── blur ──┐
- *  circle ─┤ add ── environment      │                   │
- *  circle ─┘        │                │                   add ── output
- *                   ▼                │                   │
- *  pointTube ── pointKernel ── geometry ─┐               │
- *   (grid,wrapU)   (morph)      (surface)│               │
- *                                        ├── render ─────┘
- *  pointGrid ── pointKernel ── geometry ─┘   ▲  ▲
- *   (sweep)      (cyclorama)   (surface)     │  └── camera
- *                                            └── 3 lights
+ *   ramp ─┐
+ *  circle ─┤ add ── environment
+ *  circle ─┤  │                    ┌── level ── limit ── blur ──┐
+ *  circle ─┘  │                    │                            │
+ *             ▼                    │                            add ── output
+ *  pointTube ── pointKernel ── geometry (surface) ─┐             │
+ *   (grid,wrapU)   (morph1)        (body1)         │             │
+ *                                                  ├── render ───┘
+ *  pointGrid ── pointKernel ── geometry (instances)│   ▲  ▲
+ *   (segpts1)     (segs1)         (shards1)        │   │  └── camera
+ *                                                  │   └── 3 lights
+ *  pointGrid ── pointKernel ── geometry (surface) ─┘
+ *   (sweeppts1)   (sweep1)         (cyc1)
  *
  * ## What it took from §V471, and where
  *
  *  - **§V471.1/.2 — the kernel writes what selection reads.** Corona's cloud is split
- *    three ways by a group predicate over an attribute its kernel wrote. Here the
- *    surface is one object, so the split is a per-point TINT rather than three draws,
- *    but the mechanism is the same one and the attribute is the same kind of thing:
- *    `seam`, the distance to the emblem's dividing curve, is free — it is the shape's
- *    own geometry — and it decides BOTH the colour and the order of the melt.
- *  - **§V471.3 / §V477 — gain and bias per band.** One source (`tide`) drives three
+ *    three ways by a group predicate over an attribute its kernel wrote. Here the split
+ *    is between two READINGS of the same idea — a continuous mass and a set of discrete
+ *    parts — and the thing both of them read is the same free attribute: `meltOrder`, the
+ *    distance to the emblem's dividing curve, which the shape already knows. It decides
+ *    the colour, the order the surface melts in AND the order the slabs leave, which is
+ *    why they agree without either one being told about the other.
+ *  - **§V471.3 / §V477 — gain and bias per band.** One source (`tide1`) drives three
  *    properties, each through its OWN multiply→add pair rather than one shared knob:
  *    AO intensity 0.55→1.45, environment intensity 1.00→1.85, roughness 0.190→0.085.
- *    Every one rests where the eye expects calm and travels toward the interesting
- *    end, which is §V477's half of the rule.
+ *    Every one rests where the eye expects calm and travels toward the interesting end.
  *  - **§V471.6/.8 — a ramp that goes somewhere, on a long cycle.** Six stops
- *    (midnight, indigo, violet, magenta, amber, gold) worn by the melt FRONT only, its
- *    phase turned by a 0.011 Hz LFO — 91 seconds a lap. Unlike the file §V471.8 was
- *    measured from, this LFO's amplitude IS in its target's units: `ctx.value2` is a
- *    unitless kernel value read through `fract`, so amplitude 0.5 + offset 0.5 is
- *    exactly one full rotation of the ramp and the travel is measurable, not nominal.
+ *    (midnight, indigo, violet, magenta, amber, gold) worn by the melt FRONT only — now
+ *    by the slabs' fronts as well as the surface's, so the travelling parts are the
+ *    coloured ones. Its phase turns on a 0.011 Hz LFO: 91 seconds a lap, and unlike the
+ *    file §V471.8 was measured from this amplitude IS in its target's units.
  *
  * ## Clock
  *
- * The kernel reads `ctx.absTime` only — the goo's field, its turn, its drift and the
+ * The kernels read `ctx.absTime` only — the goo's field, its turn, its drift and the
  * object's YAW all ride the absolute clock, so nothing snaps at a timeline lap (§V437).
- * The morph itself rides an LFO, which is free-running for the same reason. The yaw is
- * the one motion that does not come through the value graph, and it is there because a
- * value-graph-only piece is a still frame wherever no resolver runs — the cook oracle
- * caught exactly that.
+ * The morph rides an LFO, free-running for the same reason. The yaw is the one motion
+ * that does not come through the value graph, and it is there because a value-graph-only
+ * piece is a still frame wherever no resolver runs — the cook oracle caught exactly that.
  *
- * ## What needed a light that does not exist, and did not
+ * ## What is still not here
  *
- * "Studio lighting" normally means area sources, and this catalogue has directional
- * and point lights only. It did not need one, and the reason is worth stating: the
- * visually load-bearing part of a softbox on a slick surface is its REFLECTION, and
- * that arrives through the environment input — the two ellipses in the equirect are
- * the softboxes, sampled along R by the phong path. What an area light would still
- * add is soft SHADOW EDGES and a diffuse wrap; the shadow here is hard, and that is
- * recorded rather than hidden.
+ * A per-instance SCALE or ORIENTATION. The instanced path carries one `instance.x` for
+ * the whole draw and per-point position and tint, nothing else — so every slab is the
+ * same size and the same way up. That reads as a deliberate tiling here, and it is worth
+ * knowing rather than discovering: a mosaic that wanted to tumble as it flew would need a
+ * node-level change, not a parameter.
+ *
+ * Soft shadow edges. The cast shadow is hard, because the catalogue's lights are point
+ * and directional and an area source is a different feature (§V328 — state it, never
+ * promise the hardware).
  */
 const obolDocument = document(
   "e33-obol",
@@ -6487,10 +6697,21 @@ const obolDocument = document(
           phase: 0,
           period: 1,
           stops: [
-            { position: 0, color: [0.66, 0.72, 0.86, 1] },
-            { position: 0.4, color: [0.17, 0.19, 0.26, 1] },
-            { position: 0.62, color: [0.06, 0.065, 0.085, 1] },
-            { position: 1, color: [0.03, 0.031, 0.038, 1] },
+            /* DIMMED to 42% of what shipped (T673), and the reason is what the sky is
+               FOR here. It is not a backdrop — nothing draws it — it is the environment
+               map, and its widest reader is the irradiance tap: five samples over a broad
+               cone along N, which is a DIFFUSE fill. A bright sky therefore lifts a
+               near-black oil to putty grey no matter how dark its albedo, and no amount
+               of tuning the albedo gets it back, because the fill scales with the sky and
+               not with the surface. Dim the room and leave the softboxes where they are:
+               the reflections keep their brightness, the fill goes away, and what is left
+               is the ratio the eye reads as GLOSS rather than the level it reads as
+               exposure. Measured on the goo frame: the body's median falls to 38 luma
+               above its backdrop where it used to sit 1.6 luma above it. */
+            { position: 0, color: [0.277, 0.302, 0.361, 1] },
+            { position: 0.4, color: [0.071, 0.080, 0.109, 1] },
+            { position: 0.62, color: [0.025, 0.027, 0.036, 1] },
+            { position: 1, color: [0.013, 0.013, 0.016, 1] },
           ],
         },
         { label: "sky1", definitionVersion: 2 },
@@ -6501,7 +6722,11 @@ const obolDocument = document(
         {
           mode: "fill",
           center: [0.46, 0.265],
-          radius: [0.150, 0.052],
+          /* GROWN (T673). On a slick surface the visually load-bearing part of a softbox
+             is its REFLECTION, and a 0.150 x 0.052 ellipse reflects as a glint. A box
+             this size reads as a broad shape TRAVELLING across the form as it turns,
+             which is the half of "wet" a tighter specular cannot supply. */
+          radius: [0.280, 0.130],
           softness: 0.22,
           fillcolor: [1, 1, 1, 1],
           bgcolor: [0, 0, 0, 1],
@@ -6515,13 +6740,53 @@ const obolDocument = document(
         {
           mode: "fill",
           center: [0.715, 0.375],
-          radius: [0.048, 0.115],
+          radius: [0.110, 0.220],
           softness: 0.26,
           fillcolor: [0.62, 0.74, 1, 1],
           bgcolor: [0, 0, 0, 1],
           aspectcorrect: false,
         },
         { label: "fillbox1" },
+      ),
+      /*
+       * THE RIM, and the whole point is that it is NOT A LIGHT.
+       *
+       * This renderer's diffuse term is TWO-SIDED by rule — `lambert = abs(dot(N, L))`,
+       * T301, and the highlight is `abs(dot(N, H))` beside it — so a directional light
+       * placed behind the subject lights the faces pointing AT the camera exactly as hard
+       * as the ones pointing away. A back light here is a second key wearing a rim's
+       * name; one at intensity 1.60 blew the emblem's light half to white and produced no
+       * edge at all.
+       *
+       * What DOES rim in this engine is the environment's Schlick term (T632).
+       * `envFresnel` rises to 1 at grazing incidence, and at grazing the reflection
+       * vector points AWAY from the camera — so the silhouette reflects the equirect at
+       * (0.5, 0.5), its horizon dead centre, and until now there was nothing there but
+       * the dim end of the sky ramp. This band is that texel.
+       *
+       * WHAT IT ACTUALLY DOES, measured rather than claimed — it is a rim on the GOO and
+       * a fill on the EMBLEM, and the difference is the Fresnel term doing its job. Mean
+       * |delta| luma with the band wired vs unwired, split by a 6px erosion of the object
+       * mask: on the goo frame the silhouette ring moves 45.8 against the body's 25.9
+       * (1.8x, a rim); on the emblem frame the ring moves 14.5 against the body's 19.5
+       * (fill, not a rim). A flat disc facing the camera has almost no grazing surface,
+       * so there is nothing there for a Fresnel rim to land on — which is the same fact
+       * as "the emblem end is flat" wearing a different hat. The room moves under 3 luma
+       * either way.
+       */
+      node(
+        "rimBand",
+        "circle", [-2400, 180],
+        {
+          mode: "fill",
+          center: [0.5, 0.5],
+          radius: [0.500, 0.160],
+          softness: 0.55,
+          fillcolor: [0.74, 0.84, 1, 1],
+          bgcolor: [0, 0, 0, 1],
+          aspectcorrect: false,
+        },
+        { label: "rimband1" },
       ),
       node("studio", "add", [-2080, -740], {}, { label: "studio1" }),
 
@@ -6576,6 +6841,66 @@ const obolDocument = document(
         },
       ),
 
+      /* ---- the segments: the emblem, built of parts ---------------------------- */
+      node(
+        "segPts",
+        "pointGrid", [-2080, 1280],
+        { count: OBOL_SEG_POINTS, cols: OBOL_SEG_COLS, rows: OBOL_SEG_ROWS, sizeX: 2, sizeY: 2 },
+        { label: "segpts1" },
+      ),
+      node(
+        "segs",
+        "pointKernel", [-1760, 1280],
+        {
+          capacity: OBOL_SEG_POINTS,
+          seed: 33,
+          attributes: JSON.stringify([
+            { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            { name: "tint", type: "vec4f", semantic: "color", default: [1, 1, 1, 1] },
+          ]),
+          kernel: OBOL_SEG_KERNEL,
+        },
+        {
+          label: "segs1",
+          /* The SAME two channels the mass reads, so the wave that melts the surface is
+             the wave that lifts the slabs — one clock, one event. */
+          parameters: {
+            value1: drivenSlot("tide1", 0),
+            value2: drivenSlot("sheen1", 0.5),
+          },
+        },
+      ),
+      node(
+        "shards",
+        /*
+         * INSTANCES mode, and §V617 is why that matters rather than being a draw-call
+         * detail: an instanced primitive under a LIT material CASTS, and a points-mode
+         * billboard does not. These slabs wear `oil1`, so the depth sweep takes them and
+         * the occlusion pass finds the gutters between them. Measured with the bed
+         * removed, so nothing else could be casting: 28 643 pixels of the frame darken
+         * when the key's shadow is switched on (154ddf1), against 0 for an unlit material.
+         *
+         * The scale is UNIFORM — this path has one `instance.x` for every point and no
+         * per-point size or orientation attribute — which is what makes the mosaic read
+         * as a tiling rather than as debris. Position and tint are per point; those are
+         * the two the path carries.
+         */
+        "geometry", [-1440, 1280],
+        { mode: "instances", shape: "box", scale: 0.026, material: "oil1", tint: [1, 1, 1, 1] },
+        {
+          label: "shards1",
+          parameters: {
+            tint: {
+              mode: "map",
+              bindings: {
+                static: { kind: "static", value: [1, 1, 1, 1] },
+                map: { kind: "map", attribute: "tint" },
+              },
+            },
+          },
+        },
+      ),
+
       /* ---- the cyclorama ------------------------------------------------------ */
       node(
         "sweepPts",
@@ -6599,7 +6924,13 @@ const obolDocument = document(
       node(
         "plaster",
         "materialPhong", [-1760, 1060],
-        { color: [0.185, 0.195, 0.235, 1], specular: [0.22, 0.23, 0.29, 1], shininess: 40, roughness: 0.58 },
+        /* THE ROOM GOES DOWN (T673). A slick black object is separated from its backdrop
+           by its HIGHLIGHT, and a highlight needs somewhere to be brighter than: on the
+           goo frame the shipped file put the object's median at 60.7 luma against a
+           backdrop of 62.3 — the silhouette was carried by the cast shadow and nothing
+           else, and 36% of the object's pixels sat within 12 luma of the room. At 46% of
+           this albedo the same frame reads 72.5 against 34.3. */
+        { color: [0.085, 0.090, 0.108, 1], specular: [0.101, 0.106, 0.133, 1], shininess: 40, roughness: 0.58 },
         { label: "plaster1" },
       ),
       node("cyc", "geometry", [-1440, 660], { mode: "surface", material: "plaster1", tint: [1, 1, 1, 1] }, { label: "cyc1" }),
@@ -6610,18 +6941,25 @@ const obolDocument = document(
         "light", [-1120, -1200],
         {
           kind: "directional",
-          direction: [0.55, -0.62, -0.56],
+          direction: [0.42, -0.72, -0.55],
           color: [1, 0.95, 0.88, 1],
-          intensity: 0.26,
+          /* UP from 0.26 (T673). The shipped rig put 0.62 of flat ambient against 0.26 of
+             key, which is a lighting setup with the contrast turned off: the shadow it
+             throws is a smudge and the occlusion pass has almost nothing to darken. The
+             ambient is now 0.20 and the key is the light in the room. */
+          intensity: 0.55,
           shadows: true,
-          shadowExtent: 2.8,
+          /* WIDER, because the shadow volume is a box around the origin and the object it
+             has to hold got bigger: the goo's lobes reach 1.1 where the medallion reached
+             1.02, and the slabs arc out past both at the half-way point. */
+          shadowExtent: 3.2,
         },
         { label: "key1" },
       ),
       node(
         "fill",
         "light", [-1120, -780],
-        { kind: "directional", direction: [-0.80, -0.06, -0.60], color: [0.58, 0.70, 1, 1], intensity: 0.11 },
+        { kind: "directional", direction: [-0.85, -0.10, -0.52], color: [0.58, 0.70, 1, 1], intensity: 0.22 },
         { label: "fill1" },
       ),
       node(
@@ -6654,18 +6992,25 @@ const obolDocument = document(
         "shot",
         "render", [-800, 200],
         {
-          scenes: "cyc1 body1",
+          scenes: "cyc1 body1 shards1",
           camera: "eye1",
           lights: "key1 fill1 crown1",
           ambientColor: [0.62, 0.68, 0.84, 1],
-          ambientIntensity: 0.62,
+          /* DOWN from 0.62 (T673). Ambient is a constant added to every surface whatever
+             it faces — it is the one term that cannot describe a shape — and at 0.62 it
+             was most of the light in the picture. It is also the term AO multiplies, so a
+             large flat ambient is not "more occlusion to find", it is a floor the
+             occlusion has to climb out of. */
+          ambientIntensity: 0.20,
           background: [0.008, 0.009, 0.013, 1],
           /* T643: the STATIC value matches the driven slot's rest (1.00) — 7.00 was the
              Fresnel-era re-exposure left stranded under the slot after T636 brought the
              constant home; the driven value always won, so this row was dead and lying. */
           environmentIntensity: 1.00,
           ambientOcclusion: true,
-          aoRadius: 0.50,
+          /* TIGHTER (T673): the occlusion now has 0.052 slabs with 0.009 gutters to bite
+             on, and a 0.50 radius sweeps clean over a contact that size. */
+          aoRadius: 0.34,
           aoIntensity: 0.55,
           aoQuality: "high",
         },
@@ -6719,10 +7064,14 @@ const obolDocument = document(
       edge("e-sky-studio", ["sky", "out"], ["studio", "in1"]),
       edge("e-key-studio", ["keyBox", "out"], ["studio", "in2"], 0),
       edge("e-fill-studio", ["fillBox", "out"], ["studio", "in2"], 1),
+      edge("e-rim-studio", ["rimBand", "out"], ["studio", "in2"], 2),
       edge("e-studio-shot", ["studio", "out"], ["shot", "environment"]),
 
       edge("e-shell-morph", ["shell", "out"], ["morph", "in"]),
       edge("e-morph-body", ["morph", "out"], ["body", "points"]),
+
+      edge("e-segpts-segs", ["segPts", "out"], ["segs", "in"]),
+      edge("e-segs-shards", ["segs", "out"], ["shards", "points"]),
 
       edge("e-sweeppts-sweep", ["sweepPts", "out"], ["sweep", "in"]),
       edge("e-sweep-cyc", ["sweep", "out"], ["cyc", "points"]),
