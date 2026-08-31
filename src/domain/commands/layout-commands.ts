@@ -1,4 +1,5 @@
 import { layoutGraph } from "../graph/layout.ts";
+import { previewAspectOf } from "../graph/node-box.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId, Revision } from "../types/ids.ts";
@@ -101,11 +102,11 @@ function tidy(
   label: string,
   only: ReadonlySet<NodeId> | undefined,
 ): CommandOutcome<GraphPatchResult> {
-  const positions = layoutGraph(
-    context.graph,
-    context.registry,
-    only === undefined ? {} : { only },
-  );
+  const positions = layoutGraph(context.graph, context.registry, {
+    // T668: node heights depend on the project's own aspect, so tidy measures with it.
+    previewAspect: previewAspectOf(context.store.getSettings()),
+    ...(only === undefined ? {} : { only }),
+  });
   const moved = movedPositions(context.graph, positions);
   if (Object.keys(moved).length === 0) {
     return refuse(

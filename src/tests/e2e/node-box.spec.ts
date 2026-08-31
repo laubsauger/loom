@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { nodeBox } from "@domain/graph/node-box.ts";
+import { nodeBox, previewAspectOf } from "@domain/graph/node-box.ts";
 import { EXAMPLE_DOCUMENTS } from "../../examples/documents.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -47,7 +47,7 @@ function modelledBoxes(prefix: string): Record<string, { width: number; height: 
   if (document === undefined) throw new Error(`no shipped example named ${prefix}`);
   return Object.fromEntries(
     Object.values(document.graph.nodes).map((node) => {
-      const box = nodeBox(node, registry.get(node.type));
+      const box = nodeBox(node, registry.get(node.type), previewAspectOf(document.settings));
       return [node.id, { width: box.width, height: box.height }];
     }),
   );

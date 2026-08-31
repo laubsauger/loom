@@ -68,16 +68,30 @@ const TITLE_HEIGHT = 24;
  * "an extra border inside the area of the preview". Measured in the real DOM at 178 px
  * node width: content 176 × 99, border box 176 × 100.
  *
- * DELIBERATELY NOT the project aspect (§V622, T668 — decided, not overlooked). The slot
- * is a fixed-footprint thumbnail serving the GRAPH's legibility, not the output's shape,
- * and this number is a compatibility surface (§V621): every authored position — the 27
- * shipped examples AND every user document — was placed around a 100px slot, and only
- * the examples have a gate. Measured before deciding: following the project aspect costs
- * E24 alone 23 overlapping pairs at 1:1, and a portrait project 203 pairs across 25 of
- * 27 examples. Post-T663 the letterboxing is uniform in slot and target alike, so a
- * non-16:9 preview is consistent, merely smaller.
+ * T668, decided twice and the second decision is the owner's: the slot FOLLOWS the
+ * project's configured resolution, as TouchDesigner's do. The first pass recorded
+ * §V622 ("stay 16:9") from the measured re-author cost; the owner overruled with the
+ * costs on the table — consistency across nodes and with the configured output wins.
+ * A graph reflowing when the project's aspect changes is therefore an ACCEPTED COST,
+ * not a bug: do not "fix" the reflow later as though it were an oversight — manual
+ * re-layout after an aspect change is normal TD workflow, and the owner chose it.
+ * §V621 still applies: this arithmetic is a compatibility surface, which is why the
+ * aspect arrives as an ARGUMENT from the document's own settings rather than as a
+ * constant two files have to agree on, and why the shipped square examples were
+ * re-authored in the same change that landed it.
+ *
+ * The default below is for callers with no document in hand (a bare NumericSpec UI,
+ * a node dragged before any project exists): the parent guides us initially, 16:9.
  */
-const PREVIEW_ASPECT = 16 / 9;
+export const DEFAULT_PREVIEW_ASPECT = 16 / 9;
+
+/** The ONE derivation (§V437) from settings to slot aspect — every surface asks this. */
+export function previewAspectOf(settings: {
+  readonly outputResolution: { readonly width: number; readonly height: number };
+}): number {
+  const { width, height } = settings.outputResolution;
+  return width > 0 && height > 0 ? width / height : DEFAULT_PREVIEW_ASPECT;
+}
 
 /** `.preview` — the hairline BELOW the tile, outside the ratio since T540. */
 const PREVIEW_BORDER = 1;
@@ -146,7 +160,12 @@ export function nodePortRows(node: GraphNode, definition: NodeDefinition | undef
 }
 
 /** The box this node occupies, at its authored position. */
-export function nodeBox(node: GraphNode, definition: NodeDefinition | undefined): NodeBox {
+export function nodeBox(
+  node: GraphNode,
+  definition: NodeDefinition | undefined,
+  /** From `previewAspectOf(settings)` wherever a document is in hand (T668). */
+  previewAspect: number = DEFAULT_PREVIEW_ASPECT,
+): NodeBox {
   // A node the user resized fills the box they dragged (T208/§V116) — the document says
   // so outright, and nothing derived can override a stated size.
   if (node.size !== undefined) {
@@ -156,7 +175,7 @@ export function nodeBox(node: GraphNode, definition: NodeDefinition | undefined)
   const contentWidth = NODE_WIDTH - NODE_BORDER * 2;
   let height = NODE_BORDER * 2 + TITLE_HEIGHT;
   if (nodeHasPreview(node, definition)) {
-    height += Math.floor(contentWidth / PREVIEW_ASPECT) + PREVIEW_BORDER;
+    height += Math.floor(contentWidth / previewAspect) + PREVIEW_BORDER;
   }
   const rows = nodePortRows(node, definition);
   height += PORTS_PADDING + (rows === 0 ? 0 : rows * PORT_ROW_HEIGHT + (rows - 1) * PORT_ROW_GAP);

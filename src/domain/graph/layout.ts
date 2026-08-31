@@ -55,6 +55,8 @@ export interface LayoutOptions {
   readonly rowGap?: number;
   /** Top-left origin of the arrangement. */
   readonly origin?: { readonly x: number; readonly y: number };
+  /** T668: the slot follows the project's aspect — pass `previewAspectOf(settings)`. */
+  readonly previewAspect?: number;
 }
 
 /**
@@ -76,8 +78,9 @@ const RELATIVE_ROW_GAP = 40;
 const sizeOf = (
   node: GraphNode,
   registry: NodeRegistryView,
+  previewAspect?: number,
 ): { width: number; height: number } => {
-  const box = nodeBox(node, registry.get(node.type));
+  const box = nodeBox(node, registry.get(node.type), previewAspect);
   return { width: box.width, height: box.height };
 };
 
@@ -157,7 +160,7 @@ export function layoutGraph(
   let x = origin.x;
   for (const rank of rankKeys) {
     const column = columns.get(rank) ?? [];
-    const boxes = column.map((nodeId) => sizeOf(graph.nodes[nodeId] as GraphNode, registry));
+    const boxes = column.map((nodeId) => sizeOf(graph.nodes[nodeId] as GraphNode, registry, options.previewAspect));
     const widths = boxes.map((box) => box.width);
     const heights = boxes.map((box) => box.height);
     const totalHeight = heights.reduce((sum, height) => sum + height, 0) + rowGap * Math.max(0, column.length - 1);
@@ -204,10 +207,11 @@ export function placeFree(
   graph: GraphDocument,
   registry: NodeRegistryView,
   type: string,
+  previewAspect?: number,
 ): { x: number; y: number } {
   const nodes = Object.values(graph.nodes);
   if (nodes.length === 0) return { x: 0, y: 0 };
-  const boxes = nodes.map((node) => nodeBox(node, registry.get(node.type)));
+  const boxes = nodes.map((node) => nodeBox(node, registry.get(node.type), previewAspect));
   const right = Math.max(...boxes.map((box) => box.x + box.width));
   const top = Math.min(...boxes.map((box) => box.y));
   const probe: GraphNode = {
@@ -232,10 +236,11 @@ export function placeRelative(
   registry: NodeRegistryView,
   relativeTo: NodeId,
   direction: "right" | "below" | "left" | "above" = "right",
+  previewAspect?: number,
 ): { x: number; y: number } {
   const anchor = graph.nodes[relativeTo];
   if (anchor === undefined) return { x: 0, y: 0 };
-  const { width, height } = sizeOf(anchor, registry);
+  const { width, height } = sizeOf(anchor, registry, previewAspect);
   switch (direction) {
     case "left":
       return { x: anchor.position.x - width - RELATIVE_COLUMN_GAP, y: anchor.position.y };

@@ -3,6 +3,7 @@ import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { Revision } from "@domain/types/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { placeFree, placeRelative } from "@domain/graph/layout.ts";
+import { previewAspectOf } from "@domain/graph/node-box.ts";
 
 import {
   addNodeInput,
@@ -119,8 +120,9 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
               runtime.bus.registry,
               input.placement.relativeTo,
               input.placement.direction ?? "right",
+              previewAspectOf(runtime.bus.store.getSettings()),
             )
-          : placeFree(graph, runtime.bus.registry, input.type);
+          : placeFree(graph, runtime.bus.registry, input.type, previewAspectOf(runtime.bus.store.getSettings()));
     }
     return dispatchOperations("add_node", runtime, [operationsForAdd(input, at)], {
       label: "Add node",

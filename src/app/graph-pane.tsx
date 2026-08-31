@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import { ReactFlowProvider, useConnection, useReactFlow } from "@xyflow/react";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { ShaderloomBus } from "@domain/commands/index.ts";
@@ -7,6 +7,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import { bypassPassthroughPorts } from "@domain/graph/bypass.ts";
+import { previewAspectOf } from "@domain/graph/node-box.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
@@ -448,6 +449,9 @@ function GraphPaneInner({
       // single-key TD bindings (b, d, r, f…) work on the canvas and nowhere else.
       {...paneProps}
       className={styles.graph}
+      // T668: the preview slots' aspect is the PROJECT's (previewAspectOf models the
+      // same number for layout) — published as a CSS variable so every node reads it.
+      style={{ "--preview-aspect": String(previewAspectOf(settings)) } as CSSProperties}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >

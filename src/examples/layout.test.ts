@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { boxGap, boxesOverlap, nodeBox, type NodeBox } from "@domain/graph/node-box.ts";
+import { boxGap, boxesOverlap, nodeBox, previewAspectOf, type NodeBox } from "@domain/graph/node-box.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { exampleRegistry } from "./runner.ts";
 
@@ -61,7 +61,9 @@ function placed(document: (typeof EXAMPLE_DOCUMENTS)[number]): readonly PlacedNo
   return Object.values(document.graph.nodes).map((node) => ({
     id: node.id,
     type: node.type,
-    box: nodeBox(node, registry.get(node.type)),
+    // T668: the slot follows the PROJECT's aspect, so the gate measures each example
+    // with its own — a square document's previewing nodes are 177px tall, not 99.
+    box: nodeBox(node, registry.get(node.type), previewAspectOf(document.settings)),
   }));
 }
 

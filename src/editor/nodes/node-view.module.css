@@ -293,11 +293,12 @@
 /* ---- preview + inline controls ---------------------------------------- */
 
 .preview {
-  /* 16:9 on purpose, whatever the project's aspect (§V622, T668): the slot is a
-     thumbnail with a compatibility-bearing footprint (§V621) — every authored node
-     position, ours and users', was placed around this height. The full decision and
-     the measured cost of "following the project" live at node-box.ts PREVIEW_ASPECT. */
-  aspect-ratio: 16 / 9;
+  /* T668 (owner decision, reversing the first pass): the slot follows the PROJECT's
+     configured aspect, as TouchDesigner's do — the graph pane publishes
+     `--preview-aspect` from the document's own outputResolution, and node-box.ts
+     models the same number through `previewAspectOf`. 16:9 is only the fallback for
+     a pane with no document. Re-layout after an aspect change is normal TD workflow. */
+  aspect-ratio: var(--preview-aspect, 16 / 9);
   /*
     SEPARATION BY TONE, NOT BY A DRAWN LINE.
     A preview's content is frequently pure black, so the slot must read as its own well
