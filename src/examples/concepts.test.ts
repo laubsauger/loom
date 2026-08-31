@@ -1985,6 +1985,112 @@ describe("E33 Obol claims", () => {
   });
 });
 
+/**
+ * E34 Lidar (T672) — three claims about the round-three rework, and all three are here
+ * for the same reason: each one fails INVISIBLY IN A STILL FRAME. A still says nothing
+ * about whether the echoes scintillate; a beam whose taper has been lost still draws
+ * beams; a light pool that has lost its identity offset still lights the ground where it
+ * shines. Every one of them is a look bug with no failing test anywhere unless it is
+ * pinned deliberately.
+ */
+describe("E34 Lidar claims", () => {
+  const { document, plan } = example("E34-Lidar.loom.json");
+  const nodes = document.graph.nodes as Record<string, GraphNode>;
+  /**
+   * A scene draw belongs to the RENDER node, not to the geometry — `shot1` emits one
+   * `shot:scene:N` pass per name in its Scenes list, in list order. So the lookup goes
+   * through that list, which makes "the beams are actually in the render" part of the
+   * claim rather than a separate hope.
+   */
+  const scenes = String(nodes["shot"]?.parameters["scenes"]).split(/\s+/);
+  const sceneDraw = (label: string) => {
+    const index = scenes.indexOf(label);
+    expect(index, `${label} is not in shot1's Scenes list`).toBeGreaterThanOrEqual(0);
+    const pass = plan.passes.find((entry) => entry.kind === "draw" && entry.id.endsWith(`:scene:${String(index)}`));
+    if (pass === undefined || pass.kind !== "draw") throw new Error(`no scene draw for ${label}`);
+    return pass;
+  };
+
+  /**
+   * THE BEAMS, AND THE TWO KNOBS THAT KEEP THEM READABLE (T680).
+   *
+   * `taper` is asserted at 0 because losing it does not look like losing a feature: 24
+   * beams that all leave the SAME origin fuse into a solid wedge at the mast whatever
+   * their number, and the picture still contains beams. `spoke` is asserted for the
+   * mirror reason — with no predicate all 240 are drawn, and 240 fuse into an opaque
+   * cone that hides the terrain entirely.
+   *
+   * The endpoint binding is the claim that this costs NO SECOND MARCH: the far end is
+   * `cast1`'s own `hitPosition` pair, handed to the draw, not a re-cast.
+   */
+  it("draws one ray in ten as a beam off the cast's own hit, tapered to a point", () => {
+    expect(nodes["rays"]?.parameters["mode"]).toBe("beam");
+    expect(nodes["rays"]?.parameters["endpoint"]).toBe("hitPosition");
+    expect(nodes["rays"]?.parameters["group"]).toBe("p.spoke > 0.5");
+    expect(nodes["aim"]?.parameters["kernel"]).toContain("q.spoke = select(0.0, 1.0, (ctx.index % 10u) == 0u);");
+    const rays = sceneDraw("rays1");
+    // Six vertices an instance — the billboard branch with the axis handed in.
+    expect(rays.vertexCount).toBe(6);
+    // The far end arrives as a BUFFER, which is the whole "no extra ray march" claim.
+    const bindings = (rays.buffers ?? []).map((buffer) => buffer.binding);
+    expect(bindings).toContain("endpoints");
+    // The predicate costs one storage buffer, and it is the `spoke` pair (§V588).
+    expect(bindings).toContain("group_spoke");
+    // instance = [scale, shapeCode, TAPER, 0]. Taper 0 pinches the shared origin to a
+    // point; anything above it fuses the apex into a wedge.
+    const instance = (rays.uniforms as Record<string, readonly number[]>)["instance"] ?? [];
+    expect(instance[0]).toBeCloseTo(0.013, 6);
+    expect(instance[2]).toBe(0);
+  });
+
+  /**
+   * SAMPLE AND HOLD (T681/§V638), and this is the claim a still frame cannot make.
+   *
+   * The second leg's landing point is a chaotic function of azimuth, so a marker that
+   * adopts a new hit on EVERY qualifying frame re-locates metres away while lit — which
+   * is the scintillation, and it is invisible in any single frame. The fix is one
+   * condition: re-read only while already dark. Both halves are pinned, because gating
+   * only the LEVEL while the POSITION still tracks every hit restores the whole bug.
+   */
+  it("re-reads mark2a's echo only while it is already dark", () => {
+    const kernel = String(nodes["mark2"]?.parameters["kernel"]);
+    expect(kernel).toContain("let take = landed && p.wake.w < 0.06;");
+    // the POSITION holds on `take`, not on `landed` — this is the half that teleports.
+    expect(kernel).toContain("let pos = select(p.wake.xyz, p.hitPosition, take);");
+    expect(kernel).toContain("let level = select(p.wake.w * 0.94, 1.0, take);");
+  });
+
+  /**
+   * §V644 — THE IDENTITY ELEMENT IN A MULTIPLYING SLOT.
+   *
+   * An albedo map multiplies, so the pool must read 1.0 where nothing is lit. `poolbase1`
+   * is a Level with black at −0.1 and white at 0, which is how you say ADD ONE: out =
+   * 10·in + 1. Drop the offset and the ground goes BLACK everywhere the pool is not — a
+   * failure that reads as "the light broke the terrain" and is really a missing identity.
+   * The mapping claim rides along: the pool parks its sprites at the SAME clip
+   * (X/extent, −Z/extent) `unfold1` uses, and if those two ever disagree the pool lights
+   * the terrain's mirror image, which is plausible at a glance and wrong everywhere.
+   */
+  it("feeds the terrain's albedo a pool offset to 1.0 where it is unlit", () => {
+    expect(nodes["poolbase"]?.type).toBe("level");
+    expect(nodes["poolbase"]?.parameters["blacklevel"]).toBe(-0.1);
+    expect(nodes["poolbase"]?.parameters["whitelevel"]).toBe(0);
+    const wired = Object.values(document.graph.edges).some(
+      (edge) => edge.source.nodeId === "poolbase" && edge.target.nodeId === "basalt" && edge.target.portId === "albedo",
+    );
+    expect(wired, "the pool must reach the terrain material's albedo").toBe(true);
+    // One agreement, stated twice: the sheet and the pool park at the same clip xy.
+    expect(String(nodes["unfold"]?.parameters["kernel"])).toContain("q.position = vec3f(worldX / 4.8, -worldZ / 4.8, 0.0);");
+    expect(String(nodes["pool"]?.parameters["kernel"])).toContain("q.position = vec3f(p.position.x / 4.8, -p.position.z / 4.8, 0.0);");
+    // and the terrain draw actually SAMPLES an albedo map, rather than the wire hanging.
+    expect(sceneDraw("ground1").textures?.map((texture) => texture.binding) ?? []).toContain("albedoMap");
+    // and the pool's own splat is a real renderPoints draw, selecting on the return class.
+    const splat = plan.passes.find((entry) => entry.kind === "draw" && entry.nodeId === "poolmap");
+    expect(splat, "poolmap1 must emit a sprite draw").toBeDefined();
+    expect(nodes["poolmap"]?.parameters["blend"]).toBe("additive");
+  });
+});
+
 describe("E14 Self-Regulating Bloom claims", () => {
   const { document } = example("E14-Self-Regulating-Bloom.loom.json");
   const nodes = document.graph.nodes as Record<string, GraphNode>;

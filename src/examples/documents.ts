@@ -7114,6 +7114,10 @@ const obolDocument = document(
  * wrong and the scan line drapes over a terrain the picture mirrors front-to-back:
  * plausible at a glance, wrong everywhere, invisible until a ray "hits" a valley.
  *
+ * T672 gave that agreement a THIRD reader: `pool1` parks each return at the same clip
+ * (X/extent, −Z/extent) so the light pool lands on the terrain that made it. See the
+ * kernel's own comment for why the minus sign survives the composition.
+ *
  * ## Reflection, literally (the owner's "raycasting / reflection ala TD POPs")
  *
  * TWO Ray nodes, chained. `ricochet1` reflects each hit's direction about its
@@ -7132,9 +7136,11 @@ const obolDocument = document(
  * boundary as it breathes and RIDGES come into range before valleys: the relief reads
  * in the hit/miss boundary itself), and ECHOES (cyan, both legs hit). These readings
  * are kernel-written TINT classes plus a parked-position cull (mark2 sends non-echoes
- * to y = −60), NOT renderPoints group predicates: the lit scene path has no predicate
- * seam (T642 tracks whether it should grow one), and a predicate-filtered 2D overlay
- * under its own projection cannot sit on a 3D camera's picture.
+ * to y = −60), and since T642 the SELECTION itself is a group predicate on the lit draw
+ * — §V471's idiom, running through the shared camera and depth buffer rather than as a
+ * predicate-filtered 2D overlay under its own projection, which cannot sit on a 3D
+ * camera's picture. T672 makes this file run BOTH halves of that resolver: `poolmap1` is
+ * a genuine `renderPoints` draw, into a texture, feeding the terrain's albedo.
  *
  * ## Why the dots are unlit and the ground is not
  *
@@ -7188,6 +7194,38 @@ const obolDocument = document(
  * ridge can agree with what is behind it. The switch is off by default and this is the
  * only example that opts in.
  *
+ * ## What T672 changed: the beams, the pool, and the hold
+ *
+ * The owner, on the shipped T658 build: "it feels like some weird noise still and
+ * missing something that ties it together". THE BEAMS ARE THE THING THAT TIES IT
+ * TOGETHER. A lidar without them is a hillside with dots appearing on it, and the owner
+ * read it exactly that way; `rays1` draws the causal chain in `beam` mode (T680), which
+ * spans each ray's origin to the `hitPosition` `cast1` already carries.
+ *
+ * THE GROUND IS NOW LIT BY ITS OWN RETURNS, through the albedo map rather than through
+ * 240 lights: `pool1` → `poolmap1` → `poolsoft1` → `poolbase1` → `basalt1.albedo`. §V644
+ * lives in `poolbase1`'s comment and is the one thing here that fails as a lighting bug.
+ *
+ * AND THE "FLICKER" WAS SEMANTIC (T681). Camera frozen, the terrain contributes EXACTLY
+ * ZERO frame-to-frame energy and the echoes carried 82% of it; colouring each echo by
+ * the index of the ray that made it shows the primary ring as a smooth colour wheel and
+ * the echoes SCRAMBLED — adjacent rays land metres apart, so the second leg's landing
+ * point is a chaotic function of azimuth and a marker that re-reads while lit teleports
+ * constantly. Sample-and-hold on `mark2a` is the fix, in one condition.
+ *
+ * MEASURED — camera frozen (orbx1/orbz1 at frequency 0), 15 frame-pairs over frames
+ * 400–415, full 1280×720 (§V627), display-encoded (§V618). Both halves re-measured back
+ * to back on ONE tree so the comparison is not an argument (§V641): engine `d8ed47e`,
+ * "before" = this entry as shipped at `83e03ff`.
+ *
+ *     band            BEFORE                      AFTER
+ *     total energy    1,386,519                   727,237
+ *     green energy      873,292 (63.0%)            53,657 (7.4%)   −93.9%
+ *     green hard-flip      39.1% on 9,502 px         6.6% on 3,730 px
+ *     amber energy      205,286 (14.8%)           626,612 (86.2%)  ← the beams' own sweep
+ *     amber hard-flip       7.7%                      6.0%
+ *     halo energy       307,942                    46,968
+ *
  * Free-running throughout (§V436): the sweep, the tilt and the orbit read absolute
  * clocks, so a timeline lap never snaps the scan.
  */
@@ -7205,6 +7243,14 @@ const LIDAR_SHEET_COUNT = LIDAR_GRID * LIDAR_GRID;
    camera's `eye`: eye.x and eye.z are DRIVEN, so the static vector's x and z are inert
    and editing them to reframe is a silent no-op (§V465, and it cost an hour to learn).*/
 const LIDAR_ORBIT = 3.8;
+/* T672: one ray in ten is DRAWN as a beam. Every ray is still CAST — `spoke` costs one
+   f32 pair and no marching at all — and the subset is a picture decision measured rather
+   than chosen: 240 beams sharing one origin fuse into a solid opaque cone that hides the
+   terrain, 24 read as an instrument. */
+const LIDAR_SPOKE_EVERY = 10;
+/* The light-pool map's resolution. The terrain grid is 192², so this is ~2.7 texels a
+   cell — enough that the pool's edge is the blur's and not the map's. */
+const LIDAR_POOL_RES = 512;
 
 const LIDAR_SHEET_ATTRIBUTES = JSON.stringify([
   { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
@@ -7242,9 +7288,14 @@ const LIDAR_RAISE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
+/* THREE attributes, six bindings — still inside §V588's baseline eight. `spoke` is the
+   whole cost of drawing the beams: a per-ray f32 the aim kernel writes and the beam
+   geometry's group predicate reads, riding the Ray node's pass-through to the draw. No
+   extra march, no extra pass. */
 const LIDAR_AIM_ATTRIBUTES = JSON.stringify([
   { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
   { name: "direction", type: "vec3f", default: [0, -1, 0] },
+  { name: "spoke", type: "f32", default: [0] },
 ]);
 
 /* The instrument. Azimuth from the INDEX (240 rays around the full circle), the ring's
@@ -7264,6 +7315,8 @@ const LIDAR_AIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
     -sin(tilt),
     cos(azimuth) * cos(tilt),
   ));
+  /* T672: every ray is CAST, every tenth is DRAWN. See LIDAR_SPOKE_EVERY. */
+  q.spoke = select(0.0, 1.0, (ctx.index % ${LIDAR_SPOKE_EVERY}u) == 0u);
   return q;
 }`;
 
@@ -7361,11 +7414,22 @@ const LIDAR_MARK2_ATTRIBUTES = JSON.stringify([
    no second one. An echo's qualification is binary and intermittent, so the group
    predicate used to pop the marker in and out of existence entirely — no colour ramp
    can soften a point that is not drawn. `wake` holds the LAST QUALIFYING POSITION and
-   a level that rises instantly and decays 0.90 per frame, the predicate now reads
+   a level that rises instantly and decays 0.94 per frame, the predicate now reads
    that level, and the same state therefore delivers both asks: nothing blinks, and a
    sweep leaves a fading wake of where it just found something. Instant rise is
    deliberate — §V509's lesson that a one-pole smoother sized for an envelope
    annihilates the transient it is fed, so the transient gets its own path.
+
+   T672 — and the state was right while the RE-READING was wrong. Round two adopted a
+   new hit on every qualifying frame, so a marker whose ray re-qualified metres away
+   TELEPORTED WHILE LIT — and the second leg's landing point is a chaotic function of
+   azimuth, so it re-qualifies metres away constantly (§V638). The gate `p.wake.w <
+   0.06` moves the relocation to where no eye can see it: the marker lights at a place,
+   HOLDS still, fades, and only then re-arms. A display's phosphor. Green-band
+   frame-to-frame energy 873,292 → 53,657 for that one condition; every tail remedy was
+   measured first and every one failed (position lag made it WORSE at 2,386,000, a
+   lagged rise moved 4.5%, decay 0.90 → 0.98 moved the hard-flip rate 39.1% → 34.7%),
+   because the churn was BIRTHS and not the tail.
 
    `hit` is derived rather than carried, buying the slot (see mark1's note): the Ray
    node's contract is that a MISS ends exactly `maxDistance` from its origin, and this
@@ -7375,8 +7439,12 @@ const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let leg2 = length(p.hitPosition - p.position);
   let landed = leg2 < ${LIDAR_RANGE} - 0.02 && p.hitPosition.y > -10.0;
-  let pos = select(p.wake.xyz, p.hitPosition, landed);
-  let level = select(p.wake.w * 0.90, 1.0, landed);
+  /* T672 — SAMPLE AND HOLD. The gate is \`p.wake.w < 0.06\`, and it is the whole fix: a
+     marker takes a new reading only while it is already DARK. Delete it and the echoes
+     scintillate again while every STILL frame still looks right (§V638). */
+  let take = landed && p.wake.w < 0.06;
+  let pos = select(p.wake.xyz, p.hitPosition, take);
+  let level = select(p.wake.w * 0.94, 1.0, take);
   q.wake = vec4f(pos, level);
   q.position = pos;
   /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. The
@@ -7384,6 +7452,25 @@ const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
      the ones that read — depth, rather than confetti at one brightness. */
   let near = clamp(1.0 - length(pos - vec3f(0.0, ${LIDAR_MAST}, 0.0)) / (${LIDAR_RANGE} * 1.8), 0.0, 1.0);
   q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.15 + 1.35 * near) * level;
+  return q;
+}`;
+
+const LIDAR_POOL_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+]);
+
+/* T672 — THE SAME AGREEMENT, STATED A SECOND TIME. `unfold1` parks the sample sheet at
+   clip (X/extent, −Z/extent); this parks each RETURN at exactly the same place, and that
+   is not a coincidence to be maintained by luck. The terrain surface samples its albedo
+   map by GRID uv, grid v runs along world Z, and `renderPoints` draws at clip xy where
+   +1 is the TOP of the picture and therefore texel row 0 and therefore v = 0. Compose
+   those three and the minus sign comes back out — the same minus, for the same reason.
+   Get it wrong and the pool lights the terrain's mirror image, which is plausible at a
+   glance and wrong everywhere. */
+const LIDAR_POOL_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position = vec3f(p.position.x / ${LIDAR_EXTENT}, -p.position.z / ${LIDAR_EXTENT}, 0.0);
   return q;
 }`;
 
@@ -7457,6 +7544,59 @@ const lidarDocument = document(
         },
       }),
 
+      /* ---- the beams: the cause, drawn (T672/T680) ----------------------------- */
+      /* Dim and warm, and UNLIT on purpose: a beam is scattered light in the air, not a
+         surface — and an unlit primitive takes no part in shadowing either (§V617). */
+      node("haze", "materialUnlit", [-1600, 900], { color: [0.36, 0.21, 0.08, 1] }, { label: "haze1" }),
+      node("rays", "geometry", [-1280, 900], {
+        /* `beam` spans each ray's `position` — the mast — to its `hitPosition`, which
+           `cast1` ALREADY carries, so 24 beams cost 24 instances of six vertices and NOT
+           ONE extra ray march. The sampled-billboard fake was built and measured first:
+           983,000 texture reads a frame against this file's 15,400, for a serrated ribbon
+           that cannot taper (T680). */
+        mode: "beam", endpoint: "hitPosition", scale: 0.013,
+        /* TAPER 0, and it is load-bearing, not tidiness: every beam here shares ONE
+           origin, so at any taper above ~0 they fuse into a solid wedge at the mast
+           whatever their number. Pinching the near end to a point is both the cure and
+           what a divergent beam actually does. */
+        taper: 0,
+        material: "haze1", tint: [1, 1, 1, 1],
+        /* §V471's idiom, on the DRAW: every ray is cast, every tenth is drawn. Empty this
+           predicate and 240 beams fuse into an opaque cone that hides the terrain — which
+           is why the subset is measured rather than chosen. */
+        group: "p.spoke > 0.5",
+      }, { label: "rays1" }),
+
+      /* ---- the ground, LIT BY ITS OWN RETURNS (T672, §V644) -------------------- */
+      node("pool", "pointKernel", [-1280, 300], {
+        capacity: 240, attributes: LIDAR_POOL_ATTRIBUTES, kernel: LIDAR_POOL_KERNEL,
+      }, { label: "pool1" }),
+      node("poolmap", "renderPoints", [-960, 300], {
+        count: 240, sizePixels: 22, blend: "additive", accumulate: false,
+        /* only RETURNS light the ground — the steel out-of-range markers hang in the air
+           and have nothing under them to light. */
+        group: "p.tint.r > 0.3",
+      }, {
+        label: "poolmap1",
+        resolution: { mode: "fixed", width: LIDAR_POOL_RES, height: LIDAR_POOL_RES },
+        parameters: {
+          color: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+      node("poolsoft", "blur", [-640, 300], {
+        size: 26, filter: "gaussian", extend: "hold",
+      }, { label: "poolsoft1", resolution: { mode: "fixed", width: LIDAR_POOL_RES, height: LIDAR_POOL_RES } }),
+      /* §V644 — THE IDENTITY ELEMENT, and the one thing in this chain that looks like a
+         lighting bug when it is missing. An albedo map MULTIPLIES, so an additive
+         contribution through it must read 1.0 where nothing is lit. Black point −0.1 with
+         white at 0 is how a Level says ADD ONE: out = 10·in + 1. Drop the offset and the
+         naive map (unlit texels = 0) multiplies the ground to BLACK everywhere the pool
+         is not — which reads as "the light broke the terrain" and is really the identity
+         element going missing. */
+      node("poolbase", "level", [-320, 300], {
+        blacklevel: -0.1, whitelevel: 0, contrast: 1, brightness: 1, gamma1: 1, opacity: 1,
+      }, { label: "poolbase1", resolution: { mode: "fixed", width: LIDAR_POOL_RES, height: LIDAR_POOL_RES } }),
+
       /* ---- the bounce: reflection, literally ---------------------------------- */
       node("ricochet", "pointKernel", [-1920, 520], {
         capacity: 240, attributes: LIDAR_RICOCHET_ATTRIBUTES, kernel: LIDAR_RICOCHET_KERNEL,
@@ -7528,7 +7668,13 @@ const lidarDocument = document(
         shape: "sine", frequency: 0.019, amplitude: LIDAR_ORBIT, offset: 0, phase: 0,
       }, { label: "orbz1" }),
       node("eye", "camera", [-640, -440], {
-        eye: [LIDAR_ORBIT, 3.1, 0], lookAt: [0, 0.55, 0], fov: 46, near: 0.1, far: 40, ortho: false,
+        /* T672 — `lookAt` IS live, unlike eye.x and eye.z, and 1.60 rather than 0.55 is
+           what puts the beams' convergence at the mast just above the frame instead of
+           off the top of it. Raising it tilts the camera UP, which is exactly the move
+           that could re-expose the plate rim T658 spent its pass removing, so it was
+           checked at all eight of the orbit's worst angles — edges at frames 0/790/1579/
+           2369, corners at 395/1184/1974/2763 — and the near rim stays behind the camera. */
+        eye: [LIDAR_ORBIT, 3.1, 0], lookAt: [0, 1.60, 0], fov: 46, near: 0.1, far: 40, ortho: false,
       }, {
         label: "eye1",
         parameters: {
@@ -7537,7 +7683,7 @@ const lidarDocument = document(
         },
       }),
       node("shot", "render", [-320, -140], {
-        scenes: "ground1 impacts1 echoes1",
+        scenes: "ground1 impacts1 echoes1 rays1",
         camera: "eye1",
         lights: "moon1 lamp1",
         ambientColor: [0.50, 0.60, 0.92, 1],
@@ -7587,6 +7733,13 @@ const lidarDocument = document(
       edge("e-carve-cast", ["carve", "out"], ["cast", "field"]),
       edge("e-cast-mark", ["cast", "out"], ["mark", "in"]),
       edge("e-mark-impacts", ["mark", "out"], ["impacts", "points"]),
+      edge("e-cast-rays", ["cast", "out"], ["rays", "points"]),
+
+      edge("e-mark-pool", ["mark", "out"], ["pool", "in"]),
+      edge("e-pool-poolmap", ["pool", "out"], ["poolmap", "points"]),
+      edge("e-poolmap-poolsoft", ["poolmap", "out"], ["poolsoft", "input"]),
+      edge("e-poolsoft-poolbase", ["poolsoft", "out"], ["poolbase", "input"]),
+      edge("e-poolbase-basalt", ["poolbase", "out"], ["basalt", "albedo"]),
 
       edge("e-cast-ricochet", ["cast", "out"], ["ricochet", "in"]),
       edge("e-ricochet-rebound", ["ricochet", "out"], ["rebound", "points"]),

@@ -23,8 +23,13 @@ import { requireExample } from "./runner.ts";
  * gating, and a looser filter would be noise nobody reads.
  *
  * A doc that names a node it does not USE, on purpose, says so here with its reason — the
- * `NOT_CONSTRUCTED` convention from the composition-seams gate. Two exist today and both
- * are deliberate: an instruction to the reader, and a note about a sibling node.
+ * `NOT_CONSTRUCTED` convention from the composition-seams gate. Every entry is either an
+ * instruction to the reader, a statement about a FUTURE graph, or a note about a sibling
+ * node — and an exemption is only as good as its stated reason. T696 is the instance:
+ * `E34-Lidar.md`/`renderPoints` was listed TWICE, verbatim, on the reason "a node this
+ * graph cannot use", and T672 then gave E34 a real `renderPoints` for its light pool. A
+ * stale exemption is a gate declining to check a claim that is no longer true, so both
+ * copies were deleted with the work that falsified them.
  */
 
 const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
@@ -35,22 +40,10 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
       "T504: `audioFileIn` is now genuinely IN this graph (branch 1 of the Switch) so its exemption is gone, but the microphone is still only an instruction — a shipped `audioIn` opens the device on load, which an example must not do. The doc says how to add it as branch 2.",
   },
   {
-    doc: "E34-Lidar.md",
-    type: "renderPoints",
-    reason:
-      "the T642 deviation paragraph: it names the node whose group-predicate seam the lit scene path LACKS, to say the readings here are a workaround and not the idiom. A statement about an absent capability, deliberately about a node this graph cannot use.",
-  },
-  {
     doc: "E27-Relief.md",
     type: "audioIn",
     reason:
       "the UNDERSTUDY paragraph, generalising: the pattern this example establishes for `webcam` is what would let the two audio inputs be exampled under §V363 too. A statement about a FUTURE graph, deliberately not applied here — one example, one claim.",
-  },
-  {
-    doc: "E34-Lidar.md",
-    type: "renderPoints",
-    reason:
-      "the T642 deviation paragraph: it names the node whose group-predicate seam the lit scene path LACKS, to say the readings here are a workaround and not the idiom. A statement about an absent capability, deliberately about a node this graph cannot use.",
   },
   {
     doc: "E27-Relief.md",

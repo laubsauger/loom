@@ -58,6 +58,17 @@
           "portId": "in"
         }
       },
+      "e-cast-rays": {
+        "id": "e-cast-rays",
+        "source": {
+          "nodeId": "cast",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rays",
+          "portId": "points"
+        }
+      },
       "e-cast-ricochet": {
         "id": "e-cast-ricochet",
         "source": {
@@ -136,6 +147,17 @@
           "portId": "points"
         }
       },
+      "e-mark-pool": {
+        "id": "e-mark-pool",
+        "source": {
+          "nodeId": "mark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pool",
+          "portId": "in"
+        }
+      },
       "e-mark2-echoes": {
         "id": "e-mark2-echoes",
         "source": {
@@ -145,6 +167,50 @@
         "target": {
           "nodeId": "echoes",
           "portId": "points"
+        }
+      },
+      "e-pool-poolmap": {
+        "id": "e-pool-poolmap",
+        "source": {
+          "nodeId": "pool",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "poolmap",
+          "portId": "points"
+        }
+      },
+      "e-poolbase-basalt": {
+        "id": "e-poolbase-basalt",
+        "source": {
+          "nodeId": "poolbase",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "basalt",
+          "portId": "albedo"
+        }
+      },
+      "e-poolmap-poolsoft": {
+        "id": "e-poolmap-poolsoft",
+        "source": {
+          "nodeId": "poolmap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "poolsoft",
+          "portId": "input"
+        }
+      },
+      "e-poolsoft-poolbase": {
+        "id": "e-poolsoft-poolbase",
+        "source": {
+          "nodeId": "poolsoft",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "poolbase",
+          "portId": "input"
         }
       },
       "e-probe-raise": {
@@ -265,9 +331,9 @@
         "id": "aim",
         "label": "aim1",
         "parameters": {
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"direction\",\"type\":\"vec3f\",\"default\":[0,-1,0]}]",
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"direction\",\"type\":\"vec3f\",\"default\":[0,-1,0]},{\"name\":\"spoke\",\"type\":\"f32\",\"default\":[0]}]",
           "capacity": 240,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;\n  /* 0.60..1.10 rad (34°..63° below horizontal): the steep end lands well inside range,\n     the shallow end's slant exceeds it and the outer ring goes dark — and shallow\n     strikes reflect FORWARD off back-slopes, which is where the echoes come from. */\n  let tilt = 0.60 + ctx.value1 * 0.50;\n  q.position = vec3f(0.0, 3.3, 0.0);\n  q.direction = normalize(vec3f(\n    sin(azimuth) * cos(tilt),\n    -sin(tilt),\n    cos(azimuth) * cos(tilt),\n  ));\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;\n  /* 0.60..1.10 rad (34°..63° below horizontal): the steep end lands well inside range,\n     the shallow end's slant exceeds it and the outer ring goes dark — and shallow\n     strikes reflect FORWARD off back-slopes, which is where the echoes come from. */\n  let tilt = 0.60 + ctx.value1 * 0.50;\n  q.position = vec3f(0.0, 3.3, 0.0);\n  q.direction = normalize(vec3f(\n    sin(azimuth) * cos(tilt),\n    -sin(tilt),\n    cos(azimuth) * cos(tilt),\n  ));\n  /* T672: every ray is CAST, every tenth is DRAWN. See LIDAR_SPOKE_EVERY. */\n  q.spoke = select(0.0, 1.0, (ctx.index % 10u) == 0u);\n  return q;\n}",
           "value1": {
             "bindings": {
               "driven": {
@@ -468,7 +534,7 @@
           "fov": 46,
           "lookAt": [
             0,
-            0.55,
+            1.6,
             0
           ],
           "near": 0.1,
@@ -538,6 +604,24 @@
           "y": -140
         },
         "type": "blur"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "color": [
+            0.36,
+            0.21,
+            0.08,
+            1
+          ]
+        },
+        "position": {
+          "x": -1600,
+          "y": 900
+        },
+        "type": "materialUnlit"
       },
       "impacts": {
         "definitionVersion": 1,
@@ -621,7 +705,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"wake\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 240,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let leg2 = length(p.hitPosition - p.position);\n  let landed = leg2 < 3.4 - 0.02 && p.hitPosition.y > -10.0;\n  let pos = select(p.wake.xyz, p.hitPosition, landed);\n  let level = select(p.wake.w * 0.90, 1.0, landed);\n  q.wake = vec4f(pos, level);\n  q.position = pos;\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. The\n     floor is LOW (0.15) so the far scatter stays a scatter and the near returns are\n     the ones that read — depth, rather than confetti at one brightness. */\n  let near = clamp(1.0 - length(pos - vec3f(0.0, 3.3, 0.0)) / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.15 + 1.35 * near) * level;\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let leg2 = length(p.hitPosition - p.position);\n  let landed = leg2 < 3.4 - 0.02 && p.hitPosition.y > -10.0;\n  /* T672 — SAMPLE AND HOLD. The gate is `p.wake.w < 0.06`, and it is the whole fix: a\n     marker takes a new reading only while it is already DARK. Delete it and the echoes\n     scintillate again while every STILL frame still looks right (§V638). */\n  let take = landed && p.wake.w < 0.06;\n  let pos = select(p.wake.xyz, p.hitPosition, take);\n  let level = select(p.wake.w * 0.94, 1.0, take);\n  q.wake = vec4f(pos, level);\n  q.position = pos;\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. The\n     floor is LOW (0.15) so the far scatter stays a scatter and the near returns are\n     the ones that read — depth, rather than confetti at one brightness. */\n  let near = clamp(1.0 - length(pos - vec3f(0.0, 3.3, 0.0)) / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.15 + 1.35 * near) * level;\n  return q;\n}"
         },
         "position": {
           "x": -960,
@@ -701,6 +785,104 @@
         },
         "type": "output"
       },
+      "pool": {
+        "definitionVersion": 1,
+        "id": "pool",
+        "label": "pool1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+          "capacity": 240,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = vec3f(p.position.x / 4.8, -p.position.z / 4.8, 0.0);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1280,
+          "y": 300
+        },
+        "type": "pointKernel"
+      },
+      "poolbase": {
+        "definitionVersion": 1,
+        "id": "poolbase",
+        "label": "poolbase1",
+        "parameters": {
+          "blacklevel": -0.1,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 0
+        },
+        "position": {
+          "x": -320,
+          "y": 300
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "level"
+      },
+      "poolmap": {
+        "definitionVersion": 1,
+        "id": "poolmap",
+        "label": "poolmap1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "count": 240,
+          "group": "p.tint.r > 0.3",
+          "sizePixels": 22
+        },
+        "position": {
+          "x": -960,
+          "y": 300
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "renderPoints"
+      },
+      "poolsoft": {
+        "definitionVersion": 1,
+        "id": "poolsoft",
+        "label": "poolsoft1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 26
+        },
+        "position": {
+          "x": -640,
+          "y": 300
+        },
+        "resolution": {
+          "height": 512,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "blur"
+      },
       "probe": {
         "definitionVersion": 1,
         "id": "probe",
@@ -726,6 +908,30 @@
           "y": -440
         },
         "type": "pointKernel"
+      },
+      "rays": {
+        "definitionVersion": 1,
+        "id": "rays",
+        "label": "rays1",
+        "parameters": {
+          "endpoint": "hitPosition",
+          "group": "p.spoke > 0.5",
+          "material": "haze1",
+          "mode": "beam",
+          "scale": 0.013,
+          "taper": 0,
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1280,
+          "y": 900
+        },
+        "type": "geometry"
       },
       "rebound": {
         "definitionVersion": 1,
@@ -832,7 +1038,7 @@
           "camera": "eye1",
           "environmentIntensity": 1.15,
           "lights": "moon1 lamp1",
-          "scenes": "ground1 impacts1 echoes1",
+          "scenes": "ground1 impacts1 echoes1 rays1",
           "showEnvironment": true
         },
         "position": {
