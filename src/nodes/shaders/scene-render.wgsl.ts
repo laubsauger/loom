@@ -298,6 +298,76 @@ fn fs(input: BackdropOut) -> @location(0) vec4f {
 }`;
 }
 
+/**
+ * T725 — the surface MESH chunk (grid connectivity, central-difference normals, uv,
+ * tint), extracted verbatim so the lit generator and the glass generator share one
+ * source (§V349). The lit template's emitted text is byte-identical to before the
+ * extraction — the golden scene hashes are the proof.
+ */
+function surfaceMeshWgsl(pointColor: boolean): string {
+  return `struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) normal: vec3f,
+  @location(1) world: vec3f,
+  @location(2) uv: vec2f,
+  @location(3) tint: vec4f,
+};
+
+fn cellCorner(v: u32) -> vec2u {
+  var corners = array<vec2u, 6>(
+    vec2u(0u, 0u), vec2u(1u, 0u), vec2u(0u, 1u),
+    vec2u(0u, 1u), vec2u(1u, 0u), vec2u(1u, 1u),
+  );
+  return corners[v];
+}
+
+fn gridPosition(gx: u32, gy: u32) -> vec3f {
+  let cols = u32(params.grid.x);
+  let rows = u32(params.grid.y);
+  let px = select(gx, gx % cols, params.grid.z > 0.5);
+  let py = select(gy, gy % rows, params.grid.w > 0.5);
+  return positions[py * cols + px];
+}
+
+fn nextIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
+  return select(min(i + 1u, extent - 1u), (i + 1u) % extent, wrapped);
+}
+fn previousIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
+  return select(max(i, 1u) - 1u, (i + extent - 1u) % extent, wrapped);
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
+  let cols = u32(params.grid.x);
+  let rows = u32(params.grid.y);
+  let wrapU = params.grid.z > 0.5;
+  let wrapV = params.grid.w > 0.5;
+  let cellsU = select(cols - 1u, cols, wrapU);
+  let quad = vertex / 6u;
+  let corner = cellCorner(vertex % 6u);
+  let gx = (quad % cellsU) + corner.x;
+  let gy = (quad / cellsU) + corner.y;
+
+  let world = gridPosition(gx, gy);
+  let du = gridPosition(nextIndex(gx, cols, wrapU), gy) -
+    gridPosition(previousIndex(gx, cols, wrapU), gy);
+  let dv = gridPosition(gx, nextIndex(gy, rows, wrapV)) -
+    gridPosition(gx, previousIndex(gy, rows, wrapV));
+
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  out.normal = cross(du, dv);
+  out.world = world;
+  /* The grid coordinate IS the uv — free, and what material maps sample by. */
+  out.uv = vec2f(f32(gx) / max(params.grid.x - 1.0, 1.0), f32(gy) / max(params.grid.y - 1.0, 1.0));
+  /* Same modular indexing as the position read, so the seam vertex wears column 0's tint. */
+  out.tint = ${pointColor
+    ? "pointColors[select(gy, gy % rows, wrapV) * cols + select(gx, gx % cols, wrapU)]"
+    : "vec4f(1.0)"};
+  return out;
+}`;
+}
+
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const pointColor = options.pointColor === true;
@@ -445,67 +515,7 @@ ${lightField}${shadowFields}${envField}${projectors.fields}};
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
 ${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}
-struct VertexOut {
-  @builtin(position) position: vec4f,
-  @location(0) normal: vec3f,
-  @location(1) world: vec3f,
-  @location(2) uv: vec2f,
-  @location(3) tint: vec4f,
-};
-
-fn cellCorner(v: u32) -> vec2u {
-  var corners = array<vec2u, 6>(
-    vec2u(0u, 0u), vec2u(1u, 0u), vec2u(0u, 1u),
-    vec2u(0u, 1u), vec2u(1u, 0u), vec2u(1u, 1u),
-  );
-  return corners[v];
-}
-
-fn gridPosition(gx: u32, gy: u32) -> vec3f {
-  let cols = u32(params.grid.x);
-  let rows = u32(params.grid.y);
-  let px = select(gx, gx % cols, params.grid.z > 0.5);
-  let py = select(gy, gy % rows, params.grid.w > 0.5);
-  return positions[py * cols + px];
-}
-
-fn nextIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
-  return select(min(i + 1u, extent - 1u), (i + 1u) % extent, wrapped);
-}
-fn previousIndex(i: u32, extent: u32, wrapped: bool) -> u32 {
-  return select(max(i, 1u) - 1u, (i + extent - 1u) % extent, wrapped);
-}
-
-@vertex
-fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
-  let cols = u32(params.grid.x);
-  let rows = u32(params.grid.y);
-  let wrapU = params.grid.z > 0.5;
-  let wrapV = params.grid.w > 0.5;
-  let cellsU = select(cols - 1u, cols, wrapU);
-  let quad = vertex / 6u;
-  let corner = cellCorner(vertex % 6u);
-  let gx = (quad % cellsU) + corner.x;
-  let gy = (quad / cellsU) + corner.y;
-
-  let world = gridPosition(gx, gy);
-  let du = gridPosition(nextIndex(gx, cols, wrapU), gy) -
-    gridPosition(previousIndex(gx, cols, wrapU), gy);
-  let dv = gridPosition(gx, nextIndex(gy, rows, wrapV)) -
-    gridPosition(gx, previousIndex(gy, rows, wrapV));
-
-  var out: VertexOut;
-  out.position = params.viewProjection * vec4f(world, 1.0);
-  out.normal = cross(du, dv);
-  out.world = world;
-  /* The grid coordinate IS the uv — free, and what material maps sample by. */
-  out.uv = vec2f(f32(gx) / max(params.grid.x - 1.0, 1.0), f32(gy) / max(params.grid.y - 1.0, 1.0));
-  /* Same modular indexing as the position read, so the seam vertex wears column 0's tint. */
-  out.tint = ${pointColor
-    ? "pointColors[select(gy, gy % rows, wrapV) * cols + select(gx, gx % cols, wrapU)]"
-    : "vec4f(1.0)"};
-  return out;
-}
+${surfaceMeshWgsl(pointColor)}
 
 @fragment
 fn fs(input: VertexOut) -> @location(0) vec4f {
@@ -524,6 +534,73 @@ ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = r
  * Render only. Maps are refused upstream for instances (no uv yet), so this generator
  * takes no map options.
  */
+/**
+ * T725 — the instance PRIMITIVES chunk (quad/box/octahedron from the vertex index,
+ * analytic normals), extracted verbatim so the lit generator and the glass generator
+ * share one source (§V349). Byte-identical to the pre-extraction inline text.
+ */
+const INSTANCE_SHAPES_WGSL = `fn quadCorner(v: u32) -> vec2f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return corners[v];
+}
+
+fn shapeVertexCount(shape: u32) -> u32 {
+  if (shape == 0u) { return 6u; }
+  if (shape == 2u) { return 24u; }
+  return 36u;
+}
+
+fn boxVertex(v: u32) -> vec3f {
+  let face = v / 6u;
+  let corner = quadCorner(v % 6u);
+  let flip = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
+  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
+  return vec3f(corner.x * flip, corner.y, flip);
+}
+
+fn boxNormal(v: u32) -> vec3f {
+  let face = v / 6u;
+  let flip = f32(face % 2u) * 2.0 - 1.0;
+  let axis = face / 2u;
+  if (axis == 0u) { return vec3f(flip, 0.0, 0.0); }
+  if (axis == 1u) { return vec3f(0.0, flip, 0.0); }
+  return vec3f(0.0, 0.0, flip);
+}
+
+fn octaVertex(v: u32) -> vec3f {
+  let face = v / 3u;
+  let sx = f32(face & 1u) * 2.0 - 1.0;
+  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+  let corner = v % 3u;
+  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
+  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
+  return vec3f(0.0, 0.0, sz);
+}
+
+fn shapeVertex(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
+  if (shape == 2u) { return octaVertex(v); }
+  return boxVertex(v);
+}
+
+fn shapeNormal(shape: u32, v: u32) -> vec3f {
+  if (shape == 0u) { return vec3f(0.0, 0.0, 1.0); }
+  if (shape == 2u) {
+    let face = v / 3u;
+    let sx = f32(face & 1u) * 2.0 - 1.0;
+    let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
+    let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
+    return normalize(vec3f(sx, sy, sz));
+  }
+  return boxNormal(v);
+}`;
+
 /** T642: the group option both instance generators take — the draw and its shadow. */
 export interface SceneGroupOption {
   expression: string;
@@ -768,67 +845,7 @@ struct VertexOut {
 };
 ${group.declarations}
 
-fn quadCorner(v: u32) -> vec2f {
-  var corners = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  );
-  return corners[v];
-}
-
-fn shapeVertexCount(shape: u32) -> u32 {
-  if (shape == 0u) { return 6u; }
-  if (shape == 2u) { return 24u; }
-  return 36u;
-}
-
-fn boxVertex(v: u32) -> vec3f {
-  let face = v / 6u;
-  let corner = quadCorner(v % 6u);
-  let flip = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
-  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
-  return vec3f(corner.x * flip, corner.y, flip);
-}
-
-fn boxNormal(v: u32) -> vec3f {
-  let face = v / 6u;
-  let flip = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(flip, 0.0, 0.0); }
-  if (axis == 1u) { return vec3f(0.0, flip, 0.0); }
-  return vec3f(0.0, 0.0, flip);
-}
-
-fn octaVertex(v: u32) -> vec3f {
-  let face = v / 3u;
-  let sx = f32(face & 1u) * 2.0 - 1.0;
-  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
-  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
-  let corner = v % 3u;
-  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
-  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
-  return vec3f(0.0, 0.0, sz);
-}
-
-fn shapeVertex(shape: u32, v: u32) -> vec3f {
-  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
-  if (shape == 2u) { return octaVertex(v); }
-  return boxVertex(v);
-}
-
-fn shapeNormal(shape: u32, v: u32) -> vec3f {
-  if (shape == 0u) { return vec3f(0.0, 0.0, 1.0); }
-  if (shape == 2u) {
-    let face = v / 3u;
-    let sx = f32(face & 1u) * 2.0 - 1.0;
-    let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
-    let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
-    return normalize(vec3f(sx, sy, sz));
-  }
-  return boxNormal(v);
-}
+${INSTANCE_SHAPES_WGSL}
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
@@ -1111,4 +1128,282 @@ ${group.gate}  let shape = u32(params.instance.y);
 fn fs(input: VertexOut) -> @location(0) vec4f {
   return vec4f(${options.perspective === true ? "input.position.z" : "input.depth"}, 0.0, 0.0, 1.0);
 }`;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T725 — SCREEN-SPACE TRANSMISSION: the glass pyramid and the glass draw.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * vgpu's own transmission example, read at the source (vercel-labs/vgpu,
+ * apps/docs/examples/transmission): render the opaques, blur the frame into a
+ * pyramid, and let the glass draw bend rays back into it — Snell refraction to pick
+ * the sample point, roughness to pick the pyramid LEVEL (frosted glass is a coarser
+ * read of the scene, never a per-fragment blur), a spectral IOR loop for chromatic
+ * dispersion, Beer-Lambert absorption along the internal path, and a Schlick Fresnel
+ * mix toward the environment reflection at grazing angles.
+ *
+ * Two deliberate departures from the reference, both stated:
+ *  - NO SAMPLERS. The reference assembles a real mip texture and reads it with
+ *    hardware trilinear; our pyramid is five separate scratch targets, read with
+ *    textureLoad and MANUAL bilinear + a level mix (§V57's house idiom — draw passes
+ *    bind no samplers anywhere in this codebase, and this feature does not get to be
+ *    the reason they start).
+ *  - THICKNESS MODE ONLY (v1). The reference's "double" refraction analytically
+ *    traces its CUBE's exit face — meaningless for an arbitrary grid surface. Its own
+ *    GUI ships the thickness-based "simple" mode; that is what every geometry gets
+ *    here, and an exact box-exit trace for instances is the stated follow-up.
+ */
+
+/** Pyramid depth: level k is the frame at scale 1/2^k. Five reaches 1/16 resolution. */
+export const GLASS_PYRAMID_LEVELS = 5;
+/** Spectral samples in the dispersion loop — the reference uses 11; 7 reads the same. */
+export const GLASS_SPECTRAL_SAMPLES = 7;
+
+/** Level 0: the rendered opaques, copied so the glass draw never reads its own target. */
+export const GLASS_BLIT_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  return textureLoad(sourceTex, vec2i(position.xy), 0);
+}`;
+
+/**
+ * Downsample-with-blur, horizontal: each half-res texel reads a [1,3,3,1]/8 horizontal
+ * kernel centred between its two source columns, averaging the two source rows it
+ * straddles — decimation and the horizontal half of the Gaussian in one pass.
+ */
+export const GLASS_DOWN_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let dims = vec2i(textureDimensions(sourceTex, 0));
+  let base = vec2i(position.xy) * 2;
+  var weights = array<f32, 4>(1.0, 3.0, 3.0, 1.0);
+  var sum = vec4f(0.0);
+  for (var i = 0; i < 4; i = i + 1) {
+    let x = clamp(base.x + i - 1, 0, dims.x - 1);
+    let a = textureLoad(sourceTex, vec2i(x, clamp(base.y, 0, dims.y - 1)), 0);
+    let b = textureLoad(sourceTex, vec2i(x, clamp(base.y + 1, 0, dims.y - 1)), 0);
+    sum += (a + b) * 0.5 * weights[i];
+  }
+  return sum / 8.0;
+}`;
+
+/** The vertical half: a [1,4,6,4,1]/16 kernel at the level's own resolution. */
+export const GLASS_VBLUR_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let dims = vec2i(textureDimensions(sourceTex, 0));
+  let p = vec2i(position.xy);
+  var weights = array<f32, 5>(1.0, 4.0, 6.0, 4.0, 1.0);
+  var sum = vec4f(0.0);
+  for (var i = 0; i < 5; i = i + 1) {
+    let y = clamp(p.y + i - 2, 0, dims.y - 1);
+    sum += textureLoad(sourceTex, vec2i(p.x, y), 0) * weights[i];
+  }
+  return sum / 16.0;
+}`;
+
+export interface GlassShaderOptions {
+  /** An equirect environment is wired on the render — the reflection samples it. */
+  readonly environment?: boolean;
+}
+
+/** Manual bilinear per level + a level mix: textureLoad trilinear, exact at lod 0. */
+function glassPyramidWgsl(): string {
+  const perLevel = Array.from({ length: GLASS_PYRAMID_LEVELS }, (_, level) =>
+    `fn samplePyr${level}(uv: vec2f) -> vec3f {
+  let dims = vec2f(textureDimensions(pyr${level}, 0));
+  let coord = clamp(uv, vec2f(0.0), vec2f(1.0)) * dims - vec2f(0.5);
+  let base = floor(coord);
+  let f = coord - base;
+  let i0 = vec2i(clamp(base, vec2f(0.0), dims - vec2f(1.0)));
+  let i1 = vec2i(clamp(base + vec2f(1.0), vec2f(0.0), dims - vec2f(1.0)));
+  let c00 = textureLoad(pyr${level}, i0, 0).rgb;
+  let c10 = textureLoad(pyr${level}, vec2i(i1.x, i0.y), 0).rgb;
+  let c01 = textureLoad(pyr${level}, vec2i(i0.x, i1.y), 0).rgb;
+  let c11 = textureLoad(pyr${level}, i1, 0).rgb;
+  return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+`).join("\n");
+  const top = GLASS_PYRAMID_LEVELS - 1;
+  const branches = Array.from({ length: top - 1 }, (_, level) =>
+    `  if (l < ${(level + 1).toFixed(1)}) { return mix(samplePyr${level}(uv), samplePyr${level + 1}(uv), l - ${level.toFixed(1)}); }\n`,
+  ).join("");
+  return `${perLevel}
+fn samplePyramid(uv: vec2f, lod: f32) -> vec3f {
+  let l = clamp(lod, 0.0, ${top.toFixed(1)});
+${branches}  return mix(samplePyr${top - 1}(uv), samplePyr${top}(uv), l - ${(top - 1).toFixed(1)});
+}
+`;
+}
+
+/**
+ * The glass FRAGMENT, shared by the surface and the instances generator (§V349).
+ *
+ * Uniform contract (both generators declare these):
+ *   glassA = [ior, roughness, thickness, dispersion]
+ *   glassB = [absorption.rgb, envIntensity]
+ *   fallback = [background.rgb, unused] — what a ray that leaves the frame sees when
+ *     no environment is wired.
+ *
+ * Identity gate (§V147): at ior = 1 `refract` returns the incident ray unchanged, so
+ * the extended sample point stays ON the eye ray and projects to this very fragment —
+ * a polished, non-absorbing, ior-1 pane is byte-identical to the pixels behind it.
+ */
+function glassFragmentWgsl(options: GlassShaderOptions): string {
+  const reflectionExpr =
+    options.environment === true
+      ? "sampleEnvironment(reflected) * params.glassB.w"
+      : "params.fallback.rgb";
+  return `fn spectralWeight(t: f32) -> vec3f {
+  return vec3f(
+    exp(-pow((t - 0.05) / 0.45, 2.0)),
+    exp(-pow((t - 0.50) / 0.38, 2.0)),
+    exp(-pow((t - 0.95) / 0.45, 2.0)),
+  );
+}
+
+@fragment
+fn fs(input: VertexOut) -> @location(0) vec4f {
+  let magnitude = length(input.normal);
+  let geometric = select(vec3f(0.0, 0.0, 1.0), input.normal / max(magnitude, 1e-6), magnitude > 1e-6);
+  let view = normalize(params.eye.xyz - input.world);
+  /* Two-sided (T301): the face the camera sees is the entry face. */
+  let normal = select(-geometric, geometric, dot(geometric, view) > 0.0);
+  let incident = -view;
+  let facing = clamp(dot(view, normal), 0.0, 1.0);
+
+  let reflected = reflect(incident, normal);
+  let reflection = ${reflectionExpr};
+  let lod = pow(params.glassA.y, 0.8) * ${(GLASS_PYRAMID_LEVELS - 1).toFixed(1)} * 0.55;
+
+  var spectrum = vec3f(0.0);
+  var total = vec3f(0.0);
+  for (var i = 0; i < ${GLASS_SPECTRAL_SAMPLES}; i = i + 1) {
+    let t = (f32(i) + 0.5) / ${GLASS_SPECTRAL_SAMPLES}.0;
+    let ior = max(1.0, params.glassA.x + (t - 0.5) * params.glassA.w);
+    let inside = refract(incident, normal, 1.0 / ior);
+    /* Total internal reflection or a degenerate normal: the ray never enters the
+       scene — it sees the reflection, which is what TIR literally is. */
+    var sampleColor = reflection;
+    if (dot(inside, inside) > 1e-6) {
+      /* Thickness mode: travel the assumed internal path, then well past the exit so
+         the projected point reads the scene BEHIND the body, not its own surface. */
+      let exitPoint = input.world + inside * (params.glassA.z + 4.0);
+      let clip = params.viewProjection * vec4f(exitPoint, 1.0);
+      if (clip.w > 1e-4) {
+        let ndc = clip.xy / clip.w;
+        let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+        /* The reference's border blend: a ray that leaves the frame fades to the
+           reflection instead of smearing the clamped edge texel. */
+        let edge = smoothstep(vec2f(0.0), vec2f(0.06), uv) * smoothstep(vec2f(0.0), vec2f(0.06), vec2f(1.0) - uv);
+        sampleColor = mix(reflection, samplePyramid(uv, lod), edge.x * edge.y);
+      }
+    }
+    let weight = select(vec3f(1.0), spectralWeight(t), params.glassA.w > 1e-5);
+    spectrum += sampleColor * weight;
+    total += weight;
+  }
+  var transmitted = spectrum / max(total, vec3f(1e-4));
+
+  /* Beer-Lambert: the glass's colour, by removal only (§V644 — nothing multiplies in). */
+  transmitted *= exp(-params.glassB.rgb * params.glassA.z);
+
+  let f0 = pow((params.glassA.x - 1.0) / (params.glassA.x + 1.0), 2.0);
+  let fresnel = f0 + (1.0 - f0) * pow(1.0 - facing, 5.0);
+  return vec4f(mix(transmitted, reflection, fresnel), 1.0);
+}`;
+}
+
+function glassBindingsWgsl(options: GlassShaderOptions): string {
+  const levels = Array.from(
+    { length: GLASS_PYRAMID_LEVELS },
+    (_, level) => `@group(0) @binding(${2 + level}) var pyr${level}: texture_2d<f32>;\n`,
+  ).join("");
+  const env =
+    options.environment === true
+      ? `@group(0) @binding(${2 + GLASS_PYRAMID_LEVELS}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
+      : "";
+  return `${levels}${env}`;
+}
+
+/** The glass draw for SURFACE geometry — the lit generator's own mesh, new optics. */
+export function glassSurfaceWgsl(options: GlassShaderOptions = {}): string {
+  return `struct SceneParams {
+  viewProjection: mat4x4f,
+  eye: vec4f,
+  glassA: vec4f,            // ior, roughness, thickness, dispersion
+  glassB: vec4f,            // absorption rgb, w = environment intensity
+  fallback: vec4f,          // background rgb — the off-frame / no-env answer
+  grid: vec4f,              // cols, rows, wrapU, wrapV
+};
+
+@group(0) @binding(0) var<uniform> params: SceneParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+${glassBindingsWgsl(options)}${surfaceMeshWgsl(false)}
+
+${glassPyramidWgsl()}
+${glassFragmentWgsl(options)}`;
+}
+
+/** The glass draw for INSTANCES geometry — plain primitives (no group/billboard/beam). */
+export function glassInstancesWgsl(options: GlassShaderOptions = {}): string {
+  return `struct SceneParams {
+  viewProjection: mat4x4f,
+  eye: vec4f,
+  glassA: vec4f,            // ior, roughness, thickness, dispersion
+  glassB: vec4f,            // absorption rgb, w = environment intensity
+  fallback: vec4f,          // background rgb — the off-frame / no-env answer
+  instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
+};
+
+@group(0) @binding(0) var<uniform> params: SceneParams;
+@group(0) @binding(1) var<storage, read> positions: array<vec3f>;
+${glassBindingsWgsl(options)}struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) normal: vec3f,
+  @location(1) world: vec3f,
+};
+
+${INSTANCE_SHAPES_WGSL}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
+  let shape = u32(params.instance.y);
+  let count = shapeVertexCount(shape);
+  let v = min(vertex, count - 1u);
+  let world = shapeVertex(shape, v) * params.instance.x + positions[instance];
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  out.normal = shapeNormal(shape, v);
+  out.world = world;
+  return out;
+}
+
+${glassPyramidWgsl()}
+${glassFragmentWgsl(options)}`;
 }

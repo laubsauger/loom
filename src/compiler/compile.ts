@@ -1672,7 +1672,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         const geometryModel =
           material.model === "unlit"
             ? ("unlit" as const)
-            : material.model === "phong" || material.model === "pbr"
+            // T725: GLASS previews as phong — a stand-in, stated on the node: there is
+            // no rendered scene behind a preview rig to refract, and a shiny ball is
+            // the honest picture of "this is a specular dielectric".
+            : material.model === "phong" || material.model === "pbr" || material.model === "glass"
               ? ("phong" as const)
               : ("lambert" as const);
         // T428's pbr-through-phong, exactly as the Render maps it (scene.ts).
@@ -1807,8 +1810,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         // Material: the tilted TORUS under the fixed warm key and cool fill (T665 —
         // the ball hid concavity, self-occlusion, silhouette and a map's tiling) — the
         // model/specular mapping is the scene Render's own (T428's pbr-through-phong).
+        // T725: glass rides the phong stand-in here too — see the geometry site above.
         const model =
-          payload.model === "unlit" ? "unlit" : payload.model === "phong" || payload.model === "pbr" ? "phong" : "lambert";
+          payload.model === "unlit" ? "unlit" : payload.model === "phong" || payload.model === "pbr" || payload.model === "glass" ? "phong" : "lambert";
         const specularColor =
           payload.model === "pbr"
             ? ([

@@ -155,6 +155,7 @@ describe("core catalogue (T70, T40)", () => {
       "materialUnlit",
       "materialPhong",
       "materialPbr",
+      "materialGlass",
       "pointGenerator",
       "pointGrid",
       "pointLine",

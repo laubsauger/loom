@@ -73,7 +73,7 @@ function errorsOf(diagnostics: ReadonlyArray<{ severity: string; message: string
  * claim rewrite (T302), and the scene THINGS (T447): a camera, a light or a geometry
  * publishes resolved CPU values the Render consumes; the render pass is the Render's.
  */
-const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "projector", "geometry", "materialUnlit", "materialPhong", "materialPbr"]);
+const PAYLOAD_ONLY: ReadonlySet<string> = new Set(["pointTopology", "camera", "light", "projector", "geometry", "materialUnlit", "materialPhong", "materialPbr", "materialGlass"]);
 
 describe("the catalogue compiles through the real compiler", () => {
   it("registers the whole catalogue in one registry with no type collisions", () => {

@@ -149,7 +149,7 @@ export interface GeometryPayload {
 
 export interface MaterialPayload {
   readonly kind: "material";
-  readonly model: "unlit" | "lambert" | "phong" | "pbr";
+  readonly model: "unlit" | "lambert" | "phong" | "pbr" | "glass";
   /** Linear-space base/diffuse colour. */
   readonly baseColor: readonly [number, number, number, number];
   readonly specularColor: readonly [number, number, number];
@@ -160,6 +160,23 @@ export interface MaterialPayload {
   readonly maps: {
     readonly albedo?: string;
     readonly roughness?: string;
+  };
+  /**
+   * T725 — present exactly when model === "glass": screen-space transmission. The
+   * surface SAMPLES what was already rendered behind it (§V644: sampled light, never
+   * an albedo tint — baseColor is not even a glass parameter; absorption is), bent by
+   * Snell refraction, dispersed per wavelength, attenuated by Beer-Lambert, and mixed
+   * against a Fresnel-weighted reflection.
+   */
+  readonly glass?: {
+    /** Index of refraction, 1–2.4. 1 is optically inert (the identity gate). */
+    readonly ior: number;
+    /** World-units path length assumed inside the body (v1's "simple" mode). */
+    readonly thickness: number;
+    /** Beer-Lambert absorption per unit path, per channel (linear). */
+    readonly absorption: readonly [number, number, number];
+    /** Spectral IOR spread across the visible band. 0 = no dispersion. */
+    readonly dispersion: number;
   };
 }
 

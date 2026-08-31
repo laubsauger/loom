@@ -198,6 +198,7 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   materialUnlit: "pure",
   materialPhong: "pure",
   materialPbr: "pure",
+  materialGlass: "pure",
   // Structure: no state, no clock, no device.
   output: "pure",
   null: "pure",

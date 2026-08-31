@@ -11,8 +11,14 @@ import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-refe
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
 import {
+  GLASS_BLIT_WGSL,
+  GLASS_DOWN_WGSL,
+  GLASS_PYRAMID_LEVELS,
+  GLASS_VBLUR_WGSL,
   SHADOW_CLEAR_WGSL,
   backdropWgsl,
+  glassInstancesWgsl,
+  glassSurfaceWgsl,
   sceneInstancesWgsl,
   sceneSurfaceWgsl,
   shadowInstancesWgsl,
@@ -925,6 +931,8 @@ export const renderNode: NodeDefinition = {
     const scratch: Array<
       | NonNullable<ReturnType<typeof countedDrawSupport>>["scratch"]
       | { key: string; scale: number; format: "r32float"; depth?: true }
+      // T725: the glass pyramid levels — the node's own working format, no depth.
+      | { key: string; scale: number }
     > = [];
     /** T481: counted draw support emitted once (in the shadow phase when one exists),
      *  shared by the shadow and the lit draw of the same geometry. */
@@ -980,6 +988,11 @@ export const renderNode: NodeDefinition = {
            mostly width. §V617's material rule already skips the unlit beams every use so
            far wants; this covers the LIT one, which §V617 does not reach. */
         if (payload.mode === "points" || payload.mode === "beam") return;
+        /* T725: GLASS casts no shadow — light passes through it, so the opaque stamp a
+           caster leaves would be a lie (a caustic is a different feature, stated on the
+           material). Same argument family as the billboard and the beam above; reaches
+           the AO sweep too, deliberately — glass does not enclose its neighbourhood. */
+        if (payload.material.model === "glass") return;
         /*
          * T666 — an UNLIT geometry exchanges no light IN EITHER DIRECTION, so it does
          * not cast either. §V610 named the billboard half of this and stopped there;
@@ -1345,6 +1358,9 @@ export const renderNode: NodeDefinition = {
     } as DrawPassDescriptor);
 
     geometries.forEach(({ payload, source }, index) => {
+      /* T725: transmissive geometry draws in its own phase AFTER the opaques — it
+         samples what they drew. Skipped here, emitted below the pyramid. */
+      if (payload.material.model === "glass") return;
       if (payload.mode === "instances" || payload.mode === "points" || payload.mode === "beam") {
         const billboard = payload.mode === "points";
         /* T680: a beam is a quad like a billboard is — six vertices, one instance per
@@ -1697,6 +1713,189 @@ export const renderNode: NodeDefinition = {
       });
     });
 
+    /*
+     * T725 — the TRANSMISSION phase: pyramid, then glass, strictly after the opaques.
+     *
+     * A transmissive surface SAMPLES what was already rendered behind it, so its draws
+     * cannot ride the ordinary geometry loop — they need the finished opaque picture
+     * first, blurred into a pyramid so roughness reads a coarser LEVEL rather than
+     * blurring per fragment (the difference between frosted glass and a smeared
+     * texel). Level 0 is a straight copy — a draw must never sample its own target —
+     * and each further level halves the resolution through a separable binomial blur.
+     * All of it exists only when a glass geometry is actually named: without one the
+     * emitted plan is byte-identical (§V309).
+     *
+     * Glass depth-WRITES against the opaque depth, so a wall in front of the pane
+     * still hides it; two overlapping glass bodies see the pyramid, not each other —
+     * the reference's own limitation, stated rather than discovered.
+     */
+    const transmissive = geometries
+      .map((entry, index) => ({ ...entry, index }))
+      .filter(({ payload }) => payload.material.model === "glass");
+    if (transmissive.length > 0) {
+      const pyrTargetOf = (level: number): string => `scratch:${nodeId}:glassPyr${level}`;
+      scratch.push({ key: "glassPyr0", scale: 1 });
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}:glass:pyramid:0`,
+        nodeId,
+        shader: GLASS_BLIT_WGSL,
+        target: pyrTargetOf(0),
+        topology: "triangle-list",
+        instances: 1,
+        vertexCount: 6,
+        textures: [{ binding: "sourceTex", resourceId: target, sampled: "unfiltered" }],
+        clear: true,
+      } as DrawPassDescriptor);
+      for (let level = 1; level < GLASS_PYRAMID_LEVELS; level += 1) {
+        const scale = 1 / 2 ** level;
+        scratch.push({ key: `glassPyrH${level}`, scale });
+        scratch.push({ key: `glassPyr${level}`, scale });
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:glass:pyramid:${level}:h`,
+          nodeId,
+          shader: GLASS_DOWN_WGSL,
+          target: `scratch:${nodeId}:glassPyrH${level}`,
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 6,
+          textures: [{ binding: "sourceTex", resourceId: pyrTargetOf(level - 1), sampled: "unfiltered" }],
+          clear: true,
+        } as DrawPassDescriptor);
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:glass:pyramid:${level}:v`,
+          nodeId,
+          shader: GLASS_VBLUR_WGSL,
+          target: pyrTargetOf(level),
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: 6,
+          textures: [{ binding: "sourceTex", resourceId: `scratch:${nodeId}:glassPyrH${level}`, sampled: "unfiltered" }],
+          clear: true,
+        } as DrawPassDescriptor);
+      }
+
+      const glassTextures = [
+        ...Array.from({ length: GLASS_PYRAMID_LEVELS }, (_, level) => ({
+          binding: `pyr${level}`,
+          resourceId: pyrTargetOf(level),
+          sampled: "unfiltered" as const,
+        })),
+        ...(environmentResource === undefined
+          ? []
+          : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
+      ];
+      const glassShaderOptions = environmentResource === undefined ? {} : { environment: true };
+
+      for (const { payload, source, index } of transmissive) {
+        const glass = payload.material.glass;
+        if (glass === undefined) continue; // model "glass" always carries it; belt for the type
+        const position = payload.pairs["position"];
+        if (position === undefined) {
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.geometry",
+            message: `Node "${nodeId}": geometry "${source}" carries no position pair.`,
+            nodeId,
+          });
+          continue;
+        }
+        if (payload.mode === "points" || payload.mode === "beam") {
+          /* §V288: a billboard or a ribbon has no volume to refract through — glass on
+             one would be a flat decal wearing a physical material's name. */
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.glass",
+            message: `Node "${nodeId}": geometry "${source}" wears glass in ${payload.mode} mode — transmission needs a body; surface and instances modes refract.`,
+            nodeId,
+          });
+          continue;
+        }
+        const glassUniforms = {
+          viewProjection: Array.from(viewProjectionMatrix),
+          eye: [camera.eye[0], camera.eye[1], camera.eye[2], 0],
+          glassA: [glass.ior, payload.material.roughness, glass.thickness, glass.dispersion],
+          glassB: [glass.absorption[0], glass.absorption[1], glass.absorption[2], environmentIntensity],
+          fallback: [background[0] ?? 0, background[1] ?? 0, background[2] ?? 0, 0],
+        };
+        if (payload.mode === "instances") {
+          let counted = countedByIndex.get(index);
+          if (counted === undefined) {
+            counted = countedDrawSupport(nodeId, payload, {
+              vertexCount: 36,
+              maxInstances: Math.max(1, payload.capacity),
+              argsKey: `drawArgs${index}`,
+            });
+            if (counted !== undefined) {
+              countedByIndex.set(index, counted);
+              passes.push(counted.argsPass);
+              scratch.push(counted.scratch);
+            }
+          }
+          const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+          passes.push({
+            kind: "draw",
+            id: `${nodeId}:glass:${index}`,
+            nodeId,
+            shader: glassInstancesWgsl(glassShaderOptions),
+            target,
+            topology: "triangle-list",
+            instances: counted?.instances ?? payload.capacity,
+            vertexCount: 36,
+            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+            textures: glassTextures,
+            uniforms: {
+              ...glassUniforms,
+              instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+            },
+            uniformBinding: "params",
+            clear: false,
+          });
+          continue;
+        }
+        const topology = typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
+        if (topology === null || topology.kind !== "grid") {
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.topology",
+            message: `Node "${nodeId}": geometry "${source}" carries no analytic grid topology; a surface cannot be built.`,
+            nodeId,
+          });
+          continue;
+        }
+        if (gridPointCount(topology) > payload.capacity) {
+          diagnostics.push({
+            severity: "error",
+            code: "node.scene.topology",
+            message: `Node "${nodeId}": geometry "${source}" claims ${gridPointCount(topology)} grid points but carries ${payload.capacity}.`,
+            nodeId,
+          });
+          continue;
+        }
+        const { cellsU, cellsV } = gridCellCounts(topology);
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:glass:${index}`,
+          nodeId,
+          shader: glassSurfaceWgsl(glassShaderOptions),
+          target,
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: cellsU * cellsV * 6,
+          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          textures: glassTextures,
+          uniforms: {
+            ...glassUniforms,
+            grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
+          },
+          uniformBinding: "params",
+          clear: false,
+        });
+      }
+    }
+
     if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
       return { passes: [], diagnostics };
     }
@@ -1809,6 +2008,108 @@ export const materialPbrNode: NodeDefinition = {
   compile: materialCompile("pbr"),
 };
 
+/**
+ * T725 — GLASS: screen-space transmission, vgpu's own transmission example brought
+ * into the catalogue (the owner supplied the reference; the shaders were read, not
+ * imagined). A geometry wearing this draws AFTER the opaques and SAMPLES the picture
+ * already rendered behind it through a Gaussian blur pyramid: Snell refraction bends
+ * the sample point, roughness picks the pyramid level (frosted glass is a coarser
+ * read, not a per-fragment blur), dispersion splits the refraction per wavelength,
+ * Beer-Lambert absorbs along the path, and a Schlick Fresnel mixes toward the
+ * environment reflection at grazing angles.
+ *
+ * §V644 satisfied structurally: the transmitted term is SAMPLED light — there is no
+ * baseColor parameter at all; the only colour here is absorption, which can only
+ * remove. §V617's question answered: glass is a THIRD thing — not lit (its light is
+ * the sampled scene + Fresnel environment), not unlit (nothing interacts with light
+ * more) — and it casts no shadow: light passes through glass, and the dark stamp an
+ * opaque caster leaves would be a lie (a caustic is a different feature).
+ */
+export const materialGlassNode: NodeDefinition = {
+  type: "materialGlass",
+  version: 1,
+  title: "Material · Glass",
+  category: "render",
+  description:
+    "Screen-space transmission: the surface refracts what the render already drew behind it, through a blur pyramid so roughness reads as frost. IOR bends, Dispersion splits colours, Absorption tints by removal (Beer-Lambert over Thickness), and a Fresnel-weighted environment reflection takes over at grazing angles. Draws after the opaques; casts no shadow (light passes through). The node preview shows a phong stand-in — there is no scene behind a preview ball to refract.",
+  tags: ["3d", "material", "glass", "transmission", "refraction", "dispersion", "scene"],
+  inputs: [],
+  outputs: [MATERIAL_OUT],
+  parameters: {
+    ior: {
+      type: "number",
+      label: "IOR",
+      default: 1.5,
+      min: 1,
+      max: 2.4,
+      step: 0.01,
+      range: "bounded",
+      description: "Index of refraction — 1 is optically inert, 1.5 is glass, 2.4 is diamond.",
+    },
+    roughness: {
+      type: "number",
+      label: "Roughness",
+      default: 0.06,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      range: "bounded",
+      description: "0 is polished, 1 is fully frosted — reads a coarser level of the scene pyramid.",
+    },
+    thickness: {
+      type: "number",
+      label: "Thickness",
+      default: 0.85,
+      min: 0.01,
+      max: 10,
+      step: 0.01,
+      range: "floor",
+      description: "World-units path length assumed inside the body — how far the refracted ray travels before it leaves.",
+    },
+    absorption: {
+      type: "color",
+      label: "Absorption",
+      default: [0.3, 0.1, 0.16, 1],
+      space: "display",
+      description: "Beer-Lambert absorption per unit path — the glass's colour, by REMOVAL: high red absorption makes cyan glass.",
+    },
+    dispersion: {
+      type: "number",
+      label: "Dispersion",
+      default: 0,
+      min: 0,
+      max: 0.3,
+      step: 0.005,
+      range: "floor",
+      description: "Spectral IOR spread across the visible band. 0 is off; ~0.09 is the reference's chromatic fringe.",
+    },
+  },
+  compile(context): CompiledNodeDescription {
+    const { parameters } = readCompileInputs(context);
+    const absorption = readColor(parameters, "absorption", [0.3, 0.1, 0.16, 1]);
+    const payload: MaterialPayload = {
+      kind: "material",
+      model: "glass",
+      // The lit-path fields sit at DEFAULT_MATERIAL-adjacent values so every consumer
+      // that reads them before switching on `model` stays well-defined; none of them
+      // reach the glass shader.
+      baseColor: [0.8, 0.8, 0.8, 1],
+      specularColor: [1, 1, 1],
+      shininess: 96,
+      metallic: 0,
+      roughness: readNumber(parameters, "roughness", 0.06),
+      maps: {},
+      glass: {
+        ior: readNumber(parameters, "ior", 1.5),
+        thickness: readNumber(parameters, "thickness", 0.85),
+        absorption: [absorption[0] ?? 0.3, absorption[1] ?? 0.1, absorption[2] ?? 0.16],
+        dispersion: readNumber(parameters, "dispersion", 0),
+      },
+    };
+    return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
+  },
+};
+
 export const sceneNodeDefinitions: readonly NodeDefinition[] = [
   cameraNode,
   lightNode,
@@ -1818,4 +2119,5 @@ export const sceneNodeDefinitions: readonly NodeDefinition[] = [
   materialUnlitNode,
   materialPhongNode,
   materialPbrNode,
+  materialGlassNode,
 ];
