@@ -178,6 +178,25 @@ export const setShaderSourceInput = z
   .object({ nodeId: z.string().min(1), source: z.string(), baseRevision, dryRun })
   .strict();
 
+/**
+ * T542: the file itself, as bytes. A PATH would only be readable on the headless stdio
+ * twin — the page cannot open one — and a tool that works on one transport is the split
+ * V39 exists to prevent. Base64 travels every transport; the tool turns it into a
+ * session object URL exactly the way the file picker does.
+ */
+export const attachAssetInput = z
+  .object({
+    nodeId: z.string().min(1),
+    /** The asset parameter to bind. Omitted: the node's ONE asset parameter, refused by name when ambiguous. */
+    parameter: z.string().min(1).optional(),
+    name: z.string().min(1),
+    mimeType: z.string().min(1),
+    dataBase64: z.string().min(1),
+    baseRevision,
+    dryRun,
+  })
+  .strict();
+
 export const setOutputInput = z
   .object({ nodeId: z.string().min(1), portId: z.string().min(1).optional(), enabled: z.boolean().optional() })
   .strict();
@@ -223,6 +242,7 @@ export type ConnectPortsInput = z.infer<typeof connectPortsInput>;
 export type DisconnectPortsInput = z.infer<typeof disconnectPortsInput>;
 export type SetParametersInput = z.infer<typeof setParametersInput>;
 export type SetShaderSourceInput = z.infer<typeof setShaderSourceInput>;
+export type AttachAssetInput = z.infer<typeof attachAssetInput>;
 export type SetOutputInput = z.infer<typeof setOutputInput>;
 export type ResetFeedbackInput = z.infer<typeof resetFeedbackInput>;
 export type HistoryInput = z.infer<typeof historyInput>;

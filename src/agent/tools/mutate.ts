@@ -16,8 +16,10 @@ import {
   setParametersInput,
   setShaderSourceInput,
   layoutGraphInput,
+attachAssetInput,
 } from "../schemas.ts";
 import type {
+  AttachAssetInput,
   AddNodeInput,
   ApplyGraphPatchInput,
   ConnectPortsInput,
@@ -30,7 +32,7 @@ import type {
   SetShaderSourceInput,
   LayoutGraphInput,
 } from "../schemas.ts";
-import { dispatchOperations, dispatchPatchCommand, result, type PatchToolData } from "../tool-support.ts";
+import { dispatchOperations, dispatchPatchCommand, failed, result, type PatchToolData } from "../tool-support.ts";
 import type { AgentTool, ToolStatus } from "../types.ts";
 
 /**
@@ -244,6 +246,79 @@ export const setParameters: AgentTool<SetParametersInput, PatchToolData> = {
     ),
 };
 
+/**
+ * T542 — the asset hole. An agent could add `audioFileIn`, wire it, drive every
+ * parameter through the full mode envelope — and never hand it a FILE, which made
+ * "audio can't be connected from my side" literal. This tool closes it: bytes in,
+ * a session object URL out, bound exactly the way the file picker binds one (the
+ * name rides the URL fragment, so the inspector shows which file was attached, and
+ * the patch is audited under the agent's own actor — §V338 twice over).
+ *
+ * NO EXPORT GRANT REQUIRED, on purpose (§V38's asymmetry, stated so nobody assumes
+ * otherwise): --grant-export gates pixels LEAVING the process; putting a file INTO
+ * the page is a write the bus's ordinary grant model already governs.
+ */
+export const attachAsset: AgentTool<AttachAssetInput, PatchToolData> = {
+  name: "attach_asset",
+  title: "Attach asset",
+  description:
+    "Bind a media file (as base64 bytes) to a node's asset parameter — the agent-side twin of the file picker. Session-scoped, like a picked file. Needs no export grant: this writes INTO the page.",
+  kind: "mutate",
+  inputSchema: attachAssetInput,
+  requires: { commands: ["graph.applyPatch"] },
+  capabilities: [],
+  mutates: true,
+  run: (input, runtime) => {
+    const graph = runtime.bus.store.getGraph();
+    const node = graph.nodes[input.nodeId];
+    if (node === undefined) {
+      return Promise.resolve(
+        failed<PatchToolData>("attach_asset", "node.unknown", `No node with id "${input.nodeId}".`),
+      );
+    }
+    const definition = runtime.bus.registry.get(node.type);
+    const assetParameters = Object.entries(definition?.parameters ?? {}).filter(
+      (entry) => entry[1].type === "asset",
+    );
+    const chosen =
+      input.parameter !== undefined
+        ? assetParameters.find(([key]) => key === input.parameter)
+        : assetParameters.length === 1
+          ? assetParameters[0]
+          : undefined;
+    if (chosen === undefined) {
+      const names = assetParameters.map(([key]) => key);
+      return Promise.resolve(
+        failed<PatchToolData>(
+          "attach_asset",
+          "asset.parameterUnresolved",
+          names.length === 0
+            ? `Node "${input.nodeId}" (${node.type}) has no asset parameter.`
+            : `Node "${input.nodeId}" has ${names.length} asset parameters (${names.join(", ")}); name one with "parameter".`,
+        ),
+      );
+    }
+    let url: string;
+    try {
+      const bytes = Uint8Array.from(atob(input.dataBase64), (char) => char.charCodeAt(0));
+      const blob = new Blob([bytes], { type: input.mimeType });
+      // The same shape the picker writes: object URL + the human name in the fragment,
+      // which is what the inspector row displays (§V338 — the page SHOWS what arrived).
+      url = `${URL.createObjectURL(blob)}#${encodeURIComponent(input.name)}`;
+    } catch {
+      return Promise.resolve(
+        failed<PatchToolData>("attach_asset", "asset.badData", "dataBase64 is not valid base64."),
+      );
+    }
+    return dispatchOperations(
+      "attach_asset",
+      runtime,
+      [{ op: "setParameters", nodeId: input.nodeId, parameters: { [chosen[0]]: url } }],
+      { label: `Attach ${input.name}`, baseRevision: input.baseRevision },
+    );
+  },
+};
+
 export const setShaderSource: AgentTool<SetShaderSourceInput, PatchToolData> = {
   name: "set_shader_source",
   title: "Set shader source",
@@ -375,6 +450,7 @@ export const mutationTools: readonly AgentTool[] = [
   removeNodes,
   connectPorts,
   disconnectPorts,
+  attachAsset,
   setParameters,
   setShaderSource,
   setOutput,
