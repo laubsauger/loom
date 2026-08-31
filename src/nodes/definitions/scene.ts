@@ -43,7 +43,7 @@ export const cameraNode: NodeDefinition = {
   title: "Camera",
   category: "render",
   description:
-    "A camera other nodes reference by NAME: Render, Render Surface and Render Instances all name it in their camera parameter, so one camera frames them together. Every parameter is drivable — an orbiting camera is a uniform write, never a rebuild.",
+    "A camera other nodes reference by NAME: Render, Render Surface and Render Instances all name it in their camera parameter, so one camera frames them together. Every parameter is drivable — an orbiting camera is a uniform write, never a rebuild. Its preview shows WHAT THE RENDERER SEES: with exactly one renderer naming this camera, the preview is that renderer's own picture; with none, a stock reference scene showing framing alone; with several, the stock scene again, because there is no single answer and picking one would be a viewpoint nobody chose.",
   tags: ["3d", "scene", "camera", "view"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: { kind: "camera" } }],

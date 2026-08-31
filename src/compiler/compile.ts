@@ -203,6 +203,48 @@ function outputSlots(definition: NodeDefinition): OutputSlot[] {
   return slots;
 }
 
+/**
+ * T546 — WHICH RENDERERS FRAME THEMSELVES WITH THIS CAMERA.
+ *
+ * The owner's report: `cam1` previewed the T462 stock reference scene (checker ground,
+ * axis-coloured box) while `shot1` — which NAMES cam1 — drew three copper cubes on grey.
+ * "camera does not seem to show what the renderer sees here." T462's rationale was
+ * defensible on its own (a camera is a THING with no scene of its own, so a stock scene
+ * shows FRAMING independent of any renderer) but it loses to TD, where a Camera COMP's
+ * viewer shows the real scene, and it loses to the owner's expectation.
+ *
+ * ## The link already existed
+ *
+ * This function does NOT re-derive the camera NAME. §V372/§V373 already resolve a
+ * renderer's `camera` parameter into a SYNTHESIZED REAL EDGE before validation, and this
+ * reads those edges back — so there is exactly ONE name resolution in the compiler and
+ * this is a consumer of it, never a second copy of it (§V349). Everything the resolution
+ * already refuses — a dangling name, a name that is not a camera, a MUTED camera — is
+ * refused before an edge exists, so none of it can reach here.
+ *
+ * A "renderer" is not a node-type list, which would rot the moment a fourth renderer is
+ * written: it is simply the target of an edge into an input port of kind `camera`.
+ */
+function renderersFramedByCamera(
+  edges: ReadonlyArray<{ readonly source: { nodeId: NodeId; portId: PortId }; readonly target: { nodeId: NodeId; portId: PortId } }>,
+  definitionOf: (nodeId: NodeId) => NodeDefinition | undefined,
+): Map<string, NodeId[]> {
+  const byCameraOutput = new Map<string, NodeId[]>();
+  for (const edge of edges) {
+    const definition = definitionOf(edge.target.nodeId);
+    if (definition === undefined) continue;
+    const port = definition.inputs.find((input) => input.id === edge.target.portId);
+    if (port?.type.kind !== "camera") continue;
+    const key = outputKey(edge.source.nodeId, edge.source.portId);
+    const list = byCameraOutput.get(key);
+    if (list === undefined) byCameraOutput.set(key, [edge.target.nodeId]);
+    else if (!list.includes(edge.target.nodeId)) list.push(edge.target.nodeId);
+  }
+  // Deterministic, so N>1 is reported in a stable order rather than in edge-map order.
+  for (const list of byCameraOutput.values()) list.sort();
+  return byCameraOutput;
+}
+
 function declaresDepthOutput(definition: NodeDefinition): boolean {
   return definition.outputs.some(
     (port) => port.type.kind === "texture2d" && port.type.sample === "depth",
@@ -919,6 +961,14 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     materialized.add(outputKey(sink.nodeId, portId));
   }
 
+  // T546: read the §V372/§V373 synthesized camera edges back, so a camera's preview can
+  // follow the link that already exists. KEPT edges only — a renderer the prune dropped
+  // frames nothing this compile, so it cannot be the answer to "what does this see".
+  const renderersByCamera = renderersFramedByCamera(
+    [...topology.currentFrameEdges, ...topology.temporalEdges],
+    (id) => validated.nodes.get(id)?.definition,
+  );
+
   // 4. resolution and format propagation (T27, T72, T28, T75)
   const base: PropagationArgs = {
     order: topology.order,
@@ -1450,6 +1500,65 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       if (!previewSinkKeys.has(key)) continue;
       const payload = sceneInfoByOutput.get(key);
       if (payload === undefined) continue;
+      /*
+       * T546 — A CAMERA PREVIEWS WHAT THE RENDERER SEES, and the N-renderer question is
+       * answered HERE, once, by counting rather than by picking.
+       *
+       *   0 renderers name it → the T462 stock reference scene. This is the case T462 was
+       *     really for: nothing frames anything through this camera, so a checker ground
+       *     and an axis-coloured box show its fov and orientation, which is the only
+       *     honest picture available.
+       *   exactly 1        → THAT renderer's own output, aliased. The owner's case.
+       *   more than 1      → the stock scene again, plus a diagnostic naming every
+       *     renderer. There is no single answer, and inventing one by taking the first
+       *     would be §V147's family: a plausible picture from a viewpoint nobody chose,
+       *     that silently changes when a node is renamed. The camera node's description
+       *     states this rule so it is readable without reading the compiler.
+       *
+       * The alias is §V130's mechanism exactly — same id, same pixels, zero cost. It is
+       * not a re-render of the scene at preview size: it is the picture the renderer
+       * already drew, which is what "what the renderer sees" literally means, and it adds
+       * no pass, no target and no bytes to the plan.
+       */
+      if (payload.kind === "camera") {
+        const framed = renderersByCamera.get(key) ?? [];
+        if (framed.length > 1) {
+          diagnostics.push(
+            compilerDiagnostic(
+              "info",
+              CompilerDiagnosticCode.cameraPreviewAmbiguous,
+              `Camera "${nodeId}" frames ${String(framed.length)} renderers (${framed.join(", ")}), so there is no single "what the renderer sees" — this preview shows the stock reference scene instead.`,
+              {
+                nodeId,
+                suggestion:
+                  "Preview one of the renderers directly to see its picture, or give each renderer its own camera.",
+              },
+            ),
+          );
+        }
+        const only = framed.length === 1 ? framed[0] : undefined;
+        /*
+         * The renderer must actually PRODUCE this compile: aliasing a target nothing ever
+         * drew into would show black and call it the render (§V147). TWO defences, and
+         * both were measured to fire on their own, so neither is decoration:
+         *  - the index is built from KEPT edges, so a pruned renderer never appears here;
+         *  - and its output row must have RESOLVED, which a pruned node's never does.
+         * A `materialized.has()` check sat here too and was removed: kept implies it, so
+         * it could not fail, and an unfalsifiable guard reads as protection it is not.
+         */
+        const rendered =
+          only === undefined
+            ? undefined
+            : (() => {
+                const slot = outputSlots(validated.nodes.get(only)?.definition ?? definition)[0];
+                if (slot === undefined) return undefined;
+                return propagated.outputs.get(outputKey(only, slot.portId));
+              })();
+        if (rendered !== undefined) {
+          scenePreviewOutputs.set(key, { ...rendered, nodeId, portId: port.id });
+          continue;
+        }
+      }
       // T502: same rule, same helper — a camera, light or material preview is synthesized
       // exactly like the splat, so it renders at the same size. This is the half of §V437
       // that matters: the policy reaches the NEXT preview kind by construction.

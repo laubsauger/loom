@@ -269,3 +269,108 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
     ]).toEqual([kind, true]);
   });
 });
+
+/**
+ * T546 — a camera previews WHAT THE RENDERER SEES.
+ *
+ * The owner's report was a screenshot: `cam1` showing T462's checker-and-box stock scene
+ * beside `shot1` — which NAMES cam1 — drawing three copper cubes. The link already
+ * existed (§V372/§V373 synthesize the camera edge from the name); the preview simply did
+ * not follow it.
+ *
+ * §V461 — these fixtures can DISTINGUISH what they assert. The alias case is pinned by
+ * resource IDENTITY against the renderer's own output row, which is a value the stock
+ * scene can never produce (it always synthesizes `preview:scene:...`), and the fallback
+ * cases are pinned by the presence of the synthesized target the alias case must NOT
+ * create. A test that only counted passes would pass for either behaviour.
+ */
+describe("T546 — the camera preview follows the renderer that names it", () => {
+  const framedGraph = (renderers: Array<{ id: string; label: string }>): GraphDocument =>
+    graphOf(
+      [
+        node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"),
+        node("geo", "geometry", { mode: "surface" }, "geo1"),
+        node("cam", "camera", {}, "cam1"),
+        node("sun", "light", {}, "sun1"),
+        ...renderers.map((entry) =>
+          node(entry.id, "render", { scenes: "geo1", camera: "cam1", lights: "sun1" }, entry.label),
+        ),
+      ],
+      {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
+      },
+    );
+
+  const rowFor = (compiled: { outputs: ReadonlyArray<{ nodeId: string; portId: string; resourceId: string }> }, nodeId: string) =>
+    compiled.outputs.find((output) => output.nodeId === nodeId && output.portId === "out");
+
+  it("EXACTLY ONE renderer: the camera's preview row IS that renderer's picture, at zero cost", () => {
+    const compiled = compile(framedGraph([{ id: "shot", label: "shot1" }]), [
+      { nodeId: "cam", portId: "out" },
+      { nodeId: "shot", portId: "out" },
+    ]);
+    expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+
+    const shotRow = rowFor(compiled, "shot");
+    const camRow = rowFor(compiled, "cam");
+    expect(shotRow).toBeDefined();
+    // §V130's mechanism: same id, same pixels. This is the assertion the owner's report
+    // is about — the camera tile samples the render's own target, not a stock scene.
+    expect(camRow?.resourceId).toBe(shotRow?.resourceId);
+
+    // ZERO COST is half the claim: no synthesized target, no extra draw. A re-render of
+    // the scene at preview size would show the same picture and cost a whole pass.
+    expect(compiled.resources.some((resource) => resource.id === "preview:scene:cam:out")).toBe(false);
+    expect(
+      compiled.passes.some((pass) => String((pass as { id: string }).id) === "cam#scenePreview:out"),
+    ).toBe(false);
+  });
+
+  it("ZERO renderers: the stock reference scene stands — T462's real case, untouched", () => {
+    const compiled = compile(graphOf([node("cam", "camera", {}, "cam1")]), [
+      { nodeId: "cam", portId: "out" },
+    ]);
+    expect(compiled.resources.some((resource) => resource.id === "preview:scene:cam:out")).toBe(true);
+    expect(rowFor(compiled, "cam")?.resourceId).toBe("preview:scene:cam:out");
+    expect(
+      compiled.diagnostics.some((entry) => entry.code === "compiler/camera-preview-ambiguous"),
+    ).toBe(false);
+  });
+
+  it("MORE THAN ONE renderer: the stock scene, and the preview SAYS why — never a silent first", () => {
+    const compiled = compile(
+      framedGraph([
+        { id: "shotB", label: "shotB1" },
+        { id: "shotA", label: "shotA1" },
+      ]),
+      [
+        { nodeId: "cam", portId: "out" },
+        { nodeId: "shotA", portId: "out" },
+        { nodeId: "shotB", portId: "out" },
+      ],
+    );
+    // Not either renderer's target: the stock scene, because there is no single answer.
+    expect(rowFor(compiled, "cam")?.resourceId).toBe("preview:scene:cam:out");
+    expect(rowFor(compiled, "cam")?.resourceId).not.toBe(rowFor(compiled, "shotA")?.resourceId);
+    expect(rowFor(compiled, "cam")?.resourceId).not.toBe(rowFor(compiled, "shotB")?.resourceId);
+
+    const said = compiled.diagnostics.find(
+      (entry) => entry.code === "compiler/camera-preview-ambiguous",
+    );
+    expect(said).toBeDefined();
+    expect(said?.severity).toBe("info");
+    // It names EVERY renderer, so the reader can go and preview the one they meant.
+    expect(said?.message).toContain("shotA");
+    expect(said?.message).toContain("shotB");
+  });
+
+  it("a renderer the PRUNE dropped is not an answer — black pixels must not pass as the render (§V147)", () => {
+    // The camera is watched; the renderer is not, and nothing else keeps it. Its target
+    // would exist with nothing ever drawn into it, so the alias must NOT be taken.
+    const compiled = compile(framedGraph([{ id: "shot", label: "shot1" }]), [
+      { nodeId: "cam", portId: "out" },
+    ]);
+    expect(compiled.pruned).toContain("shot");
+    expect(rowFor(compiled, "cam")?.resourceId).toBe("preview:scene:cam:out");
+  });
+});

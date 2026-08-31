@@ -55,6 +55,13 @@ export const CompilerDiagnosticCode = {
   /** T350: a source reference AND a wired input on the same loop — one truth. */
   sourceReferenceAmbiguous: "compiler/source-reference-ambiguous",
   /**
+   * T546: more than one renderer frames itself with this camera, so "what the renderer
+   * sees" has no single answer and the preview shows the stock reference scene. INFO, not
+   * a warning: sharing one camera between renderers is a normal thing to do, and the only
+   * consequence is which picture the camera's own preview can show.
+   */
+  cameraPreviewAmbiguous: "compiler/camera-preview-ambiguous",
+  /**
    * T387: substeps were asked for and are NOT being run, with the reason and the parameter
    * named (§V288). A silently-ignored substep count is the worst version of this — the
    * picture is plausible and the simulation is fifty times slower than the number says.
