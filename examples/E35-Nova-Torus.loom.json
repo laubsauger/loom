@@ -1,0 +1,1383 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e0-music1-source1": {
+        "id": "e0-music1-source1",
+        "source": {
+          "nodeId": "music1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source1",
+          "portId": "in1"
+        }
+      },
+      "e1-source1-valuelag1": {
+        "id": "e1-source1-valuelag1",
+        "source": {
+          "nodeId": "source1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuelag1",
+          "portId": "in"
+        }
+      },
+      "e10-hsv1-null2": {
+        "id": "e10-hsv1-null2",
+        "source": {
+          "nodeId": "hsv1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "null2",
+          "portId": "in"
+        }
+      },
+      "e11-null2-output1": {
+        "id": "e11-null2-output1",
+        "source": {
+          "nodeId": "null2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "output1",
+          "portId": "input"
+        }
+      },
+      "e12-valuelag1-valuemath1": {
+        "id": "e12-valuelag1-valuemath1",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath1",
+          "portId": "a"
+        }
+      },
+      "e13-valuemath1-valuemath2": {
+        "id": "e13-valuemath1-valuemath2",
+        "source": {
+          "nodeId": "valuemath1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath2",
+          "portId": "a"
+        }
+      },
+      "e14-valuelag1-valuemath3": {
+        "id": "e14-valuelag1-valuemath3",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath3",
+          "portId": "a"
+        }
+      },
+      "e15-valuemath3-valuemath4": {
+        "id": "e15-valuemath3-valuemath4",
+        "source": {
+          "nodeId": "valuemath3",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath4",
+          "portId": "a"
+        }
+      },
+      "e16-valuelag1-valuemath5": {
+        "id": "e16-valuelag1-valuemath5",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath5",
+          "portId": "a"
+        }
+      },
+      "e17-valuemath5-valuemath6": {
+        "id": "e17-valuemath5-valuemath6",
+        "source": {
+          "nodeId": "valuemath5",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath6",
+          "portId": "a"
+        }
+      },
+      "e18-valuelag1-valuemath7": {
+        "id": "e18-valuelag1-valuemath7",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath7",
+          "portId": "a"
+        }
+      },
+      "e19-valuemath7-valuemath8": {
+        "id": "e19-valuemath7-valuemath8",
+        "source": {
+          "nodeId": "valuemath7",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath8",
+          "portId": "a"
+        }
+      },
+      "e2-audiofilein1-source1": {
+        "id": "e2-audiofilein1-source1",
+        "source": {
+          "nodeId": "audiofilein1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source1",
+          "portId": "in2"
+        }
+      },
+      "e20-valuelag1-valuemath9": {
+        "id": "e20-valuelag1-valuemath9",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath9",
+          "portId": "a"
+        }
+      },
+      "e21-valuemath9-valuemath10": {
+        "id": "e21-valuemath9-valuemath10",
+        "source": {
+          "nodeId": "valuemath9",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath10",
+          "portId": "a"
+        }
+      },
+      "e22-valuelag1-valuemath11": {
+        "id": "e22-valuelag1-valuemath11",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath11",
+          "portId": "a"
+        }
+      },
+      "e23-valuemath11-valuemath12": {
+        "id": "e23-valuemath11-valuemath12",
+        "source": {
+          "nodeId": "valuemath11",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath12",
+          "portId": "a"
+        }
+      },
+      "e24-valuelag1-valuemath13": {
+        "id": "e24-valuelag1-valuemath13",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath13",
+          "portId": "a"
+        }
+      },
+      "e25-valuemath13-valuemath14": {
+        "id": "e25-valuemath13-valuemath14",
+        "source": {
+          "nodeId": "valuemath13",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath14",
+          "portId": "a"
+        }
+      },
+      "e26-valuelag1-valuemath15": {
+        "id": "e26-valuelag1-valuemath15",
+        "source": {
+          "nodeId": "valuelag1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath15",
+          "portId": "a"
+        }
+      },
+      "e27-valuemath15-valuemath16": {
+        "id": "e27-valuemath15-valuemath16",
+        "source": {
+          "nodeId": "valuemath15",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "valuemath16",
+          "portId": "a"
+        }
+      },
+      "e28-add1-multiply1": {
+        "id": "e28-add1-multiply1",
+        "source": {
+          "nodeId": "add1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "multiply1",
+          "portId": "in1"
+        }
+      },
+      "e29-noise1-multiply1": {
+        "id": "e29-noise1-multiply1",
+        "order": 0,
+        "source": {
+          "nodeId": "noise1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "multiply1",
+          "portId": "in2"
+        }
+      },
+      "e3-ramp1-lookup1": {
+        "id": "e3-ramp1-lookup1",
+        "source": {
+          "nodeId": "ramp1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lookup1",
+          "portId": "lookup"
+        }
+      },
+      "e30-multiply1-lookup1": {
+        "id": "e30-multiply1-lookup1",
+        "source": {
+          "nodeId": "multiply1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lookup1",
+          "portId": "source"
+        }
+      },
+      "e31-screen2-screen3": {
+        "id": "e31-screen2-screen3",
+        "source": {
+          "nodeId": "screen2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen3",
+          "portId": "in1"
+        }
+      },
+      "e32-pointgenerator1-pointkernel1": {
+        "id": "e32-pointgenerator1-pointkernel1",
+        "source": {
+          "nodeId": "pointgenerator1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pointkernel1",
+          "portId": "in"
+        }
+      },
+      "e33-pointkernel1-renderpoints1": {
+        "id": "e33-pointkernel1-renderpoints1",
+        "source": {
+          "nodeId": "pointkernel1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "renderpoints1",
+          "portId": "points"
+        }
+      },
+      "e34-pointkernel1-renderpoints2": {
+        "id": "e34-pointkernel1-renderpoints2",
+        "source": {
+          "nodeId": "pointkernel1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "renderpoints2",
+          "portId": "points"
+        }
+      },
+      "e35-pointkernel1-renderpoints3": {
+        "id": "e35-pointkernel1-renderpoints3",
+        "source": {
+          "nodeId": "pointkernel1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "renderpoints3",
+          "portId": "points"
+        }
+      },
+      "e36-renderpoints1-null1": {
+        "id": "e36-renderpoints1-null1",
+        "source": {
+          "nodeId": "renderpoints1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "null1",
+          "portId": "in"
+        }
+      },
+      "e37-renderpoints2-level1": {
+        "id": "e37-renderpoints2-level1",
+        "source": {
+          "nodeId": "renderpoints2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "level1",
+          "portId": "input"
+        }
+      },
+      "e38-renderpoints3-level2": {
+        "id": "e38-renderpoints3-level2",
+        "source": {
+          "nodeId": "renderpoints3",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "level2",
+          "portId": "input"
+        }
+      },
+      "e39-null1-blur1": {
+        "id": "e39-null1-blur1",
+        "source": {
+          "nodeId": "null1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "blur1",
+          "portId": "input"
+        }
+      },
+      "e4-lookup1-screen1": {
+        "id": "e4-lookup1-screen1",
+        "source": {
+          "nodeId": "lookup1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen1",
+          "portId": "in1"
+        }
+      },
+      "e40-blur1-level3": {
+        "id": "e40-blur1-level3",
+        "source": {
+          "nodeId": "blur1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "level3",
+          "portId": "input"
+        }
+      },
+      "e41-null1-add1": {
+        "id": "e41-null1-add1",
+        "source": {
+          "nodeId": "null1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "add1",
+          "portId": "in1"
+        }
+      },
+      "e42-level3-add1": {
+        "id": "e42-level3-add1",
+        "order": 0,
+        "source": {
+          "nodeId": "level3",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "add1",
+          "portId": "in2"
+        }
+      },
+      "e5-level1-screen1": {
+        "id": "e5-level1-screen1",
+        "order": 0,
+        "source": {
+          "nodeId": "level1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen1",
+          "portId": "in2"
+        }
+      },
+      "e6-screen1-screen2": {
+        "id": "e6-screen1-screen2",
+        "source": {
+          "nodeId": "screen1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen2",
+          "portId": "in1"
+        }
+      },
+      "e7-level2-screen2": {
+        "id": "e7-level2-screen2",
+        "order": 0,
+        "source": {
+          "nodeId": "level2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen2",
+          "portId": "in2"
+        }
+      },
+      "e8-feedback1-screen3": {
+        "id": "e8-feedback1-screen3",
+        "order": 0,
+        "source": {
+          "nodeId": "feedback1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "screen3",
+          "portId": "in2"
+        }
+      },
+      "e9-screen3-hsv1": {
+        "id": "e9-screen3-hsv1",
+        "source": {
+          "nodeId": "screen3",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hsv1",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "add1": {
+        "definitionVersion": 1,
+        "id": "add1",
+        "label": "add1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1145,
+          "y": -96
+        },
+        "type": "add"
+      },
+      "audiofilein1": {
+        "definitionVersion": 1,
+        "id": "audiofilein1",
+        "label": "audiofilein1",
+        "parameters": {
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "",
+          "monitor": true,
+          "play": true,
+          "playMode": "freeRun",
+          "speed": 1,
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -420,
+          "y": 700
+        },
+        "type": "audioFileIn"
+      },
+      "blur1": {
+        "definitionVersion": 1,
+        "id": "blur1",
+        "label": "blur1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 34
+        },
+        "position": {
+          "x": 780,
+          "y": -280
+        },
+        "type": "blur"
+      },
+      "feedback1": {
+        "definitionVersion": 1,
+        "id": "feedback1",
+        "label": "feedback1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath14:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "reset": false,
+          "source": "null2",
+          "substeps": 1
+        },
+        "position": {
+          "x": 1880,
+          "y": 220
+        },
+        "type": "feedback"
+      },
+      "hsv1": {
+        "definitionVersion": 1,
+        "id": "hsv1",
+        "label": "hsv1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "lfo1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.24,
+          "value": 1
+        },
+        "position": {
+          "x": 2320,
+          "y": -100
+        },
+        "type": "hsv"
+      },
+      "level1": {
+        "definitionVersion": 1,
+        "id": "level1",
+        "label": "level1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath8:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 560,
+          "y": 200
+        },
+        "type": "level"
+      },
+      "level2": {
+        "definitionVersion": 1,
+        "id": "level2",
+        "label": "level2",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath10:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 560,
+          "y": 460
+        },
+        "type": "level"
+      },
+      "level3": {
+        "definitionVersion": 1,
+        "id": "level3",
+        "label": "level3",
+        "parameters": {
+          "blacklevel": 0.01,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath4:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 1000,
+          "y": -280
+        },
+        "type": "level"
+      },
+      "lfo1": {
+        "definitionVersion": 1,
+        "id": "lfo1",
+        "label": "lfo1",
+        "parameters": {
+          "amplitude": 18,
+          "frequency": 0.5,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -420,
+          "y": 880
+        },
+        "type": "lfo"
+      },
+      "lookup1": {
+        "definitionVersion": 1,
+        "id": "lookup1",
+        "label": "lookup1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath12:highMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 1440,
+          "y": 96
+        },
+        "type": "lookup"
+      },
+      "multiply1": {
+        "definitionVersion": 1,
+        "id": "multiply1",
+        "label": "multiply1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1340,
+          "y": -100
+        },
+        "type": "multiply"
+      },
+      "music1": {
+        "definitionVersion": 1,
+        "id": "music1",
+        "label": "music1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 112
+        },
+        "position": {
+          "x": -420,
+          "y": 440
+        },
+        "type": "audioPattern"
+      },
+      "noise1": {
+        "definitionVersion": 1,
+        "id": "noise1",
+        "label": "noise1",
+        "parameters": {
+          "amp": 0.22,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 2,
+          "mono": true,
+          "offset": 1,
+          "p": [
+            0,
+            0,
+            0
+          ],
+          "period": 3.2,
+          "r": 0,
+          "rough": 0.5,
+          "s": [
+            1,
+            1,
+            1
+          ],
+          "s4d": 1,
+          "seed": 1,
+          "speed": 0.12,
+          "spread": 2,
+          "t": [
+            0,
+            0,
+            0
+          ],
+          "t4d": 0.37,
+          "type": "perlin4d",
+          "xord": "srt"
+        },
+        "position": {
+          "x": 1220,
+          "y": 380
+        },
+        "type": "noise"
+      },
+      "null1": {
+        "definitionVersion": 1,
+        "id": "null1",
+        "label": "null1",
+        "parameters": {},
+        "position": {
+          "x": 560,
+          "y": -100
+        },
+        "type": "null"
+      },
+      "null2": {
+        "definitionVersion": 1,
+        "id": "null2",
+        "label": "null2",
+        "parameters": {},
+        "position": {
+          "x": 2540,
+          "y": -100
+        },
+        "type": "null"
+      },
+      "output1": {
+        "definitionVersion": 1,
+        "id": "output1",
+        "label": "output1",
+        "parameters": {
+          "toneMap": "none"
+        },
+        "position": {
+          "x": 2760,
+          "y": -100
+        },
+        "type": "output"
+      },
+      "pointgenerator1": {
+        "definitionVersion": 1,
+        "id": "pointgenerator1",
+        "label": "pointgenerator1",
+        "parameters": {
+          "cols": 256,
+          "count": 65536,
+          "radius": 1,
+          "radius2": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath2:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "rows": 256,
+          "shape": "torus",
+          "sizeX": 2,
+          "sizeY": 2,
+          "sizeZ": 2
+        },
+        "position": {
+          "x": -782,
+          "y": 44
+        },
+        "type": "pointGenerator"
+      },
+      "pointkernel1": {
+        "definitionVersion": 1,
+        "id": "pointkernel1",
+        "label": "pointkernel1",
+        "parameters": {
+          "attributes": "",
+          "capacity": 65536,
+          "group": "",
+          "kernel": "\nfn lm_hash(p: vec3f) -> f32 {\n  var q = fract(p * 0.1031);\n  q = q + vec3f(dot(q, q.zyx + 31.32));\n  return fract((q.x + q.y) * q.z);\n}\nfn lm_noise(x: vec3f) -> f32 {\n  let i = floor(x); let f = fract(x);\n  let u = f * f * (3.0 - 2.0 * f);\n  let a = mix(lm_hash(i + vec3f(0.0,0.0,0.0)), lm_hash(i + vec3f(1.0,0.0,0.0)), u.x);\n  let b = mix(lm_hash(i + vec3f(0.0,1.0,0.0)), lm_hash(i + vec3f(1.0,1.0,0.0)), u.x);\n  let c = mix(lm_hash(i + vec3f(0.0,0.0,1.0)), lm_hash(i + vec3f(1.0,0.0,1.0)), u.x);\n  let d = mix(lm_hash(i + vec3f(0.0,1.0,1.0)), lm_hash(i + vec3f(1.0,1.0,1.0)), u.x);\n  return mix(mix(a,b,u.y), mix(c,d,u.y), u.z) * 2.0 - 1.0;\n}\nfn lm_fbm(x: vec3f, oct: i32) -> f32 {\n  var v = 0.0; var a = 0.5; var q = x;\n  for (var k: i32 = 0; k < oct; k = k + 1) {\n    v = v + a * lm_noise(q);\n    q = q * 2.03 + vec3f(17.3, 9.1, 4.7);\n    a = a * 0.55;\n  }\n  return v;\n}\nfn lm_ridged(x: vec3f, oct: i32) -> f32 {\n  var v = 0.0; var a = 0.5; var q = x;\n  for (var k: i32 = 0; k < oct; k = k + 1) {\n    let n = 1.0 - abs(lm_noise(q));\n    v = v + a * n * n;\n    q = q * 2.07 + vec3f(11.1, 3.3, 7.7);\n    a = a * 0.52;\n  }\n  return v - 0.62;\n}\nfn lm_rotY(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x*c - v.z*s, v.y, v.x*s + v.z*c);\n}\nfn lm_rotX(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x, v.y*c - v.z*s, v.y*s + v.z*c);\n}\n\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  // absolute clock: ctx.time is timeline-relative and snaps at the loop point\n  let t = f32(ctx.absTime) * 0.001;\n\n  let R0 = 1.0; let RMIN = 0.18; let RSPAN = 0.34;\n  let pin = p.position;\n  let d = max(1.0e-4, length(pin.xz));\n  let r = length(vec2f(d - R0, pin.y));\n  let fromAudio = clamp((r - RMIN) / RSPAN, 0.0, 1.0);\n  let warp = clamp(fromAudio + 0.30 + 0.26 * sin(t * 0.087), 0.0, 1.35);\n\n  let u  = atan2(pin.z, pin.x);\n  let v0 = atan2(pin.y, d - R0);\n\n  // ---- three morph weights, smooth and normalised (no steps, no snapping) --\n  let m = t * 0.055;\n  var w0 = 0.5 + 0.5 * sin(m);\n  var w1 = 0.5 + 0.5 * sin(m * 0.73 + 2.1);\n  var w2 = 0.5 + 0.5 * sin(m * 0.51 + 4.2);\n  w0 = w0 * w0; w1 = w1 * w1; w2 = w2 * w2;      // sharpen so one mode leads\n  let ws = w0 + w1 + w2 + 1.0e-4;\n  w0 = w0 / ws; w1 = w1 / ws; w2 = w2 / ws;\n\n  // ---- twist as PERIODIC harmonics of u: closes seamlessly, morphs smoothly\n  let A1 = 0.60 + 0.90 * sin(t * 0.037);\n  let A2 = 0.80 * sin(t * 0.023 + 1.7);\n  let A3 = 0.50 * sin(t * 0.019 + 3.3);\n  var v = v0\n        + A1 * sin(u)\n        + A2 * sin(2.0 * u + t * 0.06)\n        + A3 * sin(3.0 * u - 0.4)\n        + (0.5 + 1.1 * warp) * sin(u + t * 0.12);\n  v = v + t * 0.50;\n\n  let sc = vec3f(cos(u) * 1.4, sin(u) * 1.4, v * 0.45);\n  let wv = vec3f(\n    lm_fbm(sc + vec3f(0.0, 0.0, t * 0.12), 4),\n    lm_fbm(sc + vec3f(4.1, 2.7, t * 0.10), 4),\n    lm_fbm(sc + vec3f(8.3, 6.1, t * 0.14), 4)\n  );\n  let lobes   = lm_fbm(sc * 1.6 + wv * 1.5, 5);\n  let creases = lm_ridged(sc * (2.2 + 2.4 * warp) + wv * 1.1 - vec3f(t * 0.2, 0.0, 0.0), 5);\n  let field   = mix(lobes, creases * 1.15, clamp(warp, 0.0, 1.0));\n\n  // ---- three genuinely different cross-section profiles ---------------------\n  // harmonic counts stay integer; only the CROSSFADE moves, so nothing tears\n  let sMix = 0.5 + 0.5 * sin(t * 0.020);\n  let star = mix(sin(4.0 * v), sin(7.0 * v), sMix);\n  let rMix = 0.5 + 0.5 * sin(t * 0.031 + 1.2);\n  let ripple = mix(sin(3.0 * u - t * 1.1), sin(7.0 * u - t * 0.7), rMix);\n\n  let prof0 = 1.0 + 0.30 * field;                      // smooth organic coil\n  let prof1 = 1.0 + 0.38 * star + 0.15 * field;        // star / ribbon tube\n  let prof2 = 1.0 + 0.95 * max(0.0, creases);    // spiny coral\n  let prof  = w0 * prof0 + w1 * prof1 + w2 * prof2;\n\n  let squash = mix(1.0, 0.58, w1);                     // flatten toward a ribbon\n\n  let rr = r * prof * (1.0 + 0.40 * warp * field + 0.16 * ripple);\n  let RR = R0 + 0.10 * sin(3.0 * u + t * 0.7)\n              + 0.14 * sin(2.0 * u - t * 0.60)\n              + 0.18 * lm_fbm(vec3f(cos(u) * 2.0, sin(u) * 2.0, t * 0.15), 3);\n\n  let cu = cos(u); let su = sin(u);\n  let cv = cos(v); let sv = sin(v);\n  var p3 = vec3f(cu * (RR + rr * cv), rr * sv * squash, su * (RR + rr * cv));\n  p3.y = p3.y + 0.22 * sin(2.0 * u + t * 0.45);\n\n  p3 = p3 * 0.70;\n  p3 = lm_rotY(p3, t * 0.09);\n  p3 = lm_rotX(p3, -0.58);\n\n  let dcam = 4.2; let zc = max(0.05, dcam - p3.z);\n  let ff = 3.6; let aspect = 16.0 / 9.0;\n  q.position = vec3f((p3.x * ff / zc) / aspect, p3.y * ff / zc, 0.5);\n\n  // travelling colour band + camera depth, read by the layer predicates\n  let band = 0.5 + 0.5 * sin(3.0 * u - t * 0.90 + 0.8 * field + 1.6 * sin(v * 0.5));\n  q.velocity = vec3f(band, creases, clamp(p3.z * 1.4 + 0.5, 0.0, 1.0));\n  return q;\n}\n",
+          "seed": 11,
+          "value1": 0,
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -153,
+          "y": 35
+        },
+        "type": "pointKernel"
+      },
+      "ramp1": {
+        "definitionVersion": 2,
+        "id": "ramp1",
+        "label": "ramp1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.01,
+                0.02,
+                0.07,
+                1
+              ],
+              "position": 0.1
+            },
+            {
+              "color": [
+                0.06,
+                0.13,
+                0.42,
+                1
+              ],
+              "position": 0.3
+            },
+            {
+              "color": [
+                0.48,
+                0.09,
+                0.64,
+                1
+              ],
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.98,
+                0.26,
+                0.22,
+                1
+              ],
+              "position": 0.72
+            },
+            {
+              "color": [
+                1,
+                0.74,
+                0.3,
+                1
+              ],
+              "position": 0.89
+            },
+            {
+              "color": [
+                1,
+                0.98,
+                0.93,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": 1220,
+          "y": 160
+        },
+        "type": "ramp"
+      },
+      "renderpoints1": {
+        "definitionVersion": 1,
+        "id": "renderpoints1",
+        "label": "renderpoints1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.17,
+            0.27,
+            0.54,
+            1
+          ],
+          "count": 65536,
+          "group": "",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath6:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 240,
+          "y": -100
+        },
+        "type": "renderPoints"
+      },
+      "renderpoints2": {
+        "definitionVersion": 1,
+        "id": "renderpoints2",
+        "label": "renderpoints2",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            1,
+            0.42,
+            0.1,
+            1
+          ],
+          "count": 65536,
+          "group": "p.velocity.y > 0.06",
+          "sizePixels": 1.3
+        },
+        "position": {
+          "x": 240,
+          "y": 200
+        },
+        "type": "renderPoints"
+      },
+      "renderpoints3": {
+        "definitionVersion": 1,
+        "id": "renderpoints3",
+        "label": "renderpoints3",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.22,
+            0.88,
+            1,
+            1
+          ],
+          "count": 65536,
+          "group": "p.velocity.x > 0.66 && p.velocity.y < 0.04",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "valuemath16:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 240,
+          "y": 460
+        },
+        "type": "renderPoints"
+      },
+      "screen1": {
+        "definitionVersion": 1,
+        "id": "screen1",
+        "label": "screen1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1660,
+          "y": -100
+        },
+        "type": "screen"
+      },
+      "screen2": {
+        "definitionVersion": 1,
+        "id": "screen2",
+        "label": "screen2",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1880,
+          "y": -100
+        },
+        "type": "screen"
+      },
+      "screen3": {
+        "definitionVersion": 1,
+        "id": "screen3",
+        "label": "screen3",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 2100,
+          "y": -100
+        },
+        "type": "screen"
+      },
+      "source1": {
+        "definitionVersion": 1,
+        "id": "source1",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -160,
+          "y": 570
+        },
+        "type": "valueSwitch"
+      },
+      "valuelag1": {
+        "definitionVersion": 1,
+        "id": "valuelag1",
+        "label": "valuelag1",
+        "parameters": {
+          "lag": 0.09
+        },
+        "position": {
+          "x": -140,
+          "y": 798
+        },
+        "type": "valueLag"
+      },
+      "valuemath1": {
+        "definitionVersion": 1,
+        "id": "valuemath1",
+        "label": "valuemath1",
+        "parameters": {
+          "operand": 0.34,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "valuemath10": {
+        "definitionVersion": 1,
+        "id": "valuemath10",
+        "label": "valuemath10",
+        "parameters": {
+          "operand": 0.1,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 1484
+        },
+        "type": "valueMath"
+      },
+      "valuemath11": {
+        "definitionVersion": 1,
+        "id": "valuemath11",
+        "label": "valuemath11",
+        "parameters": {
+          "operand": 2.1,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 1680
+        },
+        "type": "valueMath"
+      },
+      "valuemath12": {
+        "definitionVersion": 1,
+        "id": "valuemath12",
+        "label": "valuemath12",
+        "parameters": {
+          "operand": 1.4,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 1680
+        },
+        "type": "valueMath"
+      },
+      "valuemath13": {
+        "definitionVersion": 1,
+        "id": "valuemath13",
+        "label": "valuemath13",
+        "parameters": {
+          "operand": 0.3,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 1876
+        },
+        "type": "valueMath"
+      },
+      "valuemath14": {
+        "definitionVersion": 1,
+        "id": "valuemath14",
+        "label": "valuemath14",
+        "parameters": {
+          "operand": 0.62,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 1876
+        },
+        "type": "valueMath"
+      },
+      "valuemath15": {
+        "definitionVersion": 1,
+        "id": "valuemath15",
+        "label": "valuemath15",
+        "parameters": {
+          "operand": 9,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 2072
+        },
+        "type": "valueMath"
+      },
+      "valuemath16": {
+        "definitionVersion": 1,
+        "id": "valuemath16",
+        "label": "valuemath16",
+        "parameters": {
+          "operand": 1,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 2072
+        },
+        "type": "valueMath"
+      },
+      "valuemath2": {
+        "definitionVersion": 1,
+        "id": "valuemath2",
+        "label": "valuemath2",
+        "parameters": {
+          "operand": 0.18,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "valuemath3": {
+        "definitionVersion": 1,
+        "id": "valuemath3",
+        "label": "valuemath3",
+        "parameters": {
+          "operand": 1.5,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 896
+        },
+        "type": "valueMath"
+      },
+      "valuemath4": {
+        "definitionVersion": 1,
+        "id": "valuemath4",
+        "label": "valuemath4",
+        "parameters": {
+          "operand": 0.85,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 896
+        },
+        "type": "valueMath"
+      },
+      "valuemath5": {
+        "definitionVersion": 1,
+        "id": "valuemath5",
+        "label": "valuemath5",
+        "parameters": {
+          "operand": 2.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 1092
+        },
+        "type": "valueMath"
+      },
+      "valuemath6": {
+        "definitionVersion": 1,
+        "id": "valuemath6",
+        "label": "valuemath6",
+        "parameters": {
+          "operand": 1.2,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 1092
+        },
+        "type": "valueMath"
+      },
+      "valuemath7": {
+        "definitionVersion": 1,
+        "id": "valuemath7",
+        "label": "valuemath7",
+        "parameters": {
+          "operand": 2.2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 1288
+        },
+        "type": "valueMath"
+      },
+      "valuemath8": {
+        "definitionVersion": 1,
+        "id": "valuemath8",
+        "label": "valuemath8",
+        "parameters": {
+          "operand": 0.25,
+          "operation": "add"
+        },
+        "position": {
+          "x": 340,
+          "y": 1288
+        },
+        "type": "valueMath"
+      },
+      "valuemath9": {
+        "definitionVersion": 1,
+        "id": "valuemath9",
+        "label": "valuemath9",
+        "parameters": {
+          "operand": 20,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": 140,
+          "y": 1484
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E35 Nova-Torus",
+  "projectId": "example-nova-torus",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 20,
+    "previewLongEdge": 192,
+    "randomSeed": 1,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

@@ -122,6 +122,9 @@ describe("examples with a temporal loop", () => {
       // is a chain of eight nodes instead. `loop1` is the ordinary trail, closing on the
       // final output (§V471.5).
       "E32-Pasture.loom.json",
+      // T660: Corona's sibling keeps the same shape — trails close on the final graded
+      // output (`feedback1`, `source: "null2"`), §V471.5's idea inherited intact.
+      "E35-Nova-Torus.loom.json",
       // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
       // moving point reads as a moving point rather than a stipple — the loop's fourth
       // use in the set, after a smear, a simulation and a zoom. Its persistence is a
