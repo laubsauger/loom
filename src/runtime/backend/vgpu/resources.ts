@@ -191,11 +191,14 @@ export interface ResourceSet {
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   /**
-   * T510: pair ids ALLOCATED by this build (zero-filled), as opposed to carried — the
-   * backend hands the passes that write them one frame of `firstRun = 1u`, then clears
-   * this set. The seeding signal for storage that is genuinely fresh.
+   * T510: storage ids ALLOCATED by this build (zero-filled), as opposed to carried — the
+   * backend hands the passes that bind them one frame of `firstRun = 1u`, then clears
+   * this set. Covers point SoA pairs AND plain storage buffers: the lifecycle's counts
+   * and scan scratch are plain buffers, and a spawn cursor that missed the fresh signal
+   * kept treating frameIndex == 0 as "my storage is zero", which a timeline lap made
+   * false. The seeding signal for storage that is genuinely fresh.
    */
-  readonly freshBufferPairs: Set<string>;
+  readonly freshStorage: Set<string>;
   readonly effects: ReadonlyMap<string, Effect>;
   /** Compute pipelines per dispatch pass (T172). */
   readonly computes: ReadonlyMap<string, Compute>;
@@ -323,7 +326,7 @@ export function buildResources(
   const externalTextures = new Map<string, ExternalTextureEntry>();
   const buffers = new Map<string, StorageBuffer>();
   const bufferPairs = new Map<string, PingPongStorage>();
-  const freshBufferPairs = new Set<string>();
+  const freshStorage = new Set<string>();
   const effects = new Map<string, Effect>();
   const computes = new Map<string, Compute>();
   const draws = new Map<string, Draw>();
@@ -467,6 +470,9 @@ export function buildResources(
                 : "read-write",
           ),
         );
+        // T510: a plain storage buffer allocated here is zero-filled — the lifecycle's
+        // counts/scan scratch read that as "fresh" via firstRun, same as a SoA pair.
+        freshStorage.add(resource.id);
         note("resourcesCreated");
       } else if (resource.kind === "bufferPair") {
         // A carried pair keeps its contents, exactly like a texture ping-pong (§V22).
@@ -477,7 +483,7 @@ export function buildResources(
           continue;
         }
         bufferPairs.set(resource.id, pingPongStorage(gpu, resource.stride * resource.capacity));
-        freshBufferPairs.add(resource.id);
+        freshStorage.add(resource.id);
         note("resourcesCreated");
       }
     } catch (error) {
@@ -780,7 +786,7 @@ export function buildResources(
     externalTextures,
     buffers,
     bufferPairs,
-    freshBufferPairs,
+    freshStorage,
     effects,
     computes,
     draws,

@@ -52,10 +52,17 @@ import { NOISE_FRAGMENT_WGSL } from "../../nodes/shaders/noise.wgsl.ts";
  * every shipped example is generated FROM), and `examples/**.loom.json` (what actually
  * ships). That is the AUTHORED CONTENT surface — the things a user reads, copies and opens.
  *
+ * SCANNED SINCE T582: `src/points` — the GENERATED WGSL surface. T579 found four
+ * lifecycle passes inferring "my storage is fresh" from `params.frameIndex == 0u`, in a
+ * directory this audit could not see: the gate had proven every AUTHORED surface clean
+ * while the generated one quietly defeated the property it gates. The codegen plumbing
+ * that legitimately reads the wrapping clock (to OFFER it as `ctx.time`) is DECLARED
+ * below like any other site; a new wrapping read in generated code reddens the gate.
+ *
  * NOT SCANNED, and each for a reason:
- *   - the RUNTIME (`src/runtime`, `src/points`, `src/domain`). Reading `frame.timeSeconds`
- *     is what a transport, a codegen and an expression scope are FOR; gating them would
- *     gate the plumbing that makes both clocks exist. `loop-continuity.test.ts` covers that
+ *   - the rest of the RUNTIME (`src/runtime`, `src/domain`). Reading `frame.timeSeconds`
+ *     is what a transport and an expression scope are FOR; gating them would gate the
+ *     plumbing that makes both clocks exist. `loop-continuity.test.ts` covers that
  *     half by asserting the property end to end instead.
  *   - `*.test.ts` / test fixtures (`runtime/backend/vgpu/plan-fixture.ts` reads `frameU.time`
  *     on purpose: it is a fixture proving the shared block is BOUND, and nobody's picture
@@ -67,7 +74,7 @@ import { NOISE_FRAGMENT_WGSL } from "../../nodes/shaders/noise.wgsl.ts";
  */
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const SCANNED_ROOTS = ["src/nodes", "src/examples", "examples"] as const;
+const SCANNED_ROOTS = ["src/nodes", "src/examples", "examples", "src/points"] as const;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist", ".git"]);
 
 /**
@@ -233,6 +240,17 @@ const DECLARED: Readonly<
       "ctx.absTime/ctx.absFrame as 'the clock that keeps growing across a timeline loop, " +
       "where ctx.time wraps'. Naming the wrapping clock is the whole value of the sentence.",
   },
+  "src/points/codegen.ts": {
+    kind: "timeline-anchored",
+    reads: 5,
+    reason:
+      "The PROVIDER. ctx.time and ctx.frameIndex ARE the wrapping clock by contract — " +
+      "these reads exist to build them (two PointCtx constructions), plus the per-frame " +
+      "random salt, which keys on frameIndex so a given timeline frame reproduces its " +
+      "randomness on replay. What this file must never do again is INFER storage " +
+      "freshness from frameIndex == 0 — T579's lap bug, now ctx.firstRun (T510) — and " +
+      "the count is what catches the next such inference in generated WGSL.",
+  },
   /*
    * T579 — THE TWO E9 ENTRIES ARE GONE, and their absence is the point.
    *
@@ -313,6 +331,10 @@ describe("T497 — the shipped surface reads the absolute clock, or says why it 
     expect(visited.has("src/nodes/shaders/custom-wgsl-default.wgsl.ts")).toBe(true);
     expect(visited.has("src/examples/documents.ts")).toBe(true);
     expect(visited.has("examples/E13-Prism.loom.json")).toBe(true);
+    // T582: the GENERATED surface — the walker must reach the file whose frameIndex
+    // inference defeated the lap property while every authored surface scanned clean.
+    expect(visited.has("src/points/lifecycle.ts")).toBe(true);
+    expect(visited.has("src/points/codegen.ts")).toBe(true);
     expect(visited.size).toBeGreaterThan(80);
     // And it really parses the documents, rather than skipping every one of them silently.
     expect([...visited].filter((path) => path.endsWith(".loom.json")).length).toBeGreaterThan(20);

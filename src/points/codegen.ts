@@ -560,7 +560,7 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
   const liveExpression =
     lifecycle === undefined
       ? "kernelFrame.count"
-      : "select(min(liveCount[0], kernelFrame.count), kernelFrame.count, kernelFrame.frameIndex == 0u)";
+      : "select(min(liveCount[0], kernelFrame.count), kernelFrame.count, kernelFrame.firstRun == 1u)";
   const guard =
     lifecycle === undefined
       ? `  if (index >= kernelFrame.count) {
@@ -623,7 +623,13 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      predicate reading `ctx.absTime` must be able to declare the member the kernel did not. */
   const usesAbsClock = ABS_CLOCK_REFERENCE.test(kernel) || ABS_CLOCK_REFERENCE.test(groupSource);
   /* T510: appended after the absolute pair, for the same nothing-moves reason. */
-  const usesFirstRun = FIRST_RUN_REFERENCE.test(kernel) || FIRST_RUN_REFERENCE.test(groupSource);
+  /* T510: a LIFECYCLE kernel always declares firstRun — its own live-count guard needs
+     it (below), whether or not the user's kernel names it. Inferring freshness from
+     frameIndex == 0 opened the guard to full capacity at every timeline lap. */
+  const usesFirstRun =
+    lifecycle !== undefined ||
+    FIRST_RUN_REFERENCE.test(kernel) ||
+    FIRST_RUN_REFERENCE.test(groupSource);
   const frameFirstRun = usesFirstRun ? "\n  firstRun: u32," : "";
   const ctxFirstRun = usesFirstRun
     ? "\n  /* T510: 1u on exactly the dispatches whose storage was just created or cleared —\n     the seeding signal. A LAP is not this (frameIndex wraps, buffers keep); a seek and\n     a document load are (both clear, §V170/T519). */\n  firstRun: u32,"
@@ -635,6 +641,11 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
     : "";
   const absArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
 
+  /* T582, timeline-anchored: the kernelFrame.timeSeconds / kernelFrame.frameIndex reads
+     below exist to BUILD `ctx.time` and `ctx.frameIndex`, which are the wrapping clock by
+     contract (the salt keys randomness to the timeline frame so a replayed frame
+     reproduces). What this file must never do is INFER storage freshness from
+     frameIndex == 0 — that is `ctx.firstRun` (T510); the clock audit counts these reads. */
   const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
   timeSeconds: f32,

@@ -323,6 +323,7 @@ export function clearDeadTailWgsl(): string {
   deltaSeconds: f32,
   frameIndex: u32,
   capacity: u32,
+  firstRun: u32,
 };
 @group(0) @binding(0) var<uniform> params: TailParams;
 @group(0) @binding(1) var<storage, read> liveCount: array<u32>;
@@ -334,7 +335,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (index >= params.capacity) {
     return;
   }
-  let live = select(min(liveCount[0], params.capacity), params.capacity, params.frameIndex == 0u);
+  /* T510: "my storage is fresh" is params.firstRun, never frameIndex — a timeline LAP
+     rewinds frameIndex to 0 with the buffers intact, and treating that as fresh
+     resurrected the dead tail at every loop. */
+  let live = select(min(liveCount[0], params.capacity), params.capacity, params.firstRun == 1u);
   if (index >= live) {
     aliveFlags[index] = 0u;
   }
@@ -384,6 +388,7 @@ const SPAWN_PARAMS_WGSL = `struct SpawnParams {
   deltaSeconds: f32,
   frameIndex: u32,
   capacity: u32,
+  firstRun: u32,
 };
 @group(0) @binding(0) var<uniform> params: SpawnParams;`;
 
@@ -436,9 +441,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (births == 0u) {
     return;
   }
-  /* Frame zero: the cursor buffer is zero-initialised and ids 0..capacity-1 are the
-     first generation's, so newborn ids start at capacity (§V73). */
-  let nextIdBase = select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.frameIndex == 0u);
+  /* First run: the cursor buffer is zero-initialised and ids 0..capacity-1 are the
+     first generation's, so newborn ids start at capacity (§V73). firstRun, not
+     frameIndex == 0 — a timeline lap keeps the cursor (T510). */
+  let nextIdBase = select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.firstRun == 1u);
   let birthIndex = spawnScanned[index] + spawnBlockSums[index / ${SCAN_WORKGROUP_SIZE}u];
   let base = counts[${COUNTS_LIVE}u] + birthIndex;
   for (var child = 0u; child < births; child = child + 1u) {
@@ -467,7 +473,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
      silently would be indistinguishable from a working one that spawns fewer. */
   counts[${COUNTS_DROPPED}u] = counts[${COUNTS_DROPPED}u] + (requested - placed);
   counts[${COUNTS_NEXT_ID}u] =
-    select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.frameIndex == 0u) + placed;
+    select(counts[${COUNTS_NEXT_ID}u], params.capacity, params.firstRun == 1u) + placed;
   counts[${COUNTS_LIVE}u] = alive + placed;
   /* T339: the births slot ends the frame holding PLACED, which is the spawn hook's
      range input — [live - placed, live) is exactly the newborns. */

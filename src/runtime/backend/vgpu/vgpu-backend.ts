@@ -620,6 +620,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         pair.read.write(new Uint8Array(pair.read.size));
         pair.write.write(new Uint8Array(pair.write.size));
       }
+      // Plain storage buffers too — the lifecycle's counts and scan scratch, the
+      // indirect draw args. All of them are GPU-written scratch that a cold open
+      // would have zero-filled, and a spawn cursor that survives the clear makes
+      // `alive` a stale number the firstRun contract just promised was fresh.
+      for (const buffer of activeProgram.resources.buffers.values()) {
+        buffer.write(new Uint8Array(buffer.size));
+      }
       // T510: tell the kernels — every dispatch's next frame reads firstRun = 1u.
       activeProgram.pendingBufferClear = true;
     }
@@ -1114,7 +1121,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       externalTextures: new Map(),
       buffers: new Map(),
       bufferPairs: new Map(),
-      freshBufferPairs: new Set(),
+      freshStorage: new Set(),
       effects: new Map(),
       computes: new Map(),
       draws: new Map(),
@@ -1556,7 +1563,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           const firstRun =
             active.pendingBufferClear ||
             (pass.buffers ?? []).some((binding) =>
-              active.resources.freshBufferPairs.has(binding.resourceId),
+              active.resources.freshStorage.has(binding.resourceId),
             );
           applyUniforms(active, pass.id, {
             ...dispatchFrameUniforms(frameInputs.frame, shared),
@@ -1623,7 +1630,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // T510: the seeding frame is spent — the next dispatch of every pass reads 0u
       // until storage is created or cleared again.
       active.pendingBufferClear = false;
-      active.resources.freshBufferPairs.clear();
+      active.resources.freshStorage.clear();
     },
 
     resize(outputId, size) {
