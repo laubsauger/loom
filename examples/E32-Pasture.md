@@ -143,7 +143,19 @@ at 1, and labyrinth at every point between. No spot regime, and — the part tha
 — **no dead corner**, so an example that wants empty field cannot get it by pushing that
 coordinate to either end. E24's black four fifths comes from its colour inversion, not from a
 chemistry that stopped. This example ships its own band for that reason, chosen against
-Pearson's map and measured the same way: alive from 0 to about 0.62, dead above it.
+Pearson's map and measured the same way. Re-measured for T657 with a 0..1 ramp: labyrinth
+below ~0.15, worms breaking into segments 0.15–0.35, rings and irregular blobs 0.35–0.60,
+the regular spot lattice 0.60–0.85, death only above ~0.85 — and the boundary that decides
+whether the outskirts read as a place or as a hex grid is 0.60, not the death line.
+
+The outskirts used to sit at **0.9989**, one value across the whole region (median, p90,
+p99 and p999 all identical), because `screen(coast1, shape1)` composited a WHITE disc
+background and `screen(1, x) = 1`: `terrain1`'s drift was already wired and was being
+thrown away. T657 widened the disc's falloff so the outskirts run down through the band
+instead, widened the herd's grazing circuit so the disturbance reaches them, and left the
+background white — putting the far outskirts ON the death line was tried at 0.86 and 0.92
+and cost negative space (dark fraction 46.4% → 38.6%) while coming back MORE regular
+(blob-area CV 0.483 → 0.449).
 
 **2. The arithmetic that made the old claim look safe is also wrong.** `F ≥ 4(F+k)²` is the
 condition for a non-trivial *homogeneous* steady state, and Gray-Scott's whole interesting

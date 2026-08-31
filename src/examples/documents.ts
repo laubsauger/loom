@@ -5194,7 +5194,13 @@ const PX: vec2f = vec2f(0.5625, 1.0);
    hungry and which way the middle is. Which side of the coast it is standing on it finds out
    by starving. */
 const HOME: vec2f = vec2f(-0.2, -0.08);
-const RANGE: f32 = 0.42;
+/* T657: 0.60, where it was 0.42. The roost's circuit is the piece's disturbance and the
+   outskirts were outside it — a lattice is what a Gray-Scott field does when nothing
+   arrives to disturb it, and nothing did. A wider circuit sweeps the grazed clearing
+   through most of the pasture over its 83-second lap, so a region that is lattice now was
+   torn open a minute ago and will be again. This is the half of the fix that MOVES; the
+   chemistry gradient is the half that VARIES. */
+const RANGE: f32 = 0.60;
 
 /* WHAT AN ANIMAL SMELLS: the reaction RATE, not a concentration. U*V*V is Gray-Scott's own
    reaction term, and it is largest exactly on a GROWING front — zero in empty plate (V=0)
@@ -5552,8 +5558,12 @@ export const pastureDocument = document(
       /* The chemistry map's white point, hard against the band where the pattern survives.
          T562's lesson is the fence: the map's Level sits on a narrow window fitted to the
          noise's measured spread, so the same fractional swing needs a narrow fence too. */
-      node("warmG", "valueMath", [-2080, 1760], { operation: "multiply", operand: 0.05 }, { label: "warmg1" }),
-      node("warm", "valueMath", [-1820, 1760], { operation: "add", operand: 0.512 }, { label: "warm1" }),
+      /* T657: the swing widens 0.05 → 0.14 with the rest state at 0.55, because the
+         window it moves is now three times as wide — the same gain on a wider window is a
+         smaller gesture (§V471.3, §V477: the bias is the rest state, the gain is the
+         swing). Achievable span 0.55…0.69 against a declared −1…4 (T545). */
+      node("warmG", "valueMath", [-2080, 1760], { operation: "multiply", operand: 0.14 }, { label: "warmg1" }),
+      node("warm", "valueMath", [-1820, 1760], { operation: "add", operand: 0.55 }, { label: "warm1" }),
 
       /* ---- AND ONLY THEN THE PICTURE ------------------------------------------------ */
       node("gradeG", "valueMath", [-1560, 880], { operation: "multiply", operand: 1 }, { label: "gradeg1" }),
@@ -5677,18 +5687,52 @@ export const pastureDocument = document(
       }),
 
       // ---- THE CHEMISTRY MAP, and where the pasture is allowed to exist -------------
+      /*
+       * T657 — THE OUTSKIRTS WERE STATIC BECAUSE A COMPOSITE DELETED THEIR VARIATION, and
+       * that is one step further down than "nothing disturbs them". `terrain1` is already
+       * spatially varied and already drifting; `screen(coast1, shape1)` then threw it
+       * away, because `screen(1, anything) = 1` and this disc's background was WHITE.
+       * MEASURED by rendering `dish1` straight to the output: median 0.9989, and p90, p99
+       * and p999 all 0.9989 as well — the chemistry map was ONE NUMBER across the whole
+       * frame outside the disc, so every region ran the same regime for ever and a
+       * Gray-Scott field with nothing to distinguish one place from another packs
+       * hexagonally. The lattice was not the chemistry's fault; it was the falloff's.
+       *
+       * §V554 obeyed rather than inherited: this file's own band, driven end to end with a
+       * 0..1 ramp for 2400 steps, is LABYRINTH below ~0.15, worms breaking into segments
+       * 0.15–0.35, rings and irregular blobs 0.35–0.60, the REGULAR SPOT LATTICE 0.60–0.85,
+       * and dying above ~0.85. The outskirts sat at 0.999. Widening the falloff walks them
+       * back down through the interesting part of that band instead, and because `terrain1`
+       * drifts, WHICH region is in which regime keeps changing.
+       *
+       * The author's constraint was the real brief — break it up WITHOUT costing the
+       * negative space — so the two aggressive versions were tried and REJECTED by
+       * measurement: pinning the far outskirts on the death line (background 0.86, then
+       * 0.92) took the dark fraction from 46.4% to 38.6% and the blob-area spread from
+       * 0.483 to 0.449, i.e. it cost negative space AND came back more regular. The
+       * gradient keeps both: dark fraction 46.2% → 46.4% early and 28.4% → 26.8% at frame
+       * 3000, blob-area CV in the outskirts 0.757 → 0.872.
+       */
       /* §V474 and §V532 in one pair of nodes. `bowl1` is a disc painted BLACK INSIDE and
          WHITE OUTSIDE — already the inversion E24 needed a second node for — so screening
          it into the map pins the coordinate at the band's HIGH corner everywhere outside.
          There (feed 0.042, kill 0.068) Gray-Scott's existence condition F < 4(F+k)^2 fails
          — 0.042 against 0.0484 — so V has no non-trivial steady state at all and decays to
-         nothing. The dark four fifths of this frame is the simulation being genuinely
-         empty, not a matte over a full-frame carpet, and the soft edge is a gradient
-         THROUGH the band, so the pasture frays into spots before it stops. Off-centre
+         nothing. The dark part of this frame is the simulation being genuinely empty, not
+         a matte over a full-frame carpet, and the soft edge is a gradient THROUGH the
+         band, so the pasture frays into spots before it stops. T657 made that gradient
+         WIDE, which is the whole fix: a narrow one put almost everything on the far side
+         of it at a single saturated value. Off-centre
          because the composition wants it there and because §V532 is the record of what
          happens to material sitting on a loop's own fixed point. */
+      /* T657: radius 0.26 and softness 0.42, where it was 0.29 and 0.24. The disc is
+         slightly smaller and its falloff nearly TWICE as wide, so the ramp through the band
+         occupies most of the frame instead of a narrow ring — the outskirts become a
+         REGIME GRADIENT, and only the far corners still pin at 1.0. The background stays
+         white on purpose: that is what keeps the negative space, and it is the half of
+         this the two rejected variants gave away. */
       node("bowl", "circle", [-2860, -440], {
-        mode: "fill", center: [0.4, 0.54], radius: [0.29, 0.29], softness: 0.24,
+        mode: "fill", center: [0.4, 0.54], radius: [0.26, 0.26], softness: 0.42,
         fillcolor: [0, 0, 0, 1], bgcolor: [1, 1, 1, 1], aspectcorrect: true,
       }, { label: "bowl1", resolution: { mode: "fixed", width: 640, height: 360 } }),
       /* THE COASTLINE. A circle is a shape nobody chose, and a pasture with a circular
@@ -5704,15 +5748,24 @@ export const pastureDocument = document(
       node("swell", "noise", [-2860, -220], {
         type: "perlin4d", seed: 41, period: 0.55, harmon: 2, spread: 2, gain: 0.55,
         rough: 0.5, exp: 1, amp: 1, offset: 0, mono: false, aspectcorrect: true,
-        t4d: 0.37, s4d: 1, speed: 0.02,
+        t4d: 0.37, s4d: 1, speed: 0.035,
       }, { label: "swell1", resolution: { mode: "fixed", width: 640, height: 360 } }),
+      /* T657: 0.30 rather than 0.15, and the swell drifting at 0.035 rather than 0.02.
+         The coastline is now the width of the falloff it is warping, so the regime bands
+         are ragged and interlocking rather than concentric — a wide smooth ramp warped a
+         little is still visibly a ring. */
       node("coast", "displace", [-2600, -440], {
-        weight: [0.15, 0.15], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold",
+        weight: [0.30, 0.30], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold",
       }, { label: "coast1" }),
       node("terrain", "noise", [-2600, -220], {
         type: "perlin4d", seed: 5, period: 0.18, harmon: 4, spread: 2, gain: 0.55,
         rough: 0.5, exp: 1.25, amp: 1, offset: 0, mono: true, aspectcorrect: true,
-        t4d: 0.37, s4d: 1, speed: 0.04,
+        /* T657: 0.06 rather than 0.04. The regime map is what "evolves" means here —
+           which patch of the pasture is lattice and which is worms is now visibly a
+           function of time, not just of place. The PERIOD is deliberately left at 0.18:
+           tried at 0.34 the patches grew larger than the frame, which reads as uniform
+           again from inside one of them. */
+        t4d: 0.37, s4d: 1, speed: 0.06,
       }, { label: "terrain1", resolution: { mode: "fixed", width: 640, height: 360 } }),
       /* THE WINDOW IS T562's AND THE BRIGHTNESS IS THIS FILE'S OWN FINDING. Gray-Scott has
          a non-trivial steady state only where F >= 4(F+k)^2, and over the imported band
@@ -5720,18 +5773,28 @@ export const pastureDocument = document(
          0.0272 and alive, at 0.5 it is 0.035 against 0.0371 and already dead. So a map
          spanning the whole 0..1 coordinate spends four fifths of itself in a regime with
          nothing in it — which is what killed the first build of this file stone dead by
-         frame 800. MEASURED on this file's own band by driving it with a 0..1 ramp for
-         20 000 reaction steps: alive from 0 to about 0.62 — dense worms at the bottom,
-         spots and mitosis in the middle — and DEAD above it. `brightness: 0.72` therefore
+         frame 800. RE-MEASURED for T657, because the earlier note here was too coarse to
+         act on: driving this file's own band with a 0..1 ramp gives LABYRINTH below ~0.15,
+         worms breaking into segments 0.15–0.35, rings and irregular blobs 0.35–0.60, the
+         REGULAR SPOT LATTICE 0.60–0.85, and death only above ~0.85. Which of those a
+         region is in is the difference between "the outskirts are interesting" and "the
+         outskirts are a hex grid", so the boundary that matters is 0.60, not the death
+         line. `brightness: 0.72` therefore
          puts the pasture across the whole living part of the band and a little way past it,
          so a few patches inside the disc are bare ground the herd has to cross, while
          `bowl1` pins everything outside at 1.0, which is well clear of the boundary rather
          than balanced on it. §V474 read one level down: the "high corner" where empty field
          lives is high RELATIVE TO WHAT SURVIVES, not the top of whatever coordinate the
          graph happens to hand over — and where that boundary is, is a measurement. */
+      /* T657: the black point drops 0.45 → 0.36, which is where a four-harmonic perlin
+         sum's LINEAR band actually starts (§V587's measurement, reused). At 0.45 against a
+         white point of ~0.54 the window was a sliver of that band and `shape1` was very
+         nearly BINARY — the terrain contributed an on/off mask rather than a landscape, so
+         even where the screen did not saturate there were only two regimes to be in. The
+         window now spans the band and the audio drive widens with it. */
       node("shape", "level", [-2340, -220], {
-        blacklevel: 0.45, contrast: 1, brightness: 0.72, gamma1: 1.25, invert: 0, opacity: 1,
-      }, { label: "shape1", parameters: { whitelevel: drivenSlot("warm1:lowMid", 0.54) } }),
+        blacklevel: 0.36, contrast: 1, brightness: 0.72, gamma1: 1.25, invert: 0, opacity: 1,
+      }, { label: "shape1", parameters: { whitelevel: drivenSlot("warm1:lowMid", 0.62) } }),
       node("dish", "screen", [-2080, -440], { opacity: 1 }, { label: "dish1" }),
 
       // ---- THE REACTION -------------------------------------------------------------
