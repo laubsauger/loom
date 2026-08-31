@@ -302,20 +302,39 @@ describe("edge areas spawn back (T494)", () => {
 });
 
 describe("floating (§V97) and docking home", () => {
-  it("floatTab moves the tab out of its leaf; dockTab returns it to a leaf of its role", () => {
+  it("floatTab keeps the tab's slot; dockTab just clears the floating entry (T705b)", () => {
+    // The owner's correction of T192's original behaviour: "it's getting yanked out of
+    // its original position — it should stay there, block the space". Floating adds the
+    // key to `floating` while the tab HOLDS its leaf, so the arrangement never reflows;
+    // the leaf renders a placeholder and the content lives in the window (§V96: one
+    // content, one container). Docking removes the entry and the same slot resumes.
     const tree = DEFAULT_PANE_TREE;
     const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
     const floated = floatTab(tree, viewer.key);
     expect(floated.floating.map((tab) => tab.key)).toEqual([viewer.key]);
-    expect(findLeaf(floated, "leaf-right")?.tabs).toEqual([]);
-    // Docking prefers a leaf already holding the role; here none does, so the tab
-    // returns to the FIRST leaf rather than vanishing.
+    expect(findLeaf(floated, "leaf-right")?.tabs.map((tab) => tab.key)).toContain(viewer.key);
+    // One content, one portal container: allTabs must not list the key twice.
+    expect(allTabs(floated).filter((tab) => tab.key === viewer.key)).toHaveLength(1);
     const docked = dockTab(floated, viewer.key);
     expect(docked.floating).toEqual([]);
     expect(findTab(docked, viewer.key)).toBeDefined();
+    expect(findLeaf(docked, "leaf-right")?.tabs.map((tab) => tab.key)).toContain(viewer.key);
     // Floating twice is a no-op; docking a non-floating key is a no-op.
     expect(floatTab(floated, viewer.key)).toBe(floated);
     expect(dockTab(tree, viewer.key)).toBe(tree);
+  });
+
+  it("dockTab still RE-PLACES a tab whose leaf vanished while it floated", () => {
+    // The pre-T705b shape, kept alive for old persisted layouts and for a leaf the
+    // user closed mid-float: the floating entry is the only record, so docking must
+    // re-insert rather than silently dropping the pane.
+    const tree = DEFAULT_PANE_TREE;
+    const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
+    const floated = floatTab(tree, viewer.key);
+    const orphaned = { ...floated, root: closeTab(floated, viewer.key).root };
+    const docked = dockTab(orphaned, viewer.key);
+    expect(docked.floating).toEqual([]);
+    expect(findTab(docked, viewer.key)).toBeDefined();
   });
 
   it("homeLeafFor answers by ROLE — the first leaf carrying it, else the first leaf", () => {

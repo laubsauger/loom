@@ -95,9 +95,13 @@ export function findTab(layout: PaneTreeLayout, key: PaneKey): PaneTab | undefin
   return layout.floating.find((candidate) => candidate.key === key);
 }
 
-/** Every tab, docked leaves first (in tree order), then floating. */
+/** Every tab, docked leaves first (in tree order), then floating. Deduplicated by key:
+ *  since T705(b) a floated tab is ALSO still in its leaf, and its content must render
+ *  exactly once (§V96 — one portal container per key). */
 export function allTabs(layout: PaneTreeLayout): PaneTab[] {
-  return [...leavesOf(layout.root).flatMap((leaf) => [...leaf.tabs]), ...layout.floating];
+  const docked = leavesOf(layout.root).flatMap((leaf) => [...leaf.tabs]);
+  const seen = new Set(docked.map((tab) => tab.key));
+  return [...docked, ...layout.floating.filter((tab) => !seen.has(tab.key))];
 }
 
 function mapNode(node: LayoutNode, transform: (node: LayoutNode) => LayoutNode): LayoutNode {
@@ -407,10 +411,17 @@ export function floatTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
   const tab = findTab(layout, key);
   if (tab === undefined || layout.floating.some((floating) => floating.key === key)) return layout;
   const from = leavesOf(layout.root).find((leaf) => leaf.tabs.some((t) => t.key === key));
-  const removed = closeTab(layout, key);
+  /*
+   * T705(b), the owner's correction of the original T192 behaviour: floating a pane no
+   * longer YANKS it out of the arrangement. The tab STAYS in its leaf — holding its
+   * place, its size and its tab order — while its key also joins `floating`; the leaf
+   * renders a placeholder for it (the content itself lives in the child window, and a
+   * pane's content exists exactly once, §V96). Closing the window or docking removes
+   * the floating entry and the same slot picks the content back up, nothing reflows.
+   */
   return {
-    ...removed,
-    floating: [...removed.floating, { ...tab, ...(from === undefined ? {} : { home: from.id }) }],
+    ...layout,
+    floating: [...layout.floating, { ...tab, ...(from === undefined ? {} : { home: from.id }) }],
   };
 }
 
@@ -427,6 +438,13 @@ export function dockTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {
   if (target === undefined) return layout;
   const docked: PaneTab = { key: tab.key, role: tab.role };
   const without = { ...layout, floating: layout.floating.filter((floating) => floating.key !== key) };
+  // T705(b): the tab normally never left its leaf — docking is just the floating entry
+  // going away, and the slot that held its place picks the content back up. The
+  // re-insertion below now serves only layouts from before the change (or a leaf the
+  // user closed while the pane was floating), where the tab is genuinely gone.
+  if (leavesOf(without.root).some((leaf) => leaf.tabs.some((t) => t.key === key))) {
+    return without;
+  }
   let placed = false;
   const root = mapNode(without.root, (node) => {
     if (node.kind !== "leaf" || node.id !== target.id || placed) return node;
@@ -523,11 +541,22 @@ export function shellLayoutFromTree(layout: PaneTreeLayout): ShellLayout | null 
   const roles = allTabs(layout).map((tab) => tab.role);
   if (new Set(roles).size !== roles.length) return null; // a role twice is v4-only
 
+  /*
+   * T705(b): in the TREE a floated tab stays in its leaf (holding its place); v3's
+   * model is exclusive — a pane is in a zone OR floating, and the read-side repair
+   * drops a floating entry it has already seen in a zone. So the projection speaks
+   * v3's own semantics: a floated pane appears as floating ONLY, which is also what a
+   * downgraded build should show (the pane is, in fact, in a window).
+   */
+  const floatedKeys = new Set(layout.floating.map((tab) => tab.key));
+  const dockedTabs = (leaf: LayoutNode): readonly PaneTab[] =>
+    leaf.kind === "leaf" ? leaf.tabs.filter((tab) => !floatedKeys.has(tab.key)) : [];
   const zoneOfLeaf = (leaf: LayoutNode): readonly PaneId[] =>
-    leaf.kind === "leaf" ? leaf.tabs.map((tab) => tab.role) : [];
+    dockedTabs(leaf).map((tab) => tab.role);
   const activeOf = (leaf: LayoutNode): PaneId | null => {
     if (leaf.kind !== "leaf") return null;
-    return leaf.tabs.find((tab) => tab.key === leaf.active)?.role ?? leaf.tabs[0]?.role ?? null;
+    const tabs = dockedTabs(leaf);
+    return tabs.find((tab) => tab.key === leaf.active)?.role ?? tabs[0]?.role ?? null;
   };
   return {
     columns: [root.ratio, 100 - root.ratio],

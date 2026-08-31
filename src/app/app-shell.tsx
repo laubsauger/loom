@@ -421,6 +421,8 @@ export function AppShell({
         label={leafLabels.get(leaf.id) ?? leaf.id}
         tabs={leaf.tabs.map(describe)}
         active={leaf.active}
+        floating={floatingKeys}
+        onDock={onDock}
         moveTargets={moveTargets}
         dragging={dragging}
         roleOptions={roleOptions}
@@ -500,6 +502,11 @@ export function AppShell({
   };
 
   const tabs = allTabs(tree);
+  /** T705(b): the keys whose content is in a window right now — their slots show placeholders. */
+  const floatingKeys = useMemo(
+    () => new Set<PaneKey>(tree.floating.map((tab) => tab.key)),
+    [tree.floating],
+  );
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>

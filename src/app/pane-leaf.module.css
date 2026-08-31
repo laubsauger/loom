@@ -127,3 +127,15 @@
   font-stretch: var(--width-header);
   letter-spacing: var(--tracking-display);
 }
+
+/* T705(b): the slot a floated pane holds open. Same visual language as PaneEmpty. */
+.floatedNote {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--fg-muted);
+  font-size: var(--fs-ui);
+}

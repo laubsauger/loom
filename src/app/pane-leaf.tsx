@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef } from "react";
+import { useCallback, useId, useRef , useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@ui/primitives/button.tsx";
 import { PopoverContent, PopoverHeader, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
@@ -60,6 +60,15 @@ export interface PaneLeafViewProps {
   readonly roleOptions: ReadonlyArray<{ readonly role: PaneRole; readonly title: string }>;
   /** False for the last leaf: the shell always has somewhere to stand. */
   readonly canCloseLeaf: boolean;
+  /**
+   * T705(b): keys currently floated to their own windows. Their tabs stay in the leaf
+   * — the owner: a float must not yank the pane out of the arrangement — but their
+   * panels show a placeholder, because the content itself lives in the child window
+   * and exists exactly once (§V96).
+   */
+  readonly floating: ReadonlySet<PaneKey>;
+  /** Brings a floated tab's content back into its slot (closing its window). */
+  readonly onDock: (key: PaneKey) => void;
   readonly onSelect: (leafId: PaneKey, key: PaneKey) => void;
   readonly onMoveTab: (key: PaneKey, leafId: PaneKey) => void;
   readonly onFloat: (key: PaneKey) => void;
@@ -78,6 +87,8 @@ export function PaneLeafView({
   label,
   tabs,
   active,
+  floating,
+  onDock,
   moveTargets,
   dragging,
   roleOptions,
@@ -202,7 +213,18 @@ export function PaneLeafView({
             aria-labelledby={`${baseId}-tab-${tab.key}`}
             className={cx(styles.panel, tab.key === activeTab?.key ? undefined : styles.panelHidden)}
           >
-            <PaneOutlet paneId={tab.key} />
+            {floating.has(tab.key) ? (
+              // T705(b): the slot stays, the content is elsewhere. No PaneOutlet here —
+              // two adopters for one host would fight over the same DOM (§V96).
+              <div className={styles.floatedNote} data-testid={`floated-placeholder-${tab.key}`}>
+                <p>Showing in its own window.</p>
+                <Button variant="outline" size="md" onClick={() => onDock(tab.key)}>
+                  Bring it back here
+                </Button>
+              </div>
+            ) : (
+              <PaneOutlet paneId={tab.key} />
+            )}
           </div>
         ))}
         {droppable ? (
@@ -239,8 +261,18 @@ interface PaneTabMenuProps {
 }
 
 function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAssignRole }: PaneTabMenuProps) {
+  /**
+   * T705(b), owner report: the popover stayed open after an action fired — and since
+   * floating now leaves the pane's slot in place, the open menu sat exactly over the
+   * placeholder's "Bring it back here" button. Every action closes the menu first.
+   */
+  const [open, setOpen] = useState(false);
+  const act = (run: () => void) => {
+    setOpen(false);
+    run();
+  };
   return (
-    <PopoverRoot>
+    <PopoverRoot open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button className={styles.menuTrigger} aria-label={`Move ${tab.title}`} title={`Move ${tab.title}`}>
           {/* Glyphs, not words: the header is the tightest row in the shell and these two
@@ -255,14 +287,14 @@ function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAs
         <PopoverHeader>move {tab.title}</PopoverHeader>
         <div className={styles.menu}>
           {targets.map((target) => (
-            <Button key={target.id} variant="outline" size="md" onClick={() => onMove(tab.key, target.id)}>
+            <Button key={target.id} variant="outline" size="md" onClick={() => act(() => onMove(tab.key, target.id))}>
               {target.label}
             </Button>
           ))}
-          <Button variant="outline" size="md" onClick={() => onFloat(tab.key)}>
+          <Button variant="outline" size="md" onClick={() => act(() => onFloat(tab.key))}>
             Float in its own window
           </Button>
-          <Button variant="outline" size="md" onClick={() => onClose(tab.key)}>
+          <Button variant="outline" size="md" onClick={() => act(() => onClose(tab.key))}>
             Close pane
           </Button>
         </div>
@@ -277,7 +309,7 @@ function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAs
                 key={option.role}
                 variant="outline"
                 size="md"
-                onClick={() => onAssignRole(tab.key, option.role)}
+                onClick={() => act(() => onAssignRole(tab.key, option.role))}
               >
                 {option.title}
               </Button>
