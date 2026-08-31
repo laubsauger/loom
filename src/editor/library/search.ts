@@ -135,6 +135,27 @@ export function filterLibrary(
   return searchDefinitions(pool, query);
 }
 
+/**
+ * THE category list — derived from the manifest, and the only derivation of it (T732).
+ *
+ * Two surfaces filter by category: the library pane's "all categories ▾" dropdown and
+ * the node browser's tab strip. Both call this. Neither hand-lists the categories and
+ * neither re-derives them, because §V487 is precisely a value with two derivations that
+ * agree until one of them is edited — this project spent an afternoon today on two
+ * hand-maintained orbit branches that had drifted apart exactly that way.
+ *
+ * §T675's rule, applied: a NEW category becomes impossible to forget rather than
+ * something someone has to remember. Adding a node with `category: "physics"` puts a
+ * "physics" tab in the browser and a "physics" row in the dropdown with no other edit,
+ * and there is no second list that can be left behind.
+ *
+ * Sorted, so the two surfaces present the same order as well as the same members —
+ * "same set, different order" is a drift a set comparison would not catch.
+ */
+export function categoriesOf(definitions: readonly NodeDefinition[]): string[] {
+  return [...new Set(definitions.map((definition) => definition.category))].sort();
+}
+
 export interface CategoryBucket {
   category: string;
   definitions: readonly NodeDefinition[];

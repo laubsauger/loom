@@ -8,6 +8,7 @@ import { portTypeColor } from "@ui/ports.ts";
 import { writeNodeDragPayload } from "./drag-payload.ts";
 import type { NodeDragPayload } from "./drag-payload.ts";
 import {
+  categoriesOf,
   compatibleDefinitions,
   describeDrag,
   describeDragPrecisely,
@@ -51,10 +52,9 @@ export function NodeLibrary({
 
   const drag = portDrag ?? null;
 
-  const categories = useMemo(
-    () => [...new Set(definitions.map((definition) => definition.category))].sort(),
-    [definitions],
-  );
+  // T732: shared with the node browser's tab strip, so the two category affordances
+  // cannot come to disagree about what the categories ARE (§V487).
+  const categories = useMemo(() => categoriesOf(definitions), [definitions]);
 
   const results = useMemo(
     () => filterLibrary(definitions, { query, category, portDrag: drag }),

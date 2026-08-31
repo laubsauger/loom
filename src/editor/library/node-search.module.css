@@ -10,7 +10,79 @@
   display: flex;
   flex-direction: column;
   gap: var(--chrome-half-beat);
-  width: 260px;
+  /* T732 widened this from 260px: the category strip needs room to show more than two
+     tabs before it scrolls, and 300px fits four or five of the shorter names. Still far
+     from the library pane's width — this is a prompt, not a catalogue. */
+  width: 300px;
+}
+
+/*
+ * The category strip (T732) — ONE ROW that scrolls, not a wrapping chip wall.
+ *
+ * §V90 is the reason: the category set GROWS with the catalogue, and the library pane
+ * already learned this the expensive way — its chip wall was three rows deep before it
+ * became an on-demand dropdown. A wall here would be worse, because this surface opens
+ * ON the patch it is about to add to and every row of chrome covers more of it. A single
+ * scrolling row is bounded at one row forever, however many categories arrive.
+ *
+ * Deliberately NOT the pane's dropdown, though both read the same `categoriesOf`. The
+ * pane is persistent and has room for a popover; this surface IS a popover, and nesting
+ * one inside it would put a second Radix dismissable layer over the layer whose focus
+ * ordering has already killed this feature twice (§B107, §B120). Shared data, shared
+ * filter, different control — chosen, not inherited.
+ */
+.tabs {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* The strip must never become the tall thing on a short popover. */
+  flex: 0 0 auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-none);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: var(--line);
+}
+
+/*
+ * A category the CURRENT QUERY cannot reach. Dimmed rather than hidden: hiding it would
+ * make the strip's contents jump on every keystroke and destroy the muscle memory of
+ * where a category sits, and hiding is also a lie by omission — the category still
+ * exists, it just has no hit for this query.
+ */
+.tab[data-empty="true"] {
+  opacity: 0.4;
+}
+
+.tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -1px;
 }
 
 .search {
