@@ -3,7 +3,10 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { stickyRange } from "./plot-range.ts";
 import type { PlotRange } from "./plot-range.ts";
 import type { ValueHistory, ValueHistorySource } from "./value-history.ts";
-import { sampleValueFunction } from "./value-function.ts";
+import { FUNCTION_PLOT_SAMPLES, sampleValueFunction } from "./value-function.ts";
+import { sampleValueChainPlot } from "./value-plot-chain.ts";
+import type { ValuePlotChain } from "./value-plot-chain.ts";
+import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { ValueFunctionPlot } from "./value-function.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
@@ -104,6 +107,17 @@ export interface ValuePlotSource {
   readonly values: Readonly<Record<string, ParameterValue>>;
   /** §V45: reaches sample-and-hold shapes, so the plot matches what renders. */
   readonly randomSeed: number;
+  /**
+   * T735: this node's cycle INHERITED from upstream, when it has one of its own to draw.
+   *
+   * Resolved by the caller, which is where the graph is, and null for the overwhelming
+   * majority of nodes. A Math node has no frequency of its own, so before this it fell to
+   * the history plot — a two-second window over a sixteen-to-ninety-second cycle, whose
+   * sticky range refit about two hundred times a minute while the signal did nothing.
+   */
+  readonly chain?: ValuePlotChain | null;
+  /** The registry the chain is evaluated against. Required when `chain` is set. */
+  readonly registry?: NodeRegistryView | null;
 }
 
 /** Viewbox units. The plot scales to its box; these only set the sampling resolution. */
@@ -180,7 +194,22 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
   const fn =
     source === null
       ? null
-      : sampleValueFunction(source.definition, source.values, {
+      : /*
+         * T735: an INHERITED cycle first, then the node's own declared one.
+         *
+         * Order matters only in that both cannot apply at once — a node that declares a
+         * period does not inherit one, and `resolveValuePlotChain` enforces that at the
+         * source. So this is a preference in name only; what it really does is give the
+         * chain path somewhere to be.
+         */
+        (source.chain != null && source.registry != null
+          ? sampleValueChainPlot(source.chain, source.registry, {
+              samples: FUNCTION_PLOT_SAMPLES,
+              randomSeed: source.randomSeed,
+              timeSeconds: value.timeSeconds,
+            })
+          : null) ??
+        sampleValueFunction(source.definition, source.values, {
           timeSeconds: value.timeSeconds ?? 0,
           randomSeed: source.randomSeed,
         });

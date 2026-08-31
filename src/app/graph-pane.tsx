@@ -21,6 +21,7 @@ import type { NodeDragPayload } from "@editor/library/index.ts";
 import { NodePreviewSlot, createPreviewOrbitStore, createPreviewSlotBounds, lensMarker, usePreviewViews } from "@editor/viewer/index.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
+import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
@@ -353,6 +354,19 @@ function GraphPaneInner({
                 definition,
                 values: plotValues(definition, node.parameters),
                 randomSeed: settings.randomSeed,
+                /*
+                 * T735: a cycle INHERITED from upstream, resolved here because this is
+                 * where the graph is. Null for almost every node, and null is the safe
+                 * answer — the plot falls back to history exactly as before.
+                 *
+                 * A Math node fed by an LFO has the LFO's period even though it declares
+                 * no frequency, and without that it drew a two-second window over a
+                 * sixteen-to-ninety-second cycle: T352's sticky range refit about two
+                 * hundred times a minute, jumping the whole trace vertically each time,
+                 * while the signal itself was clean.
+                 */
+                chain: resolveValuePlotChain(graphRef.current, nodeId, registry),
+                registry,
               };
         /*
          * T576 — a node that is OFF says so instead of drawing.

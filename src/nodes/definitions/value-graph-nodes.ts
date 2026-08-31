@@ -112,6 +112,18 @@ export const valueMathNode: NodeDefinition = {
     };
     return mapChannels(a, (value, name) => operate(value, b?.[name] ?? b?.["value"] ?? fallback));
   },
+  /**
+   * T735: arithmetic against a constant does not change how often the signal repeats, so
+   * a Math fed by an LFO has the LFO's period and can draw its whole cycle. These were
+   * exactly the nodes the owner watched jank — the history plot's 2 s window over a 16-91 s
+   * cycle refit its axis ~200 times a minute while the signal did nothing.
+   *
+   * Honest where it is not: with BOTH inputs wired to different periods the output repeats
+   * on their common multiple, not on either. The chain resolver refuses that case rather
+   * than drawing one period's worth of a curve that does not close, and such a node keeps
+   * the history plot.
+   */
+  plotPeriodFollowsInputs: true,
   compile: noPasses,
 };
 
@@ -134,6 +146,8 @@ export const valueLimitNode: NodeDefinition = {
     const hi = num(values["maximum"], 1);
     return mapChannels(inputs["in"] ?? {}, (value) => Math.min(hi, Math.max(lo, value)));
   },
+  /** T735: clamping is per-sample and stateless, so the period passes straight through. */
+  plotPeriodFollowsInputs: true,
   compile: noPasses,
 };
 

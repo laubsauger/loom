@@ -56,7 +56,11 @@ interface Ring {
   /** Index of the next write. */
   cursor: number;
   latest: Record<string, number> | null;
-  /** Timeline seconds of the newest sample — the function plot's playhead reads it. */
+  /**
+   * ABSOLUTE seconds of the newest sample — the function plot's playhead reads it, and
+   * nothing else does (T495). Absolute rather than timeline because the curve the marker
+   * sits on is evaluated on the absolute clock; see the push site in `app.tsx`.
+   */
   time: number | null;
   /** Cached projection handed to React; nulled on write, rebuilt on read. */
   view: ValueHistory | null;

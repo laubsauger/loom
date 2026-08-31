@@ -345,6 +345,28 @@ export interface NodeDefinition {
    * ahead of time requires evaluating frames the app has not reached.
    */
   plotPeriod?(values: Readonly<Record<string, ParameterValue>>): number | null;
+  /**
+   * This node's output repeats on the SAME period as its value inputs (T735).
+   *
+   * `plotPeriod` above answers "what does this SOURCE do"; this answers "what does this
+   * STAGE do to a period", and together they let a period travel down a chain. A Math
+   * node fed by an LFO has a period — the LFO's — even though it has no frequency of its
+   * own, so it can have T459's static full-cycle curve instead of the sliding history
+   * window that produced §T735.
+   *
+   * DECLARED, not sniffed, for the reason `plotPeriod` states one paragraph up and for
+   * one more: the property is "clockless AND stateless AND output-repeats-with-input",
+   * and nothing about a `valueEvaluate` signature reveals it. `valueStep` reads `frame`,
+   * `channelIn` reads an ambient bag, and `valueSwitch` may select a different input from
+   * one moment to the next — all three take a value input, none of them propagates a
+   * period, and no predicate over their types could tell. Kind #N+1 has to say so itself.
+   *
+   * Absent is the safe answer and the default: the plot falls back to history, which is
+   * what every value node did before this existed. A node must NOT declare it if it is
+   * `stateful` (its output depends on everything before, not on one cycle), if it reads
+   * the clock, or if it reads anything outside the value graph.
+   */
+  plotPeriodFollowsInputs?: boolean;
   compile(context: NodeCompileContext): CompiledNodeDescription;
   migrate?(oldVersion: number, data: unknown): MigrationResult;
 }

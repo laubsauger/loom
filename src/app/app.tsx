@@ -56,6 +56,7 @@ import { useFrameLoop } from "./use-frame-loop.ts";
 import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { useAudioInput } from "./use-audio-input.ts";
 import { useAudioTrack } from "./use-audio-track.ts";
+import { absTimeSecondsOf } from "@domain/types/frame.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
@@ -297,7 +298,19 @@ export function App({
         live.add(nodeId);
         const bag = bags.get(nodeId);
         if (bag !== undefined) {
-          valueHistory.push(nodeId, bag, frame.timeSeconds);
+          /*
+           * T495: the ABSOLUTE clock, not the timeline one, because this stamp is read by
+           * exactly one thing — the function plot's playhead — and the curve it marks is
+           * evaluated against `absTimeSecondsOf`. The LFO is free-running by design (a
+           * timeline lap must not snap its phase), so on `frame.timeSeconds` the marker
+           * ran on a clock the curve did not: at frame 0 of a lap the dot sat at the
+           * curve's left edge while the node read 0.951. The VALUE was right and the
+           * picture of it was keyed to the wrong clock.
+           *
+           * `absTimeSecondsOf` falls back to `timeSeconds` when the transport publishes no
+           * absolute clock, so an unbounded timeline keeps exactly the numbers it had.
+           */
+          valueHistory.push(nodeId, bag, absTimeSecondsOf(frame));
           continue;
         }
         // Analyze is the exception: its value is a GPU readback published under the
@@ -306,7 +319,7 @@ export function App({
         const name = node.label;
         if (name === undefined) continue;
         const measured = analyze.resolver(name, { frame } as never);
-        if (typeof measured === "number") valueHistory.push(nodeId, { value: measured }, frame.timeSeconds);
+        if (typeof measured === "number") valueHistory.push(nodeId, { value: measured }, absTimeSecondsOf(frame));
       }
       // A deleted node frees its ring rather than holding a window nobody can see.
       valueHistory.retain(live);
