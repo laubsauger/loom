@@ -984,248 +984,306 @@ describe("E12 Fluid", () => {
 describe("E13 Prism", () => {
   const { document, plan } = example("E13-Prism.loom.json");
 
-  const drawFor = (source: CompiledGraph, nodeId: string): DrawPassDescriptor => {
-    const pass = source.passes.find((entry) => entry.kind === "draw" && entry.nodeId === nodeId);
-    if (pass === undefined || pass.kind !== "draw") throw new Error(`no draw pass for ${nodeId}`);
-    return pass;
-  };
-  const reorderChannel = (source: CompiledGraph, nodeId: string, key: string): number =>
-    (effectFor(source, nodeId).uniforms as Record<string, number>)[key] as number;
+  /** The scene draws, in the order `shot1.scenes` lists them. */
+  const sceneDraws = (source: CompiledGraph): readonly DrawPassDescriptor[] =>
+    source.passes.filter(
+      (entry): entry is DrawPassDescriptor => entry.kind === "draw" && entry.id.includes(":scene:"),
+    );
+  const buffersOf = (pass: DrawPassDescriptor): Map<string, string> =>
+    new Map((pass.buffers ?? []).map((buffer) => [buffer.binding, buffer.resourceId]));
+  const texturesOf = (pass: DrawPassDescriptor | EffectPassDescriptor): Map<string, string> =>
+    new Map((pass.textures ?? []).map((texture) => [texture.binding, texture.resourceId]));
+  const uniformsOf = (pass: DrawPassDescriptor): Record<string, readonly number[]> =>
+    pass.uniforms as Record<string, readonly number[]>;
+  const kernelOf = (nodeId: string): string =>
+    String((document.graph.nodes[nodeId] as GraphNode).parameters["kernel"]);
 
   /**
-   * DISPERSION, traced through the plan rather than read off the node names.
+   * THE MESH AND THE OPTICS READ ONE NUMBER, and nothing in the compiler checks that.
    *
-   * Three refractions and two Reorders is the whole trick, and the Reorders are where it
-   * silently stops working: leave `fuse1.outg` at its `in1g` default and every pass still
-   * runs, the picture is still a refracted scene, and it is the RED path three times over
-   * with no colour separation anywhere. So the claim is followed end to end — which
-   * resource each output channel actually comes from — and each path must be a different
-   * one.
+   * `form1` builds the prism and `optics1` solves Snell's law against the plane its two
+   * refracting faces lie in. They agree only because a rounded triangle's straight run
+   * sits at d·cos(60°) + ρ from the axis, and with d = RC − 2ρ that is RC/2 for EVERY
+   * corner radius — a sharp triangle's inradius, unmoved by the rounding that makes the
+   * rim possible. Change RC in one kernel and the picture stays entirely plausible while
+   * the beam floats beside the glass or drives through it.
+   *
+   * This is the DOCUMENT half of that claim; the picture half — the shaft landing on the
+   * mask, neither beam inside an 8px erosion of it, the fan's rays converging on the
+   * glass — is `prism.gpu.test.ts`, because §V147 is explicit that source text is not
+   * evidence about a pixel. Both halves exist because the two kernels are edited by hand
+   * and separately, and a constant that has to be typed twice is a constant that will be
+   * typed twice differently.
    */
-  it("assembles one channel from each of three refractions", () => {
-    const index = (value: string) =>
-      ["in1r", "in1g", "in1b", "in1a", "in1lum", "in2r", "in2g", "in2b", "in2a", "in2lum", "one", "zero"].indexOf(value);
-
-    const fuse = effectFor(plan, "fuse");
-    const prism = effectFor(plan, "prism");
-    const bound = (pass: EffectPassDescriptor) =>
-      new Map((pass.textures ?? []).map((texture) => [texture.binding, texture.resourceId]));
-
-    // fuse takes red from in1 and green from in2 ...
-    expect(reorderChannel(plan, "fuse", "outr")).toBe(index("in1r"));
-    expect(reorderChannel(plan, "fuse", "outg")).toBe(index("in2g"));
-    expect(bound(fuse).get("inputTexture")).toBe(outputFor(plan, "bendR").resourceId);
-    expect(bound(fuse).get("input2Texture")).toBe(outputFor(plan, "bendG").resourceId);
-
-    // ... and prism keeps those two and takes blue from the third.
-    expect(reorderChannel(plan, "prism", "outr")).toBe(index("in1r"));
-    expect(reorderChannel(plan, "prism", "outg")).toBe(index("in1g"));
-    expect(reorderChannel(plan, "prism", "outb")).toBe(index("in2b"));
-    expect(bound(prism).get("inputTexture")).toBe(outputFor(plan, "fuse").resourceId);
-    expect(bound(prism).get("input2Texture")).toBe(outputFor(plan, "bendB").resourceId);
+  it("solves the optics against the same circumradius the mesh is built from", () => {
+    const circumradius = /const RC: f32 = ([\d.]+);/.exec(kernelOf("form"))?.[1];
+    const inradius = /const RI: f32 = ([\d.]+);/.exec(kernelOf("optics"))?.[1];
+    expect(circumradius).toBeDefined();
+    expect(inradius).toBeDefined();
+    expect(Number(inradius)).toBeCloseTo(Number(circumradius) / 2, 6);
   });
 
   /**
-   * The three indices are DIFFERENT and ORDERED. Equal weights compile, render, and produce
-   * a refracted scene with no spectrum in it — the failure that looks like success. Blue
-   * furthest is the physics; reversed, the fringe reverses and stays plausible.
+   * ONE SOURCE, TWO READINGS (§V471.1), traced through the plan rather than read off the
+   * node names.
+   *
+   * `optics1` writes one pointset and two Geometries draw it, so the structure is a
+   * SELECTION and not more nodes. What makes that checkable without a picture is the
+   * `group_role` binding: a draw pass acquires it only because a group predicate names an
+   * attribute, so it is present exactly when the split exists — and the surface draw must
+   * NOT have one, because a predicate on a surface is refused by name (it would punch
+   * holes in a mesh rather than select from a cloud).
+   *
+   * The two tapers are the reason the split is not cosmetic. 61 beams leaving the same
+   * face within 0.03 of each other fuse into an opaque wedge at any taper above roughly
+   * zero (T680), and a single collimated shaft must not be pinched at all.
    */
-  it("refracts blue furthest and red least, from one shared source", () => {
-    const weightOf = (nodeId: string): number =>
-      ((effectFor(plan, nodeId).uniforms as Record<string, readonly number[]>)["weight"] as readonly number[])[0] as number;
+  it("splits one pointset into a pinched fan and a parallel-sided shaft", () => {
+    const draws = sceneDraws(plan);
+    expect(draws).toHaveLength(3);
 
-    const red = weightOf("bendR");
-    const green = weightOf("bendG");
-    const blue = weightOf("bendB");
-    expect(Math.abs(blue)).toBeGreaterThan(Math.abs(green));
-    expect(Math.abs(green)).toBeGreaterThan(Math.abs(red));
+    const surface = draws[0] as DrawPassDescriptor;
+    const beams = draws.slice(1);
+    // The surface is the prism, from its own kernel, with no predicate.
+    expect(buffersOf(surface).get("positions")).toBe("scratch:form:position");
+    expect(buffersOf(surface).has("group_role")).toBe(false);
 
-    // §V6: one scene and one normal field, each rendered once, sampled by all three.
-    const scene = outputFor(plan, "field").resourceId;
-    const normals = outputFor(plan, "normals").resourceId;
-    for (const nodeId of ["bendR", "bendG", "bendB"]) {
-      const bound = new Map((effectFor(plan, nodeId).textures ?? []).map((t) => [t.binding, t.resourceId]));
-      expect(bound.get("inputTexture"), nodeId).toBe(scene);
-      expect(bound.get("displaceTexture"), nodeId).toBe(normals);
+    for (const beam of beams) {
+      const buffers = buffersOf(beam);
+      // The SAME positions, and the same far end: one source.
+      expect(buffers.get("positions")).toBe("scratch:optics:position");
+      expect(buffers.get("endpoints")).toBe("scratch:optics:tip");
+      // Selected, and coloured per point.
+      expect(buffers.get("group_role")).toBe("scratch:optics:role");
+      expect(buffers.get("pointColors")).toBe("scratch:optics:tint");
+      // instance = [half-width, shape, TAPER, 0] (T680).
+      expect(beam.uniforms).toBeDefined();
     }
-    expect(plan.passes.filter((p) => p.kind === "effect" && p.nodeId === "field")).toHaveLength(1);
+
+    const tapers = beams.map((beam) => (uniformsOf(beam)["instance"] as readonly number[])[2] as number);
+    // One parallel-sided ribbon and one pinched at its origin — sorted, so this asserts
+    // the two VALUES rather than the order `scenes` happens to list them in (§V656).
+    expect([...tapers].sort((a, b) => a - b)).toEqual([0.06, 1]);
+
+    // And the predicates really are complementary halves. This one IS a source claim,
+    // deliberately: whether the two draws select DIFFERENT points cannot be seen in a
+    // binding, and the pixel half of it is in `prism.gpu.test.ts`.
+    const sources = beams.map((beam) => beam.shader);
+    expect(sources.some((source) => source.includes("p.role < 0.5"))).toBe(true);
+    expect(sources.some((source) => source.includes("p.role > 0.5"))).toBe(true);
+    expect(sources[0]).not.toBe(sources[1]);
   });
 
   /**
-   * T364, and the reason there is a spectrum to bend at all.
+   * THE RIM'S WIRING — §V640's mechanism, at §V640's address.
    *
-   * `color` maps the whole compound onto the kernel's `tint` and `sizePixels` maps onto
-   * `pscale`, and with BOTH mapped the sprite pass's params struct would be empty — WGSL
-   * refuses an empty struct, so the uniform block DISAPPEARS. That absence is the
-   * observable fact: a regression to the static colour restores the block and paints 2400
-   * identical sprites, which still renders and disperses into grey.
+   * The invariant is specific about where the band goes: a silhouette samples the
+   * equirect's HORIZON, so the rim is authored as a bright band at (0.5, 0.5). For this
+   * subject that is exact rather than approximate — a normal lying in the prism's
+   * cross-section plane reflects to (0, 0, −1), and the equirect mapping sends that to
+   * u = 0.5, v = 0.5 — so the band's centre being anywhere else is a bug that renders as
+   * a duller picture and nothing more.
+   *
+   * `aspectcorrect` must be FALSE on an equirect (the map is not a picture of a square),
+   * and the surface draw must actually receive the map: the beams are unlit and get none,
+   * which is why the environment binding appears on exactly one of the three draws.
    */
-  it("draws 2400 sprites with no uniform block, because both colour and size are mapped", () => {
-    const draw = drawFor(plan, "sparks");
-    expect(draw.uniformBinding).toBeUndefined();
-    expect(draw.uniforms).toBeUndefined();
+  it("wires the environment band to the equirect's horizon, and only the glass reads it", () => {
+    const band = effectFor(plan, "band").uniforms as Record<string, unknown>;
+    expect(band["center"]).toEqual([0.5, 0.5]);
+    // aspectcorrect false resolves to an aspect of exactly 1 — no stretch on either axis.
+    expect(band["aspect"]).toBe(1);
 
-    const sparks = document.graph.nodes["sparks"] as GraphNode;
-    const colorSlot = sparks.parameters["color"] as { mode?: string; bindings?: { map?: { attribute?: string } } };
-    const sizeSlot = sparks.parameters["sizePixels"] as { mode?: string; bindings?: { map?: { attribute?: string } } };
-    expect(colorSlot.mode).toBe("map");
-    expect(colorSlot.bindings?.map?.attribute).toBe("tint");
-    expect(sizeSlot.mode).toBe("map");
-    expect(sizeSlot.bindings?.map?.attribute).toBe("pscale");
+    const draws = sceneDraws(plan);
+    const withEnvironment = draws.filter((draw) => texturesOf(draw).has("environmentMap"));
+    expect(withEnvironment).toHaveLength(1);
+    expect(texturesOf(withEnvironment[0] as DrawPassDescriptor).get("environmentMap")).toBe(
+      outputFor(plan, "studio").resourceId,
+    );
+    expect(buffersOf(withEnvironment[0] as DrawPassDescriptor).get("positions")).toBe("scratch:form:position");
+  });
 
-    // The attribute has to EXIST on the incoming pointset, and be vec4f: the head map
-    // refuses anything else by name. The kernel has to write it, or every sprite is black.
-    const swarm = document.graph.nodes["swarm"] as GraphNode;
-    const attributes = JSON.parse(String(swarm.parameters["attributes"])) as ReadonlyArray<{
-      name: string;
-      type: string;
-      qualifier?: string;
+  /**
+   * A BLACK BODY AND NO AMBIENT, which is E33's lesson (§V632/T636) rather than taste.
+   *
+   * Everything visible on this prism is `specular · envFresnel · environmentIntensity`,
+   * and envFresnel is 0.04 head-on against 1.0 at grazing. That 25× is the entire
+   * separation between the body and the outline, and it survives only while nothing else
+   * is adding light: a diffuse albedo bright enough to see, or an ambient term worth the
+   * name, closes the gap from below and the glass goes to grey slate.
+   *
+   * So the numbers are asserted as numbers (§V218). Albedo below 0.002 LINEAR — these are
+   * authored in display space and the compiler decodes them, which is exactly the place a
+   * "0.012 is nearly black" intuition would be wrong by a transfer curve.
+   */
+  it("gives the glass a black body, no ambient, and a single hard key", () => {
+    const surface = sceneDraws(plan)[0] as DrawPassDescriptor;
+    const uniforms = uniformsOf(surface);
+
+    const albedo = uniforms["baseColor"] as readonly number[];
+    for (const channel of albedo.slice(0, 3)) expect(channel).toBeLessThan(0.002);
+    expect(uniforms["ambientColor"]).toEqual([0, 0, 0, 0]);
+    // material = [metallic, roughness, ...]: a dielectric, and barely rough, so the
+    // (1 − roughness) scale on the environment term keeps the grazing ceiling high.
+    expect((uniforms["material"] as readonly number[])[0]).toBe(0);
+    expect((uniforms["material"] as readonly number[])[1]).toBeCloseTo(0.06, 6);
+    expect((uniforms["environment"] as readonly number[])[0]).toBeCloseTo(3.2, 6);
+    // Exactly one light, and it is a hard directional — a second key would fill the body
+    // through the same two-sided lambert that makes a "back light" a second key (§V640).
+    expect(uniforms["light1Meta"]).toBeUndefined();
+    expect((uniforms["light0Meta"] as readonly number[])[0]).toBe(0);
+    expect((uniforms["light0Meta"] as readonly number[])[1]).toBeCloseTo(2.6, 6);
+  });
+
+  /**
+   * THE CLAMP BETWEEN THE LEVEL AND THE BLUR IS LOAD-BEARING, and this file is its worst
+   * case.
+   *
+   * Level is a SIGNED pipeline: below `blacklevel` it emits negatives. The blur spreads
+   * them over the whole frame and `add` then SUBTRACTS a halo from the picture. E33 and
+   * E34 both blacked out entirely before they learned this, and E13 is 90% black — almost
+   * every pixel here is below the threshold.
+   *
+   * The assertion is the ROUTING, because a `limit` node sitting beside the chain and
+   * wired to nothing renders exactly like a missing one: the blur's input must be the
+   * limit's output, and the limit's floor must actually be zero.
+   */
+  it("routes the bloom through a clamp, not straight from the level into the blur", () => {
+    const blur = plan.passes.find(
+      (entry): entry is EffectPassDescriptor => entry.kind === "effect" && entry.nodeId === "halo",
+    );
+    expect(blur).toBeDefined();
+    expect(texturesOf(blur as EffectPassDescriptor).get("inputTexture")).toBe(outputFor(plan, "clip").resourceId);
+    expect(texturesOf(effectFor(plan, "clip")).get("inputTexture")).toBe(outputFor(plan, "cut").resourceId);
+    expect((effectFor(plan, "clip").uniforms as Record<string, number>)["low"]).toBe(0);
+    // And the bloom is ADDED to the render rather than replacing it.
+    const glow = effectFor(plan, "glow");
+    expect(texturesOf(glow).get("frontTexture")).toBe(outputFor(plan, "shot").resourceId);
+    expect(texturesOf(glow).get("backTexture0")).toBe(outputFor(plan, "halo").resourceId);
+  });
+
+  /**
+   * A SQUARE WAVE THROUGH A LAG IS AN EASE, and that is why `swing1` is a square rather
+   * than a sine. A sine would look smooth with `ease1` deleted and this assertion would be
+   * unfalsifiable; a square takes exactly two values, so every value BETWEEN them in the
+   * compiled uniforms was produced by the smoothing stage.
+   *
+   * The aim is what the whole example turns on — the fan's spread is a function of it — so
+   * this discriminates three failures at once: no chain (one value forever), no Lag (two
+   * values), and a Lag that holds instead of integrating (it never reaches either end).
+   */
+  it("eases the aim between the square wave's two levels instead of snapping", () => {
+    const run = valueGraphRun(document);
+    const parked: Pointer = { x: 0, y: 0, buttons: 0 };
+    const aims = new Set<number>();
+    let low = 1;
+    let high = 0;
+    // 0.18 Hz: a bit over five seconds a cycle, so 400 frames crosses several edges.
+    for (let index = 0; index < 400; index += 1) {
+      const { plan: live } = run.step(parked);
+      const dispatch = live.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
+      const value = ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})["value1"] as number;
+      aims.add(Number(value.toFixed(6)));
+      low = Math.min(low, value);
+      high = Math.max(high, value);
+    }
+    expect(aims.size).toBeGreaterThan(50);
+    // Both ends are actually reached, so the swing really is the full 62°..37°.
+    expect(low).toBeLessThan(0.05);
+    expect(high).toBeGreaterThan(0.95);
+    // And nothing outside — the kernel clamps, but a slot that needed clamping would mean
+    // the LFO's amplitude and offset had drifted off the parameter's own range.
+    expect(low).toBeGreaterThanOrEqual(-1e-6);
+    expect(high).toBeLessThanOrEqual(1 + 1e-6);
+  });
+
+  /**
+   * THE POINTER ONLY EVER ADDS, and that is what makes it safe to ship on a parameter the
+   * picture depends on.
+   *
+   * `mouse1 → follow1 → value3` is summed with the LFO INSIDE the kernel, because a value
+   * graph merges channel BAGS and an LFO's channel shares no name with a pointer's `x`.
+   * The consequence worth gating is the default: a pointer that has never moved reads 0,
+   * so `value3` is exactly 0 and every gate in the suite sees the LFO's picture and not a
+   * pointer-biased one. §V108's retained value, made true of an input that has none.
+   *
+   * Then the Lag's SHAPE, which is the same discrimination the old E13 made about its
+   * lens: one frame after the pointer jumps, `value3` has moved and has moved only part of
+   * the way; ninety frames later it has arrived.
+   */
+  it("adds nothing until the pointer moves, then eases in", () => {
+    const value3Of = (source: CompiledGraph): number => {
+      const dispatch = source.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
+      return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})["value3"] as number;
+    };
+    // The shipped, unresolved plan: no pointer anywhere, and the slot's retained value.
+    expect(value3Of(plan)).toBe(0);
+
+    const run = valueGraphRun(document);
+    const parked: Pointer = { x: 0, y: 0, buttons: 0 };
+    expect(value3Of(run.hold(parked, 60).plan)).toBeCloseTo(0, 6);
+
+    const dragged: Pointer = { x: 1, y: 0.5, buttons: 0 };
+    const oneFrame = value3Of(run.step(dragged).plan);
+    expect(oneFrame).toBeGreaterThan(0);
+    // A missing Lag lands on the pointer this frame.
+    expect(oneFrame).toBeLessThan(0.5);
+    expect(value3Of(run.hold(dragged, 90).plan)).toBeCloseTo(1, 3);
+  });
+
+  /**
+   * HUE AND REFRACTIVE INDEX ARE ONE PARAMETER, which is the reason the spectrum is
+   * ordered rather than merely colourful.
+   *
+   * `t` indexes the band; n = 1.50 + value2·t decides how far it bends, and the SAME `t`
+   * samples `spectrum1` for its colour. Break the tie — colour the bands from anything
+   * else — and the picture is a rainbow that is not a spectrum, which is the failure that
+   * looks like success. The tie is a wire (the ramp reaches the kernel's `field` input,
+   * so `fieldAt` is legal at all) plus one line of arithmetic, and both are checked here;
+   * that red sits at the top of the fan and violet at the bottom is a claim about the
+   * PICTURE and lives in `prism.gpu.test.ts`.
+   */
+  it("takes each band's colour and its refractive index from the same t", () => {
+    const kernel = kernelOf("optics");
+    expect(kernel).toContain("let n = N_RED + ctx.value2 * t;");
+    expect(kernel).toContain("fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0))");
+
+    // `fieldAt` compiles only when something is wired to the kernel's field input, so the
+    // ramp reaching it is structural rather than decorative.
+    const field = document.graph.edges;
+    const wired = Object.values(field).some(
+      (edge) => edge.target.nodeId === "optics" && edge.target.portId === "field" && edge.source.nodeId === "spectrum",
+    );
+    expect(wired).toBe(true);
+
+    // And the ramp GOES somewhere (§V471.6): seven stops, red end to violet end, with the
+    // ends genuinely opposite rather than two shades of one hue.
+    const stops = (document.graph.nodes["spectrum"] as GraphNode).parameters["stops"] as ReadonlyArray<{
+      position: number;
+      color: readonly number[];
     }>;
-    const tint = attributes.find((entry) => entry.name === "tint");
-    expect(tint?.type).toBe("vec4f");
-    // §V313/T287: a colour attribute says so, so a colour-space op would convert it and a
-    // spatial transform would leave it alone.
-    expect(tint?.qualifier).toBe("color");
-    expect(String(swarm.parameters["kernel"])).toContain("q.tint =");
-    expect(String(swarm.parameters["kernel"])).toContain("q.pscale =");
+    expect(stops.length).toBe(7);
+    const first = stops[0] as { color: readonly number[] };
+    const last = stops[stops.length - 1] as { color: readonly number[] };
+    expect((first.color[0] as number)).toBeGreaterThan(first.color[2] as number);
+    expect((last.color[2] as number)).toBeGreaterThan(last.color[0] as number);
   });
 
   /**
-   * The control case. Force `color` back to a static value and the uniform block comes
-   * back — which is what proves the absence above is caused by the map rather than by some
-   * unrelated property of a draw pass.
-   */
-  it("gets its uniform block back the moment the colour stops being mapped", () => {
-    const sparks = document.graph.nodes["sparks"] as GraphNode;
-    const staticColour: GraphNode = {
-      ...sparks,
-      parameters: { ...sparks.parameters, color: [1, 1, 1, 1] },
-    };
-    const plain = recompile(document, {
-      ...document.graph,
-      nodes: { ...document.graph.nodes, sparks: staticColour },
-    });
-
-    expect(messagesOf(plain.diagnostics)).toEqual([]);
-    const draw = plain.passes.find((pass) => pass.kind === "draw" && pass.nodeId === "sparks");
-    expect(draw?.kind === "draw" ? draw.uniformBinding : undefined).toBe("params");
-  });
-
-  /**
-   * THE LAG IS THE POINT, not the wire.
+   * THE DISPERSIVE POWER IS A DOCUMENT PARAMETER, not a constant buried in the kernel.
    *
-   * `mouse1 → follow1(Lag) → lens1.center` is the owner's canonical chain, and a test that
-   * only checked the centre eventually equals the pointer would pass with the Lag deleted.
-   * So the assertion is the SHAPE of the approach: one frame after the pointer jumps the
-   * lens has moved, and has moved only part of the way; many frames later it has arrived.
-   *
-   * That discriminates three things at once — no chain (never moves), no Lag (arrives on
-   * the first frame), and a Lag that holds instead of integrating (never arrives).
+   * `optics1.value2` is the whole span of n across the band. It has to reach the dispatch
+   * as a number for the gate that mutes it to mean anything — a mute that changed nothing
+   * because the kernel had its own hard-coded span would pass and prove the opposite of
+   * what it claims (§V655).
    */
-  it("eases the lens toward the pointer instead of snapping to it", () => {
-    const run = valueGraphRun(document);
-    const target: Pointer = { x: 0.18, y: 0.82, buttons: 0 };
-
-    // Settle on the centre first, so the jump is a jump.
-    const settled = run.hold(CENTRE, 60);
-    const centreOf = (source: CompiledGraph): readonly number[] =>
-      (effectFor(source, "lens").uniforms as Record<string, readonly number[]>)["center"] as readonly number[];
-    expect(centreOf(settled.plan)).toEqual([0.5, 0.5]);
-
-    const oneFrame = centreOf(run.step(target).plan);
-    // Moved...
-    expect(oneFrame[0]).toBeLessThan(0.5);
-    expect(oneFrame[1]).toBeGreaterThan(0.5);
-    // ...but nowhere near arrived. A missing Lag lands on the pointer this frame.
-    expect(oneFrame[0]).toBeGreaterThan(0.4);
-    expect(oneFrame[1]).toBeLessThan(0.6);
-
-    const arrived = centreOf(run.hold(target, 90).plan);
-    expect(arrived[0]).toBeCloseTo(target.x, 3);
-    expect(arrived[1]).toBeCloseTo(target.y, 3);
-  });
-
-  /**
-   * A SQUARE WAVE THROUGH A LAG IS AN EASE, and that is the whole reason the LFO is a
-   * square rather than a sine here. A sine would look smooth with the Lag removed and this
-   * assertion would be unfalsifiable; a square takes exactly two values, so every value
-   * BETWEEN them in the compiled uniforms was produced by the smoothing stage.
-   */
-  it("eases the lens radius between the square wave's two levels", () => {
-    const run = valueGraphRun(document);
-    const radii = new Set<number>();
-    // 0.22 Hz: a bit over four seconds a cycle, so 300 frames crosses both edges.
-    for (let index = 0; index < 300; index += 1) {
-      const { plan: live } = run.step(CENTRE);
-      const radius = (effectFor(live, "lens").uniforms as Record<string, readonly number[]>)["radius"] as readonly number[];
-      expect(radius[0]).toBe(radius[1]);
-      radii.add(Number((radius[0] as number).toFixed(6)));
-    }
-
-    // Two values would mean the Lag is not in the path at all.
-    expect(radii.size).toBeGreaterThan(50);
-    // And every one of them lies inside the wave's own range: the LFO's amplitude and
-    // offset are chosen so the manifest never has to clamp (a clamp is a warning, and the
-    // gate treats a warning as a failure).
-    for (const radius of radii) {
-      expect(radius).toBeGreaterThanOrEqual(0.18 - 1e-6);
-      expect(radius).toBeLessThanOrEqual(0.46 + 1e-6);
-    }
-  });
-
-  /**
-   * THE ROLL KEEPS GOING, and after T537/T565 there is no `%` doing it.
-   *
-   * This test used to assert the opposite character: `r` was clamped to ±360 by its
-   * manifest and `clampToDeclared` read that as a hard limit on every resolved value, so
-   * `abstime * 7` alone pinned the roll at 360 degrees after 51 seconds and raised the
-   * out-of-range diagnostic the gate treats as a failure. E13 carried `% 360` as a
-   * user-level workaround for exactly that (§B111). T537 split the two ideas the manifest
-   * had conflated — a slider's RANGE is not a value CLAMP — and `r` now declares
-   * `range: "cyclic"`, which `numericRangeOf` answers with no limit at all.
-   *
-   * So the assertion is the UNWRAPPED angle: a hundred seconds in the resolver must hand
-   * the shader 700 degrees, not 360 (the old clamp) and not 340 (the old modulo). All
-   * three render the same picture, which is precisely why only an exact-value assertion
-   * can tell them apart — a look test here would pass on the bug (§V147).
-   */
-  it("keeps rolling past 360 degrees, with no wrap and no clamp", () => {
-    const seconds = 100;
-    const late = compileGraph({
-      graph: document.graph,
-      settings: document.settings,
-      registry: exampleRegistry(),
-      capabilities: TIER_B_CAPABILITIES,
-      resolution: {
-        frame: {
-          timeSeconds: seconds,
-          deltaSeconds: 1 / 60,
-          frameIndex: seconds * 60,
-          mode: "offline",
-          randomSeed: document.settings.randomSeed,
-        },
-      },
-    });
-
-    // A clamp is a diagnostic, and the example gate treats any diagnostic as a failure.
-    expect(messagesOf(late.diagnostics)).toEqual([]);
-
-    const degrees = seconds * 7;
-    expect(degrees).toBeGreaterThan(360);
-    const rot = (effectFor(late, "roll").uniforms as Record<string, number>)["rot"] as number;
-    expect(rot).toBeCloseTo((degrees * Math.PI) / 180, 10);
-    // Neither of the two answers this test accepted before T565.
-    expect(rot).not.toBeCloseTo((360 * Math.PI) / 180, 6);
-    expect(rot).not.toBeCloseTo(((degrees % 360) * Math.PI) / 180, 6);
-    // ...and it IS the same pose, which is why dropping the workaround changes no picture.
-    expect((rot - ((degrees % 360) * Math.PI) / 180) % (2 * Math.PI)).toBeCloseTo(0, 10);
-
-    const slot = (document.graph.nodes["roll"] as GraphNode).parameters["r"] as {
-      mode?: string;
-      bindings?: { expression?: { source?: string } };
-    };
-    expect(slot.mode).toBe("expression");
-    expect(slot.bindings?.expression?.source).toBe("abstime * 7");
+  it("carries the glass's dispersive power as a live uniform the kernel reads", () => {
+    const dispatch = plan.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
+    const uniforms = (dispatch as { uniforms?: Record<string, number> }).uniforms ?? {};
+    expect(uniforms["value2"]).toBeCloseTo(0.085, 6);
+    expect(kernelOf("optics")).toContain("ctx.value2");
+    // Real crown glass is about a sixth of this, and the exaggeration is stated in the md.
+    expect(uniforms["value2"]).toBeGreaterThan(0);
   });
 });
 

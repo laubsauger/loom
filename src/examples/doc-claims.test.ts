@@ -56,12 +56,10 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
     reason:
       "an INSTRUCTION to the reader, the same one E24 carries: the example ships the deterministic audioPattern (§V363) so it plays with no asset, and the doc says which node to swap in to drive it from a real track.",
   },
-  {
-    doc: "E13-Prism.md",
-    type: "renderInstances",
-    reason:
-      "a struck-through limitation note about a SIBLING renderer (T369 closed it), explicitly contrasted with the renderPoints this example does use.",
-  },
+  /* T710 removed E13's `renderInstances` exemption with the sentence that needed it: the
+     rebuilt Prism is a 3D scene and no longer draws sprites, so the struck-through note
+     contrasting the two point renderers had nothing left to contrast. An exemption
+     outlives its prose exactly as easily as prose outlives its graph. */
 ];
 
 describe("concept docs name only nodes their graphs contain (B83, §V332)", () => {

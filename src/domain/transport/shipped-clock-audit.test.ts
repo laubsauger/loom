@@ -441,14 +441,37 @@ describe("T497 — the sites T497 moved are, and stay, on the absolute clock", (
   };
 
   /**
+   * THE WITNESS LISTS BELOW ARE RE-POINTABLE. THE PROPERTY IS THE SUBJECT.
+   *
+   * Every hand-listed pair in this file names an example only because that example
+   * happens to exercise the property under test. None of them is a contract with the
+   * example. When a document is rebuilt and stops using the mechanism — as E13-Prism did
+   * at T710, when the image-space dispersion it demonstrated was replaced by a 3D prism
+   * with nothing in it that is honestly free-running — the correct move is to re-point
+   * the witness at another file that genuinely carries the mechanism, NOT to preserve the
+   * mechanism so the list keeps compiling.
+   *
+   * That failure mode is real and it runs the wrong way round: a shipped document
+   * contorted to satisfy a gate is a lie authored into the product, and §V624's rule
+   * against a dead parameter is the same rule — never ship a dead thing dressed as a live
+   * one. A witness list drifts exactly the way any hand-maintained list drifts; the guard
+   * is that it must always have at least two entries and each must still be true, which
+   * is what these loops check by construction.
+   *
+   * ---
+   *
    * WIRED, not merely written. A kernel naming `ctx.absTime` compiles only if codegen
    * DETECTED the name, declared both members on `KernelFrame` AND passed them into the ctx
    * constructor — and the failure when it does not is silent in the worst way (vgpu writes
    * uniforms by NAME, so a declared-but-unwritten member reads zero forever and looks like a
    * stopped clock). Asserting the generated text is asserting the whole chain, T489's §V309.
+   *
+   * T710 moved E13-Prism off this list and E9-Ember onto it: E9's `fire1` names
+   * `ctx.absTime` on purpose (its draught and per-vent flare are free-running, T511/T579),
+   * which is the same reason it stopped being a witness for the NEGATIVE property below.
    */
   for (const [fileName, nodeId] of [
-    ["E13-Prism.loom.json", "swarm"],
+    ["E9-Ember.loom.json", "sim"],
     ["E16-Murmuration.loom.json", "flock"],
   ] as const) {
     it(`${fileName} — the kernel's generated block carries the absolute pair, filled`, () => {
@@ -461,19 +484,36 @@ describe("T497 — the sites T497 moved are, and stay, on the absolute clock", (
   }
 
   /**
-   * T565: and it is now a BARE ramp. The `% 360` this used to assert was never geometry —
-   * it was a user-level workaround for §B111, where `clampToDeclared` read Transform's
+   * THE EXPRESSION GRAMMAR'S clock read, which is the one written with no dot in it.
+   *
+   * The property: a free-running rotation in a shipped document must be authored on
+   * `abstime` and not on `time`, because `time` wraps at a timeline lap (T497/§V436) and
+   * a roll on it snaps back to zero every time the piece loops — a seam that is invisible
+   * in every screenshot and only appears once someone bounds the piece and plays it.
+   *
+   * T565 also removed the `% 360` this used to assert. That wrap was never geometry: it
+   * was a user-level workaround for §B111, where `clampToDeclared` read Transform's
    * declared −360…360 as a hard limit and froze the roll at 360° after fifty-one seconds.
-   * T537 made `r` `cyclic`, so the wrap has nothing left to do. The clock half of the
-   * assertion is unchanged and is what this test is for.
+   * T537 made `r` `cyclic`, so the wrap has nothing left to do — and a shipped document
+   * must not carry a scar from a bug we fixed.
+   *
+   * THE WITNESS MOVED AT T710, per the note above. This was E13-Prism's `roll1`; the
+   * rebuilt Prism carries no expression slot at all, and there is no honest home for one
+   * in it — a rotation would fight the optics the file is built on, and the expression
+   * grammar is arithmetic only, so it cannot produce a camera orbit either. Inventing a
+   * slot to keep this test naming E13 would have been the exact inversion this file warns
+   * about. E5-Kaleidoscope's `fold` is the same mechanism, doing the same job, for real.
    */
-  it("E13's roll expression reads `abstime`, the one clock read with no dot in it", () => {
-    const document = requireExample(byName.get("E13-Prism.loom.json") as never).document;
-    const roll = document.graph.nodes["roll"]?.parameters["r"];
+  it("a shipped free-running roll reads `abstime`, the one clock read with no dot in it", () => {
+    const document = requireExample(byName.get("E5-Kaleidoscope.loom.json") as never).document;
+    const roll = document.graph.nodes["fold"]?.parameters["r"];
     const source = (roll as { bindings?: { expression?: { source?: string } } } | undefined)?.bindings
       ?.expression?.source;
-    expect(source).toBe("abstime * 7");
+    expect(source).toBe("abstime * 5");
     expect(source).not.toContain("%");
+    // And it really does run past the manifest's declared ±360 rather than being wrapped
+    // into it by hand: 5°/s crosses 360 at 72 seconds, so the unwrapped read is the point.
+    expect(5 * 100).toBeGreaterThan(360);
   });
 
   /**

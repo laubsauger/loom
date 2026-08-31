@@ -1,133 +1,226 @@
 # E13 — Prism
 
-The showcase. A swarm of individually coloured sparks behind a lens of glass, refracted
-three times at three refractive indices and reassembled channel by channel, with the lens
-following your pointer and breathing on an LFO.
+Deep black. A triangular block of glass, drawn entirely by the light caught on its edges.
+A white beam enters low from the right, and a spectrum fans out to the left — and the fan
+opens and closes as the beam swings, because the fan is Snell's law and not a drawing.
 
-Every other example here demonstrates *one* mechanism. This one exists because someone who
-has read twelve single-mechanism files still has not seen them in one frame, and "in one
-frame" is the actual product claim.
+We have no refraction and no glass material, and this file does not pretend otherwise. It
+is built on the fact that makes a prism paintable without either: **a prism reads as glass
+through its edges, not its volume.** The body is nearly black; what says "glass" is a thin
+bright rim along every silhouette and a dim sheen on the faces.
 
 ## Graph
 
 ```
-swarm1(pointKernel) ─► sparks1(renderPoints) ─► roll1(transform) ─► field1.in1
-backdrop1(ramp) ──────────────────────────────────────────────────► field1.in2
-field1(over) ─┬─► bendR1(displace) ─┐
-              ├─► bendG1(displace) ─┴─► fuse1(reorder) ─┐
-              └─► bendB1(displace) ────────────────────┴─► prism1(reorder) ─► out1
-lens1(circle) ─► normals1(slope) ─► the `disp` input of all three
+bar1(pointTube) ─► form1(pointKernel) ─► solid1(geometry) ─┐
+glass1(materialPhong) ─────── by name ────────────────────┘  the glass
+                                                              │
+spectrum1(ramp) ─► optics1.field                              │
+optics1(pointKernel) ─┬─► shaft1(geometry)  p.role < 0.5      ├─► shot1(render)
+                      └─► fan1(geometry)    p.role > 0.5      │
+flare1(materialUnlit) ────── by name ─────────────────────────┤
+                                                              │
+sky1(ramp) ──┐                                                │
+band1(circle) ┴─► studio1(add) ─► shot1.environment           │
+key1(light), eye1(camera) ──── by name ───────────────────────┘
 
-mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
-pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
-roll1.r = "abstime * 7"                                 an expression
-sparks1.color ← `tint`, sparks1.sizePixels ← `pscale`   the map mode
+shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1.in2
+shot1 ────────────────────────────────────────────► glow1(add) ─► out1(output)
+
+swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1     the aim
+mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3                the aim, + pointer
+drift1(lfo, sine) ┄drives┄► eye1.eye.x
+fan1.tint ← the `tint` attribute                                    the map mode
 ```
 
 | Node | Type | Doing |
 | --- | --- | --- |
-| `swarm1` | `pointKernel` | 2400 points on a woven, breathing band; writes `tint` (a spectral wheel) and `pscale` |
-| `sparks1` | `renderPoints` | additive sprites, **colour and size both mapped to attributes** (T364) |
-| `roll1` | `transform` | rolls the light field, angle from an expression |
-| `backdrop1` | `ramp` | a dark radial field — dispersion needs colour everywhere, not just on the sparks |
-| `lens1` | `circle` | a soft **dome**, not a disc: `softness` past the radius. Centre and radius both driven |
-| `normals1` | `slope` | `mode: normal` — the dome's gradient becomes the lens's normal field |
-| `bendR1/G1/B1` | `displace` | one scene, three refractive indices: −0.75, −1.05, −1.4 |
-| `fuse1`, `prism1` | `reorder` | red from R, green from G, blue from B |
-| `mouse1 → follow1` | value graph | the pointer, smoothed — the glass has weight |
-| `pulse1 → ease1` | value graph | a square wave through a one-pole smoother: an ease |
+| `bar1` | `pointTube` | a 240×45 grid with its u seam closed — the topology a prism's lateral loop needs |
+| `form1` | `pointKernel` | walks a **rounded** triangle by arc length and puts a quarter-round on each cap edge |
+| `glass1` | `materialPhong` | diffuse 0.0009 linear, specular 0.86, roughness 0.06 — the whole read is Fresnel |
+| `solid1` | `geometry` | `mode: surface` |
+| `spectrum1` | `ramp` | seven stops, red → violet. The kernel samples it at `u = t`, and `t` is also the refractive index |
+| `optics1` | `pointKernel` | Snell's law twice per band, 61 bands, plus the shaft and its reflected ghost |
+| `shaft1` | `geometry` | `mode: beam`, taper 1 — a parallel-sided ribbon |
+| `fan1` | `geometry` | `mode: beam`, taper 0.06, **tint mapped per point** |
+| `sky1`, `band1` | `ramp`, `circle` | the equirect: near-black, with a bright band on its horizon at (0.5, 0.5) |
+| `key1` | `light` | one directional, aimed to put a glint on one edge and nowhere else |
+| `cut1 → clip1 → halo1 → glow1` | post | the bloom, with the clamp that is load-bearing |
 
 ## What it proves
 
-**Dispersion, out of nodes that were not built for it.** There is no per-channel Displace
-and none is needed. Refract the same scene three times at three strengths, then take red
-from the first, green from the second and blue from the third through two Reorders. Blue
-bends furthest, as it does through glass. One scene and one normal field feed all three
-refractions, so §V6 renders each of them once — the cost of the effect is three samples of
-an image that already exists.
+### The rim is `envFresnel`, used deliberately, and the geometry is built for it
 
-**Per-point colour is why there is a spectrum to bend (T364, §V313).** `sparks1` maps its
-whole `color` compound onto the kernel's `tint` attribute and its `sizePixels` onto
-`pscale`, so 2400 sprites carry 2400 colours and 2400 sizes. With *both* mapped the sprite
-pass's params struct would be empty — WGSL refuses an empty struct — so the uniform block
-disappears entirely and the draw carries no uniforms at all. A uniform-coloured swarm
-disperses into grey fringes; a spectral one disperses into a spectrum.
+§V640 records both halves of the mechanism: the environment's Fresnel term rises to 1 at
+grazing, so a bright band on the equirect's horizon shows up as a rim — **and it does that
+only on geometry that curves away.** On a flat camera-facing surface there is barely any
+grazing for the term to find, and the same band becomes fill.
 
-Those values are **linear** by declaration: a point attribute is data (§V56/§V57), nothing
-display-decodes it, and the kernel's cosine palette writes linear light directly. The
-attribute is `color`-qualified (§T287), which is what a colour-space operation would convert
-and what a spatial transform must leave alone.
+So `form1` builds a shape that curves exactly where the light is wanted. The cross-section
+is a rounded triangle walked by **arc length** — three straight runs joined by three 120°
+arcs — and the profile puts a quarter-round where each flat cap meets the barrel. Along a
+straight run, the surface renderer's central difference is collinear, so the face normal is
+*exactly* constant and the faces stay flat and black. Across an arc the normal sweeps 120°,
+and somewhere in that sweep it passes through grazing. A thread of surface at grazing
+therefore runs the whole way round the triangle, from any camera.
 
-**Three ways to move a parameter, doing three different jobs.**
+Rounding the corners does not move the faces, which is what lets the optics share the
+geometry from a single constant: a rounded triangle's straight run sits at `d·cos(60°) + ρ`
+from the axis, and with `d = RC − 2ρ` that is `RC/2` for **every** corner radius — a sharp
+triangle's inradius.
 
-*The value graph (§V179), twice, and both times it is the canonical chain.*
-`mouse1 → follow1(Lag) → lens1.center` gives the glass weight: the pointer is the target,
-the Lag is the mass. `pulse1(LFO) → ease1(Lag) → lens1.radius` breathes it. The LFO is a
-**square** wave on purpose — a square through a one-pole smoother *is* an ease, so the Lag's
-contribution is visible rather than theoretical. Delete `ease1` and the lens snaps between
-two sizes like a shutter. That is the entire argument for having a Lag node, and it is why
-the concept test counts distinct radii instead of checking that a wire exists.
+The equirect address is not a coincidence either. A normal lying in the cross-section plane
+reflects to `(0, 0, −1)`, which the equirect mapping sends to `(0.5, 0.5)` exactly — the
+band's centre, which is the address §V640 gives for it. The flat cap's normal lands near
+`u = 0.01` instead, outside the band. One texture, two addresses: the outline lights and
+the body does not.
 
-*An expression (§V71) rolls the light field.* `abstime * 7 % 360` is written where it is read
-— no node, no channel, no wire — and the `%` is load-bearing: Transform's `r` is clamped to
-±360 by its manifest, so the wrap belongs in the expression. Being honest about the scope:
-the v1 grammar is arithmetic only, so an LFO with a saw shape could produce this same ramp.
-What the expression buys here is locality, not reach.
+Measured with §V640's own instrument (environment wired against unwired, mean |Δ| split by
+a 6px erosion of the prism's mask), 1280×720, display-encoded from the plan's own output
+space, at commit `9d6b674`:
 
-*A kernel (§V45) animates the swarm.* `ctx.absTime` arrives through the same frame contract
-everything else uses, and the kernel is **stateless** — position and colour are functions of
-the slot index and the clock — so frame N is the same picture whether it was replayed from
-zero or arrived at live.
+| | ring | interior | ratio |
+| --- | --- | --- | --- |
+| mean \|Δ\| with the band on vs off | **43.06** | **4.21** | **10.2× harder on the outline** |
+| luma on the shipped frame | 62.7 | 6.3 | 10.0× |
+
+For scale, the two subjects §V640 was measured on: E33's lobed goo read 45.8 / 25.9 = 1.8×
+(a rim, but a soft one), and E33's flat emblem read 14.5 / 19.5 — *stronger in the body*,
+i.e. fill wearing a rim's name. §V640's limit is a limit; here it is the whole design.
+
+**Ambient is zero and the key is hard**, which is E33's lesson (§V632/T636) rather than
+taste. The physical terms in this scene are a 4% head-on Fresnel on a specular of 0.86 and
+a diffuse albedo of 0.0009 linear, so any ambient worth the name drowns them and the glass
+goes to grey slate. `key1` does exactly one job: its direction is the mirror of the view
+about the upper-left round-over's normal, so its Blinn lobe lands as a glint on that edge.
+Killing it moves 8,387 pixels by more than 4 luma — it earns its node.
+
+### The dispersion is solved, not drawn
+
+`optics1` runs `refract` twice per band, vectorially, in the prism's own cross-section:
+into the right face, across to the left face's plane, out. The refractive index runs from
+1.500 at the red end to 1.585 at the violet end, and the *same* parameter `t` picks the
+band's colour out of `spectrum1`. Hue and refractive index are one number, so a reversed
+`n(λ)` reverses the fan and nothing else.
+
+Exaggeration, stated: real crown glass disperses about a sixth of this. The span is
+`optics1.value2`, a number this file owns rather than a constant hidden in the kernel — set
+it to zero and the fan collapses to a single ray, which is what the gate asserts.
+
+**Which way the angle actually works.** The brief for this rebuild said a more oblique
+incoming beam spreads more. That is not what the arithmetic says, and the file follows the
+arithmetic. Differentiating the deviation at fixed incidence:
+
+```
+dδ/dn = (sin θ3 + cos θ3 · tan θ2) / cos θ4
+```
+
+As θ1 grows, θ2 grows, θ3 = A − θ2 shrinks and θ4 shrinks with it — numerator down,
+denominator up. Angular dispersion **falls** monotonically as the beam lies down on the
+*entry* face, and **rises** as the internal ray approaches the critical angle at the *exit*
+face. The exit face is where dispersion is made; the entry face only decides how obliquely
+the ray arrives there.
+
+Over the swing this file uses, computed and then measured on the picture (fan span at
+screen column 240, commit `9d6b674`):
+
+| aim | θ1 | computed fan | measured span |
+| --- | --- | --- | --- |
+| `value1 = 0` | 62° | 5.98° | 46 px |
+| `value1 = 1` | 37° | 10.91° | 108 px |
+| ratio | | 1.82 | **2.35** |
+
+The measured ratio is larger than the angular one because the exit *point* swings as well
+as the exit angle — the same physics arriving twice.
+
+θ1 stops at 37° and not lower for a reason in the same arithmetic. At n = 1.585 the
+critical angle is 39.1°, and θ3 reaches it at θ1 ≈ 33.7°: below that the violet end
+**totally internally reflects**. `refract2` returns a zero vector there, and a beam whose
+two ends coincide draws zero area — so the failure mode is a band quietly leaving the
+spectrum, never a wrong ray. 37° keeps 3.3° of margin.
+
+### One source, two readings
+
+`optics1` writes 63 points — the shaft, its ghost, and 61 bands — and two Geometries read
+that one pointset through a **group predicate** (§V471's first idea, structure from
+selection rather than from more nodes). The split is not cosmetic: `shaft1` wants taper 1,
+a parallel-sided ribbon, and `fan1` wants taper 0.06, because 61 beams leaving the same
+face within 0.03 of each other fuse into an opaque wedge at any taper above roughly zero
+(T680).
+
+**The ghost is the part that says "surface."** Not every ray enters the glass. Schlick on
+the same incidence the refraction uses gives the share the entry face sends back — 4.3% at
+37°, rising to 8.3% at 62° — and that share *is* its tint, so the reflected streak
+brightens as the fan narrows, out of one number rather than a second knob.
+
+### Two ways to move the aim, added in the kernel
+
+`swing1(lfo, square) → ease1(valueLag) → value1` is the canonical chain, and the square is
+deliberate: a square through a one-pole smoother **is** an ease. Delete `ease1` and the
+beam snaps between two angles like a shutter instead of swinging.
+
+`mouse1 → follow1(valueLag) → value3` is the pointer, and the kernel computes
+`clamp(value1 + 0.55·value3, 0, 1)`. The addition happens in the kernel and not on a wire
+because a value graph merges channel *bags*, and an LFO's channel and a pointer's `x` have
+no name in common. The pointer only ever **adds**: a pointer that has never moved reads 0,
+so every gate and every fresh session sees the LFO's picture exactly, and dragging right
+lays the beam down and opens the spectrum. Measured, at column 240 after 90 frames: the fan
+sits at y 256…301 with the pointer parked and y 338…391 with it held right — an 86px swing.
+
+`drift1` sways the camera 0.22 either side of 0.45 over 22 seconds, and it is not
+decoration. `envFresnel` reads `dot(N, viewDir)`, so moving the eye moves *which* thread of
+the round-over is at grazing. The rim travels. A static camera over this material is the
+one thing that would make an edge-lit prism look painted.
 
 ## What breaks here first
 
-**The Reorder channel selectors.** Leave `fuse1.outg` at its `in1g` default and every pass
-still runs, the picture is still a refracted scene, and it is the red path three times over
-with *no colour separation anywhere*. That is the failure that looks like success, so the
-concept test follows each output channel back to the resource it actually comes from rather
-than reading the node names.
+**The material model.** The environment term is emitted only on the Blinn-Phong path.
+Make the glass a lambert or an unlit and there is no Fresnel, therefore no rim, therefore
+no glass — and nothing warns you. You get a black triangle.
 
-**Equal weights.** Three refractions at the same strength compile, render, and produce a
-refracted scene with no spectrum in it. The test asserts they are ordered, not merely
-present.
+**The round-over going flat.** Shrink the cap edge from 0.120 to 0.002 and the normal stops
+sweeping through grazing. The picture still renders a triangle; §V640's split falls from
+10.2× to under the gate's floor, which is the only thing that notices.
 
-**The map, silently falling back.** If `color` stopped being mapped, the uniform block
-returns and 2400 identical sprites are drawn. The concept test asserts the *absence* of the
-uniform block, with a control that forces the static colour back and watches the block
-reappear — otherwise the absence could be a property of draw passes in general.
+**The mesh and the optics disagreeing.** `form1` builds the geometry and `optics1` solves
+the optics, and the *only* thing making them agree is that both read one circumradius.
+Nothing in the compiler checks it. Move one and the picture stays entirely plausible — a
+prism, a beam, a spectrum — while the beam either floats beside the glass or drives through
+the middle of it. Both directions are gated, and both were verified by making them happen:
+growing the mesh from 0.76 to 0.95 puts 123 fan pixels inside an 8px erosion of the prism;
+shrinking it to 0.45 moves the shaft's tip 30px off the glass.
 
-**The mapped attribute's name and type.** A vec4f is required for the compound head, and
-the attribute must exist on the incoming pointset. Both refusals are by name (§V288), which
-is the right behaviour and is one to hit while building rather than in the gate.
+**The clamp between the Level and the blur.** Level is a signed pipeline: below
+`blacklevel` it emits negatives, the blur spreads them across the whole frame, and `add`
+then *subtracts* a halo from the picture. On a document this black almost every pixel is
+below the threshold, so without `clip1` the frame goes out entirely. E33 and E34 both
+learned this; a deep-black document is its worst case.
 
-**The lens being a disc.** `softness` past the radius is what makes the Circle a smooth
-dome; a hard disc's gradient is a ring one pixel wide and refracts almost nothing. Slope's
-`strength` is at the manifest's maximum for the same reason — the dome's slope is one unit
-of luminance across 0.6 uv, which is gentle.
+**Judging any of it from a saved linear frame.** §V618: `savePng` in a GPU test writes the
+linear target, about a stop and a half darker than the tile a human sees, and this document
+is 90% black. Every number on this page is measured on the display-encoded frame at the
+project's full 1280×720, with the output space read from the plan.
 
 ## Where the seams still show
 
-Stated rather than hidden, because a showcase is exactly where the temptation is to route
-around a rough edge:
-
-- ~~**A point kernel cannot read the pointer.**~~ Fixed by T367: `PointCtx` now carries
-  `pointer` alongside `index`, `count`, `time`, `delta` and `frameIndex`, and it is the
-  same four numbers the value graph and every fragment shader read (§V182). E9 uses it —
-  the cursor parts the fountain's spray. This file still drives the lens with the mouse
-  rather than the swarm, because `roll1` spins the sprite image about the frame centre
-  after `sparks1` has drawn it, so a swarm gathered at the cursor would be rotated away
-  from it. Pulling on the swarm here wants the roll to move or go.
-- **The expression grammar is arithmetic only.** No `sin`, no `clamp`, no `min`. With `%`
-  you can build a sawtooth and a wrap, and that is the ceiling; anything with a shape wants
-  an LFO node. That is a real v1 boundary, not a gap in this file.
-- ~~**Per-point colour is on `renderPoints`, not `renderInstances`.**~~ Fixed by T369:
-  `renderInstances` takes the same compound-head map, refusing in the same words, and the
-  lighting still runs over the mapped colour — thousands of individually coloured LIT
-  solids. This file stays on additive sprites because dispersion wants light that ADDS;
-  swapping the renderer is now a choice rather than a limit.
-
-- **Nothing can displace a generator's points.** `pointKernel` is a SOURCE — it has no
-  pointset input — so a kernel cannot deform points that came from somewhere else. That is
-  why the pointer-driven displacement is demonstrated on a kernel that makes its own points
-  (E9) rather than on E10's torus generator: `torus1 → kernel → renderInstances` is not a
-  graph anyone can currently draw.
+- **There is no caustic on the base.** The owner's reference has one. We have no
+  refraction, so a caustic here would be light we invented and placed, and §V617 means a
+  beam cannot cast one either — an unlit primitive takes no part in shadowing. The glow
+  under the prism is bloom spilling off the exit face, which is a real thing that happens,
+  and it is all this file claims.
+- **The beams are drawn in a plane 0.05 in front of the front face.** The optics are solved
+  in the cross-section, which does not use the extrusion axis at all, so this is a shift
+  along exactly the direction the physics ignores — but it is a shift, and it is what stops
+  the prism's own solid from swallowing the ends of the shaft and the fan. The alternative
+  was a camera angle at which one of the two refracting faces is always turned away.
+- **The dispersion is about six times life.** Crown glass separates a beam by roughly two
+  degrees over this geometry, which at this scale is a coloured fringe rather than a
+  spectrum. The exaggeration is a document parameter, not a hidden constant.
+- **The spectrum is 61 opaque ribbons, not a continuum.** A scene draw has no additive
+  blend mode, so the bands overlap by depth rather than by light. At the widest aim the
+  overlap is thin enough that a very close look finds the seams; the bloom is what carries
+  them into a continuous band.
+- **~~A point kernel cannot read the pointer.~~** Fixed by T367 — `PointCtx` carries
+  `pointer`. This file still routes the cursor through the value graph rather than reading
+  it in the kernel, because the aim wants smoothing (`follow1`) and a Lag is a value-graph
+  node, not a kernel one.
