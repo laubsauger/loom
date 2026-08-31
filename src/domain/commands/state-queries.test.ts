@@ -96,10 +96,13 @@ describe("each query answers what it claims", () => {
       { severity: "error", code: "b", message: "second" },
       { severity: "error", code: "c", message: "third" },
     ];
-    attachStateSources(harness.bus, { diagnostics: () => published });
+    attachStateSources(harness.bus, { diagnostics: () => ({ diagnostics: published, revision: 7 }) });
 
     const all = await harness.bus.query("diagnostics.get", {}, context());
     expect(all.diagnostics).toHaveLength(3);
+    // T596: the answer is DATED. A caller that just applied revision 8 can see that this
+    // list has not looked at it yet, instead of reading a clean list as approval (§V338).
+    expect(all.revision).toBe(7);
 
     const errors = await harness.bus.query("diagnostics.get", { severity: "error" }, context());
     expect(errors.diagnostics.map((entry) => entry.code)).toEqual(["b", "c"]);

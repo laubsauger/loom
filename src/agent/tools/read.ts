@@ -392,11 +392,12 @@ export const getSelection: AgentTool<
 
 export const getDiagnostics: AgentTool<
   GetDiagnosticsInput,
-  { readonly diagnostics: readonly RuntimeDiagnostic[] }
+  { readonly diagnostics: readonly RuntimeDiagnostic[]; readonly revision: number }
 > = {
   name: "get_diagnostics",
   title: "Get diagnostics",
-  description: "Current compile and runtime diagnostics, newest last.",
+  description:
+    "Current compile and runtime diagnostics, newest last, stamped with the document revision they were derived from. A revision BEHIND your last edit means the list has not seen that edit yet; diagnostics only a rendered frame can produce also wait for a frame (see get_runtime_metrics).",
   kind: "read",
   inputSchema: getDiagnosticsInput,
   requires: { queries: ["diagnostics.get"] },
@@ -405,14 +406,20 @@ export const getDiagnostics: AgentTool<
   // Filtering happens in the query, not here: two implementations of "newest 10 errors"
   // is two answers to one question.
   async run(input, runtime) {
-    const snapshot = await runtime.query<{ readonly diagnostics: readonly RuntimeDiagnostic[] }>(
-      "diagnostics.get",
-      {
-        ...(input.severity === undefined ? {} : { severity: input.severity }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-      },
-    );
-    return ok("get_diagnostics", { diagnostics: [...snapshot.diagnostics] });
+    const snapshot = await runtime.query<{
+      readonly diagnostics: readonly RuntimeDiagnostic[];
+      readonly revision: number;
+    }>("diagnostics.get", {
+      ...(input.severity === undefined ? {} : { severity: input.severity }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    });
+    // T596: the revision travels with the list. Without it a caller cannot tell a clean
+    // answer from an answer taken before its own edit was looked at, and two sessions
+    // have now read the second as the first.
+    return ok("get_diagnostics", {
+      diagnostics: [...snapshot.diagnostics],
+      revision: snapshot.revision,
+    });
   },
 };
 

@@ -739,7 +739,13 @@ export function App({
   ]);
 
   const errorCount = problems.filter((diagnostic) => diagnostic.severity === "error").length;
-  const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
+  const agentSurface = useAgentSurface(
+    runtime,
+    // T596: the revision the COMPILE half of `problems` was derived from, so a reader can
+    // tell "clean at your edit" from "not looked at your edit yet" (§V338).
+    { selection, diagnostics: problems, diagnosticsRevision: compile.graph.revision },
+    agentPorts,
+  );
   // T397/§V338: publishing the surface to a transport AND reporting what that publication
   // found. The row this produces is the app's only answer to "is an agent attached?".
   const mcpTransports = useMcpTransports(agentSurface);

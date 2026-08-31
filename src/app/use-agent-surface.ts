@@ -4,7 +4,7 @@ import type { AgentPorts, AgentRuntimeMetrics, AgentToolSurface } from "@agent/i
 import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
-import type { NodeId } from "@domain/types/ids.ts";
+import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -54,6 +54,15 @@ export interface AgentSurfaceState {
   readonly selection: readonly NodeId[];
   /** Everything the problems surface shows: compile, runtime, autosave, project (§I.diag). */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /**
+   * The document revision the COMPILE-derived diagnostics above were produced from (T596).
+   *
+   * Not `store.getRevision()`, and the difference is the whole point: the store's revision
+   * is what the document is at NOW, so stamping the answer with it would make every list
+   * look current — including one taken before the compile that would have found the
+   * problem. This is the revision the list actually saw.
+   */
+  readonly diagnosticsRevision: Revision;
 }
 
 export function useAgentSurface(
@@ -67,7 +76,10 @@ export function useAgentSurface(
   useEffect(() => {
     attachStateSources(runtime.bus, {
       selection: () => ({ nodeIds: [...stateRef.current.selection], edgeIds: [] }),
-      diagnostics: () => stateRef.current.diagnostics,
+      diagnostics: () => ({
+        diagnostics: stateRef.current.diagnostics,
+        revision: stateRef.current.diagnosticsRevision,
+      }),
       metrics: (): AgentRuntimeMetrics => {
         // §V16: sampled from the hub on demand. Nothing is pushed, and no per-frame data
         // enters the document store on the way.

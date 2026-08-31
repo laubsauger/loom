@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import { MAX_RETAINED_DIAGNOSTICS, retainDiagnostic } from "./diagnostic-buffer.ts";
 
 /**
  * The way back from a halted device (T98, §V23).
@@ -17,8 +18,15 @@ import type { ShaderloomBackend } from "@runtime/backend/index.ts";
  * almost never happens, and the halt already announces itself.
  */
 
-/** Bound on retained backend diagnostics. The backend already dedupes upstream (T99). */
-const MAX_DIAGNOSTICS = 50;
+/**
+ * Bound on retained backend diagnostics.
+ *
+ * T596: the hub dedupes a repeat inside a ONE-SECOND window and then re-emits the
+ * condition with a running count, so "already deduped upstream" bounds the RATE and not
+ * the total — a warning that stays true costs one entry per second here. `retainDiagnostic`
+ * is what keeps that to one SLOT, so this bound counts distinct conditions.
+ */
+const MAX_DIAGNOSTICS = MAX_RETAINED_DIAGNOSTICS;
 
 export interface GpuRecovery {
   /** True while the backend is refusing to submit work. */
@@ -48,7 +56,7 @@ export function useGpuRecovery(backend: ShaderloomBackend | null | undefined): G
     }
     setHalted(backend.status.halted);
     return backend.onDiagnostic((diagnostic) => {
-      setDiagnostics((current) => [...current, diagnostic].slice(-MAX_DIAGNOSTICS));
+      setDiagnostics((current) => retainDiagnostic(current, diagnostic, MAX_DIAGNOSTICS));
       // Every transition into and out of the halted state is accompanied by a report,
       // so reading status here is enough — and it is the backend's own answer, not a
       // guess derived from the diagnostic's code.
@@ -64,14 +72,15 @@ export function useGpuRecovery(backend: ShaderloomBackend | null | undefined): G
       .recover()
       .catch((error: unknown) => {
         setDiagnostics((current) =>
-          [
-            ...current,
+          retainDiagnostic(
+            current,
             {
               severity: "error" as const,
               code: "backend/recover-failed",
               message: `The recovery attempt threw: ${error instanceof Error ? error.message : String(error)}`,
             },
-          ].slice(-MAX_DIAGNOSTICS),
+            MAX_DIAGNOSTICS,
+          ),
         );
       })
       .finally(() => {

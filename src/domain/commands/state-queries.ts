@@ -56,8 +56,35 @@ export interface DiagnosticsQueryInput {
   limit?: number;
 }
 
+/**
+ * What the diagnostics source publishes: the list, and WHEN it was derived (T596).
+ *
+ * `diagnostics` alone cannot answer "does this reflect my last edit?", and an agent that
+ * cannot ask reads a clean list as approval. The measured behaviour is that everything a
+ * command's own compile produces is visible on the very next read — 15 of 15 in the live
+ * app, back to back, no delay — while the diagnostics only a RENDERED FRAME can produce
+ * (`animation/structuralDrift`, `backend/*`) arrive when a frame arrives, which in a
+ * hidden or occluded tab is up to a second later (§V434). Both are correct; neither is
+ * distinguishable from a stale answer without a date on it. §V338: a report has to name
+ * what it is a report OF.
+ */
+export interface DiagnosticsReport {
+  readonly diagnostics: readonly RuntimeDiagnostic[];
+  /** The document revision the compile-derived half was produced from. */
+  readonly revision: Revision;
+}
+
 export interface DiagnosticsSnapshot {
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /**
+   * The document revision these were derived from (T596).
+   *
+   * Compare it with the revision your last command returned. EQUAL means the list has
+   * seen your edit. BEHIND means it has not yet, and nothing in it is about your edit —
+   * read again rather than concluding. Frame-produced diagnostics are a separate wait:
+   * `runtime.metrics` reports whether frames are running at all.
+   */
+  readonly revision: Revision;
 }
 
 /**
@@ -101,7 +128,8 @@ export interface ProjectSnapshot {
  */
 export interface StateSources {
   selection?: () => SelectionSnapshot;
-  diagnostics?: () => readonly RuntimeDiagnostic[];
+  /** T596: the list AND the revision it was derived from — see `DiagnosticsReport`. */
+  diagnostics?: () => DiagnosticsReport;
   metrics?: () => RuntimeMetricsSnapshot;
   /** Everything about the open project except its graph, which the store already has. */
   project?: () => Omit<ProjectDocument, "graph">;
@@ -155,14 +183,18 @@ export function attachStateSources(bus: ShaderloomBus, sources: StateSources): v
     bus.registerQuery({
       name: "diagnostics.get",
       description: "Current compile and runtime diagnostics, newest last.",
-      handler: (input): DiagnosticsSnapshot => {
+      handler: (input, context): DiagnosticsSnapshot => {
         const read = holder.sources.diagnostics;
-        const all = read === undefined ? [] : [...read()];
+        // No source is unreachable (the query is registered only once one is attached),
+        // but the store's revision is the honest stand-in rather than a fabricated 0.
+        const report = read === undefined ? { diagnostics: [], revision: context.graph.revision } : read();
+        const all = [...report.diagnostics];
         const bySeverity =
           input.severity === undefined ? all : all.filter((entry) => entry.severity === input.severity);
         const limit = input.limit;
         return {
           diagnostics: limit === undefined ? bySeverity : bySeverity.slice(-Math.max(0, limit)),
+          revision: report.revision,
         };
       },
     });

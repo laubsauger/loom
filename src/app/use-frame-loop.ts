@@ -12,6 +12,7 @@ import { createFrameDriver, createPointerSource } from "@runtime/execution/index
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { createUniformAnimator } from "./animate-parameters.ts";
+import { MAX_RETAINED_DIAGNOSTICS, retainDiagnostic } from "./diagnostic-buffer.ts";
 import { registerTransportCommands, transportHolderFor } from "./transport-commands.ts";
 
 /**
@@ -29,7 +30,8 @@ import { registerTransportCommands, transportHolderFor } from "./transport-comma
  * broken, and a stale render is exactly what §V9 asks for over a broken one.
  */
 
-const MAX_DIAGNOSTICS = 50;
+/** T596: distinct CONDITIONS, not reports — `retainDiagnostic` collapses repeats. */
+const MAX_DIAGNOSTICS = MAX_RETAINED_DIAGNOSTICS;
 
 // The timeline rate now comes from the document (§V177, T272) via `projectFps`, which
 // applies the default in one place. What it must NOT become is two numbers: the clock and
@@ -278,8 +280,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     if (written !== null || driftRef.current) return;
     driftRef.current = true;
     setDiagnostics((current) =>
-      [
-        ...current,
+      retainDiagnostic(
+        current,
         {
           severity: "warning" as const,
           code: "animation/structuralDrift",
@@ -287,7 +289,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
           suggestion:
             "Only values may animate (§V5). A parameter that changes a resolution, a format or a shader interface needs a recompile, which the frame loop will not do.",
         },
-      ].slice(-MAX_DIAGNOSTICS),
+        MAX_DIAGNOSTICS,
+      ),
     );
   }, [backend]);
 
@@ -567,8 +570,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       .catch((error: unknown) => {
         if (generation !== generationRef.current) return;
         setDiagnostics((current) =>
-          [
-            ...current,
+          retainDiagnostic(
+            current,
             {
               severity: "error" as const,
               code: "backend/compile-failed",
@@ -576,7 +579,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
                 error instanceof Error ? error.message : String(error)
               }`,
             },
-          ].slice(-MAX_DIAGNOSTICS),
+            MAX_DIAGNOSTICS,
+          ),
         );
       });
     // `bus` deliberately excluded: it is only dereferenced inside the `.then`, and
