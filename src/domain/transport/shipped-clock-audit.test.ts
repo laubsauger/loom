@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { listExamples } from "../../examples/catalogue.ts";
+import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { requireExample } from "../../examples/runner.ts";
 import { CUSTOM_WGSL_DEFAULT_SOURCE } from "../../nodes/shaders/custom-wgsl-default.wgsl.ts";
 import { NOISE_FRAGMENT_WGSL } from "../../nodes/shaders/noise.wgsl.ts";
@@ -234,11 +235,23 @@ const DECLARED: Readonly<
   },
   "src/nodes/definitions/point-kernel-advanced.ts": {
     kind: "names-the-contrast",
-    reads: 1,
+    reads: 2,
     reason:
-      "The `kernel` parameter's DESCRIPTION, which teaches the distinction: it offers " +
-      "ctx.absTime/ctx.absFrame as 'the clock that keeps growing across a timeline loop, " +
-      "where ctx.time wraps'. Naming the wrapping clock is the whole value of the sentence.",
+      "The `kernel` parameter's DESCRIPTION, which teaches the distinction. T587 turned it " +
+      "round: it now LEADS with ctx.absTime/ctx.absFrame and names ctx.time and " +
+      "ctx.frameIndex second, as the timeline readings that reset at every lap — two reads " +
+      "where there was one, because the sentence that steers people off a clock has to say " +
+      "which clock. Reachability was never the problem; `time` being the obvious name was.",
+  },
+  "src/nodes/definitions/points.ts": {
+    kind: "names-the-contrast",
+    reads: 2,
+    reason:
+      "T587, the same sentence on the basic Point Kernel. It used to list the ctx members " +
+      "flatly — 'index, count, time, delta, frameIndex' — with the absolute pair mentioned " +
+      "last as an extra, which is exactly the shape that made `ctx.time` the obvious choice " +
+      "and the wrong one. It now leads with ctx.absTime/ctx.absFrame and names ctx.time and " +
+      "ctx.frameIndex as the special case, with the declaration that silences the notice.",
   },
   "src/points/codegen.ts": {
     kind: "timeline-anchored",
@@ -484,4 +497,109 @@ describe("T497 — the sites T497 moved are, and stay, on the absolute clock", (
       expect(shader).not.toContain("absFrameIndex");
     });
   }
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T587 — REACHABILITY IS NOT DISCOVERABILITY. What the catalogue TEACHES about clocks.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * T489 made the absolute clock reachable and T497 got the shipped code onto it. Both left
+ * `time` as the OBVIOUS name, and the owner watched an agent prove it: it wrote `ctx.time`,
+ * the picture snapped at the lap, and the text it had read to get there — the kernel
+ * parameter's description — had listed `time` first and the absolute pair last, as an extra.
+ *
+ * So this is the third gate over the same property, one layer up again: not what the shipped
+ * surface READS (above) but what it TELLS you to read. §V424's lesson is the reason it can
+ * exist at all — for an agent the schema IS the documentation, and a description is a
+ * published contract that no validator checks.
+ *
+ * ## Why it is derived from the REGISTRY, and why it asserts ORDER
+ *
+ * §V453's shape: the enumeration comes from `allNodeDefinitions`, so node type N+1 whose
+ * description names the wrapping clock fails until its author writes the contrast in. A
+ * hand list would have covered the two kernel nodes and nothing after them.
+ *
+ * ORDER, not mere presence, because §V461: "the description mentions absTime" passes on the
+ * description that put it last, which is the exact text that failed the owner. A string that
+ * names the wrapping clock must name the absolute one FIRST — the framing is the fix.
+ */
+describe("T587 — every rendered string that names the wrapping clock leads with the absolute one", () => {
+  /** A member ACCESS, the same anchoring `WRAPPING_ACCESS` uses and for the same reason. */
+  const WRAPPING_IN_PROSE = /\b(?:ctx|frameU)\.(?:time|frameIndex)\b/;
+  const ABSOLUTE_IN_PROSE = /\b(?:ctx|frameU)\.(?:absTime|absFrame)\b/;
+
+  /** Every string the catalogue RENDERS: node descriptions, parameter labels and descriptions. */
+  function renderedStrings(): { where: string; text: string }[] {
+    const out: { where: string; text: string }[] = [];
+    for (const definition of allNodeDefinitions) {
+      out.push({ where: `${definition.type}.description`, text: definition.description ?? "" });
+      for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
+        const schema = parameter as { label?: unknown; description?: unknown };
+        if (typeof schema.label === "string") out.push({ where: `${definition.type}.${key}.label`, text: schema.label });
+        if (typeof schema.description === "string") {
+          out.push({ where: `${definition.type}.${key}.description`, text: schema.description });
+        }
+      }
+    }
+    return out;
+  }
+
+  const teaching = renderedStrings().filter((entry) => WRAPPING_IN_PROSE.test(entry.text));
+
+  it("the scan reaches the strings it polices, and they are the kernel descriptions", () => {
+    // §V461/§V452: a matcher that quietly matches nothing is a green test checking nothing,
+    // and this one would then pass for ever while every description drifted back.
+    expect(renderedStrings().length).toBeGreaterThan(200);
+    expect(teaching.map((entry) => entry.where).sort()).toEqual([
+      "pointKernel.kernel.description",
+      "pointKernelAdvanced.kernel.description",
+    ]);
+  });
+
+  it("the matcher can tell a leading mention from a trailing one", () => {
+    // The fixture has to be CAPABLE of failing the thing it asserts (§V461). Both probes
+    // name both clocks; only the ORDER differs, which is the whole claim.
+    const leads = "ctx.absTime keeps counting; ctx.time restarts at the lap.";
+    const trails = "ctx carries index, count, time, delta — and ctx.time, plus ctx.absTime.";
+    const indexes = (text: string) => [text.search(ABSOLUTE_IN_PROSE), text.search(WRAPPING_IN_PROSE)];
+    expect(WRAPPING_IN_PROSE.test(leads) && WRAPPING_IN_PROSE.test(trails)).toBe(true);
+    const [absLeads, wrapLeads] = indexes(leads) as [number, number];
+    const [absTrails, wrapTrails] = indexes(trails) as [number, number];
+    expect(absLeads).toBeLessThan(wrapLeads);
+    expect(absTrails).toBeGreaterThan(wrapTrails);
+  });
+
+  for (const entry of teaching) {
+    it(`${entry.where} names the absolute pair, and names it first`, () => {
+      const absolute = entry.text.search(ABSOLUTE_IN_PROSE);
+      const wrapping = entry.text.search(WRAPPING_IN_PROSE);
+      expect(
+        absolute,
+        `${entry.where} names the clock that wraps and never names the one that does not. ` +
+          "A person or an agent reading this writes ctx.time and watches the picture snap at " +
+          "the lap (T489/T587).",
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        absolute,
+        `${entry.where} mentions the absolute clock only AFTER the wrapping one. Leading with ` +
+          "`time` is what made it the obvious choice; the absolute pair goes first and the " +
+          "wrapping clock is named as the special case (§V461: presence alone passes on the " +
+          "text that failed the owner).",
+      ).toBeLessThan(wrapping);
+    });
+  }
+
+  /**
+   * The declaration the diagnostic looks for has to be REACHABLE from the text, or it is a
+   * secret handshake: codegen silences the notice on the word "timeline-anchored", so the
+   * description that provokes the notice is where the word has to be offered (§V338/§V464).
+   */
+  it("the kernel descriptions say how to declare a deliberately timeline-anchored kernel", () => {
+    for (const entry of teaching) {
+      expect(entry.text.toLowerCase(), `${entry.where} names no way out of the notice`).toContain(
+        "timeline-anchored",
+      );
+    }
+  });
 });

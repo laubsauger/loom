@@ -27,7 +27,22 @@ export interface SharedUniformValues extends Record<string, unknown> {
    * wall reading: a frame count at the timeline's rate, deterministic under replay.
    */
   absTime: number;
-  /** The frame count behind `absTime`, as f32 (the block is f32 throughout). */
+  /**
+   * The frame count behind `absTime`, as f32 (the block is f32 throughout, matching the
+   * `frameIndex` above it).
+   *
+   * B119 — THE ASYMMETRY, stated on both sides rather than resolved. A POINT KERNEL's
+   * `ctx.absFrame` is `u32`, because a kernel's `PointCtx` carries `frameIndex` as u32 and
+   * a member that disagreed with its own neighbour would be the odd one out there. So the
+   * same name is f32 here and u32 there, each locally right and mutually inconsistent, and
+   * identical-looking arithmetic compiles in one and fails in the other with Dawn's "no
+   * matching overload" — which names nothing. It is NOT unified because unifying means
+   * changing a struct member's TYPE: every saved project doing integer work on
+   * `ctx.absFrame` would stop compiling, and the kernel's u32 would then be the member that
+   * disagrees with its neighbour instead. The counterpart note is at the kernel's own
+   * declaration in `src/points/codegen.ts`, in the comment the generated WGSL carries.
+   * `absTime` is f32 on both sides and always has been.
+   */
   absFrame: number;
   resolution: readonly [number, number];
   /** x, y, buttons, unused. Packed as vec4f so the block stays 16-byte aligned. */

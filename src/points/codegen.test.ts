@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
+import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
 
 import {
   ATTRIBUTE_STRIDES,
@@ -651,3 +655,182 @@ describe("ctx.firstRun (T510, §V309)", () => {
   });
 });
 
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T587 — the TEACHING NOTICE: codegen names the wrapping clock before Dawn has to.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * §V288's move — refuse BY NAME rather than let the device answer — applied at the one
+ * severity below a refusal, because `ctx.time` is not an error. It is the right clock for a
+ * timeline-anchored kernel (§V436) and the wrong one for everything else, and until now
+ * nothing anywhere said which was which. The notice fires on the undeclared kernel and is
+ * silent on the declared one; that pair is the whole property, and neither half means
+ * anything without the other.
+ */
+describe("T587 — the wrapping clock is named, not left to bite", () => {
+  const base = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position"],
+  };
+  const kernelOf = (body: string) =>
+    `fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n${body}\n  return q;\n}`;
+  const noticesOf = (request: Parameters<typeof generateKernelModule>[0]) => {
+    const module = generateKernelModule(request);
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    return module.notices;
+  };
+
+  it("fires on an UNDECLARED kernel that reads ctx.time, and names the alternative", () => {
+    const notices = noticesOf({ ...base, kernel: kernelOf("  q.position.x = sin(ctx.time);") });
+    expect(notices).toHaveLength(1);
+    const notice = notices[0] as { code: string; message: string; suggestion: string };
+    expect(notice.code).toBe("node.points.clock");
+    // Both halves of §V338: what it does, and what makes it go away.
+    expect(notice.message).toContain("ctx.time");
+    expect(notice.message).toContain("ctx.absTime");
+    expect(notice.suggestion).toContain("ctx.absTime");
+    expect(notice.suggestion).toContain("timeline-anchored");
+  });
+
+  it("stays SILENT on a kernel that declares itself timeline-anchored (§V453/§V464)", () => {
+    // Same read, same everything, one comment different. If this ever passed for a reason
+    // other than the declaration, the test above would be a blanket ban on ctx.time — which
+    // would be a lie about the API, since a Timer-shaped kernel is meant to wrap (§V436).
+    const declared = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  // timeline-anchored: this sweep IS the position in the piece, so it must reset at the lap.
+  q.position.x = sin(ctx.time);
+  return q;
+}`;
+    expect(noticesOf({ ...base, kernel: declared })).toEqual([]);
+  });
+
+  it("stays silent on a kernel already on the absolute clock, and on one with no clock", () => {
+    expect(noticesOf({ ...base, kernel: kernelOf("  q.position.x = sin(ctx.absTime);") })).toEqual([]);
+    expect(noticesOf({ ...base, kernel: kernelOf("  q.position += q.velocity * ctx.delta;") })).toEqual([]);
+  });
+
+  it("reads CODE, not commentary (§V443) — an explanation naming the other clock is not a read", () => {
+    // Every kernel T497 fixed carries a comment saying "ctx.absTime, not ctx.time". A scan
+    // that counted those would fire on the fifteen kernels that got this right, which is the
+    // fastest possible way to teach people to ignore it.
+    const explained = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* FREE-RUNNING (§V436): ctx.absTime, not ctx.time — the wind does not restart. */
+  q.position.x = sin(ctx.absTime);
+  return q;
+}`;
+    expect(noticesOf({ ...base, kernel: explained })).toEqual([]);
+  });
+
+  it("covers ctx.frameIndex too, and carries B119's type note where it is needed", () => {
+    const notices = noticesOf({ ...base, kernel: kernelOf("  q.position.x = f32(ctx.frameIndex) * 0.01;") });
+    expect(notices).toHaveLength(1);
+    const notice = notices[0] as { message: string; suggestion: string };
+    expect(notice.message).toContain("ctx.frameIndex");
+    expect(notice.message).toContain("ctx.absFrame");
+    // The reader has just been sent to a member whose type differs from the shader's.
+    expect(notice.suggestion).toContain("u32");
+  });
+
+  it("scans the GROUP predicate, which compiles against the same ctx", () => {
+    const notices = noticesOf({
+      ...base,
+      kernel: kernelOf("  q.position += q.velocity * ctx.delta;"),
+      group: "ctx.time > 1.0",
+    });
+    expect(notices).toHaveLength(1);
+  });
+
+  it("scans the SPAWN HOOK, where a phase off the wrapping clock repeats every lap", () => {
+    const hook = `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  q.position.x = sin(ctx.time);
+  return q;
+}`;
+    const module = generateSpawnHookModule({ attributes: SCHEMA, flagsAttribute: "id", hook });
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.notices).toHaveLength(1);
+    expect((module.notices[0] as { message: string }).message).toContain("spawn hook");
+  });
+
+  it("a notice is not a refusal — the module still compiles and still generates its pass", () => {
+    const module = generateKernelModule({ ...base, kernel: kernelOf("  q.position.x = sin(ctx.time);") });
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.wgsl).toContain("fn main");
+    expect(module.notices).toHaveLength(1);
+  });
+
+  /**
+   * §V309, the notice's half of it: an advisory must not change a byte of the generated
+   * text. A kernel that provokes the notice and one that does not differ only in the clock
+   * they name, so the block they get is the same block.
+   */
+  it("emits byte-identical WGSL whether or not it carries a notice (§V309)", () => {
+    const noticed = kernelOf("  q.position.x = ctx.time;");
+    const declared = kernelOf("  // timeline-anchored: deliberate.\n  q.position.x = ctx.time;");
+    const wrapping = generateKernelModule({ ...base, kernel: noticed });
+    const anchored = generateKernelModule({ ...base, kernel: declared });
+    if (!wrapping.ok || !anchored.ok) throw new Error("both should compile");
+    expect(wrapping.notices).toHaveLength(1);
+    expect(anchored.notices).toEqual([]);
+    // The user's own text is the only difference; every generated byte around it — the
+    // KernelFrame block, the ctx construction, the bindings — is the same block.
+    expect(wrapping.wgsl.replace(noticed, "<kernel>")).toBe(anchored.wgsl.replace(declared, "<kernel>"));
+  });
+});
+
+/**
+ * B119 — `absFrame` is u32 in a kernel and f32 in a shader, and it STAYS that way.
+ *
+ * Not unified, and the reason is a measurement rather than a taste: unifying means changing
+ * a struct member's TYPE, which breaks every saved project doing integer work on
+ * `ctx.absFrame`, and it would then be the member disagreeing with the `frameIndex` beside
+ * it. Each side is right about its own neighbours; they are wrong about each other, and
+ * Dawn's answer to the mismatch ("no matching overload") names nothing.
+ *
+ * So the gate is the one a documented asymmetry earns: BOTH types are pinned, so changing
+ * either alone reddens here, and BOTH declarations carry the reason where the reader is —
+ * for the kernel that is the comment the generated WGSL itself carries.
+ */
+describe("B119 — the absFrame asymmetry is pinned and stated at both sites", () => {
+  const module = generateKernelModule({
+    attributes: SCHEMA,
+    reads: ["position", "id"],
+    writes: ["position"],
+    kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position.x = f32(ctx.absFrame);\n  return q;\n}",
+  });
+
+  it("a point kernel's ctx.absFrame is u32, matching the frameIndex beside it", () => {
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.wgsl).toContain("absFrame: u32,");
+    expect(module.wgsl).toContain("frameIndex: u32,");
+  });
+
+  it("a shader's frameU.absFrame is f32, matching the block it lives in", () => {
+    expect(SHARED_UNIFORMS_WGSL).toContain("absFrame: f32,");
+    expect(SHARED_UNIFORMS_WGSL).toContain("frameIndex: f32,");
+    // absTime is the same type on both sides and always was — the report that it "isn't
+    // f32" was wrong, and pinning it here stops the wrong repair being made to the wrong
+    // member next time someone reads the bug and not the code.
+    expect(SHARED_UNIFORMS_WGSL).toContain("absTime: f32,");
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.wgsl).toContain("absTime: f32,");
+  });
+
+  it("the generated kernel SAYS so, where the person writing the kernel reads", () => {
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    // The declaration site the kernel author can actually see. A pinned type with no
+    // explanation is the asymmetry preserved and nothing learned.
+    expect(module.wgsl).toContain("B119");
+    expect(module.wgsl).toContain("no matching overload");
+  });
+
+  it("and the shader side says so too, at its own declaration", () => {
+    const source = readFileSync(new URL("../runtime/backend/shared-uniforms.ts", import.meta.url), "utf8");
+    expect(source).toContain("B119");
+    expect(source).toContain("ctx.absFrame");
+  });
+});

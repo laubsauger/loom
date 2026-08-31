@@ -1,3 +1,4 @@
+import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
@@ -12,6 +13,7 @@ import {
   generateKernelModule,
   kernelReadsValueSlot,
   pointKernelValueKey,
+  type KernelNotice,
 } from "../../points/codegen.ts";
 import { parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
@@ -179,6 +181,30 @@ export function pointKernelValueUniforms(
   );
 }
 
+/**
+ * T587: a generated module's advisories, as diagnostics on the node that emitted it.
+ *
+ * SEVERITY IS `info`, and the reasoning lives at `wrappingClockNotice` in codegen where the
+ * notice is built. The mapping is here rather than there because codegen is a pure WGSL
+ * unit with no opinion about the diagnostic bus — and it is ONE function rather than two so
+ * the basic and the advanced kernel cannot come to disagree about how loud this is.
+ *
+ * Every point node that generates a module calls this, so a module gaining a second kind of
+ * notice reaches both nodes at once.
+ */
+export function pointKernelNoticeDiagnostics(
+  nodeId: string,
+  notices: ReadonlyArray<KernelNotice>,
+): RuntimeDiagnostic[] {
+  return notices.map((notice) => ({
+    severity: "info" as const,
+    code: notice.code,
+    message: `Node "${nodeId}": ${notice.message}`,
+    nodeId,
+    suggestion: notice.suggestion,
+  }));
+}
+
 export const pointKernelNode: NodeDefinition = {
   type: "pointKernel",
   version: 1,
@@ -257,7 +283,7 @@ export const pointKernelNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. ctx carries index, count, time, delta, frameIndex — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472), value1..value4 (this node's drivable Value parameters, T479) and absTime/absFrame (the clock that keeps growing across a timeline loop, where time and frameIndex wrap — T489) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
+        "fn process(p: Point, ctx: PointCtx) -> Point. Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point (a sweep, a scrubbed envelope), and write \"timeline-anchored\" in a comment when you do. ctx also carries index, count and delta — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
     },
     group: {
       type: "code",
@@ -440,6 +466,12 @@ export const pointKernelNode: NodeDefinition = {
 
     return {
       passes: [pass],
+      // T587: the module compiled, and had something to say about the clock it reads.
+      // Carried on a SUCCESSFUL compile on purpose — this is advice, not a refusal, and a
+      // kernel that means to read the wrapping clock keeps running while it is shown.
+      ...(module.notices.length === 0
+        ? {}
+        : { diagnostics: pointKernelNoticeDiagnostics(nodeId, module.notices) }),
       // Structural declaration for the compiler's scratch handler once it learns
       // bufferPair entries (see module doc). Shape mirrors pointKernelResources().
       scratch: pointKernelResources(nodeId, attributes, capacity).map((resource) => ({

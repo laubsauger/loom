@@ -52,6 +52,9 @@ struct Params {
 // Filled by the runtime from FrameEvaluationInput every frame: time, deltaTime,
 // frameIndex, randomSeed, wallTime, wallDelta, absTime, absFrame, resolution, pointer.
 // time laps with the timeline; absTime keeps growing (T461/T468). No other clock here.
+// Every member of this block is f32, absFrame included. A POINT KERNEL's ctx.absFrame is
+// u32 instead (it matches the frameIndex beside it there), so arithmetic moved between a
+// shader and a kernel needs the conversion, not a paste (B119).
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 // This node's own parameters, updated when you change them on the node.
 @group(0) @binding(3) var<uniform> params: Params;

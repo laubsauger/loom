@@ -17,7 +17,13 @@ import {
 import { DEFAULT_POINT_KERNEL } from "../shaders/points.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { parseAttributes, pointKernelValueParameters, pointKernelValueUniforms, pointPairId } from "./points.ts";
+import {
+  parseAttributes,
+  pointKernelNoticeDiagnostics,
+  pointKernelValueParameters,
+  pointKernelValueUniforms,
+  pointPairId,
+} from "./points.ts";
 
 /**
  * The ADVANCED kernel (T322/T323): a per-point kernel that may CHANGE COUNTS — the
@@ -98,7 +104,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). ctx.pointer (vec4f: x, y, buttons), ctx.value1..value4 (this node's drivable Value parameters, T479) and ctx.absTime/ctx.absFrame (the clock that keeps growing across a timeline loop, where ctx.time wraps — T489) are available to a kernel that names them. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point, and write \"timeline-anchored\" in a comment when you do. ctx.pointer (vec4f: x, y, buttons) and ctx.value1..value4 (this node's drivable Value parameters, T479) are available to a kernel that names them. pointRand(pointId, salt) is available.",
     },
     group: {
       type: "code",
@@ -403,9 +409,15 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       { kind: "buffer", key: "spawnBlockSums", stride: 4, capacity: blockCount(capacity) },
     ];
 
+    // T587: the kernel's notices AND the spawn hook's, on one node. The hook is scanned
+    // separately because it is separate text with its own declaration — a kernel that
+    // declared itself timeline-anchored does not excuse the hook beside it (§V464(c)).
+    const notices = [...module.notices, ...(hookModule?.ok === true ? hookModule.notices : [])];
+
     return {
       passes,
       scratch,
+      ...(notices.length === 0 ? {} : { diagnostics: pointKernelNoticeDiagnostics(nodeId, notices) }),
       pointsets: {
         out: {
           // Consumers bind READ halves: that is where scatter left this frame's

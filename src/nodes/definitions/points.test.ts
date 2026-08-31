@@ -536,3 +536,49 @@ describe("the draw-time group (T333)", () => {
     expect(pass.shader).not.toContain("GroupPoint");
   });
 });
+
+/**
+ * T587 — the seam codegen's own tests cannot reach: a notice becomes an `info` diagnostic
+ * on a node whose compile SUCCEEDED, and travels with the passes rather than instead of
+ * them. Severity is asserted, not assumed: an `error` here would refuse a legitimate
+ * timeline-anchored kernel and a missing entry would be silence, which is the state T587
+ * exists to end.
+ */
+describe("T587 — a point kernel on the wrapping clock says so, without refusing", () => {
+  const compileWith = (kernel: string) =>
+    pointKernelNode.compile(compileContext({ nodeId: "sim", outputs: [], parameters: { kernel } }));
+
+  const WRAPPING = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position.x = sin(ctx.time);
+  return q;
+}`;
+
+  it("emits ONE info diagnostic and still emits its dispatch", () => {
+    const result = compileWith(WRAPPING);
+    expect(result.passes).toHaveLength(1);
+    const diagnostics = result.diagnostics ?? [];
+    expect(diagnostics).toHaveLength(1);
+    const diagnostic = diagnostics[0] as { severity: string; code: string; message: string; nodeId?: string };
+    expect(diagnostic.severity).toBe("info");
+    expect(diagnostic.code).toBe("node.points.clock");
+    // Attributed to the node, so the problems panel can jump to it (T465).
+    expect(diagnostic.nodeId).toBe("sim");
+    expect(diagnostic.message).toContain('Node "sim"');
+  });
+
+  it("says nothing at all when the kernel declares itself timeline-anchored", () => {
+    const declared = WRAPPING.replace(
+      "  var q = p;",
+      "  var q = p;\n  // timeline-anchored: the sweep IS the position in the piece.",
+    );
+    expect(compileWith(declared).diagnostics ?? []).toEqual([]);
+    expect(compileWith(declared).passes).toHaveLength(1);
+  });
+
+  it("the DEFAULT kernel every new node ships with provokes nothing", () => {
+    // If it did, the notice would greet every user on every fresh node and become noise
+    // before it ever taught anyone anything.
+    expect(pointKernelNode.compile(compileContext({ nodeId: "sim", outputs: [] })).diagnostics ?? []).toEqual([]);
+  });
+});

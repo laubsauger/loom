@@ -181,6 +181,12 @@ export interface KernelModule {
    * by name, and a declared texture with no binding fails loudly at pass build.
    */
   readonly usesField: boolean;
+  /**
+   * T587: advisories the emitting node turns into `info` diagnostics. NOT refusals — a
+   * module carrying notices is a module that compiled. Today there is one: the kernel
+   * reads the clock that wraps and has not declared itself timeline-anchored.
+   */
+  readonly notices: ReadonlyArray<KernelNotice>;
 }
 
 export interface KernelModuleFailure {
@@ -262,6 +268,113 @@ const DIM_REFERENCE = /\.\s*dim\b/;
  * and a render zeroes it first (T467), so the same project renders the same bytes.
  */
 const ABS_CLOCK_REFERENCE = /\.\s*(?:absTime|absFrame)\b/;
+
+/**
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ * T587 — REACHABILITY IS NOT DISCOVERABILITY. The wrapping clock, named BY US.
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ *
+ * T489 made the absolute pair above REACHABLE from every kernel and T497 got the shipped
+ * surface onto it. Neither changed the fact that `time` is the OBVIOUS name and the wrong
+ * one for anything that has to survive a lap: an author (or an agent) writes `ctx.time`,
+ * the picture snaps at the out point, and nothing anywhere says why. An API whose default
+ * is the trap has not been fixed, only made survivable.
+ *
+ * So codegen answers first, the way it already answers `fieldAt` with nothing wired and
+ * `ctx.value9` (§V288): BY NAME, saying what the read does and what the alternative is.
+ * The difference from those two is SEVERITY, and it is a decision rather than an oversight
+ * — see `wrappingClockNotice`.
+ *
+ * The pairing lives here and nowhere else, so `time`→`absTime` cannot come to mean two
+ * things. Written as a member NAME rather than an access (`ctx.` + name) on purpose: the
+ * repo-wide clock audit counts `.time` occurrences in this file and a literal in a message
+ * would inflate a count that is load-bearing (§V464(c), T582's freshness inference).
+ */
+const WRAPPING_CLOCK_REFERENCE = /\.\s*(time|frameIndex)\b/g;
+
+const ABSOLUTE_COUNTERPART: Readonly<Record<string, string>> = {
+  time: "absTime",
+  frameIndex: "absFrame",
+};
+
+/**
+ * §V453/§V464 one layer down, in the only text a USER'S kernel has: the kernel itself.
+ *
+ * A shipped node declares its clock in its description and the audit's table; a kernel
+ * typed into a document has neither, so the declaration is the word in a comment — the
+ * same word, in the artifact the person reads, which is §V464's rule. A Timer-shaped
+ * kernel says `// timeline-anchored: the sweep IS the position in the piece` and the
+ * notice stops; nothing else stops it, and there is deliberately no dismiss (the problems
+ * panel has no acknowledged-state — nothing can be silenced while still true, T465).
+ */
+const TIMELINE_ANCHORED_DECLARATION = /timeline-anchored/i;
+
+/**
+ * §V443: a text scan reads comments too, and here that is backwards in both directions —
+ * a kernel EXPLAINING which clock it took ("absTime, not time") would be reported as
+ * reading the wrapping one, and a kernel declaring itself timeline-anchored says so IN a
+ * comment. So the READ is looked for in stripped source and the DECLARATION in raw source.
+ */
+function stripWgslComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
+/** An advisory a generated module carries out with it — never a refusal. */
+export interface KernelNotice {
+  readonly code: string;
+  readonly message: string;
+  readonly suggestion: string;
+}
+
+/**
+ * THE SEVERITY DECISION, stated where it is made.
+ *
+ * This is an `info`, not a warning and emphatically not a refusal, because `ctx.time` is
+ * CORRECT for a whole class of kernel (§V436: a Timer, a scrubbed envelope, anything whose
+ * position in the piece is the point). A refusal would be a lie about the API; a warning
+ * would put a standing yellow on every legitimately timeline-anchored kernel, and a warning
+ * that is usually wrong is a warning people stop reading. `info` is also what §V317 already
+ * reserves for "legitimate, and you should know". The audience that most needs this reads
+ * the LIST rather than the colour: `useAgentSurface` publishes every diagnostic regardless
+ * of severity, so the agent that wrote `ctx.time` gets told either way.
+ *
+ * §V338: the message names what would make it go away — read the absolute member, or
+ * declare the kernel timeline-anchored.
+ */
+function wrappingClockNotice(
+  subject: "kernel" | "spawn hook",
+  ...sources: ReadonlyArray<string>
+): KernelNotice | undefined {
+  if (sources.some((source) => TIMELINE_ANCHORED_DECLARATION.test(source))) return undefined;
+  const members: string[] = [];
+  for (const source of sources) {
+    WRAPPING_CLOCK_REFERENCE.lastIndex = 0;
+    for (const match of stripWgslComments(source).matchAll(WRAPPING_CLOCK_REFERENCE)) {
+      const member = match[1] as string;
+      if (!members.includes(member)) members.push(member);
+    }
+  }
+  if (members.length === 0) return undefined;
+  const wrapping = members.map((member) => `ctx.${member}`).join(" and ");
+  const absolute = members.map((member) => `ctx.${ABSOLUTE_COUNTERPART[member] ?? ""}`).join(" and ");
+  /* B119, told exactly where it bites: the reader has just been sent to `ctx.absFrame`,
+     which is u32 here and f32 in a shader's block. Unconverted shader arithmetic on it is
+     what produces Dawn's "no matching overload", which explains nothing. */
+  const frameNote = members.includes("frameIndex")
+    ? " — ctx.absFrame is u32 like the member it replaces, so float maths on it needs f32(...), where a texture shader's frameU.absFrame is already f32"
+    : "";
+  return {
+    code: "node.points.clock",
+    message:
+      `${subject} reads ${wrapping} — the TIMELINE clock, which resets to the in point every ` +
+      `time the loop comes round, so whatever it drives snaps back there. ${absolute} ` +
+      `${members.length > 1 ? "keep" : "keeps"} counting straight through the lap (T489).`,
+    suggestion:
+      `Read ${absolute} instead${frameNote}. If where you are IN the piece is the point ` +
+      `(a timer, a scrubbed envelope) that is a real choice — write "timeline-anchored" in a ` +
+      `comment in the ${subject} and this stops.`,
+  };
+}
 
 /**
  * T510 (§V309): FIRST RUN — `ctx.firstRun`, 1u on exactly the dispatches whose storage
@@ -637,7 +750,7 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
   const firstRunArgument = usesFirstRun ? ", kernelFrame.firstRun" : "";
   const frameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
   const ctxAbs = usesAbsClock
-    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap — `time` above restarts at\n     the in point, this keeps counting (T461). A frame COUNT at the timeline rate, never\n     a wall reading, so an offline take reproduces (§V44, T467). */\n  absTime: f32,\n  absFrame: u32,"
+    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap — `time` above restarts at\n     the in point, this keeps counting (T461). A frame COUNT at the timeline rate, never\n     a wall reading, so an offline take reproduces (§V44, T467).\n\n     B119 — THE ONE ASYMMETRY, said here because this is where it bites. `absFrame` is\n     u32 in THIS struct and f32 in a texture shader's `frameU` block. Each matches the\n     `frameIndex` beside it (u32 here, f32 there — that block is f32 throughout), so\n     neither side is wrong on its own and the two do not agree with each other. Float\n     maths on it wants `f32(ctx.absFrame)`; shader arithmetic pasted in unconverted is\n     what Dawn answers with \"no matching overload\". `absTime` is f32 on both sides. */\n  absTime: f32,\n  absFrame: u32,"
     : "";
   const absArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
 
@@ -699,7 +812,15 @@ ${stores}
     usesAbsClock,
     usesField: usesField && request.field === true,
     usesFirstRun,
+    /* T587: the GROUP predicate is scanned with the kernel because it compiles against the
+       same `PointCtx` — a predicate gating on `ctx.time` wraps exactly as loudly. */
+    notices: noticesOf(wrappingClockNotice("kernel", kernel, groupSource)),
   };
+}
+
+/** One place that turns "maybe a notice" into the list every module carries. */
+function noticesOf(...found: ReadonlyArray<KernelNotice | undefined>): ReadonlyArray<KernelNotice> {
+  return found.filter((notice): notice is KernelNotice => notice !== undefined);
 }
 
 
@@ -768,7 +889,7 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
   const usesAbsClock = ABS_CLOCK_REFERENCE.test(request.hook);
   const hookFrameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
   const hookCtxAbs = usesAbsClock
-    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap (T461), same numbers the\n     kernel on this node reads. */\n  absTime: f32,\n  absFrame: u32,"
+    ? "\n  /* T489: the clock that does NOT wrap at a timeline lap (T461), same numbers the\n     kernel on this node reads. B119: `absFrame` is u32 here (matching the `frameIndex`\n     above) and f32 in a shader's `frameU` block — convert, do not paste. */\n  absTime: f32,\n  absFrame: u32,"
     : "";
   const hookAbsArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
 
@@ -841,7 +962,22 @@ ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name}
 
   // T510: the spawn hook runs on NEWBORNS mid-simulation; "my buffers are fresh" is a
   // kernel-level fact, so the hook never declares it.
-  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesAbsClock, usesField: false, usesFirstRun: false };
+  return {
+    ok: true,
+    wgsl,
+    buffers: bindings,
+    contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,
+    workgroupSize,
+    usesPointer,
+    usesValues: hookValueSlots,
+    usesAbsClock,
+    usesField: false,
+    usesFirstRun: false,
+    /* T587: the hook is the surface where this matters MOST — "born with a phase off the
+       clock" is the natural thing to write there, and on the wrapping one every generation
+       born after a lap repeats the phases of the generation born before it. */
+    notices: noticesOf(wrappingClockNotice("spawn hook", request.hook)),
+  };
 }
 
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */
