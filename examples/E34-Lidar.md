@@ -16,7 +16,7 @@ relief(noise) ─► carve(level) ─┬─► probe(textureToAttribute) ─► 
                                │        └─► ricochet(pointKernel) ─► rebound(pointRay) ─► mark2(pointKernel) ─► echoes(geometry)
                                └───────────────────────────────────▲ (field)
 
-skyband(ramp) ─► shot(render) ◄─ ground · impacts · echoes · eye(camera) · moon(light)
+skyband(ramp) ─► shot(render) ◄─ ground · impacts · echoes · eye(camera) · moon(light) · lamp(light)
 shot ─► cut(level) ─► clip(limit) ─► halo(blur) ─► glow(add) ─► out(output)
 ```
 
@@ -59,12 +59,23 @@ shot ─► cut(level) ─► clip(limit) ─► halo(blur) ─► glow(add) ─
   grazing, and the diffuse irradiance half fills the valleys the key never reaches —
   unplug the environment wire and the valleys go black. The returns themselves are
   unlit emitters (`materialUnlit` × per-point tint), which is what a display's dots are.
+- **The sky is the same map that lights the scene** (T659). `showEnvironment` on the
+  render draws `skyband1` as the background along a camera ray per pixel. Before it,
+  `sampleEnvironment` had exactly two readers — the reflection vector and the five
+  irradiance taps — and *no pass drew it*, so the visible night was the Background
+  colour and retuning the ramp moved the fill and the rim and never the sky. The
+  switch is off by default; this is the only shipped example that opts in.
+- **An unlit surface casts no shadow** (T666/§V617). The returns are unlit, so they
+  do not block the moon. They used to: 480 octahedra threw hard, texel-quantised fins
+  down every grazing slope, which was the entire visible shadow content of this scene
+  and read as black combing nobody could attribute to anything in frame.
 
 ## Three readings of one cast
 
 Returns (hot amber, brightness 1 − distance/range), out-of-range (faint steel dots at
 the ray ends), echoes (cyan, both legs landed). Since T642 the echo reading is a real
-**group predicate on the geometry node** — `p.hit > 0.5 && p.hitPosition.y > -10.0` —
+**group predicate on the geometry node** — `p.wake.w > 0.03` since T658, the second
+leg's own verdict before that —
 §V471's selection idiom running in the lit path through the shared camera and depth
 buffer, exactly as `renderPoints` runs it (same resolver, same zero-area collapse, and
 the depth pass gates too, so an excluded echo casts no ghost shadow). This file
@@ -84,3 +95,18 @@ what a tint is for.
   working, not `ambientIntensity`.
 - `cast1.steps` — THE cost knob (steps × points per frame). At 8 the drape starts
   tunnelling through thin ridges; 64 is honest for this relief.
+- The **wake**: set `mark1`'s lag rates to 1.0, or `mark2a`'s decay to 0.0, and watch
+  the readings start blinking again. A ray's verdict is binary, so a ray sitting on the
+  range frontier flips it every frame; the smoothing therefore has to be *temporal and
+  on the reading*, never a blur on the picture. The same state that stops the blinking
+  is what leaves a fade behind a moving return — the trail and the smoothing are one
+  mechanism, not two.
+
+## Editing the camera
+
+**The orbit radius is not in the camera.** `eye1.eye.x` and `eye1.eye.z` are *driven*
+by `orbx1`/`orbz1`, so the static vector's x and z are inert (§V465) and changing them
+to reframe the shot is a silent no-op that looks like a fix in the diff. The radius is
+the two LFO amplitudes, and it is deliberately smaller than the terrain's half-extent:
+the camera orbits *inside* the plate's footprint, which is what keeps the sheet's
+straight rim — a finite square seen edge-on — out of the frame.

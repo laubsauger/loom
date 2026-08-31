@@ -347,7 +347,7 @@
             -1,
             0
           ],
-          "extent": 3.2,
+          "extent": 4.8,
           "heightOffset": -0.6,
           "heightScale": 2.6,
           "maxDistance": 3.4,
@@ -385,7 +385,7 @@
           "contrast": 1,
           "gamma1": 1,
           "opacity": 1,
-          "whitelevel": 1.15
+          "whitelevel": 0.95
         },
         "position": {
           "x": 0,
@@ -398,10 +398,10 @@
         "id": "echoes",
         "label": "echoes1",
         "parameters": {
-          "group": "p.hit > 0.5 && p.hitPosition.y > -10.0",
+          "group": "p.wake.w > 0.03",
           "material": "spark1",
           "mode": "instances",
-          "scale": 0.05,
+          "scale": 0.03,
           "shape": "octahedron",
           "tint": {
             "bindings": {
@@ -434,7 +434,7 @@
         "label": "eye1",
         "parameters": {
           "eye": [
-            4.6,
+            3.8,
             3.1,
             0
           ],
@@ -446,7 +446,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 4.6
+                "value": 3.8
               }
             },
             "mode": "driven"
@@ -531,7 +531,7 @@
         "parameters": {
           "extend": "hold",
           "filter": "gaussian",
-          "size": 22
+          "size": 28
         },
         "position": {
           "x": 640,
@@ -546,7 +546,7 @@
         "parameters": {
           "material": "spark1",
           "mode": "instances",
-          "scale": 0.045,
+          "scale": 0.052,
           "shape": "octahedron",
           "tint": {
             "bindings": {
@@ -573,14 +573,40 @@
         },
         "type": "geometry"
       },
+      "lamp": {
+        "definitionVersion": 1,
+        "id": "lamp",
+        "label": "lamp1",
+        "parameters": {
+          "color": [
+            1,
+            0.7,
+            0.42,
+            1
+          ],
+          "intensity": 0.8,
+          "kind": "point",
+          "position": [
+            0,
+            3.3,
+            0
+          ],
+          "shadows": false
+        },
+        "position": {
+          "x": -960,
+          "y": -1160
+        },
+        "type": "light"
+      },
       "mark": {
         "definitionVersion": 1,
         "id": "mark",
         "label": "mark1",
         "parameters": {
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hit\",\"type\":\"f32\",\"default\":[0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"wake\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 240,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = p.hitPosition;\n  /* distance re-derived from the one mast — see the attribute comment on why. */\n  let slant = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - slant / 3.4, 0.0, 1.0);\n  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (0.5 + 1.6 * near);\n  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * 0.32;\n  q.tint = mix(lost, ret, p.hit);\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let landed = select(0.0, 1.0, slant < 3.4 - 0.01);\n  let near = clamp(1.0 - slant / 3.4, 0.0, 1.0);\n  let pos = mix(p.wake.xyz, p.hitPosition, 0.22);\n  let level = mix(p.wake.w, landed, 0.10);\n  q.wake = vec4f(pos, level);\n  q.position = pos;\n  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (0.5 + 1.6 * near);\n  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * 0.32;\n  q.tint = mix(lost, ret, level * level);\n  return q;\n}"
         },
         "position": {
           "x": -1600,
@@ -593,9 +619,9 @@
         "id": "mark2",
         "label": "mark2a",
         "parameters": {
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hit\",\"type\":\"f32\",\"default\":[0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"wake\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 240,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = p.hitPosition;\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */\n  let path = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - path / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.35 + 1.10 * near);\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let leg2 = length(p.hitPosition - p.position);\n  let landed = leg2 < 3.4 - 0.02 && p.hitPosition.y > -10.0;\n  let pos = select(p.wake.xyz, p.hitPosition, landed);\n  let level = select(p.wake.w * 0.90, 1.0, landed);\n  q.wake = vec4f(pos, level);\n  q.position = pos;\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. The\n     floor is LOW (0.15) so the far scatter stays a scatter and the near returns are\n     the ones that read — depth, rather than confetti at one brightness. */\n  let near = clamp(1.0 - length(pos - vec3f(0.0, 3.3, 0.0)) / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.15 + 1.35 * near) * level;\n  return q;\n}"
         },
         "position": {
           "x": -960,
@@ -621,7 +647,7 @@
           ],
           "intensity": 0.5,
           "kind": "directional",
-          "shadowExtent": 4.5,
+          "shadowExtent": 7,
           "shadows": true
         },
         "position": {
@@ -635,7 +661,7 @@
         "id": "orbx",
         "label": "orbx1",
         "parameters": {
-          "amplitude": 4.6,
+          "amplitude": 3.8,
           "frequency": 0.019,
           "offset": 0,
           "phase": 0.25,
@@ -652,7 +678,7 @@
         "id": "orbz",
         "label": "orbz1",
         "parameters": {
-          "amplitude": 4.6,
+          "amplitude": 3.8,
           "frequency": 0.019,
           "offset": 0,
           "phase": 0,
@@ -692,8 +718,8 @@
         "label": "raise1",
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
-          "capacity": 16384,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 3.2;\n  let worldZ = (v * 2.0 - 1.0) * 3.2;\n  q.position = vec3f(worldX, p.sample.r * 2.6 + (-0.6), worldZ);\n  return q;\n}"
+          "capacity": 36864,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 4.8;\n  let worldZ = (v * 2.0 - 1.0) * 4.8;\n  q.position = vec3f(worldX, p.sample.r * 2.6 + (-0.6), worldZ);\n  return q;\n}"
         },
         "position": {
           "x": -1600,
@@ -711,7 +737,7 @@
             -1,
             0
           ],
-          "extent": 3.2,
+          "extent": 4.8,
           "heightOffset": -0.6,
           "heightScale": 2.6,
           "maxDistance": 3.4,
@@ -735,7 +761,7 @@
           "harmon": 4,
           "mono": true,
           "offset": 0,
-          "period": 0.4,
+          "period": 0.2666666666666667,
           "rough": 0.5,
           "s4d": 1,
           "seed": 11,
@@ -775,9 +801,9 @@
         "id": "sheet",
         "label": "sheet1",
         "parameters": {
-          "cols": 128,
-          "count": 16384,
-          "rows": 128
+          "cols": 192,
+          "count": 36864,
+          "rows": 192
         },
         "position": {
           "x": -2560,
@@ -796,7 +822,7 @@
             0.92,
             1
           ],
-          "ambientIntensity": 0.16,
+          "ambientIntensity": 0.11,
           "background": [
             0.006,
             0.008,
@@ -804,8 +830,8 @@
             1
           ],
           "camera": "eye1",
-          "environmentIntensity": 1,
-          "lights": "moon1",
+          "environmentIntensity": 1.15,
+          "lights": "moon1 lamp1",
           "scenes": "ground1 impacts1 echoes1",
           "showEnvironment": true
         },
@@ -826,36 +852,45 @@
           "stops": [
             {
               "color": [
+                0.008,
                 0.01,
-                0.014,
-                0.03,
+                0.028,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.03,
-                0.052,
-                0.11,
+                0.026,
+                0.04,
+                0.098,
                 1
               ],
-              "position": 0.55
+              "position": 0.52
             },
             {
               "color": [
-                0.085,
-                0.12,
-                0.22,
+                0.07,
+                0.112,
+                0.215,
+                1
+              ],
+              "position": 0.66
+            },
+            {
+              "color": [
+                0.15,
+                0.13,
+                0.15,
                 1
               ],
               "position": 0.78
             },
             {
               "color": [
-                0.012,
-                0.016,
-                0.034,
+                0.02,
+                0.018,
+                0.03,
                 1
               ],
               "position": 1
@@ -915,8 +950,8 @@
         "label": "unfold1",
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
-          "capacity": 16384,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 3.2;\n  let worldZ = (v * 2.0 - 1.0) * 3.2;\n  q.position = vec3f(worldX / 3.2, -worldZ / 3.2, 0.0);\n  return q;\n}"
+          "capacity": 36864,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let worldX = (u * 2.0 - 1.0) * 4.8;\n  let worldZ = (v * 2.0 - 1.0) * 4.8;\n  q.position = vec3f(worldX / 4.8, -worldZ / 4.8, 0.0);\n  return q;\n}"
         },
         "position": {
           "x": -2240,
