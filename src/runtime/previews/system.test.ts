@@ -3,6 +3,7 @@ import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import { createPreviewSystem } from "./system.ts";
 import { previewPassId } from "./program.ts";
 import { DEFAULT_PREVIEW_ORBIT, orbitViewProjection } from "./orbit.ts";
+import type { PreviewOrbit } from "./orbit.ts";
 import { DEFAULT_PREVIEW_VIEW, previewKey } from "./types.ts";
 import type { PreviewFrameCommand, PreviewProgram, PreviewRequest, PreviewRuntimeHost } from "./types.ts";
 
@@ -238,7 +239,7 @@ describe("preview system", () => {
         },
       ],
     } as never as NonNullable<PreviewRequest["synthesis"]>;
-    const synthesized = (orbit?: { azimuth: number; elevation: number; distance: number }) =>
+    const synthesized = (orbit?: PreviewOrbit) =>
       request("a", {
         synthesis,
         ...(orbit === undefined ? {} : { orbit }),
@@ -254,7 +255,7 @@ describe("preview system", () => {
 
     // The drag. A new orbit is a VALUE: new matrix pushed, synth pass refreshed this
     // tick so the gesture is live — and the program never rebuilds (§V5, §V330).
-    const orbit = { azimuth: 1, elevation: 0.2, distance: 1 };
+    const orbit = { azimuth: 1, elevation: 0.2, distance: 1, panX: 0, panY: 0 };
     run(system, [synthesized(orbit)], 1, { startIndex: 2 });
     const push = host.commands[2]?.uniforms?.find((update) => update.passId === synthPassId);
     expect(push?.values["viewProjection"]).toEqual(orbitViewProjection(basis, orbit));

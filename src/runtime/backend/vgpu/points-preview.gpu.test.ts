@@ -249,7 +249,7 @@ describe("pointset preview splat on Dawn (T373)", () => {
       boosted.present([
         {
           passId: "gen#pointsPreview:out",
-          values: orbitUniforms(basis as never, { azimuth: Math.PI / 2, elevation: 0, distance: 1 }),
+          values: orbitUniforms(basis as never, { azimuth: Math.PI / 2, elevation: 0, distance: 1, panX: 0, panY: 0 }),
         },
       ]);
       await device.queue.onSubmittedWorkDone();
@@ -263,7 +263,7 @@ describe("pointset preview splat on Dawn (T373)", () => {
       boosted.present([
         {
           passId: "gen#pointsPreview:out",
-          values: orbitUniforms(basis as never, { azimuth: 0, elevation: 0, distance: 1 }),
+          values: orbitUniforms(basis as never, { azimuth: 0, elevation: 0, distance: 1, panX: 0, panY: 0 }),
         },
       ]);
       await device.queue.onSubmittedWorkDone();
