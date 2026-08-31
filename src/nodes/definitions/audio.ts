@@ -207,6 +207,9 @@ const ANALYSER_DB_SPAN = 70;
  */
 const BAND_REFERENCE_DB = { low: 68.25, lowMid: 54.84, highMid: 58.96, high: 51.08 } as const;
 
+/** T707: where a full strike's onset lands — real music's measured max (0.25-0.29, N=3). */
+const ONSET_REFERENCE = 0.28;
+
 /** Linear band amplitude → the analyser's byte-fraction domain. Silence reads 0, as it does live. */
 function toAnalyserDomain(linear: number, referenceDb: number): number {
   if (linear <= 0) return 0;
@@ -272,7 +275,17 @@ export const audioPatternNode: NodeDefinition = {
     const high = toAnalyserDomain(highAmplitude, BAND_REFERENCE_DB.high);
     /* T437's interval semantics, honestly: a slow frame under a fast bpm counts 2. */
     const onsetCount = Math.max(0, Math.floor(beats) - Math.floor(Math.max(beatsBefore, 0)));
-    const onset = Math.max(kick, snare, hat) * amount;
+    /*
+     * T707 — onset is CALIBRATED like the bands, not just shaped like them. The real
+     * path's onset is a spectral-flux ENVELOPE that reads mean 0.014-0.033, p99
+     * 0.13-0.20, max 0.25-0.29 across 2370 frames × 3 recorded tracks — this channel
+     * used to peak at 1.0, roughly 3.5× hot, so anything tuned against it would slam
+     * on a real track's gentlest rise. Same construction as the band references: the
+     * pattern's full strike lands on music's measured MAX. Same N=3 caveat as the
+     * bands, carried rather than hidden. `onsetCount` needs none of this — it is an
+     * event count on both paths.
+     */
+    const onset = Math.max(kick, snare, hat) * amount * ONSET_REFERENCE;
 
     /*
      * T548 — MUSICAL STRUCTURE AS CHANNELS, which is the middle TIMESCALE the value graph
@@ -307,7 +320,8 @@ export const audioPatternNode: NodeDefinition = {
       high,
       onset,
       onsetCount,
-      onsetMax: onsetCount > 0 ? amount : onset,
+      // The interval peak is the same envelope's unit, so it wears the same calibration.
+      onsetMax: onsetCount > 0 ? amount * ONSET_REFERENCE : onset,
       beat: beatIndex,
       beatPhase: Math.max(0, beats) - beatIndex,
       bar: Math.floor(barPosition),

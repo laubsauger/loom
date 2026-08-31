@@ -208,6 +208,10 @@ describe("audioPattern (T442)", () => {
     const onBeat = channelsAt(1.0);
     expect(onBeat.low).toBeCloseTo(0.975, 10);
     expect(onBeat.onsetCount).toBe(1);
+    // T707: onset is an envelope in the ANALYSER'S calibration — a full strike lands on
+    // real music's measured max (0.28), not at 1.0, which was ~3.5× any real track.
+    expect(onBeat.onset).toBeCloseTo(0.28, 10);
+    expect(onBeat.onsetMax).toBeCloseTo(0.28, 10);
     // Just before the next beat the amplitude has decayed to 0.12 + 0.88*exp(-phase*7),
     // which is 18.35 dB down from the strike and therefore 18.35/70 down the channel.
     const late = channelsAt(1.49);
@@ -266,7 +270,8 @@ describe("audioPattern (T442)", () => {
     // A whole second at 120 bpm inside one delta: two beats crossed, count says 2.
     const slow = channelsAt(2.0, 1.0);
     expect(slow.onsetCount).toBe(2);
-    expect(slow.onsetMax).toBe(1);
+    // T707: the interval peak wears the envelope's calibration — a full strike's 0.28.
+    expect(slow.onsetMax).toBeCloseTo(0.28, 10);
   });
 
   it("is pure: the same clock gives the same channels — replayable by construction", () => {
