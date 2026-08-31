@@ -220,6 +220,7 @@
               "max": 2,
               "min": -2,
               "size": 2,
+              "step": 0.01,
               "type": "vector"
             },
             "key": "amount",

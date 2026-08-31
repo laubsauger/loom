@@ -229,7 +229,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "drift",
-        definition: { type: "vector", size: 2, label: "Drift", default: [0, -0.0008], min: -1, max: 1 },
+        definition: { type: "vector", size: 2, label: "Drift", default: [0, -0.0008], min: -1, max: 1, step: 0.0001 },
         targets: [{ nodeId: "drift", key: "t" }],
       },
       {
@@ -310,6 +310,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: [2, 2],
           min: 0.01,
           max: 64,
+          step: 0.01,
         },
         targets: [{ nodeId: "facets", key: "repeat" }],
       },
@@ -328,7 +329,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "zoom",
-        definition: { type: "vector", size: 2, label: "Zoom", default: [0.5, 0.5], min: -8, max: 8 },
+        definition: { type: "vector", size: 2, label: "Zoom", default: [0.5, 0.5], min: -8, max: 8, step: 0.01 },
         targets: [{ nodeId: "fold", key: "s" }],
       },
       {
@@ -365,6 +366,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: [0.18, 0.13],
           min: -2,
           max: 2,
+          step: 0.01,
         },
         targets: [{ nodeId: "warp", key: "weight" }],
       },

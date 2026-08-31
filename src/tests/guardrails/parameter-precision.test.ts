@@ -94,13 +94,40 @@ describe("B80 — a continuous parameter can show a fraction", () => {
  *
  * Starter components are held to ZERO failures: they are the shipped surface a user
  * clicks first, and every published numeric now declares its step. The CATALOGUE holds
- * 27 known-lossy parameters — one number doing three jobs (drag rate, grid, decimals)
+ * 39 known-lossy defaults (T653 added the vector components the first walk missed) — one number doing three jobs (drag rate, grid, decimals)
  * across the whole manifest is T567's design call, deliberately not folded in here — so
  * they are a RATCHET, §V541-style: each listed entry must STILL be lossy (fix one and
  * this gate makes you take it off the list), and nothing unlisted may join them.
  */
 const roundTrips = (value: number, spec: NumericSpec): boolean =>
   normalizeValue(Number(formatNumber(value, spec)), spec) === value;
+
+/**
+ * T653: number AND vector parameters. A vector carries ONE NumericSpec for all of its
+ * components, so the same derived grid damages each component the same way — the walk
+ * that stopped at `type === "number"` reported zero for half the shapes in its own
+ * scope (§V500's unfalsifiable guard, in a gate written to be falsifiable).
+ */
+function numericSlots(
+  key: string,
+  parameter: { type?: string },
+): ReadonlyArray<{ name: string; value: number; spec: NumericSpec }> {
+  if (parameter.type === "number") {
+    const fallback = (parameter as { default?: unknown }).default;
+    if (typeof fallback !== "number") return [];
+    return [{ name: key, value: fallback, spec: parameter as NumericSpec }];
+  }
+  if (parameter.type === "vector") {
+    const fallback = (parameter as { default?: unknown }).default;
+    if (!Array.isArray(fallback)) return [];
+    return fallback.flatMap((component, index) =>
+      typeof component === "number"
+        ? [{ name: `${key}[${String(index)}]`, value: component, spec: parameter as NumericSpec }]
+        : [],
+    );
+  }
+  return [];
+}
 
 /** T567's written inventory. Every entry is a default that display+commit damages. */
 const KNOWN_LOSSY_DEFAULTS: ReadonlySet<string> = new Set([
@@ -111,6 +138,12 @@ const KNOWN_LOSSY_DEFAULTS: ReadonlySet<string> = new Set([
   "text.size", "text.linespacing", "valueFilter.cutoff", "audioPattern.bpm",
   "camera.fov", "render.aoRadius", "materialPhong.shininess",
   "renderInstances.fov", "renderSurface.fov",
+  // T653: the vector components the number-only walk missed — same derivation, same
+  // T567 owner, found when the walk learned that a vector carries one spec for all
+  // of its components.
+  "checker.size[0]", "checker.size[1]", "circle.radius[0]", "circle.radius[1]",
+  "displace.weight[0]", "displace.weight[1]", "rectangle.size[0]", "rectangle.size[1]",
+  "tile.repeat[0]", "tile.repeat[1]", "transform.s[0]", "transform.s[1]",
 ]);
 
 describe("T648 — display-then-commit preserves the default", () => {
@@ -129,32 +162,27 @@ describe("T648 — display-then-commit preserves the default", () => {
     const lossy: string[] = [];
     for (const component of await buildStarterComponents()) {
       for (const published of component.definition.parameters) {
-        const definition = published.definition as { type?: string };
-        if (definition.type !== "number") continue;
-        const spec = published.definition as NumericSpec;
-        const fallback = (published.definition as { default?: unknown }).default;
-        if (typeof fallback !== "number") continue;
-        if (!roundTrips(fallback, spec)) {
-          lossy.push(
-            `${component.definition.componentId}.${published.key}: default ${String(fallback)} ` +
-              `displays "${formatNumber(fallback, spec)}" and commits ` +
-              `${String(normalizeValue(Number(formatNumber(fallback, spec)), spec))}`,
-          );
+        for (const slot of numericSlots(published.key, published.definition as { type?: string })) {
+          if (!roundTrips(slot.value, slot.spec)) {
+            lossy.push(
+              `${component.definition.componentId}.${slot.name}: default ${String(slot.value)} ` +
+                `displays "${formatNumber(slot.value, slot.spec)}" and commits ` +
+                `${String(normalizeValue(Number(formatNumber(slot.value, slot.spec)), slot.spec))}`,
+            );
+          }
         }
       }
     }
     expect(lossy, lossy.join("\n")).toEqual([]);
   });
 
-  it("the catalogue ratchet: the 27 known-lossy stay listed, and nobody joins them", () => {
+  it("the catalogue ratchet: the 39 known-lossy stay listed, and nobody joins them", () => {
     const lossyNow = new Set<string>();
     for (const definition of allNodeDefinitions) {
       for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
-        if (parameter.type !== "number") continue;
-        const spec = parameter as NumericSpec;
-        const fallback = (parameter as { default?: unknown }).default;
-        if (typeof fallback !== "number") continue;
-        if (!roundTrips(fallback, spec)) lossyNow.add(`${definition.type}.${key}`);
+        for (const slot of numericSlots(key, parameter as { type?: string })) {
+          if (!roundTrips(slot.value, slot.spec)) lossyNow.add(`${definition.type}.${slot.name}`);
+        }
       }
     }
     const newcomers = [...lossyNow].filter((name) => !KNOWN_LOSSY_DEFAULTS.has(name)).sort();
