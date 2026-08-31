@@ -567,6 +567,12 @@ export function sceneInstancesWgsl(options: {
   lightCount: number;
   /** T478: a vec4f attribute multiplies the base colour per point (the geometry's mapped tint). */
   pointColor?: boolean;
+  /**
+   * T721: an f32 attribute — or one channel of a float vector — multiplies the instance
+   * SCALE per point, exactly as `pointColor` multiplies the base colour. Absent, not one
+   * byte of this shader changes (§V309).
+   */
+  pointScale?: { type: string; channel?: string };
   /** T481: casting light indices — see SceneShadingOptions.shadows. */
   shadows?: ReadonlyArray<number>;
   /** T482: equirect environment wired — see SceneShadingOptions.environment. */
@@ -611,6 +617,19 @@ export function sceneInstancesWgsl(options: {
   const pointColor = options.pointColor === true;
   const billboard = options.billboard === true;
   const beam = options.beam === true;
+  /* T721: binding 4 is the other half of the hole T680 documented below — 3 took the
+     beam's endpoints, 4 takes the per-point size, and the shadow maps still start at 5,
+     so nothing existing moves. `scaleAt` is 1.0 when nothing is mapped, which is why an
+     unmapped geometry's WGSL is unchanged to the byte. */
+  const pointScale = options.pointScale;
+  const scaleDeclaration =
+    pointScale === undefined
+      ? ""
+      : `@group(0) @binding(4) var<storage, read> pointScales: array<${pointScale.type}>;\n`;
+  const scaleAt =
+    pointScale === undefined
+      ? "params.instance.x"
+      : `(params.instance.x * pointScales[instance]${pointScale.channel === undefined ? "" : `.${pointScale.channel}`})`;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const shadows = options.shadows ?? [];
   const shadowSlotOf = (index: number): number => shadows.indexOf(index);
@@ -737,9 +756,10 @@ ${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightFi
 ${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${
     /* T680: bindings 3 and 4 have always been free here — the shadow maps start at 5 and
        everything optional is numbered after them — so the beam's second position buffer
-       lands in a hole rather than shifting a single existing slot. */
+       lands in a hole rather than shifting a single existing slot. T721 took the other
+       one for the per-point size. */
     beam ? "@group(0) @binding(3) var<storage, read> endpoints: array<vec3f>;\n" : ""
-  }${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}${group.bindings}
+  }${scaleDeclaration}${shadowBindings}${envDeclarations}${aoDeclarations}${projectors.bindings}${group.bindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -834,7 +854,7 @@ ${group.gate}${
      beam does and the only thing that stops N beams sharing one origin from fusing into a
      solid wedge there. */
   let widthAt = mix(params.instance.z, 1.0, corner.y * 0.5 + 0.5);
-  let world = along + side * corner.x * params.instance.x * widthAt;
+  let world = along + side * corner.x * ${scaleAt} * widthAt;
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);
   /* Perpendicular to the width AND to the length, which for this width axis is the
@@ -846,7 +866,7 @@ ${group.gate}${
       : billboard
       ? `  let corner = quadCorner(min(vertex, 5u));
   let world = positions[instance]
-    + (params.billboardRight.xyz * corner.x + params.billboardUp.xyz * corner.y) * params.instance.x;
+    + (params.billboardRight.xyz * corner.x + params.billboardUp.xyz * corner.y) * ${scaleAt};
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);
   /* r × u = −forward for an orthonormal camera basis: the card faces the camera. */
@@ -857,7 +877,7 @@ ${group.gate}${
       : `  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
-  let local = shapeVertex(shape, v) * params.instance.x;
+  let local = shapeVertex(shape, v) * ${scaleAt};
   let world = local + positions[instance];
   var out: VertexOut;
   out.position = params.viewProjection * vec4f(world, 1.0);
@@ -981,7 +1001,9 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 }
 
 /** The instance primitives from the light's view — shapes identical to the lit draw. */
-export function shadowInstancesWgsl(options: DepthPassOptions & { group?: SceneGroupOption } = {}): string {
+export function shadowInstancesWgsl(
+  options: DepthPassOptions & { group?: SceneGroupOption; pointScale?: { type: string; channel?: string } } = {},
+): string {
   const linear = options.linearDepth === true;
   /* T642: an excluded instance must not cast a GHOST SHADOW — the depth pass gates on
      the same predicate, from the same shared block, or an invisible instance would
@@ -995,6 +1017,21 @@ export function shadowInstancesWgsl(options: DepthPassOptions & { group?: SceneG
     gated.depth = 1.0;
     return gated;`,
   );
+  /* T721 — a MAPPED SCALE HAS TO REACH THE DEPTH SWEEP OR THE SHADOW LIES. Instances
+     are the one per-point mode that casts (§V610 excuses the two billboard modes), so a
+     per-point size that only the lit draw knew about would paint a shadow the size of
+     the AUTHORED scale under a primitive drawn at another one — a mismatch that reads
+     as a lighting bug and is really a missing binding. It goes AFTER the group binds so
+     an unmapped geometry's depth shader is unchanged to the byte (§V309). */
+  const pointScale = options.pointScale;
+  const scaleDeclaration =
+    pointScale === undefined
+      ? ""
+      : `@group(0) @binding(${2 + (options.group?.binds.length ?? 0)}) var<storage, read> pointScales: array<${pointScale.type}>;\n`;
+  const scaleAt =
+    pointScale === undefined
+      ? "params.instance.x"
+      : `(params.instance.x * pointScales[instance]${pointScale.channel === undefined ? "" : `.${pointScale.channel}`})`;
   const depthExpr = linear
     ? `dot(params.depthRow, vec4f(world, 1.0)) / max(params.depthRange.x, 1e-6)`
     : `clip.z`;
@@ -1010,7 +1047,7 @@ ${linearFields}};
 
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${group.bindings}
+${group.bindings}${scaleDeclaration}
 fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
@@ -1062,7 +1099,7 @@ fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32
 ${group.gate}  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
-  let world = shapeVertex(shape, v) * params.instance.x + positions[instance];
+  let world = shapeVertex(shape, v) * ${scaleAt} + positions[instance];
   let clip = params.lightViewProjection * vec4f(world, 1.0);
   var out: VertexOut;
   out.position = clip;

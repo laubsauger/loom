@@ -654,6 +654,80 @@ export function resolveColorMap(
   return { map: { pair: entry.pair, half: entry.half } };
 }
 
+/**
+ * T721 — the SCALAR half of `resolveColorMap`, and it exists for §V109's reason: two
+ * nodes now map a per-point SIZE (`renderPoints.sizePixels` and `geometry.scale`), and
+ * two copies of "what may drive a size" is two chances for them to refuse a document in
+ * different words, or for one of them to grow a channel the other has not heard of.
+ *
+ * An f32 attribute drives it whole; a float VECTOR needs a channel, because "size from
+ * `velocity`" is not a statement until it says which component. Anything else refuses by
+ * name (§V288) rather than falling back to the retained static — the fault §B132 shipped
+ * for weeks was exactly a size that looked authored and was silently dropped.
+ */
+export function resolveScalarMap(
+  nodeId: string,
+  binding: { attribute: string; channel?: string; port?: string } | undefined,
+  pointset:
+    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
+    | undefined,
+  pointsPort: string,
+  label: string,
+):
+  | { map: { pair: string; half: "read" | "write"; type: string; channel?: string } | undefined }
+  | { refusal: CompiledNodeDescription } {
+  if (binding === undefined) return { map: undefined };
+  const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
+    refusal: {
+      passes: [],
+      diagnostics: [
+        {
+          severity: "error",
+          code: "node.parameter.map",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+          ...(suggestion === undefined ? {} : { suggestion }),
+        },
+      ],
+    },
+  });
+  if (binding.port !== undefined && binding.port !== pointsPort) {
+    return refuse(`${label} maps port "${binding.port}", but the only pointset input is "${pointsPort}".`);
+  }
+  const available = Object.keys(pointset?.pairs ?? {}).sort();
+  const entry = pointset?.pairs[binding.attribute];
+  if (entry === undefined) {
+    return refuse(
+      `${label} maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
+      available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
+    );
+  }
+  if (entry.type === undefined) {
+    return refuse(
+      `${label} maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
+    );
+  }
+  const vectorChannels: Record<string, readonly string[]> = {
+    vec2f: ["x", "y"],
+    vec3f: ["x", "y", "z"],
+    vec4f: ["x", "y", "z", "w"],
+  };
+  if (entry.type === "f32") {
+    if (binding.channel !== undefined) {
+      return refuse(`${label} maps f32 attribute "${binding.attribute}" with a channel; an f32 has none.`);
+    }
+    return { map: { pair: entry.pair, half: entry.half, type: entry.type } };
+  }
+  const channels = vectorChannels[entry.type];
+  if (channels === undefined) {
+    return refuse(`${label} cannot map "${binding.attribute}" of type "${entry.type}"; a size needs f32 or a float vector channel.`);
+  }
+  if (binding.channel === undefined || !channels.includes(binding.channel)) {
+    return refuse(`${label} maps ${entry.type} attribute "${binding.attribute}" and needs a channel (${channels.join("/")}).`);
+  }
+  return { map: { pair: entry.pair, half: entry.half, type: entry.type, channel: binding.channel } };
+}
+
 export function countedDrawSupport(
   nodeId: string,
   pointset: { count?: { buffer: string } } | undefined,
@@ -786,48 +860,7 @@ export const renderPointsNode: NodeDefinition = {
 
     const blend = parameters["blend"] === "alpha" ? ("alpha" as const) : ("additive" as const);
 
-    // T286/T364 (§V288): map-mode parameters resolve against the EDGE — attribute
-    // present, type coherent — or fail by name, saying what the pointset provides.
-    // Never a silent fall-back to the retained static.
-    const refuseMap = (message: string, suggestion?: string): CompiledNodeDescription => ({
-      passes: [],
-      diagnostics: [
-        {
-          severity: "error",
-          code: "node.parameter.map",
-          message: `Node "${nodeId}": ${message}`,
-          nodeId,
-          ...(suggestion === undefined ? {} : { suggestion }),
-        },
-      ],
-    });
     type MapEntry = { pair: string; half: "read" | "write"; type?: string };
-    const lookupMap = (
-      key: string,
-      binding: { attribute: string; channel?: string; port?: string },
-    ): { entry: MapEntry; type: string } | CompiledNodeDescription => {
-      // §V306: `port` names the pointset input when there are several; this node has
-      // exactly one, so a port that is not it is a mistake said out loud.
-      if (binding.port !== undefined && binding.port !== "points") {
-        return refuseMap(`${key} maps port "${binding.port}", but the only pointset input is "points".`);
-      }
-      const available = Object.keys(points.pointset?.pairs ?? {}).sort();
-      const entry = points.pointset?.pairs[binding.attribute];
-      if (entry === undefined) {
-        return refuseMap(
-          `${key} maps attribute "${binding.attribute}", which the incoming pointset does not carry.`,
-          available.length > 0 ? `It provides: ${available.join(", ")}.` : "Connect a producer first.",
-        );
-      }
-      if (entry.type === undefined) {
-        return refuseMap(
-          `${key} maps "${binding.attribute}", but the edge does not declare its type; the producer predates typed pairs.`,
-        );
-      }
-      return { entry, type: entry.type };
-    };
-    const isRefusal = (value: { entry: MapEntry } | CompiledNodeDescription): value is CompiledNodeDescription =>
-      "passes" in value;
 
     // T333: the draw-time group. Excluded instances collapse to zero-area quads.
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
@@ -860,35 +893,19 @@ export const renderPointsNode: NodeDefinition = {
       };
     }
 
-    const sizeMap = parameterMaps["sizePixels"];
-    let mappedSize: { entry: MapEntry; type: string; channel?: string } | undefined;
-    if (sizeMap !== undefined) {
-      const found = lookupMap("sizePixels", sizeMap);
-      if (isRefusal(found)) return found;
-      const vectorChannels: Record<string, readonly string[]> = {
-        vec2f: ["x", "y"],
-        vec3f: ["x", "y", "z"],
-        vec4f: ["x", "y", "z", "w"],
-      };
-      if (found.type === "f32") {
-        if (sizeMap.channel !== undefined) {
-          return refuseMap(`sizePixels maps f32 attribute "${sizeMap.attribute}" with a channel; an f32 has none.`);
-        }
-        mappedSize = found;
-      } else if (vectorChannels[found.type] !== undefined) {
-        const channels = vectorChannels[found.type] as readonly string[];
-        if (sizeMap.channel === undefined || !channels.includes(sizeMap.channel)) {
-          return refuseMap(
-            `sizePixels maps ${found.type} attribute "${sizeMap.attribute}" and needs a channel (${channels.join("/")}).`,
-          );
-        }
-        mappedSize = { ...found, channel: sizeMap.channel };
-      } else {
-        return refuseMap(
-          `sizePixels cannot map "${sizeMap.attribute}" of type "${found.type}"; a size needs f32 or a float vector channel.`,
-        );
-      }
-    }
+    /* T721 moved this to `resolveScalarMap`, the same move T369 made for the colour: the
+       geometry node maps a size now too, and one resolver is what keeps the two refusing
+       a bad document in the SAME words (§V109). The wording here is unchanged. */
+    const resolvedSize = resolveScalarMap(nodeId, parameterMaps["sizePixels"], points.pointset, "points", "sizePixels");
+    if ("refusal" in resolvedSize) return resolvedSize.refusal;
+    const mappedSize =
+      resolvedSize.map === undefined
+        ? undefined
+        : {
+            entry: { pair: resolvedSize.map.pair, half: resolvedSize.map.half, type: resolvedSize.map.type } as MapEntry,
+            type: resolvedSize.map.type,
+            ...(resolvedSize.map.channel === undefined ? {} : { channel: resolvedSize.map.channel }),
+          };
 
     // T364 (§V195 as amended): a map on the COMPOUND HEAD, type-matched — a vec4f
     // attribute drives the whole colour. LINEAR by convention: attributes are data

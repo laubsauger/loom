@@ -83,6 +83,21 @@ export interface GeometryPayload {
     readonly taper?: number;
   };
   /**
+   * T721 — a PER-POINT size factor, as an f32 attribute (or one channel of a float
+   * vector). It MULTIPLIES `instance.scale` rather than replacing it, for two reasons
+   * that are not style: the authored Scale stays a live number the inspector can move,
+   * which is the fault §B132 shipped for weeks in the other direction; and it makes the
+   * attribute dimensionless, so a kernel writes "twice as big" rather than having to
+   * know the object's world size. Same shape and same arithmetic as the mapped `tint`
+   * one field up, which is the other map on this node.
+   */
+  readonly scaleAttribute?: {
+    readonly pair: string;
+    readonly half: "read" | "write";
+    readonly type: string;
+    readonly channel?: string;
+  };
+  /**
    * T680 — BEAM mode: the other end of each segment, as a vec3f attribute pair.
    *
    * The beam is the third member of the billboard family and the one that carries a
