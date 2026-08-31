@@ -5348,7 +5348,12 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let found = select(0.0, 1.0, q.graze.y > 0.20 && fed > 0.40);
   /* .w is the grazer's own size in pixels: a per-point pscale (T286), so \`graze1\` is not
      one sprite size for a whole layer but every animal drawn at how much it is eating. */
-  q.graze = vec4f(fed, famine, max(found, q.graze.z * exp(-ctx.delta * 0.8)), 0.7 + 1.4 * fed);
+  /* T671: the decay was 0.8 and is now 0.45. \`found\` is a hard threshold and the caste
+     that reads it (\`find1\`, group p.graze.z > 0.30) POPS when a point dithers across the
+     line — E34's lesson in the other example, that a binary verdict wants a slower state
+     under it rather than a filter over the picture. 2.2 s instead of 1.25 s keeps a point
+     on one side long enough to stop flickering, and the caste still empties. */
+  q.graze = vec4f(fed, famine, max(found, q.graze.z * exp(-ctx.delta * 0.45)), 0.7 + 1.4 * fed);
   return q;
 }`;
 
@@ -5476,6 +5481,36 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * scatters THIS frame, the deposit that scatter lays becomes structure over the next few
  * seconds, and the regime it lands in was set by the bar before.
  *
+ * ## T671 — a lattice needs a stationary substrate, so deny it one
+ *
+ * The owner looked at the T657 build and said the field still "consists of all these
+ * very regular dots with no interesting motion and things happening outside the absolute
+ * nucleus". T657 removed the cause of ONE regime everywhere (§V623); it did not answer
+ * why a uniform regime packs regularly, which is simply what Gray-Scott does when the
+ * medium under the pattern holds still. Three of the four changes are that one idea:
+ *
+ *  - ADVECTION (§V626). `flow1` displaces the whole state along a slow flow between the
+ *    feedback and the reaction, while `pack1` repaints the chemistry AFTER the reaction —
+ *    so the field moves and its parameters do not, which SHEARS. A rigid rotation would
+ *    have turned the lattice and left it a lattice.
+ *  - WEATHER. `front1` is a fertile ring expanding on the herd's own 83-second lap,
+ *    multiplying the chemistry down as it passes, so a region is walked out of the
+ *    lattice band and back — the owner's "across screen, at least occasionally".
+ *  - THE CAMERA (§V625). A sway on the same clock, a SINE rather than `range1`'s saw
+ *    because a saw snaps a rotation once a lap, outside the trail loop.
+ *
+ * And the fourth, the blink, which is temporal and was measured rather than judged:
+ * `env1`'s lag and the `found` caste's decay, both named at their sites.
+ *
+ * MEASURED, on the shipped file. Blob-area spread in the outskirts 0.872 → 1.132 and
+ * mean blob area 60.6 → 106.0 — the outskirts carry worms, dashes, rings, open cells and
+ * aligned striations instead of one texture. Negative space not paid for: dark fraction
+ * 26.8% → 31.7%. Nucleus hard-flip rate 23.28% → 18.68%. AND THE LOOP IS UNCHANGED,
+ * which was the owner's own constraint: deposit off → mean V 0.00000 with zero texels
+ * above 0.05; steering on 1.079× the frame mean against a field the herd cannot write,
+ * steering deleted 0.996× — chance — versus 1.080× / 0.994× before. A prettier Pasture
+ * with a dead stigmergy loop would have been a failure that photographs well.
+ *
  * ## The two traps this file paid attention to rather than rediscovering
  *
  * §V533: the loop is pinned. `state1`, `rd1`, `sowin1`, `pack1`, `sow1`, `bowl1`,
@@ -5525,7 +5560,15 @@ export const pastureDocument = document(
       /* ONE lag and ONE trigger, which is the smallest honest set. 0.07 s is short enough
          that a kick is an event and long enough that the bands stop jittering; the trigger
          is the instant, and §V509 is why nothing stands between it and what it drives. */
-      node("env", "valueLag", [-2340, 1100], { lag: 0.07 }, { label: "env1" }),
+      /* T671: 0.16 s, where it was 0.07. Four frames of lag still let a high band arrive
+         as a per-frame pulse on two sprite castes' SIZE, which is what "blinky" was.
+         MEASURED on the nucleus alone, thresholded at display 205 so it is the core and
+         not the field, at the project's full 1280×720 (§V627 — an additive points
+         document read at half res is a different exposure): hard-flip rate 23.28% →
+         15.42%, mean frame-to-frame delta 38.25 → 32.91. The TRIGGER is untouched — it
+         reaches `burst1` on its own wire from `source1` and never through this lag, so
+         §V509 still holds and a beat is still an event rather than a drift. */
+      node("env", "valueLag", [-2340, 1100], { lag: 0.16 }, { label: "env1" }),
       node("trig", "valueTrigger", [-2340, 1540], { threshold: 0.5 }, { label: "trig1" }),
 
       /* ---- THE HERD'S THREE BANDS. These reach ctx.value1..3 (T479), which is the only
@@ -5796,6 +5839,57 @@ export const pastureDocument = document(
         blacklevel: 0.36, contrast: 1, brightness: 0.72, gamma1: 1.25, invert: 0, opacity: 1,
       }, { label: "shape1", parameters: { whitelevel: drivenSlot("warm1:lowMid", 0.62) } }),
       node("dish", "screen", [-2080, -440], { opacity: 1 }, { label: "dish1" }),
+      /*
+       * T671 — WEATHER. A fertile front, expanding on the herd's own 83-second lap.
+       * Multiplying the chemistry map DOWN in a moving ring walks that ring's regime
+       * from the lattice band (0.60–0.85) back toward worms and coral, and then releases
+       * it: the owner's "more effect on the field all across screen, at least
+       * occasionally". `range1` is the piece's clock and this is its second consequence,
+       * so the front and the grazing circuit are in step by construction rather than by
+       * two numbers that happen to agree.
+       *
+       * The ×0.30 is a RANGE fit, not a taste knob: `range1` spans ±π and `phase` is
+       * declared −1…1, so the raw channel would clamp (T545). ±0.94 fills the parameter
+       * and leaves a margin.
+       *
+       * Verified TRAVELLING rather than assumed — a driven parameter that never arrives
+       * is §V471.8's exact failure. Rendering `front1` alone, its median walks
+       * 0.9989 → 0.9967 → 0.8364 → 0.9989 across frames 0 / 600 / 1200 / 1800.
+       */
+      node("sweepG", "valueMath", [-2600, 1760], { operation: "multiply", operand: 0.30 }, { label: "sweepg1" }),
+      node("front", "ramp", [-2340, -640], {
+        type: "radial", interp: "smooth", period: 2.2,
+        stops: [
+          { position: 0.0, color: [1, 1, 1, 1] },
+          { position: 0.40, color: [1, 1, 1, 1] },
+          { position: 0.62, color: [0.55, 0.55, 0.55, 1] },
+          { position: 0.84, color: [1, 1, 1, 1] },
+          { position: 1.0, color: [1, 1, 1, 1] },
+        ],
+      }, {
+        label: "front1", definitionVersion: 2,
+        resolution: { mode: "fixed", width: 640, height: 360 },
+        parameters: { phase: drivenSlot("sweepg1", 0) },
+      }),
+      node("weather", "multiply", [-2080, -640], { opacity: 1 }, {
+        label: "weather1", resolution: { mode: "fixed", width: 640, height: 360 },
+      }),
+      /*
+       * T671 — ADVECTION, and it is the one that kills the lattice. §V626: to break a
+       * pattern you move the MEDIUM; rotating the pattern turns a lattice and leaves it a
+       * lattice. One `displace` between the feedback and the reaction nudges the whole
+       * state along `swell1`'s slow two-channel flow every frame, and the chemistry map
+       * does NOT move with it — `pack1` repaints b from the map AFTER the reaction — so
+       * this is advection THROUGH a static parameter field, which shears.
+       *
+       * 0.0025 is the DENSITY knob and it is a real trade, stated rather than discovered:
+       * at 0.006 the dark fraction reaches 71% and the pasture visibly shrinks, because
+       * the flow carries V away faster than a low-feed regime can regrow it. Turn it up
+       * for wilder and emptier, down for denser and more regular.
+       */
+      node("flow", "displace", [-1690, -260], {
+        weight: [0.0025, 0.0025], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold",
+      }, { label: "flow1", resolution: { mode: "fixed", width: 640, height: 360 } }),
 
       // ---- THE REACTION -------------------------------------------------------------
       node("state", "feedback", [-1820, 0], {
@@ -5947,7 +6041,27 @@ export const pastureDocument = document(
         label: "hue1",
         parameters: { hueoffset: drivenSlot("drift1", 0) },
       }),
-      node("out", "output", [4160, 0], {}, { label: "out1" }),
+      /*
+       * T671 — THE CAMERA, the owner's "rotate camera lerpy on bar or whatever". A slow
+       * sway on the piece's OWN 83-second lap, the same clock the herd's circuit walks.
+       *
+       * §V625: a SINE at `range1`'s frequency, not `range1` itself. That saw is right for
+       * an angle the herd WALKS — its wrap from +π to −π is invisible once you take the
+       * cosine — and wrong for a rotation, where the same wrap snaps the frame back once
+       * a lap. Same clock, same period, re-shaped rather than re-used. No audio: a
+       * gesture this slow must not acquire a live-device dependency.
+       *
+       * OUTSIDE the trail loop, which closes on `hue1`. §V481(a) is exactly about a
+       * transform inside a feedback loop; a rotation in there would spiral the trails
+       * instead of swaying the picture. The 1.12 scale is the cover for ±4.5°.
+       */
+      node("sway", "lfo", [3900, 400], {
+        shape: "sine", frequency: 0.012, amplitude: 4.5, offset: 0, phase: 0,
+      }, { label: "sway1" }),
+      node("spin", "transform", [4160, 0], {
+        t: [0, 0], s: [1.12, 1.12], p: [0, 0], xord: "srt", extend: "hold", aspectcorrect: true,
+      }, { label: "spin1", parameters: { r: drivenSlot("sway1", 0) } }),
+      node("out", "output", [4420, 0], {}, { label: "out1" }),
     ],
     [
       // sound: both sources reach the Switch, exactly one leaves it (T504/T508).
@@ -5988,7 +6102,9 @@ export const pastureDocument = document(
 
       // THE LOOP, both directions of it.
       // outward: the state reacts four times, and the herd smells the result.
-      edge("e-state-rd", ["state", "out"], ["rd", "input"]),
+      edge("e-state-flow", ["state", "out"], ["flow", "source"]),
+      edge("e-swell-flow", ["swell", "out"], ["flow", "disp"], 0),
+      edge("e-flow-rd", ["flow", "out"], ["rd", "input"]),
       edge("e-rd1-rd2", ["rd", "out"], ["rd2", "input"]),
       edge("e-rd2-rd3", ["rd2", "out"], ["rd3", "input"]),
       edge("e-rd3-rd4", ["rd3", "out"], ["rd4", "input"]),
@@ -6007,7 +6123,10 @@ export const pastureDocument = document(
       edge("e-chew-eat", ["chew", "out"], ["eat", "in1"]),
       edge("e-sowin-eat", ["sowIn", "out"], ["eat", "in2"], 0),
       edge("e-eat-pack", ["eat", "out"], ["pack", "in1"]),
-      edge("e-dish-pack", ["dish", "out"], ["pack", "in2"]),
+      edge("e-range-sweepg", ["range", "out"], ["sweepG", "a"]),
+      edge("e-dish-weather", ["dish", "out"], ["weather", "in1"]),
+      edge("e-front-weather", ["front", "out"], ["weather", "in2"], 0),
+      edge("e-weather-pack", ["weather", "out"], ["pack", "in2"]),
 
       // the same cloud, three more times
       edge("e-herd-scout", ["herd", "out"], ["scout", "points"]),
@@ -6032,7 +6151,8 @@ export const pastureDocument = document(
       edge("e-burn-mixtrail", ["burn", "out"], ["mixTrail", "in1"]),
       edge("e-loop-mixtrail", ["loop", "out"], ["mixTrail", "in2"], 0),
       edge("e-mixtrail-hue", ["mixTrail", "out"], ["hue", "input"]),
-      edge("e-hue-out", ["hue", "out"], ["out", "input"]),
+      edge("e-hue-spin", ["hue", "out"], ["spin", "input"]),
+      edge("e-spin-out", ["spin", "out"], ["out", "input"]),
     ],
   ),
 );

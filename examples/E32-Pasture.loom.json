@@ -102,15 +102,15 @@
           "portId": "input"
         }
       },
-      "e-dish-pack": {
-        "id": "e-dish-pack",
+      "e-dish-weather": {
+        "id": "e-dish-weather",
         "source": {
           "nodeId": "dish",
           "portId": "out"
         },
         "target": {
-          "nodeId": "pack",
-          "portId": "in2"
+          "nodeId": "weather",
+          "portId": "in1"
         }
       },
       "e-dropg-drop": {
@@ -258,6 +258,29 @@
           "portId": "in2"
         }
       },
+      "e-flow-rd": {
+        "id": "e-flow-rd",
+        "source": {
+          "nodeId": "flow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd",
+          "portId": "input"
+        }
+      },
+      "e-front-weather": {
+        "id": "e-front-weather",
+        "order": 0,
+        "source": {
+          "nodeId": "front",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "weather",
+          "portId": "in2"
+        }
+      },
       "e-glowg-glow": {
         "id": "e-glowg-glow",
         "source": {
@@ -369,14 +392,14 @@
           "portId": "points"
         }
       },
-      "e-hue-out": {
-        "id": "e-hue-out",
+      "e-hue-spin": {
+        "id": "e-hue-spin",
         "source": {
           "nodeId": "hue",
           "portId": "out"
         },
         "target": {
-          "nodeId": "out",
+          "nodeId": "spin",
           "portId": "input"
         }
       },
@@ -479,6 +502,17 @@
         "target": {
           "nodeId": "tint",
           "portId": "lookup"
+        }
+      },
+      "e-range-sweepg": {
+        "id": "e-range-sweepg",
+        "source": {
+          "nodeId": "range",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sweepG",
+          "portId": "a"
         }
       },
       "e-rd1-rd2": {
@@ -683,15 +717,26 @@
           "portId": "a"
         }
       },
-      "e-state-rd": {
-        "id": "e-state-rd",
+      "e-spin-out": {
+        "id": "e-spin-out",
+        "source": {
+          "nodeId": "spin",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-state-flow": {
+        "id": "e-state-flow",
         "source": {
           "nodeId": "state",
           "portId": "out"
         },
         "target": {
-          "nodeId": "rd",
-          "portId": "input"
+          "nodeId": "flow",
+          "portId": "source"
         }
       },
       "e-swell-coast": {
@@ -702,6 +747,18 @@
         },
         "target": {
           "nodeId": "coast",
+          "portId": "disp"
+        }
+      },
+      "e-swell-flow": {
+        "id": "e-swell-flow",
+        "order": 0,
+        "source": {
+          "nodeId": "swell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "flow",
           "portId": "disp"
         }
       },
@@ -769,6 +826,17 @@
         "target": {
           "nodeId": "warm",
           "portId": "a"
+        }
+      },
+      "e-weather-pack": {
+        "id": "e-weather-pack",
+        "source": {
+          "nodeId": "weather",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
         }
       }
     },
@@ -1063,7 +1131,7 @@
         "id": "env",
         "label": "env1",
         "parameters": {
-          "lag": 0.07
+          "lag": 0.16
         },
         "position": {
           "x": -2340,
@@ -1110,6 +1178,114 @@
           "width": 1280
         },
         "type": "renderPoints"
+      },
+      "flow": {
+        "definitionVersion": 1,
+        "id": "flow",
+        "label": "flow1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.0025,
+            0.0025
+          ]
+        },
+        "position": {
+          "x": -1690,
+          "y": -260
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "displace"
+      },
+      "front": {
+        "definitionVersion": 2,
+        "id": "front",
+        "label": "front1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 2.2,
+          "phase": {
+            "bindings": {
+              "driven": {
+                "channel": "sweepg1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "stops": [
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0.55,
+                0.55,
+                0.55,
+                1
+              ],
+              "position": 0.62
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0.84
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "radial"
+        },
+        "position": {
+          "x": -2340,
+          "y": -640
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "ramp"
       },
       "glow": {
         "definitionVersion": 1,
@@ -1259,7 +1435,7 @@
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"graze\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 5000,
           "group": "",
-          "kernel": "/* A clip unit is 640 px across x and 360 px across y on this 16:9 frame, so every\n   displacement is squashed in x to make walking ISOTROPIC ON SCREEN. One constant, and it\n   is the only thing in this kernel that knows the output's shape. */\nconst PX: vec2f = vec2f(0.5625, 1.0);\n/* The pasture, in clip space: the same disc `bowl1` cuts out of the chemistry map, and the\n   ONE number stated in two coordinate systems in this file. bowl1.center is uv with v DOWN;\n   this is clip with y UP, so (0.40, 0.54) uv is (-0.20, -0.08) clip (T512's mapping,\n   uv.y = 0.5 - y*0.5). Move one and move the other. There is deliberately NO radius here to\n   match `bowl1`'s: an animal does not know the shape of the coastline, only that it is\n   hungry and which way the middle is. Which side of the coast it is standing on it finds out\n   by starving. */\nconst HOME: vec2f = vec2f(-0.2, -0.08);\n/* T657: 0.60, where it was 0.42. The roost's circuit is the piece's disturbance and the\n   outskirts were outside it — a lattice is what a Gray-Scott field does when nothing\n   arrives to disturb it, and nothing did. A wider circuit sweeps the grazed clearing\n   through most of the pasture over its 83-second lap, so a region that is lattice now was\n   torn open a minute ago and will be again. This is the half of the fix that MOVES; the\n   chemistry gradient is the half that VARIES. */\nconst RANGE: f32 = 0.60;\n\n/* WHAT AN ANIMAL SMELLS: the reaction RATE, not a concentration. U*V*V is Gray-Scott's own\n   reaction term, and it is largest exactly on a GROWING front — zero in empty plate (V=0)\n   and small inside a saturated blob (U already eaten). Steering on it puts the herd on the\n   living edge and nowhere else, which is why the swarm never piles onto a dead spot and\n   never has to be told not to. The field arrives BLURRED (`smell1`): fieldAt is a\n   textureLoad, NEAREST and unfiltered by construction (§V57), and a Gray-Scott V is\n   near-binary (§V427), so an unblurred difference of it is mostly quantisation. */\nfn forage(spot: vec2f) -> f32 {\n  let f = fieldAt(vec3f(spot, 0.0));\n  return f.r * f.g * f.g;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: firstRun is 1u on exactly the dispatches whose storage was just created or\n     cleared — the seeding signal, and the only honest one (frameIndex == 0 is a timeline\n     lap, not a fresh buffer). Scatter once, deterministically: pointRand is a hash of the\n     identity, not a stream, so the same seed lays the same herd on any device (§V45). */\n  if (ctx.firstRun == 1u) {\n    /* ON THE PASTURE, not across the frame. A uniform scatter walks a fifth of the herd\n       through the dead ground before the spring gathers it, and every one of them seeds a\n       spot out there that then persists for the rest of the run — measured: the first build\n       to get this far had the empty four fifths covered in stray colonies laid in the first\n       two seconds. sqrt() on the radius is what makes the disc UNIFORM rather than\n       centre-heavy; without it the middle is seeded four times as hard as the rim. */\n    let a = pointRand(ctx.index, 37u) * 6.2831853;\n    let r = sqrt(pointRand(ctx.index, 11u)) * 0.8;\n    let h = pointRand(ctx.index, 23u) * 6.2831853;\n    q.position = vec3f(HOME + vec2f(cos(a), sin(a)) * r * PX, 0.0);\n    q.velocity = vec3f(cos(h), sin(h), 0.0);\n    q.graze = vec4f(0.0, 0.0, 0.0, 0.0);\n    return q;\n  }\n\n  let pos = q.position.xy;\n  let dir = normalize(select(vec2f(1.0, 0.0), q.velocity.xy, dot(q.velocity.xy, q.velocity.xy) > 1e-8));\n  let nrm = vec2f(-dir.y, dir.x);\n\n  /* THREE SENSORS, not a finite difference — and this is the cheaper of the two ways to\n     get a direction out of a field. The alternative is to make the reaction shader encode\n     its own gradient into spare channels, and there are none spare (b is the chemistry\n     map, a is the kernel's initialised flag), so it would cost a second full-field pass:\n     230 400 texels. Three taps per animal costs 72 000 loads for the whole herd — a third\n     of that, with no extra node and no channel budget. Sensing scales with the HERD; a\n     field encoding scales with the FIELD, and the field is the bigger of the two.\n     ctx.value2 is the audio on the reach: the hats make the herd look further ahead. */\n  let reach = ctx.value2;\n  let sway = 0.62;\n  let leftDir = dir * cos(sway) + nrm * sin(sway);\n  let rightDir = dir * cos(sway) - nrm * sin(sway);\n  let ahead = forage(pos + dir * reach * PX);\n  let left = forage(pos + leftDir * reach * PX);\n  let right = forage(pos + rightDir * reach * PX);\n\n  /* A FIXED TURN TOWARD THE BETTER SIDE — Physarum's rule — and NOT a proportional\n     controller on (left - right)/total, which is what this kernel had for six builds and\n     which measured as doing nothing at all. The reason is worth keeping: a gain small\n     enough that a saturated sensor does not spin the animal is also too small to turn it\n     onto a feature ten pixels wide before it has walked past. ABLATION, at gain 3.6: the\n     reaction rate under the herd was 1.56x the pasture's average with steering on and\n     1.71x with the term deleted entirely. A term you can delete without the measurement\n     moving is not a mechanism, however good the sentence describing it is.\n     The 1e-4 guard is the other half: on bare ground all three sensors read zero, the\n     comparison is meaningless, and an animal that turns on noise never travels. */\n  var steer = 0.0;\n  if (max(left, right) > ahead + 1e-4) {\n    steer = select(-9.5, 9.5, left > right);\n  }\n\n  /* HUNGER RANDOMISES, and this is the line that makes `graze.y` a POLICY rather than a\n     colour. A fed animal walks its front; a starving one loses the plot and random-walks,\n     which is the only thing in the file that ever finds the NEXT colony. The picture reads\n     the same number as \"scouts\", so what you see streaming out of the cluster is literally\n     the search. The gain is 2.4 and not 7: at 7 a starved animal spins fast enough that it\n     cannot hold a heading long enough to follow a gradient at all, so hunger became a TRAP\n     — measured, the starving fraction saturated at famine 1.0 and never recovered, and the\n     \"found\" caste below rendered nothing, ever. Exploration has to stay navigable. */\n  steer = steer + (pointRand(ctx.index, 5u) - 0.5) * (0.45 + 2.4 * q.graze.y);\n\n  /* E16's spring — but keyed to HUNGER rather than to distance, and that one change is\n     what stops the picture being a circle. A distance spring draws a disc: every animal is\n     equally pulled wherever it is, so the flock fills a round region whatever the field is\n     doing underneath it, and the pasture's shape stops mattering. Gated on famine instead,\n     a WELL-FED animal is not homing at all — it stays where the food is — and only an\n     animal that has gone hungry turns back toward the middle. The flock's outline is\n     therefore drawn by the FOOD, it migrates as it eats a region down, and E16's sentence\n     still holds: the murmuration never abandons the sphere. The second term is the frame's\n     fence and nothing else: past 0.95 of a half-height from home, everything turns back. */\n  /* WHERE HOME IS THIS MINUTE. A fixed spring has a FIXED POINT, and a flock sitting on\n     its own fixed point eats one spot to the ground and stays there forever — measured, a\n     blown-out core in the same place at frames 300, 900 and 1500 with the rest of the\n     pasture untouched. §V532 is the same sentence about an expanding loop; this is the herd\n     saying it. So the roost walks a slow circle: ctx.value4 is an 83-second SAW on an\n     ANGLE, which is the one wave whose wrap is continuous once you take its cosine, and the\n     flock makes a circuit of its range, grazing it down behind and finding it regrown by\n     the time it comes round again. It is the piece's longest cycle and it is in the\n     ANIMALS, not in the grade. */\n  let home = HOME + vec2f(cos(ctx.value4), sin(ctx.value4)) * RANGE * PX;\n  let toHome = (home - pos) / PX;\n  let away = length(toHome);\n  let sinHome = (dir.x * toHome.y - dir.y * toHome.x) / max(away, 1e-5);\n  steer = steer + sinHome * (5.5 * q.graze.y + 9.0 * smoothstep(0.8, 1.2, away));\n\n  /* §V481(b) ON THE HERD, which is the half of that invariant nobody had a place to put.\n     An envelope on the turn rate is a DC term: it bends every animal the same way for as\n     long as it is up, which is a drift, not an event. A beat arrives as an ANGLE instead —\n     one frame, a different kick per animal — and because the HEADING IS STATE the swarm\n     carries the consequence for seconds afterwards. It is E24's seeded plate said in the\n     other half of the loop: the impulse is instant and the consequence is not. It is an\n     ANGLE and not a rate, and deliberately NOT multiplied by ctx.delta: a trigger has no\n     duration, so scaling it by time would be scaling an event by how long it did not last\n     (§V509). */\n  let burst = (pointRand(ctx.index, 9u) - 0.5) * ctx.value3;\n\n  let ang = atan2(dir.y, dir.x) + steer * ctx.delta + burst;\n  let walk = vec2f(cos(ang), sin(ang));\n  var nextPos = pos + walk * ctx.value1 * ctx.delta * PX;\n  /* A fence, not a mechanism — the spring above is what actually holds the herd. Anything\n     that reaches this has been pushed by a burst on the far side of the frame. */\n  nextPos = clamp(nextPos, vec2f(-1.02), vec2f(1.02));\n\n  q.velocity = vec3f(walk, 0.0);\n  q.position = vec3f(nextPos, 0.0);\n\n  /* WHAT THE ANIMAL KNOWS ABOUT ITSELF — three numbers the picture then slices on. */\n  /* THE GAIN IS MEASURED, not chosen: over the blurred field the reaction rate is 0 at the\n     median and 0.136 at the ninth decile, so x14 saturates on roughly the richest tenth of\n     the pasture and reads zero on the half of it that is bare. */\n  let meal = clamp(forage(nextPos) * 14.0, 0.0, 1.0);\n  /* A SHORT lag, 1/12 s — long enough to smooth the crossing of a single texel, short\n     enough to actually REACH what it is tracking. At 1/5 s it never did: an animal crosses\n     a front in about six frames, the lag only closes 8% of the gap per frame, and the value\n     equilibrated near the duty cycle instead of near the value — measured, it never passed\n     0.45 for any animal in the herd, so every threshold above it was dead. */\n  let fed = q.graze.x + (meal - q.graze.x) * clamp(ctx.delta * 12.0, 0.0, 1.0);\n  /* FAMINE RESETS ON A PROPER MOUTHFUL, NOT ON A BRUSH PAST ONE, and that\n     one number is the difference between a live mechanism and a decorative attribute.\n     Reset at 0.20 and every animal brushes enough structure to keep its clock at zero: the\n     scout caste renders ONE sprite in the whole frame and the hunger term in the steering\n     above multiplies by zero — an idea the file states and never delivers, which is the\n     exact failure §V471.8 records in Corona's hue drift. Measured at both settings. */\n  let famine = select(min(1.0, q.graze.y + ctx.delta / 1.6), 0.0, fed > 0.45);\n  let found = select(0.0, 1.0, q.graze.y > 0.20 && fed > 0.40);\n  /* .w is the grazer's own size in pixels: a per-point pscale (T286), so `graze1` is not\n     one sprite size for a whole layer but every animal drawn at how much it is eating. */\n  q.graze = vec4f(fed, famine, max(found, q.graze.z * exp(-ctx.delta * 0.8)), 0.7 + 1.4 * fed);\n  return q;\n}",
+          "kernel": "/* A clip unit is 640 px across x and 360 px across y on this 16:9 frame, so every\n   displacement is squashed in x to make walking ISOTROPIC ON SCREEN. One constant, and it\n   is the only thing in this kernel that knows the output's shape. */\nconst PX: vec2f = vec2f(0.5625, 1.0);\n/* The pasture, in clip space: the same disc `bowl1` cuts out of the chemistry map, and the\n   ONE number stated in two coordinate systems in this file. bowl1.center is uv with v DOWN;\n   this is clip with y UP, so (0.40, 0.54) uv is (-0.20, -0.08) clip (T512's mapping,\n   uv.y = 0.5 - y*0.5). Move one and move the other. There is deliberately NO radius here to\n   match `bowl1`'s: an animal does not know the shape of the coastline, only that it is\n   hungry and which way the middle is. Which side of the coast it is standing on it finds out\n   by starving. */\nconst HOME: vec2f = vec2f(-0.2, -0.08);\n/* T657: 0.60, where it was 0.42. The roost's circuit is the piece's disturbance and the\n   outskirts were outside it — a lattice is what a Gray-Scott field does when nothing\n   arrives to disturb it, and nothing did. A wider circuit sweeps the grazed clearing\n   through most of the pasture over its 83-second lap, so a region that is lattice now was\n   torn open a minute ago and will be again. This is the half of the fix that MOVES; the\n   chemistry gradient is the half that VARIES. */\nconst RANGE: f32 = 0.60;\n\n/* WHAT AN ANIMAL SMELLS: the reaction RATE, not a concentration. U*V*V is Gray-Scott's own\n   reaction term, and it is largest exactly on a GROWING front — zero in empty plate (V=0)\n   and small inside a saturated blob (U already eaten). Steering on it puts the herd on the\n   living edge and nowhere else, which is why the swarm never piles onto a dead spot and\n   never has to be told not to. The field arrives BLURRED (`smell1`): fieldAt is a\n   textureLoad, NEAREST and unfiltered by construction (§V57), and a Gray-Scott V is\n   near-binary (§V427), so an unblurred difference of it is mostly quantisation. */\nfn forage(spot: vec2f) -> f32 {\n  let f = fieldAt(vec3f(spot, 0.0));\n  return f.r * f.g * f.g;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: firstRun is 1u on exactly the dispatches whose storage was just created or\n     cleared — the seeding signal, and the only honest one (frameIndex == 0 is a timeline\n     lap, not a fresh buffer). Scatter once, deterministically: pointRand is a hash of the\n     identity, not a stream, so the same seed lays the same herd on any device (§V45). */\n  if (ctx.firstRun == 1u) {\n    /* ON THE PASTURE, not across the frame. A uniform scatter walks a fifth of the herd\n       through the dead ground before the spring gathers it, and every one of them seeds a\n       spot out there that then persists for the rest of the run — measured: the first build\n       to get this far had the empty four fifths covered in stray colonies laid in the first\n       two seconds. sqrt() on the radius is what makes the disc UNIFORM rather than\n       centre-heavy; without it the middle is seeded four times as hard as the rim. */\n    let a = pointRand(ctx.index, 37u) * 6.2831853;\n    let r = sqrt(pointRand(ctx.index, 11u)) * 0.8;\n    let h = pointRand(ctx.index, 23u) * 6.2831853;\n    q.position = vec3f(HOME + vec2f(cos(a), sin(a)) * r * PX, 0.0);\n    q.velocity = vec3f(cos(h), sin(h), 0.0);\n    q.graze = vec4f(0.0, 0.0, 0.0, 0.0);\n    return q;\n  }\n\n  let pos = q.position.xy;\n  let dir = normalize(select(vec2f(1.0, 0.0), q.velocity.xy, dot(q.velocity.xy, q.velocity.xy) > 1e-8));\n  let nrm = vec2f(-dir.y, dir.x);\n\n  /* THREE SENSORS, not a finite difference — and this is the cheaper of the two ways to\n     get a direction out of a field. The alternative is to make the reaction shader encode\n     its own gradient into spare channels, and there are none spare (b is the chemistry\n     map, a is the kernel's initialised flag), so it would cost a second full-field pass:\n     230 400 texels. Three taps per animal costs 72 000 loads for the whole herd — a third\n     of that, with no extra node and no channel budget. Sensing scales with the HERD; a\n     field encoding scales with the FIELD, and the field is the bigger of the two.\n     ctx.value2 is the audio on the reach: the hats make the herd look further ahead. */\n  let reach = ctx.value2;\n  let sway = 0.62;\n  let leftDir = dir * cos(sway) + nrm * sin(sway);\n  let rightDir = dir * cos(sway) - nrm * sin(sway);\n  let ahead = forage(pos + dir * reach * PX);\n  let left = forage(pos + leftDir * reach * PX);\n  let right = forage(pos + rightDir * reach * PX);\n\n  /* A FIXED TURN TOWARD THE BETTER SIDE — Physarum's rule — and NOT a proportional\n     controller on (left - right)/total, which is what this kernel had for six builds and\n     which measured as doing nothing at all. The reason is worth keeping: a gain small\n     enough that a saturated sensor does not spin the animal is also too small to turn it\n     onto a feature ten pixels wide before it has walked past. ABLATION, at gain 3.6: the\n     reaction rate under the herd was 1.56x the pasture's average with steering on and\n     1.71x with the term deleted entirely. A term you can delete without the measurement\n     moving is not a mechanism, however good the sentence describing it is.\n     The 1e-4 guard is the other half: on bare ground all three sensors read zero, the\n     comparison is meaningless, and an animal that turns on noise never travels. */\n  var steer = 0.0;\n  if (max(left, right) > ahead + 1e-4) {\n    steer = select(-9.5, 9.5, left > right);\n  }\n\n  /* HUNGER RANDOMISES, and this is the line that makes `graze.y` a POLICY rather than a\n     colour. A fed animal walks its front; a starving one loses the plot and random-walks,\n     which is the only thing in the file that ever finds the NEXT colony. The picture reads\n     the same number as \"scouts\", so what you see streaming out of the cluster is literally\n     the search. The gain is 2.4 and not 7: at 7 a starved animal spins fast enough that it\n     cannot hold a heading long enough to follow a gradient at all, so hunger became a TRAP\n     — measured, the starving fraction saturated at famine 1.0 and never recovered, and the\n     \"found\" caste below rendered nothing, ever. Exploration has to stay navigable. */\n  steer = steer + (pointRand(ctx.index, 5u) - 0.5) * (0.45 + 2.4 * q.graze.y);\n\n  /* E16's spring — but keyed to HUNGER rather than to distance, and that one change is\n     what stops the picture being a circle. A distance spring draws a disc: every animal is\n     equally pulled wherever it is, so the flock fills a round region whatever the field is\n     doing underneath it, and the pasture's shape stops mattering. Gated on famine instead,\n     a WELL-FED animal is not homing at all — it stays where the food is — and only an\n     animal that has gone hungry turns back toward the middle. The flock's outline is\n     therefore drawn by the FOOD, it migrates as it eats a region down, and E16's sentence\n     still holds: the murmuration never abandons the sphere. The second term is the frame's\n     fence and nothing else: past 0.95 of a half-height from home, everything turns back. */\n  /* WHERE HOME IS THIS MINUTE. A fixed spring has a FIXED POINT, and a flock sitting on\n     its own fixed point eats one spot to the ground and stays there forever — measured, a\n     blown-out core in the same place at frames 300, 900 and 1500 with the rest of the\n     pasture untouched. §V532 is the same sentence about an expanding loop; this is the herd\n     saying it. So the roost walks a slow circle: ctx.value4 is an 83-second SAW on an\n     ANGLE, which is the one wave whose wrap is continuous once you take its cosine, and the\n     flock makes a circuit of its range, grazing it down behind and finding it regrown by\n     the time it comes round again. It is the piece's longest cycle and it is in the\n     ANIMALS, not in the grade. */\n  let home = HOME + vec2f(cos(ctx.value4), sin(ctx.value4)) * RANGE * PX;\n  let toHome = (home - pos) / PX;\n  let away = length(toHome);\n  let sinHome = (dir.x * toHome.y - dir.y * toHome.x) / max(away, 1e-5);\n  steer = steer + sinHome * (5.5 * q.graze.y + 9.0 * smoothstep(0.8, 1.2, away));\n\n  /* §V481(b) ON THE HERD, which is the half of that invariant nobody had a place to put.\n     An envelope on the turn rate is a DC term: it bends every animal the same way for as\n     long as it is up, which is a drift, not an event. A beat arrives as an ANGLE instead —\n     one frame, a different kick per animal — and because the HEADING IS STATE the swarm\n     carries the consequence for seconds afterwards. It is E24's seeded plate said in the\n     other half of the loop: the impulse is instant and the consequence is not. It is an\n     ANGLE and not a rate, and deliberately NOT multiplied by ctx.delta: a trigger has no\n     duration, so scaling it by time would be scaling an event by how long it did not last\n     (§V509). */\n  let burst = (pointRand(ctx.index, 9u) - 0.5) * ctx.value3;\n\n  let ang = atan2(dir.y, dir.x) + steer * ctx.delta + burst;\n  let walk = vec2f(cos(ang), sin(ang));\n  var nextPos = pos + walk * ctx.value1 * ctx.delta * PX;\n  /* A fence, not a mechanism — the spring above is what actually holds the herd. Anything\n     that reaches this has been pushed by a burst on the far side of the frame. */\n  nextPos = clamp(nextPos, vec2f(-1.02), vec2f(1.02));\n\n  q.velocity = vec3f(walk, 0.0);\n  q.position = vec3f(nextPos, 0.0);\n\n  /* WHAT THE ANIMAL KNOWS ABOUT ITSELF — three numbers the picture then slices on. */\n  /* THE GAIN IS MEASURED, not chosen: over the blurred field the reaction rate is 0 at the\n     median and 0.136 at the ninth decile, so x14 saturates on roughly the richest tenth of\n     the pasture and reads zero on the half of it that is bare. */\n  let meal = clamp(forage(nextPos) * 14.0, 0.0, 1.0);\n  /* A SHORT lag, 1/12 s — long enough to smooth the crossing of a single texel, short\n     enough to actually REACH what it is tracking. At 1/5 s it never did: an animal crosses\n     a front in about six frames, the lag only closes 8% of the gap per frame, and the value\n     equilibrated near the duty cycle instead of near the value — measured, it never passed\n     0.45 for any animal in the herd, so every threshold above it was dead. */\n  let fed = q.graze.x + (meal - q.graze.x) * clamp(ctx.delta * 12.0, 0.0, 1.0);\n  /* FAMINE RESETS ON A PROPER MOUTHFUL, NOT ON A BRUSH PAST ONE, and that\n     one number is the difference between a live mechanism and a decorative attribute.\n     Reset at 0.20 and every animal brushes enough structure to keep its clock at zero: the\n     scout caste renders ONE sprite in the whole frame and the hunger term in the steering\n     above multiplies by zero — an idea the file states and never delivers, which is the\n     exact failure §V471.8 records in Corona's hue drift. Measured at both settings. */\n  let famine = select(min(1.0, q.graze.y + ctx.delta / 1.6), 0.0, fed > 0.45);\n  let found = select(0.0, 1.0, q.graze.y > 0.20 && fed > 0.40);\n  /* .w is the grazer's own size in pixels: a per-point pscale (T286), so `graze1` is not\n     one sprite size for a whole layer but every animal drawn at how much it is eating. */\n  /* T671: the decay was 0.8 and is now 0.45. `found` is a hard threshold and the caste\n     that reads it (`find1`, group p.graze.z > 0.30) POPS when a point dithers across the\n     line — E34's lesson in the other example, that a binary verdict wants a slower state\n     under it rather than a filter over the picture. 2.2 s instead of 1.25 s keeps a point\n     on one side long enough to stop flickering, and the caste still empties. */\n  q.graze = vec4f(fed, famine, max(found, q.graze.z * exp(-ctx.delta * 0.45)), 0.7 + 1.4 * fed);\n  return q;\n}",
           "seed": 21,
           "value1": {
             "bindings": {
@@ -1457,7 +1633,7 @@
         "label": "out1",
         "parameters": {},
         "position": {
-          "x": 4160,
+          "x": 4420,
           "y": 0
         },
         "type": "output"
@@ -1919,6 +2095,46 @@
         },
         "type": "valueMath"
       },
+      "spin": {
+        "definitionVersion": 1,
+        "id": "spin",
+        "label": "spin1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "hold",
+          "p": [
+            0,
+            0
+          ],
+          "r": {
+            "bindings": {
+              "driven": {
+                "channel": "sway1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "s": [
+            1.12,
+            1.12
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": 4160,
+          "y": 0
+        },
+        "type": "transform"
+      },
       "state": {
         "definitionVersion": 1,
         "format": {
@@ -1949,6 +2165,37 @@
           "width": 640
         },
         "type": "feedback"
+      },
+      "sway": {
+        "definitionVersion": 1,
+        "id": "sway",
+        "label": "sway1",
+        "parameters": {
+          "amplitude": 4.5,
+          "frequency": 0.012,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 3900,
+          "y": 400
+        },
+        "type": "lfo"
+      },
+      "sweepG": {
+        "definitionVersion": 1,
+        "id": "sweepG",
+        "label": "sweepg1",
+        "parameters": {
+          "operand": 0.3,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2600,
+          "y": 1760
+        },
+        "type": "valueMath"
       },
       "swell": {
         "definitionVersion": 1,
@@ -2123,6 +2370,24 @@
           "y": 1760
         },
         "type": "valueMath"
+      },
+      "weather": {
+        "definitionVersion": 1,
+        "id": "weather",
+        "label": "weather1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -2080,
+          "y": -640
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "multiply"
       }
     },
     "revision": 1

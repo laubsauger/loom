@@ -239,3 +239,34 @@ two value sources on one port would merge and one of them would silently vanish.
 
 Frame 0 is a faint sprinkle of fresh spore on bare ground, which is the honest first frame of
 a piece whose whole subject is what the herd does next. Give it thirty seconds.
+
+## T671 — what breaks a lattice
+
+A hexagonal lattice is what Gray-Scott produces at a *uniform* feed, so more contrast
+does not cure it. What cures it is denying the pattern the stationary substrate it needs,
+and three of T671's four changes are that one idea:
+
+- **Advection.** `flow1` displaces the state along a slow flow between the feedback and
+  the reaction. The chemistry map does **not** move with it — `pack1` repaints it *after*
+  the reaction — so this is advection through a static parameter field, which shears the
+  lattice apart. A rigid rotation would turn the lattice and leave it a lattice. Its
+  weight is the density knob: at 0.006 the dark fraction hits 71% and the pasture visibly
+  shrinks, because the flow carries V away faster than a low-feed regime regrows it.
+- **Weather.** `front1` is a fertile ring expanding on the herd's own 83-second lap; it
+  multiplies the chemistry down as it passes, walking a region out of the lattice band
+  and back again.
+- **The camera.** `sway1` rotates the picture on that same clock — a sine, not `range1`'s
+  saw, because a saw is right for an angle the herd *walks* and would snap a rotation back
+  once a lap. Outside the trail loop, or the trails would spiral.
+
+And the blink, which is temporal and was measured rather than judged: `env1`'s lag goes
+0.07 → 0.16 s so a high band stops arriving as a per-frame pulse on two sprite castes'
+size, and the `found` caste's decay slows so points stop dithering across its threshold.
+The **trigger** is untouched — it reaches `burst1` on its own wire, never through the lag,
+so a beat is still an event.
+
+Measured on the shipped file: blob-area spread in the outskirts 0.872 → 1.132, mean blob
+area 60.6 → 106.0, dark fraction 26.8% → 31.7% (negative space is not paid for), nucleus
+hard-flip rate 23.28% → 18.68%. And the loop is unchanged — deposit off gives mean V
+0.00000, steering on 1.079× against steering deleted 0.996×, versus 1.080× / 0.994×
+before. A prettier Pasture with a dead stigmergy loop would be the wrong trade.
