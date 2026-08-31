@@ -1,11 +1,12 @@
 # E27 — Relief
 
-A moving picture stands up off the screen. A hundred and five thousand glowing points lie
-on a landscape in space, each lifted in proportion to the brightness under it, and a
-drifting camera films it low and from the side: teal valleys, a magenta ridge line, a white
-crest, and a luminous mountain that wanders across the plain. The bloom fuses thousands of
-separate points into one surface. Rutt–Etra — the analog video-synth look — with a live
-graph where the scan converter used to be.
+A moving picture stands up off the screen, and since T676 it means that literally. A
+hundred and five thousand glowing points stand in a sheet leaning back seventy degrees,
+each pushed toward you in proportion to the brightness under it, and a swaying camera
+watches it face-on: teal valleys, a magenta ridge line, a white crest, and a luminous dome
+that wanders across the frame. The bloom fuses thousands of separate points into one
+surface. Rutt–Etra — the analog video-synth look — with a live graph where the scan
+converter used to be.
 
 **It opens playing its own performer, and your camera is one number away.**
 
@@ -90,12 +91,13 @@ has to be able to tell apart the thing its test asserts** (§V461) — every ear
 image had been symmetric, and a symmetric image is structurally blind to a vertical flip.
 Fixed at source in `src/points/codegen.ts` (B105/T512), not compensated for here.
 
-**And the kernel's z sign moved WITH that fix, which is the part to remember.** The bridge
+**And the kernel's sign moved WITH that fix, which is the part to remember.** The bridge
 now reads `uv.y = 0.5 − position.y·0.5`, so `position.y = +1` is texel row 0 — the top of
-the picture. The top of a picture belongs at the *far* edge of a laid-flat landscape, and
-far is z negative from a camera on +z, so `lift1` negates. This sign is COUPLED to
-`points/codegen.ts` and it is not guessable from inside this file: read the mapping there
-rather than assuming, because assuming is exactly what B105 cost.
+the picture. Laid flat, the top of a picture belonged at the *far* edge, which is z
+negative from a camera on +z. Stood up (T676), the top of a picture belongs at the *top*,
+which is y positive — and the same negation delivers both, because the rotation carries it.
+This sign is COUPLED to `points/codegen.ts` and it is not guessable from inside this file:
+read the mapping there rather than assuming, because assuming is exactly what B105 cost.
 
 ### The height came out of the palette, which is why it was "weak"
 
@@ -117,13 +119,34 @@ The old eye looked along (-0.32, 0.40, -0.86) at a sheet whose relief was entire
 about barely projected. The doc claimed the opposite ("face-on, a height field is just the
 picture again"), which is how it survived review.
 
-Two changes. The sheet is laid into **xz** with the height on +y, so the world's up axis
-*is* the height axis and an ordinary landscape camera frames it — with the sheet in xy and
-the height in +z, world up lies flat inside the picture and every camera that shows the
-relief has to roll, which is how the first attempt at a fix came out running diagonally off
-the edge of the frame. Then the eye goes low and to one side: about 19% of the view along
-the height axis, so the hills have silhouettes and a rising slope bunches its scan lines
-the way a contour map does.
+T503 fixed it by laying the sheet into **xz** with the height on +y, so the world's up axis
+*is* the height axis, and putting the eye low and to one side: about 19% of the view along
+the height axis, so the hills had silhouettes and a rising slope bunched its scan lines the
+way a contour map does.
+
+### And then the landscape was the wrong shape for the subject (T676)
+
+Owner: *"its on its Back both in preview and final output. we're laying the points on their
+back which makes sense for the mountains but looks weird when we do webcam right."*
+
+That sentence is a rule, not a note. **Orientation follows the source.** A heightfield is
+read from above — mountains lie down, and T503 was right for the understudy. A scanned
+video image is read *face-on*, because you look at a face the way you looked at it, and the
+real subject of this example is the webcam on branch 1. Face-on with a slight lean is also
+the historical Rutt–Etra frame, which is what this document is quoting.
+
+So the sheet now stands at **70° off the floor**, not the 90° the report named. 90° with a
+camera in front puts the view direction straight back down the height axis — exactly the
+86% failure above — and it removes both cues this example reads by, with no third one to
+fall back on: `phosphor1` is **unlit**, so there is no shading here and a raking key, a
+bas-relief's usual mechanism, is not available. What remains is silhouette and scan-line
+bunching, and both are obliquity cues. Leaning back 20° keeps the eye about 20–25° off the
+sheet's normal: the image reads face-on and the relief still has somewhere to project.
+
+**The sway became load-bearing in the same move.** With no light and no shading, parallax
+is the only depth cue left, so `sway1` swinging `eye.x` ±1.15 at 0.024 Hz — ±16° at this
+distance — is what makes the near ridges slide against the far ground. Laid down it was a
+garnish; stood up it is the reason you can see depth at all.
 
 ## What else it proves
 
@@ -171,8 +194,11 @@ an add inside the working range, not a highlight rolloff.
   an edge lost its `order` and the id tiebreak took over.
 - **One flat glowing sheet, no scan lines** → `body1.scale` grew past half the point
   spacing and the quads closed the gaps.
-- **The picture is there but lies flat** → the sample stopped reaching `position.y` in
+- **The picture is there but lies flat** → the sample stopped reaching the height term in
   `lift1`. This is the failure the GPU control catches; nothing structural can see it.
+- **The sheet is on its back again** → the rotation in `lift1` collapsed to 0°, which is
+  exactly the old lay-down mapping (`y = h`, `z = −v`). That is the check the coefficients
+  were chosen against, so a sheet on the floor means the sines and cosines were swapped.
 - **The terrain is a flat plate with one spike in it** → `lift1` went back to reading
   luminance off `coat1` instead of `braid1`'s alpha, and the palette is acting as the height
   curve again.
@@ -188,12 +214,14 @@ an add inside the working range, not a highlight rolloff.
 
 ## Look pass
 
-Rendered on Dawn at 1280×720 and inspected at frames 1, 90 and 240, before and after
-(§V383). The before-and-after is the point: the first build's frame is what "weak" looks
+Rendered on Dawn at 1280×720 — full project resolution, because additive point density is
+resolution-dependent and a half-res look call lies about exposure (§V627) — and read
+display-encoded, not off the linear target (§V618). Inspected at frames 1, 90 and 240,
+before and after (§V383). The before-and-after is the point: the first build's frame is what "weak" looks
 like.
 
 **Correctness.** The understudy plays from the first frame, the sway carries the camera
-through a wide arc, and the mountain crosses the plain on two incommensurate drifts so no
+through a wide arc, and the dome crosses the frame on two incommensurate drifts so no
 two laps look alike.
 
 **Beauty (§V420).** The rebuild passes and the original did not. Before: mean frame

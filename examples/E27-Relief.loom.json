@@ -354,9 +354,9 @@
         "label": "eye1",
         "parameters": {
           "eye": [
-            0.5,
-            1.62,
-            3.05
+            0,
+            0.13,
+            4.25
           ],
           "eye.x": {
             "bindings": {
@@ -366,7 +366,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.5
+                "value": 0
               }
             },
             "mode": "driven"
@@ -375,8 +375,8 @@
           "fov": 40,
           "lookAt": [
             0,
-            0.02,
-            -0.12
+            0.13,
+            0.35
           ],
           "near": 0.1,
           "ortho": false
@@ -409,7 +409,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 105600,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:\n     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes\n     off alpha so the palette never doubles as a height curve — see the note above. */\n  let height = p.sample.a;\n  /* THE SHEET LIES DOWN, and that is what makes the frame framable. The grid arrives in\n     the xy plane, so a height in +z puts the world's UP axis flat IN the picture — every\n     camera that shows the relief then has to roll, which is how the first build ended up\n     with the terrain running diagonally out of frame. Mapping xy -> xz and the height to\n     +y makes the height axis the WORLD's up axis, and an ordinary landscape camera works.\n     The z sign is the orientation fix, and it MOVED WITH T512. The bridge now reads\n     uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output\n     shows at the TOP of the frame. The top of a picture belongs at the FAR edge of a\n     laid-flat landscape, and far is z NEGATIVE from a camera on +z, so the y that samples\n     the top has to negate. Read the mapping in points/codegen.ts rather than guessing:\n     this sign is coupled to it and B105 is what guessing costs. Sampled on a square (the\n     mapping demands it), drawn 16:9. */\n  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, -p.position.y * 1.15);\n  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same\n     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT\n     would have made the low ground transparent as well as dark. */\n  q.sample = vec4f(p.sample.rgb, 1.0);\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:\n     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes\n     off alpha so the palette never doubles as a height curve — see the note above. */\n  let height = p.sample.a;\n  /* T676 — THE SHEET STANDS UP, 70 degrees off the floor, and ORIENTATION FOLLOWS THE\n     SOURCE.\n\n     Owner: \"its on its Back both in preview and final output. we're laying the points on\n     their back which makes sense for the mountains but looks weird when we do webcam\n     right\". That sentence is the rule, and it is why this is not a tuning change. A\n     HEIGHTFIELD is read from above, so T503 was right to lay the sheet down for the\n     noise-and-dome understudy. A SCANNED VIDEO IMAGE is read FACE-ON — you look at a face\n     the way you looked at it — and this example's real subject is the webcam on branch 1.\n     Face-on with a slight lean is also the historical Rutt-Etra frame, which is what this\n     document is quoting.\n\n     WHY 70 AND NOT THE 90 THE OWNER SAID. The owner gave a number describing the problem.\n     A true 90 with a camera in front puts the view direction straight back down the height\n     axis, which is EXACTLY the failure T503 fixed (the first build looked 86% down it and\n     the relief did not project at all). It also removes both cues this example actually\n     reads by, and it has no third one to fall back on: the material is UNLIT, so there is\n     no shading and no raking light — a bas-relief's usual mechanism is simply unavailable\n     here. What is left is SILHOUETTE against the far ground and SCAN LINES BUNCHING on a\n     rising slope, and both are obliquity cues. Leaning the sheet back 20 degrees keeps the\n     camera about 20-25 degrees off its normal: the image reads face-on, and the relief\n     still has somewhere to project.\n\n     THE GEOMETRY. The grid arrives in the xy plane. Read 'u' as across, 'v' as up the\n     sheet, 'h' as out along its normal, then rotate (v, h) about x by 70 degrees:\n       y = v*sin70 + h*cos70,  z = -v*cos70 + h*sin70\n     so the sheet's own up axis leans back and its normal leans toward the camera on +z.\n     At 0 degrees this collapses to the old (u, h, v) lay-down, which is the check that the\n     rotation is the only thing that changed.\n\n     THE 'v' SIGN IS T512's AND IT SURVIVES INTACT. The bridge reads\n     uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output\n     shows at the TOP of the frame. Laid flat, the top of a picture belonged at the FAR\n     edge, which is z NEGATIVE from a camera on +z. STOOD UP, the top of a picture belongs\n     at the TOP, which is y POSITIVE — and the same negation delivers both, because the\n     rotation carries it. Read the mapping in points/codegen.ts rather than guessing: this\n     sign is coupled to it and B105 is what guessing costs.\n\n     Baked rather than parameterised: this kernel has exactly one consumer, the 'lift1'\n     node below. A shared kernel that could only do one orientation would be the same fault\n     as two hand-maintained branches — but there is nothing here to share it with.\n     Sampled on a square (the mapping demands it), drawn 16:9. */\n  let v = p.position.y * 1.15;\n  let h = height * 1.05 - 0.16;\n  q.position = vec3f(p.position.x * 1.7778, v * 0.9397 + h * 0.3420, -v * 0.3420 + h * 0.9397);\n  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same\n     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT\n     would have made the low ground transparent as well as dark. */\n  q.sample = vec4f(p.sample.rgb, 1.0);\n  return q;\n}",
           "seed": 41
         },
         "position": {

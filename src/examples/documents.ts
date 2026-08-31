@@ -3860,19 +3860,51 @@ const RELIEF_LIFT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
      rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes
      off alpha so the palette never doubles as a height curve — see the note above. */
   let height = p.sample.a;
-  /* THE SHEET LIES DOWN, and that is what makes the frame framable. The grid arrives in
-     the xy plane, so a height in +z puts the world's UP axis flat IN the picture — every
-     camera that shows the relief then has to roll, which is how the first build ended up
-     with the terrain running diagonally out of frame. Mapping xy -> xz and the height to
-     +y makes the height axis the WORLD's up axis, and an ordinary landscape camera works.
-     The z sign is the orientation fix, and it MOVED WITH T512. The bridge now reads
+  /* T676 — THE SHEET STANDS UP, 70 degrees off the floor, and ORIENTATION FOLLOWS THE
+     SOURCE.
+
+     Owner: "its on its Back both in preview and final output. we're laying the points on
+     their back which makes sense for the mountains but looks weird when we do webcam
+     right". That sentence is the rule, and it is why this is not a tuning change. A
+     HEIGHTFIELD is read from above, so T503 was right to lay the sheet down for the
+     noise-and-dome understudy. A SCANNED VIDEO IMAGE is read FACE-ON — you look at a face
+     the way you looked at it — and this example's real subject is the webcam on branch 1.
+     Face-on with a slight lean is also the historical Rutt-Etra frame, which is what this
+     document is quoting.
+
+     WHY 70 AND NOT THE 90 THE OWNER SAID. The owner gave a number describing the problem.
+     A true 90 with a camera in front puts the view direction straight back down the height
+     axis, which is EXACTLY the failure T503 fixed (the first build looked 86% down it and
+     the relief did not project at all). It also removes both cues this example actually
+     reads by, and it has no third one to fall back on: the material is UNLIT, so there is
+     no shading and no raking light — a bas-relief's usual mechanism is simply unavailable
+     here. What is left is SILHOUETTE against the far ground and SCAN LINES BUNCHING on a
+     rising slope, and both are obliquity cues. Leaning the sheet back 20 degrees keeps the
+     camera about 20-25 degrees off its normal: the image reads face-on, and the relief
+     still has somewhere to project.
+
+     THE GEOMETRY. The grid arrives in the xy plane. Read 'u' as across, 'v' as up the
+     sheet, 'h' as out along its normal, then rotate (v, h) about x by 70 degrees:
+       y = v*sin70 + h*cos70,  z = -v*cos70 + h*sin70
+     so the sheet's own up axis leans back and its normal leans toward the camera on +z.
+     At 0 degrees this collapses to the old (u, h, v) lay-down, which is the check that the
+     rotation is the only thing that changed.
+
+     THE 'v' SIGN IS T512's AND IT SURVIVES INTACT. The bridge reads
      uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output
-     shows at the TOP of the frame. The top of a picture belongs at the FAR edge of a
-     laid-flat landscape, and far is z NEGATIVE from a camera on +z, so the y that samples
-     the top has to negate. Read the mapping in points/codegen.ts rather than guessing:
-     this sign is coupled to it and B105 is what guessing costs. Sampled on a square (the
-     mapping demands it), drawn 16:9. */
-  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, -p.position.y * 1.15);
+     shows at the TOP of the frame. Laid flat, the top of a picture belonged at the FAR
+     edge, which is z NEGATIVE from a camera on +z. STOOD UP, the top of a picture belongs
+     at the TOP, which is y POSITIVE — and the same negation delivers both, because the
+     rotation carries it. Read the mapping in points/codegen.ts rather than guessing: this
+     sign is coupled to it and B105 is what guessing costs.
+
+     Baked rather than parameterised: this kernel has exactly one consumer, the 'lift1'
+     node below. A shared kernel that could only do one orientation would be the same fault
+     as two hand-maintained branches — but there is nothing here to share it with.
+     Sampled on a square (the mapping demands it), drawn 16:9. */
+  let v = p.position.y * 1.15;
+  let h = height * 1.05 - 0.16;
+  q.position = vec3f(p.position.x * 1.7778, v * 0.9397 + h * 0.3420, -v * 0.3420 + h * 0.9397);
   /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same
      attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT
      would have made the low ground transparent as well as dark. */
@@ -3997,16 +4029,29 @@ const reliefDocument = document(
         parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } },
       }),
       node("eye", "camera", [420, -180], {
-        /* T503 — A LANDSCAPE VIEW, and the number that matters is how much of the view
-           direction runs PARALLEL to the height axis. The old eye looked 86% down it, so
-           the displacement barely projected and the shot was the source picture with a
-           shimmer on it. From here it is ~19%: the hills have SILHOUETTES against the far
-           ground, and a rising slope bunches its scan lines the way a contour map does.
-           Low, because a Rutt-Etra image is a horizon, not a plan view. */
-        eye: [0.5, 1.62, 3.05], lookAt: [0, 0.02, -0.12], fov: 40, near: 0.1, far: 100, ortho: false,
+        /* T676 — A FRONT VIEW, because the sheet stands up now (see RELIEF_LIFT_KERNEL).
+           T503's number is still the one that matters — how much of the view direction runs
+           PARALLEL to the height axis — and this framing keeps it where T503 put it. The
+           first build ran 86% and the relief did not project at all; the landscape camera
+           got it to ~19%; standing the sheet up and looking at it LEVEL gives the same ~19%
+           from the other side, because the sheet leans back 20 degrees and the eye is on its
+           centre line. So the picture reads face-on, as a scanned frame should, and the
+           silhouettes and the scan-line bunching are still there to read it by.
+
+           Framed on the stood-up extent rather than guessed: the sheet spans y -1.14..+1.39
+           and its middle row sits at z ~ +0.35, so a half-height of 1.26 at fov 40 needs
+           3.46 and this sits at 3.90 for margin. Width is not the binding constraint at
+           16:9 (half-width 1.78 against 2.53 available).
+
+           THE SWAY IS NOW LOAD-BEARING, not decoration. A relief seen face-on under no
+           light has no shading to give it depth, so PARALLAX is what remains: eye.x swings
+           +/-1.15 at 0.024 Hz, which is +/-16 degrees at this distance, and the near ridges
+           slide against the far ground the way they would if you moved your head. Laid down
+           this was a garnish; stood up it is the depth cue. */
+        eye: [0, 0.13, 4.25], lookAt: [0, 0.13, 0.35], fov: 40, near: 0.1, far: 100, ortho: false,
       }, {
         label: "eye1",
-        parameters: { "eye.x": drivenSlot("sway1", 0.5) },
+        parameters: { "eye.x": drivenSlot("sway1", 0) },
       }),
       node("sway", "lfo", [120, -420], {
         shape: "sine", frequency: 0.024, amplitude: 1.15, offset: 0, phase: 0,
