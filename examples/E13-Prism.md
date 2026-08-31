@@ -20,7 +20,7 @@ lens1(circle) ─► normals1(slope) ─► the `disp` input of all three
 
 mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
 pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
-roll1.r = "abstime * 7 % 360"                           an expression
+roll1.r = "abstime * 7"                                 an expression
 sparks1.color ← `tint`, sparks1.sizePixels ← `pscale`   the map mode
 ```
 

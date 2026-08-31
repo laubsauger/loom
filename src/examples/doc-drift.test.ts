@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -112,4 +112,71 @@ describe("T522 — example markdown matches the document it sits beside", () => 
       expect(wrong, wrong.join("\n")).toEqual([]);
     },
   );
+});
+
+/**
+ * T516 — CLOCK CLAIMS INSIDE FENCES ARE VERBATIM QUOTES.
+ *
+ * Two docs were fixed by hand after the code moved underneath them, and the census that
+ * built this gate found a third live: E13's fence still showed `abstime * 7 % 360`
+ * after T565 dropped the workaround from the shipped expression. Prose may paraphrase;
+ * a FENCE that shows clock code is read as the file's contents, so it has to BE the
+ * file's contents.
+ *
+ * Scoped tight so it stays credible (a text gate over free prose is noise): only
+ * fenced lines carrying a clock token, and of those, only (a) double-quoted strings —
+ * the `roll1.r = "abstime * 7"` idiom — and (b) WGSL-shaped lines reading `ctx.` or
+ * `frameU.`. Diagram arrows (`←`, `─`) are relationship annotations, exempt. The
+ * census measured one hit and zero noise on the shipped catalogue.
+ */
+describe("T516 — fenced clock claims match the shipped code", () => {
+  const pairs = readdirSync(EXAMPLES_DIR)
+    .filter((name) => name.endsWith(".md") && name.startsWith("E"))
+    .map((name) => ({ md: name, loom: name.replace(/\.md$/, ".loom.json") }))
+    .filter((pair) => existsSync(join(EXAMPLES_DIR, pair.loom)));
+
+  const CLOCK = /ctx\.(absTime|time)\b|frameU\.(absTime|time)\b|\babstime\b/;
+
+  function clockCorpus(loomText: string): string {
+    const parsed = JSON.parse(loomText) as {
+      graph?: { nodes?: Record<string, { parameters?: Record<string, unknown> }> };
+      document?: { graph?: { nodes?: Record<string, { parameters?: Record<string, unknown> }> } };
+    };
+    const nodes = parsed.graph?.nodes ?? parsed.document?.graph?.nodes ?? {};
+    const chunks: string[] = [];
+    for (const node of Object.values(nodes)) {
+      for (const value of Object.values(node.parameters ?? {})) {
+        if (typeof value === "string") chunks.push(value);
+        else if (typeof value === "object" && value !== null) {
+          const source = (value as { bindings?: { expression?: { source?: string } } }).bindings?.expression?.source;
+          if (source !== undefined) chunks.push(source);
+        }
+      }
+    }
+    return chunks.join("\n");
+  }
+
+  for (const pair of pairs) {
+    it(`${pair.md} quotes the clock code it ships`, () => {
+      const markdown = readFileSync(join(EXAMPLES_DIR, pair.md), "utf8");
+      const corpus = clockCorpus(readFileSync(join(EXAMPLES_DIR, pair.loom), "utf8"));
+      const stale: string[] = [];
+      for (const [, block] of markdown.matchAll(/```[a-z]*\n([\s\S]*?)```/g)) {
+        if (block === undefined) continue;
+        for (const line of block.split("\n")) {
+          if (!CLOCK.test(line)) continue;
+          for (const [, quoted] of line.matchAll(/"([^"]+)"/g)) {
+            if (quoted !== undefined && CLOCK.test(quoted) && !corpus.includes(quoted)) {
+              stale.push(`quoted "${quoted}" is not in the shipped document`);
+            }
+          }
+          if ((line.includes("ctx.") || line.includes("frameU.")) && !line.includes("←") && !line.includes("─")) {
+            const trimmed = line.trim();
+            if (!corpus.includes(trimmed)) stale.push(`line \`${trimmed}\` is not in the shipped document`);
+          }
+        }
+      }
+      expect(stale, `${pair.md}: ${stale.join("; ")} — the fence claims code the file does not contain (T516)`).toEqual([]);
+    });
+  }
 });
