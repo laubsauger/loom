@@ -25,31 +25,39 @@ export interface PreviewSinkStore {
 }
 
 /**
- * How many consecutive ticks a ref may be ABSENT before it leaves the sink set.
+ * How long a ref may be ABSENT before it leaves the sink set.
  *
  * §V142 vs §V158, reconciled: additions apply immediately (an entering tile must
  * materialize to show anything), but removals wait — a pan that sweeps a node off
- * screen and back must not recompile twice mid-gesture. At the preview tick rate this
- * is roughly a second of grace; a node that genuinely left recompiles ONCE, and that
- * compile only releases (T143 carry), never allocates.
+ * screen and back must not recompile twice mid-gesture. A second of grace; a node that
+ * genuinely left recompiles ONCE, and that compile only releases (T143 carry), never
+ * allocates.
+ *
+ * MEASURED IN TIME, not in `set()` calls (T620). The grace used to be 60 calls, written
+ * when every call was one rAF tick. Chrome suspends rAF entirely for a hidden or
+ * occluded window, and there the store is driven only by the per-plan resync — one call
+ * per recompile — so "60 ticks ≈ a second" silently became "60 recompiles ≈ forever",
+ * and a deleted node's sink poisoned every compile (`sink-unknown`) for the rest of the
+ * session. A clock does not stop when rAF does.
  */
-const REMOVAL_GRACE_TICKS = 60;
+const REMOVAL_GRACE_MS = 1000;
 
-export function createPreviewSinkStore(): PreviewSinkStore {
+export function createPreviewSinkStore(
+  now: () => number = () => performance.now(),
+): PreviewSinkStore {
   let sinks: ReadonlyArray<ActiveSink> = [];
   let key = "";
-  let tick = 0;
   const lastSeen = new Map<string, { ref: { nodeId: string; portId: string }; at: number }>();
   const listeners = new Set<() => void>();
 
   return {
     set(refs) {
-      tick += 1;
+      const at = now();
       for (const ref of refs) {
-        lastSeen.set(`${ref.nodeId}:${ref.portId}`, { ref, at: tick });
+        lastSeen.set(`${ref.nodeId}:${ref.portId}`, { ref, at });
       }
       for (const [seenKey, entry] of lastSeen) {
-        if (tick - entry.at > REMOVAL_GRACE_TICKS) lastSeen.delete(seenKey);
+        if (at - entry.at > REMOVAL_GRACE_MS) lastSeen.delete(seenKey);
       }
       const sorted = [...lastSeen.values()]
         .map((entry) => entry.ref)

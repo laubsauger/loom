@@ -202,6 +202,8 @@ export function componentPreviewTarget(
 export function useNodePreviews(inputs: NodePreviewInputs): void {
   const inputsRef = useRef(inputs);
   inputsRef.current = inputs;
+  /** The live tick body, for the T620 resync effect below. Null while not mounted. */
+  const stepRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = inputs.canvasRef.current;
@@ -224,9 +226,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
-    const tick = (): void => {
-      frameHandle = requestAnimationFrame(tick);
-
+    const step = (): void => {
       // §V23 — a device rebuild invalidates cadence state (refresh clocks, tile keys)
       // that the backend cannot know about; the backend's own rebuild is separate and
       // already happens beneath `previewHost`/`present`.
@@ -509,9 +509,26 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       }
     };
 
+    const tick = (): void => {
+      frameHandle = requestAnimationFrame(tick);
+      step();
+    };
+    /*
+     * T620: the rAF loop is the CADENCE, not the only door. Chrome suspends
+     * requestAnimationFrame entirely for a hidden or occluded window, and the frame
+     * driver, document edits and recompiles all keep running underneath — measured on a
+     * plain solid → feedback doc driven through an occluded tab: the sink store and the
+     * preview program froze at their last visible state, every structural recompile then
+     * diverged from the frozen program, and the preview host warned
+     * `binds unknown texture "pingpong:…"` on every retry, once a second, forever. The
+     * compile effect below runs ONE step whenever the compiled outputs change, so the
+     * program and the sink set converge with the plan even while rAF is parked.
+     */
+    stepRef.current = step;
     frameHandle = requestAnimationFrame(tick);
 
     return () => {
+      stepRef.current = null;
       cancelAnimationFrame(frameHandle);
       system.reset();
       host.dispose();
@@ -522,4 +539,20 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     // picked up live through `inputsRef` above rather than through the dependency array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputs.backend]);
+
+  /*
+   * T620's other half: a new plan landed while rAF is parked. Gated on the page being
+   * HIDDEN, and both halves of the gate are load-bearing: when the page is visible the
+   * next rAF tick picks the plan up anyway, and an extra mid-frame step would advance
+   * the preview clock and cadence state between display frames — which is exactly the
+   * perturbation that starved T501's reservation dance when this ran unconditionally
+   * (four of fifty-two previews never painted). When the page is hidden — a background
+   * tab, or a fully occluded window, which Chrome also reports as hidden — this is the
+   * ONLY thing keeping the preview program and the sink set in step with the document.
+   */
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      stepRef.current?.();
+    }
+  }, [inputs.compiledOutputs]);
 }
