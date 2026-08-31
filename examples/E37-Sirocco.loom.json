@@ -1,0 +1,562 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-burn-hue": {
+        "id": "e-burn-hue",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-drift-streak": {
+        "id": "e-drift-streak",
+        "source": {
+          "nodeId": "drift",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "streak",
+          "portId": "in"
+        }
+      },
+      "e-halo-halolvl": {
+        "id": "e-halo-halolvl",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haloLvl",
+          "portId": "input"
+        }
+      },
+      "e-halolvl-burn": {
+        "id": "e-halolvl-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "haloLvl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-hue-out": {
+        "id": "e-hue-out",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-shot-burn": {
+        "id": "e-shot-burn",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-shot-halo": {
+        "id": "e-shot-halo",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-streak-body": {
+        "id": "e-streak-body",
+        "source": {
+          "nodeId": "streak",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "body",
+          "portId": "points"
+        }
+      },
+      "e-streak-fast": {
+        "id": "e-streak-fast",
+        "source": {
+          "nodeId": "streak",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fast",
+          "portId": "points"
+        }
+      },
+      "e-streak-heads": {
+        "id": "e-streak-heads",
+        "source": {
+          "nodeId": "streak",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heads",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "body": {
+        "definitionVersion": 1,
+        "id": "body",
+        "label": "body1",
+        "parameters": {
+          "endpoint": "trail",
+          "group": "p.size <= 1.35",
+          "material": "haze1",
+          "mode": "beam",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "size",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.0013
+              }
+            },
+            "mode": "map"
+          },
+          "taper": 0.35,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -860,
+          "y": 220
+        },
+        "type": "geometry"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {},
+        "position": {
+          "x": 740,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"qualifier\":\"direction\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0.2,0.3,0.6,1]}]",
+          "capacity": 18000,
+          "group": "",
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/* The radius the warm start fills, and the radius the containment starts pushing back\n   at. Seeding INSIDE the containment means frame zero opens on a settled cloud rather\n   than on a shell collapsing inward. */\nconst SEED_RADIUS: f32 = 1.05;\nconst BOUND: f32 = 1.05;\n\n/* How hard the wind blows, and how fast a mote gives in to it. FLOW scales the curl to\n   clip units per second; DRAG is the reciprocal of the time a mote takes to adopt the\n   wind, so a small number is a heavy mote that keeps its own line through a gust. */\nconst FLOW: f32 = 0.20;\nconst DRAG: f32 = 1.35;\n\n/* The reference speed the colour normalises against — the SAME number the streak\n   kernel sizes against, so \"fast\" means one thing in this document (§V349). */\nconst SPEED_REFERENCE: f32 = 0.85;\n\n/* The exposure, in ONE place. The draws are OPAQUE and depth-tested (a scene draw is\n   not an additive splat), so brightness here is not accumulation — it is how light the\n   cloud's own surface is, and the whole picture rides on it. */\nconst TINT_GAIN: f32 = 0.66;\n\n/**\n * THE VECTOR POTENTIAL. What a mote feels is its CURL, below, and the curl of any field\n * is divergence-free BY CONSTRUCTION: this wind can stretch the cloud, fold it and shed\n * sheets off it, and it can never squeeze it into a knot or drain it into a point. That\n * property is the whole reason a flow field is authored as a potential and differentiated\n * rather than written down as three noises directly — three independent noises have\n * sources and sinks, and a cloud in one of them collects into blobs within seconds.\n *\n * Three terms at three scales, all moving. The broad term sets the sheets, the middle one\n * folds them, and the fine one is what stops the volume reading as a single slow swirl.\n */\nfn potential(pos: vec3f, t: f32) -> vec3f {\n  let broad = vec3f(\n    sin(pos.y * 2.30 + t * 0.51) * cos(pos.z * 1.90 - t * 0.37),\n    sin(pos.z * 2.10 - t * 0.44) * cos(pos.x * 2.60 + t * 0.29),\n    sin(pos.x * 1.70 + t * 0.33) * cos(pos.y * 2.40 - t * 0.41)\n  );\n  let fold = vec3f(\n    sin((pos.z + pos.x) * 4.30 - t * 0.83),\n    sin((pos.x + pos.y) * 4.70 + t * 0.71),\n    sin((pos.y + pos.z) * 3.90 - t * 0.62)\n  ) * 0.34;\n  let fine = vec3f(\n    cos(pos.x * 8.10 - t * 1.13),\n    cos(pos.y * 7.30 + t * 0.97),\n    cos(pos.z * 8.90 - t * 1.07)\n  ) * 0.11;\n  return broad + fold + fine;\n}\n\n/* curl(P) = (dPz/dy - dPy/dz, dPx/dz - dPz/dx, dPy/dx - dPx/dy), central differences.\n   Six potential evaluations per mote per frame, which is the price of the property\n   above and is paid once here rather than approximated. */\nfn curl3(pos: vec3f, t: f32) -> vec3f {\n  let e = 0.045;\n  let dx = (potential(pos + vec3f(e, 0.0, 0.0), t) - potential(pos - vec3f(e, 0.0, 0.0), t)) / (2.0 * e);\n  let dy = (potential(pos + vec3f(0.0, e, 0.0), t) - potential(pos - vec3f(0.0, e, 0.0), t)) / (2.0 * e);\n  let dz = (potential(pos + vec3f(0.0, 0.0, e), t) - potential(pos - vec3f(0.0, 0.0, e), t)) / (2.0 * e);\n  return vec3f(dy.z - dz.y, dz.x - dx.z, dx.y - dy.x);\n}\n\n/* How long the warm start runs before frame zero is shown, and at what step. FOUR\n   SECONDS: the cloud needs about that long to fold, and a gallery thumbnail is frame 0\n   (T535) — seeded cold, this file's card is a fuzzy ball that the piece never shows\n   again. Measured: 22.3% of the frame lit and a uniform sphere at frame 0 without it. */\nconst PREROLL_STEPS: i32 = 120;\nconst PREROLL_DT: f32 = 1.0 / 30.0;\n\n/* A ball filled BY VOLUME, not by radius: the cube root on the radial draw is what\n   keeps the centre from being dense and the shell from being empty. */\nfn seedBall(id: u32) -> vec3f {\n  let u = pointRand(id, 11u);\n  let v = pointRand(id, 23u);\n  let w = pointRand(id, 37u);\n  let cosT = 1.0 - 2.0 * v;\n  let sinT = sqrt(max(0.0, 1.0 - cosT * cosT));\n  let phi = TAU * w;\n  let r = SEED_RADIUS * pow(max(u, 1.0e-6), 1.0 / 3.0);\n  return vec3f(r * sinT * cos(phi), r * sinT * sin(phi), r * cosT);\n}\n\nstruct State {\n  pos: vec3f,\n  vel: vec3f,\n};\n\n/**\n * ONE STEP OF THE WIND — and it is one function because it is integrated in TWO places:\n * once per frame below, and PREROLL_STEPS times as the warm start. E9 states the rule and\n * this file obeys it: a warm start computed by different arithmetic from the simulation is\n * a warm start that opens on a picture the piece never shows.\n */\nfn step(s: State, t: f32, dt: f32) -> State {\n  let flow = curl3(s.pos, t) * FLOW;\n\n  /* CONTAINMENT: zero inside the ball and rising outside it, so the cloud has an EDGE\n     without a wall. Motes are turned back over about half a unit; nothing is clamped and\n     nothing is teleported — a clamp parks a population on the boundary sphere and reads as\n     a hard shell, and a teleport is a jump the streak cannot represent. */\n  let d = length(s.pos);\n  let outward = s.pos / max(d, 1.0e-5);\n  let contain = -outward * smoothstep(BOUND, BOUND + 0.55, d) * 2.20;\n\n  /* Motes are ACCELERATED toward the wind against their own inertia, never carried along\n     it: the picture is the field INTEGRATED, which is the whole of §V427 — noise is smooth\n     at every scale and a simulation is not. Turn DRAG up far enough and this degenerates\n     into exactly the plain noise lookup it exists not to be. */\n  let vel = s.vel + ((flow - s.vel) * DRAG + contain) * dt;\n  return State(s.pos + vel * dt, vel);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* §V73 says a SLOT is not an identity, and here is why ctx.index is nonetheless the\n     right identity to hash on: this is the BASIC kernel — no spawn, no kill, no\n     compaction — so no slot ever moves for the life of the buffer. E9 carries a real id\n     attribute because the ADVANCED kernel mints and compacts, which is exactly when the\n     slot stops being stable. Spending an attribute here to restate a constant would cost\n     a quarter of the four-attribute budget (§V588) for nothing. */\n  let id = ctx.index;\n\n  /* FREE-RUNNING (§V436): ctx.absTime, never ctx.time. The wind does not restart when the\n     piece does — ctx.time wraps at the out point (T455) and would put every phase of the\n     potential back where it was at frame zero, snapping the whole cloud at each lap.\n     ctx.delta is untouched: a step is continuous across a lap by construction (T464). */\n  let t = ctx.absTime;\n\n  var s = State(p.position, p.velocity);\n\n  /* THE SEEDING SIGNAL — ctx.firstRun, which means \"my storage was just created or\n     cleared\" and NOTHING else (T510/§V495). frameIndex == 0 also means \"the timeline\n     lapped\", and a lap KEEPS its buffers, so a simulation must survive it while a seek\n     and a document load must rebuild it.\n\n     The seed takes its velocity FROM THE FIELD rather than from zero, and that is a warm\n     start rather than a nicety: a gallery thumbnail is frame 0 (T535), the streak length\n     is the velocity, and a cloud seeded at rest opens on a frame with no streaks in it at\n     all — the one picture this example exists to show. */\n  if (ctx.firstRun == 1u) {\n    /* THE WARM START. Seeded at rest and then RUN — four seconds of the same step the\n       frame below takes, ending exactly at this frame's clock, so what frame zero shows is\n       a cloud that has already folded rather than the sphere it started as. */\n    s = State(seedBall(id), vec3f(0.0));\n    for (var k: i32 = 0; k < PREROLL_STEPS; k = k + 1) {\n      s = step(s, t - f32(PREROLL_STEPS - k) * PREROLL_DT, PREROLL_DT);\n    }\n  }\n\n  s = step(s, t, ctx.delta);\n\n  let pos = s.pos;\n  let vel = s.vel;\n  q.position = pos;\n  q.velocity = vel;\n\n  /* THE COLOUR IS DATA THE KERNEL WRITES (§V471.2), and the draws below select on it and\n     wear it — there is no palette lookup downstream to discard it. Two ideas, not one: how\n     fast this mote is going, and WHERE IT IS in a band travelling slowly through the\n     volume. Speed alone reads as a speedometer; the band is what makes the cloud look lit\n     from somewhere. LINEAR values, because attributes are data and nothing display-decodes\n     a per-point colour (§V56). */\n  let heat = clamp(length(vel) / SPEED_REFERENCE, 0.0, 1.0);\n  let band = 0.5 + 0.5 * sin(pos.y * 2.20 - t * 0.23 + heat * 2.10);\n  /* SQUARED heat, and that is what makes the picture read as a wind rather than as a\n     gradient: the median mote sits at heat ~0.46, so heat*heat puts the whole BODY of the\n     cloud in deep blue and spends the amber only on the genuinely fast few. A linear ramp\n     here washes every streak to the same cream — measured, and it is the difference\n     between the first render and this one. */\n  let hue = mix(vec3f(0.020, 0.070, 0.340), vec3f(0.920, 0.400, 0.100), heat * heat);\n  /* The band's own contribution is a SHIFT, not a second ramp: it tips the cold end\n     toward teal and the hot end toward rose, so two motes at the same speed in different\n     parts of the volume are not the same colour. */\n  let shift = mix(vec3f(-0.010, 0.060, -0.070), vec3f(0.060, -0.050, 0.130), band);\n  q.tint = vec4f(TINT_GAIN * max(vec3f(0.0), hue + shift), 1.0);\n  return q;\n}",
+          "seed": 37,
+          "value1": 0,
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -1500,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "drift2": {
+        "definitionVersion": 1,
+        "id": "drift2",
+        "label": "drift2",
+        "parameters": {
+          "amplitude": 15,
+          "frequency": 0.035,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 740,
+          "y": 320
+        },
+        "type": "lfo"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            4.2,
+            0.9,
+            0
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 4.2
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.z": {
+            "bindings": {
+              "driven": {
+                "channel": "orbz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 24,
+          "fov": 42,
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": -540,
+          "y": 0
+        },
+        "type": "camera"
+      },
+      "fast": {
+        "definitionVersion": 1,
+        "id": "fast",
+        "label": "fast1",
+        "parameters": {
+          "endpoint": "trail",
+          "group": "p.size > 1.35",
+          "material": "haze1",
+          "mode": "beam",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "size",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.002
+              }
+            },
+            "mode": "map"
+          },
+          "taper": 0.12,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -860,
+          "y": 0
+        },
+        "type": "geometry"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 24
+        },
+        "position": {
+          "x": 100,
+          "y": 220
+        },
+        "type": "blur"
+      },
+      "haloLvl": {
+        "definitionVersion": 1,
+        "id": "haloLvl",
+        "label": "halolvl1",
+        "parameters": {
+          "blacklevel": 0.04,
+          "brightness": 0.55,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 420,
+          "y": 220
+        },
+        "type": "level"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1180,
+          "y": -420
+        },
+        "type": "materialUnlit"
+      },
+      "heads": {
+        "definitionVersion": 1,
+        "id": "heads",
+        "label": "heads1",
+        "parameters": {
+          "group": "",
+          "material": "haze1",
+          "mode": "points",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "size",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.0034
+              }
+            },
+            "mode": "map"
+          },
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -860,
+          "y": -220
+        },
+        "type": "geometry"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "drift2",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.05,
+          "value": 1
+        },
+        "position": {
+          "x": 1060,
+          "y": 0
+        },
+        "type": "hsv"
+      },
+      "orbx": {
+        "definitionVersion": 1,
+        "id": "orbx",
+        "label": "orbx1",
+        "parameters": {
+          "amplitude": 4.2,
+          "frequency": 0.021,
+          "offset": 0,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1500,
+          "y": 520
+        },
+        "type": "lfo"
+      },
+      "orbz": {
+        "definitionVersion": 1,
+        "id": "orbz",
+        "label": "orbz1",
+        "parameters": {
+          "amplitude": 4.2,
+          "frequency": 0.021,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1500,
+          "y": 700
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1380,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "ambientIntensity": 1,
+          "ambientOcclusion": false,
+          "background": [
+            0.004,
+            0.006,
+            0.014,
+            1
+          ],
+          "camera": "eye1",
+          "environmentIntensity": 1,
+          "lights": "",
+          "scenes": "body1 fast1 heads1",
+          "showEnvironment": false
+        },
+        "position": {
+          "x": -220,
+          "y": 0
+        },
+        "type": "render"
+      },
+      "streak": {
+        "definitionVersion": 1,
+        "id": "streak",
+        "label": "streak1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"qualifier\":\"direction\",\"default\":[0,0,0]},{\"name\":\"trail\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"size\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[1]}]",
+          "capacity": 18000,
+          "group": "",
+          "kernel": "/* The streak's length in SECONDS OF THIS MOTE'S OWN TRAVEL. It lives HERE and nowhere\n   else (§V349): the structural gate reads this very declaration out of the shipped kernel\n   rather than keeping a second copy that could drift away from it. */\nconst TRAIL: f32 = 0.34;\nconst SPEED_REFERENCE: f32 = 0.85;\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T401: position and velocity arrive from the DRIFT kernel's pairs, fresh this frame,\n     and ride through unchanged in the copy above. This node is the one the draws bind, so\n     it owns the edge they read (§V197) — and tint is NOT in this schema, so it travels\n     past this node BY REFERENCE. That is the whole reason five channels reach the draws\n     when one kernel may declare only FOUR attributes (§V588): the ceiling is per kernel,\n     and a chain is how you spend more than one kernel's worth.\n\n     Nothing here integrates. This kernel is the READING, not the simulation — the split is\n     E16's flock/part and E34's cast/sight, and it is what keeps the wind in one file's\n     worth of arithmetic and the geometry in another. */\n\n  /* THE STREAK, and T680 in one line. A beam takes a per-point FAR END, so a velocity-\n     scaled trail costs ONE attribute and NO HISTORY: backwards along this mote's own\n     velocity by TRAIL seconds. The ribbon therefore IS the distance the mote covers in\n     that time, and a fast mote draws a long one BY CONSTRUCTION rather than by a rule\n     somebody wrote.\n\n     Derived from VELOCITY and not from the previous POSITION on purpose, and the\n     difference is visible: a previous-position trail draws a false streak across the frame\n     the instant anything moves a point discontinuously, and a velocity trail cannot, because\n     velocity does not jump when position does. */\n  q.trail = p.position - p.velocity * TRAIL;\n\n  /* SIZE, normalised against the SAME reference speed the colour uses so the two readings\n     agree about what \"fast\" means (§V349). T721's scale map MULTIPLIES the geometry's own\n     Scale by this, so the number on the node stays the object's size and this stays a\n     factor. The floor is 0.35 rather than 0: a mote at rest is small, never absent. */\n  q.size = 0.35 + 1.65 * clamp(length(p.velocity) / SPEED_REFERENCE, 0.0, 1.0);\n  return q;\n}",
+          "seed": 37,
+          "value1": 0,
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -1180,
+          "y": 0
+        },
+        "type": "pointKernel"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E37 Sirocco",
+  "projectId": "example-e37-sirocco",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 37,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
