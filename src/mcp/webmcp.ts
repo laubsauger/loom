@@ -83,13 +83,28 @@ export interface RegisterWebMcpOptions {
  * the first registration's tools are already live against the current surface.
  */
 /**
- * T525: hosts this page already published to via `registerTool`. A re-run (StrictMode's
- * probe, a surface re-mint) would throw one caught "Duplicate tool name" per tool — 28
- * exceptions flooding the console on every load, harmless but indistinguishable from a
- * real failure at a glance. Skipping the whole loop for a known host says the same
- * thing silently; the standing registration keeps answering through the provider (B93).
+ * T525/T550: has this page already published via `registerTool`? A re-run (StrictMode's
+ * probe, a surface re-mint) would reject one "Duplicate tool name" per tool — 28
+ * unhandled rejections flooding the console on every load, harmless but
+ * indistinguishable from a real failure at a glance. The guard is a `Symbol.for` marker
+ * on the host's DOCUMENT, not a module-level WeakSet, because a long-lived HMR session
+ * can run two copies of this module (§V442) and two WeakSets absorb nothing; the
+ * symbol registry is global to the page, so both copies see one marker. Measured
+ * before choosing: `document.modelContext` IS identity-stable here, so the weak set
+ * was sound against StrictMode alone — the marker also survives the dual-module case.
  */
-const registeredHosts = new WeakSet<object>();
+const REGISTERED_MARKER = Symbol.for("shaderloom.webmcp.registered");
+
+function alreadyRegistered(host: unknown): boolean {
+  const doc = (host as { document?: object }).document;
+  if (doc === undefined) return false;
+  return (doc as Record<symbol, unknown>)[REGISTERED_MARKER] === true;
+}
+
+function markRegistered(host: unknown): void {
+  const doc = (host as { document?: object }).document;
+  if (doc !== undefined) (doc as Record<symbol, unknown>)[REGISTERED_MARKER] = true;
+}
 
 export function registerWebMcp(
   surface: AgentToolSurface | (() => AgentToolSurface),
@@ -137,18 +152,22 @@ export function registerWebMcp(
   const provide = context.provideContext;
   if (typeof provide === "function") {
     provide({ tools });
-  } else if (!registeredHosts.has(context)) {
-    registeredHosts.add(context);
+  } else if (!alreadyRegistered(options.host ?? globalThis)) {
+    markRegistered(options.host ?? globalThis);
     for (const tool of tools) {
+      // T550, and the owner diagnosed it from the stack trace before either agent did:
+      // `registerTool` returns a PROMISE, so its duplicate-name rejection sailed past
+      // the old synchronous try/catch as "Uncaught (in promise)" — the catch that
+      // "handled" it never ran. The filter below is the same reasoning, attached to a
+      // catch that actually runs: a duplicate is harmless BECAUSE execute goes through
+      // the provider (B93) — the standing registration already answers from the
+      // current surface. Anything else stays loud: a swallowed schema rejection would
+      // be a tool that silently never existed.
       try {
-        context.registerTool?.(tool);
+        void Promise.resolve(context.registerTool?.(tool)).catch((error: unknown) => {
+          if (!String(error).toLowerCase().includes("duplicate")) throw error;
+        });
       } catch (error) {
-        // "Duplicate tool name": this page already registered it, and `registerTool`
-        // has no replace or unregister in the proposal. Harmless BECAUSE execute goes
-        // through the provider — the standing registration already answers from the
-        // current surface, so there is nothing stale to replace (B93). Anything ELSE
-        // stays loud: a swallowed schema rejection would be a tool that silently
-        // never existed.
         if (!String(error).toLowerCase().includes("duplicate")) throw error;
       }
     }
