@@ -631,7 +631,15 @@ export function GraphCanvas({
           maxZoom={8}
           fitView
         >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--line)" />
+          {/*
+            T708: --graph-dot at size 1.5, not --line at size 1. Two things were wrong
+            and only fixing one leaves the grid invisible: the colour carried ΔL* 10.7
+            over the ground it was drawn on, and `size={1}` is a radius of 0.5px, so
+            every dot was a single antialiased sub-pixel that washed the little
+            contrast it had straight back out. The token now clears the graph void by
+            ΔL* 22.8 and the dot has a pixel to land in.
+          */}
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1.5} color="var(--graph-dot)" />
           {underlay}
           <ReferenceLines dependencies={dependencies} />
         </ReactFlow>

@@ -96,13 +96,16 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
       // Lifted from #0b0e14 (2096a6f): a preview tile's content is often pure black, so
       // the tile, the node body and the canvas ground collapsed into one shape. This test
       // is the reason the palette cannot drift silently — it caught that commit.
-      "--bg-void": "#10141d",
-      "--bg-panel": "#12161f",
-      "--bg-raise": "#1a202c",
-      "--line": "#232a38",
-      "--line-hot": "#384356",
+      // Widened at T708; the SEPARATION between them is gated below, which is the part
+      // that survives the next deliberate re-pin of these values.
+      "--bg-void": "#131821",
+      "--bg-panel": "#191e29",
+      "--bg-raise": "#232937",
+      "--line": "#2e3646",
+      "--divider-line": "#293040",
+      "--line-hot": "#404a5f",
       "--text": "#d6dce8",
-      "--text-dim": "#7c8698",
+      "--text-dim": "#8d95a7",
       "--signal": "#f2a03d",
       "--warn": "#fbbf24",
       "--error": "#ff5c57",
@@ -139,6 +142,136 @@ describe("V17 — dark-only theme, every color comes from a token", () => {
     // A stack, not a single face: sans-serif / monospace endpoints are present.
     expect(tokensCss).toMatch(/--font-ui:[^;]*sans-serif;/s);
     expect(tokensCss).toMatch(/--font-mono:[^;]*monospace;/s);
+  });
+});
+
+/**
+ * T708 — the SURFACE LADDER has a numeric floor.
+ *
+ * The bug this replaces was not a wrong colour, it was a colour difference too small to
+ * see: --bg-void and --bg-panel differed by rgb(2,2,2), so the 3px pane gutter documented
+ * under --divider could not be perceived and every pane read as one sheet. Pinning the
+ * hexes (above) catches an ACCIDENTAL edit, but it cannot catch the failure mode that
+ * actually happened — someone deliberately re-tuning the palette and re-pinning it just
+ * as flat. Only a floor on the SEPARATION does that, so this is the gate that matters.
+ *
+ * The measure is CIE L*, not raw rgb distance: L* is uniform in perceived lightness, so
+ * "4 units apart" means the same thing at the dark end of the ramp as at the light end,
+ * which raw channel deltas emphatically do not. The floors are stated as constants rather
+ * than inlined so that raising or lowering the bar is a visible, reviewable edit.
+ */
+const MIN_SURFACE_STEP = 4; // adjacent rungs of the structural ladder
+const MIN_STATE_STEP = 3; // a hover/active state against the surface it covers
+const MIN_LINE_STEP = 4; // a hairline against the lightest surface it rules
+const MIN_DOT_STEP = 15; // the graph dot grid against the graph void
+
+/** sRGB hex -> CIE L* (D65). */
+function lightness(hex: string): number {
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+  const linear = channels.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const y = 0.2126729 * linear[0]! + 0.7151522 * linear[1]! + 0.072175 * linear[2]!;
+  return y <= 216 / 24389 ? y * (24389 / 27) : Math.cbrt(y) * 116 - 16;
+}
+
+/** The value tokens.css actually declares — never a copy of it kept in this file. */
+function tokenLightness(name: string): number {
+  const match = new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`).exec(tokensCss);
+  if (match === null) throw new Error(`${name} is not declared in tokens.css as a 6-digit hex`);
+  return lightness(match[1]!);
+}
+
+describe("T708 — adjacent surfaces are separated by a perceptible amount", () => {
+  it("reads the ladder out of tokens.css, so a re-tuned palette is re-measured", () => {
+    // Guards the guard: if the regex stopped matching, every assertion below would be
+    // measuring nothing. A ladder that does not rise is not a ladder.
+    const ladder = ["--bg-sunken", "--bg-void", "--bg-panel", "--bg-raise"].map(tokenLightness);
+    expect(ladder).toHaveLength(4);
+    expect([...ladder].sort((a, b) => a - b)).toEqual(ladder);
+  });
+
+  it.each([
+    // Only the pairs that actually MEET on screen carry the floor. --bg-void is the app
+    // backdrop and is occluded everywhere by a pane or the canvas, so it is held in
+    // ladder ORDER (above) but not to a perceptual step — a floor on an invisible pair
+    // would be a number nobody can check by looking, and it would have blocked the
+    // owner's tightening of the two visible ends for no reason anyone could see.
+    ["--bg-sunken", "--bg-panel"], // the graph well against every pane around it
+    ["--bg-panel", "--bg-raise"], // a pane against the nodes, menus and popovers on it
+  ])("%s and %s are at least 4 L* apart", (darker, lighter) => {
+    expect(tokenLightness(lighter) - tokenLightness(darker)).toBeGreaterThanOrEqual(
+      MIN_SURFACE_STEP,
+    );
+  });
+
+  it("draws the pane seam LIGHTER than both surfaces it separates", () => {
+    /*
+     * The inverted relationship, gated rather than remembered. T491 made the seam
+     * RECESSED — 3px of --bg-void showing between panes — and T708 first widened the
+     * ladder while keeping it recessed. The owner looked at that and reversed it: "the
+     * vertical dividers and horizontal ones should BE lighter and not be almost black."
+     *
+     * A floor written as "adjacent surfaces must differ" cannot express this. It is
+     * satisfied just as well by a seam DARKER than its neighbours, which is precisely
+     * the design that was rejected — so the separation is asserted with a direction.
+     * The seam divides a pane from another pane, and a pane from the graph well, so it
+     * must clear the lightest and the darkest of those.
+     */
+    const seam = tokenLightness("--divider-line");
+    for (const surface of ["--bg-panel", "--bg-sunken", "--bg-void"]) {
+      expect(seam - tokenLightness(surface)).toBeGreaterThanOrEqual(MIN_SURFACE_STEP);
+    }
+    // And the drag/hover state has to brighten further, not darken back past the seam.
+    expect(tokenLightness("--line-hot")).toBeGreaterThan(seam);
+  });
+
+  it("separates each interaction state from the surface it covers", () => {
+    expect(tokenLightness("--bg-hover") - tokenLightness("--bg-panel")).toBeGreaterThanOrEqual(
+      MIN_STATE_STEP,
+    );
+    // --bg-active is the highlighted row inside a menu, and a menu is --bg-raise.
+    expect(tokenLightness("--bg-active") - tokenLightness("--bg-raise")).toBeGreaterThanOrEqual(
+      MIN_STATE_STEP,
+    );
+  });
+
+  it("keeps a hairline visible on the lightest surface it rules", () => {
+    expect(tokenLightness("--line") - tokenLightness("--bg-raise")).toBeGreaterThanOrEqual(
+      MIN_LINE_STEP,
+    );
+    expect(tokenLightness("--line-hot") - tokenLightness("--line")).toBeGreaterThanOrEqual(
+      MIN_LINE_STEP,
+    );
+  });
+
+  it("keeps the graph dot grid visible against the graph void", () => {
+    // A far bigger floor than a surface step, and deliberately so: the dots are a 1.5px
+    // radius on a 16px pitch, so they are mostly antialiased edge. A separation that
+    // reads across a whole pane does not read across a sub-pixel dot — which is how the
+    // grid went missing while --line was, on paper, "ten L* above the ground".
+    expect(tokenLightness("--graph-dot") - tokenLightness("--bg-sunken")).toBeGreaterThanOrEqual(
+      MIN_DOT_STEP,
+    );
+  });
+
+  it("keeps dim text legible against every surface it is set on", () => {
+    // Widening the ladder lifts the surfaces under the text; without raising --text-dim
+    // with them this rebalance would have bought contrast between panes by spending it
+    // on the 11px meta text inside them.
+    const contrast = (a: string, b: string) => {
+      const luminance = (hex: string) => {
+        const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+        const [r, g, bl] = channels.map((c) =>
+          c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+        );
+        return 0.2126729 * r! + 0.7151522 * g! + 0.072175 * bl!;
+      };
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    };
+    const hex = (name: string) => new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`).exec(tokensCss)![1]!;
+    for (const surface of ["--bg-panel", "--bg-raise"]) {
+      expect(contrast(hex("--text-dim"), hex(surface))).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 

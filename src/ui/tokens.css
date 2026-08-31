@@ -9,16 +9,57 @@
 :root {
   color-scheme: dark;
 
-  /* ---- ground ------------------------------------------------------- */
-  --bg-void: #10141d; /* canvas ground, app backdrop */
-  --bg-panel: #12161f; /* pane fill */
-  --bg-raise: #1a202c; /* node body, popover, menu */
-  --line: #232a38; /* hairline, pane divider */
-  --line-hot: #384356; /* divider hover / drag */
+  /* ---- ground -------------------------------------------------------
+     T708: the SURFACE LADDER. Every value below is a chosen L* on one ramp
+     (CIE L*, hue 276.5°, chroma rising with lightness), NOT a hex picked by
+     eye — and `tokens.test.ts` gates the relationships between them.
+
+     The ladder before T708 was decorative rather than functional: --bg-void
+     and --bg-panel sat at L* 6.32 and 7.24, a difference of rgb(2,2,2), so
+     the 3px seam documented under --divider was invisible by construction
+     and every pane, sidebar and dock read as one flat sheet. Widening the
+     steps is what makes a division visible; drawing MORE chrome is not
+     (§V90 — the ask is division, not decoration).
+
+       --bg-sunken     L*  5.1   graph void, wells
+       --bg-void       L*  8.1   app backdrop — see the note on it below
+       --bg-panel      L* 11.2   pane fill
+       --bg-raise      L* 16.6   node body, popover, menu
+       --divider-line  L* 19.9   the seam BETWEEN panes
+
+     The surfaces a user actually sees meet are 5-6 L* apart, over the 4.0
+     floor the test enforces.
+
+     THE SEAM IS LIT, NOT RECESSED, and that is a deliberate reversal of the
+     original T491 design. The owner's call, looking at the running app: "the
+     vertical dividers and horizontal ones should BE lighter and not be almost
+     black" — so --divider-line sits ABOVE every surface it separates rather
+     than below them, the way TouchDesigner draws a pane edge. A recessed
+     gutter was the first attempt and the owner rejected it. If you are here
+     because a light seam looks like a bug: it is not, it is the requirement,
+     and `tokens.test.ts` gates the seam EXCEEDING both neighbours so the
+     relationship cannot quietly invert back. */
+  --bg-void: #131821; /* canvas ground, app backdrop */
+  --bg-panel: #191e29; /* pane fill */
+  --bg-raise: #232937; /* node body, popover, menu */
+  --line: #2e3646; /* hairline */
+  /* The inter-pane seam. Its own token rather than --bg-void because the two roles
+     genuinely diverged: --bg-void is the backdrop BEHIND everything (and is almost
+     entirely occluded — panes and the canvas cover it), while this is a LINE drawn
+     between two panes and must read above both. Overloading one token on both is
+     what produced the invisible gutter in the first place. Paired with --divider,
+     which is the seam's THICKNESS. */
+  --divider-line: #293040;
+  --line-hot: #404a5f; /* seam hover / drag */
 
   /* ---- text --------------------------------------------------------- */
   --text: #d6dce8;
-  --text-dim: #7c8698; /* labels, units, meta */
+  /* T708: raised with the ladder, not independently. Widening the surface steps
+     lifts --bg-panel and --bg-raise, and dim text held at its old L* 55.7 would
+     have fallen from 4.93:1 to 4.40:1 against the pane fill — below the 4.5:1
+     floor for 11px meta. At L* 61.6 it reads 5.55:1 on panel and 4.84:1 on
+     raise, so the rebalance costs no legibility. */
+  --text-dim: #8d95a7; /* labels, units, meta */
 
   /* ---- state -------------------------------------------------------- */
   --signal: #f2a03d; /* live / active / running amber */
@@ -30,9 +71,17 @@
   /* ---- derived surfaces --------------------------------------------
      No new hues: these interpolate between the ground steps above so the
      chrome stays a single neutral ramp. */
-  --bg-sunken: #090c11; /* wells, inset tracks, graph void */
-  --bg-hover: #171c27;
-  --bg-active: #202838;
+  --bg-sunken: #0d111a; /* wells, inset tracks, graph void */
+  --bg-hover: #202633;
+  --bg-active: #2c3444;
+  /* T708: the graph's dot grid. Its own token rather than --line because the two
+     have different jobs and different grounds: a hairline rules a PANEL, the dots
+     sit on the graph void, and at r=0.5 a dot needs far more separation than a
+     continuous 1px rule to register at all. --line on --bg-void gave the dots
+     ΔL* 10.7 across a sub-pixel radius, which is why the owner could not see the
+     grid. Against --bg-sunken this is ΔL* 21.0. Full brightness is deliberate —
+     T463 already settled that the network background is not dimmed. */
+  --graph-dot: #353e50;
   --bg-overlay: rgba(6, 8, 12, 0.66); /* dialog backdrop */
   --shadow-raise: 0 8px 24px rgba(0, 0, 0, 0.55);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.02);
@@ -117,9 +166,17 @@
   /* T491 (V438): STRUCTURAL boundaries read a step heavier than content hairlines.
      A pane division at 1px of --line was indistinguishable from a tab strip's border
      or a section rule, so the shell's architecture and its furniture carried equal
-     weight. 3px of recessed ground (the gutter shows --bg-void between panes) is a
-     tone step AND a weight step — never a second hairline beside the first. */
-  --divider: 3px; /* visual thickness; hit area is widened in JS */
+     weight. 3px is that weight step — never a second hairline beside the first.
+
+     T708 REVERSED THE TONE STEP. T491 made the seam RECESSED ground, showing --bg-void
+     between panes; at the palette of the day that was a 1% difference and could not be
+     seen at all, and when the ladder was widened the owner looked at the recessed
+     version and rejected it outright: "the vertical dividers and horizontal ones should
+     BE lighter and not be almost black. or actually black." So the seam is now a LIT
+     edge — --divider-line, above both surfaces it separates — and it is drawn by
+     `app-shell.module.css .handle`. The weight step (3px) survives from T491; only the
+     direction of the tone step changed. Do not "restore" a dark gutter here. */
+  --divider: 3px; /* seam thickness; the tone is --divider-line, hit area widened in JS */
 
   /* ---- motion (V19) --------------------------------------------------
      Zeroed under prefers-reduced-motion below, so any consumer that drives
@@ -171,7 +228,7 @@
   --radius-sm: 2px;
   --radius-lg: 6px;
   --radius-pill: 999px;
-  --text-disabled: #5a6478;
+  --text-disabled: #656c7c; /* T708: raised with the ladder, holding its 3.0:1 on panel */
   --selection-bg: #24405c;
   --z-canvas-overlay: 30;
   --z-toast: 90;

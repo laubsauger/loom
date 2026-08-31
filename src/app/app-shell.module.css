@@ -45,15 +45,23 @@
   min-height: 0;
 }
 
-/* Dividers: a 3px GUTTER of recessed ground (T491, V438), zero radius (§C), with a
-   generous invisible hit area supplied by the handle's pointer margins. The tone step
-   below the pane fill is what separates a structural division from the 1px --line
-   hairlines that rule tab strips and sections — architecture heavier than furniture. */
+/* Dividers: a 3px LIT SEAM (T491 for the weight, T708 for the tone), zero radius (§C),
+   with a generous invisible hit area supplied by the handle's pointer margins. The 3px
+   width is what separates a structural division from the 1px --line hairlines that rule
+   tab strips and sections — architecture heavier than furniture.
+
+   T708: --divider-line, not --bg-void. This was a RECESSED gutter showing the app
+   backdrop between panes, and two things were wrong with that. It was invisible — void
+   and panel differed by 2/255 per channel — and once the ladder was widened enough to see it,
+   the owner rejected the recessed reading itself: a seam should be a lit edge, the way
+   TouchDesigner draws one, not a shadow gap. --divider-line sits ABOVE both surfaces it
+   separates, and `tokens.test.ts` gates that it stays above them. Applies to .handleV
+   and .handleH alike — the owner named vertical and horizontal seams together. */
 .handle {
   position: relative;
   flex: 0 0 auto;
   border-radius: var(--radius-none);
-  background: var(--bg-void);
+  background: var(--divider-line);
   transition: background var(--dur-instant) var(--ease-out);
 }
 

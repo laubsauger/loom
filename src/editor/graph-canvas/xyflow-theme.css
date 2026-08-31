@@ -8,8 +8,17 @@
  * the in-flight connection line, handle connect feedback, the attribution.
  */
 
+/*
+ * T708: --bg-sunken, not --bg-void. This rule paints over `.graph`, whose own fill is
+ * already --bg-sunken ("wells, inset tracks, GRAPH VOID") — so the canvas was painting
+ * the app BACKDROP colour and the pane's declared intent never reached a pixel. The
+ * consequence was worse than a wrong shade: the 3px pane gutter is also --bg-void, so
+ * along every edge the graph shares with a divider there was literally zero tone step
+ * and the graph had no visible boundary at all. On --bg-sunken the graph reads as the
+ * deep well the ladder says it is, one full step below the gutter.
+ */
 .react-flow {
-  background: var(--bg-void);
+  background: var(--bg-sunken);
 }
 
 .react-flow__pane {
