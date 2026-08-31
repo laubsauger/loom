@@ -205,7 +205,10 @@ describe("T394 — fullscreen the viewer", () => {
   });
 
   it("targets the CHILD document once the viewer is floated into its own window (T393)", async () => {
-    const user = userEvent.setup();
+    // delay: null and a widened budget: this test mounts the full App and walks three
+    // real clicks; under a parallel suite the default 5s timeout flaked for three
+    // different sessions before anyone fixed the clock instead of re-attributing it.
+    const user = userEvent.setup({ delay: null });
     const childDocument = document.implementation.createHTMLDocument("floated viewer");
     const child: PaneWindow = {
       document: childDocument,
@@ -253,7 +256,7 @@ describe("T394 — fullscreen the viewer", () => {
     expect(spy.requests, "asked for fullscreen again instead of leaving it").toEqual([surface]);
     expect(childDocument.fullscreenElement).toBeNull();
     runtime.dispose();
-  });
+  }, 20_000);
 
   it("target 'app' fullscreens the DOCUMENT ELEMENT — the whole app, browser bar gone (T551)", async () => {
     const runtime = await mountApp();
