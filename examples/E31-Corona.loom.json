@@ -675,7 +675,7 @@
         "id": "drift",
         "label": "drift1",
         "parameters": {
-          "amplitude": 0.35,
+          "amplitude": 30,
           "frequency": 0.035,
           "offset": 0,
           "phase": 0,

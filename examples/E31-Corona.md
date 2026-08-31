@@ -226,9 +226,14 @@ music. The palette is a performance, not a decision made once.
 
 ## 8. The slowest thing is slower than your attention span
 
-`drift1` runs at **0.035 Hz — a 29-second cycle** — on hue. That single number is most of
-why an hour of this is watchable: at any moment something is changing that you did not
-notice start. Free-running (§V436, B98), so a timeline lap does not restart it.
+`drift1` runs at **0.035 Hz — a 29-second cycle** — on hue, and swings **±30 degrees**
+either side of it. It takes both numbers: `lfoValue` returns its amplitude in the DRIVEN
+PARAMETER'S units, so a period this slow with a swing too small to see is a cycle nothing
+travels through. 60 degrees peak-to-peak is a sixth of the wheel — the palette is
+somewhere else than it was a moment ago, never somewhere else entirely.
+
+That is most of why an hour of this is watchable: at any moment something is changing that
+you did not notice start. Free-running (§V436, B98), so a timeline lap does not restart it.
 
 ## What shipping it changed, and it is one thing
 

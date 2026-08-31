@@ -4868,8 +4868,11 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  *
  * ## 8. THE SLOWEST THING IS SLOWER THAN YOUR ATTENTION SPAN
  *
- * `hue1`'s LFO runs at 0.035 Hz — a 29-second cycle. That single number is most of why it
- * does not get boring: at any moment something is changing that you did not notice start.
+ * `hue1`'s LFO runs at 0.035 Hz — a 29-second cycle — and swings ±30 degrees on it. It
+ * takes BOTH numbers (T574): `lfoValue`'s amplitude is in the driven parameter's units, so
+ * a period this slow with a swing too small to see is a cycle nothing travels through.
+ * Together they are most of why it does not get boring: at any moment something is
+ * changing that you did not notice start.
  *
  * ## What T538 changed, and it is one thing
  *
@@ -5059,8 +5062,23 @@ const coronaDocument = document(
       node("mixTrail", "screen", [1380, -240], {}, { label: "mixtrail1" }),
       /* 0.035 Hz — a 29-SECOND cycle (§V471.8). The slowest thing in the piece is slower
          than the viewer's attention span, which is most of why an hour of it is watchable.
-         Free-running (§V436, B98), so a timeline lap does not restart the drift. */
-      node("drift", "lfo", [1380, 60], { shape: "sine", frequency: 0.035, amplitude: 0.35, offset: 0, phase: 0 }, { label: "drift1" }),
+         Free-running (§V436, B98), so a timeline lap does not restart the drift.
+
+         T574 — AND THE AMPLITUDE IS IN THE TARGET'S UNITS, which is what this file got
+         wrong for four rounds. `lfoValue` returns `offset + amplitude·wave` in whatever
+         the DRIVEN PARAMETER measures, and `hue1.hueoffset` is DEGREES on a -180..180
+         range. So the old `0.35` swung ±0.35 DEGREES — a tenth of a percent of a turn —
+         while the .md claimed the drift was most of why the piece does not get boring.
+         The period was always right; the travel was ~100x short and no test could see it
+         (§T575: the range checker reads an LFO as a default 0..1 span, not its real one,
+         so this one is checked BY EYE).
+
+         30 is 30 degrees either side — 60 PEAK-TO-PEAK, a sixth of the wheel. Calibrated
+         against E32-Pasture, which runs 24 on this identical `drift1 -> hueoffset` shape
+         and reads as genuinely travelling: a quarter more than Pasture, which suits Corona
+         being the more colour-forward piece, and nowhere near a rainbow cycle. The palette
+         should be somewhere else than it was a moment ago, not somewhere ELSE ENTIRELY. */
+      node("drift", "lfo", [1380, 60], { shape: "sine", frequency: 0.035, amplitude: 30, offset: 0, phase: 0 }, { label: "drift1" }),
       node("hue", "hsv", [1640, -240], { saturation: 1.12, value: 1 }, {
         label: "hue1",
         parameters: { hueoffset: drivenSlot("drift1", 0) },
