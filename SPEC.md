@@ -2124,7 +2124,7 @@ T243|.|**Text generator — RASTERIZE THE STRING, ⊥ a glyph atlas.** AMENDED: 
 T312|.|plumb the node's RESOLVED size to the media-source hook. `copyExternalImageToTexture` asserts matching extents ∴ a rasterizer ! draw @ resolved size, ⊥ project size, or a per-node resolution override breaks the upload. video sidesteps this by adopting the INTRINSIC size; text has none worth adopting|T243,T264,V167
 T232|x|**Composite** node — variadic in + `operation` enum (`compileTime`), sharing ONE blend module w/ the named nodes|V140,V141,V131,V107
 T226|x|Composite family variadic (Over/Add/Multiply/Screen/Difference) — fold N inputs ∈ declared order; Over is order-dependent so the fold direction is a stated fact, ⊥ an accident|V131,V14
-T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown|V132,V19
+T227|.|variadic port UI: n slots + 1 free, drag to reorder, index shown ⟶ ⚠**SUPERSEDED BY T695 — SAME WORK, & the owner has now asked for it.** T695 carries the owner's words & the REASON the single-handle form is wrong (⊥ target to replace ∴ drop-replace impossible BY CONSTRUCTION). this row's extra asks — **drag to REORDER & INDEX SHOWN** — are ⊥ ∈ T695 & ! be folded in ∨ explicitly dropped: if handle identity is positional, reorder & the stability problem T695 names are THE SAME PROBLEM|V132,V19,T695
 T221|x|node `name` as a unique identifier: auto-number on create + on rename collision, `label` → name semantics, uniqueness enforced ∈ the patch layer|V127,V129
 T222|x|rename rewrites referencing binds/expressions ∈ the same patch|V128,V110
 T223|x|**Null node** — 1 in 1 out, passthrough, ⊥ emits a pass; the stable reference point for rewiring|V127,V25
