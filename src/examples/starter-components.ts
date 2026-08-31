@@ -213,7 +213,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     publish: [
       {
         key: "persistence",
-        definition: { type: "number", label: "Persistence", default: 0.997, min: 0, max: 1 },
+        definition: { type: "number", label: "Persistence", default: 0.997, min: 0, max: 1, step: 0.001 },
         targets: [{ nodeId: "echo", key: "persistence" }],
       },
       {
@@ -240,13 +240,14 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: 0.25,
           min: -360,
           max: 360,
+          step: 0.05,
           unit: "degrees",
         },
         targets: [{ nodeId: "drift", key: "r" }],
       },
       {
         key: "softness",
-        definition: { type: "number", label: "Softness", default: 1.4, min: 0, max: 128, unit: "px" },
+        definition: { type: "number", label: "Softness", default: 1.4, min: 0, max: 128, step: 0.1, unit: "px" },
         targets: [{ nodeId: "soften", key: "size" }],
       },
     ],
@@ -283,7 +284,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "radius",
-        definition: { type: "number", label: "Radius", default: 40, min: 0, max: 128, unit: "px" },
+        definition: { type: "number", label: "Radius", default: 40, min: 0, max: 128, step: 0.5, unit: "px" },
         targets: [{ nodeId: "glow", key: "size" }],
       },
       {
@@ -320,6 +321,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: 30,
           min: -360,
           max: 360,
+          step: 0.05,
           unit: "degrees",
         },
         targets: [{ nodeId: "fold", key: "r" }],
@@ -337,6 +339,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: -15,
           min: -360,
           max: 360,
+          step: 0.05,
           unit: "degrees",
         },
         targets: [{ nodeId: "spin", key: "r" }],
@@ -385,6 +388,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           default: 12,
           min: -360,
           max: 360,
+          step: 0.05,
           unit: "degrees",
         },
         targets: [{ nodeId: "place", key: "r" }],
@@ -411,7 +415,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     publish: [
       {
         key: "blacklevel",
-        definition: { type: "number", label: "Black Level", default: 0, min: -1, max: 2 },
+        definition: { type: "number", label: "Black Level", default: 0, min: -1, max: 2, step: 0.005 },
         targets: [{ nodeId: "range", key: "blacklevel" }],
       },
       {
@@ -421,12 +425,12 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
       {
         key: "gamma",
-        definition: { type: "number", label: "Gamma", default: 1, min: 0.01, max: 8 },
+        definition: { type: "number", label: "Gamma", default: 1, min: 0.01, max: 8, step: 0.01 },
         targets: [{ nodeId: "range", key: "gamma1" }],
       },
       {
         key: "contrast",
-        definition: { type: "number", label: "Contrast", default: 1, min: 0, max: 8 },
+        definition: { type: "number", label: "Contrast", default: 1, min: 0, max: 8, step: 0.01 },
         targets: [{ nodeId: "range", key: "contrast" }],
       },
       {

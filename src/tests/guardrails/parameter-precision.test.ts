@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { buildStarterComponents } from "../../examples/starter-components.ts";
 import { lfoNode } from "@nodes/definitions/values.ts";
 import { decimalsFor, formatNumber, normalizeValue } from "@ui/controls/drag-math.ts";
 import type { NumericSpec } from "@ui/controls/types.ts";
@@ -77,5 +78,92 @@ describe("B80 — a continuous parameter can show a fraction", () => {
       }
     }
     expect(accidents).toEqual([]);
+  });
+});
+
+/**
+ * T648 — THE DEFAULT MUST SURVIVE BEING LOOKED AT.
+ *
+ * The property: displaying a value and committing the display back preserves it —
+ * `normalizeValue(Number(formatNumber(v, spec)), spec) === v` for the manifest default,
+ * the one value every user starts from. B80's gate above only refused a DERIVED ZERO
+ * decimals, and `(360 − (−360)) / 100 = 7.2` derives ONE — so the starter components'
+ * Spin (default 0.25°) displayed "0.3" and a click-and-blur committed 0. A guard with a
+ * hole shaped like every one-decimal parameter (§V461).
+ *
+ * Starter components are held to ZERO failures: they are the shipped surface a user
+ * clicks first, and every published numeric now declares its step. The CATALOGUE holds
+ * 27 known-lossy parameters — one number doing three jobs (drag rate, grid, decimals)
+ * across the whole manifest is T567's design call, deliberately not folded in here — so
+ * they are a RATCHET, §V541-style: each listed entry must STILL be lossy (fix one and
+ * this gate makes you take it off the list), and nothing unlisted may join them.
+ */
+const roundTrips = (value: number, spec: NumericSpec): boolean =>
+  normalizeValue(Number(formatNumber(value, spec)), spec) === value;
+
+/** T567's written inventory. Every entry is a default that display+commit damages. */
+const KNOWN_LOSSY_DEFAULTS: ReadonlySet<string> = new Set([
+  "noise.spread", "noise.exp", "noise.amp", "ramp.period", "circle.softness",
+  "rectangle.softness", "level.blacklevel", "level.gamma1", "level.contrast",
+  "level.brightness", "limit.high", "limit.steps", "lookup.scale", "blur.size",
+  "slope.angle", "cache.frames", "cache.scale", "renderPoints.sizePixels",
+  "text.size", "text.linespacing", "valueFilter.cutoff", "audioPattern.bpm",
+  "camera.fov", "render.aoRadius", "materialPhong.shininess",
+  "renderInstances.fov", "renderSurface.fov",
+]);
+
+describe("T648 — display-then-commit preserves the default", () => {
+  it("the reported instance, pinned: Spin's 0.25 degrees survives the field", async () => {
+    const components = await buildStarterComponents();
+    const echo = components.find((entry) => entry.definition.componentId === "feedbackEcho");
+    const spin = echo?.definition.parameters.find((entry) => entry.key === "spin");
+    expect(spin).toBeDefined();
+    const spec = spin?.definition as NumericSpec;
+    // The symptom, verbatim: 0.25 displayed "0.3" and committed 0 — a click destroyed it.
+    expect(formatNumber(0.25, spec)).toBe("0.25");
+    expect(normalizeValue(Number(formatNumber(0.25, spec)), spec)).toBe(0.25);
+  });
+
+  it("every starter component's published default survives — zero tolerance", async () => {
+    const lossy: string[] = [];
+    for (const component of await buildStarterComponents()) {
+      for (const published of component.definition.parameters) {
+        const definition = published.definition as { type?: string };
+        if (definition.type !== "number") continue;
+        const spec = published.definition as NumericSpec;
+        if (typeof spec.default !== "number") continue;
+        if (!roundTrips(spec.default, spec)) {
+          lossy.push(
+            `${component.definition.componentId}.${published.key}: default ${String(spec.default)} ` +
+              `displays "${formatNumber(spec.default, spec)}" and commits ` +
+              `${String(normalizeValue(Number(formatNumber(spec.default, spec)), spec))}`,
+          );
+        }
+      }
+    }
+    expect(lossy, lossy.join("\n")).toEqual([]);
+  });
+
+  it("the catalogue ratchet: the 27 known-lossy stay listed, and nobody joins them", () => {
+    const lossyNow = new Set<string>();
+    for (const definition of allNodeDefinitions) {
+      for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
+        if (parameter.type !== "number") continue;
+        const spec = parameter as NumericSpec;
+        if (typeof spec.default !== "number") continue;
+        if (!roundTrips(spec.default, spec)) lossyNow.add(`${definition.type}.${key}`);
+      }
+    }
+    const newcomers = [...lossyNow].filter((name) => !KNOWN_LOSSY_DEFAULTS.has(name)).sort();
+    expect(
+      newcomers,
+      `New parameters whose default does not survive display+commit — declare a step that ` +
+        `holds the default (T648): ${newcomers.join(", ")}`,
+    ).toEqual([]);
+    const healed = [...KNOWN_LOSSY_DEFAULTS].filter((name) => !lossyNow.has(name)).sort();
+    expect(
+      healed,
+      `These are no longer lossy — take them off KNOWN_LOSSY_DEFAULTS so the ratchet holds (§V541): ${healed.join(", ")}`,
+    ).toEqual([]);
   });
 });
