@@ -16,6 +16,16 @@ nothing. The pattern is also the audio path's deterministic test signal — the 
 gate renders this file twice and demands byte-identical frames, with no recording
 involved.
 
+
+## What you see on load
+
+It **opens on a black frame**, for one or two frames, and then the chemistry appears.
+That is the simulation starting from a cleared state rather than a defect: the feedback
+pair's alpha channel is the seeded-start flag, so frame 0 is by construction the moment
+before any chemistry exists. Worth stating rather than hiding, because a gallery thumbnail
+is frame 0 — and T521's liveness gate holds a declared exemption for exactly this, which is
+why the sentence has to live here where a reader will find it.
+
 ## Graph
 
 ```
