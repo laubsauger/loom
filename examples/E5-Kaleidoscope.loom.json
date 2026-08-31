@@ -145,7 +145,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "abstime * 5 % 360"
+                "source": "abstime * 5"
               },
               "static": {
                 "kind": "static",
@@ -282,7 +282,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "360 - abstime * 2.5 % 360"
+                "source": "-abstime * 2.5"
               },
               "static": {
                 "kind": "static",

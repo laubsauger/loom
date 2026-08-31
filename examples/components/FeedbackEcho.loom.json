@@ -50,6 +50,28 @@
                 "nodeId": "decay",
                 "portId": "input"
               }
+            },
+            "in_in1_feed_1": {
+              "id": "in_in1_feed_1",
+              "source": {
+                "nodeId": "in_in1",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "over",
+                "portId": "in1"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "over",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
             }
           },
           "groups": {},
@@ -114,6 +136,28 @@
               },
               "type": "feedback"
             },
+            "in_in1": {
+              "definitionVersion": 1,
+              "id": "in_in1",
+              "label": "in1",
+              "parameters": {},
+              "position": {
+                "x": -200,
+                "y": -60
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 280,
+                "y": -60
+              },
+              "type": "componentOut"
+            },
             "over": {
               "definitionVersion": 1,
               "id": "over",
@@ -147,17 +191,17 @@
         "inputs": [
           {
             "externalId": "in1",
-            "label": "Front",
-            "nodeId": "over",
-            "portId": "in1"
+            "label": "in1",
+            "nodeId": "in_in1",
+            "portId": "in"
           }
         ],
         "name": "FeedbackEcho",
         "outputs": [
           {
             "externalId": "out",
-            "label": "Out",
-            "nodeId": "over",
+            "label": "out",
+            "nodeId": "out_out",
             "portId": "out"
           }
         ],

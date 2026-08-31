@@ -361,7 +361,7 @@ export const reactionDiffusionDocument = document(
         offset: 0,
         mono: true,
         aspectcorrect: true,
-        t4d: 0,
+        t4d: 0.37, // T535: off the 4D lattice plane, where t4d=0 collapses amplitude — frame 0 (the thumbnail) was flatter than every frame after it
         s4d: 1,
         speed: 0.05,
       }, { label: "broad1" }),
@@ -378,7 +378,7 @@ export const reactionDiffusionDocument = document(
         offset: 0,
         mono: true,
         aspectcorrect: true,
-        t4d: 0,
+        t4d: 0.37, // T535: off the 4D lattice plane, where t4d=0 collapses amplitude — frame 0 (the thumbnail) was flatter than every frame after it
         s4d: 1,
         speed: 0.09,
       }, { label: "detail1" }),
@@ -519,7 +519,7 @@ export const animatedNoiseFieldDocument = document(
         offset: 0,
         mono: true,
         aspectcorrect: true,
-        t4d: 0,
+        t4d: 0.37, // T535: off the 4D lattice plane, where t4d=0 collapses amplitude — frame 0 (the thumbnail) was flatter than every frame after it
         s4d: 1,
         speed: 0.35,
       }),
@@ -855,7 +855,10 @@ export const kaleidoscopeDocument = document(
         // The translate is what makes this rotation VISIBLE: a circular ramp centred on
         // the frame is rotationally symmetric, so spinning it about its own centre would
         // be a no-op that every structural test would pass (§V361). Off-centre, it turns.
-        { parameters: { r: expressionSlot("abstime * 5 % 360", 30) } },
+        // T583: the `% 360` guard is gone — T537 freed expression values from the
+        // parameter's stored range, so the angle can just grow (E13's removal rendered
+        // byte-identical before its first wrap; only float rounding after).
+        { parameters: { r: expressionSlot("abstime * 5", 30) } },
       ),
       /**
        * TWO, NOT THREE, and the reason is measurable rather than aesthetic.
@@ -915,9 +918,9 @@ export const kaleidoscopeDocument = document(
         },
         // Counter-rotating, and slower than the fold: two rotations at the same rate are
         // one rotation, and the beat between 5 and 2.5 degrees a second is the drift the
-        // owner asked for. Written as `360 - x % 360` rather than with a unary minus so
-        // the value stays inside the parameter's own range at every instant.
-        { parameters: { r: expressionSlot("360 - abstime * 2.5 % 360", -15) } },
+        // owner asked for. T583: the old `360 - x % 360` contortion existed only to stay
+        // inside the stored range; T537 freed that, so this is just the negative rate.
+        { parameters: { r: expressionSlot("-abstime * 2.5", -15) } },
       ),
       node("out", "output", [280, 0]),
     ],
@@ -1029,7 +1032,8 @@ export const displacementStackDocument = document(
         // The field EVOLVES (noise speed) and is also PLACED differently over time, and
         // those are two different motions doing two different jobs — which is the whole
         // reason `shape` and `place` are separate nodes. ABSOLUTE clock (§V453).
-        { parameters: { r: expressionSlot("abstime * 4 % 360", 12) } },
+        // T583: `% 360` guard removed — see E5; T537 made it unnecessary.
+        { parameters: { r: expressionSlot("abstime * 4", 12) } },
       ),
       node("warp", "displace", [260, -60], {
         weight: [0.18, 0.13],
@@ -1088,7 +1092,7 @@ const lfoDissolveDocument = document(
           aspectcorrect: true,
           seed: 5,
           s4d: 1,
-          t4d: 0,
+          t4d: 0.37, // T535: off the 4D lattice plane, where t4d=0 collapses amplitude — frame 0 (the thumbnail) was flatter than every frame after it
           // Non-zero, and a 4D type: `speed` does nothing on a 2D field (B14).
           speed: 0.4,
         },
@@ -3274,7 +3278,7 @@ const gooeyballDocument = document(
           aspectcorrect: true,
           seed: 37,
           s4d: 1,
-          t4d: 0,
+          t4d: 0.37, // T535: off the lattice plane — see E2's note
           /* Animated, and a 4D type so `speed` actually does something (B14): the goo
              crawls over the ball instead of freezing into one dent. */
           speed: 0.3,
@@ -3888,7 +3892,7 @@ const reliefDocument = document(
       node("ripple", "noise", [-1680, 300], {
         type: "perlin4d", seed: 41, period: 0.32, harmon: 4, spread: 2.1, gain: 0.58,
         rough: 0.55, exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true,
-        t4d: 0, s4d: 1, speed: 0.16,
+        t4d: 0.37, s4d: 1, speed: 0.16, // T535: off the lattice plane
       }, { label: "ripple1" }),
       node("bed", "level", [-1380, 300], {
         /* T503: the bed used to be crushed to a 0.42..1.05 sliver — a sixth of the height
@@ -4371,14 +4375,19 @@ const descentDocument = document(
            above zero gives the corridor an END — without it the far rings asymptote toward
            a permanent grey haze instead of going out. GAMMA above one fights the other
            thing the loop does to a picture: every pass resamples bilinearly, so an edge
-           that has gone round fifty times is a gradient, and pulling the midtones down
-           steepens it again.
-           GAMMA AND NOT CONTRAST, and the difference is stability rather than taste. A
-           Contrast above one expands about a mid-grey pivot, so for anything brighter than
-           the pivot it is a GAIN — inside a loop that is positive feedback, and the first
-           build went to white in seven seconds with contrast 1.05 and persistence 0.989.
-           `pow(v, 1.12)` is below `v` everywhere in [0,1), so it sharpens and contracts at
-           the same time. Every stage inside a feedback loop has to be checked for that. */
+           that has gone round fifty times is a gradient, and lifting the midtones
+           re-steepens its dark ramp.
+           SIGN CHECKED (T618, §V481c): Level computes `pow(v, 1 / gamma1)`, so 1.12 is
+           `pow(v, 0.893)` — ABOVE `v` on (0,1), a midtone LIFT, i.e. mildly expansive.
+           An earlier version of this comment claimed the opposite and §V481(c) was
+           first recorded from it. What actually keeps the loop bounded is not this
+           stage contracting — it is `persistence 0.989` shrinking every pass and the
+           `blacklevel` floor clipping the tail; the lift only has to stay small enough
+           that their product with it is below one, which at 1.12 it does. Contrast was
+           still the wrong knob for a different reason: its expansion PIVOTS at mid-grey,
+           so the bright half gets gain exactly where the loop already accumulates, and
+           the first build went to white in seven seconds with contrast 1.05.
+           Every stage inside a feedback loop has to be sign-checked like this. */
         blacklevel: 0.006, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1.12, opacity: 1,
       }, { label: "fade1" }),
       node("shift", "hsv", [0, 230], {

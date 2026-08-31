@@ -28,10 +28,43 @@
                 "nodeId": "legal",
                 "portId": "input"
               }
+            },
+            "in_input_feed_1": {
+              "id": "in_input_feed_1",
+              "source": {
+                "nodeId": "in_input",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "range",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "legal",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
             }
           },
           "groups": {},
           "nodes": {
+            "in_input": {
+              "definitionVersion": 1,
+              "id": "in_input",
+              "label": "input",
+              "parameters": {},
+              "position": {
+                "x": -500,
+                "y": 0
+              },
+              "type": "componentIn"
+            },
             "legal": {
               "definitionVersion": 1,
               "id": "legal",
@@ -46,6 +79,17 @@
                 "y": 0
               },
               "type": "limit"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 500,
+                "y": 0
+              },
+              "type": "componentOut"
             },
             "range": {
               "definitionVersion": 1,
@@ -84,17 +128,17 @@
         "inputs": [
           {
             "externalId": "input",
-            "label": "Input",
-            "nodeId": "range",
-            "portId": "input"
+            "label": "input",
+            "nodeId": "in_input",
+            "portId": "in"
           }
         ],
         "name": "MediaGrade",
         "outputs": [
           {
             "externalId": "out",
-            "label": "Out",
-            "nodeId": "legal",
+            "label": "out",
+            "nodeId": "out_out",
             "portId": "out"
           }
         ],

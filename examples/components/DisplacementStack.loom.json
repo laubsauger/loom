@@ -39,6 +39,28 @@
                 "nodeId": "place",
                 "portId": "input"
               }
+            },
+            "in_source_feed_1": {
+              "id": "in_source_feed_1",
+              "source": {
+                "nodeId": "in_source",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "warp",
+                "portId": "source"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "warp",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
             }
           },
           "groups": {},
@@ -69,6 +91,28 @@
               },
               "type": "noise"
             },
+            "in_source": {
+              "definitionVersion": 1,
+              "id": "in_source",
+              "label": "source",
+              "parameters": {},
+              "position": {
+                "x": 20,
+                "y": -60
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 500,
+                "y": -60
+              },
+              "type": "componentOut"
+            },
             "place": {
               "definitionVersion": 1,
               "id": "place",
@@ -83,7 +127,7 @@
                   "bindings": {
                     "expression": {
                       "kind": "expression",
-                      "source": "abstime * 4 % 360"
+                      "source": "abstime * 4"
                     },
                     "static": {
                       "kind": "static",
@@ -151,17 +195,17 @@
         "inputs": [
           {
             "externalId": "source",
-            "label": "Source",
-            "nodeId": "warp",
-            "portId": "source"
+            "label": "source",
+            "nodeId": "in_source",
+            "portId": "in"
           }
         ],
         "name": "DisplacementStack",
         "outputs": [
           {
             "externalId": "out",
-            "label": "Out",
-            "nodeId": "warp",
+            "label": "out",
+            "nodeId": "out_out",
             "portId": "out"
           }
         ],

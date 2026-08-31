@@ -28,6 +28,28 @@
                 "nodeId": "facets",
                 "portId": "input"
               }
+            },
+            "in_input_feed_1": {
+              "id": "in_input_feed_1",
+              "source": {
+                "nodeId": "in_input",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "fold",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "spin",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
             }
           },
           "groups": {},
@@ -93,7 +115,7 @@
                   "bindings": {
                     "expression": {
                       "kind": "expression",
-                      "source": "abstime * 5 % 360"
+                      "source": "abstime * 5"
                     },
                     "static": {
                       "kind": "static",
@@ -118,6 +140,28 @@
               },
               "type": "transform"
             },
+            "in_input": {
+              "definitionVersion": 1,
+              "id": "in_input",
+              "label": "input",
+              "parameters": {},
+              "position": {
+                "x": -740,
+                "y": 0
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 260,
+                "y": 0
+              },
+              "type": "componentOut"
+            },
             "spin": {
               "definitionVersion": 1,
               "id": "spin",
@@ -132,7 +176,7 @@
                   "bindings": {
                     "expression": {
                       "kind": "expression",
-                      "source": "360 - abstime * 2.5 % 360"
+                      "source": "-abstime * 2.5"
                     },
                     "static": {
                       "kind": "static",
@@ -163,17 +207,17 @@
         "inputs": [
           {
             "externalId": "input",
-            "label": "Input",
-            "nodeId": "fold",
-            "portId": "input"
+            "label": "input",
+            "nodeId": "in_input",
+            "portId": "in"
           }
         ],
         "name": "Kaleidoscope",
         "outputs": [
           {
             "externalId": "out",
-            "label": "Out",
-            "nodeId": "spin",
+            "label": "out",
+            "nodeId": "out_out",
             "portId": "out"
           }
         ],

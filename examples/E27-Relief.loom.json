@@ -550,7 +550,7 @@
           "seed": 41,
           "speed": 0.16,
           "spread": 2.1,
-          "t4d": 0,
+          "t4d": 0.37,
           "type": "perlin4d"
         },
         "position": {

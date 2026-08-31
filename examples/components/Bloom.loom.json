@@ -83,6 +83,28 @@
                 "nodeId": "combine",
                 "portId": "in1"
               }
+            },
+            "in_input_feed_1": {
+              "id": "in_input_feed_1",
+              "source": {
+                "nodeId": "in_input",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "hot",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "combine",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
             }
           },
           "groups": {},
@@ -176,6 +198,28 @@
                 "y": 0
               },
               "type": "level"
+            },
+            "in_input": {
+              "definitionVersion": 1,
+              "id": "in_input",
+              "label": "input",
+              "parameters": {},
+              "position": {
+                "x": -740,
+                "y": 0
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 780,
+                "y": 0
+              },
+              "type": "componentOut"
             },
             "palette": {
               "definitionVersion": 2,
@@ -273,17 +317,17 @@
         "inputs": [
           {
             "externalId": "input",
-            "label": "Input",
-            "nodeId": "hot",
-            "portId": "input"
+            "label": "input",
+            "nodeId": "in_input",
+            "portId": "in"
           }
         ],
         "name": "Bloom",
         "outputs": [
           {
             "externalId": "out",
-            "label": "Out",
-            "nodeId": "combine",
+            "label": "out",
+            "nodeId": "out_out",
             "portId": "out"
           }
         ],
