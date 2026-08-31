@@ -3,103 +3,83 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
-      "e-backdrop-field": {
-        "id": "e-backdrop-field",
+      "e-band-studio": {
+        "id": "e-band-studio",
+        "order": 0,
         "source": {
-          "nodeId": "backdrop",
+          "nodeId": "band",
           "portId": "out"
         },
         "target": {
-          "nodeId": "field",
+          "nodeId": "studio",
           "portId": "in2"
         }
       },
-      "e-bendB-prism": {
-        "id": "e-bendB-prism",
+      "e-bar-form": {
+        "id": "e-bar-form",
         "source": {
-          "nodeId": "bendB",
+          "nodeId": "bar",
           "portId": "out"
         },
         "target": {
-          "nodeId": "prism",
-          "portId": "in2"
+          "nodeId": "form",
+          "portId": "in"
         }
       },
-      "e-bendG-fuse": {
-        "id": "e-bendG-fuse",
+      "e-clip-halo": {
+        "id": "e-clip-halo",
         "source": {
-          "nodeId": "bendG",
+          "nodeId": "clip",
           "portId": "out"
         },
         "target": {
-          "nodeId": "fuse",
-          "portId": "in2"
-        }
-      },
-      "e-bendR-fuse": {
-        "id": "e-bendR-fuse",
-        "source": {
-          "nodeId": "bendR",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "fuse",
-          "portId": "in1"
-        }
-      },
-      "e-field-bendB": {
-        "id": "e-field-bendB",
-        "source": {
-          "nodeId": "field",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bendB",
-          "portId": "source"
-        }
-      },
-      "e-field-bendG": {
-        "id": "e-field-bendG",
-        "source": {
-          "nodeId": "field",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bendG",
-          "portId": "source"
-        }
-      },
-      "e-field-bendR": {
-        "id": "e-field-bendR",
-        "source": {
-          "nodeId": "field",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bendR",
-          "portId": "source"
-        }
-      },
-      "e-fuse-prism": {
-        "id": "e-fuse-prism",
-        "source": {
-          "nodeId": "fuse",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "prism",
-          "portId": "in1"
-        }
-      },
-      "e-lens-normals": {
-        "id": "e-lens-normals",
-        "source": {
-          "nodeId": "lens",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "normals",
+          "nodeId": "halo",
           "portId": "input"
+        }
+      },
+      "e-cut-clip": {
+        "id": "e-cut-clip",
+        "source": {
+          "nodeId": "cut",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clip",
+          "portId": "input"
+        }
+      },
+      "e-form-solid": {
+        "id": "e-form-solid",
+        "source": {
+          "nodeId": "form",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "solid",
+          "portId": "points"
+        }
+      },
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-halo-glow": {
+        "id": "e-halo-glow",
+        "order": 0,
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in2"
         }
       },
       "e-mouse-follow": {
@@ -113,272 +93,103 @@
           "portId": "in"
         }
       },
-      "e-normals-bendB": {
-        "id": "e-normals-bendB",
+      "e-optics-fan": {
+        "id": "e-optics-fan",
         "source": {
-          "nodeId": "normals",
+          "nodeId": "optics",
           "portId": "out"
         },
         "target": {
-          "nodeId": "bendB",
-          "portId": "disp"
+          "nodeId": "fan",
+          "portId": "points"
         }
       },
-      "e-normals-bendG": {
-        "id": "e-normals-bendG",
+      "e-optics-shaft": {
+        "id": "e-optics-shaft",
         "source": {
-          "nodeId": "normals",
+          "nodeId": "optics",
           "portId": "out"
         },
         "target": {
-          "nodeId": "bendG",
-          "portId": "disp"
+          "nodeId": "shaft",
+          "portId": "points"
         }
       },
-      "e-normals-bendR": {
-        "id": "e-normals-bendR",
+      "e-shot-cut": {
+        "id": "e-shot-cut",
         "source": {
-          "nodeId": "normals",
+          "nodeId": "shot",
           "portId": "out"
         },
         "target": {
-          "nodeId": "bendR",
-          "portId": "disp"
-        }
-      },
-      "e-prism-out": {
-        "id": "e-prism-out",
-        "source": {
-          "nodeId": "prism",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "out",
+          "nodeId": "cut",
           "portId": "input"
         }
       },
-      "e-pulse-ease": {
-        "id": "e-pulse-ease",
+      "e-shot-glow": {
+        "id": "e-shot-glow",
         "source": {
-          "nodeId": "pulse",
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in1"
+        }
+      },
+      "e-sky-studio": {
+        "id": "e-sky-studio",
+        "source": {
+          "nodeId": "sky",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "studio",
+          "portId": "in1"
+        }
+      },
+      "e-spectrum-optics": {
+        "id": "e-spectrum-optics",
+        "source": {
+          "nodeId": "spectrum",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "optics",
+          "portId": "field"
+        }
+      },
+      "e-studio-shot": {
+        "id": "e-studio-shot",
+        "source": {
+          "nodeId": "studio",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shot",
+          "portId": "environment"
+        }
+      },
+      "e-swing-ease": {
+        "id": "e-swing-ease",
+        "source": {
+          "nodeId": "swing",
           "portId": "out"
         },
         "target": {
           "nodeId": "ease",
           "portId": "in"
         }
-      },
-      "e-roll-field": {
-        "id": "e-roll-field",
-        "source": {
-          "nodeId": "roll",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "field",
-          "portId": "in1"
-        }
-      },
-      "e-sparks-roll": {
-        "id": "e-sparks-roll",
-        "source": {
-          "nodeId": "sparks",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "roll",
-          "portId": "input"
-        }
-      },
-      "e-swarm-sparks": {
-        "id": "e-swarm-sparks",
-        "source": {
-          "nodeId": "swarm",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "sparks",
-          "portId": "points"
-        }
       }
     },
     "groups": {},
     "nodes": {
-      "backdrop": {
-        "definitionVersion": 2,
-        "id": "backdrop",
-        "label": "backdrop1",
-        "parameters": {
-          "interp": "smooth",
-          "period": 1,
-          "phase": 0,
-          "stops": [
-            {
-              "color": [
-                0.13,
-                0.08,
-                0.3,
-                1
-              ],
-              "position": 0
-            },
-            {
-              "color": [
-                0.05,
-                0.04,
-                0.13,
-                1
-              ],
-              "position": 0.55
-            },
-            {
-              "color": [
-                0.01,
-                0.01,
-                0.04,
-                1
-              ],
-              "position": 1
-            }
-          ],
-          "type": "radial"
-        },
-        "position": {
-          "x": -880,
-          "y": -140
-        },
-        "type": "ramp"
-      },
-      "bendB": {
+      "band": {
         "definitionVersion": 1,
-        "id": "bendB",
-        "label": "bendB1",
+        "id": "band",
+        "label": "band1",
         "parameters": {
-          "extend": "hold",
-          "offset": [
-            0.5,
-            0.5
-          ],
-          "sourcex": "red",
-          "sourcey": "green",
-          "weight": [
-            -1.4,
-            -1.4
-          ]
-        },
-        "position": {
-          "x": 0,
-          "y": 180
-        },
-        "type": "displace"
-      },
-      "bendG": {
-        "definitionVersion": 1,
-        "id": "bendG",
-        "label": "bendG1",
-        "parameters": {
-          "extend": "hold",
-          "offset": [
-            0.5,
-            0.5
-          ],
-          "sourcex": "red",
-          "sourcey": "green",
-          "weight": [
-            -1.05,
-            -1.05
-          ]
-        },
-        "position": {
-          "x": 0,
-          "y": -20
-        },
-        "type": "displace"
-      },
-      "bendR": {
-        "definitionVersion": 1,
-        "id": "bendR",
-        "label": "bendR1",
-        "parameters": {
-          "extend": "hold",
-          "offset": [
-            0.5,
-            0.5
-          ],
-          "sourcex": "red",
-          "sourcey": "green",
-          "weight": [
-            -0.75,
-            -0.75
-          ]
-        },
-        "position": {
-          "x": 0,
-          "y": -220
-        },
-        "type": "displace"
-      },
-      "ease": {
-        "definitionVersion": 1,
-        "id": "ease",
-        "label": "ease1",
-        "parameters": {
-          "lag": 0.45
-        },
-        "position": {
-          "x": -940,
-          "y": 600
-        },
-        "type": "valueLag"
-      },
-      "field": {
-        "definitionVersion": 1,
-        "id": "field",
-        "label": "field1",
-        "parameters": {
-          "opacity": 1
-        },
-        "position": {
-          "x": -300,
-          "y": 0
-        },
-        "type": "over"
-      },
-      "follow": {
-        "definitionVersion": 1,
-        "id": "follow",
-        "label": "follow1",
-        "parameters": {
-          "lag": 0.14
-        },
-        "position": {
-          "x": -940,
-          "y": 420
-        },
-        "type": "valueLag"
-      },
-      "fuse": {
-        "definitionVersion": 1,
-        "id": "fuse",
-        "label": "fuse1",
-        "parameters": {
-          "outa": "in1a",
-          "outb": "in1b",
-          "outg": "in2g",
-          "outr": "in1r"
-        },
-        "position": {
-          "x": 300,
-          "y": -120
-        },
-        "type": "reorder"
-      },
-      "lens": {
-        "definitionVersion": 1,
-        "id": "lens",
-        "label": "lens1",
-        "parameters": {
-          "aspectcorrect": true,
+          "aspectcorrect": false,
           "bgcolor": [
             0,
             0,
@@ -389,194 +200,155 @@
             0.5,
             0.5
           ],
-          "center.x": {
-            "bindings": {
-              "driven": {
-                "channel": "follow1:x",
-                "kind": "driven"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.5
-              }
-            },
-            "mode": "driven"
-          },
-          "center.y": {
-            "bindings": {
-              "driven": {
-                "channel": "follow1:y",
-                "kind": "driven"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.5
-              }
-            },
-            "mode": "driven"
-          },
           "fillcolor": [
-            1,
-            1,
+            0.74,
+            0.84,
             1,
             1
           ],
           "mode": "fill",
-          "radius.x": {
-            "bindings": {
-              "driven": {
-                "channel": "ease1",
-                "kind": "driven"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.32
-              }
-            },
-            "mode": "driven"
-          },
-          "radius.y": {
-            "bindings": {
-              "driven": {
-                "channel": "ease1",
-                "kind": "driven"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.32
-              }
-            },
-            "mode": "driven"
-          },
-          "softness": 0.62
+          "radius": [
+            0.26,
+            0.075
+          ],
+          "softness": 0.16
         },
         "position": {
-          "x": -580,
-          "y": -320
+          "x": -1880,
+          "y": -680
         },
         "type": "circle"
       },
-      "mouse": {
+      "bar": {
         "definitionVersion": 1,
-        "id": "mouse",
-        "label": "mouse1",
-        "parameters": {},
-        "position": {
-          "x": -1180,
-          "y": 420
-        },
-        "type": "mouse"
-      },
-      "normals": {
-        "definitionVersion": 1,
-        "id": "normals",
-        "label": "normals1",
+        "id": "bar",
+        "label": "bar1",
         "parameters": {
-          "angle": 45,
-          "channel": "luminance",
-          "extend": "hold",
-          "mode": "normal",
-          "strength": 20,
-          "zeropoint": 0.5
+          "cols": 240,
+          "count": 10800,
+          "rows": 45
         },
         "position": {
-          "x": -300,
-          "y": -320
+          "x": -1880,
+          "y": -420
         },
-        "type": "slope"
+        "type": "pointTube"
       },
-      "out": {
+      "clip": {
         "definitionVersion": 1,
-        "id": "out",
-        "label": "out1",
-        "parameters": {},
-        "position": {
-          "x": 820,
-          "y": -20
-        },
-        "type": "output"
-      },
-      "prism": {
-        "definitionVersion": 1,
-        "id": "prism",
-        "label": "prism1",
+        "id": "clip",
+        "label": "clip1",
         "parameters": {
-          "outa": "in1a",
-          "outb": "in2b",
-          "outg": "in1g",
-          "outr": "in1r"
+          "high": 6,
+          "low": 0,
+          "mode": "clamp",
+          "steps": 4
         },
         "position": {
-          "x": 560,
-          "y": -20
+          "x": -280,
+          "y": -140
         },
-        "type": "reorder"
+        "type": "limit"
       },
-      "pulse": {
+      "cut": {
         "definitionVersion": 1,
-        "id": "pulse",
-        "label": "pulse1",
+        "id": "cut",
+        "label": "cut1",
         "parameters": {
-          "amplitude": 0.14,
-          "frequency": 0.22,
-          "offset": 0.32,
+          "blacklevel": 0.32,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -600,
+          "y": -140
+        },
+        "type": "level"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 0.22,
+          "frequency": 0.045,
+          "offset": 0.45,
           "phase": 0,
-          "shape": "square"
+          "shape": "sine"
         },
         "position": {
-          "x": -1180,
-          "y": 600
+          "x": -1880,
+          "y": 1040
         },
         "type": "lfo"
       },
-      "roll": {
+      "ease": {
         "definitionVersion": 1,
-        "id": "roll",
-        "label": "roll1",
+        "id": "ease",
+        "label": "ease1",
         "parameters": {
-          "aspectcorrect": true,
-          "extend": "zero",
-          "p": [
-            0,
-            0
+          "lag": 0.6
+        },
+        "position": {
+          "x": -1560,
+          "y": 640
+        },
+        "type": "valueLag"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            0.45,
+            -0.36,
+            6.6
           ],
-          "r": {
+          "eye.x": {
             "bindings": {
-              "expression": {
-                "kind": "expression",
-                "source": "abstime * 7"
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 0.45
               }
             },
-            "mode": "expression"
+            "mode": "driven"
           },
-          "s": [
-            1,
-            1
-          ],
-          "t": [
-            0,
+          "far": 40,
+          "fov": 26,
+          "lookAt": [
+            -0.05,
+            -0.53,
             0
           ],
-          "xord": "srt"
+          "near": 0.1,
+          "ortho": false
         },
         "position": {
-          "x": -580,
-          "y": 100
+          "x": -1240,
+          "y": -680
         },
-        "type": "transform"
+        "type": "camera"
       },
-      "sparks": {
+      "fan": {
         "definitionVersion": 1,
-        "id": "sparks",
-        "label": "sparks1",
+        "id": "fan",
+        "label": "fan1",
         "parameters": {
-          "accumulate": false,
-          "blend": "additive",
-          "color": {
+          "endpoint": "tip",
+          "group": "p.role > 0.5",
+          "material": "flare1",
+          "mode": "beam",
+          "scale": 0.0075,
+          "taper": 0.06,
+          "tint": {
             "bindings": {
               "map": {
                 "attribute": "tint",
@@ -593,44 +365,456 @@
               }
             },
             "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1240,
+          "y": 100
+        },
+        "type": "geometry"
+      },
+      "flare": {
+        "definitionVersion": 1,
+        "id": "flare",
+        "label": "flare1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1560,
+          "y": -140
+        },
+        "type": "materialUnlit"
+      },
+      "follow": {
+        "definitionVersion": 1,
+        "id": "follow",
+        "label": "follow1",
+        "parameters": {
+          "lag": 0.18
+        },
+        "position": {
+          "x": -1560,
+          "y": 840
+        },
+        "type": "valueLag"
+      },
+      "form": {
+        "definitionVersion": 1,
+        "id": "form",
+        "label": "form1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 10800,
+          "kernel": "const PI: f32 = 3.14159265358979323846;\nconst TAU: f32 = 6.28318530717958647692;\nconst RC: f32 = 0.76;\n/** Corner radius. Small — the corners are where the normal sweeps FASTEST. */\nconst RHO: f32 = 0.046;\nconst HALF: f32 = 0.55;\n/** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */\nconst ER: f32 = 0.120;\nconst EZ: f32 = 0.120;\n\nfn contour(u: f32) -> vec2f {\n  let d = RC - 2.0 * RHO;\n  let seg = sqrt(3.0) * d;\n  let arc = RHO * TAU / 3.0;\n  let unit = seg + arc;\n  let s = u * 3.0 * unit;\n  let k = floor(s / unit);\n  let local = s - k * unit;\n  let phi = PI * 0.5 + k * TAU / 3.0;\n  let c = vec2f(cos(phi), sin(phi)) * d;\n  if (local < arc) {\n    let psi = phi - PI / 3.0 + local / RHO;\n    return c + vec2f(cos(psi), sin(psi)) * RHO;\n  }\n  let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));\n  let a = c + outward * RHO;\n  let b = vec2f(cos(phi + TAU / 3.0), sin(phi + TAU / 3.0)) * d + outward * RHO;\n  return mix(a, b, (local - arc) / seg);\n}\n\n/* Radius scale and z, along the axis: flat cap, quarter-round, barrel, and back again.\n   The cap collapses to the axis at a = 0 and a = 1, which closes the solid — a quad with\n   two coincident corners is a triangle, so the last ring is a fan. */\nfn profile(a: f32) -> vec2f {\n  if (a <= 0.10) { return vec2f((1.0 - ER) * (a / 0.10), HALF); }\n  if (a <= 0.36) {\n    let th = (a - 0.10) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), HALF - EZ * (1.0 - cos(th)));\n  }\n  if (a <= 0.64) { return vec2f(1.0, mix(HALF - EZ, -(HALF - EZ), (a - 0.36) / 0.28)); }\n  if (a <= 0.90) {\n    let th = (0.90 - a) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), -(HALF - EZ * (1.0 - cos(th))));\n  }\n  return vec2f((1.0 - ER) * ((1.0 - a) / 0.10), -HALF);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* wrapU: the u parametrization is EXCLUSIVE, so i/cols closes the seam exactly. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let pr = profile(a);\n  q.position = vec3f(contour(u) * pr.x, pr.y);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1560,
+          "y": -420
+        },
+        "type": "pointKernel"
+      },
+      "glass": {
+        "definitionVersion": 1,
+        "id": "glass",
+        "label": "glass1",
+        "parameters": {
+          "color": [
+            0.012,
+            0.013,
+            0.018,
+            1
+          ],
+          "roughness": 0.06,
+          "shininess": 140,
+          "specular": [
+            0.86,
+            0.92,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1560,
+          "y": -640
+        },
+        "type": "materialPhong"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {},
+        "position": {
+          "x": 360,
+          "y": -420
+        },
+        "type": "add"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 22
+        },
+        "position": {
+          "x": 40,
+          "y": -140
+        },
+        "type": "blur"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            0.8,
+            0.88,
+            1,
+            1
+          ],
+          "direction": [
+            0.73,
+            -0.6,
+            0.31
+          ],
+          "intensity": 2.6,
+          "kind": "directional",
+          "shadows": false
+        },
+        "position": {
+          "x": -1240,
+          "y": -900
+        },
+        "type": "light"
+      },
+      "mouse": {
+        "definitionVersion": 1,
+        "id": "mouse",
+        "label": "mouse1",
+        "parameters": {},
+        "position": {
+          "x": -1880,
+          "y": 840
+        },
+        "type": "mouse"
+      },
+      "optics": {
+        "definitionVersion": 1,
+        "id": "optics",
+        "label": "optics1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tip\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"role\",\"type\":\"f32\",\"default\":[1]}]",
+          "capacity": 63,
+          "kernel": "const PI: f32 = 3.14159265358979323846;\n/* The two refracting faces, as outward normals, and the offset they share. */\nconst NR: vec2f = vec2f(0.86602540, 0.5);\nconst NL: vec2f = vec2f(-0.86602540, 0.5);\nconst RI: f32 = 0.380;\n/* The beams are drawn 0.05 IN FRONT of the front face — a shift along the extrusion\n   axis, which is the one direction the cross-section does not use, so the optics are\n   untouched and the solid cannot swallow either end. */\nconst PLANE: f32 = 0.60;\n/* Where on the entry face the beam lands, as a tangent coordinate. The face runs\n   +/-0.578, so this sits low on it — the reference's beam enters LOW. */\nconst ENTRY: f32 = -0.28;\nconst SHAFT_LEN: f32 = 2.10;\nconst GHOST_LEN: f32 = 0.90;\nconst FAN_LEN: f32 = 2.25;\nconst N_RED: f32 = 1.50;\n/* 37 and not lower: at n = 1.585 the critical angle is 39.1 degrees and the internal ray\n   reaches it at about 33.7, where the violet end goes into TOTAL INTERNAL REFLECTION. */\nconst THETA_LO: f32 = 37.0;\nconst THETA_HI: f32 = 62.0;\nconst AIM_POINTER: f32 = 0.55;\n\n/* WGSL's own refract, in 2D. A zero return IS total internal reflection, and a beam\n   whose two ends coincide draws zero area (T680) — so the failure is a band leaving the\n   spectrum, never a wrong ray. */\nfn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {\n  let d = dot(n, i);\n  let k = 1.0 - eta * eta * (1.0 - d * d);\n  if (k < 0.0) { return vec2f(0.0); }\n  return i * eta - n * (eta * d + sqrt(k));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* The LFO and the pointer are ADDED HERE, not merged on a wire: a value graph merges\n     channel BAGS, and an LFO's channel and a pointer's x share no name. value3 is 0\n     until a pointer moves, so every gate sees the LFO's picture exactly. */\n  let aim = clamp(ctx.value1 + AIM_POINTER * ctx.value3, 0.0, 1.0);\n  let theta = mix(THETA_HI, THETA_LO, aim) * PI / 180.0;\n  let inward = -NR;\n  let cs = cos(-theta);\n  let sn = sin(-theta);\n  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);\n  let pe = NR * RI + vec2f(-NR.y, NR.x) * ENTRY;\n\n  if (ctx.index == 0u) {\n    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);\n    q.tip = vec3f(pe, PLANE);\n    q.tint = vec4f(1.0, 1.0, 1.0, 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 1u) {\n    /* The GHOST: the share the face sent back, by Schlick on the same incidence the\n       refraction uses. 4.3% at 37 degrees, 8.3% at 62 — so the streak brightens as the\n       fan narrows, out of one number rather than a second knob. */\n    let r = dIn - NR * (2.0 * dot(dIn, NR));\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(pe, PLANE);\n    q.tip = vec3f(pe + r * GHOST_LEN, PLANE);\n    q.tint = vec4f(vec3f(fr), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  /* t is BOTH the refractive index and the hue: value2 is the glass's dispersive power\n     (real crown glass is about a sixth of this), and the colour comes from the ramp on\n     the field input at u = t. Mute value2 and the fan collapses to one ray. */\n  let t = f32(ctx.index - 2u) / f32(ctx.count - 3u);\n  let n = N_RED + ctx.value2 * t;\n  let d2 = refract2(dIn, NR, 1.0 / n);\n  let den = dot(d2, NL);\n  let s = (RI - dot(pe, NL)) / max(den, 1.0e-4);\n  let px = pe + d2 * s;\n  let d3 = refract2(d2, -NL, n);\n  q.position = vec3f(px, PLANE);\n  q.tip = vec3f(px + d3 * FAN_LEN, PLANE);\n  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);\n  q.role = 1.0;\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "ease1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
           },
-          "count": 2400,
-          "sizePixels": {
+          "value2": 0.085,
+          "value3": {
+            "bindings": {
+              "driven": {
+                "channel": "follow1:x",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1560,
+          "y": 100
+        },
+        "type": "pointKernel"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 680,
+          "y": -420
+        },
+        "type": "output"
+      },
+      "shaft": {
+        "definitionVersion": 1,
+        "id": "shaft",
+        "label": "shaft1",
+        "parameters": {
+          "endpoint": "tip",
+          "group": "p.role < 0.5",
+          "material": "flare1",
+          "mode": "beam",
+          "scale": 0.006,
+          "taper": 1,
+          "tint": {
             "bindings": {
               "map": {
-                "attribute": "pscale",
+                "attribute": "tint",
                 "kind": "map"
               },
               "static": {
                 "kind": "static",
-                "value": 4
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
               }
             },
             "mode": "map"
           }
         },
         "position": {
-          "x": -880,
-          "y": 100
+          "x": -1240,
+          "y": -140
         },
-        "type": "renderPoints"
+        "type": "geometry"
       },
-      "swarm": {
+      "shot": {
         "definitionVersion": 1,
-        "id": "swarm",
-        "label": "swarm1",
+        "id": "shot",
+        "label": "shot1",
         "parameters": {
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"pscale\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[3]}]",
-          "capacity": 2400,
-          "group": "",
-          "kernel": "const TAU: f32 = 6.28318530717958647692;\n\n/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so\n    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */\nfn spectrum(t: f32) -> vec3f {\n  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */\n  q.id = ctx.index;\n  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);\n\n  /* FREE-RUNNING (§V436, T497): ctx.absTime, not ctx.time. The swarm's rotation and hue\n     drift are \"always going\", and ctx.time wraps at the out point once the piece is\n     bounded (T455) — on it the whole band jumped back to its frame-zero pose every lap. */\n  let angle = (t * TAU * 3.0) + (ctx.absTime * 0.22);\n  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.absTime * 0.55));\n  let radius = 0.56 + breathe;\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);\n\n  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */\n  q.tint = vec4f(spectrum(t + (ctx.absTime * 0.04)), 1.0);\n  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */\n  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);\n  return q;\n}",
-          "seed": 23
+          "ambientColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "eye1",
+          "environmentIntensity": 3.2,
+          "lights": "key1",
+          "scenes": "solid1 fan1 shaft1",
+          "showEnvironment": false
         },
         "position": {
-          "x": -1180,
+          "x": -920,
+          "y": -420
+        },
+        "type": "render"
+      },
+      "sky": {
+        "definitionVersion": 2,
+        "id": "sky",
+        "label": "sky1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.004,
+                0.005,
+                0.009,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -1880,
+          "y": -900
+        },
+        "resolution": {
+          "height": 256,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "ramp"
+      },
+      "solid": {
+        "definitionVersion": 1,
+        "id": "solid",
+        "label": "solid1",
+        "parameters": {
+          "material": "glass1",
+          "mode": "surface",
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1240,
+          "y": -420
+        },
+        "type": "geometry"
+      },
+      "spectrum": {
+        "definitionVersion": 2,
+        "id": "spectrum",
+        "label": "spectrum1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                1,
+                0.1,
+                0.06,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                0.42,
+                0.05,
+                1
+              ],
+              "position": 0.17
+            },
+            {
+              "color": [
+                1,
+                0.86,
+                0.1,
+                1
+              ],
+              "position": 0.33
+            },
+            {
+              "color": [
+                0.28,
+                1,
+                0.24,
+                1
+              ],
+              "position": 0.5
+            },
+            {
+              "color": [
+                0.1,
+                0.82,
+                1,
+                1
+              ],
+              "position": 0.66
+            },
+            {
+              "color": [
+                0.16,
+                0.3,
+                1,
+                1
+              ],
+              "position": 0.83
+            },
+            {
+              "color": [
+                0.55,
+                0.14,
+                1,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1880,
           "y": 100
         },
-        "type": "pointKernel"
+        "resolution": {
+          "height": 8,
+          "mode": "fixed",
+          "width": 256
+        },
+        "type": "ramp"
+      },
+      "studio": {
+        "definitionVersion": 1,
+        "id": "studio",
+        "label": "studio1",
+        "parameters": {},
+        "position": {
+          "x": -1560,
+          "y": -900
+        },
+        "resolution": {
+          "height": 256,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "add"
+      },
+      "swing": {
+        "definitionVersion": 1,
+        "id": "swing",
+        "label": "swing1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.18,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "square"
+        },
+        "position": {
+          "x": -1880,
+          "y": 640
+        },
+        "type": "lfo"
       }
     },
     "revision": 1

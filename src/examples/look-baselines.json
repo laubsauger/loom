@@ -20,7 +20,7 @@
     "f0max": 0.3708
   },
   "E13-Prism.loom.json": {
-    "motion": 0.19303,
+    "motion": 0.04247,
     "range": 1,
     "f0max": 1
   },
@@ -100,9 +100,9 @@
     "f0max": 0.8834
   },
   "E34-Lidar.loom.json": {
-    "motion": 0.0925,
-    "range": 0.9821,
-    "f0max": 0.7317
+    "motion": 0.108,
+    "range": 0.9978,
+    "f0max": 0.8528
   },
   "E35-Nova-Torus.loom.json": {
     "motion": 0.09784,

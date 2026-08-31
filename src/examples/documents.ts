@@ -1986,122 +1986,311 @@ const fluidDocument = document(
 );
 
 /**
- * E13 — Prism (T363, T364).
+ * E13 — Prism (T710, rebuilt; was T363/T364).
  *
- *   swarm1(pointKernel) ─► sparks1(renderPoints) ─► roll1(transform) ─► field1.in1
- *   backdrop1(ramp) ───────────────────────────────────────────────────► field1.in2
- *   field1(over) ─┬─► bendR1(displace) ─┐
- *                 ├─► bendG1(displace) ─┴─► fuse1(reorder) ─┐
- *                 └─► bendB1(displace) ──────────────────────┴─► prism1(reorder) ─► out1
- *   lens1(circle) ─► normals1(slope) ─► the `disp` input of all three
+ *   bar1(pointTube) ─► form1(pointKernel) ─► solid1(geometry, surface) ─┐
+ *   glass1(materialPhong) ──────────────── by name ────────────────────┘
+ *                                                                       ├─► shot1(render)
+ *   spectrum1(ramp) ─► optics1.field                                    │
+ *   optics1(pointKernel) ─┬─► shaft1(geometry, beam, p.role < 0.5) ─────┤
+ *                         └─► fan1  (geometry, beam, p.role > 0.5) ─────┤
+ *   sky1(ramp) ─┐                                                       │
+ *   band1(circle @ 0.5,0.5) ─┴─► studio1(add) ─► shot1.environment ─────┘
+ *   key1(light), eye1(camera) ──── by name ─────────────────────────────┘
  *
- *   mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
- *   pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
- *   roll1.r = "abstime * 7"   (an expression, §V71)
- *   sparks1.color ← the `tint` attribute, sparks1.sizePixels ← `pscale` (map mode, T364)
+ *   shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1(add).in2
+ *   shot1 ─────────────────────────────────────────────► glow1(add).in1 ─► out1
  *
- * THE ONE THAT IS SUPPOSED TO SHOW THE WHOLE TOOL. Every other example demonstrates one
- * mechanism. This one exists because someone who has read twelve single-mechanism files
- * still has not seen them in one frame, and "in one frame" is the actual product claim.
+ *   swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1   the AIM
+ *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3              the AIM, +pointer
+ *   drift1(lfo, sine) ┄drives┄► eye1.eye.x
+ *   fan1.tint ← the `tint` attribute (map mode, T478)
  *
- * THE LOOK: DISPERSION. A lens bends blue further than red, so a coloured edge seen
- * through one comes apart into a spectrum. There is no per-channel Displace and none is
- * needed: the same scene is refracted THREE TIMES at three strengths and reassembled
- * channel by channel through two Reorders. Reorder exists for exactly this, and one image
- * feeding three Displaces is §V6 — the scene and the normal field are each rendered once.
+ * THE OWNER'S REFERENCE, and the one technical fact that makes it buildable: A PRISM
+ * READS AS GLASS THROUGH ITS EDGES, NOT ITS VOLUME. The body is nearly black; what says
+ * "glass" is a thin bright rim on every silhouette and a dim sheen on the faces. We have
+ * no refraction and no glass material, and faking either reads worse than an honest
+ * edge-lit prism — so the rim is T632's `envFresnel`, used deliberately (§V640).
  *
- * COLOUR COMES FROM THE POINTS, WHICH IS WHY THE PRISM HAS ANYTHING TO BEND (T364, §V313).
- * `sparks1` maps its whole `color` compound onto the kernel's `tint` attribute and its
- * `sizePixels` onto `pscale`, so 2400 sprites carry 2400 colours and 2400 sizes and the
- * draw pass ends up carrying NO uniform block at all — with both mapped the params struct
- * would be empty, and WGSL refuses an empty struct, so it vanishes. A uniform-coloured
- * swarm would disperse into grey fringes; a spectral one disperses into a spectrum.
+ * `envFresnel` rises to 1 at GRAZING, and §V640's measured LIMIT — the environment-band
+ * rim is a rim only on CURVED geometry and turns into fill on a flat camera-facing
+ * surface — is the whole reason this shape is built the way it is. `form1` walks a
+ * ROUNDED triangle: three straight runs joined by three 120° arcs, and a quarter-round
+ * where each flat cap meets the barrel. Along a straight run the surface renderer's
+ * central difference is collinear, so the face normal is EXACTLY constant and the faces
+ * stay flat and black. Across an arc the normal sweeps 120°, and somewhere in that sweep
+ * it passes through grazing — so a thread of surface at grazing runs all the way round
+ * the triangle, from any camera. That thread is the picture.
  *
- * Those attribute values are LINEAR (§V313). A point attribute is DATA — nothing
- * display-decodes it — so the kernel's cosine palette writes linear light directly and
- * must not be authored as if it were a colour picker's swatch.
+ * Rounding the corners does not move the faces, which is what lets `optics1` below share
+ * the geometry: the straight run of a rounded triangle sits at d·cos(60°) + ρ from the
+ * axis, and with d = RC − 2ρ that is exactly RC/2 — a sharp triangle's inradius, for
+ * every ρ. One number, two nodes, no drift.
  *
- * THE LENS IS A SOFT DOME, not a hard disc. `softness` roughly twice the radius makes the
- * Circle a smooth bump; Slope's `normal` mode turns the bump into a normal field, largest
- * tilt at the rim and none at the centre. That is what a real lens does, and it is why the
- * fringe appears around the edge of the glass rather than uniformly over the frame.
+ * Measured at THIS commit, 1280×720, display-encoded from the plan's own space (§V618),
+ * environment on vs off, split by a 6px erosion of the prism's own mask — §V640's own
+ * instrument: RING mean |Δ| 43.06, INTERIOR 4.21, so the environment lands 10.2× harder
+ * on the OUTLINE than in the body. E33's melted goo measured 1.8× and E33's flat emblem
+ * measured 0.74×, i.e. fill. On the shipped frame the ring reads 62.7 luma against an
+ * interior of 6.3. Two numbers, not one adjective.
  *
- * THREE WAYS TO MOVE A PARAMETER, doing three different jobs:
+ * AMBIENT IS ZERO AND THE KEY IS HARD, and that is E33's lesson (§V632/T636) rather than
+ * taste: the physical terms here are tiny — a 4% head-on Fresnel on a specular of 0.86
+ * and a diffuse albedo of 0.0009 linear — so any ambient worth the name drowns them and
+ * the glass goes to grey slate. `key1` therefore does exactly one job: its direction is
+ * the mirror of the view about the upper-left round-over's normal, so its Blinn lobe
+ * (shininess 140) lands as a GLINT on that edge and nowhere else. Measured: killing it
+ * moves 8,387 pixels by more than 4 luma — it earns its node (§V624).
  *
- *   THE VALUE GRAPH (§V179), twice, and both times it is the owner's canonical chain.
- *   `mouse1 → follow1(Lag) → lens1.center` gives the glass weight: the pointer is the
- *   target, the Lag is the mass. `pulse1(LFO) → ease1(Lag) → lens1.radius` breathes it.
- *   The LFO is a SQUARE wave deliberately — a square through a one-pole smoother is an
- *   EASE, so the Lag's contribution is visible rather than theoretical. Delete `ease1` and
- *   the lens snaps between two sizes like a shutter; that is the whole argument for the node.
+ * THE DISPERSION IS THE EXAMPLE, and it is solved rather than drawn. `optics1` runs
+ * Snell's law twice per band, vectorially, in the prism's own cross-section: refract in
+ * at the right face, cross to the left face plane, refract out. n runs 1.500 (red) to
+ * 1.585 (violet) — real crown glass disperses about a sixth of that, and the
+ * exaggeration is `value2`, a number this file owns rather than a constant hidden in the
+ * kernel. Sixty-one bands take their colour from `spectrum1` through the kernel's own
+ * `field` input (`fieldAt(vec3f(t·2−1, 0, 0))` samples the ramp at u = t, v = 0.5), so
+ * hue and refractive index are the SAME parameter and the ramp is the authored spectrum.
  *
- *   AN EXPRESSION (§V71) rolls the light field. `abstime * 7` is written where it is read —
- *   no node, no channel, no wire — and it is a bare RAMP because it is finally allowed to
- *   be one. This file shipped `abstime * 7 % 360` for months and the `%` was never geometry:
- *   it was a USER WORKAROUND for §B111. Transform's `r` declares min/max −360…360, and
- *   `clampToDeclared` read those two numbers as a hard limit on every resolved value, so an
- *   unwrapped roll froze dead at 360° after fifty-one seconds. T537 split the two ideas the
- *   manifest had conflated — a slider's RANGE is not a value CLAMP — and `r` now declares
- *   `range: "cyclic"`, which `numericRangeOf` answers with no limit at all, so the ramp
- *   simply keeps climbing. The picture is identical either way, because a rotation is
- *   periodic and 360° apart is the same pose; what changed is that the file no longer
- *   carries a scar from a bug we fixed (T565). Being honest about the scope: the v1 grammar
- *   is arithmetic only, so an LFO could produce this same ramp. What the expression buys
- *   here is locality, not reach.
+ * WHAT THE ANGLE ACTUALLY DOES, measured rather than assumed. The brief for this rebuild
+ * said "a more oblique incoming beam spreads more". That is not what the arithmetic says
+ * and the file should not claim it. Differentiating δ = θ1 + asin(n·sin(A − θ2)) − A:
  *
- *   A KERNEL (§V45) animates the swarm. `ctx.absTime` reaches the GPU through the same frame
- *   contract everything else does, and the kernel is STATELESS — position and colour are
- *   functions of the slot index and the clock — so frame N is the same picture whether it
- *   was replayed from zero or arrived at live.
+ *     dδ/dn = (sin θ3 + cos θ3 · tan θ2) / cos θ4
  *
- *   BOTH OF THOSE ARE ON THE ABSOLUTE CLOCK, and that is the T497 decision this file makes
- *   twice. A roll and a drifting spectrum are FREE-RUNNING (§V436): they are "always going",
- *   so they must not see the timeline lap. `time` and `abstime` are the same number until
- *   the first wrap, which is exactly why this shipped wrong for so long — the file looked
- *   right in every screenshot and seamed only once someone bounded the piece and played it.
+ * and as θ1 grows, θ2 grows, θ3 = A − θ2 shrinks and θ4 shrinks with it — numerator down,
+ * denominator up. Angular dispersion therefore FALLS monotonically as the beam lies down
+ * on the entry face, and RISES as the internal ray approaches the critical angle at the
+ * EXIT face. Computed over the swing: 5.98° of fan at θ1 = 62°, 10.91° at θ1 = 37°.
+ * Measured on the picture at the same two aims — the vertical span of the fan at screen
+ * column 240 — 46px and 108px, a ratio of 2.35. The exit face is where dispersion is
+ * made; the entry face only decides how obliquely the ray arrives there.
  *
- * WHICH WAY THE POINTER GOES. v runs DOWN (§V236), and the lens follows the pointer 1:1
- * because a lens centre and a pointer are the same unit. E12 drives the same kind of
- * parameter with no chain at all (channel liveness with no edge, §V173b); here it goes
- * through a real value EDGE into a Lag, which is the difference worth seeing side by side.
+ * θ1 stops at 37° and not lower for a reason that is in the same arithmetic: at n = 1.585
+ * the critical angle is 39.1°, and θ3 reaches it at θ1 ≈ 33.7°. Below that the violet end
+ * TOTALLY INTERNALLY REFLECTS. `refract2` returns a zero vector there and the beam
+ * collapses to zero length — which the beam shader already draws as zero AREA — so the
+ * failure is a band quietly leaving the spectrum rather than a wrong picture. 37° keeps
+ * 3.3° of margin at the violet end.
+ *
+ * ONE SOURCE, TWO READINGS (§V471.1). `optics1` writes 63 points — the shaft, the ghost,
+ * and 61 bands — and two Geometries read the same pointset through a GROUP PREDICATE,
+ * because they need different tapers: `shaft1` takes `p.role < 0.5` at taper 1, a
+ * parallel-sided ribbon, and `fan1` takes `p.role > 0.5` at taper 0.06, because 61 beams
+ * leaving the same face within 0.03 of each other fuse into an opaque wedge at any taper
+ * above about zero (T680). The structure is a selection, not more nodes.
+ *
+ * THE GHOST IS THE PART THAT SAYS "SURFACE". Not every ray enters: Schlick on the same
+ * incidence the refraction uses gives the share the entry face sends back, 4.3% at 37°
+ * rising to 8.3% at 62°, and that share IS its tint — so the reflected streak brightens
+ * as the fan narrows, from one number, with no second knob.
+ *
+ * THE BEAMS ARE DRAWN IN A PLANE 0.05 IN FRONT OF THE FRONT FACE, and that is the one
+ * cheat in the file, stated. The optics are solved in the cross-section, which does not
+ * use the extrusion axis at all; drawing the segments at z = 0.60 instead of inside the
+ * body is a shift along exactly that unused axis, and it is what stops the prism's own
+ * solid from swallowing the ends of the shaft and the fan. Gated: the shaft's tip lands
+ * 1px from the prism's mask and NO beam pixel reaches an 8px erosion of it, so "the beam
+ * arrives where the glass is" is a measurement, not a hope.
+ *
+ * TWO WAYS TO MOVE THE AIM, and they are added in the KERNEL rather than merged on a
+ * wire. `swing1(lfo, square) → ease1(valueLag) → value1` is the canonical chain and the
+ * square is deliberate: a square through a one-pole smoother IS an ease, so delete
+ * `ease1` and the beam snaps between two angles like a shutter instead of swinging.
+ * `mouse1 → follow1(valueLag) → value3` is the pointer, and the kernel computes
+ * `clamp(value1 + 0.55·value3, 0, 1)` — a value graph merges channel BAGS, and an LFO's
+ * channel and a pointer's `x` do not have a name in common, so the addition belongs where
+ * both numbers already are. The pointer only ever ADDS: a pointer that has never moved
+ * reads 0, so every gate and every fresh session sees the LFO's picture exactly, and
+ * dragging right lays the beam down and opens the spectrum.
+ *
+ * `drift1` sways the camera 0.22 either side of 0.45 over 22 seconds, and that is not
+ * decoration: `envFresnel` reads `dot(N, viewDir)`, so moving the eye moves WHICH thread
+ * of the round-over is at grazing. The rim travels. A static camera over this material is
+ * the one thing that would make an edge-lit prism look painted.
+ *
+ * WHAT IS NOT HERE. There is no caustic on the base. The reference has one; we have no
+ * refraction, so a caustic would be light we invented and placed, and §V617 means a beam
+ * cannot cast one either. The glow under the prism is bloom spilling off the exit face,
+ * which is a real thing that happens, and it is all this file claims.
  */
-const PRISM_SWARM_KERNEL = `const TAU: f32 = 6.28318530717958647692;
+const PRISM_COLS = 240;
+const PRISM_ROWS = 45;
+/** Circumradius of the triangular cross-section. Its faces sit at PRISM_RC/2 (see below). */
+const PRISM_RC = 0.76;
+/** The band the glass is drawn WITH: 61 refracted rays plus the shaft and its ghost. */
+const PRISM_BANDS = 61;
 
-/** A cosine spectral wheel. LINEAR by declaration (§V313): an attribute is DATA, so
-    nothing decodes this on the way to the sprite and nothing should author it as sRGB. */
-fn spectrum(t: f32) -> vec3f {
-  return vec3f(0.5) + (vec3f(0.5) * cos(TAU * (vec3f(t) + vec3f(0.0, 0.33, 0.67))));
+/**
+ * The prism's SURFACE. A tube is a grid with its u seam closed, which is exactly the
+ * topology a prism's lateral loop needs (T296/T301) — `bar1` is here for its `cols`,
+ * `rows` and wrapU and nothing else, because every position below is replaced.
+ *
+ * THE ROUNDED TRIANGLE IS THE MECHANISM, not a styling choice. §V640: the environment
+ * band is a rim only where the surface CURVES AWAY, and it degrades into fill on a flat
+ * camera-facing face. So the cross-section is walked by ARC LENGTH — three straight runs
+ * joined by three 120° arcs — and the profile puts a quarter-round where each flat cap
+ * meets the barrel. Along a straight run the surface renderer's central difference is
+ * collinear, so the face normal is EXACTLY constant and the faces stay flat and black;
+ * across an arc the normal sweeps 120° and passes through grazing, so a thread of
+ * surface at grazing runs the whole way round the triangle from any camera.
+ *
+ * Rounding the corners does not move the faces: a straight run sits at d·cos(60°) + ρ
+ * from the axis, and with d = RC − 2ρ that is RC/2 for EVERY ρ — a sharp triangle's
+ * inradius. That identity is why `optics1` can share this geometry from one constant.
+ */
+const PRISM_FORM_KERNEL = `const PI: f32 = 3.14159265358979323846;
+const TAU: f32 = 6.28318530717958647692;
+const RC: f32 = ${PRISM_RC};
+/** Corner radius. Small — the corners are where the normal sweeps FASTEST. */
+const RHO: f32 = 0.046;
+const HALF: f32 = 0.55;
+/** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */
+const ER: f32 = 0.120;
+const EZ: f32 = 0.120;
+
+fn contour(u: f32) -> vec2f {
+  let d = RC - 2.0 * RHO;
+  let seg = sqrt(3.0) * d;
+  let arc = RHO * TAU / 3.0;
+  let unit = seg + arc;
+  let s = u * 3.0 * unit;
+  let k = floor(s / unit);
+  let local = s - k * unit;
+  let phi = PI * 0.5 + k * TAU / 3.0;
+  let c = vec2f(cos(phi), sin(phi)) * d;
+  if (local < arc) {
+    let psi = phi - PI / 3.0 + local / RHO;
+    return c + vec2f(cos(psi), sin(psi)) * RHO;
+  }
+  let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));
+  let a = c + outward * RHO;
+  let b = vec2f(cos(phi + TAU / 3.0), sin(phi + TAU / 3.0)) * d + outward * RHO;
+  return mix(a, b, (local - arc) / seg);
+}
+
+/* Radius scale and z, along the axis: flat cap, quarter-round, barrel, and back again.
+   The cap collapses to the axis at a = 0 and a = 1, which closes the solid — a quad with
+   two coincident corners is a triangle, so the last ring is a fan. */
+fn profile(a: f32) -> vec2f {
+  if (a <= 0.10) { return vec2f((1.0 - ER) * (a / 0.10), HALF); }
+  if (a <= 0.36) {
+    let th = (a - 0.10) / 0.26 * (PI * 0.5);
+    return vec2f(1.0 - ER * (1.0 - sin(th)), HALF - EZ * (1.0 - cos(th)));
+  }
+  if (a <= 0.64) { return vec2f(1.0, mix(HALF - EZ, -(HALF - EZ), (a - 0.36) / 0.28)); }
+  if (a <= 0.90) {
+    let th = (0.90 - a) / 0.26 * (PI * 0.5);
+    return vec2f(1.0 - ER * (1.0 - sin(th)), -(HALF - EZ * (1.0 - cos(th))));
+  }
+  return vec2f((1.0 - ER) * ((1.0 - a) / 0.10), -HALF);
 }
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* Stateless: nothing here integrates, so a replay and a live run agree exactly (§V45). */
-  q.id = ctx.index;
-  let t = f32(ctx.index) / max(f32(ctx.count), 1.0);
-
-  /* FREE-RUNNING (§V436, T497): ctx.absTime, not ctx.time. The swarm's rotation and hue
-     drift are "always going", and ctx.time wraps at the out point once the piece is
-     bounded (T455) — on it the whole band jumped back to its frame-zero pose every lap. */
-  let angle = (t * TAU * 3.0) + (ctx.absTime * 0.22);
-  let breathe = 0.22 * sin((t * TAU * 7.0) - (ctx.absTime * 0.55));
-  let radius = 0.56 + breathe;
-  q.position = vec3f(cos(angle) * radius, sin(angle) * radius * 0.88, 0.0);
-
-  /* Hue runs along the band and drifts, so the prism always has a spectrum to take apart. */
-  q.tint = vec4f(spectrum(t + (ctx.absTime * 0.04)), 1.0);
-  /* Per-point size, deterministic per id (§V73): the swarm sparkles instead of tiling. */
-  q.pscale = 1.6 + (pointRand(q.id, 5u) * 3.4);
+  /* wrapU: the u parametrization is EXCLUSIVE, so i/cols closes the seam exactly. */
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);
+  let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
+  let pr = profile(a);
+  q.position = vec3f(contour(u) * pr.x, pr.y);
   return q;
 }`;
 
-/** The swarm's schema. `tint` is `color`-QUALIFIED (§V313/T287) — it is what a colour-space
- *  operation would convert and what a spatial transform must leave alone. */
-const PRISM_SWARM_ATTRIBUTES = JSON.stringify([
+/** `tip` is the beam's far end (T680 binds it by name); `role` is what splits ONE
+ *  pointset into two draws with different tapers; `tint` is `color`-qualified (§V313). */
+const PRISM_OPTICS_ATTRIBUTES = JSON.stringify([
   { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  { name: "id", type: "u32", semantic: "id", default: [0] },
+  { name: "tip", type: "vec3f", default: [0, 0, 0] },
   { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
-  { name: "pscale", type: "f32", semantic: "size", default: [3] },
+  { name: "role", type: "f32", default: [1] },
 ]);
+
+/**
+ * THE OPTICS — Snell's law twice per band, vectorially, in the prism's cross-section.
+ * This is the difference between a working prism and a picture of one: nothing here is
+ * an authored angle, and the fan's spread falls out of the same arithmetic that decides
+ * each band's colour, because n and hue are the SAME parameter t.
+ */
+const PRISM_OPTICS_KERNEL = `const PI: f32 = 3.14159265358979323846;
+/* The two refracting faces, as outward normals, and the offset they share. */
+const NR: vec2f = vec2f(0.86602540, 0.5);
+const NL: vec2f = vec2f(-0.86602540, 0.5);
+const RI: f32 = ${(PRISM_RC / 2).toFixed(3)};
+/* The beams are drawn 0.05 IN FRONT of the front face — a shift along the extrusion
+   axis, which is the one direction the cross-section does not use, so the optics are
+   untouched and the solid cannot swallow either end. */
+const PLANE: f32 = 0.60;
+/* Where on the entry face the beam lands, as a tangent coordinate. The face runs
+   +/-0.578, so this sits low on it — the reference's beam enters LOW. */
+const ENTRY: f32 = -0.28;
+const SHAFT_LEN: f32 = 2.10;
+const GHOST_LEN: f32 = 0.90;
+const FAN_LEN: f32 = 2.25;
+const N_RED: f32 = 1.50;
+/* 37 and not lower: at n = 1.585 the critical angle is 39.1 degrees and the internal ray
+   reaches it at about 33.7, where the violet end goes into TOTAL INTERNAL REFLECTION. */
+const THETA_LO: f32 = 37.0;
+const THETA_HI: f32 = 62.0;
+const AIM_POINTER: f32 = 0.55;
+
+/* WGSL's own refract, in 2D. A zero return IS total internal reflection, and a beam
+   whose two ends coincide draws zero area (T680) — so the failure is a band leaving the
+   spectrum, never a wrong ray. */
+fn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {
+  let d = dot(n, i);
+  let k = 1.0 - eta * eta * (1.0 - d * d);
+  if (k < 0.0) { return vec2f(0.0); }
+  return i * eta - n * (eta * d + sqrt(k));
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* The LFO and the pointer are ADDED HERE, not merged on a wire: a value graph merges
+     channel BAGS, and an LFO's channel and a pointer's x share no name. value3 is 0
+     until a pointer moves, so every gate sees the LFO's picture exactly. */
+  let aim = clamp(ctx.value1 + AIM_POINTER * ctx.value3, 0.0, 1.0);
+  let theta = mix(THETA_HI, THETA_LO, aim) * PI / 180.0;
+  let inward = -NR;
+  let cs = cos(-theta);
+  let sn = sin(-theta);
+  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);
+  let pe = NR * RI + vec2f(-NR.y, NR.x) * ENTRY;
+
+  if (ctx.index == 0u) {
+    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);
+    q.tip = vec3f(pe, PLANE);
+    q.tint = vec4f(1.0, 1.0, 1.0, 1.0);
+    q.role = 0.0;
+    return q;
+  }
+  if (ctx.index == 1u) {
+    /* The GHOST: the share the face sent back, by Schlick on the same incidence the
+       refraction uses. 4.3% at 37 degrees, 8.3% at 62 — so the streak brightens as the
+       fan narrows, out of one number rather than a second knob. */
+    let r = dIn - NR * (2.0 * dot(dIn, NR));
+    let c = abs(dot(dIn, NR));
+    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);
+    q.position = vec3f(pe, PLANE);
+    q.tip = vec3f(pe + r * GHOST_LEN, PLANE);
+    q.tint = vec4f(vec3f(fr), 1.0);
+    q.role = 0.0;
+    return q;
+  }
+  /* t is BOTH the refractive index and the hue: value2 is the glass's dispersive power
+     (real crown glass is about a sixth of this), and the colour comes from the ramp on
+     the field input at u = t. Mute value2 and the fan collapses to one ray. */
+  let t = f32(ctx.index - 2u) / f32(ctx.count - 3u);
+  let n = N_RED + ctx.value2 * t;
+  let d2 = refract2(dIn, NR, 1.0 / n);
+  let den = dot(d2, NL);
+  let s = (RI - dot(pe, NL)) / max(den, 1.0e-4);
+  let px = pe + d2 * s;
+  let d3 = refract2(d2, -NL, n);
+  q.position = vec3f(px, PLANE);
+  q.tip = vec3f(px + d3 * FAN_LEN, PLANE);
+  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);
+  q.role = 1.0;
+  return q;
+}`;
 
 const prismDocument = document(
   "e13-prism",
@@ -2109,194 +2298,153 @@ const prismDocument = document(
   settings({ randomSeed: 23 }),
   graph(
     [
-      // ---- the value graph -------------------------------------------------------
-      node("mouse", "mouse", [-1180, 420], {}, { label: "mouse1" }),
-      node("follow", "valueLag", [-940, 420], { lag: 0.14 }, { label: "follow1" }),
-      node(
-        "pulse",
-        "lfo",
-        [-1180, 600],
-        // 0.14 either side of 0.32: the lens breathes between radius 0.18 and 0.46, both
-        // well inside the manifest's range, so nothing is ever clamped on the way through.
-        { shape: "square", frequency: 0.22, amplitude: 0.14, offset: 0.32, phase: 0 },
-        { label: "pulse1" },
-      ),
-      node("ease", "valueLag", [-940, 600], { lag: 0.45 }, { label: "ease1" }),
+      // ---- the aim: two chains, added in the kernel -------------------------------
+      // A SQUARE, deliberately: a square through a one-pole smoother IS an ease, so
+      // `ease1` is visible rather than theoretical — delete it and the beam snaps
+      // between two angles like a shutter instead of swinging.
+      node("swing", "lfo", [-1880, 640], { shape: "square", frequency: 0.18, amplitude: 0.5, offset: 0.5, phase: 0 }, { label: "swing1" }),
+      node("ease", "valueLag", [-1560, 640], { lag: 0.6 }, { label: "ease1" }),
+      node("mouse", "mouse", [-1880, 840], {}, { label: "mouse1" }),
+      node("follow", "valueLag", [-1560, 840], { lag: 0.18 }, { label: "follow1" }),
+      // `envFresnel` reads dot(N, viewDir), so moving the eye moves WHICH thread of the
+      // round-over is at grazing: the rim TRAVELS. A static camera is the one thing that
+      // would make an edge-lit prism look painted.
+      node("drift", "lfo", [-1880, 1040], { shape: "sine", frequency: 0.045, amplitude: 0.22, offset: 0.45, phase: 0 }, { label: "drift1" }),
 
-      // ---- the light -------------------------------------------------------------
-      node(
-        "swarm",
-        "pointKernel",
-        [-1180, 100],
-        {
-          capacity: 2400,
-          seed: 23,
-          attributes: PRISM_SWARM_ATTRIBUTES,
-          kernel: PRISM_SWARM_KERNEL,
-          group: "",
-        },
-        { label: "swarm1" },
-      ),
-      node(
-        "sparks",
-        "renderPoints",
-        [-880, 100],
-        { count: 2400, blend: "additive", accumulate: false },
-        {
-          label: "sparks1",
-          // T364: the map mode, on a COMPOUND HEAD and on a scalar. With both mapped the
-          // draw carries no uniform block at all — see the note above.
-          parameters: {
-            color: {
-              mode: "map",
-              bindings: {
-                static: { kind: "static", value: [1, 1, 1, 1] },
-                map: { kind: "map", attribute: "tint" },
-              },
-            },
-            sizePixels: {
-              mode: "map",
-              bindings: {
-                static: { kind: "static", value: 4 },
-                map: { kind: "map", attribute: "pscale" },
-              },
-            },
-          },
-        },
-      ),
-      node(
-        "roll",
-        "transform",
-        [-580, 100],
-        { t: [0, 0], s: [1, 1], p: [0, 0], xord: "srt", extend: "zero", aspectcorrect: true },
-        {
-          label: "roll1",
-          // FREE-RUNNING (§V436, T497): `abstime`, not `time`. A continuous roll on the
-          // timeline clock snaps back to 0° at every lap. There is no `% 360` here any
-          // more (T565): that wrap was a workaround for §B111's clamp, and T537 made `r`
-          // `cyclic`, so the ramp is allowed to just keep going.
-          parameters: { r: expressionSlot("abstime * 7", 0) },
-        },
-      ),
-      node(
-        "backdrop",
-        "ramp",
-        [-880, -140],
-        {
-          type: "radial",
-          interp: "smooth",
-          phase: 0,
-          period: 1,
-          // Dark, never black. Dispersion moves WHERE a colour is read from, so a field
-          // with no colour in it disperses into nothing.
-          stops: [
-            { position: 0, color: [0.13, 0.08, 0.3, 1] },
-            { position: 0.55, color: [0.05, 0.04, 0.13, 1] },
-            { position: 1, color: [0.01, 0.01, 0.04, 1] },
-          ],
-        },
-        { label: "backdrop1", definitionVersion: 2 },
-      ),
-      node("field", "over", [-300, 0], { opacity: 1 }, { label: "field1" }),
+      // ---- the glass -------------------------------------------------------------
+      node("bar", "pointTube", [-1880, -420], { count: PRISM_COLS * PRISM_ROWS, cols: PRISM_COLS, rows: PRISM_ROWS }, { label: "bar1" }),
+      node("form", "pointKernel", [-1560, -420], {
+        capacity: PRISM_COLS * PRISM_ROWS,
+        attributes: JSON.stringify([{ name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] }]),
+        kernel: PRISM_FORM_KERNEL,
+      }, { label: "form1" }),
+      // The environment term compiles for PHONG only, and nothing warns you otherwise: a
+      // lambert or unlit prism has no Fresnel and therefore no rim at all. Diffuse is
+      // 0.0009 linear — the body is meant to be black — and the whole read is `specular`
+      // times `envFresnel`, which is 0.04 head-on and 1.0 at grazing.
+      node("glass", "materialPhong", [-1560, -640], {
+        color: [0.012, 0.013, 0.018, 1], specular: [0.86, 0.92, 1, 1], shininess: 140, roughness: 0.06,
+      }, { label: "glass1" }),
+      node("solid", "geometry", [-1240, -420], { mode: "surface", material: "glass1", tint: [1, 1, 1, 1] }, { label: "solid1" }),
 
-      // ---- the lens --------------------------------------------------------------
-      node(
-        "lens",
-        "circle",
-        [-580, -320],
-        {
-          mode: "fill",
-          center: [0.5, 0.5],
-          // Softness past the radius: a DOME, not a disc. The dome's gradient is the lens
-          // profile; a disc's gradient is a ring one pixel wide and refracts nothing.
-          softness: 0.62,
-          fillcolor: [1, 1, 1, 1],
-          bgcolor: [0, 0, 0, 1],
-          aspectcorrect: true,
-        },
-        {
-          label: "lens1",
-          parameters: {
-            "center.x": drivenSlot("follow1:x", 0.5),
-            "center.y": drivenSlot("follow1:y", 0.5),
-            "radius.x": drivenSlot("ease1", 0.32),
-            "radius.y": drivenSlot("ease1", 0.32),
-          },
-        },
-      ),
-      node(
-        "normals",
-        "slope",
-        [-300, -320],
-        // The dome's slope is gentle — one unit of luminance across 0.6 uv — so the Sobel
-        // result needs the manifest's full strength to tilt the normal far enough to bend.
-        { mode: "normal", channel: "luminance", strength: 20, zeropoint: 0.5, angle: 45, extend: "hold" },
-        { label: "normals1" },
-      ),
+      // ---- the light, taken apart ------------------------------------------------
+      // A ramp that GOES somewhere (§V471.6), and it is not decoration: this is the
+      // curve n(t) is read against, so retuning it retunes the spectrum's colour without
+      // touching a line of WGSL.
+      node("spectrum", "ramp", [-1880, 100], {
+        type: "horizontal", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0.00, color: [1, 0.10, 0.06, 1] },
+          { position: 0.17, color: [1, 0.42, 0.05, 1] },
+          { position: 0.33, color: [1, 0.86, 0.10, 1] },
+          { position: 0.50, color: [0.28, 1, 0.24, 1] },
+          { position: 0.66, color: [0.10, 0.82, 1, 1] },
+          { position: 0.83, color: [0.16, 0.30, 1, 1] },
+          { position: 1.00, color: [0.55, 0.14, 1, 1] },
+        ],
+      }, { label: "spectrum1", definitionVersion: 2, resolution: { mode: "fixed", width: 256, height: 8 } }),
+      node("optics", "pointKernel", [-1560, 100], {
+        capacity: PRISM_BANDS + 2,
+        attributes: PRISM_OPTICS_ATTRIBUTES,
+        kernel: PRISM_OPTICS_KERNEL,
+        // The glass's DISPERSIVE POWER, and the one number the whole effect rests on:
+        // n runs 1.500 (red) to 1.585 (violet). Set it to 0 and the fan collapses to a
+        // single ray, which is what the gate asserts.
+        value2: 0.085,
+      }, {
+        label: "optics1",
+        parameters: { value1: drivenSlot("ease1", 0.5), value3: drivenSlot("follow1:x", 0) },
+      }),
+      // UNLIT, and white: a beam is scattered light in the air, not a surface, and it
+      // takes no part in shadowing either (§V617). The colour is the attribute's.
+      node("flare", "materialUnlit", [-1560, -140], { color: [1, 1, 1, 1] }, { label: "flare1" }),
+      // §V471.1 — ONE SOURCE, TWO READINGS, split by a group predicate rather than by
+      // more nodes. The split is not cosmetic: a single shaft wants a parallel-sided
+      // ribbon, and 61 beams leaving the same face within 0.03 of each other fuse into
+      // an opaque wedge at any taper above about zero (T680).
+      node("shaft", "geometry", [-1240, -140], {
+        mode: "beam", endpoint: "tip", scale: 0.006, taper: 1, material: "flare1", group: "p.role < 0.5",
+      }, { label: "shaft1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
+      node("fan", "geometry", [-1240, 100], {
+        mode: "beam", endpoint: "tip", scale: 0.0075, taper: 0.06, material: "flare1", group: "p.role > 0.5",
+      }, { label: "fan1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
 
-      // ---- dispersion: one scene, three refractive indices ------------------------
-      node(
-        "bendR",
-        "displace",
-        [0, -220],
-        { weight: [-0.75, -0.75], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
-        { label: "bendR1" },
-      ),
-      node(
-        "bendG",
-        "displace",
-        [0, -20],
-        { weight: [-1.05, -1.05], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
-        { label: "bendG1" },
-      ),
-      node(
-        "bendB",
-        "displace",
-        [0, 180],
-        // Blue bends furthest, as it does through glass. Order the three the other way and
-        // the fringe reverses: the picture stays plausible and the physics does not.
-        { weight: [-1.4, -1.4], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold" },
-        { label: "bendB1" },
-      ),
-      node(
-        "fuse",
-        "reorder",
-        [300, -120],
-        { outr: "in1r", outg: "in2g", outb: "in1b", outa: "in1a" },
-        { label: "fuse1" },
-      ),
-      node(
-        "prism",
-        "reorder",
-        [560, -20],
-        { outr: "in1r", outg: "in1g", outb: "in2b", outa: "in1a" },
-        { label: "prism1" },
-      ),
-      node("out", "output", [820, -20], {}, { label: "out1" }),
+      // ---- the studio: an equirect whose horizon IS the rim -----------------------
+      // v = acos(R.y)/pi, so 0.5 is the horizon; u = atan2(R.x, -R.z)/2pi + 0.5. A normal
+      // lying in the cross-section plane reflects to (0,0,-1) and lands at (0.5, 0.5)
+      // EXACTLY — §V640's band, at the address §V640 gives for it. The cap's normal
+      // lands at u ~ 0.01 instead, well outside the band, which is why the body stays
+      // black while the outline lights: one texture, two addresses.
+      node("sky", "ramp", [-1880, -900], {
+        type: "vertical", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0.00, color: [0, 0, 0, 1] },
+          { position: 0.40, color: [0.004, 0.005, 0.009, 1] },
+          { position: 1.00, color: [0, 0, 0, 1] },
+        ],
+      }, { label: "sky1", definitionVersion: 2, resolution: { mode: "fixed", width: 512, height: 256 } }),
+      // `aspectcorrect` FALSE, always, on an equirect: the map is not a picture of a
+      // square. Softness 0.16 and not more — the band's tail is what greys the body.
+      node("band", "circle", [-1880, -680], {
+        mode: "fill", center: [0.5, 0.5], radius: [0.26, 0.075], softness: 0.16,
+        fillcolor: [0.74, 0.84, 1, 1], bgcolor: [0, 0, 0, 1], aspectcorrect: false,
+      }, { label: "band1" }),
+      node("studio", "add", [-1560, -900], {}, { label: "studio1", resolution: { mode: "fixed", width: 512, height: 256 } }),
+
+      // ---- the shot --------------------------------------------------------------
+      // ONE job: the direction is the mirror of the view about the upper-left
+      // round-over's normal, so the Blinn lobe lands as a GLINT on that edge and nowhere
+      // else. Measured: kill it and 8,387 pixels move by more than 4 luma.
+      node("key", "light", [-1240, -900], {
+        kind: "directional", direction: [0.73, -0.60, 0.31], color: [0.80, 0.88, 1, 1], intensity: 2.6, shadows: false,
+      }, { label: "key1" }),
+      node("eye", "camera", [-1240, -680], {
+        // 26 degrees is a long lens on purpose: this is a poster, and a wide one would
+        // bend the spectrum's straight rays. The eye sits barely off the prism's own
+        // axis, which is what keeps the lateral faces to a sliver instead of a slab.
+        eye: [0.45, -0.36, 6.6], lookAt: [-0.05, -0.53, 0], fov: 26, near: 0.1, far: 40, ortho: false,
+      }, { label: "eye1", parameters: { "eye.x": drivenSlot("drift1", 0.45) } }),
+      node("shot", "render", [-920, -420], {
+        scenes: "solid1 fan1 shaft1", camera: "eye1", lights: "key1",
+        // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the
+        // physical terms here are a 4% head-on Fresnel and a 0.0009 albedo, so any
+        // ambient worth the name drowns them and the glass goes to grey slate.
+        ambientColor: [0, 0, 0, 1], ambientIntensity: 0,
+        background: [0, 0, 0, 1], environmentIntensity: 3.2, showEnvironment: false,
+      }, { label: "shot1" }),
+
+      // ---- the bloom, and the clamp that is load-bearing --------------------------
+      // Level is a SIGNED pipeline: below `blacklevel` it emits negatives, the blur
+      // spreads them over the whole frame and `add` then SUBTRACTS a halo from the
+      // picture. On a document this black almost every pixel is below the threshold, so
+      // without `clip1` the frame goes out entirely (E33's and E34's lesson, twice).
+      node("cut", "level", [-600, -140], { blacklevel: 0.32, whitelevel: 1, gamma1: 1, contrast: 1, brightness: 1, opacity: 1 }, { label: "cut1" }),
+      node("clip", "limit", [-280, -140], { mode: "clamp", low: 0, high: 6, steps: 4 }, { label: "clip1" }),
+      node("halo", "blur", [40, -140], { size: 22, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("glow", "add", [360, -420], {}, { label: "glow1" }),
+      node("out", "output", [680, -420], {}, { label: "out1" }),
     ],
     [
+      edge("e-swing-ease", ["swing", "out"], ["ease", "in"]),
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
-      edge("e-pulse-ease", ["pulse", "out"], ["ease", "in"]),
 
-      edge("e-swarm-sparks", ["swarm", "out"], ["sparks", "points"]),
-      edge("e-sparks-roll", ["sparks", "out"], ["roll", "input"]),
-      edge("e-roll-field", ["roll", "out"], ["field", "in1"]),
-      edge("e-backdrop-field", ["backdrop", "out"], ["field", "in2"]),
+      edge("e-bar-form", ["bar", "out"], ["form", "in"]),
+      edge("e-form-solid", ["form", "out"], ["solid", "points"]),
 
-      edge("e-lens-normals", ["lens", "out"], ["normals", "input"]),
+      edge("e-spectrum-optics", ["spectrum", "out"], ["optics", "field"]),
+      edge("e-optics-shaft", ["optics", "out"], ["shaft", "points"]),
+      edge("e-optics-fan", ["optics", "out"], ["fan", "points"]),
 
-      edge("e-field-bendR", ["field", "out"], ["bendR", "source"]),
-      edge("e-field-bendG", ["field", "out"], ["bendG", "source"]),
-      edge("e-field-bendB", ["field", "out"], ["bendB", "source"]),
-      edge("e-normals-bendR", ["normals", "out"], ["bendR", "disp"]),
-      edge("e-normals-bendG", ["normals", "out"], ["bendG", "disp"]),
-      edge("e-normals-bendB", ["normals", "out"], ["bendB", "disp"]),
+      edge("e-sky-studio", ["sky", "out"], ["studio", "in1"]),
+      edge("e-band-studio", ["band", "out"], ["studio", "in2"], 0),
+      edge("e-studio-shot", ["studio", "out"], ["shot", "environment"]),
 
-      edge("e-bendR-fuse", ["bendR", "out"], ["fuse", "in1"]),
-      edge("e-bendG-fuse", ["bendG", "out"], ["fuse", "in2"]),
-      edge("e-fuse-prism", ["fuse", "out"], ["prism", "in1"]),
-      edge("e-bendB-prism", ["bendB", "out"], ["prism", "in2"]),
-      edge("e-prism-out", ["prism", "out"], ["out", "input"]),
+      edge("e-shot-cut", ["shot", "out"], ["cut", "input"]),
+      edge("e-cut-clip", ["cut", "out"], ["clip", "input"]),
+      edge("e-clip-halo", ["clip", "out"], ["halo", "input"]),
+      edge("e-shot-glow", ["shot", "out"], ["glow", "in1"]),
+      edge("e-halo-glow", ["halo", "out"], ["glow", "in2"], 0),
+      edge("e-glow-out", ["glow", "out"], ["out", "input"]),
     ],
   ),
 );
@@ -7261,7 +7409,23 @@ const LIDAR_HEIGHT_SCALE = 2.6;
 const LIDAR_HEIGHT_OFFSET_V = -0.6;
 const LIDAR_MAST = 3.3;
 const LIDAR_HEIGHT_OFFSET = LIDAR_HEIGHT_OFFSET_V;
-const LIDAR_RANGE = 3.4;
+/* T711 — RANGE AND CONTRACTION ARE ONE NUMBER, and this is the constraint the next
+   person tuning this file will hit. The tightest the target circle can be is set by the
+   STEEPEST tilt, and the steepest tilt is capped by how far a shot can reach: the mast
+   stands at y = 3.3 and the terrain floor is −0.6, so a vertical shot needs 3.9 to touch
+   the bottom of the basin. At the shipped 3.4 a vertical shot bottoms out at y = −0.1 —
+   measured at tilt span 0.72 the whole middle of the ring falls SHORT, turns
+   out-of-range steel, and exactly one beam survives. So "contract the circle further"
+   costs REACH, and 3.4 → 3.9 moves with the span below or the ask breaks the picture. */
+const LIDAR_RANGE = 3.9;
+/* The tilt's shallow end and its SPAN, in radians below horizontal. The shallow end does
+   not move (§V639: the echoes exist BECAUSE shallow rays reflect forward off back-slopes,
+   and steepening that end deletes the reading). The span is the owner's "a bit smaller
+   even than what we have now": 0.50 → 0.62 takes the tightest ring's radius to
+   tan(1.10)/tan(1.22) = 0.719 of what it was — 28% smaller, and the ratio is free of the
+   local ground height, so it is a fact about the instrument rather than about one frame. */
+const LIDAR_TILT_MIN = 0.6;
+const LIDAR_TILT_SPAN = 0.62;
 /* T658: the terrain GRID, sized so a cell stays 0.05 world units after the plate grew
    — 2·4.8/192 = 0.05, the exact spacing the 3.2/128 sheet had. */
 const LIDAR_GRID = 192;
@@ -7332,10 +7496,11 @@ const LIDAR_AIM_ATTRIBUTES = JSON.stringify([
 const LIDAR_AIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;
-  /* 0.60..1.10 rad (34°..63° below horizontal): the steep end lands well inside range,
+  /* 0.60..1.22 rad (34°..70° below horizontal): the steep end lands well inside range,
      the shallow end's slant exceeds it and the outer ring goes dark — and shallow
-     strikes reflect FORWARD off back-slopes, which is where the echoes come from. */
-  let tilt = 0.60 + ctx.value1 * 0.50;
+     strikes reflect FORWARD off back-slopes, which is where the echoes come from.
+     The steep end is capped by LIDAR_RANGE, not by taste — see that constant. */
+  let tilt = ${LIDAR_TILT_MIN} + ctx.value1 * ${LIDAR_TILT_SPAN};
   q.position = vec3f(0.0, ${LIDAR_MAST}, 0.0);
   q.direction = normalize(vec3f(
     sin(azimuth) * cos(tilt),
@@ -7344,6 +7509,46 @@ const LIDAR_AIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   ));
   /* T672: every ray is CAST, every tenth is DRAWN. See LIDAR_SPOKE_EVERY. */
   q.spoke = select(0.0, 1.0, (ctx.index % ${LIDAR_SPOKE_EVERY}u) == 0u);
+  return q;
+}`;
+
+/* T711 — THE BEAM'S OWN COLOUR, one slot per attribute and four of them (§V588 again).
+   `spoke` is declared because the draw's predicate reads it and this kernel sits between
+   `cast1` and the draw; `hitPosition` because the beam's far end is written here. */
+const LIDAR_SIGHT_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "spoke", type: "f32", default: [0] },
+  { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+]);
+
+/* T711 — A RAY AND THE MARK IT MAKES SHARE A COLOUR, which is the whole reason this
+   kernel exists. `haze1` used to be a FLAT [0.36, 0.21, 0.08] — one colour for every
+   beam, unrelated to the box it lands on — and the mechanism nobody had named is that
+   0.36 sits just BELOW `cut1`'s 0.42 bloom knee, so 24 lit ribbons read as matte orange
+   sticks while the ring they end on glowed. The expression here is `mark1`'s own return
+   colour at a lower gain, so the beam is the same yellow as its impact and lands ABOVE
+   the knee: the eye traces cause to effect because the two are literally one colour.
+
+   And the second half: A RAY WITH NO RETURN IS NOT DRAWN. Both ends on the same point
+   is a ZERO-AREA beam, which is the honest reading of a shot that never landed, and it
+   needs no flag — the Ray node's contract is that a miss ends exactly `maxDistance` from
+   its origin, so the same `slant` that colours the beam also classifies it.
+
+   The two alternatives were built and measured, and both lose (§V668). RECOLOURING the
+   misses takes the green band's hard-flip rate from 0.4% to 11.3%, because the CLASS
+   BOUNDARY is what oscillates — a recoloured miss class blinks worse than the hit class
+   it replaces. FADING the beam out at max range paints a BLACK RIBBON across the lit
+   terrain: a beam is opaque scene geometry, so dimming it toward zero does not hide it,
+   it darkens whatever is behind it. Dropping costs nothing on the metric — the amber
+   hard-flip rate is unchanged at 0.4% with the drop alone, and the 0.4% → 1.9% this
+   rework does spend is attributable entirely to the BRIGHTNESS, measured separately. */
+const LIDAR_SIGHT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  let slant = length(p.hitPosition - p.position);
+  let near = clamp(1.0 - slant / ${LIDAR_RANGE}, 0.0, 1.0);
+  q.tint = vec4f(1.0, 0.62 + 0.30 * near, 0.18, 1.0) * (0.35 + 0.90 * near);
+  q.hitPosition = select(p.position, p.hitPosition, slant < ${LIDAR_RANGE} - 0.01);
   return q;
 }`;
 
@@ -7474,6 +7679,15 @@ const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   let level = select(p.wake.w * 0.94, 1.0, take);
   q.wake = vec4f(pos, level);
   q.position = pos;
+  /* T711 — the BOUNCE LEG's far end, and the only place it can live. \`p.position\` here
+     is the FIRST hit, the primary ray's landing, and this kernel's own \`hitPosition\`
+     slot is a LEAF: nothing downstream reads it, because the only consumer of mark2a is
+     the draw. Four attributes is the whole budget (§V588), so the segment gets published
+     through a slot that already exists rather than through a fifth pair. The far end is
+     LIVE while the near end is HELD, which is the right way round: the first hit is a
+     SMOOTH function of azimuth (T681 measured the primary ring as a clean colour wheel),
+     so the beam's base creeps while its tip stays put, and nothing pops. */
+  q.hitPosition = p.position;
   /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. The
      floor is LOW (0.15) so the far scatter stays a scatter and the near returns are
      the ones that read — depth, rather than confetti at one brightness. */
@@ -7571,28 +7785,43 @@ const lidarDocument = document(
         },
       }),
 
-      /* ---- the beams: the cause, drawn (T672/T680) ----------------------------- */
-      /* Dim and warm, and UNLIT on purpose: a beam is scattered light in the air, not a
-         surface — and an unlit primitive takes no part in shadowing either (§V617). */
-      node("haze", "materialUnlit", [-1600, 900], { color: [0.36, 0.21, 0.08, 1] }, { label: "haze1" }),
+      /* ---- the beams: the cause, drawn (T672/T680), coloured by it (T711) ------- */
+      node("sight", "pointKernel", [-1920, 900], {
+        capacity: 240, attributes: LIDAR_SIGHT_ATTRIBUTES, kernel: LIDAR_SIGHT_KERNEL,
+      }, { label: "sight1" }),
+      /* WHITE, and UNLIT on purpose: a beam is scattered light in the air, not a surface —
+         and an unlit primitive takes no part in shadowing either (§V617). T711 moved the
+         colour off this material and onto the POINT, because one flat colour for every
+         beam is exactly what stopped the beams reading as the cause of the marks; the
+         material is now the identity element so the tint IS the colour. */
+      node("haze", "materialUnlit", [-1600, 900], { color: [1, 1, 1, 1] }, { label: "haze1" }),
       node("rays", "geometry", [-1280, 900], {
         /* `beam` spans each ray's `position` — the mast — to its `hitPosition`, which
            `cast1` ALREADY carries, so 24 beams cost 24 instances of six vertices and NOT
            ONE extra ray march. The sampled-billboard fake was built and measured first:
            983,000 texture reads a frame against this file's 15,400, for a serrated ribbon
            that cannot taper (T680). */
+        /* T711: the far end is now `sight1`'s, not `cast1`'s — same attribute, one kernel
+           later, so a ray with no return arrives with both ends on the same point and
+           collapses to zero area instead of drawing a hit that did not happen. */
         mode: "beam", endpoint: "hitPosition", scale: 0.013,
         /* TAPER 0, and it is load-bearing, not tidiness: every beam here shares ONE
            origin, so at any taper above ~0 they fuse into a solid wedge at the mast
            whatever their number. Pinching the near end to a point is both the cure and
            what a divergent beam actually does. */
         taper: 0,
-        material: "haze1", tint: [1, 1, 1, 1],
+        material: "haze1",
         /* §V471's idiom, on the DRAW: every ray is cast, every tenth is drawn. Empty this
            predicate and 240 beams fuse into an opaque cone that hides the terrain — which
            is why the subset is measured rather than chosen. */
         group: "p.spoke > 0.5",
-      }, { label: "rays1" }),
+      }, {
+        label: "rays1",
+        /* T478 again, on a BEAM this time: the kernel's per-ray colour IS the beam's. */
+        parameters: {
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
 
       /* ---- the ground, LIT BY ITS OWN RETURNS (T672, §V644) -------------------- */
       node("pool", "pointKernel", [-1280, 300], {
@@ -7643,6 +7872,45 @@ const lidarDocument = document(
         group: "p.wake.w > 0.03",
       }, {
         label: "echoes1",
+        parameters: {
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+
+      /* ---- the bounce leg, DRAWN (T711) --------------------------------------- */
+      /* THIS WAS REJECTED ONCE, BY MEASUREMENT, AND THE REJECTION WAS RIGHT FOR ITS TREE.
+         T681 drew this segment off `rebound1`'s RAW verdict and it cost green energy
+         873k → 1,399k, "because the segments pop in and out with the raw verdict and
+         have no persistence to inherit". §V638's sample-and-hold then landed — and a
+         beam hung on mark2a inherits exactly the persistence the rejected version
+         lacked. Re-measured on THIS tree, same ten rays, same width, same colour, camera
+         frozen, 15 frame-pairs, the ONLY variable being where the segment reads from:
+
+             no bounce beam        green    663,533 on   171,680 px   hard-flip 0.4%
+             bounce, HELD          green  4,961,526 on   393,877 px   hard-flip 2.2%
+             bounce, RAW verdict   green 32,123,665 on 1,490,859 px   hard-flip 7.1%
+
+         The hold is worth 6.5× the green energy and 3.2× the churn, and 2.2% sits under
+         the amber band T681 itself judged against. A conclusion measured on one tree is
+         not evidence about another one. */
+      node("mist", "materialUnlit", [-960, 900], { color: [0.85, 0.85, 0.85, 1] }, { label: "mist1" }),
+      node("bounce", "geometry", [-640, 900], {
+        /* `position` is the HELD echo point and `hitPosition` the first hit mark2a
+           publishes, so the segment is the echo's own cause. Taper 1: unlike the
+           primaries these share no origin, so there is no apex to pinch. */
+        mode: "beam", endpoint: "hitPosition", scale: 0.006, taper: 1, material: "mist1",
+        /* Both halves matter. `wake.w` is echoes1's OWN predicate, so a bounce beam
+           lights, holds, fades and re-arms with the box it belongs to — that is where the
+           persistence comes from. `spoke` is the same every-tenth subset the primaries
+           use, and it reaches this draw for free: an attribute a pointKernel does not
+           DECLARE still flows through the pointset, so mark2a never had to spend a slot
+           on it. Drop it and all 240 legs draw: the basin becomes green spaghetti, green
+           energy ×6.5 again, and it is T681's picture exactly. */
+        group: "p.wake.w > 0.03 && p.spoke > 0.5",
+      }, {
+        label: "bounce1",
+        /* mark2a's tint, unchanged — so the leg and the echo it ends on are ONE colour,
+           the same agreement the primaries and their boxes now keep. */
         parameters: {
           tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
         },
@@ -7710,7 +7978,7 @@ const lidarDocument = document(
         },
       }),
       node("shot", "render", [-320, -140], {
-        scenes: "ground1 impacts1 echoes1 rays1",
+        scenes: "ground1 impacts1 echoes1 rays1 bounce1",
         camera: "eye1",
         lights: "moon1 lamp1",
         ambientColor: [0.50, 0.60, 0.92, 1],
@@ -7744,6 +8012,37 @@ const lidarDocument = document(
          un-clamped chain blacked out the entire film. */
       node("clip", "limit", [320, -140], { mode: "clamp", low: 0, high: 6, steps: 4 }, { label: "clip1" }),
       node("halo", "blur", [640, -140], { size: 28, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+
+      /* ---- the trail: a LUMINANCE-thresholded feedback (T711) ------------------ */
+      /* THE TUNING QUESTION IS WHERE THIS SITS RELATIVE TO THE POOL-LIT GROUND, and it
+         is answered with a number rather than an eye. Rendered with the marks, beams and
+         echoes taken out of the Scenes list, the terrain — moonlit AND lit by its own
+         impact pool — tops out at linear luma 0.102. Threshold 0.16 with softness 0.10 is
+         a smoothstep across 0.11 … 0.21, so the transition's FOOT is above the brightest
+         ground there is: the ground contributes EXACTLY NOTHING and everything the eye
+         reads as a glow trails. Lower it under 0.10 and the whole lit hillside smears;
+         raise it past 0.40 and only the 0.7% of the frame that is core survives. */
+      node("hot", "threshold", [0, 340], {
+        threshold: 0.16, softness: 0.10, channel: "luminance", compare: "greater",
+      }, { label: "hot1" }),
+      /* Threshold emits a MASK in rgb and alpha alike, so the colour has to be put back:
+         multiply keeps what passed and discards what did not. `opacity` scales the FRONT
+         layer, which makes it the loop's INJECTION GAIN and the only place it lives. */
+      node("stain", "multiply", [320, 340], { opacity: 0.05 }, { label: "stain1" }),
+      node("smear", "add", [640, 340], {}, { label: "smear1" }),
+      /* §V631 — BOUNDED BY ARITHMETIC, not by hope: steady state is injection ÷ (1 −
+         persistence), so 0.90 settles at 10× the injection and 0.05 × 10 = 0.5 of the
+         source at a mark that holds still. Positive gain below 1: convergent, and no sign
+         alternation (§V630's oscillator needs a NEGATIVE gain, which needs a Screen this
+         path does not have). Measured rather than assumed, and not over a short window:
+         `smear1`'s own alpha reads [0, 0.47] at frame 60 and [0, 0.50] at frame 800, and
+         the sink's stays inside [0, 1]. What it buys, camera frozen: the amber band's
+         hard-flip rate 2.9% → 0.5% at the steep end and 4.5% → 1.0% at the shallow one,
+         with TOTAL energy down 1.6% — trails add frame-to-frame correlation, which is
+         the point, and here they paid for themselves in energy as well. */
+      node("trail", "feedback", [640, 560], {
+        source: "smear1", persistence: 0.90, clearColor: [0, 0, 0, 0],
+      }, { label: "trail1" }),
       node("glow", "add", [960, -140], {}, { label: "glow1" }),
       node("out", "output", [1280, -140], {}, { label: "out1" }),
     ],
@@ -7760,7 +8059,8 @@ const lidarDocument = document(
       edge("e-carve-cast", ["carve", "out"], ["cast", "field"]),
       edge("e-cast-mark", ["cast", "out"], ["mark", "in"]),
       edge("e-mark-impacts", ["mark", "out"], ["impacts", "points"]),
-      edge("e-cast-rays", ["cast", "out"], ["rays", "points"]),
+      edge("e-cast-sight", ["cast", "out"], ["sight", "in"]),
+      edge("e-sight-rays", ["sight", "out"], ["rays", "points"]),
 
       edge("e-mark-pool", ["mark", "out"], ["pool", "in"]),
       edge("e-pool-poolmap", ["pool", "out"], ["poolmap", "points"]),
@@ -7773,13 +8073,20 @@ const lidarDocument = document(
       edge("e-carve-rebound", ["carve", "out"], ["rebound", "field"]),
       edge("e-rebound-mark2", ["rebound", "out"], ["mark2", "in"]),
       edge("e-mark2-echoes", ["mark2", "out"], ["echoes", "points"]),
+      edge("e-mark2-bounce", ["mark2", "out"], ["bounce", "points"]),
 
       edge("e-skyband-shot", ["skyband", "out"], ["shot", "environment"]),
       edge("e-shot-cut", ["shot", "out"], ["cut", "input"]),
       edge("e-cut-clip", ["cut", "out"], ["clip", "input"]),
       edge("e-clip-halo", ["clip", "out"], ["halo", "input"]),
+      edge("e-shot-hot", ["shot", "out"], ["hot", "input"]),
+      edge("e-shot-stain", ["shot", "out"], ["stain", "in1"]),
+      edge("e-hot-stain", ["hot", "out"], ["stain", "in2"], 0),
+      edge("e-stain-smear", ["stain", "out"], ["smear", "in1"]),
+      edge("e-trail-smear", ["trail", "out"], ["smear", "in2"], 0),
       edge("e-shot-glow", ["shot", "out"], ["glow", "in1"]),
       edge("e-halo-glow", ["halo", "out"], ["glow", "in2"], 0),
+      edge("e-smear-glow", ["smear", "out"], ["glow", "in2"], 1),
       edge("e-glow-out", ["glow", "out"], ["out", "input"]),
     ],
   ),
