@@ -1,6 +1,6 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
-import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
+import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePairRef, ScenePayload } from "../../domain/types/scene.ts";
 import { resolveGroupPredicate } from "./points.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
 import { cameraPayloadMatrix, directionalShadowMatrix, lookAt } from "../../domain/geometry/camera.ts";
@@ -218,7 +218,32 @@ export const geometryNode: NodeDefinition = {
            predicate. They cast no shadow (a screen-aligned card has no light-facing
            geometry). */
         { value: "points", label: "Points" },
+        /* T680: one quad per point, spanning `position` → the Endpoint attribute. The
+           third member of the billboard family and the one that carries a BEARING:
+           beams, streaks, trails — anything whose reading is a SEGMENT rather than a
+           dot. Casts no shadow, for §V610's reason. */
+        { value: "beam", label: "Beam" },
       ],
+    },
+    endpoint: {
+      type: "string",
+      label: "Endpoint",
+      default: "",
+      compileTime: true,
+      inactiveWhen: (values) => (values["mode"] === "beam" ? null : "Only a beam has a far end."),
+      description:
+        "Beam mode: the name of a vec3f attribute holding the FAR end of each segment. The near end is `position`. A ray's `hitPosition`, a previous frame's position, `position + velocity` — whatever the data already knows.",
+    },
+    taper: {
+      type: "number",
+      label: "Taper",
+      default: 1,
+      min: 0,
+      max: 1,
+      range: "bounded",
+      inactiveWhen: (values) => (values["mode"] === "beam" ? null : "Only a beam has two ends to size differently."),
+      description:
+        "Beam mode: the share of the width the beam keeps at its ORIGIN. 1 is a parallel-sided ribbon; 0 pinches the near end to a point, which is what a divergent beam does — and what keeps many beams sharing one origin from fusing into a solid wedge there.",
     },
     shape: {
       type: "enum",
@@ -239,9 +264,11 @@ export const geometryNode: NodeDefinition = {
       min: 0,
       range: "floor",
       inactiveWhen: (values) =>
-        values["mode"] === "instances" || values["mode"] === "points"
+        values["mode"] === "instances" || values["mode"] === "points" || values["mode"] === "beam"
           ? null
           : "Scale sizes instances and point billboards; a surface spans its grid.",
+      description:
+        "Instances: the primitive's size. Points: the billboard's. Beam: its HALF-WIDTH — a beam takes its length from the data, so this is the only dimension left to set.",
     },
     tint: {
       type: "color",
@@ -257,7 +284,7 @@ export const geometryNode: NodeDefinition = {
       default: "",
       compileTime: true,
       description:
-        "T642/T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.hit > 0.5. Instances and Points modes; referenced attributes bind on demand from the edge. Empty = all.",
+        "T642/T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.hit > 0.5. Instances, Points and Beam modes; referenced attributes bind on demand from the edge. Empty = all.",
     },
   },
   compile(context): CompiledNodeDescription {
@@ -329,7 +356,18 @@ export const geometryNode: NodeDefinition = {
               (base.baseColor[3] ?? 1) * (tint[3] ?? 1),
             ],
           };
-    const mode = parameters["mode"] === "instances" ? "instances" : parameters["mode"] === "points" ? "points" : "surface";
+    const mode =
+      parameters["mode"] === "instances"
+        ? "instances"
+        : parameters["mode"] === "points"
+          ? "points"
+          : parameters["mode"] === "beam"
+            ? "beam"
+            : "surface";
+    /* The three PER-POINT modes, as one word: everything below that is true of an
+       instance is true of a billboard and of a beam — a scale, a group predicate, no
+       uv, no grid. Only `surface` is the odd one. */
+    const perPoint = mode === "instances" || mode === "points" || mode === "beam";
     /*
      * T642: the group predicate, resolved by the SAME function renderPoints uses
      * (§V349 by construction). Instances only, and the refusal says WHY (§V606: a
@@ -348,7 +386,7 @@ export const geometryNode: NodeDefinition = {
             code: "node.scene.group",
             message: `Node "${nodeId}": a group predicate needs a per-point mode — a surface draw's triangles span every grid point, so filtering points would punch holes in the mesh rather than select from a cloud.`,
             nodeId,
-            suggestion: "Switch Mode to Instances or Points, or route the cloud through renderPoints.",
+            suggestion: "Switch Mode to Instances, Points or Beam, or route the cloud through renderPoints.",
           },
         ],
       };
@@ -368,6 +406,39 @@ export const geometryNode: NodeDefinition = {
         ],
       };
     }
+    /*
+     * T680 — BEAM mode's far end. Refused BY NAME when the attribute is missing or is
+     * not vec3f (§V288): a beam whose endpoint quietly defaulted would draw every
+     * segment at zero length, which renders as an empty frame and teaches that the mode
+     * does not work. The near end is always `position`, which the input port already
+     * requires, so only this one needs asking for.
+     */
+    const endpointName = typeof parameters["endpoint"] === "string" ? (parameters["endpoint"] as string).trim() : "";
+    let endpointPair: ScenePairRef | undefined;
+    if (mode === "beam") {
+      const carried = endpointName === "" ? undefined : pointset.pairs[endpointName];
+      if (endpointName === "" || carried === undefined || carried.type !== "vec3f") {
+        const why =
+          endpointName === ""
+            ? "beam mode needs an Endpoint attribute naming the far end of each segment"
+            : carried === undefined
+              ? `the incoming point set carries no attribute "${endpointName}"`
+              : `the incoming \`${endpointName}\` attribute is ${carried.type ?? "untyped"}, and a beam's far end must be vec3f`;
+        return {
+          passes: [],
+          diagnostics: [
+            {
+              severity: "error",
+              code: "node.scene.endpoint",
+              message: `Node "${nodeId}": ${why}.`,
+              nodeId,
+              suggestion: "Name a vec3f attribute the producer writes — a Ray node's `hitPosition`, or a kernel's own second position.",
+            },
+          ],
+        };
+      }
+      endpointPair = { pair: carried.pair, half: carried.half, type: "vec3f" };
+    }
     const shapeParameter = parameters["shape"];
     const payload: GeometryPayload = {
       kind: "geometry",
@@ -375,14 +446,25 @@ export const geometryNode: NodeDefinition = {
       capacity: pointset.capacity,
       ...(pointset.topology === undefined ? {} : { topology: pointset.topology }),
       mode,
-      ...(mode === "instances"
+      /*
+       * B-fix, found while building T680: this carried the scale for INSTANCES only, so
+       * a points-mode billboard fell through to the draw's `?? { scale: 0.05 }` and the
+       * Scale parameter — which declares itself ACTIVE for points — did nothing at all.
+       * Measured on E34: 0.005 and 0.30 rendered BYTE-IDENTICAL. §V465's fault exactly,
+       * and worse, because nothing overrode it; the value was simply dropped on the
+       * floor. All three per-point modes carry it now. `shape` rides along unused in the
+       * two billboard modes, which is what the shader already assumes.
+       */
+      ...(perPoint
         ? {
             instance: {
               shape: shapeParameter === "quad" ? "quad" : shapeParameter === "octahedron" ? "octahedron" : "box",
               scale: readNumber(parameters, "scale", 0.05),
+              ...(mode === "beam" ? { taper: Math.min(1, Math.max(0, readNumber(parameters, "taper", 1))) } : {}),
             },
           }
         : {}),
+      ...(endpointPair === undefined ? {} : { endpoint: endpointPair }),
       ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
       ...(resolvedGroup === undefined ? {} : { group: resolvedGroup }),
       ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
@@ -673,8 +755,15 @@ export const renderNode: NodeDefinition = {
         /* T647: a points-mode billboard casts NO shadow, deliberately — a camera-facing
            card has no light-facing geometry, so a shadow from it would be a lie (and
            without this skip a grid-topology cloud would cast its MESH's shadow, a ghost
-           of a surface nobody drew). Stated here, not silently absent (§V403). */
-        if (payload.mode === "points") return;
+           of a surface nobody drew). Stated here, not silently absent (§V403).
+
+           T680 extends the SAME argument, not a new one, to the beam: the ribbon rotates
+           about its own length to face the viewer, so the silhouette a light would see is
+           not the silhouette anything has. Its LENGTH and BEARING are real — that half
+           comes from the data — but its width is a viewing artefact, and a shadow is
+           mostly width. §V617's material rule already skips the unlit beams every use so
+           far wants; this covers the LIT one, which §V617 does not reach. */
+        if (payload.mode === "points" || payload.mode === "beam") return;
         /*
          * T666 — an UNLIT geometry exchanges no light IN EITHER DIRECTION, so it does
          * not cast either. §V610 named the billboard half of this and stopped there;
@@ -971,8 +1060,12 @@ export const renderNode: NodeDefinition = {
     } as DrawPassDescriptor);
 
     geometries.forEach(({ payload, source }, index) => {
-      if (payload.mode === "instances" || payload.mode === "points") {
+      if (payload.mode === "instances" || payload.mode === "points" || payload.mode === "beam") {
         const billboard = payload.mode === "points";
+        /* T680: a beam is a quad like a billboard is — six vertices, one instance per
+           point — so it rides this whole branch and differs only in the generator flag
+           and the one extra buffer. */
+        const beam = payload.mode === "beam";
         const position = payload.pairs["position"];
         if (position === undefined) {
           diagnostics.push({
@@ -990,7 +1083,7 @@ export const renderNode: NodeDefinition = {
           diagnostics.push({
             severity: "error",
             code: "node.scene.maps",
-            message: `Node "${nodeId}": geometry "${source}" wears a material with texture maps, but instances have no uv to sample by yet — maps work on surface geometry.`,
+            message: `Node "${nodeId}": geometry "${source}" wears a material with texture maps, but a ${payload.mode} draw has no uv to sample by yet — maps work on surface geometry.`,
             nodeId,
           });
           return;
@@ -1027,7 +1120,7 @@ export const renderNode: NodeDefinition = {
         let counted = countedByIndex.get(index);
         if (counted === undefined) {
           counted = countedDrawSupport(nodeId, payload, {
-            vertexCount: billboard ? 6 : 36,
+            vertexCount: billboard || beam ? 6 : 36,
             maxInstances: Math.max(1, payload.capacity),
             argsKey: `drawArgs${index}`,
           });
@@ -1050,13 +1143,20 @@ export const renderNode: NodeDefinition = {
             ...(aoActive ? { ambientOcclusion: true } : {}),
             ...(payload.group === undefined ? {} : { group: payload.group }),
             ...(billboard ? { billboard: true } : {}),
+            ...(beam ? { beam: true } : {}),
           }),
           target,
           topology: "triangle-list",
           instances: counted?.instances ?? payload.capacity,
-          vertexCount: billboard ? 6 : 36,
+          vertexCount: billboard || beam ? 6 : 36,
           buffers: [
             { binding: "positions", resourceId: position.pair, half: position.half },
+            /* T680: the far end, bound exactly as the colour attribute is — the geometry
+               node resolved the NAME against the edge, so this is one more pair ref and
+               no new concept. */
+            ...(payload.endpoint === undefined
+              ? []
+              : [{ binding: "endpoints", resourceId: payload.endpoint.pair, half: payload.endpoint.half }]),
             ...(payload.colorAttribute === undefined
               ? []
               : [
@@ -1084,7 +1184,15 @@ export const renderNode: NodeDefinition = {
             baseColor: [...material.baseColor],
             specular: [...specularColor, shininess],
             material: [material.metallic, material.roughness, 0, 0],
-            instance: [instance.scale, billboard ? 0 : instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+            instance: [
+              instance.scale,
+              billboard || beam ? 0 : instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1,
+              /* T680: z is the beam's taper. Beam mode always sets it; every other mode
+                 leaves this slot at the 0 it has always held, so their uniform bytes are
+                 unchanged and no golden reading moves (§V309). */
+              instance.taper ?? 0,
+              0,
+            ],
             ...(billboard
               ? {
                   billboardRight: [bbRight[0], bbRight[1], bbRight[2], 0],

@@ -64,9 +64,36 @@ export interface GeometryPayload {
   readonly capacity: number;
   readonly topology?: PointTopology | string;
   /** How this object renders. */
-  readonly mode: "surface" | "instances" | "points";
-  /** Instances mode: the primitive worn per point (T428b). */
-  readonly instance?: { readonly shape: "quad" | "box" | "octahedron"; readonly scale: number };
+  readonly mode: "surface" | "instances" | "points" | "beam";
+  /**
+   * The per-point primitive's sizing. Instances wear the `shape` (T428b); the two
+   * billboard modes ignore it and use `scale` alone; `taper` is beam-only.
+   */
+  readonly instance?: {
+    readonly shape: "quad" | "box" | "octahedron";
+    readonly scale: number;
+    /**
+     * T680, beam mode: the fraction of the full width the beam has AT ITS ORIGIN. 1 is a
+     * parallel-sided ribbon; 0 pinches the near end to a point, which is what a
+     * divergent beam does and — measured, not assumed — the only thing that keeps N
+     * beams sharing one origin from fusing into a solid opaque wedge around it.
+     */
+    readonly taper?: number;
+  };
+  /**
+   * T680 — BEAM mode: the other end of each segment, as a vec3f attribute pair.
+   *
+   * The beam is the third member of the billboard family and the one that carries a
+   * DIRECTION: a quad spanning `position` → this endpoint, widened along the axis the
+   * camera can see. Where `points` mode derives its whole basis from the camera, a beam
+   * derives only its WIDTH from the camera and takes its length and its bearing from
+   * the data — which is why it needs a second position and the billboard does not.
+   *
+   * Required in beam mode and refused by name when absent or mistyped (§V288): a beam
+   * that silently fell back to a zero-length segment would draw nothing and teach that
+   * the mode is broken.
+   */
+  readonly endpoint?: ScenePairRef;
   /**
    * T478: per-point colour — the geometry's `tint` in MAP mode, resolved to a vec4f
    * attribute pair. It MULTIPLIES the material's base colour per point, exactly as the

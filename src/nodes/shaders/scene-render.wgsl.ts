@@ -501,9 +501,22 @@ export function sceneInstancesWgsl(options: {
    * the scene loop skips points geometries in the depth pass and says so there.
    */
   billboard?: boolean;
+  /**
+   * T680: BEAM mode — one quad per point, spanning `positions[i]` → `endpoints[i]`,
+   * widened along the one axis the camera can see. Same lights, same environment, same
+   * group gate, same depth buffer as the other two (§V349, again): the vertex stage is
+   * the only thing that differs, and it differs by where the quad's LONG axis comes
+   * from — the camera in billboard mode, the DATA here.
+   *
+   * It casts no shadow for the same reason a billboard does not (§V610): the ribbon
+   * turns to face the viewer, so the silhouette a light would see is not the silhouette
+   * anything has. The scene loop skips it in the depth pass and says so there.
+   */
+  beam?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
   const billboard = options.billboard === true;
+  const beam = options.beam === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const shadows = options.shadows ?? [];
   const shadowSlotOf = (index: number): number => shadows.indexOf(index);
@@ -617,12 +630,17 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   baseColor: vec4f,
   specular: vec4f,
   material: vec4f,
-  instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
+  instance: vec4f,          // x = scale (beam: HALF-WIDTH), y = shape (0 quad, 1 box, 2 octahedron), z = beam taper
 ${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}${aoDeclarations}${group.bindings}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${
+    /* T680: bindings 3 and 4 have always been free here — the shadow maps start at 5 and
+       everything optional is numbered after them — so the beam's second position buffer
+       lands in a hole rather than shifting a single existing slot. */
+    beam ? "@group(0) @binding(3) var<storage, read> endpoints: array<vec3f>;\n" : ""
+  }${shadowBindings}${envDeclarations}${aoDeclarations}${group.bindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -696,7 +714,37 @@ fn shapeNormal(shape: u32, v: u32) -> vec3f {
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
 ${group.gate}${
-    billboard
+    beam
+      ? `  /* T680: corner.y picks the END (−1 = origin, +1 = endpoint), corner.x the SIDE.
+     The width axis is the one direction perpendicular to the beam that the camera can
+     actually see — cross(axis, toEye) — so the ribbon turns with the viewer about its
+     own length and never goes edge-on and vanishes. */
+  let corner = quadCorner(min(vertex, 5u));
+  let a = positions[instance];
+  let b = endpoints[instance];
+  let axis = b - a;
+  let along = mix(a, b, corner.y * 0.5 + 0.5);
+  let across = cross(axis, params.eye.xyz - along);
+  let acrossLen = length(across);
+  /* Exactly end-on, or a zero-length beam: divide by nothing and fall back to a fixed
+     axis. A zero-length beam still collapses to zero AREA — both ends land on the same
+     point — which is the honest reading of a ray that never travelled. */
+  let side = select(across / max(acrossLen, 1e-6), vec3f(1.0, 0.0, 0.0), acrossLen < 1e-6);
+  /* z = TAPER: the share of the width the beam keeps at its ORIGIN. At 1 this is a
+     parallel-sided ribbon; below it the near end pinches, which is both what a divergent
+     beam does and the only thing that stops N beams sharing one origin from fusing into a
+     solid wedge there. */
+  let widthAt = mix(params.instance.z, 1.0, corner.y * 0.5 + 0.5);
+  let world = along + side * corner.x * params.instance.x * widthAt;
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  /* Perpendicular to the width AND to the length, which for this width axis is the
+     component of the view vector across the beam: the ribbon faces the camera. */
+  out.normal = normalize(cross(side, axis));
+  out.world = world;
+  out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
+  return out;`
+      : billboard
       ? `  let corner = quadCorner(min(vertex, 5u));
   let world = positions[instance]
     + (params.billboardRight.xyz * corner.x + params.billboardUp.xyz * corner.y) * params.instance.x;
