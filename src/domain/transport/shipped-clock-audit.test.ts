@@ -173,7 +173,7 @@ function scan(): ClockRead[] {
         const text = readFileSync(absolute, "utf8");
         readsIn(path, text, out);
         // Expressions authored in a document SOURCE are string literals, so the property
-        // scan above cannot see them: `expressionSlot("time * 7 % 360")` holds a clock in a
+        // scan above cannot see them: `expressionSlot("time * 7")` holds a clock in a
         // grammar with no dots in it. E13-Prism's roll was exactly that, and it is the one
         // site in T497 that neither of the other two matchers would have found.
         for (const match of text.matchAll(/expressionSlot\(\s*"([^"]*)"/g)) {
@@ -435,12 +435,20 @@ describe("T497 — the sites T497 moved are, and stay, on the absolute clock", (
     });
   }
 
+  /**
+   * T565: and it is now a BARE ramp. The `% 360` this used to assert was never geometry —
+   * it was a user-level workaround for §B111, where `clampToDeclared` read Transform's
+   * declared −360…360 as a hard limit and froze the roll at 360° after fifty-one seconds.
+   * T537 made `r` `cyclic`, so the wrap has nothing left to do. The clock half of the
+   * assertion is unchanged and is what this test is for.
+   */
   it("E13's roll expression reads `abstime`, the one clock read with no dot in it", () => {
     const document = requireExample(byName.get("E13-Prism.loom.json") as never).document;
     const roll = document.graph.nodes["roll"]?.parameters["r"];
     const source = (roll as { bindings?: { expression?: { source?: string } } } | undefined)?.bindings
       ?.expression?.source;
-    expect(source).toBe("abstime * 7 % 360");
+    expect(source).toBe("abstime * 7");
+    expect(source).not.toContain("%");
   });
 
   /**

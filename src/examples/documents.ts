@@ -1711,7 +1711,7 @@ const fluidDocument = document(
  *
  *   mouse1 ─► follow1(lag) ┄drives┄► lens1.center.x/.y
  *   pulse1(lfo, square) ─► ease1(lag) ┄drives┄► lens1.radius.x/.y
- *   roll1.r = "time * 7 % 360"   (an expression, §V71)
+ *   roll1.r = "abstime * 7"   (an expression, §V71)
  *   sparks1.color ← the `tint` attribute, sparks1.sizePixels ← `pscale` (map mode, T364)
  *
  * THE ONE THAT IS SUPPOSED TO SHOW THE WHOLE TOOL. Every other example demonstrates one
@@ -1749,11 +1749,19 @@ const fluidDocument = document(
  *   EASE, so the Lag's contribution is visible rather than theoretical. Delete `ease1` and
  *   the lens snaps between two sizes like a shutter; that is the whole argument for the node.
  *
- *   AN EXPRESSION (§V71) rolls the light field. `abstime * 7 % 360` is written where it is
- *   read — no node, no channel, no wire — and the `%` is load-bearing: Transform's `r` is
- *   clamped to ±360 by its manifest, so the wrap belongs in the expression. Being honest
- *   about the scope: the v1 grammar is arithmetic only, so an LFO could produce this same
- *   ramp. What the expression buys here is locality, not reach.
+ *   AN EXPRESSION (§V71) rolls the light field. `abstime * 7` is written where it is read —
+ *   no node, no channel, no wire — and it is a bare RAMP because it is finally allowed to
+ *   be one. This file shipped `abstime * 7 % 360` for months and the `%` was never geometry:
+ *   it was a USER WORKAROUND for §B111. Transform's `r` declares min/max −360…360, and
+ *   `clampToDeclared` read those two numbers as a hard limit on every resolved value, so an
+ *   unwrapped roll froze dead at 360° after fifty-one seconds. T537 split the two ideas the
+ *   manifest had conflated — a slider's RANGE is not a value CLAMP — and `r` now declares
+ *   `range: "cyclic"`, which `numericRangeOf` answers with no limit at all, so the ramp
+ *   simply keeps climbing. The picture is identical either way, because a rotation is
+ *   periodic and 360° apart is the same pose; what changed is that the file no longer
+ *   carries a scar from a bug we fixed (T565). Being honest about the scope: the v1 grammar
+ *   is arithmetic only, so an LFO could produce this same ramp. What the expression buys
+ *   here is locality, not reach.
  *
  *   A KERNEL (§V45) animates the swarm. `ctx.absTime` reaches the GPU through the same frame
  *   contract everything else does, and the kernel is STATELESS — position and colour are
@@ -1877,11 +1885,11 @@ const prismDocument = document(
         { t: [0, 0], s: [1, 1], p: [0, 0], xord: "srt", extend: "zero", aspectcorrect: true },
         {
           label: "roll1",
-          // The `%` is not decoration: `r` is clamped to ±360, so the wrap lives here.
           // FREE-RUNNING (§V436, T497): `abstime`, not `time`. A continuous roll on the
-          // timeline clock snaps back to 0° at every lap; `%` keeps it inside Transform's
-          // ±360 clamp either way, so the wrap that belongs here is the ARITHMETIC one.
-          parameters: { r: expressionSlot("abstime * 7 % 360", 0) },
+          // timeline clock snaps back to 0° at every lap. There is no `% 360` here any
+          // more (T565): that wrap was a workaround for §B111's clamp, and T537 made `r`
+          // `cyclic`, so the ramp is allowed to just keep going.
+          parameters: { r: expressionSlot("abstime * 7", 0) },
         },
       ),
       node(

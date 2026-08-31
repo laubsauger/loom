@@ -1119,14 +1119,22 @@ describe("E13 Prism", () => {
   });
 
   /**
-   * THE EXPRESSION WRAPS, and the `%` is the load-bearing character.
+   * THE ROLL KEEPS GOING, and after T537/T565 there is no `%` doing it.
    *
-   * Transform's `r` is clamped to ±360 by its manifest, so `time * 7` alone would pin the
-   * roll at 360 degrees after 51 seconds AND raise the out-of-range warning the gate treats
-   * as a failure — a rotation that silently stops. Compiled a hundred seconds in, the angle
-   * here is the wrapped one and there is no diagnostic.
+   * This test used to assert the opposite character: `r` was clamped to ±360 by its
+   * manifest and `clampToDeclared` read that as a hard limit on every resolved value, so
+   * `abstime * 7` alone pinned the roll at 360 degrees after 51 seconds and raised the
+   * out-of-range diagnostic the gate treats as a failure. E13 carried `% 360` as a
+   * user-level workaround for exactly that (§B111). T537 split the two ideas the manifest
+   * had conflated — a slider's RANGE is not a value CLAMP — and `r` now declares
+   * `range: "cyclic"`, which `numericRangeOf` answers with no limit at all.
+   *
+   * So the assertion is the UNWRAPPED angle: a hundred seconds in the resolver must hand
+   * the shader 700 degrees, not 360 (the old clamp) and not 340 (the old modulo). All
+   * three render the same picture, which is precisely why only an exact-value assertion
+   * can tell them apart — a look test here would pass on the bug (§V147).
    */
-  it("keeps rolling past 360 degrees, because the expression does the wrap", () => {
+  it("keeps rolling past 360 degrees, with no wrap and no clamp", () => {
     const seconds = 100;
     const late = compileGraph({
       graph: document.graph,
@@ -1144,18 +1152,25 @@ describe("E13 Prism", () => {
       },
     });
 
+    // A clamp is a diagnostic, and the example gate treats any diagnostic as a failure.
     expect(messagesOf(late.diagnostics)).toEqual([]);
-    const degrees = ((seconds * 7) % 360) as number;
-    expect(degrees).toBeLessThan(360);
+
+    const degrees = seconds * 7;
+    expect(degrees).toBeGreaterThan(360);
     const rot = (effectFor(late, "roll").uniforms as Record<string, number>)["rot"] as number;
     expect(rot).toBeCloseTo((degrees * Math.PI) / 180, 10);
+    // Neither of the two answers this test accepted before T565.
+    expect(rot).not.toBeCloseTo((360 * Math.PI) / 180, 6);
+    expect(rot).not.toBeCloseTo(((degrees % 360) * Math.PI) / 180, 6);
+    // ...and it IS the same pose, which is why dropping the workaround changes no picture.
+    expect((rot - ((degrees % 360) * Math.PI) / 180) % (2 * Math.PI)).toBeCloseTo(0, 10);
 
     const slot = (document.graph.nodes["roll"] as GraphNode).parameters["r"] as {
       mode?: string;
       bindings?: { expression?: { source?: string } };
     };
     expect(slot.mode).toBe("expression");
-    expect(slot.bindings?.expression?.source).toContain("%");
+    expect(slot.bindings?.expression?.source).toBe("abstime * 7");
   });
 });
 

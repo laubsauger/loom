@@ -544,7 +544,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "abstime * 7 % 360"
+                "source": "abstime * 7"
               },
               "static": {
                 "kind": "static",
