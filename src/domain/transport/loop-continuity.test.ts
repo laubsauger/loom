@@ -279,6 +279,12 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   valueStep: "clockless",
   audioIn: "clockless",
   audioFileIn: "clockless",
+  // T654/T670: channelIn reads a RESOLVER — the last completed value of an external
+  // channel (analyze's readback via session extras) — and no clock at all. Whatever
+  // clock the MEASUREMENT is on belongs to the node that produced it; a lap reaches
+  // channelIn only through the picture it is measuring, which is §V144's contract,
+  // not a phase this node owns. Same shape as valueStep: it inherits, it never ticks.
+  channelIn: "clockless",
 };
 
 function valueNodes(): readonly NodeDefinition[] {

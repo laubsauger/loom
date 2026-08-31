@@ -38,6 +38,13 @@ leans warmer when the picture is starving and cooler when it is overshooting.
 A feedback loop is not stable because it feels gentle; it is stable because its loop
 gain is below one. Both numbers here are measured, not assumed.
 
+One sentence about *where* they are measured, because §V618 exists: every meter number
+in this file is a LINEAR-light mean — the space `analyze` reduces in, reading the
+working texture before the output's display encode. The pictures described are the
+display-encoded tile a viewer sees, where the settled 0.206 linear averages out near
+mid-grey — a document vague about which of those two spaces its numbers live in is
+how a loop gets tuned against one image and judged against another.
+
 **The plant.** With the controller frozen, brightness `b` in, meter out (640×360, the
 settled frame): 0.80 → 0.110, 1.00 → 0.138, 1.20 → 0.166, 1.40 → 0.203, 1.60 → 0.250.
 Local slope at the operating point (b ≈ 1.35): **G ≈ 0.23** meter per unit brightness.
