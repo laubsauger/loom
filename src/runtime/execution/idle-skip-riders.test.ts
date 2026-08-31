@@ -182,3 +182,122 @@ describe("§V225 — a value chain's uniform write re-opens the idle gate (T254)
     }
   });
 });
+
+/**
+ * circle → slitScan(map: ramp) → output. Nothing in this plan reads the clock: a Circle
+ * and a Ramp are pure functions of their parameters and the Slit Scan's own shader reads
+ * only its map and its history. The ONLY thing that evolves is the RING.
+ */
+function ringGraph(): GraphDocument {
+  return {
+    revision: 1,
+    groups: {},
+    nodes: {
+      c: {
+        id: "c",
+        type: "circle",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: { mode: "fill", center: [0.5, 0.5], radius: [0.2, 0.2] },
+      },
+      r: {
+        id: "r",
+        type: "ramp",
+        definitionVersion: 2,
+        position: { x: 0, y: 240 },
+        parameters: { type: "vertical" },
+      },
+      s: {
+        id: "s",
+        type: "slitScan",
+        definitionVersion: 1,
+        position: { x: 240, y: 0 },
+        parameters: { frames: 8, depth: 1 },
+      },
+      o: { id: "o", type: "output", definitionVersion: 1, position: { x: 480, y: 0 }, parameters: {} },
+    },
+    edges: {
+      e1: { id: "e1", source: { nodeId: "c", portId: "out" }, target: { nodeId: "s", portId: "input" } },
+      e2: { id: "e2", source: { nodeId: "r", portId: "out" }, target: { nodeId: "s", portId: "map" } },
+      e3: { id: "e3", source: { nodeId: "s", portId: "out" }, target: { nodeId: "o", portId: "input" } },
+    },
+  } as GraphDocument;
+}
+
+/**
+ * T518 — A RING IS EVOLVING STATE, and the idle gate did not know it.
+ *
+ * `planRequiresEveryFrame` listed `pingPong`, `bufferPair` and `externalTexture` as the
+ * kinds that force a frame, and left `ring` out. A ring archives a slice at every frame
+ * ENTRY (§V276), so the same map value names a different moment on each frame — identical
+ * inputs, different output, which is exactly the definition of state the gate is meant to
+ * respect. Skipping the frame skips the archive too, so the history stops advancing and a
+ * slit-scan freezes on whatever it happened to hold.
+ *
+ * It survived because the one shipped slit-scan drew from a Noise shader, whose shared
+ * block set `everyFrame` for an unrelated reason. E8's rework replaced that source with a
+ * shape whose motion arrives as a uniform write, and the cook oracle went red at frame 1:
+ * under "auto" every one of 80 frames returned frame ZERO's digest.
+ *
+ * This is the counterpart of the assertion above rather than a repeat of it. That one says
+ * a static plan IS skipped, which is the gate doing its job; this one says a plan holding a
+ * ring is NOT — and without both, "skips nothing ever" and "skips everything always" each
+ * pass one of them.
+ */
+describe("T254's idle gate treats a RING as evolving state (T518)", () => {
+  it("never skips a plan whose only moving part is a slit-scan ring", async () => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: ringGraph(),
+      settings: SETTINGS,
+      registry,
+      capabilities: CAPABILITIES,
+    });
+    expect(plan.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    // NON-VACUITY: the plan really does hold a ring. Without this the test would still
+    // pass on a build where slitScan quietly stopped allocating one.
+    expect(plan.resources.some((resource) => resource.kind === "ring")).toBe(true);
+
+    const backend = createVgpuBackend({ host: mockGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.setCookPolicy("auto");
+      const before = backend.status.framesSkipped ?? 0;
+      for (let frame = 0; frame < 5; frame += 1) backend.render(compiled, frameInputs(frame));
+      expect((backend.status.framesSkipped ?? 0) - before).toBe(0);
+    } finally {
+      backend.dispose();
+    }
+  });
+
+  /**
+   * The control, and it is what makes the assertion above mean something: the SAME backend,
+   * the SAME policy, a plan with no ring — and it skips all five. A gate that had simply
+   * been switched off would pass the test above and fail this one.
+   */
+  it("still skips four of five on a plan without one", async () => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: staticGraph(),
+      settings: SETTINGS,
+      registry,
+      capabilities: CAPABILITIES,
+    });
+    const backend = createVgpuBackend({ host: mockGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.setCookPolicy("auto");
+      const before = backend.status.framesSkipped ?? 0;
+      for (let frame = 0; frame < 5; frame += 1) backend.render(compiled, frameInputs(frame));
+      // FOUR, not five, and the missing one is the FIRST: a freshly compiled program is
+      // dirty, so frame 0 always encodes and only the four after it are idle. Measured
+      // rather than assumed — the neighbouring §V225 case reads 5 because it has already
+      // spent five frames under "always" clearing that flag before switching policy.
+      expect((backend.status.framesSkipped ?? 0) - before).toBe(4);
+    } finally {
+      backend.dispose();
+    }
+  });
+});

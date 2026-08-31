@@ -2076,8 +2076,29 @@ function planRequiresEveryFrame(
   resources: ReadonlyArray<ResourceDescriptor>,
 ): boolean {
   const kinds = new Map(resources.map((resource) => [resource.id, resource.kind]));
+  /**
+   * T518/B: `ring` belongs here and was missing, which froze every slit-scan whose SOURCE
+   * happened to be still under "auto".
+   *
+   * A ring is evolving state by definition — it archives a slice at every frame entry
+   * (§V276), so the SAME map value names a different moment on each frame and identical
+   * inputs do not produce identical output. Skipping the frame skips the archive as well,
+   * so the history stops advancing and the picture freezes on whatever it held.
+   *
+   * It hid because the only shipped slit-scan read the clock through a Noise shader's
+   * shared block, which set `everyFrame` for an unrelated reason; the moment E8's source
+   * became a shape whose motion arrives as a UNIFORM WRITE, nothing in the plan itself was
+   * time-dependent and the whole plan looked static. Measured on Dawn through the cook
+   * oracle: 80 frames under "auto" returned frame 0's digest 80 times while "always"
+   * advanced correctly — the exact policy divergence §V157's oracle exists to catch, and
+   * the first time it has ever fired.
+   */
   const evolving = (id: string | undefined): boolean =>
-    id !== undefined && (kinds.get(id) === "pingPong" || kinds.get(id) === "bufferPair" || kinds.get(id) === "externalTexture");
+    id !== undefined &&
+    (kinds.get(id) === "pingPong" ||
+      kinds.get(id) === "bufferPair" ||
+      kinds.get(id) === "externalTexture" ||
+      kinds.get(id) === "ring");
   return passes.some((pass) => {
     if (pass.kind === "swap" || pass.kind === "counter" || pass.kind === "loop") return false;
     if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) return true;
