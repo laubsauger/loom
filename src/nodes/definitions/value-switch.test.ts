@@ -108,7 +108,12 @@ describe("valueSwitch — one source, exactly (T508, §V457)", () => {
     expect(pickedBag(1, ["in1", "in3"])).toEqual({ value: 22 });
   });
 
-  it("an unconnected Switch emits an empty bag rather than inventing a zero", () => {
+  it("an unconnected Switch publishes NOTHING rather than inventing a zero", () => {
+    // T578: the name said "an empty bag" and the node stopped publishing one — T508/T541
+    // made it absent from `byName` entirely. The intent is unchanged (a Switch with no
+    // source must not invent a value), so the assertion states the absence directly
+    // rather than only through `pickedBag`'s `?? {}`, which cannot tell empty from gone.
+    expect(evaluated(0, []).byName.has("pick1")).toBe(false);
     expect(pickedBag(0, [])).toEqual({});
   });
 
