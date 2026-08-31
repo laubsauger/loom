@@ -17,6 +17,7 @@ import { ProblemsPanel } from "@editor/shader-editor/index.ts";
 import { Button, ErrorBoundary } from "@ui/index.ts";
 import { UnsavedChangesDialog } from "@ui/primitives/unsaved-changes-dialog.tsx";
 import { AppRuntimeContext } from "./app-context.ts";
+import { usePerDocument } from "./use-per-document.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
@@ -236,9 +237,20 @@ export function App({
   const probe = gpuProbe ?? sharedGpuProbe;
   const status = useGpuStatus(probe);
   const capabilities = status.kind === "ready" ? status.capabilities : null;
-  // T252 (§V158): one store links the preview scheduler's kept set to the compiler's
-  // preview sinks — what is watched is what materializes, and nothing else renders.
-  const previewSinks = useMemo(() => createPreviewSinkStore(), []);
+  /**
+   * T252 (§V158): one store links the preview scheduler's kept set to the compiler's
+   * preview sinks — what is watched is what materializes, and nothing else renders.
+   *
+   * PER DOCUMENT (T733, B106). The set is keyed `${nodeId}:${portId}` and removals wait a
+   * second (§T620's grace, so a pan that sweeps a node off screen and back does not
+   * recompile twice) — which means that for a second after every load the compiler is
+   * handed the CLOSED project's watch list. Names that the new document does not have
+   * produce `compiler/sink-unknown`; names it does have get materialized because a
+   * project the user closed was looking at them. On the owner's own pair that is eleven
+   * shared ids. A grace period is the right rule inside one document and has no meaning
+   * across two: the previous document's tiles are not coming back.
+   */
+  const previewSinks = usePerDocument(runtime.documentIdentity, createPreviewSinkStore);
   const backend = status.kind === "ready" ? status.backend : undefined;
 
   /**

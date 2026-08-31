@@ -5,6 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, CompiledExecutionPlan } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import type { ReadbackImage } from "@runtime/previews/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
@@ -43,6 +44,14 @@ import type { GpuStatus } from "../../app/gpu-status.ts";
  *
  * One load proves nothing here: with a single document the pin is correct by construction.
  * The claim is about what CROSSES a boundary, so the gate must cross one.
+ *
+ * ## The pixel READOUT is the same defect on the same pane (T733)
+ *
+ * The probe's target is memoised on `${nodeId}` and `${portId}`, and every one of the
+ * twenty-nine shipped examples declares its sink on a node called `out` — so those two
+ * primitives do not move across a load, the memo stays referentially stable, and every
+ * reset hanging off it stays asleep. The sampled value survives into a project that never
+ * produced it, as a NUMBER, which is the worst possible disguise for stale data.
  *
  * ## The control (§V32's direction, restated)
  *
@@ -173,6 +182,15 @@ function stubBackend(): ShaderloomBackend {
     }),
     updateUniforms() {},
     resetTemporalHistory() {},
+    // One opaque mid-grey pixel, so the readout has a real number to hold on to.
+    readOutput: (): Promise<ReadbackImage> =>
+      Promise.resolve({
+        width: 1,
+        height: 1,
+        format: "rgba8unorm",
+        rowStride: 4,
+        bytes: new Uint8Array([128, 128, 128, 255]),
+      }),
     recover: () => Promise.resolve(),
     setCookPolicy() {},
     dispose() {},
@@ -286,6 +304,55 @@ describe("T726 — a load resets the viewer's pin (B106)", () => {
     // THE CLAIM. Opening a project shows that project's Output, not whatever the closed
     // one's pin happens to name in it.
     expect(session.select().value).toBe(SINK);
+  }, 30_000);
+
+  it("does not carry a probed pixel VALUE into the next document (T733)", async () => {
+    const session = await mount();
+    await session.open(DOCUMENT_A, "A.loom.json");
+    await waitFor(() => {
+      expect(listing(session.select())).toContain(SINK);
+    });
+
+    // The viewer's own canvas, given a box to normalise against — jsdom measures every
+    // element as zero, and a zero-sized picture has no pixel to point at.
+    const canvas = screen.getByTestId("viewer-canvas") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 100,
+        top: 50,
+        width: 200,
+        height: 100,
+        right: 300,
+        bottom: 150,
+        x: 100,
+        y: 50,
+        toJSON: () => "",
+      }) as DOMRect;
+
+    await act(async () => {
+      fireEvent.pointerMove(canvas, { clientX: 200, clientY: 125, buttons: 0 });
+    });
+    // NON-VACUITY: there has to BE a reading before "the reading did not survive" means
+    // anything. `—` is the empty state, so the assertion is that it is not that.
+    await waitFor(() => {
+      expect(screen.getByTestId("viewer-readout").textContent).toMatch(/\d/);
+    });
+    const sampled = screen.getByTestId("viewer-readout").textContent ?? "";
+
+    // ADVERSARIAL (§V461): B's sink is `out:$target` too — the same nodeId and the same
+    // portId — so nothing about the probe's TARGET moves. That is exactly the case the
+    // memo cannot see, and a fixture whose two documents named their output differently
+    // would pass on the broken code.
+    await session.open(DOCUMENT_B, "B.loom.json");
+    await waitFor(() => {
+      expect(session.select().value).toBe(SINK);
+    });
+
+    // THE CLAIM. A number belonging to a project the user has closed is not a reading of
+    // the one they just opened, so the readout is back to its empty state.
+    const after = screen.getByTestId("viewer-readout").textContent ?? "";
+    expect(after).not.toBe(sampled);
+    expect(after).toContain("\u2014");
   }, 30_000);
 
   it("keeps the pin across an ordinary edit inside ONE document (the control)", async () => {

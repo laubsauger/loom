@@ -449,6 +449,21 @@ export function ViewerPane({
    * reset-on-new-output effect would wipe the sample and the cursor each time. The user
    * would see the readout blink out whenever anything in the graph changed, which looks
    * like the probe failing rather than like the pane working correctly.
+   *
+   * ## And the DOCUMENT is one of those primitives (T733, B106)
+   *
+   * Those two primitives do not move across a load, and that is the bug: `out:$target` is
+   * the declared sink of all twenty-nine shipped examples, so opening any of them over
+   * any other leaves `nodeId` and `portId` byte-identical, the memo referentially stable,
+   * and every reset that hangs off it asleep — the sample, the cursor, and
+   * `usePixelReadout`'s own generation guard, which is what stops a readback issued
+   * against the CLOSED project from landing in the new one. The number under "value" then
+   * belongs to a picture the user cannot see any more, and it is a NUMBER, so nothing
+   * about it looks stale.
+   *
+   * The document is therefore part of the target's identity even though it is not part of
+   * its VALUE. That is what the exemption below buys: the dependency is deliberately not
+   * referenced in the body, because what has to change is the object, not the ref.
    */
   const selectedNodeId = selected?.nodeId ?? null;
   const selectedPortId = selected?.portId ?? null;
@@ -457,7 +472,11 @@ export function ViewerPane({
       selectedNodeId === null || selectedPortId === null
         ? null
         : { nodeId: selectedNodeId, portId: selectedPortId },
-    [selectedNodeId, selectedPortId],
+    // §V676 — the rule is right about the BODY and wrong about the claim. A load must
+    // mint a new target object so the invalidation effects fire, and there is nothing to
+    // reference in the body to say so.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [documentIdentity, selectedNodeId, selectedPortId],
   );
 
   /**

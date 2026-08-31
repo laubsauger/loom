@@ -25,6 +25,7 @@ import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
+import { usePerDocument } from "./use-per-document.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
 import { registerViewCommands } from "./view-commands.ts";
 import { useNodePreviews } from "./use-node-previews.ts";
@@ -164,12 +165,13 @@ function GraphPaneInner({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  // One store per mounted pane: `NodePreviewSlot` writes each node's measured slot
-  // rect, the preview tick below reads it every frame (T185, design note §3).
-  const previewBounds = useMemo(() => createPreviewSlotBounds(), []);
+  // One store per mounted pane AND per open document (`use-per-document.ts`):
+  // `NodePreviewSlot` writes each node's measured slot rect, the preview tick below reads
+  // it every frame (T185, design note §3).
+  const previewBounds = usePerDocument(documentIdentity, createPreviewSlotBounds);
   // T561: per-PANE inspection orbits — a second pane on the same node is a second
   // camera, by construction (each mounted pane creates its own store).
-  const previewOrbits = useMemo(() => createPreviewOrbitStore(), []);
+  const previewOrbits = usePerDocument(documentIdentity, createPreviewOrbitStore);
   // T336: the preview LENS. Registers `preview.setView`/`preview.resetView` and keeps their
   // default target on the selection while this pane is mounted — the pane that shows previews
   // is the one that can honestly offer a command for changing how they look (§V90).
