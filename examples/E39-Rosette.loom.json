@@ -1,0 +1,921 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-ang-angfix": {
+        "id": "e-ang-angfix",
+        "source": {
+          "nodeId": "ang",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "angfix",
+          "portId": "input"
+        }
+      },
+      "e-angfix-field": {
+        "id": "e-angfix-field",
+        "source": {
+          "nodeId": "angfix",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in1"
+        }
+      },
+      "e-beat-smooth": {
+        "id": "e-beat-smooth",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "smooth",
+          "portId": "in"
+        }
+      },
+      "e-burn-trim": {
+        "id": "e-burn-trim",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trim",
+          "portId": "input"
+        }
+      },
+      "e-clip-pick": {
+        "id": "e-clip-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-deepb-deep": {
+        "id": "e-deepb-deep",
+        "source": {
+          "nodeId": "deepb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "deep",
+          "portId": "in"
+        }
+      },
+      "e-deepg-deepb": {
+        "id": "e-deepg-deepb",
+        "source": {
+          "nodeId": "deepg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "deepb",
+          "portId": "a"
+        }
+      },
+      "e-depth-field": {
+        "id": "e-depth-field",
+        "source": {
+          "nodeId": "depth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in2"
+        }
+      },
+      "e-field-warp": {
+        "id": "e-field-warp",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "map"
+        }
+      },
+      "e-halo-haze": {
+        "id": "e-halo-haze",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haze",
+          "portId": "input"
+        }
+      },
+      "e-haze-burn": {
+        "id": "e-haze-burn",
+        "order": 1,
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-hueb-hue": {
+        "id": "e-hueb-hue",
+        "source": {
+          "nodeId": "hueb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hue",
+          "portId": "in"
+        }
+      },
+      "e-hueg-hueb": {
+        "id": "e-hueg-hueb",
+        "source": {
+          "nodeId": "hueg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hueb",
+          "portId": "a"
+        }
+      },
+      "e-paint-burn": {
+        "id": "e-paint-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-paint-halo": {
+        "id": "e-paint-halo",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-palette-paint": {
+        "id": "e-palette-paint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "lookup"
+        }
+      },
+      "e-petalb-petal": {
+        "id": "e-petalb-petal",
+        "source": {
+          "nodeId": "petalb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "petal",
+          "portId": "in"
+        }
+      },
+      "e-petalg-petalb": {
+        "id": "e-petalg-petalb",
+        "source": {
+          "nodeId": "petalg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "petalb",
+          "portId": "a"
+        }
+      },
+      "e-pick-warp": {
+        "id": "e-pick-warp",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warp",
+          "portId": "source"
+        }
+      },
+      "e-rad-depth": {
+        "id": "e-rad-depth",
+        "source": {
+          "nodeId": "rad",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "depth",
+          "portId": "input"
+        }
+      },
+      "e-smooth-deepg": {
+        "id": "e-smooth-deepg",
+        "source": {
+          "nodeId": "smooth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "deepg",
+          "portId": "a"
+        }
+      },
+      "e-smooth-hueg": {
+        "id": "e-smooth-hueg",
+        "source": {
+          "nodeId": "smooth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hueg",
+          "portId": "a"
+        }
+      },
+      "e-smooth-petalg": {
+        "id": "e-smooth-petalg",
+        "source": {
+          "nodeId": "smooth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "petalg",
+          "portId": "a"
+        }
+      },
+      "e-stand-pick": {
+        "id": "e-stand-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "stand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-trim-out": {
+        "id": "e-trim-out",
+        "source": {
+          "nodeId": "trim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-warp-paint": {
+        "id": "e-warp-paint",
+        "source": {
+          "nodeId": "warp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "source"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "ang": {
+        "definitionVersion": 2,
+        "id": "ang",
+        "label": "ang1",
+        "parameters": {
+          "interp": "linear",
+          "period": {
+            "bindings": {
+              "driven": {
+                "channel": "petal1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 6
+              }
+            },
+            "mode": "driven"
+          },
+          "phase": {
+            "bindings": {
+              "driven": {
+                "channel": "spin1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "circular"
+        },
+        "position": {
+          "x": -1360,
+          "y": -420
+        },
+        "type": "ramp"
+      },
+      "angfix": {
+        "definitionVersion": 1,
+        "id": "angfix",
+        "label": "angfix1",
+        "parameters": {
+          "aspectcorrect": false,
+          "extend": "hold",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0,
+          "s": [
+            0.5625,
+            1
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -1100,
+          "y": -420
+        },
+        "type": "transform"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "beatsPerBar": 4,
+          "bpm": 118
+        },
+        "position": {
+          "x": -1620,
+          "y": 620
+        },
+        "type": "audioPattern"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 200,
+          "y": -80
+        },
+        "type": "add"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "file": "",
+          "playMode": "freeRun",
+          "speed": 1
+        },
+        "position": {
+          "x": -1620,
+          "y": 260
+        },
+        "type": "movieFileIn"
+      },
+      "deep": {
+        "definitionVersion": 1,
+        "id": "deep",
+        "label": "deep1",
+        "parameters": {
+          "maximum": 4.5,
+          "minimum": 0.6
+        },
+        "position": {
+          "x": -580,
+          "y": 700
+        },
+        "type": "valueLimit"
+      },
+      "deepb": {
+        "definitionVersion": 1,
+        "id": "deepb",
+        "label": "deepb1",
+        "parameters": {
+          "operand": 0.9,
+          "operation": "add"
+        },
+        "position": {
+          "x": -840,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "deepg": {
+        "definitionVersion": 1,
+        "id": "deepg",
+        "label": "deepg1",
+        "parameters": {
+          "operand": 2.4,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1100,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "depth": {
+        "definitionVersion": 1,
+        "id": "depth",
+        "label": "depth1",
+        "parameters": {
+          "blacklevel": -0.28125,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": {
+            "bindings": {
+              "driven": {
+                "channel": "deep1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.6
+              }
+            },
+            "mode": "driven"
+          },
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 0
+        },
+        "position": {
+          "x": -1100,
+          "y": -180
+        },
+        "type": "level"
+      },
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "field1",
+        "parameters": {
+          "outa": "one",
+          "outb": "zero",
+          "outg": "in2r",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": -840,
+          "y": -300
+        },
+        "type": "reorder"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 34
+        },
+        "position": {
+          "x": -60,
+          "y": 200
+        },
+        "type": "blur"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "blacklevel": 0.58,
+          "brightness": 0.95,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 200,
+          "y": 200
+        },
+        "type": "level"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "maximum": 1.9,
+          "minimum": 0.45
+        },
+        "position": {
+          "x": -580,
+          "y": 880
+        },
+        "type": "valueLimit"
+      },
+      "hueb": {
+        "definitionVersion": 1,
+        "id": "hueb",
+        "label": "hueb1",
+        "parameters": {
+          "operand": 0.72,
+          "operation": "add"
+        },
+        "position": {
+          "x": -840,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "hueg": {
+        "definitionVersion": 1,
+        "id": "hueg",
+        "label": "hueg1",
+        "parameters": {
+          "operand": 0.9,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1100,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 720,
+          "y": -80
+        },
+        "type": "output"
+      },
+      "paint": {
+        "definitionVersion": 1,
+        "id": "paint",
+        "label": "paint1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": 0,
+          "row": 0.5,
+          "scale": {
+            "bindings": {
+              "driven": {
+                "channel": "hue1:highMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -320,
+          "y": -80
+        },
+        "type": "lookup"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "linear",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.01,
+                0.02,
+                0.06,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.05,
+                0.16,
+                0.42,
+                1
+              ],
+              "position": 0.2
+            },
+            {
+              "color": [
+                0.1,
+                0.55,
+                0.78,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0.45,
+                0.35,
+                0.85,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                0.92,
+                0.32,
+                0.48,
+                1
+              ],
+              "position": 0.76
+            },
+            {
+              "color": [
+                1,
+                0.72,
+                0.32,
+                1
+              ],
+              "position": 0.9
+            },
+            {
+              "color": [
+                1,
+                0.98,
+                0.92,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -840,
+          "y": 300
+        },
+        "type": "ramp"
+      },
+      "petal": {
+        "definitionVersion": 1,
+        "id": "petal",
+        "label": "petal1",
+        "parameters": {
+          "maximum": 12,
+          "minimum": 3
+        },
+        "position": {
+          "x": -580,
+          "y": 520
+        },
+        "type": "valueLimit"
+      },
+      "petalb": {
+        "definitionVersion": 1,
+        "id": "petalb",
+        "label": "petalb1",
+        "parameters": {
+          "operand": 4.2,
+          "operation": "add"
+        },
+        "position": {
+          "x": -840,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "petalg": {
+        "definitionVersion": 1,
+        "id": "petalg",
+        "label": "petalg1",
+        "parameters": {
+          "operand": 5.5,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1100,
+          "y": 520
+        },
+        "type": "valueMath"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1360,
+          "y": 150
+        },
+        "type": "switch"
+      },
+      "rad": {
+        "definitionVersion": 1,
+        "id": "rad",
+        "label": "rad1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "distance",
+          "radius": [
+            0.5,
+            0.5
+          ],
+          "softness": 0.005
+        },
+        "position": {
+          "x": -1360,
+          "y": -180
+        },
+        "type": "circle"
+      },
+      "smooth": {
+        "definitionVersion": 1,
+        "id": "smooth",
+        "label": "smooth1",
+        "parameters": {
+          "lag": 0.09
+        },
+        "position": {
+          "x": -1360,
+          "y": 620
+        },
+        "type": "valueLag"
+      },
+      "spin": {
+        "definitionVersion": 1,
+        "id": "spin",
+        "label": "spin1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.037,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "saw"
+        },
+        "position": {
+          "x": -1620,
+          "y": 440
+        },
+        "type": "lfo"
+      },
+      "stand": {
+        "definitionVersion": 1,
+        "id": "stand",
+        "label": "stand1",
+        "parameters": {
+          "amp": 2.6,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.58,
+          "harmon": 4,
+          "mono": true,
+          "offset": 0,
+          "period": 0.115,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.19,
+          "spread": 2.1,
+          "t4d": 0.4,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1620,
+          "y": 40
+        },
+        "type": "noise"
+      },
+      "trim": {
+        "definitionVersion": 1,
+        "id": "trim",
+        "label": "trim1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1.06,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1.18
+        },
+        "position": {
+          "x": 460,
+          "y": -80
+        },
+        "type": "level"
+      },
+      "warp": {
+        "definitionVersion": 1,
+        "id": "warp",
+        "label": "warp1",
+        "parameters": {
+          "extend": "mirror",
+          "flipu": false,
+          "flipv": false,
+          "sourcex": "red",
+          "sourcey": "green"
+        },
+        "position": {
+          "x": -580,
+          "y": -80
+        },
+        "type": "remap"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E39 Rosette",
+  "projectId": "example-rosette",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

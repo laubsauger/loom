@@ -8665,6 +8665,508 @@ const facadeDocument = document(
   ),
 );
 
+/**
+ * §V688 — the constants the polar field is built from, derived rather than typed in.
+ * `circle` in distance mode emits `k * (rNorm - 1)` with `k = min(0.5/aspect, 0.5)`, so a
+ * Level with `blacklevel: -k, whitelevel: 0` recovers normalised radius EXACTLY; and the
+ * circular Ramp's atan2 is computed in uv space, so sampling it through a transform scaled
+ * by 1/aspect is what turns it into the angle in pixel space.
+ */
+const ROSETTE_ASPECT = 1280 / 720;
+const ROSETTE_POLAR_K = Math.min(0.5 / ROSETTE_ASPECT, 0.5);
+const ROSETTE_INV_ASPECT = 720 / 1280;
+
+/**
+ * E39 — Rosette (T729).
+ *
+ *   stand1(noise 4d) ─┐ order 0
+ *                     ├─► pick1(switch) ─────────────────► warp1.source
+ *   clip1(movieFileIn)┘ order 1                                 ▲
+ *                                                               │
+ *   ang1(ramp circular, phase ┄ spin1, period ┄ petal1) ─► angfix1(transform) ─┐
+ *                                                                              ├─► field1(reorder) ─► warp1.map
+ *   rad1(circle, distance) ─► depth1(level, gamma ┄ deep1) ─────────────────────┘
+ *
+ *   warp1(remap) ─► paint1(lookup ◄─ palette1) ─┬─► burn1(add) ─► trim1 ─► out1
+ *                                               └─► halo1(blur) ─► haze1(level) ─┘
+ *
+ * ## A POLAR WARP IS NOT A NODE — it is six nodes we already had (§V688)
+ *
+ * The brief for this example called log-polar "probably the single most versatile missing
+ * primitive". It is not missing. Remap takes a uv FIELD and samples the source at it, so
+ * any warp at all is a question of who builds the field — and the catalogue can build this
+ * one: a circular Ramp is theta, a Circle in distance mode is rho, Reorder packs one into
+ * red and the other into green, and Remap applies it. Nothing here is a special case of
+ * "polar"; the same four nodes build any coordinate map you can draw.
+ *
+ * Three details are load-bearing, and each was measured rather than reasoned (§V688):
+ *
+ * ASPECT. `ramp(circular)` computes its atan2 in UV space, so on 16:9 the rays come out
+ * elliptically spaced. `angfix1` samples the ramp through a transform scaled by 1/aspect,
+ * which is exactly atan2(dv, du * aspect) — the angle in PIXEL space. Delete it and the
+ * rosette squashes into an ellipse.
+ *
+ * RADIUS COMES FROM CIRCLE, NOT FROM `ramp(radial)`. The radial ramp is
+ * `clamp(length(uv - 0.5) * 2, 0, 1)`, so everything outside the inscribed circle — all
+ * four corners, about a fifth of a 16:9 frame — pins to one flat value and renders as dead
+ * blocks. Circle's distance mode is unclamped and already aspect-aware, and
+ * `level(blacklevel = -k, whitelevel = 0)` with `k = min(0.5/aspect, 0.5)` recovers
+ * normalised radius exactly, because the node emits `k * (rNorm - 1)`.
+ *
+ * EXTEND IS `mirror`, NOT `repeat`. Rho runs past 1 at the corners and has to come back
+ * somehow. Repeat FRACTS it, which is a discontinuity, and it showed as a stair-stepped
+ * arc wherever the map crossed 1.0. Mirror folds instead of jumping, so the rings reflect
+ * and there is no seam to see. The float working format is what lets rho exceed 1 at all.
+ *
+ * ## Not a tunnel, deliberately
+ *
+ * E1 already puts a transform inside a feedback loop and E29 already zooms one past 1.0 to
+ * fall down a corridor. A third tunnel would teach nothing. This is the other thing the
+ * polar map is for: repetition AROUND the circle rather than travel INTO it, which is why
+ * the driven parameter is the ramp's `period` — the count of times the source wraps the
+ * axis — and not a scale.
+ *
+ * ## The palette had to be balanced by LIGHT, not by numbers (§V695)
+ *
+ * Ramp stops are declared in display space and decode to linear, which costs a dark cool
+ * colour most of its luminance while a bright warm one barely moves: the first version of
+ * `palette1` looked balanced as authored numbers and played back as red over black,
+ * because [0.05, 0.36, 0.55] lands at linear [0.004, 0.106, 0.267] and simply reads as
+ * black. The cool half is lifted until it carries comparable light.
+ */
+const rosetteDocument = document(
+  "rosette",
+  "E39 Rosette",
+  settings(),
+  graph(
+    [
+      // ── the performer, and the seat kept warm for your own footage ──────────
+      node("stand", "noise", [-1620, 40], {
+        type: "perlin4d",
+        seed: 5,
+        period: 0.115,
+        harmon: 4,
+        spread: 2.1,
+        gain: 0.58,
+        rough: 0.5,
+        exp: 1,
+        amp: 2.6,
+        offset: 0,
+        mono: true,
+        aspectcorrect: true,
+        speed: 0.19,
+        t4d: 0.4,
+        s4d: 1,
+      }, { label: "stand1" }),
+      node("clip", "movieFileIn", [-1620, 260], { file: "", playMode: "freeRun", speed: 1 }, { label: "clip1" }),
+      node("pick", "switch", [-1360, 150], { index: 0 }, { label: "pick1" }),
+
+      // ── theta: a circular ramp, un-skewed by a transform in the ramp's own space ──
+      node("ang", "ramp", [-1360, -420], {
+        type: "circular",
+        interp: "linear",
+        stops: [
+          { position: 0, color: [0, 0, 0, 1] },
+          { position: 1, color: [1, 1, 1, 1] },
+        ],
+      }, { label: "ang1", definitionVersion: 2, parameters: { phase: drivenSlot("spin1", 0), period: drivenSlot("petal1:low", 6), } }),
+      node("angfix", "transform", [-1100, -420], {
+        t: [0, 0],
+        r: 0,
+        s: [ROSETTE_INV_ASPECT, 1],
+        p: [0, 0],
+        xord: "srt",
+        extend: "hold",
+        aspectcorrect: false,
+      }, { label: "angfix1" }),
+
+      // ── rho: an unclamped radius, curved by gamma ──────────────────────────
+      node("rad", "circle", [-1360, -180], {
+        mode: "distance",
+        center: [0.5, 0.5],
+        radius: [0.5, 0.5],
+        softness: 0.005,
+        fillcolor: [1, 1, 1, 1],
+        bgcolor: [0, 0, 0, 0],
+        aspectcorrect: true,
+      }, { label: "rad1" }),
+      node("depth", "level", [-1100, -180], {
+        blacklevel: -ROSETTE_POLAR_K,
+        whitelevel: 0,
+        contrast: 1,
+        brightness: 1,
+        invert: 0,
+        opacity: 1,
+      }, { label: "depth1", parameters: { gamma1: drivenSlot("deep1:lowMid", 1.6), } }),
+
+      // ── the uv field, and the warp ────────────────────────────────────────
+      node("field", "reorder", [-840, -300], {
+        outr: "in1r",
+        outg: "in2r",
+        outb: "zero",
+        outa: "one",
+      }, { label: "field1" }),
+      node("warp", "remap", [-580, -80], {
+        sourcex: "red",
+        sourcey: "green",
+        flipu: false,
+        flipv: false,
+        extend: "mirror",
+      }, { label: "warp1" }),
+
+      // ── the grade ─────────────────────────────────────────────────────────
+      node("palette", "ramp", [-840, 300], {
+        type: "horizontal",
+        interp: "linear",
+        phase: 0,
+        period: 1,
+        stops: [
+          { position: 0, color: [0.01, 0.02, 0.06, 1] },
+          { position: 0.2, color: [0.05, 0.16, 0.42, 1] },
+          { position: 0.4, color: [0.1, 0.55, 0.78, 1] },
+          { position: 0.58, color: [0.45, 0.35, 0.85, 1] },
+          { position: 0.76, color: [0.92, 0.32, 0.48, 1] },
+          { position: 0.9, color: [1, 0.72, 0.32, 1] },
+          { position: 1, color: [1, 0.98, 0.92, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+      node("paint", "lookup", [-320, -80], {
+        channel: "luminance",
+        row: 0.5,
+        offset: 0,
+      }, { label: "paint1", parameters: { scale: drivenSlot("hue1:highMid", 1), } }),
+
+      // ── bloom ─────────────────────────────────────────────────────────────
+      node("halo", "blur", [-60, 200], { size: 34, filter: "gaussian", extend: "hold" }, { label: "halo1" }),
+      node("haze", "level", [200, 200], {
+        blacklevel: 0.58,
+        whitelevel: 1,
+        gamma1: 1,
+        contrast: 1,
+        brightness: 0.95,
+        invert: 0,
+        opacity: 1,
+      }, { label: "haze1" }),
+      node("burn", "add", [200, -80], { opacity: 1 }, { label: "burn1" }),
+      node("trim", "level", [460, -80], {
+        blacklevel: 0,
+        whitelevel: 1.18,
+        gamma1: 1,
+        contrast: 1.06,
+        brightness: 1,
+        invert: 0,
+        opacity: 1,
+      }, { label: "trim1" }),
+      node("out", "output", [720, -80], {}, { label: "out1" }),
+
+      // ── the score ─────────────────────────────────────────────────────────
+      node("beat", "audioPattern", [-1620, 620], { bpm: 118, amount: 1, beatsPerBar: 4 }, { label: "beat1" }),
+      node("smooth", "valueLag", [-1360, 620], { lag: 0.09 }, { label: "smooth1" }),
+      node("spin", "lfo", [-1620, 440], { shape: "saw", frequency: 0.037, amplitude: 0.5, offset: 0.5, phase: 0 }, { label: "spin1" }),
+
+      node("petalg", "valueMath", [-1100, 520], { operation: "multiply", operand: 5.5 }, { label: "petalg1" }),
+      node("petalb", "valueMath", [-840, 520], { operation: "add", operand: 4.2 }, { label: "petalb1" }),
+      node("petal", "valueLimit", [-580, 520], { minimum: 3, maximum: 12 }, { label: "petal1" }),
+
+      node("deepg", "valueMath", [-1100, 700], { operation: "multiply", operand: 2.4 }, { label: "deepg1" }),
+      node("deepb", "valueMath", [-840, 700], { operation: "add", operand: 0.9 }, { label: "deepb1" }),
+      node("deep", "valueLimit", [-580, 700], { minimum: 0.6, maximum: 4.5 }, { label: "deep1" }),
+
+      node("hueg", "valueMath", [-1100, 880], { operation: "multiply", operand: 0.9 }, { label: "hueg1" }),
+      node("hueb", "valueMath", [-840, 880], { operation: "add", operand: 0.72 }, { label: "hueb1" }),
+      node("hue", "valueLimit", [-580, 880], { minimum: 0.45, maximum: 1.9 }, { label: "hue1" }),
+    ],
+    [
+      edge("e-stand-pick", ["stand", "out"], ["pick", "inputs"], 0),
+      edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 1),
+      edge("e-ang-angfix", ["ang", "out"], ["angfix", "input"]),
+      edge("e-rad-depth", ["rad", "out"], ["depth", "input"]),
+      edge("e-angfix-field", ["angfix", "out"], ["field", "in1"]),
+      edge("e-depth-field", ["depth", "out"], ["field", "in2"]),
+      edge("e-pick-warp", ["pick", "out"], ["warp", "source"]),
+      edge("e-field-warp", ["field", "out"], ["warp", "map"]),
+      edge("e-warp-paint", ["warp", "out"], ["paint", "source"]),
+      edge("e-palette-paint", ["palette", "out"], ["paint", "lookup"]),
+      edge("e-paint-halo", ["paint", "out"], ["halo", "input"]),
+      edge("e-halo-haze", ["halo", "out"], ["haze", "input"]),
+      edge("e-paint-burn", ["paint", "out"], ["burn", "in1"], 0),
+      edge("e-haze-burn", ["haze", "out"], ["burn", "in2"], 1),
+      edge("e-burn-trim", ["burn", "out"], ["trim", "input"]),
+      edge("e-trim-out", ["trim", "out"], ["out", "input"]),
+      edge("e-beat-smooth", ["beat", "out"], ["smooth", "in"]),
+      edge("e-smooth-petalg", ["smooth", "out"], ["petalg", "a"]),
+      edge("e-petalg-petalb", ["petalg", "out"], ["petalb", "a"]),
+      edge("e-petalb-petal", ["petalb", "out"], ["petal", "in"]),
+      edge("e-smooth-deepg", ["smooth", "out"], ["deepg", "a"]),
+      edge("e-deepg-deepb", ["deepg", "out"], ["deepb", "a"]),
+      edge("e-deepb-deep", ["deepb", "out"], ["deep", "in"]),
+      edge("e-smooth-hueg", ["smooth", "out"], ["hueg", "a"]),
+      edge("e-hueg-hueb", ["hueg", "out"], ["hueb", "a"]),
+      edge("e-hueb-hue", ["hueb", "out"], ["hue", "in"]),
+    ],
+  ),
+);
+
+/**
+ * E40 — Wake (T729).
+ *
+ *   bed1(noise 4d, nearly still) ─┐
+ *   orb1(circle ┄ pathx1/pathy1) ─┴─► stand1(add) ─┐ order 0
+ *                                                   ├─► pick1(switch) ─┬─► past1(cache, 6 back)
+ *   clip1(movieFileIn) ─────────────────────────────┘ order 1          │        │
+ *                                                                      ▼        ▼
+ *                                              under1(level) ◄─┐   moved1(difference)
+ *                                                              │        │
+ *   gain1(level, whitelevel ┄ bite1) ◄────────────────────────────────── ┘
+ *        │
+ *        ├─► shiftr1(transform ┄ tear1) ─► fuser1(reorder) ─┐
+ *        └─► shiftb1(transform ┄ tearb1) ─► fuseb1(reorder) ┴─► born1(add) ◄─ loop1(feedback)
+ *                                                                  │
+ *                             born1 ─► paint1(lookup ◄─ palette1) ─┴─► lay1(add) ─► trim1 ─► out1
+ *
+ * ## What a Cache is FOR, other than a delay line
+ *
+ * E24 reads three cache taps as an RGB delay, which uses the ring as an echo. This uses it
+ * as an INSTRUMENT: the difference between now and six frames ago is a motion field, and
+ * everything downstream is a reading of that field rather than of the picture. It is the
+ * one operation in the set that cannot be evaluated on a single frame — the subject of the
+ * example is change itself, which is why its claims are asserted across FRAME PAIRS and not
+ * from a still (§V681).
+ *
+ * ## The understudy has to MOVE, and that is not decoration (§V687)
+ *
+ * §V363 says a demo demonstrates itself. An example whose subject is change has no null
+ * state that looks like anything: the first version of this graph used a `perlin3d` with no
+ * driver, and since `speed` advances the FOURTH dimension and a 3D noise has none (T518,
+ * §V624), the field never changed and the whole file rendered PURE BLACK. Not dim — black,
+ * with every structural test green about it. So `bed1` is `perlin4d` with a real `speed`,
+ * and the subject is `orb1` on two LFOs. The bed is nearly still ON PURPOSE: a bed evolving
+ * as fast as the subject travels makes the detector see motion everywhere and the subject
+ * never stands out. Something has to hold still for a wake to be a wake ON.
+ *
+ * ## Grade AFTER the accumulator, so the palette axis is AGE
+ *
+ * The obvious wiring puts the Lookup before the loop, and it is wrong: the loop then sums
+ * GRADED colour, the head pins white, and the tail carries no hue at all. Feeding the raw
+ * motion into the accumulator and grading what comes OUT makes the ramp a map of how long
+ * ago a pixel moved — fresh reads warm, old reads cool — which is the picture this example
+ * is for. So the loop closes on `born1`, not on the final output: §V471.5's shape inverted
+ * for the same reason E34 inverts it, because a loop closing on the finished frame would
+ * smear the bed along with the wake.
+ *
+ * ## NO subtractive offset inside a float loop (§V694)
+ *
+ * This graph had a Level in the loop with `blacklevel: 0.008`, copying E1's idiom for
+ * terminating a trail. E1's docstring says blacklevel "crushes the dimmest survivors to
+ * zero", which is true in a unorm format and FALSE in the `rgba16float` we ship: an empty
+ * pixel goes to -0.008, the loop drives it further down every frame, and the downstream Add
+ * then came out DARKER than its own base layer — the bed vanished completely and it read as
+ * the compositor being broken. Persistence is already the decay and it cannot go negative,
+ * so the node is gone rather than fixed.
+ *
+ * ## The gain pairs are fitted to a MEASURED field (§V696)
+ *
+ * `bite1` sets `gain1.whitelevel`, and the honest number depends entirely on what the
+ * difference actually measures — which changed by thirteen times when `orb1` was given a
+ * faster path. Fitted by eye it was wrong by an order of magnitude twice, once mapping the
+ * field's MEDIAN to 0.86 and blowing the frame white. Louder low band lowers the white
+ * point, so the wake flares on the kick; `hold1` lengthens the trail on the same beat.
+ */
+const wakeDocument = document(
+  "wake",
+  "E40 Wake",
+  settings(),
+  graph(
+    [
+      node("bed", "noise", [-1620, -180], {
+        type: "perlin4d",
+        seed: 11,
+        period: 0.11,
+        harmon: 3,
+        spread: 2,
+        gain: 0.5,
+        rough: 0.5,
+        exp: 1.4,
+        amp: 1.5,
+        offset: 0.1,
+        mono: true,
+        aspectcorrect: true,
+        speed: 0.035,
+        t4d: 0,
+        s4d: 1,
+      }, { label: "bed1" }),
+      node("orb", "circle", [-1620, 40], {
+        mode: "fill",
+        center: [0.5, 0.5],
+        radius: [0.085, 0.085],
+        softness: 0.09,
+        fillcolor: [1, 0.97, 0.9, 1],
+        bgcolor: [0, 0, 0, 0],
+        aspectcorrect: true,
+      }, { label: "orb1", parameters: { "center.x": drivenSlot("pathx1", 0.5), "center.y": drivenSlot("pathy1", 0.5), } }),
+      node("stand", "add", [-1360, -70], { opacity: 1 }, { label: "stand1" }),
+      node("pathx", "lfo", [-1620, 440], { shape: "sine", frequency: 0.29, amplitude: 0.33, offset: 0.5, phase: 0 }, { label: "pathx1" }),
+      node("pathy", "lfo", [-1620, 560], { shape: "sine", frequency: 0.203, amplitude: 0.3, offset: 0.5, phase: 0.25 }, { label: "pathy1" }),
+      node("clip", "movieFileIn", [-1620, 260], { file: "", playMode: "freeRun", speed: 1 }, { label: "clip1" }),
+      node("pick", "switch", [-1360, 150], { index: 0 }, { label: "pick1" }),
+
+      // ── the delay line and the difference against it ───────────────────────
+      node("past", "cache", [-1100, 320], { frames: 8, index: 6, scale: 1 }, { label: "past1" }),
+      node("moved", "difference", [-840, 150], {}, { label: "moved1" }),
+      node("gain", "level", [-580, 150], {
+        blacklevel: 0.02,
+        gamma1: 1,
+        contrast: 1,
+        brightness: 1,
+        invert: 0,
+        opacity: 1,
+      }, { label: "gain1", parameters: { whitelevel: drivenSlot("bite1:low", 2.2), } }),
+
+      // ── chromatic split of the motion, not of the picture ──────────────────
+      node("shiftr", "transform", [-320, -60], {
+        t: [0.006, 0],
+        r: 0,
+        s: [1, 1],
+        p: [0, 0],
+        xord: "srt",
+        extend: "hold",
+        aspectcorrect: false,
+      }, { label: "shiftr1", parameters: { "t.x": drivenSlot("tear1:high", 0.006), } }),
+      node("shiftb", "transform", [-320, 360], {
+        t: [-0.006, 0],
+        r: 0,
+        s: [1, 1],
+        p: [0, 0],
+        xord: "srt",
+        extend: "hold",
+        aspectcorrect: false,
+      }, { label: "shiftb1", parameters: { "t.x": drivenSlot("tearb1:high", -0.006), } }),
+      node("fuser", "reorder", [-60, 60], {
+        outr: "in2r",
+        outg: "in1g",
+        outb: "in1b",
+        outa: "one",
+      }, { label: "fuser1" }),
+      node("fuseb", "reorder", [200, 60], {
+        outr: "in1r",
+        outg: "in1g",
+        outb: "in2b",
+        outa: "one",
+      }, { label: "fuseb1" }),
+
+      // ── grade the motion ──────────────────────────────────────────────────
+      node("palette", "ramp", [720, 420], {
+        type: "horizontal",
+        interp: "linear",
+        phase: 0,
+        period: 1,
+        stops: [
+          { position: 0, color: [0, 0, 0, 1] },
+          { position: 0.22, color: [0.02, 0.09, 0.22, 1] },
+          { position: 0.46, color: [0.05, 0.5, 0.62, 1] },
+          { position: 0.68, color: [0.2, 0.92, 0.72, 1] },
+          { position: 0.86, color: [0.85, 0.98, 0.55, 1] },
+          { position: 1, color: [1, 1, 0.95, 1] },
+        ],
+      }, { label: "palette1", definitionVersion: 2 }),
+      node("paint", "lookup", [980, 60], {
+        channel: "luminance",
+        row: 0.5,
+        offset: 0,
+        scale: 1.25,
+      }, { label: "paint1" }),
+
+      // ── the phosphor: only what MOVED enters the loop ─────────────────────
+      node("loop", "feedback", [460, 380], {
+        source: "born1",
+        clearColor: [0, 0, 0, 0],
+        reset: false,
+        substeps: 1,
+      }, { label: "loop1", parameters: { persistence: drivenSlot("hold1:level", 0.95), } }),
+      node("born", "add", [720, 60], { opacity: 1 }, { label: "born1" }),
+
+      // ── the subject, held down under its own wake ────────────────────────
+      node("under", "level", [-1100, -140], {
+        blacklevel: 0.06,
+        whitelevel: 1,
+        gamma1: 1,
+        contrast: 1.4,
+        brightness: 0.2,
+        invert: 0,
+        opacity: 1,
+      }, { label: "under1" }),
+      node("lay", "add", [1240, 60], { opacity: 1 }, { label: "lay1" }),
+      node("trim", "level", [1500, 60], {
+        blacklevel: 0,
+        whitelevel: 1.25,
+        gamma1: 1,
+        contrast: 1.08,
+        brightness: 1,
+        invert: 0,
+        opacity: 1,
+      }, { label: "trim1" }),
+      node("out", "output", [1760, 60], {}, { label: "out1" }),
+
+      // ── the score ────────────────────────────────────────────────────────
+      node("beat", "audioPattern", [-1620, 700], { bpm: 126, amount: 1, beatsPerBar: 4 }, { label: "beat1" }),
+      node("smooth", "valueLag", [-1360, 700], { lag: 0.07 }, { label: "smooth1" }),
+
+      node("biteg", "valueMath", [-1100, 620], { operation: "multiply", operand: -1.6 }, { label: "biteg1" }),
+      node("biteb", "valueMath", [-840, 620], { operation: "add", operand: 3 }, { label: "biteb1" }),
+      node("bite", "valueLimit", [-580, 620], { minimum: 1.6, maximum: 3.2 }, { label: "bite1" }),
+
+      node("tearg", "valueMath", [-1100, 800], { operation: "multiply", operand: 0.03 }, { label: "tearg1" }),
+      node("tearb", "valueMath", [-840, 800], { operation: "add", operand: 0.004 }, { label: "tearb1" }),
+      node("tear", "valueLimit", [-580, 800], { minimum: 0.001, maximum: 0.03 }, { label: "tear1" }),
+      node("tearng", "valueMath", [-1100, 980], { operation: "multiply", operand: -0.03 }, { label: "tearng1" }),
+      node("tearnb", "valueMath", [-840, 980], { operation: "add", operand: -0.004 }, { label: "tearnb1" }),
+      node("tearn", "valueLimit", [-580, 980], { minimum: -0.03, maximum: -0.001 }, { label: "tearb1" }),
+
+      node("holdg", "valueMath", [-1100, 1160], { operation: "multiply", operand: 0.032 }, { label: "holdg1" }),
+      node("holdb", "valueMath", [-840, 1160], { operation: "add", operand: 0.93 }, { label: "holdb1" }),
+      node("hold", "valueLimit", [-580, 1160], { minimum: 0.92, maximum: 0.972 }, { label: "hold1" }),
+    ],
+    [
+      edge("e-bed-stand", ["bed", "out"], ["stand", "in1"], 0),
+      edge("e-orb-stand", ["orb", "out"], ["stand", "in2"], 1),
+      edge("e-stand-pick", ["stand", "out"], ["pick", "inputs"], 0),
+      edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 1),
+      edge("e-pick-past", ["pick", "out"], ["past", "input"]),
+      edge("e-pick-moved", ["pick", "out"], ["moved", "in1"], 0),
+      edge("e-past-moved", ["past", "out"], ["moved", "in2"], 1),
+      edge("e-moved-gain", ["moved", "out"], ["gain", "input"]),
+      edge("e-gain-shiftr", ["gain", "out"], ["shiftr", "input"]),
+      edge("e-gain-shiftb", ["gain", "out"], ["shiftb", "input"]),
+      edge("e-gain-fuser", ["gain", "out"], ["fuser", "in1"]),
+      edge("e-shiftr-fuser", ["shiftr", "out"], ["fuser", "in2"]),
+      edge("e-fuser-fuseb", ["fuser", "out"], ["fuseb", "in1"]),
+      edge("e-shiftb-fuseb", ["shiftb", "out"], ["fuseb", "in2"]),
+      edge("e-fuseb-born", ["fuseb", "out"], ["born", "in1"], 0),
+      edge("e-loop-born", ["loop", "out"], ["born", "in2"], 1),
+      edge("e-born-paint", ["born", "out"], ["paint", "source"]),
+      edge("e-palette-paint", ["palette", "out"], ["paint", "lookup"]),
+      edge("e-pick-under", ["pick", "out"], ["under", "input"]),
+      edge("e-under-lay", ["under", "out"], ["lay", "in1"], 0),
+      edge("e-paint-lay", ["paint", "out"], ["lay", "in2"], 1),
+      edge("e-lay-trim", ["lay", "out"], ["trim", "input"]),
+      edge("e-trim-out", ["trim", "out"], ["out", "input"]),
+      edge("e-beat-smooth", ["beat", "out"], ["smooth", "in"]),
+      edge("e-smooth-biteg", ["smooth", "out"], ["biteg", "a"]),
+      edge("e-biteg-biteb", ["biteg", "out"], ["biteb", "a"]),
+      edge("e-biteb-bite", ["biteb", "out"], ["bite", "in"]),
+      edge("e-smooth-tearg", ["smooth", "out"], ["tearg", "a"]),
+      edge("e-tearg-tearb", ["tearg", "out"], ["tearb", "a"]),
+      edge("e-tearb-tear", ["tearb", "out"], ["tear", "in"]),
+      edge("e-smooth-tearng", ["smooth", "out"], ["tearng", "a"]),
+      edge("e-tearng-tearnb", ["tearng", "out"], ["tearnb", "a"]),
+      edge("e-tearnb-tearn", ["tearnb", "out"], ["tearn", "in"]),
+      edge("e-smooth-holdg", ["smooth", "out"], ["holdg", "a"]),
+      edge("e-holdg-holdb", ["holdg", "out"], ["holdb", "a"]),
+      edge("e-holdb-hold", ["holdb", "out"], ["hold", "in"]),
+    ],
+  ),
+);
+
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
   reactionDiffusionDocument,
@@ -8695,4 +9197,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   lidarDocument,
   novaTorusDocument,
   facadeDocument,
+  rosetteDocument,
+  wakeDocument,
 ];
