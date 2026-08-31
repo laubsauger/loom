@@ -2254,6 +2254,18 @@ describe("E34 Lidar claims", () => {
    * And the far end is the FIRST hit, published through mark2a's own leaf `hitPosition`
    * slot: four attributes is the whole budget (§V588), so a fifth pair is not available
    * and the segment has to travel through a slot that already exists.
+   *
+   * WHY THIS IS ASSERTED STRUCTURALLY RATHER THAN FROM PIXELS, and it is the reason the
+   * shape of this test matters more than its strictness: the hold is a property ACROSS
+   * FRAMES — a marker keeping its place while lit — and every still-frame instrument we
+   * own is blind to it. Delete the gate and each individual frame still looks correct;
+   * only the relationship between consecutive frames breaks. Measured, not assumed: all
+   * three mutations of this claim (drop `wake.w`, drop `spoke`, drop mark2a's published
+   * first hit) leave `liveness.test.ts` GREEN, and so do the seven others in this file's
+   * E34 set — including "draw all 240 bounce legs", which is a visibly ruined frame. A
+   * green look baseline means "about the same picture", never "this example is intact"
+   * (§V653). So the assertion names the CONDITION, and the flicker numbers that justify
+   * it were taken from frame PAIRS with the camera frozen, never from a still.
    */
   it("hangs the bounce leg on mark2a's hold, subset by the same spoke as the primaries", () => {
     expect(nodes["bounce"]?.parameters["mode"]).toBe("beam");
