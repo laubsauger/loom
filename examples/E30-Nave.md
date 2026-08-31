@@ -12,8 +12,8 @@ this is the crossing.**
 ## Graph
 
 ```
-beat1(audioPattern 120bpm) ─► swell1(lag 0.11) ─┬─► bgain1 ─► bore1(limit)  ┄ value1
-                                                └─► lgain1 ─► lum1(limit)   ┄ value2
+beat1(audioPattern 120bpm) ─► swell1(lag 0.11) ─┬─► bgain1 ─► bore1(valueLimit)  ┄ value1
+                                                └─► lgain1 ─► lum1(valueLimit)   ┄ value2
 palette1(ramp, 6 stops) ──────────────────────────────┐
                                                       ▼
 grid1(pointGrid 176×60) ─► bridge1(textureToAttribute) ─► roll1(pointKernel) ─► ribs1(geometry:

@@ -9,9 +9,9 @@ them drifts as the field animates, and the whole thing keeps evolving instead of
 ```
 broad1(noise, perlin4d) ─► warp1.source ─┐
 detail1(noise, perlin4d) ► warp1.disp ───┴─► warp1(displace) ─► shape1(level) ─► pack1.in2
-state1(feedback, substeps 20) ─► rd1(customWgsl) ─► pack1(reorder) ─► state1
+state(feedback, substeps 20) ─► rd1(customWgsl) ─► pack1(reorder) ─► state
      ╰┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ source: "pack1" ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╯   (a reference, T350)
-rd1 ─► tint1(lookup) ◄─ palette1(ramp, 5 stops) ─► out1(output)
+rd1 ─► tint1(lookup) ◄─ palette1(ramp, 5 stops) ─► out(output)
                 tint1.offset ← lfo1
 ```
 
@@ -21,7 +21,7 @@ rd1 ─► tint1(lookup) ◄─ palette1(ramp, 5 stops) ─► out1(output)
 | `detail1` | `noise` | `perlin4d`, period 0.13, `speed 0.09` — the field that *warps* the first one |
 | `warp1` | `displace` | drags `broad1` around by `detail1`, so the two fields interfere |
 | `shape1` | `level` | stretches and hardens the distribution into distinct regions |
-| `state1` | `feedback` | the simulation state, 512×512 rgba16float, **`substeps: 20`** |
+| `state` | `feedback` | the simulation state, 512×512 rgba16float, **`substeps: 20`** |
 | `rd1` | `customWgsl` | the Gray-Scott step: a nine-tap Laplacian and two rate equations |
 | `pack1` | `reorder` | U and V from the kernel, the chemistry coordinate into blue, alpha kept |
 | `palette1` | `ramp` | five stops, smooth: deep navy → teal → green → amber → cream |

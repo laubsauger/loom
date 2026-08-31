@@ -43,7 +43,7 @@ music1(audioPattern 112bpm) ─┐
 track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
         YOUR TRACK HERE)                    │
    SLOW ── env1(lag 0.12) ◄────────────────┤
-             ├─► sgain1·sbase1·steps1 ┄► state1.substeps            (low)
+             ├─► sgain1·sbase1·steps1 ┄► state.substeps            (low)
              ├─► wgain1·wbase1·wlevel1 ┄► shape1.whitelevel         (lowMid)
              └─► xgain1·xspeed1 ┄► grow1.s                          (low)
    FAST ── snap1(lag 0.04) ◄───────────────┤
@@ -60,7 +60,7 @@ WHERE THE ORGANISM LIVES — one disc, read twice, never drawn:
   bowl1(circle, off-centre) ─► rim1(invert) ─► dish1(screen) ◄─ shape1   ⇒ chemistry
   bowl1 ────────────────────► sow1(multiply) ◄─ spark1                   ⇒ the beat's seed
 
-broad1 ─► warp1 ◄─ detail1     state1(feedback, source: pack1)      sow1 ─► gate1
+broad1 ─► warp1 ◄─ detail1     state(feedback, source: pack1)      sow1 ─► gate1
               │                     │                                          │
               ▼                     ▼                                          ▼
  shape1 ─► dish1 ─────────► pack1 ◄─ inject1(screen, 512²) ◄─ rd1 ◄─ wind1 ◄─ (the loop)
@@ -297,7 +297,7 @@ Composite inherits its size from `in1`, and `inject1`'s `in1` is the seed GATE �
 has to be, because `opacity` scales the front and that is what makes `opacity` mean "how
 much V a hit drops in" (§V510). The gate is a `project`-resolution chain. So the loop ran
 512-square through `rd1`, was DOWNSAMPLED to the output's size at the composite, and was
-resampled back up by `state1`: a low-pass through the whole reaction, once per frame.
+resampled back up by `state`: a low-pass through the whole reaction, once per frame.
 
 At a 512-square output that is a no-op and it hid for three rounds. At T521's 192×108 probe
 it wipes Gray-Scott's structure out, and once T598's disc confined the chemistry to a fifth
@@ -347,7 +347,7 @@ gallery thumbnail shows (T535).
 ## The mappings, and why each is shaped the way it is
 
 **Bass → substeps: the beat makes the simulation FASTER.** `steps1` drives
-`state1.substeps` — a per-frame VALUE since T425, so no recompile, no history wipe, just
+`state.substeps` — a per-frame VALUE since T425, so no recompile, no history wipe, just
 more Gray-Scott iterations encoded on loud frames (base 14, up to 34). The cap is
 enforced twice on purpose: `valueLimit` fences the value in the graph, and the encoder
 clamps again at expansion — a loud passage cannot spike frame time unboundedly through

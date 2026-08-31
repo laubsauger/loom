@@ -11,8 +11,8 @@ shaft surges toward you and settles over the beat.
 ## Graph
 
 ```
-beat1(audioPattern 124bpm) ─┬─► punch1(lag 0.28) ─► zgain1 ─► zbase1 ─► zoom1(limit) ┄┐
-                            └─► hit1(trigger)    ─► strike1 ─► lamp1(limit) ┄┐        │
+beat1(audioPattern 124bpm) ─┬─► punch1(lag 0.28) ─► zgain1 ─► zbase1 ─► zoom1(valueLimit) ┄┐
+                            └─► hit1(trigger)    ─► strike1 ─► lamp1(valueLimit) ┄┐        │
                                                                              │  s.x/s.y│
 bore1(rectangle 0.124) ─┐                                                    │        │
                         ├─► ring1(difference) ─► paint1(lookup) ─► lampl1(level, brightness ┄)
