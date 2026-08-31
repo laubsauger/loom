@@ -138,6 +138,80 @@ const ENV_SAMPLE_WGSL = `fn sampleEnvironment(direction: vec3f) -> vec3f {
 }
 `;
 
+/**
+ * T659 — the BACKDROP, which until now could only ever be a flat colour.
+ *
+ * The gap the owner found by looking: `sampleEnvironment` appears in exactly two places
+ * — the reflection vector and the five irradiance taps — and NO pass ever renders it.
+ * So a wired environment was taking as LIGHT ONLY, and the visible sky behind a scene
+ * was the backdrop colour, always. "Is the sky band taking, or are we using a skybox?"
+ * had the answer "neither": it was taking, and it was never drawn.
+ *
+ * `environment: false` returns the T444 backdrop VERBATIM, which is why every scene that
+ * does not opt in is byte-identical (§V461's other end, measured by hashing pass WGSL
+ * across the catalogue rather than asserted).
+ *
+ * With it on, the same equirect fetch the reflection uses is read along a camera ray
+ * through each pixel — one function, so the sky and its own reflection cannot drift
+ * apart (§V349). The ray is built from a basis handed in as uniforms, `right` and `up`
+ * PRE-SCALED by the frustum's half-extents, so the fragment shader does one add and one
+ * normalize and the trigonometry lives on the CPU where the camera already is.
+ *
+ * Depth is untouched: it still writes 0.999 and every geometry draws over it, exactly as
+ * the colour backdrop did. This is a background, not an object.
+ *
+ * ORTHOGRAPHIC cameras get a CONSTANT direction, and that is correct rather than
+ * degenerate: parallel rays see one point of an environment at infinity. Stated because
+ * a flat sky under an ortho camera otherwise reads as a bug (§V403).
+ */
+export function backdropWgsl(options: { readonly environment?: boolean } = {}): string {
+  if (options.environment !== true) {
+    return `struct Backdrop { color: vec4f };
+@group(0) @binding(0) var<uniform> backdrop: Backdrop;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.999, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4f { return backdrop.color; }`;
+  }
+  return `struct Backdrop {
+  color: vec4f,       // rgb unused when the environment draws; a = the backdrop's alpha
+  right: vec4f,       // camera right × tan(fovY/2) × aspect (zero under an ortho camera)
+  up: vec4f,          // camera up × tan(fovY/2)             (zero under an ortho camera)
+  forward: vec4f,     // unit view direction; w = environment intensity
+};
+@group(0) @binding(0) var<uniform> backdrop: Backdrop;
+@group(0) @binding(1) var environmentMap: texture_2d<f32>;
+${ENV_SAMPLE_WGSL}
+struct BackdropOut {
+  @builtin(position) position: vec4f,
+  @location(0) ndc: vec2f,
+};
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> BackdropOut {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  var out: BackdropOut;
+  out.position = vec4f(corners[v], 0.999, 1.0);
+  out.ndc = corners[v];
+  return out;
+}
+@fragment
+fn fs(input: BackdropOut) -> @location(0) vec4f {
+  let direction = normalize(
+    backdrop.forward.xyz + input.ndc.x * backdrop.right.xyz + input.ndc.y * backdrop.up.xyz,
+  );
+  return vec4f(sampleEnvironment(direction) * backdrop.forward.w, backdrop.color.a);
+}`;
+}
+
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const pointColor = options.pointColor === true;

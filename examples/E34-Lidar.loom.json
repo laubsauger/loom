@@ -806,7 +806,8 @@
           "camera": "eye1",
           "environmentIntensity": 1,
           "lights": "moon1",
-          "scenes": "ground1 impacts1 echoes1"
+          "scenes": "ground1 impacts1 echoes1",
+          "showEnvironment": true
         },
         "position": {
           "x": -320,

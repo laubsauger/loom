@@ -12,6 +12,7 @@ import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap } from "./points.ts";
 import {
   SHADOW_CLEAR_WGSL,
+  backdropWgsl,
   sceneInstancesWgsl,
   sceneSurfaceWgsl,
   shadowInstancesWgsl,
@@ -448,8 +449,22 @@ export const renderNode: NodeDefinition = {
       default: 1,
       min: 0,
       range: "floor",
-      description: "Scales the wired environment's reflection. A value: drivable, never a rebuild.",
+      description:
+        "Scales the wired environment — its reflection, its diffuse fill, and (T659) the background when Show Environment is on. A value: drivable, never a rebuild.",
       inactiveWhen: () => null,
+    },
+    /*
+     * T659 — DRAW the environment behind the scene. Off by default and it must stay
+     * that way: an environment is wired on several shipped scenes purely as light, and
+     * defaulting this on would change every one of their skies in one commit.
+     */
+    showEnvironment: {
+      type: "boolean",
+      label: "Show Environment",
+      default: false,
+      compileTime: true,
+      description:
+        "Draws the wired environment as the BACKGROUND, sampled along a camera ray per pixel, behind everything and without touching depth. Off, the background is the Background colour — which is what a wired environment has always looked like, because until now it only ever contributed reflections and fill. Every material model sees it: a background is a picture, not a shading term. An orthographic camera sees one direction, so its sky is flat.",
     },
     /*
      * T624 — AMBIENT OCCLUSION. One switch, and every geometry this render names is
@@ -836,39 +851,13 @@ export const renderNode: NodeDefinition = {
       } as DrawPassDescriptor);
     }
     /*
-     * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
-     * so a render used as a material map is a PICTURE with a stage behind it rather
-     * than performers floating on unlit black (the invisible-screen failure the E25
-     * look pass caught). The colour is a value; geometry draws compose over it.
-     */
-    passes.push({
-      kind: "draw",
-      id: `${nodeId}:backdrop`,
-      nodeId,
-      shader: `struct Backdrop { color: vec4f };
-@group(0) @binding(0) var<uniform> backdrop: Backdrop;
-@vertex
-fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
-  var corners = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  );
-  return vec4f(corners[v], 0.999, 1.0);
-}
-@fragment
-fn fs() -> @location(0) vec4f { return backdrop.color; }`,
-      target,
-      topology: "triangle-list",
-      instances: 1,
-      vertexCount: 6,
-      uniforms: { color: [background[0] ?? 0, background[1] ?? 0, background[2] ?? 0, background[3] ?? 1] },
-      uniformBinding: "backdrop",
-      clear: true,
-    } as DrawPassDescriptor);
-    /*
      * T647: the billboard basis for points-mode geometries — camera right/up from the
      * SAME eye/lookAt the view-projection was built from, so the cards face the camera
      * exactly. A straight-down camera falls back to +x as up, the lookAt() convention.
+     *
+     * T659 hoisted this above the backdrop, unchanged: the environment BACKGROUND needs
+     * the same basis to build its per-pixel ray, and one derivation serving both is what
+     * stops the sky and the billboards disagreeing about which way is right (§V349).
      */
     const bbForward = (() => {
       const delta = [
@@ -894,6 +883,69 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
       bbRight[2] * bbForward[0] - bbRight[0] * bbForward[2],
       bbRight[0] * bbForward[1] - bbRight[1] * bbForward[0],
     ] as const;
+
+    /*
+     * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
+     * so a render used as a material map is a PICTURE with a stage behind it rather
+     * than performers floating on unlit black (the invisible-screen failure the E25
+     * look pass caught). The colour is a value; geometry draws compose over it.
+     *
+     * T659: and OPTIONALLY the wired environment itself, along a camera ray per pixel.
+     * Until now `sampleEnvironment` was read only by the reflection and the irradiance
+     * taps, so an environment lit the scene and was never visible — the owner's "is the
+     * sky band taking, or are we using a skybox?" had the answer "taking, never drawn".
+     * OFF BY DEFAULT on purpose: every shipped scene that wires an environment would
+     * otherwise change its sky at once, and a look change nobody asked for is a
+     * regression however good it is.
+     *
+     * The half-extents are the camera's own: `tan(fovY/2)` up, times the aspect across.
+     * An ORTHOGRAPHIC camera hands in ZERO for both, so every pixel reads one direction
+     * — which is what parallel rays see of something at infinity, stated rather than
+     * discovered. The reflection's `environmentIntensity` scales this too: one map, and
+     * a reflection brighter than the sky it reflects is incoherent.
+     */
+    const showEnvironment = parameters["showEnvironment"] === true;
+    const drawEnvironment = showEnvironment && environmentResource !== undefined;
+    if (showEnvironment && environmentResource === undefined) {
+      diagnostics.push({
+        severity: "warning",
+        code: "node.scene.environment",
+        message: `Node "${nodeId}": Show Environment is on, but no environment is wired — the background stays the Background colour.`,
+        nodeId,
+        suggestion: "Wire a texture into the Environment input, or turn Show Environment off.",
+      });
+    }
+    const halfHeight = camera.ortho ? 0 : Math.tan((camera.fovDeg * Math.PI) / 360);
+    passes.push({
+      kind: "draw",
+      id: `${nodeId}:backdrop`,
+      nodeId,
+      shader: backdropWgsl(drawEnvironment ? { environment: true } : {}),
+      target,
+      topology: "triangle-list",
+      instances: 1,
+      vertexCount: 6,
+      ...(drawEnvironment
+        ? { textures: [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }] }
+        : {}),
+      uniforms: {
+        color: [background[0] ?? 0, background[1] ?? 0, background[2] ?? 0, background[3] ?? 1],
+        ...(drawEnvironment
+          ? {
+              right: [
+                bbRight[0] * halfHeight * aspect,
+                bbRight[1] * halfHeight * aspect,
+                bbRight[2] * halfHeight * aspect,
+                0,
+              ],
+              up: [bbUp[0] * halfHeight, bbUp[1] * halfHeight, bbUp[2] * halfHeight, 0],
+              forward: [bbForward[0], bbForward[1], bbForward[2], environmentIntensity],
+            }
+          : {}),
+      },
+      uniformBinding: "backdrop",
+      clear: true,
+    } as DrawPassDescriptor);
 
     geometries.forEach(({ payload, source }, index) => {
       if (payload.mode === "instances" || payload.mode === "points") {

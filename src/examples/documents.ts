@@ -6568,6 +6568,16 @@ const obolDocument = document(
  * reaches. Kill the environment wire and the valleys go black; that is the diffuse
  * half doing the work `ambientIntensity` used to fake.
  *
+ * ## The sky is the same map (T659)
+ *
+ * `skyband1` is now DRAWN as well as taken — `showEnvironment` on this render. Until
+ * T659 the environment had exactly two readers, the reflection vector and the five
+ * irradiance taps, and no pass ever rendered it: the visible night was the `background`
+ * colour, so tuning the ramp changed the fill and the rim and never the sky. One map now
+ * lights the scene and IS the scene's backdrop, which is the only way the rim light on a
+ * ridge can agree with what is behind it. The switch is off by default and this is the
+ * only example that opts in.
+ *
  * Free-running throughout (§V436): the sweep, the tilt and the orbit read absolute
  * clocks, so a timeline lap never snaps the scan.
  */
@@ -6846,6 +6856,11 @@ const lidarDocument = document(
         ambientIntensity: 0.16,
         background: [0.006, 0.008, 0.016, 1],
         environmentIntensity: 1.0,
+        /* T659: and the sky band is now DRAWN as well as taken. It was already the only
+           thing filling the valleys; the frame behind the ridges was the `background`
+           colour and nothing else, which is why the night read as flat black however the
+           ramp was tuned. This is the opt-in — the switch is off everywhere else. */
+        showEnvironment: true,
       }, { label: "shot1" }),
 
       /* ---- the returns glow --------------------------------------------------- */
