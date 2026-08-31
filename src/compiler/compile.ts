@@ -1,4 +1,5 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
+import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import { nodeNames } from "../domain/graph/names.ts";
 import { sourceReferenceTokens, sourceReferencesOf } from "../domain/graph/source-references.ts";
@@ -586,11 +587,11 @@ function splicePassthroughNodes(validated: {
     // mutes instead, exactly like a source, with the reason said out loud.
     if (resolved.node.ui?.bypassed === true) {
       const output = resolved.definition.outputs[0];
-      const input = resolved.definition.inputs.find(
-        (port) => output !== undefined && port.type.kind === output.type.kind,
-      );
-      if (input !== undefined && output !== undefined) {
-        wires.set(nodeId, { input: input.id, output: output.id });
+      // T541: the rule itself now lives in `bypassPassthroughPorts` — the value graph
+      // asks the same question and §V109 says it must not get a second answer.
+      const ports = bypassPassthroughPorts(resolved.definition);
+      if (ports !== undefined) {
+        wires.set(nodeId, ports);
       } else {
         muted.add(nodeId);
         if (resolved.definition.inputs.length > 0 && output !== undefined) {

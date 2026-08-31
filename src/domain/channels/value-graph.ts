@@ -6,6 +6,7 @@ import type { NodeDefinition, ValueChannels } from "../types/node-definition.ts"
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { ChannelResolver } from "../parameters/resolve.ts";
 import { resolveParameterSchema } from "../parameters/resolve.ts";
+import { bypassPassthroughPorts } from "../graph/bypass.ts";
 
 /**
  * The value graph (T273/T274, §V179): TD's CHOP layer, CPU-side, evaluated once per
@@ -29,6 +30,46 @@ import { resolveParameterSchema } from "../parameters/resolve.ts";
  * node's parameter driven by another value node is the value graph's own wiring
  * question (connect them instead); resolving it through the resolver here would be
  * recursion through the seam this module implements.
+ *
+ * ## MUTE and BYPASS (T541/B114)
+ *
+ * This module contained no occurrence of either word until T541: texture chains honoured
+ * the two flags from T250 and value chains never learned, so an `audioPattern` with the
+ * mute badge lit kept driving everything downstream, plot and all. §V437's shape — the
+ * flags were a PROPERTY of the graph and were delivered at one layer.
+ *
+ * Both are defined here EXACTLY as the compiler defines them for textures (§V109 — one
+ * question, one answer), the only difference being the flavour of silence each layer has
+ * to hand:
+ *
+ *  - **MUTE = publish NOTHING.** The node emits no bag, so it is absent from `byId` and
+ *    `byName`: the resolver answers `undefined` for its name (a driven parameter falls
+ *    back exactly as it does for a name that was never wired), its plot goes blank, and —
+ *    the part that needs saying — a consumer's input PORT stays ABSENT rather than
+ *    arriving empty. `{}` is not the same as unconnected: `valueSwitch` counts CONNECTED
+ *    inputs, so an empty bag would still be a branch and muting `in1` would silently
+ *    renumber the others. Absent is what "as if nothing were wired" has to mean.
+ *  - **BYPASS = the input bag, unchanged**, taken from the node's passthrough input
+ *    (`bypassPassthroughPorts`, shared with the compiler). Nothing arriving there — a
+ *    SOURCE with no inputs at all (`audioPattern`, `lfo`, `audioFileIn`, `mouse`), or an
+ *    unwired passthrough port — means there is nothing to pass, and the node is silent by
+ *    the rule above. That is TD's behaviour for a bypassed generator and already this
+ *    project's answer for a bypassed texture source; inventing "bypass on a source is a
+ *    no-op" here would have made one flag mean two things depending on the node.
+ *
+ * Silence PROPAGATES: a node whose only input went silent publishes nothing itself, so
+ * `mute → lag → switch` reaches the switch as an unconnected port, not as a zero.
+ *
+ * §V457's merge sees this: a muted node simply stops contributing to the
+ * `{...prior, ...next}` fold, so on a port fed by two sources the survivor now supplies
+ * every channel it publishes — including ones the muted node used to win. That is the
+ * merge doing what it is specified to do (it is a compose, and one contributor left), and
+ * it is deliberate: muting one node CAN change another's contribution to a shared port.
+ * It is pinned by test rather than left to be rediscovered.
+ *
+ * A muted node's persistent state is neither advanced nor cleared — it is not cooked, the
+ * way a muted CHOP is not cooked — so a Lag resumes its trajectory when the badge goes
+ * out instead of jumping to a value it never travelled to.
  */
 
 export interface ValueGraphResult {
@@ -136,10 +177,34 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
 
       const byId = new Map<NodeId, ValueChannels>();
       const byName = new Map<string, ValueChannels>();
+      /** Publishes a node's bag. A node that never calls this is SILENT (see the note). */
+      const publish = (nodeId: NodeId, bag: ValueChannels): void => {
+        // Non-finite numbers never leave a stage: downstream math on NaN is a graph
+        // that silently dies three nodes later.
+        const clean: Record<string, number> = {};
+        for (const [name, value] of Object.entries(bag)) {
+          if (Number.isFinite(value)) clean[name] = value;
+        }
+        // T541: NO CHANNELS IS SILENCE, whatever produced it — a mute, a bypassed source,
+        // a Switch with nothing connected, a stage that threw. Publishing an empty bag
+        // would make the node PRESENT-but-empty, and a consumer cannot tell that from a
+        // real reading: `valueSwitch` would count it as a branch and cut to nothing. So
+        // silence propagates as ABSENCE, and there is one kind of it rather than two.
+        if (Object.keys(clean).length === 0) return;
+        byId.set(nodeId, clean);
+        const label = graph.nodes[nodeId]?.label;
+        if (label !== undefined) byName.set(label, clean);
+      };
+
       for (const nodeId of order) {
         const member = members.get(nodeId);
         const node = graph.nodes[nodeId];
         if (member === undefined || node === undefined) continue;
+
+        // T541: MUTE first, before inputs, parameters, state or diagnostics. A muted node
+        // is OFF — it does not cook, so it cannot resolve a bad parameter, cannot report a
+        // shadowed channel and cannot advance a Lag. It publishes nothing at all.
+        if (node.ui?.muted === true) continue;
 
         const inputs: Record<PortId, ValueChannels> = {};
         /** T509: who currently supplies each channel of each port, for the shadow report. */
@@ -148,7 +213,13 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
           // Merged over sorted edge ids: later channels win on a name clash, which is
           // deterministic and lets a multi-wire input compose bags (V457 — the merge
           // itself is deliberate and stays).
-          const arriving = byId.get(entry.source) ?? {};
+          // T541: a source that published NOTHING (muted, or bypassed with nothing to
+          // pass) contributes no edge at all — not an empty bag. A port fed only by such
+          // sources stays ABSENT from `inputs`, which is how a consumer sees "unwired":
+          // `valueSwitch` counts connected inputs, and an empty bag would still be a
+          // branch. §V457's merge simply loses a contributor, deliberately.
+          const arriving = byId.get(entry.source);
+          if (arriving === undefined) continue;
           const existing = inputs[entry.port] ?? {};
           for (const name of Object.keys(arriving)) {
             const holder = providers.get(`${entry.port}:${name}`);
@@ -170,6 +241,20 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
             providers.set(`${entry.port}:${name}`, entry.source);
           }
           inputs[entry.port] = { ...existing, ...arriving };
+        }
+
+        // T541: BYPASS is a WIRE — the passthrough input's bag, unchanged and unevaluated,
+        // so nothing downstream can tell the node apart from a piece of cable. The port is
+        // `bypassPassthroughPorts`, the same rule the texture compiler splices by. Nothing
+        // arriving there (a SOURCE has no such port at all) means there is nothing to pass
+        // and the node is silent — TD's bypassed generator, and T250's bypassed source.
+        if (node.ui?.bypassed === true) {
+          const through = bypassPassthroughPorts(member.definition);
+          const passed = through === undefined ? undefined : inputs[through.input];
+          // A copy, never the input object: `byId` hands bags to downstream stages and a
+          // shared reference would let one stage's mutation reach back into its source.
+          if (passed !== undefined) publish(nodeId, { ...passed });
+          continue;
         }
 
         // Frame-scoped, channel-free parameter resolution (see the module note).
@@ -199,14 +284,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
             nodeId,
           });
         }
-        // Non-finite numbers never leave a stage: downstream math on NaN is a graph
-        // that silently dies three nodes later.
-        const clean: Record<string, number> = {};
-        for (const [name, value] of Object.entries(channels)) {
-          if (Number.isFinite(value)) clean[name] = value;
-        }
-        byId.set(nodeId, clean);
-        if (node.label !== undefined) byName.set(node.label, clean);
+        publish(nodeId, channels);
       }
 
       const resolver: ChannelResolver = (channel) => {
