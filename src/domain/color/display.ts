@@ -107,6 +107,22 @@ export interface SinkDisplayTransform {
   readonly toneMap: ToneMapOperator;
   /** Apply the sRGB OETF in the fragment shader. The target then declares `encoded`. */
   readonly encode: boolean;
+  /**
+   * Clamp alpha into [0,1] (T678, B129).
+   *
+   * A THIRD half, and it is not derivable from the other two — which is exactly why it
+   * lives here rather than being inferred at the shader. `toneMap: "none", encode: false`
+   * is returned by all three of the branches below, so the shader that serves it cannot
+   * tell a DISPLAY sink on an `-srgb` target (hardware encodes; alpha is still nonsense
+   * above 1) from a `data` target or a `displayTransform: "none"` measurement dump (where
+   * clamping would DESTROY the values the user asked for raw). §V619's shape: structurally
+   * identical candidates that must not share one answer.
+   *
+   * True exactly when this is a display sink. The catalogue's arithmetic blends carry alpha
+   * per channel by decided convention (`composite.wgsl.ts`), so a sink alpha outside [0,1]
+   * is ordinary rather than exceptional — B129 rode E9-Ember's to ±65504.
+   */
+  readonly clampAlpha: boolean;
 }
 
 /**
@@ -127,9 +143,11 @@ export function sinkDisplayTransform(
   derivedSpace: ColorSpace,
   requested: ToneMapOperator,
 ): SinkDisplayTransform {
-  if (policy.displayTransform !== "srgb") return { toneMap: "none", encode: false };
-  if (derivedSpace === "data") return { toneMap: "none", encode: false };
-  return { toneMap: requested, encode: !isSrgbFormat(format) };
+  // Both off-paths mean RAW VALUES OUT, and that includes alpha: a measurement dump and a
+  // data target are the two places where clamping would be the lossy choice (T678).
+  if (policy.displayTransform !== "srgb") return { toneMap: "none", encode: false, clampAlpha: false };
+  if (derivedSpace === "data") return { toneMap: "none", encode: false, clampAlpha: false };
+  return { toneMap: requested, encode: !isSrgbFormat(format), clampAlpha: true };
 }
 
 /**

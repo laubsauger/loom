@@ -10,6 +10,7 @@ import { outputNode } from "./output.ts";
 import { isSinkNode, SINK_TAG } from "./sink.ts";
 import { solidNode } from "./solid.ts";
 import {
+  OUTPUT_ALPHA_CLAMP_WGSL,
   OUTPUT_DISPLAY_ENCODE_WGSL,
   OUTPUT_PASSTHROUGH_WGSL,
 } from "../shaders/output-passthrough.wgsl.ts";
@@ -97,17 +98,24 @@ describe("Output node (T15)", () => {
     expect((raw.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
   });
 
-  it("leaves a data target and an -srgb target alone — the transform would be applied twice", () => {
+  it("leaves a data target and an -srgb target's COLOUR alone — the transform would be applied twice", () => {
     const srgbPolicy = { workingSpace: "linear", displayTransform: "srgb" } as const;
-    // `data` is not a colour (§V56).
+    // `data` is not a colour (§V56) — and T678 does not clamp its alpha either: a data
+    // target and a `displayTransform: "none"` dump are the two places where raw means raw.
     const data = outputNode.compile(contextFor({ colorPolicy: srgbPolicy, space: "data" }));
     expect((data.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
     // An -srgb target's hardware already encodes on write; doing it in the shader too
-    // would store the transform twice.
+    // would store the transform twice. But it IS a display sink, so T678 bounds its alpha
+    // — which is why this is no longer the same string as the data case. Those two shared
+    // one shader until B129, and that is exactly what made them indistinguishable.
     const srgb = outputNode.compile(
       contextFor({ colorPolicy: srgbPolicy, format: "rgba8unorm-srgb" }),
     );
-    expect((srgb.passes[0] as { shader: string }).shader).toBe(OUTPUT_PASSTHROUGH_WGSL);
+    expect((srgb.passes[0] as { shader: string }).shader).toBe(OUTPUT_ALPHA_CLAMP_WGSL);
+    expect(OUTPUT_ALPHA_CLAMP_WGSL).not.toBe(OUTPUT_PASSTHROUGH_WGSL);
+    // The colour half is untouched: no OETF, no curve, rgb straight through.
+    expect(OUTPUT_ALPHA_CLAMP_WGSL).toContain("vec4f(source.rgb,");
+    expect(OUTPUT_ALPHA_CLAMP_WGSL).not.toContain("encodeDisplay");
   });
 
   /**

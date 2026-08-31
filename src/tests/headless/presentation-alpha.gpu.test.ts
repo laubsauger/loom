@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
+import { sinkDisplayTransform } from "../../domain/color/display.ts";
 import { loadProject } from "../../domain/project/index.ts";
+import {
+  OUTPUT_PASSTHROUGH_WGSL,
+  outputDisplayShader,
+} from "../../nodes/shaders/output-passthrough.wgsl.ts";
 import { exampleRegistry } from "../../examples/runner.ts";
 import { mockGpuHost, type MockGpuHost } from "../../runtime/backend/vgpu/mock-gpu-host.ts";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
@@ -186,4 +191,93 @@ describe("T674 — the viewer pane presents its output opaquely", () => {
       ).toBeGreaterThan(0.5);
     }
   }, 300_000);
+});
+
+/**
+ * T678 — THE SECOND DEFENCE, AT THE SINK.
+ *
+ * `alphaMode: "opaque"` protects the VIEWER PANE and nothing else. Every other reader of a
+ * sink target — `savePng`, the image export, the cook oracle, an agent screenshot — reads
+ * the texture directly and never touches a canvas, so a meaningless alpha still reached all
+ * of them. The Output node already clamps and encodes RGB; passing `source.a` through raw
+ * was the asymmetry.
+ *
+ * These two mechanisms are INDEPENDENT and both are load-bearing. A test that only asserted
+ * the presented picture would stay green if this clamp were deleted, and vice versa.
+ */
+describe("T678 — the Output node bounds the alpha it writes", () => {
+  const displaySinks: ReadonlyArray<readonly [string, string]> = [
+    // The measured offenders from T674's sweep, worst first (§B129/§B130).
+    ["E9-Ember.loom.json", "out"], // ±65504, alternating sign
+    ["E29-Descent.loom.json", "out"], // converges to 128
+    ["E14-Self-Regulating-Bloom.loom.json", "out"], // flat 2.0
+    ["E24-Audio-Reaction-Diffusion.loom.json", "out"], // 1.03 climbing
+    ["E8-Slit-Scan.loom.json", "out"], // 1.55, and a 0.55 frame that stays 0.55
+  ];
+
+  it.each(displaySinks)("keeps %s's sink alpha inside [0,1]", async (fileName, sinkId) => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+    const loaded = loadProject(readFileSync(`examples/${fileName}`, "utf8"), {
+      nodes: exampleRegistry(),
+    });
+    if (!loaded.ok) throw new Error(`${fileName} did not load: ${loaded.reason}`);
+    const document = loaded.document;
+
+    const capture = [0, 1, 2, 5, 9, 12, 15];
+    const rendered = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: document.graph,
+      settings: document.settings,
+      frames: 16,
+      capture,
+      outputNodeId: sinkId,
+      animate: true,
+    });
+
+    for (const frame of rendered.frames) {
+      const components = decodeComponents(frame.bytes, frame.format);
+      const pixels = frame.width * frame.height;
+      let low = Infinity;
+      let high = -Infinity;
+      for (let i = 0; i < pixels; i += 1) {
+        const alpha = components[i * 4 + 3] ?? 0;
+        if (alpha < low) low = alpha;
+        if (alpha > high) high = alpha;
+      }
+      expect(low, `${fileName} frame ${frame.frameIndex} alpha min`).toBeGreaterThanOrEqual(0);
+      expect(high, `${fileName} frame ${frame.frameIndex} alpha max`).toBeLessThanOrEqual(1);
+    }
+  }, 300_000);
+
+  /**
+   * THE NEGATIVE HALF (§V516): the clamp must NOT reach the two sinks that mean raw.
+   *
+   * Scoping this guard to "the Output node" instead of "a DISPLAY sink" would have silently
+   * bounded a `data` target and a `displayTransform: "none"` measurement dump — both of
+   * which exist precisely so someone can read back the numbers a shader produced. All three
+   * cases returned `toneMap: "none", encode: false` and shared ONE shader string before
+   * T678, so nothing structural distinguished them (§V619).
+   */
+  it("does NOT clamp a data target or a measurement dump", () => {
+    const srgb = { workingSpace: "linear", displayTransform: "srgb" } as const;
+    expect(sinkDisplayTransform(srgb, "rgba16float", "data", "none").clampAlpha).toBe(false);
+    expect(
+      sinkDisplayTransform(
+        { workingSpace: "linear", displayTransform: "none" },
+        "rgba16float",
+        "linear",
+        "none",
+      ).clampAlpha,
+    ).toBe(false);
+    // And it IS on for every display sink, whichever shader that lands on.
+    expect(sinkDisplayTransform(srgb, "rgba16float", "linear", "none").clampAlpha).toBe(true);
+    expect(sinkDisplayTransform(srgb, "rgba8unorm-srgb", "linear", "none").clampAlpha).toBe(true);
+    expect(sinkDisplayTransform(srgb, "rgba16float", "linear", "filmic").clampAlpha).toBe(true);
+    // The raw shader must still exist and still pass alpha through, or the negative case
+    // above is asserting a property of a shader nobody selects.
+    expect(OUTPUT_PASSTHROUGH_WGSL).not.toContain("clamp(source.a");
+    expect(outputDisplayShader(sinkDisplayTransform(srgb, "rgba16float", "data", "none"))).toBe(
+      OUTPUT_PASSTHROUGH_WGSL,
+    );
+  });
 });

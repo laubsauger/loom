@@ -25,11 +25,47 @@ import { SRGB_TRANSFER_WGSL, TONE_MAP_WGSL } from "../../domain/color/display.ts
 const SAMPLE = `@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;`;
 
-/** `displayTransform: "none"`, a `data` target, or an `-srgb` target the hardware encodes. */
+/**
+ * ALPHA AT A DISPLAY SINK, written once (T678, §V140).
+ *
+ * The catalogue's arithmetic blends operate per channel across RGBA by decided convention
+ * (`composite.wgsl.ts`) — Add adds alpha, Screen screens it — so a sink alpha outside [0,1]
+ * is ordinary, not exceptional. B129: E9-Ember's Screen-through-Feedback loop drove it to
+ * ±65504 (f16 max), and a NEGATIVE alpha is what the viewer turned into a black frame.
+ *
+ * This is the SECOND of two independent defences and both are load-bearing — do not delete
+ * either as redundant:
+ *
+ *   1. `vgpu-backend.ts` configures the presentation surface `alphaMode: "opaque"`, so the
+ *      viewer IGNORES alpha however wrong it is. That protects the pane.
+ *   2. This clamp stops a meaningless alpha reaching the target at all. That protects every
+ *      OTHER reader of the sink — export, savePng, the cook oracle, an agent screenshot —
+ *      none of which go through a canvas and none of which (1) helps.
+ *
+ * `clamp`, not "force to 1": in-range coverage is a real value at a sink that something
+ * downstream may composite, and overwriting it would be the lossy choice. NOTE therefore
+ * that this does NOT rescue B130's E8-Slit-Scan frame 0, whose alpha is 0.55 — in range,
+ * left alone, and dim only under a premultiplied canvas that defence (1) removed.
+ */
+const CLAMPED_ALPHA = `clamp(source.a, 0.0, 1.0)`;
+
+/** `displayTransform: "none"` or a `data` target: raw values out, ALPHA INCLUDED (§V56). */
 export const OUTPUT_PASSTHROUGH_WGSL = `${SAMPLE}
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return textureSample(inputTexture, inputSampler, uv);
+}`;
+
+/**
+ * An `-srgb` target the HARDWARE encodes, with no tone map: colour passes through untouched
+ * and only alpha is bounded. Split out from `OUTPUT_PASSTHROUGH_WGSL` by T678 — the two
+ * were one string, which is what made a display sink indistinguishable from a data dump.
+ */
+export const OUTPUT_ALPHA_CLAMP_WGSL = `${SAMPLE}
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let source = textureSample(inputTexture, inputSampler, uv);
+  return vec4f(source.rgb, ${CLAMPED_ALPHA});
 }`;
 
 /** `displayTransform: "srgb"`. Alpha is never encoded, in any sRGB variant. */
@@ -40,7 +76,7 @@ ${SRGB_TRANSFER_WGSL}
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let source = textureSample(inputTexture, inputSampler, uv);
-  return vec4f(encodeDisplay(source.rgb), source.a);
+  return vec4f(encodeDisplay(source.rgb), ${CLAMPED_ALPHA});
 }`;
 
 
@@ -58,7 +94,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  */
 export function outputDisplayShader(transform: SinkDisplayTransform): string {
   if (transform.toneMap === "none") {
-    return transform.encode ? OUTPUT_DISPLAY_ENCODE_WGSL : OUTPUT_PASSTHROUGH_WGSL;
+    if (transform.encode) return OUTPUT_DISPLAY_ENCODE_WGSL;
+    // T678: `encode: false` is returned by THREE different decisions and only one of them
+    // is a display sink, so the alpha clamp is read from the decision rather than inferred
+    // from the shape of it (§V619).
+    return transform.clampAlpha ? OUTPUT_ALPHA_CLAMP_WGSL : OUTPUT_PASSTHROUGH_WGSL;
   }
   const curve = transform.toneMap === "filmic" ? "tonemapFilmic" : "tonemapReinhard";
   const graded = `${curve}(source.rgb)`;
@@ -70,6 +110,6 @@ ${transform.encode ? `\n${SRGB_TRANSFER_WGSL}\n` : ""}
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let source = textureSample(inputTexture, inputSampler, uv);
-  return vec4f(${shown}, source.a);
+  return vec4f(${shown}, ${transform.clampAlpha ? CLAMPED_ALPHA : "source.a"});
 }`;
 }
