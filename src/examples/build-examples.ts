@@ -16,14 +16,28 @@ import { buildExampleFiles } from "./example-files.ts";
  * Writing happens on import — this module is a script and nothing else imports it.
  */
 
+/**
+ * T698: `--only <substring>` writes just the matching examples. Five workers share this
+ * tree through windowed files, and a bare regen sweeps up every other worker's
+ * in-flight document changes — regenerate only what your change touched.
+ */
+const onlyAt = process.argv.indexOf("--only");
+const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : undefined;
+if (onlyAt >= 0 && only === undefined) throw new Error("--only needs a name substring");
+
+let wrote = 0;
 for (const file of buildExampleFiles()) {
+  if (only !== undefined && !file.fileName.includes(only)) continue;
   const path = join(EXAMPLES_DIR, file.fileName);
   writeFileSync(path, file.text, "utf8");
   console.log(`wrote ${path}`);
+  wrote += 1;
 }
+if (only !== undefined && wrote === 0) throw new Error(`--only ${only} matched no example`);
 
 // Components are authored by running the real authoring commands, so this half is async.
-for (const file of await buildStarterComponentFiles()) {
+// Skipped under --only: the flag scopes a regen to named EXAMPLES.
+for (const file of only !== undefined ? [] : await buildStarterComponentFiles()) {
   const path = join(STARTER_COMPONENTS_DIR, file.fileName);
   writeFileSync(path, file.text, "utf8");
   console.log(`wrote ${path}`);

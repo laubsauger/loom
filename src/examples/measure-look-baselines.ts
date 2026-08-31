@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { exampleFileNameOf, measure } from "./look-instrument.ts";
@@ -14,8 +14,23 @@ import { exampleFileNameOf, measure } from "./look-instrument.ts";
  * naming each drifted example precisely so the update cannot happen reflexively.
  */
 
-const entries: Record<string, { motion: number; range: number; f0max: number }> = {};
+/**
+ * T698/§V643: `--only <substring>` re-measures just the matching examples and MERGES
+ * into the existing file — a worker landing one deliberate look move must not sweep
+ * up (or hand-measure around) everyone else's rows. Bare invocation still re-seeds
+ * all 28, which per §V646 belongs on a CLEAN tree only.
+ */
+const onlyAt = process.argv.indexOf("--only");
+const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : undefined;
+if (onlyAt >= 0 && only === undefined) throw new Error("--only needs a name substring");
+
+const path = join(import.meta.dirname, "look-baselines.json");
+const entries: Record<string, { motion: number; range: number; f0max: number }> =
+  only === undefined ? {} : (JSON.parse(readFileSync(path, "utf8")) as typeof entries);
+let matched = 0;
 for (const document of EXAMPLE_DOCUMENTS) {
+  if (only !== undefined && !exampleFileNameOf(document.name).includes(only)) continue;
+  matched += 1;
   const outputNodeId = Object.values(document.graph.nodes).find((node) => node.type === "output")?.id;
   if (outputNodeId === undefined) throw new Error(`${document.name}: no output node`);
   const reading = await measure(document.graph, document.settings, outputNodeId);
@@ -26,7 +41,7 @@ for (const document of EXAMPLE_DOCUMENTS) {
   };
   console.log(`${exampleFileNameOf(document.name)} measured`);
 }
+if (only !== undefined && matched === 0) throw new Error(`--only ${only} matched no example`);
 const sorted = Object.fromEntries(Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)));
-const path = join(import.meta.dirname, "look-baselines.json");
 writeFileSync(path, JSON.stringify(sorted, null, 2) + "\n");
-console.log(`wrote ${path}`);
+console.log(`wrote ${path}${only === undefined ? "" : ` (merged ${matched} row${matched === 1 ? "" : "s"})`}`);
