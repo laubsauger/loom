@@ -129,7 +129,17 @@ function fixtureBackend(): ShaderloomBackend {
     readOutput: noGpu,
     onDiagnostic: () => () => {},
     dispose() {},
-    loop: () => ({ stop() {} }),
+    // T619: a loop that TICKS — the frame-observer seam (pulses, analyze, telemetry
+    // frame counters) is invisible to any test whose backend never invokes its
+    // callback. ~30fps on a timer; jsdom has no rAF worth trusting.
+    loop: (onFrame) => {
+      const timer = setInterval(() => onFrame(), 33);
+      return {
+        stop() {
+          clearInterval(timer);
+        },
+      };
+    },
     updateUniforms() {},
     resetTemporalHistory() {},
     recover: () => Promise.resolve(),
@@ -1513,6 +1523,40 @@ describe("B68 — the reference-lines toggle is reachable from the canvas menu (
  * the headless server (`server.test.ts`'s twin gate). A tool that genuinely cannot
  * exist in an environment must be waived BY NAME with the reason, not left to drift.
  */
+describe("T619 — get_runtime_metrics tells the truth about a rendering document", () => {
+  it("reports the compiled plan's counts and the frames the driver ran", async () => {
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, runtime, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("no agent surface");
+
+    await waitFor(() => {
+      expect(runtime.telemetry.snapshot().plan).not.toBeNull();
+    });
+
+    const metrics = await built.callTool("get_runtime_metrics", {});
+    expect(metrics.status).toBe("ok");
+    const data = metrics.data as {
+      nodeCount: number;
+      passCount: number;
+      framesRendered: number;
+      lastFrameIndex: number | null;
+    };
+    // The plan half: an agent asking "what is compiled" must not be told zero on a
+    // compiled five-node graph — the exact lie T619 measured in a live tab.
+    expect(data.nodeCount).toBeGreaterThan(0);
+    expect(data.passCount).toBeGreaterThan(0);
+    // The frame half: the driver ticks in this mount; framesRendered must move with it.
+    await waitFor(() => {
+      expect(runtime.telemetry.snapshot().framesRendered).toBeGreaterThan(0);
+    });
+    const after = (await built.callTool("get_runtime_metrics", {})).data as { framesRendered: number };
+    expect(after.framesRendered).toBeGreaterThan(0);
+  });
+});
+
 describe("T597/§V39 — the page surface is complete: every tool available", () => {
   it("no tool on the composed page surface is unavailable", async () => {
     const runtime = newRuntime();

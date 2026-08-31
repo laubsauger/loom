@@ -467,8 +467,14 @@ export function App({
     (frame: FrameEvaluationInput) => {
       pulses.observe(frame);
       analyze.observe(frame);
+      // T619: the hub's frame counters. `noteFrame` existed since T41 with ZERO product
+      // callers (§V220's shape again) — so `get_runtime_metrics` told every agent
+      // framesRendered: 0 while the header showed 30fps, and the per-node "frames"
+      // readout never moved. The observer seam is exactly the documented home
+      // ("from FrameDriver.onFrame", telemetry/index.ts).
+      runtime.telemetry.noteFrame(frame.frameIndex);
     },
-    [analyze, pulses],
+    [analyze, pulses, runtime],
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
   const audioInput = useAudioInput(
