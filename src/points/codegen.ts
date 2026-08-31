@@ -173,6 +173,8 @@ export interface KernelModule {
    * frame from the same numbers the shared block gets (§V182).
    */
   readonly usesAbsClock: boolean;
+  /** T510: the module names `ctx.firstRun`; the pass must reserve the uniform member. */
+  readonly usesFirstRun: boolean;
   /**
    * T477: the kernel samples `fieldAt(...)` and a field is wired. The emitting node
    * MUST bind the texture as `fieldTexture` exactly when this is true — vgpu matches
@@ -260,6 +262,15 @@ const DIM_REFERENCE = /\.\s*dim\b/;
  * and a render zeroes it first (T467), so the same project renders the same bytes.
  */
 const ABS_CLOCK_REFERENCE = /\.\s*(?:absTime|absFrame)\b/;
+
+/**
+ * T510 (§V309): FIRST RUN — `ctx.firstRun`, 1u on exactly the dispatches whose storage
+ * was just created or cleared, 0u otherwise. The seeding signal the clocks cannot
+ * carry: `frameIndex == 0` also fires at a timeline LAP (which is how E9's fountain
+ * re-seeded at every loop), and `absFrame == 0` never fires again after a seek. One
+ * token per meaning: the clocks say WHEN, this says "my buffers are fresh".
+ */
+const FIRST_RUN_REFERENCE = /\.\s*firstRun\b/;
 
 /**
  * T479: how many live value-graph slots a point kernel can reach. Four is a judgement,
@@ -611,6 +622,13 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      The GROUP PREDICATE is scanned too: it is compiled against this same `PointCtx`, so a
      predicate reading `ctx.absTime` must be able to declare the member the kernel did not. */
   const usesAbsClock = ABS_CLOCK_REFERENCE.test(kernel) || ABS_CLOCK_REFERENCE.test(groupSource);
+  /* T510: appended after the absolute pair, for the same nothing-moves reason. */
+  const usesFirstRun = FIRST_RUN_REFERENCE.test(kernel) || FIRST_RUN_REFERENCE.test(groupSource);
+  const frameFirstRun = usesFirstRun ? "\n  firstRun: u32," : "";
+  const ctxFirstRun = usesFirstRun
+    ? "\n  /* T510: 1u on exactly the dispatches whose storage was just created or cleared —\n     the seeding signal. A LAP is not this (frameIndex wraps, buffers keep); a seek and\n     a document load are (both clear, §V170/T519). */\n  firstRun: u32,"
+    : "";
+  const firstRunArgument = usesFirstRun ? ", kernelFrame.firstRun" : "";
   const frameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
   const ctxAbs = usesAbsClock
     ? "\n  /* T489: the clock that does NOT wrap at a timeline lap — `time` above restarts at\n     the in point, this keeps counting (T461). A frame COUNT at the timeline rate, never\n     a wall reading, so an offline take reproduces (§V44, T467). */\n  absTime: f32,\n  absFrame: u32,"
@@ -623,7 +641,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${framePointer}${frameValues}${frameAbs}
+  count: u32,${framePointer}${frameValues}${frameAbs}${frameFirstRun}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -640,7 +658,7 @@ ${dimStruct}struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}${ctxAbs}
+  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}${ctxAbs}${ctxFirstRun}
 };
 
 ${RNG_WGSL}
@@ -653,7 +671,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments}${absArguments});
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments}${absArguments}${firstRunArgument});
 ${invoke}
 ${stores}
 }
@@ -669,6 +687,7 @@ ${stores}
     usesValues: valueSlots,
     usesAbsClock,
     usesField: usesField && request.field === true,
+    usesFirstRun,
   };
 }
 
@@ -809,7 +828,9 @@ ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name}
 }
 `;
 
-  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesAbsClock, usesField: false };
+  // T510: the spawn hook runs on NEWBORNS mid-simulation; "my buffers are fresh" is a
+  // kernel-level fact, so the hook never declares it.
+  return { ok: true, wgsl, buffers: bindings, contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION, workgroupSize, usesPointer, usesValues: hookValueSlots, usesAbsClock, usesField: false, usesFirstRun: false };
 }
 
 /** Components a default value needs, re-exported so node manifests can validate cheaply. */

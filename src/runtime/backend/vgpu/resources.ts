@@ -190,6 +190,12 @@ export interface ResourceSet {
   /** SoA point storage (T118, §V75): one buffer per attribute, plus counters. */
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
+  /**
+   * T510: pair ids ALLOCATED by this build (zero-filled), as opposed to carried — the
+   * backend hands the passes that write them one frame of `firstRun = 1u`, then clears
+   * this set. The seeding signal for storage that is genuinely fresh.
+   */
+  readonly freshBufferPairs: Set<string>;
   readonly effects: ReadonlyMap<string, Effect>;
   /** Compute pipelines per dispatch pass (T172). */
   readonly computes: ReadonlyMap<string, Compute>;
@@ -317,6 +323,7 @@ export function buildResources(
   const externalTextures = new Map<string, ExternalTextureEntry>();
   const buffers = new Map<string, StorageBuffer>();
   const bufferPairs = new Map<string, PingPongStorage>();
+  const freshBufferPairs = new Set<string>();
   const effects = new Map<string, Effect>();
   const computes = new Map<string, Compute>();
   const draws = new Map<string, Draw>();
@@ -470,6 +477,7 @@ export function buildResources(
           continue;
         }
         bufferPairs.set(resource.id, pingPongStorage(gpu, resource.stride * resource.capacity));
+        freshBufferPairs.add(resource.id);
         note("resourcesCreated");
       }
     } catch (error) {
@@ -772,6 +780,7 @@ export function buildResources(
     externalTextures,
     buffers,
     bufferPairs,
+    freshBufferPairs,
     effects,
     computes,
     draws,

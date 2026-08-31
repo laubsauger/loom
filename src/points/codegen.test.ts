@@ -606,3 +606,48 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
     expect(module.wgsl).not.toContain("fieldTexture");
   });
 });
+
+/**
+ * T510 — `ctx.firstRun`, the seeding signal the clocks cannot carry. `frameIndex == 0`
+ * also fires at a timeline LAP (E9's fountain re-seeded at every loop); `absFrame == 0`
+ * never fires again after a seek. One token per meaning: firstRun is 1u exactly when
+ * this pass's storage was created or cleared. Use-detected like the pointer (§V309):
+ * a kernel that never names it generates byte-identical WGSL.
+ */
+describe("ctx.firstRun (T510, §V309)", () => {
+  const base = {
+    attributes: SCHEMA,
+    reads: ["position", "velocity", "id"],
+    writes: ["position"],
+  };
+
+  it("declares the member exactly when the kernel names it", () => {
+    const module = generateKernelModule({
+      ...base,
+      kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  if (ctx.firstRun == 1u) { q.position = vec3f(0.0); }\n  return q;\n}",
+    });
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.usesFirstRun).toBe(true);
+    expect(module.wgsl).toContain("firstRun: u32");
+    expect(module.wgsl).toContain("kernelFrame.firstRun");
+  });
+
+  it("a kernel that never names it generates byte-identical WGSL (§V309)", () => {
+    const kernel = "fn process(p: Point, ctx: PointCtx) -> Point {\n  return p;\n}";
+    const module = generateKernelModule({ ...base, kernel });
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.usesFirstRun).toBe(false);
+    expect(module.wgsl).not.toContain("firstRun");
+  });
+
+  it("the GROUP predicate can declare it when the kernel does not", () => {
+    const module = generateKernelModule({
+      ...base,
+      kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  return p;\n}",
+      group: "ctx.firstRun == 0u",
+    });
+    if (!module.ok) throw new Error(module.errors.join(", "));
+    expect(module.usesFirstRun).toBe(true);
+  });
+});
+

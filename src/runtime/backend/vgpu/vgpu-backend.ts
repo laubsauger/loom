@@ -139,6 +139,8 @@ interface Program {
    * a stateful pass makes the plan every-frame, so nothing skippable has state.
    */
   everyFrame: boolean;
+  /** T510: an unscoped buffers clear happened; the next render's dispatches read firstRun = 1u. */
+  pendingBufferClear: boolean;
   /** Something changed since the last encoded frame: uniforms, a compile, a reset. */
   dirty: boolean;
 }
@@ -547,6 +549,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   function clearTemporalHistory(
     reason: "device" | "resolution" | "explicit",
     resourceIds?: readonly string[],
+    options?: { buffers?: boolean; silent?: boolean },
   ): void {
     const gpu = session?.gpu;
     if (!gpu || !program) return;
@@ -605,6 +608,31 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // every layer and reset the counters, outside the frame (copies self-submit).
       for (const ring of selectedRings) ring.resetHistory();
     }
+    /**
+     * T552/T510: the OTHER half of the audit sentence — "a SEEK zeroes frameIndex and
+     * drops the point pairs together". Zero-filled is fresh-allocation state byte for
+     * byte, so a cleared boundary is indistinguishable from a cold open; every shipped
+     * kernel's frameIndex == 0 self-seed guard fires over exactly what it would have
+     * seen at first run. Unscoped only: a per-node feedback reset names textures.
+     */
+    if (options?.buffers === true && resourceIds === undefined) {
+      for (const pair of activeProgram.resources.bufferPairs.values()) {
+        pair.read.write(new Uint8Array(pair.read.size));
+        pair.write.write(new Uint8Array(pair.write.size));
+      }
+      // T510: tell the kernels — every dispatch's next frame reads firstRun = 1u.
+      activeProgram.pendingBufferClear = true;
+    }
+    /**
+     * T553, decided deliberately: the receipt goes to WHOEVER ASKED. A user-invoked
+     * reset keeps its info line — they acted, the pane confirming N pairs cleared is
+     * the receipt. An automatic boundary reset (document load, seek replay) passes
+     * silent: the load is its own visible event, and restating it on every open is the
+     * noise that teaches people to skim the one pane they currently read. The
+     * temporalResets counter still ticks either way, so the audit number survives the
+     * missing line.
+     */
+    if (options?.silent === true) return;
     hub.report(
       backendDiagnostic(
         "info",
@@ -1086,6 +1114,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       externalTextures: new Map(),
       buffers: new Map(),
       bufferPairs: new Map(),
+      freshBufferPairs: new Set(),
       effects: new Map(),
       computes: new Map(),
       draws: new Map(),
@@ -1471,6 +1500,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         resources,
         everyFrame: planRequiresEveryFrame(read.passes, read.resources),
         dirty: true, // a fresh program must draw its first frame
+        pendingBufferClear: false,
       };
       if (previous) releaseResourcesExcept(previous.resources, resources);
       // Reused uniform blocks still hold pre-recompile values; the plan's values are
@@ -1520,7 +1550,18 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // disagree about either. Passes whose block declares none of them ignore the keys.
       for (const pass of active.passes) {
         if (pass.kind === "dispatch" && pass.uniformBinding !== undefined) {
-          applyUniforms(active, pass.id, dispatchFrameUniforms(frameInputs.frame, shared));
+          // T510: firstRun = 1u exactly when this pass's storage was created or cleared
+          // since the last submitted frame — never at a plain frameIndex wrap (a LAP
+          // keeps its buffers, so a sim must survive it; §T510).
+          const firstRun =
+            active.pendingBufferClear ||
+            (pass.buffers ?? []).some((binding) =>
+              active.resources.freshBufferPairs.has(binding.resourceId),
+            );
+          applyUniforms(active, pass.id, {
+            ...dispatchFrameUniforms(frameInputs.frame, shared),
+            firstRun: firstRun ? 1 : 0,
+          });
         }
       }
       // T321: passes reading a ring as an ARRAY need to know where "now" is. The
@@ -1579,6 +1620,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         }
       }
       framesSubmitted += 1;
+      // T510: the seeding frame is spent — the next dispatch of every pass reads 0u
+      // until storage is created or cleared again.
+      active.pendingBufferClear = false;
+      active.resources.freshBufferPairs.clear();
     },
 
     resize(outputId, size) {
@@ -1755,9 +1800,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       applyUniforms(program, update.passId, update.values);
     },
 
-    resetTemporalHistory(resourceIds?: readonly string[]) {
+    resetTemporalHistory(resourceIds?: readonly string[], options?: { buffers?: boolean; silent?: boolean }) {
       if (program) program.dirty = true;
-      clearTemporalHistory("explicit", resourceIds);
+      clearTemporalHistory("explicit", resourceIds, options);
     },
 
     present(canvas: PresentableCanvas, options: PresentationOptions): PresentationHandle {

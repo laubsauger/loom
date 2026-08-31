@@ -310,6 +310,9 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           seed: readNumber(parameters, "seed", 7),
           count: capacity,
           ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+        // T510: reserved exactly when the module declared it — the backend overwrites it
+        // every dispatch (1u only when this pass's storage was just created or cleared).
+        ...(module.usesFirstRun ? { firstRun: 0 } : {}),
           // T479: mirrored per declared slot, same hazard as the pointer above.
           ...pointKernelValueUniforms(module.usesValues, parameters),
           // T489 (B97): the absolute pair, same mirroring rule as the pointer above.

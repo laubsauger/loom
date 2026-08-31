@@ -117,7 +117,14 @@ export interface ShaderloomBackend extends RenderBackend {
    * what a pulse-based Feedback reset (§V126) and `runtime.resetFeedback` key on.
    * Unknown ids are reported, never silently skipped.
    */
-  resetTemporalHistory(resourceIds?: readonly string[]): void;
+  /**
+   * T552/T510: `buffers` extends an UNSCOPED clear to the point SoA pairs, zero-filled —
+   * byte-identical to fresh allocation, so a cleared boundary is indistinguishable from
+   * a cold open. The caller that sets it must also land the transport on frame 0: the
+   * shipped kernel convention is that ctx.frameIndex == 0 MEANS "my buffers were just
+   * cleared", and the two halves of that sentence must move together.
+   */
+  resetTemporalHistory(resourceIds?: readonly string[], options?: { buffers?: boolean; silent?: boolean }): void;
 
   /**
    * Attaches a presentable surface to a compiled output (T87, §V64/§V70). The surface is

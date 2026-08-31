@@ -415,6 +415,9 @@ export const pointKernelNode: NodeDefinition = {
         // overwrites it every frame from the SAME value the shared block gets (§V182);
         // this entry only reserves the name, because vgpu matches uniforms by name.
         ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+        // T510: reserved exactly when the module declared it — the backend overwrites it
+        // every dispatch (1u only when this pass's storage was just created or cleared).
+        ...(module.usesFirstRun ? { firstRun: 0 } : {}),
         // T479: one entry per slot the module declared, and the value is the RESOLVED
         // parameter — a driven slot arrives already channel-resolved, so the per-frame
         // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
