@@ -633,12 +633,11 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
       parameters: [],
     } as never;
     const system = createComponentSystem(registry, [definition]);
-    return { system, registry, type: componentNodeType("fan", 1) };
+    return { system, type: componentNodeType("fan", 1) };
   };
 
   const inputsFor = (
     system: { nodes: unknown; components: { view(): unknown } },
-    registry: unknown,
     type: string,
     ui?: Record<string, unknown>,
   ) =>
@@ -655,8 +654,8 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
 
   it("defaults to the node behind the FIRST output socket — the Out node (T607)", async () => {
     const { componentPreviewTarget } = await import("./use-node-previews.ts");
-    const { system, registry, type } = await makeSystem();
-    const target = componentPreviewTarget(inputsFor(system, registry, type), "c1" as never);
+    const { system, type } = await makeSystem();
+    const target = componentPreviewTarget(inputsFor(system, type), "c1" as never);
     // The Out node itself is a wire; its previewable port resolves and the flat id is
     // the §V82 path the compiler mints for it.
     expect(target).toEqual({ nodeId: "c1/exit", portId: "out" });
@@ -664,9 +663,9 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
 
   it("ui.componentPreview points the preview at ANY inner node — TD's debug view", async () => {
     const { componentPreviewTarget } = await import("./use-node-previews.ts");
-    const { system, registry, type } = await makeSystem();
+    const { system, type } = await makeSystem();
     const target = componentPreviewTarget(
-      inputsFor(system, registry, type, { componentPreview: "blurA" }),
+      inputsFor(system, type, { componentPreview: "blurA" }),
       "c1" as never,
     );
     expect(target).toEqual({ nodeId: "c1/blurA", portId: "out" });
@@ -674,9 +673,9 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
 
   it("an invalid choice falls back to the default rather than a dead preview", async () => {
     const { componentPreviewTarget } = await import("./use-node-previews.ts");
-    const { system, registry, type } = await makeSystem();
+    const { system, type } = await makeSystem();
     const target = componentPreviewTarget(
-      inputsFor(system, registry, type, { componentPreview: "gone" }),
+      inputsFor(system, type, { componentPreview: "gone" }),
       "c1" as never,
     );
     expect(target?.nodeId).toBe("c1/exit");
@@ -684,8 +683,8 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
 
   it("a non-instance resolves to nothing — the ordinary path is untouched", async () => {
     const { componentPreviewTarget } = await import("./use-node-previews.ts");
-    const { system, registry } = await makeSystem();
-    expect(componentPreviewTarget(inputsFor(system, registry, "blur"), "c1" as never)).toBeUndefined();
+    const { system } = await makeSystem();
+    expect(componentPreviewTarget(inputsFor(system, "blur"), "c1" as never)).toBeUndefined();
   });
 });
 
