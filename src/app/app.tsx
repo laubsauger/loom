@@ -616,6 +616,9 @@ export function App({
       const next = createAppRuntime({
         ...(storage === undefined ? {} : { identityStorage: storage }),
         document: result.document,
+        // T627: the file's component library rides into the fresh runtime with its
+        // graph — without it every linked instance reports component-missing (§V79).
+        components: result.components,
         unknownParameters: result.unknownParameters,
         actor: runtimeRef.current.invocation.actor,
       });

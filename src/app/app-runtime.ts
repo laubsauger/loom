@@ -15,6 +15,7 @@ import type { FlattenedGraphSource } from "./flattened-graph.ts";
 import { installStarterComponents } from "@editor/component/index.ts";
 import type { StarterSetInstall } from "@editor/component/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import { createTelemetryHub } from "@runtime/telemetry/index.ts";
 import type { TelemetryHub } from "@runtime/telemetry/index.ts";
 import type { LayoutStorage } from "./layout-storage.ts";
@@ -164,6 +165,16 @@ export interface AppRuntimeOptions {
    * that unnecessary.
    */
   document?: ProjectDocument;
+  /**
+   * T627: the document's COMPONENT LIBRARY, from `LoadProjectSuccess.components`.
+   *
+   * A linked instance references its definition rather than copying it (§V79), so a
+   * runtime built for a loaded document without its library leaves every instance on
+   * `component-missing` — the file's own components must ride into the fresh runtime
+   * the same open that carries its graph. Installed AFTER the starters, so a project
+   * that carries its own copy of a starter (older, or edited) is the authority (§V84).
+   */
+  components?: readonly GraphComponentDefinition[];
   /** Values from a newer build, carried through untouched (§V68). */
   unknownParameters?: readonly UnknownParameter[];
 }
@@ -214,6 +225,12 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
   // rather than the other way round: an instance is pinned to the definition it was saved
   // against (§V84), and the document is the authority on that.
   const starterComponents = installStarterComponents(components);
+  // T627: the opened document's own library (see the option's docblock). Same-id+version
+  // registration REPLACES, which is exactly the §V84 authority order the starters note
+  // above describes; an invalid definition refuses loudly rather than half-installing.
+  for (const definition of options.components ?? []) {
+    components.register(definition);
+  }
   const initialGraph: GraphDocument | undefined = options.document?.graph;
   const initialSettings = options.settings ?? options.document?.settings ?? DEFAULT_PROJECT_SETTINGS;
   const { bus } = createDomainBus({
