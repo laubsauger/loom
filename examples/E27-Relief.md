@@ -86,9 +86,16 @@ face, upside down.
 
 The one-node probe that settled it is worth copying: a `circle` at `center.y = 0.2`
 rendered straight to an output, and read back to see which row it landed on. **A fixture
-has to be able to tell apart the thing its test asserts** — every earlier probe image had
-been symmetric, and a symmetric image is structurally blind to a vertical flip. Fixed at
-source in `src/points/codegen.ts` (B105/T512), not compensated for here.
+has to be able to tell apart the thing its test asserts** (§V461) — every earlier probe
+image had been symmetric, and a symmetric image is structurally blind to a vertical flip.
+Fixed at source in `src/points/codegen.ts` (B105/T512), not compensated for here.
+
+**And the kernel's z sign moved WITH that fix, which is the part to remember.** The bridge
+now reads `uv.y = 0.5 − position.y·0.5`, so `position.y = +1` is texel row 0 — the top of
+the picture. The top of a picture belongs at the *far* edge of a laid-flat landscape, and
+far is z negative from a camera on +z, so `lift1` negates. This sign is COUPLED to
+`points/codegen.ts` and it is not guessable from inside this file: read the mapping there
+rather than assuming, because assuming is exactly what B105 cost.
 
 ### The height came out of the palette, which is why it was "weak"
 
@@ -169,7 +176,10 @@ an add inside the working range, not a highlight rolloff.
 - **The terrain is a flat plate with one spike in it** → `lift1` went back to reading
   luminance off `coat1` instead of `braid1`'s alpha, and the palette is acting as the height
   curve again.
-- **The picture is mirrored top-to-bottom** → the bridge's uv mapping regressed (B105).
+- **The picture is mirrored top-to-bottom** → the bridge's uv mapping changed and `lift1`'s
+  z sign did not follow it, or vice versa. The two move together (B105/T512), and the
+  understudy cannot show you: pin the dome at one end of the source to find out which way
+  round it is.
 - **The panel darkens toward its edges** → the material became lit, or a light list
   appeared on `shot1`.
 - **The mountain has a level, scooped summit** → `swell1.fillcolor` went to 1.0 and the add

@@ -896,7 +896,7 @@ export const kaleidoscopeDocument = document(
       node(
         "drifty",
         "lfo",
-        [-240, 420],
+        [-240, 470],
         { shape: "sine", frequency: 0.031, amplitude: 0.25, offset: 0.05, phase: 0.25 },
         { label: "drifty1" },
       ),
@@ -934,7 +934,14 @@ export const kaleidoscopeDocument = document(
  * E6 — Displacement Stack (T156).
  *
  *   checker ────────────────────────────────► displace.source ─► output
- *   noise ─► level ─► transform ─► displace.disp
+ *   noise(4D) ─► level ─► transform ─► displace.disp
+ *                          r ← abstime
+ *
+ * T518: the field was `simplex2d`, which has no time axis, so the plate was frozen — mean
+ * |Δ| of exactly 0.00 between frames on Dawn. It is `perlin4d` now, and `place.r` turns as
+ * well, so the two motions in the branch are the two jobs the branch has: the field
+ * EVOLVES (Level shapes what it produces) and it is also PLACED (Transform decides where
+ * it lands). Watching them separately is the argument for the stack being a stack.
  *
  * The displacement branch is a STACK, not a single Noise: shaping the field (Level) and
  * placing it (Transform) before it reaches `displace.disp` is how a displacement is
@@ -1114,9 +1121,23 @@ const lfoDissolveDocument = document(
 /**
  * E8 — Slit Scan (T321, T237).
  *
- * Per-pixel time: a 48-frame history of an evolving noise field, read back through a
+ * Per-pixel time: a 48-frame history of a disc travelling on two LFOs, read back through a
  * vertical ramp so every ROW shows a different moment — the classic slit-scan smear,
- * newest at the black end of the ramp, ~1.6 seconds ago at the white end.
+ * newest at the black end of the ramp, 0.8 seconds ago at the white end.
+ *
+ * T518 — THE SUBJECT CHANGED, and that was the whole fix. This used to smear a `perlin4d`
+ * field, and §V427 says why that could not work: a slit scan reveals the HISTORY of
+ * something that has identity, and noise is smooth at every scale, so smearing it produces
+ * more smoothness. The shipped frame lived entirely between 0.35 and 0.61 in linear — a
+ * pastel wash with no edge in it anywhere — and the owner reported that you could not see
+ * what the node did. A disc on a path has identity: its history draws a ribbon whose shape
+ * IS its path, and the per-row time quantisation appears as a visible staircase along the
+ * ribbon's edge. That staircase is the mechanism, drawn.
+ *
+ * The live source is composited back over the scan (`now`), which also cures a real
+ * first-impression defect: before the ring has archived anything there is no oldest frame
+ * for §V229's clamp to hold, so frame 0 rendered COMPLETELY BLACK — and frame 0 is what a
+ * gallery thumbnail shows.
  *
  * This is the file that fails if the temporal stack regresses: the ring's
  * copy-on-rotate (V276 — archive at frame entry, never mid-encode), the
@@ -1394,14 +1415,27 @@ const instancedTorusDocument = document(
 /**
  * E11 — Gradient Remap (T354, T270).
  *
- *   noise1(noise) ──► lookup1.source ─┐
- *   ramp1(ramp, 5 stops) ─► .lookup ──┴─► lookup1(lookup) ─► out1(output)
+ *   noise1(noise, 4D) ──────► lookup1.source ─┐
+ *   ramp1(ramp, 6 cyclic stops) ─► .lookup ───┴─► lookup1(lookup) ─► out1(output)
+ *            phase ← abstime                       offset -0.86, scale 2.6
  *
  * Ramp into Lookup is the standard way to recolour an image through a palette, and it is
  * the pairing multi-stop Ramp (T270) was built for: with two colours it is a tinted
- * greyscale and barely worth wiring: the fifth stop is what makes it a PALETTE. The noise
+ * greyscale and barely worth wiring: the extra stops are what make it a PALETTE. The noise
  * supplies structure, its luminance is read as a POSITION along the gradient, and the
  * colour found there is the output — so every pixel's brightness becomes a hue.
+ *
+ * ## T518 / T523 — a palette example that showed a third of its palette
+ *
+ * Two faults, and the second is the interesting one. The field was `perlin2d` at `speed:
+ * 0`, so nothing moved (mean |Δ| of exactly 0.00 on Dawn). And the lookup indexed on the
+ * field's RAW luminance, which for a fractal noise runs from about 0.34 to 0.70 — so the
+ * index never left the middle third of the gradient, and the deep end and the pale end
+ * were never rendered at all. An example whose entire subject is a multi-stop palette was
+ * hiding most of its own stops, and no assertion could notice: every stop was present in
+ * the document, every stop decoded correctly, and the picture was still wrong.
+ * `offset`/`scale` are the two parameters that exist for exactly this, and they are now
+ * doing it.
  *
  * The two inputs are not interchangeable and the manifest's policies say so: resolution
  * inherits `source` (the image whose shape survives), format inherits `lookup` (the output
@@ -3006,10 +3040,14 @@ const RELIEF_LIFT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
      camera that shows the relief then has to roll, which is how the first build ended up
      with the terrain running diagonally out of frame. Mapping xy -> xz and the height to
      +y makes the height axis the WORLD's up axis, and an ordinary landscape camera works.
-     The z sign is the orientation fix: the bridge maps y = -1 to TEXEL ROW 0, the row an
-     output shows at the TOP, so row 0 belongs at the FAR edge — z negative, away from a
-     camera on +z. Sampled on a square (the mapping demands it), drawn 16:9. */
-  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, p.position.y * 1.15);
+     The z sign is the orientation fix, and it MOVED WITH T512. The bridge now reads
+     uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output
+     shows at the TOP of the frame. The top of a picture belongs at the FAR edge of a
+     laid-flat landscape, and far is z NEGATIVE from a camera on +z, so the y that samples
+     the top has to negate. Read the mapping in points/codegen.ts rather than guessing:
+     this sign is coupled to it and B105 is what guessing costs. Sampled on a square (the
+     mapping demands it), drawn 16:9. */
+  q.position = vec3f(p.position.x * 1.7778, height * 1.05 - 0.16, -p.position.y * 1.15);
   /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same
      attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT
      would have made the low ground transparent as well as dark. */
@@ -3990,27 +4028,44 @@ const coronaDocument = document(
       /* EIGHT multiply -> add PAIRS, one band to one property, each with its own gain and
          bias. This is §V471's third idea and it is the difference between a reactive image
          and an image that pumps: a single master gain moves everything together. */
-      node("swellG", "valueMath", [-960, 520], { operation: "multiply", operand: 0.95 }, { label: "swellg1" }),
-      node("swell", "valueMath", [-700, 520], { operation: "add", operand: 1 }, { label: "swell1" }),
-      node("glowG", "valueMath", [-960, 780], { operation: "multiply", operand: 1.5 }, { label: "glowg1" }),
-      node("glow", "valueMath", [-700, 780], { operation: "add", operand: 0.85 }, { label: "glow1" }),
+      /* T547 (§V477) — THE BIAS IS THE REST STATE, THE GAIN IS THE SWING, and the owner's
+         file biased every pair INTO the interesting part of its range, so there was nowhere
+         to go but up. The bias here was +1.0: rest radius 1.0 is already the full sphere, so
+         there was no contracted state to expand FROM and the audio could only ever add.
+         0.68 rest / 1.93 peak gives the creature somewhere to come back to, which is what
+         makes the expansion read as an expansion rather than as jitter on a still image. */
+      node("swellG", "valueMath", [-960, 520], { operation: "multiply", operand: 1.25 }, { label: "swellg1" }),
+      node("swell", "valueMath", [-700, 520], { operation: "add", operand: 0.68 }, { label: "swell1" }),
+      node("glowG", "valueMath", [-960, 780], { operation: "multiply", operand: 1.8 }, { label: "glowg1" }),
+      node("glow", "valueMath", [-700, 780], { operation: "add", operand: 0.45 }, { label: "glow1" }),
       node("dotG", "valueMath", [-960, 1040], { operation: "multiply", operand: 2.2 }, { label: "dotg1" }),
       node("dot", "valueMath", [-700, 1040], { operation: "add", operand: 1.2 }, { label: "dot1" }),
       node("heatG", "valueMath", [-960, 1300], { operation: "multiply", operand: 2.2 }, { label: "heatg1" }),
       node("heat", "valueMath", [-700, 1300], { operation: "add", operand: 0.25 }, { label: "heat1" }),
-      node("sparkG", "valueMath", [-440, 520], { operation: "multiply", operand: 20 }, { label: "sparkg1" }),
-      node("sparkAdd", "valueMath", [-180, 520], { operation: "add", operand: 0.1 }, { label: "sparkadd1" }),
+      /* T547 asked whether ×20 was deliberate. It was not: on the Beat source `high` rests
+         around 0.2, so ×20 rested at 4 and the Limit below PINNED at its ceiling on every
+         loud frame — the cyan band was in blast mode permanently, which is §V477 stated as
+         a symptom. ×6 rests near 0.5 and travels to ~3, and the Limit goes back to being a
+         fence for a real track rather than the thing setting the level. */
+      node("sparkG", "valueMath", [-440, 520], { operation: "multiply", operand: 6 }, { label: "sparkg1" }),
+      node("sparkAdd", "valueMath", [-180, 520], { operation: "add", operand: 0.15 }, { label: "sparkadd1" }),
       /* THE THIRD FENCE, and the pair above is why it has to exist. A gain of 20 is the
          right sensitivity — `high` is a small channel and the cyan tips are the faintest
          thing in the frame, so a quiet passage still has to light them — but ×20 + 0.1 over
-         a 0..1 band spans 0.1..20.1 against a Brightness declared 0..8. §V471's third idea
+         a 0..1 band spanned 0.1..20.1 against a Brightness declared 0..8. §V471's third idea
          (gain and bias per band) is right and INCOMPLETE: the pair has to be range-checked
          against its TARGET, or the idiom ships a clamp. Two fences, E24's shape: the Limit
          holds the value in the graph where you can see it, and T368's clamp is the backstop
          rather than the mechanism. */
-      node("spark", "valueLimit", [80, 520], { minimum: 0.1, maximum: 6 }, { label: "spark1" }),
-      node("gradeG", "valueMath", [-440, 780], { operation: "multiply", operand: 2.1 }, { label: "gradeg1" }),
-      node("grade", "valueMath", [-180, 780], { operation: "add", operand: 1.4 }, { label: "grade1" }),
+      node("spark", "valueLimit", [80, 520], { minimum: 0.05, maximum: 5 }, { label: "spark1" }),
+      /* T547 — "colors down, not always in blast mode", and the number is the BIAS again.
+         Rest scale was 1.4, which drives the lookup coordinate far up a seven-stop ramp that
+         ENDS IN WHITE: the palette sat permanently at its hot end, so a peak had nowhere to
+         climb to and the seven stops might as well have been two. Resting near 0.85 puts the
+         calm state in the navy and blue and lets a loud passage reach the gold — which is
+         §V471's sixth idea finally doing something. */
+      node("gradeG", "valueMath", [-440, 780], { operation: "multiply", operand: 2.6 }, { label: "gradeg1" }),
+      node("grade", "valueMath", [-180, 780], { operation: "add", operand: 0.55 }, { label: "grade1" }),
       /* T538 FOLLOW-UP: this gain was 0.95 in the owner's file, which put persistence at
          0.62..1.57 against a range of 0..1 — so it raised a `parameter.range` problem on any
          moderately loud passage, and T368's clamp was the only thing standing between the

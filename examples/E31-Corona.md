@@ -76,16 +76,16 @@ own scale and offset:
 
 | pair | band | × | + | drives |
 | --- | --- | --- | --- | --- |
-| `swell1` | lowMid | 0.95 | 1 | `gen1.radius` — the creature's character |
-| `glow1` | low | 1.5 | 0.85 | bloom gain |
+| `swell1` | lowMid | 1.25 | 0.68 | `gen1.radius` — the creature's character |
+| `glow1` | low | 1.8 | 0.45 | bloom gain |
 | `dot1` | level | 2.2 | 1.2 | body point size |
 | `heat1` | low | 2.2 | 0.25 | orange band gain |
-| `spark1` | high | 20 | 0.1, then LIMIT 0.1…6 | cyan band gain |
-| `grade1` | highMid | 2.1 | 1.4 | palette scale |
+| `spark1` | high | 6 | 0.15, then LIMIT 0.05…5 | cyan band gain |
+| `grade1` | highMid | 2.6 | 0.55 | palette scale |
 | `trail1` | level | 0.30 | 0.62 | trail persistence |
 | `tip1` | high | 9 | 1 | tip point size |
 
-`high × 20 + 0.1` and `level × 0.30 + 0.62` are not the same curve and must not be. **A
+`high × 6 + 0.15` and `level × 0.30 + 0.62` are not the same curve and must not be. **A
 single master gain makes everything move together, which reads as one thing pumping.** One
 `valueLag` at 0.09 s sits between the audio and all eight, so nothing jitters and every
 driven property agrees about what "now" is.
@@ -114,6 +114,32 @@ than the mechanism.
 Composing a gain/bias pair over the source channel's 0…1 and comparing it against the
 target's declared range needs no device and no render. Six of the eight were fine; the two
 that were not are the two with the largest gains, which is where to look first.
+
+### …and it has to REST LOW AND TRAVEL (§V477)
+
+The owner's second note was that it should "contract a bit more to the center so that the
+expansion is a bit more pronounced" and that the colours are "always in blast mode". Those
+are one cause, and it is the same arithmetic seen from the other end:
+
+**The bias is the rest state. The gain is the swing.** Every pair in the original biased
+*into* the interesting part of its range, so there was nowhere to go but up:
+
+- `gen1.radius` rested at **1.0** — already the full sphere. There was no contracted state
+  to expand *from*, so the audio could only add. Now 0.68 → 1.93: tighter core, bigger
+  travel, and the expansion reads as an expansion instead of as jitter on a still image.
+- `coat1.scale` rested at **1.4**, which drives the lookup coordinate far up a seven-stop
+  ramp that *ends in white*. The palette sat permanently at its hot end, a peak had nowhere
+  to climb to, and the seven stops might as well have been two. Resting near 0.85 puts the
+  calm state in the navy and blue and lets a loud passage reach the gold — which is idea 6
+  finally doing something.
+- `sparklvl1.brightness` rested around **4** of a ceiling of 6, so the Limit was *pinning*
+  on every loud frame and the cyan band was permanently blasting. ×6 rests near 0.5, and
+  the Limit goes back to being a fence for a real track rather than the thing setting the
+  level.
+
+A rest value at the top of its range is a still image with jitter, and the audio stops
+meaning anything. Check the rest state on the **Beat** source, not just on a loud track —
+the Beat is what most people see first.
 
 ## 4. Layered post, each stage doing one job
 
@@ -171,6 +197,8 @@ thing is `beat1`, deliberately: it stands in for a track, so bar one lands on th
 - **Everything pumps together on the beat** → the eight pairs collapsed toward one gain.
 - **The trails look like a separate ghost image** → `loop1.source` moved off `tail1`.
 - **It gets boring after a minute** → `drift1.frequency` went up. 0.035 Hz is the number.
+- **It is bright and busy from the first frame and the beat does nothing** → a bias crept
+  back up. Rest low and travel (§V477); check `swell1` and `grade1` first.
 - **The image stops decaying and blows out to white** → `trailg1`'s gain went back up and
   persistence is pinning at 1.0.
 - **A `parameter.range` problem in the problems pane** → a gain/bias pair overshot its
