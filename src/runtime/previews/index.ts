@@ -69,7 +69,12 @@ export type { TileAllocation, TileAtlas, TileRequest } from "./tile-atlas.ts";
 export { createPreviewScheduler } from "./schedule.ts";
 export type { PreviewScheduler, PreviewSchedulerOptions, ScheduleInput } from "./schedule.ts";
 
-export { PREVIEW_SAMPLER, buildPreviewProgram, previewPassId } from "./program.ts";
+export {
+  EMPTY_PREVIEW_PROGRAM,
+  PREVIEW_SAMPLER,
+  buildPreviewProgram,
+  previewPassId,
+} from "./program.ts";
 
 export {
   clampOrbitDistance,

@@ -12,6 +12,7 @@ import {
   previewShader,
   previewUniforms,
 } from "./debug-effects.ts";
+import { createTileAtlas } from "./tile-atlas.ts";
 import type { TileAtlas } from "./tile-atlas.ts";
 import { previewKey } from "./types.ts";
 import type { AllocatedPreview, PreviewProgram } from "./types.ts";
@@ -129,3 +130,27 @@ export function buildPreviewProgram(
     }),
   };
 }
+
+/**
+ * The program that installs NOTHING (B143).
+ *
+ * A preview program is a list of passes that BIND MAIN-PLAN RESOURCES BY ID, and its ids are
+ * node ids — the names a person typed. So the program built for one document is not merely
+ * useless against the next one's main plan, it is WRONG about it: every tile whose node id the
+ * incoming document does not have binds a resource that no longer exists, and the backend says
+ * so, correctly, once per pass (`backend/unknown-resource`). E24 → E2 is 48 tiles meeting 9
+ * survivors: thirty-nine true diagnostics about a program nobody wants any more.
+ *
+ * The window exists because the main plan installs FIRST — `backend.compile` resolves and
+ * re-points every preview host (`refreshPreviewExternals`) before the preview tick's next rAF
+ * gets to notice the load. Pushing this at the boundary closes the window from the other side:
+ * there is no stale program left for the incoming plan to be measured against. The report is
+ * not silenced — it is made untrue.
+ *
+ * Built rather than written out so it cannot drift from `buildPreviewProgram`'s own empty case,
+ * which is what `plan()` pushes the moment a document has nothing to preview.
+ */
+export const EMPTY_PREVIEW_PROGRAM: PreviewProgram = buildPreviewProgram(
+  [],
+  createTileAtlas({ capacity: 0 }),
+);

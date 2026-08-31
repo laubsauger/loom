@@ -8,7 +8,12 @@ import type { ResolvedOutput } from "@compiler/index.ts";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { fitInsideRegion } from "@editor/nodes/index.ts";
 import type { PreviewOrbitStore, PreviewSlotBoundsStore, PreviewViewSource } from "@editor/viewer/index.ts";
-import { DEFAULT_PREVIEW_VIEW, createPreviewSystem, slotScreenRect } from "@runtime/previews/index.ts";
+import {
+  DEFAULT_PREVIEW_VIEW,
+  EMPTY_PREVIEW_PROGRAM,
+  createPreviewSystem,
+  slotScreenRect,
+} from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -206,6 +211,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
   inputsRef.current = inputs;
   /** The live tick body, for the T620 resync effect below. Null while not mounted. */
   const stepRef = useRef<(() => void) | null>(null);
+  /** The live document-boundary body, for the B143 effect below. Null while not mounted. */
+  const boundaryRef = useRef<((identity: string) => void) | null>(null);
 
   useEffect(() => {
     const canvas = inputs.canvasRef.current;
@@ -228,6 +235,40 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
+    /**
+     * T519/B106 — a DIFFERENT DOCUMENT is open. Every tile and every refresh clock in here
+     * is keyed by node id, and those ids belong to the project that just closed.
+     *
+     * B143 — and so does the program the BACKEND still has installed, which is a separate
+     * thing from the state this system holds. `system.reset()` empties the atlas and nulls
+     * the signature, so the next tick re-pushes; it does not touch the host. That gap is a
+     * window, and the main plan gets there first: `backend.compile` resolves and re-points
+     * every preview host (`refreshPreviewExternals`) on a microtask, while the next rAF is
+     * a whole frame away. So the closed document's program is rebuilt against the incoming
+     * document's plan and reports one true `backend/unknown-resource` per tile whose node
+     * the new document does not have — thirty-nine of forty-eight for E24 → E2, which then
+     * sit in the problems pane for good.
+     *
+     * Uninstalling here closes the window from the side that can actually be closed: the
+     * push is SYNCHRONOUS at the boundary, so there is no stale program for the incoming
+     * plan to be measured against. Nothing is suppressed — the diagnostics were right, and
+     * the fix is to stop making them true.
+     *
+     * Called from the tick AND from a commit-time effect, sharing this one closure so the
+     * comparison happens once whichever door the boundary arrives through. Not the whole
+     * `step()`: that advances the preview clock and cadence state between display frames,
+     * which is the perturbation T620 documents below.
+     */
+    const crossDocumentBoundary = (identity: string): void => {
+      if (identity === lastDocumentIdentity) return;
+      lastDocumentIdentity = identity;
+      host.setPreviewProgram(EMPTY_PREVIEW_PROGRAM);
+      system.reset();
+      // T501's first-paint reservations are keyed by preview key too, so they belong
+      // to the document that just closed.
+      everMaterialized.clear();
+    };
+
     const step = (): void => {
       // §V23 — a device rebuild invalidates cadence state (refresh clocks, tile keys)
       // that the backend cannot know about; the backend's own rebuild is separate and
@@ -238,15 +279,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       }
 
       const current = inputsRef.current;
-      // T519/B106 — a DIFFERENT DOCUMENT is open. Every tile and every refresh clock in
-      // here is keyed by node id, and those ids belong to the project that just closed.
-      if (current.documentIdentity !== lastDocumentIdentity) {
-        lastDocumentIdentity = current.documentIdentity;
-        system.reset();
-        // T501's first-paint reservations are keyed by preview key too, so they belong
-        // to the document that just closed.
-        everMaterialized.clear();
-      }
+      // The commit-time effect below normally gets here first; this is the same call, for
+      // the case where it did not (a load that never re-rendered this pane).
+      crossDocumentBoundary(current.documentIdentity);
 
       const rect = canvas.getBoundingClientRect();
       const surface = { x: 0, y: 0, width: rect.width, height: rect.height };
@@ -541,10 +576,12 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
      * program and the sink set converge with the plan even while rAF is parked.
      */
     stepRef.current = step;
+    boundaryRef.current = crossDocumentBoundary;
     frameHandle = requestAnimationFrame(tick);
 
     return () => {
       stepRef.current = null;
+      boundaryRef.current = null;
       cancelAnimationFrame(frameHandle);
       system.reset();
       host.dispose();
@@ -574,4 +611,21 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
     // the pin), and a ui-only edit moves the document without moving the compiled
     // outputs.
   }, [inputs.compiledOutputs, inputs.graph]);
+
+  /*
+   * B143 — the document boundary at COMMIT time, which is the only time early enough.
+   *
+   * A load schedules `backend.compile` from an effect in the same commit as this one and
+   * installs the new main plan when that promise resolves, on a microtask; the preview
+   * tick's next rAF is a display frame later. So the boundary must be crossed while the
+   * commit is still running, or the closed document's program is what the incoming plan
+   * finds installed — see `crossDocumentBoundary` above for what that costs.
+   *
+   * This runs unconditionally rather than under T620's hidden-page gate because it is not
+   * a step: it pushes an empty program and drops per-document state, and touches neither
+   * the preview clock nor the cadence state that gate exists to protect.
+   */
+  useEffect(() => {
+    boundaryRef.current?.(inputs.documentIdentity);
+  }, [inputs.documentIdentity]);
 }

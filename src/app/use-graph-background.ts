@@ -4,7 +4,11 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { liveClock } from "@domain/transport/live-clock.ts";
-import { DEFAULT_PREVIEW_VIEW, createPreviewSystem } from "@runtime/previews/index.ts";
+import {
+  DEFAULT_PREVIEW_VIEW,
+  EMPTY_PREVIEW_PROGRAM,
+  createPreviewSystem,
+} from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem } from "@runtime/previews/index.ts";
 
 /**
@@ -146,6 +150,8 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
   inputsRef.current = inputs;
   /** The live tick body, for the T634 hidden-page resync below. Null while not mounted. */
   const stepRef = useRef<(() => void) | null>(null);
+  /** The live document-boundary body, for the B143 effect below. Null while not mounted. */
+  const boundaryRef = useRef<((identity: string) => void) | null>(null);
 
   useEffect(() => {
     const canvas = inputs.canvasRef.current;
@@ -159,6 +165,23 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
     let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;
 
+    /**
+     * T519/B106 — the background tile is keyed by node id like every other preview.
+     *
+     * B143 — and so is the program the BACKEND still has installed, which `system.reset()`
+     * does not touch. The incoming main plan installs first (`backend.compile` resolves on
+     * a microtask, the next rAF is a display frame away), so without this push the closed
+     * document's program is rebuilt against it and reports one true
+     * `backend/unknown-resource` per background tile the new document has no node for. Same
+     * boundary, same rule, same fix as `use-node-previews.ts` — see the long note there.
+     */
+    const crossDocumentBoundary = (identity: string): void => {
+      if (identity === lastDocumentIdentity) return;
+      lastDocumentIdentity = identity;
+      host.setPreviewProgram(EMPTY_PREVIEW_PROGRAM);
+      system.reset();
+    };
+
     const step = (): void => {
       if (backend.status.deviceGeneration !== lastDeviceGeneration) {
         lastDeviceGeneration = backend.status.deviceGeneration;
@@ -166,11 +189,9 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
       }
 
       const current = inputsRef.current;
-      // T519/B106 — the background tile is keyed by node id like every other preview.
-      if (current.documentIdentity !== lastDocumentIdentity) {
-        lastDocumentIdentity = current.documentIdentity;
-        system.reset();
-      }
+      // The commit-time effect below normally gets here first; this is the same call, for
+      // the case where it did not (a load that never re-rendered this pane).
+      crossDocumentBoundary(current.documentIdentity);
       const marks = graphBackgroundMarks(current.graph, current.compiledOutputs);
       // Marking IS watching (T252): the refs keep their nodes materialized. The sink
       // store merges callers, so this coexists with the tile scheduler's own set.
@@ -244,9 +265,11 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
     // running, and this hook maintains preview sinks (marking IS watching, T252) and a
     // preview program, both of which must follow the document. See use-node-previews.
     stepRef.current = step;
+    boundaryRef.current = crossDocumentBoundary;
     frameHandle = requestAnimationFrame(tick);
     return () => {
       stepRef.current = null;
+      boundaryRef.current = null;
       cancelAnimationFrame(frameHandle);
       host.dispose();
     };
@@ -262,4 +285,11 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
     // The graph too, not just the plan: a mark is ui state, and a ui-only edit moves
     // the document without moving the compiled outputs.
   }, [inputs.compiledOutputs, inputs.graph]);
+
+  // B143 — the document boundary at COMMIT time, before the incoming main plan installs.
+  // Unconditional, unlike the hidden-page gate above: this is not a step, so it moves no
+  // cadence state. Rationale in full in `use-node-previews.ts`.
+  useEffect(() => {
+    boundaryRef.current?.(inputs.documentIdentity);
+  }, [inputs.documentIdentity]);
 }
