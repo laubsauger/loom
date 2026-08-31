@@ -597,7 +597,12 @@ export function ViewerPane({
           {outputs.length === 0 ? <option value="">no outputs</option> : null}
           {outputs.map((output) => (
             <option key={outputKey(output)} value={outputKey(output)}>
-              {outputKey(output)}
+              {/* T622 (§V539's boundary rule): the NAME the user gave the node (§V129:
+                  the label IS the name), resolved here where the row is composed — the
+                  raw id stays the option's VALUE, which is what pinning and
+                  `viewer.show` key on. A flat component-inner id has no row in the raw
+                  document and falls back to the id itself. */}
+              {`${graph.nodes[output.nodeId as NodeId]?.label ?? output.nodeId}:${output.portId}`}
               {sink !== null && outputKey(sink) === outputKey(output) ? " (output)" : ""}
             </option>
           ))}

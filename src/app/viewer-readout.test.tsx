@@ -275,3 +275,27 @@ describe("T440/§V354 — `v` shows the selected node in the viewer", () => {
     runtime.dispose();
   });
 });
+
+describe("T622 — the OUTPUT selector speaks node names, not resource ids", () => {
+  it("options show the node's label; the value stays the raw key that pinning uses", async () => {
+    const runtime = newRuntime();
+    await seedTwoOutputs(runtime);
+    const gpu = fixture();
+    await mountViewer(runtime, gpu.backend);
+
+    const graph = runtime.bus.store.getGraph();
+    const solidId = Object.keys(graph.nodes).find((id) => graph.nodes[id]?.type === "solid") ?? "";
+    const label = graph.nodes[solidId]?.label ?? "";
+    expect(label).not.toBe("");
+    expect(label).not.toBe(solidId); // the premise: ids are opaque, labels are human
+
+    const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
+    const option = [...select.options].find((entry) => entry.value === `${solidId}:out`);
+    expect(option).toBeDefined();
+    // The row READS as the name the user sees on the node...
+    expect(option?.textContent).toContain(`${label}:out`);
+    expect(option?.textContent).not.toContain(solidId);
+    // ...while the VALUE keys on the stable id, so pinning survives a rename (§V128).
+    expect(option?.value).toBe(`${solidId}:out`);
+  });
+});
