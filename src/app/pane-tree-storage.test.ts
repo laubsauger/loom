@@ -5,6 +5,7 @@ import {
   LEGACY_PANE_TREE_STORAGE_KEY,
   PANE_TREE_STORAGE_KEY,
   applyNamedPaneTree,
+  isPaneTreeModified,
   readPaneTreeStore,
   writePaneTreeStore,
 } from "./pane-tree-storage.ts";
@@ -28,6 +29,7 @@ import {
   writeLayoutStore,
 } from "./layout-storage.ts";
 import type { LayoutStorage } from "./layout-storage.ts";
+import type { PaneTreeLayout } from "./pane-tree.ts";
 
 /**
  * The v4 store beside the v3 store (T404, V311, V385). The migration is where a
@@ -260,5 +262,45 @@ describe("T466 — a profile parked on the migration's own row is unpinned, once
     expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
     expect(shellLayoutFromTree(store.current)?.zones.rightBottom).toEqual(["inspector"]);
     expect(store.layouts.map((entry) => entry.name)).toEqual(["Saved layout"]);
+  });
+});
+
+describe("a vanished selection clears — preset or user layout, one rule (T589)", () => {
+  it("keeps the FURNITURE and drops only the name, so the menu cannot lie", () => {
+    // The owner's case: a profile parked on a preset the catalogue no longer ships
+    // (Classic). T470 repointed the NAME to Default while the shell stayed Classic —
+    // the menu said Default, the furniture disagreed. Now the selection clears, the
+    // arrangement is untouched, and "unsaved arrangement" is the honest state.
+    const storage = memoryStorage();
+    const classic = splitLeaf(DEFAULT_PANE_TREE, "leaf-left", "row", { ratio: 0.4 });
+    const classicTree = "layout" in classic ? (classic as { layout: PaneTreeLayout }).layout : (classic as never as PaneTreeLayout);
+    storage.setItem(
+      PANE_TREE_STORAGE_KEY,
+      JSON.stringify({ version: 5, current: classicTree, currentId: "preset:classic", layouts: [] }),
+    );
+
+    const store = readPaneTreeStore(storage);
+    // The name is gone — nothing in the menu claims a preset the shell does not show.
+    expect(store.currentId).toBeNull();
+    // The furniture is exactly what the user was looking at.
+    expect(JSON.stringify(store.current.root)).toBe(JSON.stringify(classicTree.root));
+    // And the honest consequence: an unsaved arrangement reads as modified.
+    expect(isPaneTreeModified(store)).toBe(true);
+  });
+
+  it("a KNOWN preset selection still round-trips untouched — the clear is not a default", () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      PANE_TREE_STORAGE_KEY,
+      JSON.stringify({
+        version: 5,
+        current: DEFAULT_PANE_TREE,
+        currentId: "preset:default",
+        layouts: [],
+      }),
+    );
+    const store = readPaneTreeStore(storage);
+    expect(store.currentId).toBe("preset:default");
+    expect(isPaneTreeModified(store)).toBe(false);
   });
 });

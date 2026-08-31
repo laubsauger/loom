@@ -107,13 +107,16 @@ function storeFromRecord(source: Record<string, unknown>): PaneTreeStore {
 
   return {
     current: repairPaneTree(source["current"]),
-    // T470: a vanished PRESET selection (Classic) falls back to Default, named in the
-    // menu; a deleted user layout's selection clears. The arrangement is untouched.
-    currentId: known
-      ? (currentId as string)
-      : typeof currentId === "string" && isPresetLayoutId(currentId)
-        ? DEFAULT_LAYOUT_ID
-        : null,
+    /*
+     * T589 (amending T470): a vanished selection CLEARS — preset or user layout, one
+     * rule. T470 repointed a vanished preset's NAME to Default while leaving the
+     * ARRANGEMENT untouched, so the menu said Default while the shell was still
+     * Classic: §V399's "falls back gracefully and named" was half true, and the half
+     * that lied was the name. Clearing keeps the furniture the user was actually
+     * looking at and lets the menu say the honest thing — an unsaved arrangement —
+     * instead of claiming a preset the shell does not show.
+     */
+    currentId: known ? (currentId as string) : null,
     layouts,
   };
 }
@@ -302,14 +305,24 @@ export function deleteNamedPaneTree(store: PaneTreeStore, id: string): PaneTreeS
   };
 }
 
-/** Ratio noise from a live drag must not read as "modified" — compare to half a percent. */
+/**
+ * Ratio noise from a live drag must not read as "modified" — compare to half a percent.
+ *
+ * T590's measurement found the old rounding was `ratio * 2 / 2`: half a UNIT, not half
+ * a percent. Ratios live on two scales in this tree (the shell projection's splits are
+ * percentages, `splitLeaf`'s are fractions), and on the fraction scale half a unit is
+ * the whole range — every drag between 0.25 and 0.75 compared equal, so the modified
+ * badge stayed OFF through real rearrangement. Scale-aware: fractions round to 1/200,
+ * percentages to 1/2 — half a percent either way, as the sentence above always claimed.
+ */
 function normalizeTreeNode(node: PaneTreeLayout["root"]): unknown {
   if (node.kind === "leaf") return { kind: "leaf", id: node.id, tabs: node.tabs, active: node.active };
+  const scale = node.ratio <= 1 ? 200 : 2;
   return {
     kind: "split",
     id: node.id,
     direction: node.direction,
-    ratio: Math.round(node.ratio * 2) / 2,
+    ratio: Math.round(node.ratio * scale) / scale,
     first: normalizeTreeNode(node.first),
     second: normalizeTreeNode(node.second),
   };
