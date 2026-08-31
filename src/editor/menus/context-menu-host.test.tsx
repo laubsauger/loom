@@ -155,22 +155,29 @@ describe("running an item (§V29)", () => {
  * is non-empty".
  */
 /**
- * T524/B107, the CAUSE pinned: a submenu must SURVIVE focus moving to something the
- * DOM does not contain. Radix's SubContent closes on "focus outside", detected via a
- * React-capture flag — and under React 19.2's focus ordering, a pointerdown on an item
- * inside a NESTED sub set focus before the flag, so the parent sub read its own child
- * as outside and closed mid-press; pointerup then found nothing to select. Keyboard
- * always worked, which is why 21 green tests missed it. Our wrapper vetoes
- * focus-outside on SubContent (the root still traps focus and still dismisses on
- * Escape and outside pointerdown, both covered elsewhere in this file).
+ * T524/B107, the CAUSE pinned — and B120, its NARROWING: a submenu must survive focus
+ * straying DURING A POINTER PRESS on its own contents, and at no other time. Radix's
+ * SubContent closes on "focus outside", detected via a React-capture flag — and under
+ * React 19.2's focus ordering, a pointerdown on an item inside a NESTED sub set focus
+ * before the flag, so the parent sub read its own child as outside and closed
+ * mid-press; pointerup then found nothing to select. Keyboard always worked, which is
+ * why 21 green tests missed it.
+ *
+ * The first fix vetoed focus-outside UNCONDITIONALLY, and that fixed "closes too
+ * eagerly" by shipping "never closes": browsing category A → B → C stacked every
+ * submenu, because the focus-outside that closes A when B opens is the LEGITIMATE
+ * close (B120). The veto now holds only while a pointer press is active inside the
+ * submenu's own React subtree.
  *
  * HONESTY (V461's spirit): jsdom cannot replay the exact React-19.2 pointer ordering —
  * the composed depth-2 test above passed while the browser failed. What jsdom CAN do
  * is fire a real focusin from a node outside the React tree, which drives the same
- * dismissable-layer path the regression came through; red without the veto.
+ * dismissable-layer path the regression came through — once mid-press (must survive)
+ * and once with no press (must close). A fixture that only checked one half would pass
+ * in both the blanket-veto world and the no-veto world (§V461).
  */
-describe("a submenu survives stray focus (T524/B107)", () => {
-  it("keeps the submenu open when focus lands outside the React tree", async () => {
+describe("a submenu survives stray focus mid-press, and ONLY mid-press (T524/B107, B120)", () => {
+  it("keeps the submenu open during a press inside it, and lets the same focus close it after release", async () => {
     setup();
     const outside = document.createElement("button");
     document.body.appendChild(outside);
@@ -182,12 +189,23 @@ describe("a submenu survives stray focus (T524/B107)", () => {
       });
       expect(itemNamed("filter")).toBeDefined();
 
+      // MID-PRESS: pointerdown on a row inside the sub, release not yet fired — the
+      // T524 shape. Stray focus must not close it.
       await act(async () => {
+        fireEvent.pointerDown(itemNamed("filter"));
         outside.focus();
         fireEvent.focusIn(outside);
       });
-      // The sub level is still there to click — before the veto this focus closed it.
       expect(itemNamed("filter")).toBeDefined();
+
+      // RELEASED: the identical stray focus is now the legitimate dismissable-layer
+      // close. A blanket veto (the B120 bug) keeps the sub open here.
+      await act(async () => {
+        fireEvent.pointerUp(itemNamed("filter"));
+        outside.focus();
+        fireEvent.focusIn(outside);
+      });
+      expect(screen.queryByText("filter", { selector: "span" })).toBeNull();
     } finally {
       outside.remove();
     }
@@ -219,6 +237,32 @@ describe("Add node, all the way to the graph (T524)", () => {
     expect(added).toBeDefined();
     // The CLICK position, projected — never (0,0), which is where a lost target lands.
     expect(added?.position.x).not.toBe(0);
+  });
+
+  it("browsing to a sibling category closes the previous one — at most ONE submenu per level (B120)", async () => {
+    // The SECOND property, which the depth-2 walk above cannot see: it walks one
+    // branch, and the B120 stacking bug only shows when a second branch opens while
+    // the first is up. §V461: the fixture must assert the first is GONE, not merely
+    // that the second is open — a blanket focus-outside veto passes the weaker check.
+    setup();
+    openOn("pane");
+    await act(async () => {
+      fireEvent.pointerMove(itemNamed("Add node"));
+      fireEvent.click(itemNamed("Add node"));
+    });
+    await act(async () => {
+      fireEvent.pointerMove(itemNamed("filter"));
+      fireEvent.click(itemNamed("filter"));
+    });
+    expect(itemNamed("Blur")).toBeDefined();
+
+    // Browse to the sibling. No pointer press is active, so nothing may veto the close.
+    await act(async () => {
+      fireEvent.pointerMove(itemNamed("generator"));
+      fireEvent.click(itemNamed("generator"));
+    });
+    expect(itemNamed("Solid")).toBeDefined(); // the sibling opened —
+    expect(screen.queryByText("Blur", { selector: "span" })).toBeNull(); // — and the first closed
   });
 });
 
