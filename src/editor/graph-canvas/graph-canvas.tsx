@@ -6,8 +6,6 @@ import "./xyflow-theme.css";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import {
-  Background,
-  BackgroundVariant,
   ConnectionLineType,
   ReactFlow,
   SelectionMode,
@@ -50,6 +48,7 @@ import {
 } from "@editor/library/node-search-command.ts";
 import { resolveMenuTarget } from "@editor/menus/target.ts";
 import { parameterDependencies } from "@domain/graph/parameter-dependencies.ts";
+import { GraphGrid } from "./graph-grid.tsx";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type {
   GraphCanvasContextValue,
@@ -719,14 +718,13 @@ export function GraphCanvas({
           fitView
         >
           {/*
-            T708: --graph-dot at size 1.5, not --line at size 1. Two things were wrong
-            and only fixing one leaves the grid invisible: the colour carried ΔL* 10.7
-            over the ground it was drawn on, and `size={1}` is a radius of 0.5px, so
-            every dot was a single antialiased sub-pixel that washed the little
-            contrast it had straight back out. The token now clears the graph void by
-            ΔL* 22.8 and the dot has a pixel to land in.
+            T708 gave the dots a colour that can be seen — --graph-dot at size 1.5, where
+            --line at size 1 was ΔL* 10.7 over its ground across a sub-pixel radius, so
+            the little contrast it had was antialiased straight back out. T717 gave them
+            a density that survives the zoom range; the two-layer cross-fade and the
+            reason it is not one adaptive gap live in `graph-grid.tsx`.
           */}
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1.5} color="var(--graph-dot)" />
+          <GraphGrid />
           {underlay}
           <ReferenceLines dependencies={dependencies} />
         </ReactFlow>
