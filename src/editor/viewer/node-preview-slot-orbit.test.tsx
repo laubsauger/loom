@@ -104,7 +104,7 @@ describe("the preview inspection mode (T656)", () => {
   it("HOME is the default, and the toggle says so", () => {
     const { orbits } = mount(true);
     expect(orbits.mode(NODE)).toBe("home");
-    expect(toggle().textContent).toBe("HOME");
+    expect(toggle().getAttribute("data-mode")).toBe("home");
     expect(toggle().getAttribute("aria-pressed")).toBe("false");
   });
 
@@ -127,7 +127,7 @@ describe("the preview inspection mode (T656)", () => {
     fireEvent.click(toggle());
 
     expect(orbits.mode(NODE)).toBe("adjustable");
-    expect(toggle().textContent).toBe("ADJUST");
+    expect(toggle().getAttribute("data-mode")).toBe("adjustable");
     expect(toggle().getAttribute("aria-pressed")).toBe("true");
     expect(slot.className).toMatch(/nowheel/);
 
@@ -186,12 +186,62 @@ describe("the preview inspection mode (T656)", () => {
     // Not "reset separately" — the orbit went with the mode, in one operation, so the two
     // cannot drift into disagreeing. An undefined orbit is the baked framing (§V528).
     expect(orbits.get(NODE)).toBeUndefined();
-    expect(toggle().textContent).toBe("HOME");
+    expect(toggle().getAttribute("data-mode")).toBe("home");
 
     // And the tile is back to today's behaviour, wheel included.
     fireEvent.wheel(slot, { deltaY: -100 });
     expect(orbits.get(NODE)).toBeUndefined();
     expect(canvasWheel).toHaveBeenCalledTimes(1);
+  });
+
+  it("the toggle is ONE box in both states — no word, so no reflow (T664)", () => {
+    /**
+     * The owner's report was "that adjust button looks a bit wonk and huge". The cause
+     * was the label: HOME is four characters and ADJUST is six, so the control grew by
+     * half the moment it was pressed — while its own CSS claimed the state was carried
+     * by tone and never by size. This is that claim, asserted rather than commented:
+     * the rendered content must not vary with the mode, which a text node cannot
+     * promise in any locale and a glyph gives for free.
+     */
+    const { slot } = mount(true);
+    const home = toggle().innerHTML;
+    fireEvent.click(toggle());
+    expect(toggle().getAttribute("data-mode")).toBe("adjustable");
+    expect(toggle().innerHTML).toBe(home);
+    expect(toggle().textContent).toBe("");
+    // The name is on the control, not in a word inside it, so it stays legible to a
+    // screen reader while the tile stays legible to everyone else.
+    expect(toggle().getAttribute("aria-label")).toBeTruthy();
+    expect(slot).toBeTruthy();
+  });
+
+  it("`h` over an ADJUSTABLE tile returns it home; `H` is the canvas's and stays so", () => {
+    // TD's muscle memory (T664). `h` is free by an earlier deliberate decision, not by
+    // luck: `defaults.ts` binds shifted `H` to `view.home` and records why lowercase was
+    // left out — so the negative half here is that the canvas binding is untouched.
+    const { orbits, slot } = mount(true);
+    fireEvent.click(toggle());
+    fireEvent.wheel(slot, { deltaY: 100 });
+    expect(orbits.get(NODE)).toBeDefined();
+
+    // Not hovering yet: the key does nothing, so `h` is not swallowed canvas-wide.
+    fireEvent.keyDown(window, { key: "h" });
+    expect(orbits.mode(NODE)).toBe("adjustable");
+
+    fireEvent.pointerEnter(slot);
+    fireEvent.keyDown(window, { key: "H" }); // the canvas's own binding, untouched
+    expect(orbits.mode(NODE)).toBe("adjustable");
+
+    fireEvent.keyDown(window, { key: "h" });
+    expect(orbits.mode(NODE)).toBe("home");
+    expect(orbits.get(NODE)).toBeUndefined();
+
+    // And once home, the listener is gone: `h` is the canvas's again.
+    const swallowed = vi.fn();
+    window.addEventListener("keydown", swallowed);
+    fireEvent.keyDown(window, { key: "h" });
+    expect(swallowed).toHaveBeenCalledTimes(1);
+    window.removeEventListener("keydown", swallowed);
   });
 
   it("a NON-orbitable slot is never offered the mode at all", () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useReactFlow } from "@xyflow/react";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -176,6 +176,37 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
     orbits?.setMode(nodeId, mode === "adjustable" ? "home" : "adjustable");
   }, [orbits, nodeId, mode]);
 
+  /**
+   * T664 — `h` over the tile returns it home, so the toggle is not the only way back.
+   *
+   * TouchDesigner's muscle memory, and the key is free here by an earlier deliberate
+   * decision rather than by luck: `H` (shifted) is `view.home`, the canvas's 1:1 zoom,
+   * and `defaults.ts` records that lowercase `h` was left OUT because "home selected"
+   * stopped meaning anything once `H` became about scale. `key === "h"` never matches
+   * the shifted form, so the canvas binding is untouched.
+   *
+   * It stays out of the keymap registry on purpose. §V78 routes a COMMAND's key through
+   * the registry so the menu and the palette can show it; this has no command to route,
+   * because §V527's whole point is that the inspection store holds no bus. It is a
+   * gesture on a hovered tile, the same kind of thing as the drag beside it.
+   *
+   * Listener attached only while a tile is actually hovered AND adjustable: one listener
+   * for the whole canvas rather than one per preview, and no chance of swallowing `h`
+   * from a text field, which cannot be hovered and focused as this tile at once.
+   */
+  const [hovered, setHovered] = useState(false);
+  useEffect(() => {
+    if (!hovered || !adjustable || orbits === undefined) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "h" || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      orbits.setMode(nodeId, "home");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hovered, adjustable, orbits, nodeId]);
+
   useEffect(() => {
     const element = ref.current;
     if (element === null) return;
@@ -237,6 +268,8 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
     >
       {/*
         T613/T656 — the toggle IS the affordance and the indicator, so there is no second
@@ -256,14 +289,36 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
           // phrase, and what the gestures ARE belongs in the help surface, not here.
           title={
             mode === "adjustable"
-              ? "Adjusting — press to return to the stock framing"
+              ? "Adjusting — press, or h, to return home"
               : "Adjust this preview's camera — orbit, zoom, pan"
           }
           // The press is the toggle's own; it must not also start an orbit drag.
           onPointerDown={(event) => event.stopPropagation()}
           onClick={toggleMode}
         >
-          {mode === "adjustable" ? "ADJUST" : "HOME"}
+          {/*
+            T664 — an ICON in a SQUARE box, never a word.
+            The first cut said HOME / ADJUST, and the owner reported it as "wonk and huge":
+            four characters becoming six grew the control by half the instant it was
+            pressed, so a control meant to say "nothing changed but the mode" visibly
+            reflowed. The CSS comment beside it already claimed the state was carried by
+            tone and never by size — the TEXT NODE was the thing breaking that claim, and
+            no amount of styling fixes a channel that is the string's own length. A glyph
+            is one width in every state and every locale. The orbit ring reads at 10px and
+            says what the mode DOES, which a word this small never did.
+          */}
+          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" focusable="false">
+            <ellipse
+              cx="6"
+              cy="6"
+              rx="5.2"
+              ry="2.4"
+              transform="rotate(-30 6 6)"
+              fill="none"
+              stroke="currentColor"
+            />
+            <circle cx="6" cy="6" r="1.9" fill="currentColor" />
+          </svg>
         </button>
       ) : null}
       {preview === null ? (
