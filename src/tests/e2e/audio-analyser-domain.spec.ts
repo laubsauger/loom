@@ -366,7 +366,40 @@ test.describe("T702 — the analyser's band channels are dB-domain, measured LIV
     expect(mean(perCaptureError)).toBeLessThan(0.5);
     // 4. And therefore drives the same channel values.
     for (const band of BANDS) expect(Math.max(...channelDeltas[band])).toBeLessThan(0.01);
-    // 5. The channels are logarithmic: a FIXED step per 10 dB, at the predicted 10/70.
-    for (const band of BANDS) expect(mean(slopes[band])).toBeCloseTo(10 / 70, 2);
+    // 5. The channels are logarithmic: the sweep spans the predicted 10/70 per 10 dB.
+    //
+    //    NOTE ON WHAT THIS ACTUALLY MEASURES (§B144): `mean(slopes[band])` TELESCOPES.
+    //    Every step is 10 dB, so slopes[i] = means[i-1] - means[i] and their mean is
+    //    exactly `(means[first] - means[last]) / 4` — it depends only on the ENDPOINTS
+    //    and cannot detect whether the step is constant. The per-step values genuinely
+    //    vary (0.1127-0.1654 on `low`, which has ~10 FFT bins at 23.4 Hz each), and that
+    //    variation is REPORTED above but not asserted. The comment used to claim "a FIXED
+    //    step", which this statistic has never tested. Constancy needs its own assertion
+    //    over the individual slopes; it is not smuggled in here.
+    //
+    //    §B144/§V716 — the window is ±0.01 and the number is not arbitrary. The slope is
+    //    built from BYTE-quantised channel values, so it can only land on a `k/255`
+    //    lattice at 0.00392 per count, while the prediction is 10/70 × 255 = **36.43
+    //    counts** — between two lattice points. `toBeCloseTo(…, 2)` is ±0.005, which is
+    //    1.28 counts wide, so it passed iff the measurement landed on 36 or 37 and failed
+    //    on 35 or 38 — and 35 misses by 0.0006. That is marginal BY CONSTRUCTION, and it
+    //    read as statistical noise: it failed 4 runs in 8 at clean HEAD and cost three
+    //    workers a control run each. The tell that it was quantisation rather than
+    //    variance is that the failures landed on ADJACENT LATTICE POINTS instead of
+    //    scattering (0.1351, 0.1369, 0.1373, 0.1507).
+    //
+    //    Widened by WINDOW, never by precision digit: `toBeCloseTo(…, 1)` is ±0.05, and a
+    //    tolerance that loose would stop refuting the LINEAR hypothesis — which is the
+    //    claim this entire spec exists to defend (§V647, T700).
+    //
+    //    The window is ±0.015, MEASURED rather than chosen: in an isolated §V713 harness
+    //    the statistic was observed at 0.13034, which is 0.0125 from the prediction. A
+    //    ±0.01 window passed 32 of 32 runs and would still have rejected that legitimate
+    //    reading — setting a tolerance INSIDE the statistic's own observed range is the
+    //    same error as the original, one size down. ±0.015 covers it with margin and is
+    //    still 3x tighter than a precision digit could express.
+    for (const band of BANDS) {
+      expect(Math.abs(mean(slopes[band]) - 10 / 70)).toBeLessThan(0.015);
+    }
   });
 });
