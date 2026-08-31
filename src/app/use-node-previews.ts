@@ -270,9 +270,17 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const off: Array<{ nodeId: NodeId; portId: string }> = [];
       // §V100/T197 — a slot that is not live still shows what the compiler resolved for
       // it, never a blank box, so this is looked up regardless of live/suspended/idle.
-      const facts = new Map<NodeId, { width: number; height: number; format: string }>();
+      // T527: keyed `${nodeId}:${portId}`, because that is the only safe key for a
+      // materialized output (`ResolvedOutput`'s own docblock) — one node can emit several.
+      // Keyed by node alone, a two-output node reported whichever row landed LAST under
+      // both ports, so the slot's stated size and format belonged to a port nobody asked for.
+      const facts = new Map<string, { width: number; height: number; format: string }>();
       for (const output of current.compiledOutputs) {
-        facts.set(output.nodeId, { width: output.size[0], height: output.size[1], format: output.format });
+        facts.set(`${output.nodeId}:${output.portId}`, {
+          width: output.size[0],
+          height: output.size[1],
+          format: output.format,
+        });
       }
 
       for (const { nodeId, portId, on } of candidates) {
@@ -299,10 +307,16 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         const sinkNodeId = previewTarget?.nodeId ?? nodeId;
         const sinkPortId = previewTarget?.portId ?? portId;
         if (previewTarget !== undefined) flatSinkOf.set(nodeId, previewTarget);
+        // T527: an output's identity is PORT-scoped, never node-scoped — the row this
+        // slot wants is exactly `sinkNodeId:sinkPortId`. Matching on the node alone took
+        // whichever row happened to come first and then bound the tile under THAT row's
+        // `output.portId`, so a node with two previewable outputs previewed the wrong
+        // one. `compiledOutputs` carries no ordering guarantee, so the port is the match.
         const output = current.compiledOutputs.find(
-          previewTarget === undefined
-            ? (entry) => entry.nodeId === nodeId && entry.resourceKind !== "pointset"
-            : (entry) => entry.nodeId === previewTarget.nodeId && entry.resourceKind !== "pointset",
+          (entry) =>
+            entry.nodeId === sinkNodeId &&
+            entry.portId === sinkPortId &&
+            entry.resourceKind !== "pointset",
         );
         // §V111: the offset within the node (never re-measured mid-drag). §V112: the
         // node's LIVE position, read fresh every tick — the two combine into the slot's
@@ -467,7 +481,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       }
 
       for (const entry of result.schedule.active) {
-        const found = facts.get(entry.ref.nodeId);
+        const found = facts.get(`${entry.ref.nodeId}:${entry.ref.portId}`);
         current.nodeRuntime.publish(entry.ref.nodeId, {
           preview: {
             output: entry.ref,
@@ -477,7 +491,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         });
       }
       for (const entry of result.schedule.suspended) {
-        const found = facts.get(entry.ref.nodeId);
+        const found = facts.get(`${entry.ref.nodeId}:${entry.ref.portId}`);
         current.nodeRuntime.publish(entry.ref.nodeId, {
           preview: {
             output: entry.ref,
@@ -487,7 +501,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         });
       }
       for (const { nodeId, portId } of idle) {
-        const found = facts.get(nodeId);
+        const found = facts.get(`${nodeId}:${portId}`);
         current.nodeRuntime.publish(nodeId, {
           preview: {
             output: { nodeId, portId },
@@ -500,7 +514,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       // still shows what the compiler resolved when the node renders for something else.
       // Off with no facts is the honest picture of a node that is now costing nothing.
       for (const { nodeId, portId } of off) {
-        const found = facts.get(nodeId);
+        const found = facts.get(`${nodeId}:${portId}`);
         current.nodeRuntime.publish(nodeId, {
           preview: {
             output: { nodeId, portId },

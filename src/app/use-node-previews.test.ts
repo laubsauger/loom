@@ -688,3 +688,107 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
     expect(componentPreviewTarget(inputsFor(system, registry, "blur"), "c1" as never)).toBeUndefined();
   });
 });
+
+/**
+ * T527 — WHICH output the slot binds, on a node that has more than one.
+ *
+ * `ResolvedOutput`'s own docblock states the rule: "Identity is port-scoped, never
+ * node-scoped ... `${nodeId}:${portId}` is the only safe key", because one node can
+ * materialize several outputs — a render emitting colour and depth is the shape the
+ * compiler already anticipates (`depthOutputs`). The lookup here matched on nodeId ALONE
+ * and then built the request from the matched row's own `portId`, so it bound whichever
+ * row `find` reached first and labelled the tile with that port. Every shipped node has
+ * exactly one previewable output today, which is why this stayed invisible.
+ *
+ * §V461 — a single-output fixture cannot distinguish "matched the right port" from
+ * "matched the only port", so the fixture here declares TWO previewable texture outputs
+ * and the assertions name the one `previewablePort` picks (`out`, declared first). The
+ * two cases differ only in ARRAY ORDER, which is deliberate: `compiledOutputs` is a
+ * `ReadonlyArray` with no ordering contract — the compiler happens to sort by
+ * `${nodeId}:${portId}`, so `depth` really does arrive before `out` — and a consumer that
+ * reads the right row only for one ordering is not reading the right row.
+ */
+describe("useNodePreviews binds the PORT it asked for, not the node's first row (T527)", () => {
+  const gbufferNode = {
+    type: "test.gbuffer",
+    version: 1,
+    title: "GBuffer",
+    category: "generator",
+    inputs: [],
+    // `out` first: this is the port `previewablePort` picks and therefore the one the
+    // slot, the sink and the tile all mean.
+    outputs: [
+      { id: "out", label: "Colour", type: { kind: "texture2d", sample: "float", channels: 4 } },
+      { id: "depth", label: "Depth", type: { kind: "texture2d", sample: "float", channels: 1 } },
+    ],
+    parameters: {},
+    compile: () => ({ passes: [] }),
+  } as never;
+
+  const rowFor = (portId: string, size: readonly [number, number], format: string) => ({
+    nodeId: "n1",
+    portId,
+    resourceId: `res:n1:${portId}`,
+    resourceKind: "target" as const,
+    size,
+    format,
+    space: "linear" as const,
+    temporal: false,
+  });
+
+  function run(compiledOutputs: ReadonlyArray<Record<string, unknown>>) {
+    const registry = createNodeRegistry([gbufferNode]).view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("n1", { x: 0, y: 0, width: 200, height: 120 });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+
+    renderHook(() =>
+      useNodePreviews({
+        backend: fakeBackend(),
+        canvasRef: { current: canvas },
+        bounds,
+        graph: graphWith("test.gbuffer"),
+        registry,
+        compiledOutputs: compiledOutputs as never,
+        nodeRuntime,
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    const snapshot = nodeRuntime.get("n1");
+    nodeRuntime.dispose();
+    return snapshot;
+  }
+
+  it("shows the previewable port even when another row comes first", () => {
+    // The compiler's own order: "n1:depth" sorts before "n1:out".
+    const snapshot = run([
+      rowFor("depth", [32, 32], "r32float"),
+      rowFor("out", [64, 64], "rgba8unorm"),
+    ]);
+
+    expect(snapshot.preview?.state.kind).toBe("live");
+    // Matching by node id alone bound `depth` here and published it as the slot's port.
+    expect(snapshot.preview?.output).toEqual({ nodeId: "n1", portId: "out" });
+  });
+
+  it("states the RESOLVED FACTS of that port, not of the node's last row (§V100)", () => {
+    // Same fixture, opposite order: now the tile was already right by luck and it is the
+    // facts — keyed by node, so last row won — that named the wrong port's picture.
+    const snapshot = run([
+      rowFor("out", [64, 64], "rgba8unorm"),
+      rowFor("depth", [32, 32], "r32float"),
+    ]);
+
+    expect(snapshot.preview?.output).toEqual({ nodeId: "n1", portId: "out" });
+    expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
+  });
+});
