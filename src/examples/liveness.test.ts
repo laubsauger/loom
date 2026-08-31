@@ -5,10 +5,9 @@ import { describe, expect, it } from "vitest";
 import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import { EXAMPLES_DIR } from "./catalogue.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
-import { toRgba8 } from "../runtime/export/image.ts";
-import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
-import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
-import { renderHeadless } from "../tests/headless/render-harness.ts";
+import { probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
+import { PROBE_RESOLUTION, exampleFileNameOf, measure } from "./look-instrument.ts";
+import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════
@@ -73,15 +72,6 @@ import { renderHeadless } from "../tests/headless/render-harness.ts";
  */
 
 /** Small enough to render two dozen examples, large enough that structure survives. */
-const PROBE_RESOLUTION = { width: 192, height: 108 } as const;
-
-/**
- * Frames 60 and 180 — one second in, three seconds in. Both LATE (past any warm-up) and two
- * seconds apart, which is long enough that even the slowest shipped drift registers.
- */
-const CAPTURE = [0, 60, 180] as const;
-const LAST_CAPTURE = 180;
-
 /**
  * THE THRESHOLDS, and every one is read off a measurement rather than chosen.
  *
@@ -183,92 +173,6 @@ const DECLARED: Readonly<Record<string, Exemption>> = {
     evidence: "opens on a black frame",
   },
 };
-
-const lin = (byte: number): number => {
-  const c = byte / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-};
-
-interface Reading {
-  /** Mean |Δ| of linear luma between the two late frames. */
-  readonly motion: number;
-  /** p999 − p001 of the last frame's linear luma. */
-  readonly range: number;
-  /** The brightest linear luma anywhere in frame 0. */
-  readonly firstFrameMax: number;
-}
-
-/**
- * ONE measurement path, and `animate: true` is written into it rather than passed to it.
- *
- * The colour space comes from the PLAN, never from an assumption: the Output node applies
- * the display transform, so its target already holds encoded bytes, and claiming "linear"
- * here re-encodes them — which reads a stop and a half too pale and quietly moves every
- * threshold in this file.
- */
-async function measure(
-  graph: GraphDocument,
-  settings: ProjectSettings,
-  outputNodeId: string,
-): Promise<Reading> {
-  const result = await renderHeadless({
-    host: nodeGpuHost(),
-    graph,
-    settings: { ...settings, outputResolution: { ...PROBE_RESOLUTION } },
-    frames: LAST_CAPTURE + 1,
-    capture: [...CAPTURE],
-    outputNodeId,
-    fps: 60,
-    animate: true,
-  });
-  const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
-  if (errors.length > 0) {
-    throw new Error(`render reported: ${errors.map((d) => d.message).join("; ")}`);
-  }
-  const space = result.plan.outputs.find((o) => o.nodeId === outputNodeId)?.space ?? "linear";
-  const lumaOf = (index: number): Float64Array => {
-    const frame = result.frames[index];
-    if (frame === undefined) throw new Error(`no captured frame at index ${index}`);
-    const image = toRgba8(
-      {
-        width: frame.width,
-        height: frame.height,
-        format: frame.format,
-        bytes: frame.bytes,
-        rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8),
-      },
-      { space },
-    );
-    const out = new Float64Array(image.data.length / 4);
-    for (let at = 0, pixel = 0; at < image.data.length; at += 4, pixel += 1) {
-      out[pixel] =
-        0.2126 * lin(image.data[at] ?? 0) +
-        0.7152 * lin(image.data[at + 1] ?? 0) +
-        0.0722 * lin(image.data[at + 2] ?? 0);
-    }
-    return out;
-  };
-
-  const first = lumaOf(0);
-  const early = lumaOf(1);
-  const late = lumaOf(2);
-
-  let sum = 0;
-  for (let pixel = 0; pixel < late.length; pixel += 1) {
-    sum += Math.abs((late[pixel] ?? 0) - (early[pixel] ?? 0));
-  }
-  const sorted = Float64Array.from(late).sort();
-  const at = (quantile: number): number =>
-    sorted[Math.min(sorted.length - 1, Math.floor(quantile * sorted.length))] ?? 0;
-  let firstFrameMax = 0;
-  for (const value of first) if (value > firstFrameMax) firstFrameMax = value;
-
-  return {
-    motion: sum / Math.max(1, late.length),
-    range: at(0.999) - at(0.001),
-    firstFrameMax,
-  };
-}
 
 const settingsFor = (width: number, height: number): ProjectSettings => ({
   outputResolution: { width, height },
@@ -568,16 +472,52 @@ describe("T521 — every shipped example moves, and you can see it", () => {
           `${entry.document.name} opens on a black frame (brightest pixel ` +
             `${reading.firstFrameMax.toFixed(4)}), and frame 0 is what the gallery shows.`,
         );
+
+        /**
+         * §V643 (T690) — THE BASELINE, asserted. The md tables were documentation and a
+         * catalogue-wide look drift was invisible by construction: E33 went stale NINE
+         * HOURS after authoring while every gate stayed green (T689), because T632/T636
+         * swapped its hand gain for physical terms and the round trip was approximately
+         * true, not measured-true (§V642). This block is the reader that can see.
+         *
+         * The band is read off measurements, not chosen: benign cross-commit drift
+         * measured ≤0.1% relative (E24 across a morning of engine work), the real event
+         * measured ≥22% (E33 under T632+T636). Ten percent sits an order of magnitude
+         * from both. The absolute floor covers near-zero baselines (E12's declared-still
+         * 0.00000 motion, E24's declared-black 0.0000 f0max), where a relative band is
+         * meaningless.
+         *
+         * A red here is a DECISION POINT, not a chore: if you changed how an example
+         * looks on purpose, re-run measure-look-baselines.ts IN THE SAME COMMIT and
+         * state the delta (§V642); if you did not, you just caught an accidental
+         * catalogue-wide look change — do not update the file to make it quiet.
+         */
+        const baseline = (LOOK_BASELINES as Record<string, { motion: number; range: number; f0max: number }>)[fileName];
+        expect(baseline, `${fileName} has no look baseline — run measure-look-baselines.ts and commit the entry`).toBeDefined();
+        const drifted: string[] = [];
+        const check = (metric: string, measured: number, recorded: number) => {
+          const band = Math.max(0.1 * Math.abs(recorded), 0.003);
+          if (Math.abs(measured - recorded) > band) {
+            const pct = recorded === 0 ? "∞" : `${((measured / recorded - 1) * 100).toFixed(1)}%`;
+            drifted.push(`${metric}: baseline ${recorded}, measured ${measured.toFixed(5)} (${pct})`);
+          }
+        };
+        if (baseline !== undefined) {
+          check("motion", reading.motion, baseline.motion);
+          check("range", reading.range, baseline.range);
+          check("f0max", reading.firstFrameMax, baseline.f0max);
+        }
+        expect(
+          drifted,
+          `${entry.document.name} no longer looks like its baseline — ${drifted.join("; ")}. ` +
+            `Deliberate? Re-run measure-look-baselines.ts in this commit and state the delta ` +
+            `(§V642/§V643). Not deliberate? You caught a look regression — do not update the file.`,
+        ).toEqual([]);
       },
       240_000,
     );
   }
 });
-
-/** `E4 Bloom` → `E4-Bloom.loom.json`, the same derivation `buildProjectFile` uses. */
-function exampleFileNameOf(name: string): string {
-  return `${name.replace(/\s+/g, "-")}.loom.json`;
-}
 
 /**
  * One property, both directions. `reason` present means the example claims it cannot meet
