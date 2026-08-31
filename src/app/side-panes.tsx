@@ -350,7 +350,9 @@ export function ViewerPane({
   probe,
   readoutOptions,
 }: ViewerPaneProps) {
-  const { bus, invocation, registry } = useAppRuntime();
+  // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
+  // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
+  const { bus, documentIdentity, invocation, registry } = useAppRuntime();
   const outputs = useMemo(() => compiled?.outputs ?? [], [compiled]);
 
   const sink = useMemo(() => {
@@ -370,8 +372,34 @@ export function ViewerPane({
    * output would put an arbitrary intermediate on the viewer. What the selector adds is the
    * ability to say otherwise: repointing is `setOutput` (§V70), which is why it costs a
    * uniform-sized change and not a re-attach.
+   *
+   * ## The pin belongs to a DOCUMENT (T726, B106, §V79)
+   *
+   * A pin is a key — `${nodeId}:${portId}` — and node ids are the names a person typed,
+   * so two unrelated projects collide on them constantly: E31 and E32 share TWENTY-ONE
+   * ids, E2 and E24 share eleven, and `out` is in all twenty-nine shipped examples. Held
+   * as a bare key, a pin therefore SURVIVED a load and re-bound itself to whatever the
+   * incoming document happened to call by the same name. Measured in the running app:
+   * pin the viewer to `rd:out` in E2-Reaction-Diffusion, open E24-Audio-Reaction-Diffusion,
+   * and the selector still reads `rd:out` — the new project's Output node is not what is
+   * on screen, and nothing said so. The fallback below cannot see it, because a matching
+   * key is exactly what "the pin is still valid" looks like from inside one document.
+   *
+   * So the pin carries the identity it was made under and is READ THROUGH it. Same
+   * correction as `classify-revision.ts`'s `DocumentRevision` and for the same reason: a
+   * comparison that cannot distinguish two documents must not be handed the job of
+   * deciding whether something from one is valid in the other. Crossing the boundary
+   * yields `null`, which is "no pin" — and no pin means the DECLARED SINK, which is what
+   * opening a project is supposed to show.
    */
-  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const [pin, setPin] = useState<{ documentIdentity: string; key: string } | null>(null);
+  const pinnedKey = pin !== null && pin.documentIdentity === documentIdentity ? pin.key : null;
+  const setPinnedKey = useCallback(
+    (key: string | null) => {
+      setPin(key === null ? null : { documentIdentity, key });
+    },
+    [documentIdentity],
+  );
   const selected = useMemo(() => {
     if (pinnedKey !== null) {
       const match = outputs.find((output) => outputKey(output) === pinnedKey);
@@ -407,7 +435,10 @@ export function ViewerPane({
     return () => {
       if (holder.current === handlers) holder.current = null;
     };
-  }, [bus]);
+    // `setPinnedKey` stamps the CURRENT document on the pin (T726), so the handler has to
+    // be rebuilt when that changes — `bus` alone would leave `v` writing the closed
+    // project's identity onto a pin made in the new one.
+  }, [bus, setPinnedKey]);
 
   const { canvasRef, canvasKey } = useOutputPresentation(backend, selected?.resourceId ?? null);
   /**
