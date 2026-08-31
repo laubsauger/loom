@@ -96,6 +96,7 @@ export {
   findPublishedParameter,
   publishParameter,
   publishedParameterOperations,
+  reorderPublishedParameter,
   unexposePort,
   unpublishParameter,
 } from "./published-parameter.ts";
@@ -123,6 +124,7 @@ export type {
   InstantiateInput,
   InstantiateOutput,
   PublishParameterInput,
+  ReorderParameterInput,
   SaveSelectionCommandInput,
   SaveSelectionOutput,
   SetParentBindingInput,

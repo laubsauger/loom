@@ -69,19 +69,55 @@ export function findPublishedParameter(
 }
 
 /**
- * Adds or REPLACES a published parameter.
+ * Adds or REPLACES a published parameter, KEEPING ITS PLACE ON THE PAGE.
  *
  * Replacement is re-authoring: the label, range and unit of the published control are
  * chosen for the component's user, not inherited from whichever internal parameter it
  * happens to drive (§V80). Editing the published definition is the normal case, not an
  * error to guard against.
+ *
+ * Position is part of the authored result, not an artefact of when the edit happened
+ * (T423). Filtering and appending — what this did before there was an editor — meant
+ * that renaming the label of the first knob dropped it to the bottom of the page, so a
+ * component's public interface reshuffled itself every time its author touched it. A new
+ * key still appends: there is no other honest place for it.
  */
 export function publishParameter(
   definition: GraphComponentDefinition,
   published: PublishedParameter,
 ): GraphComponentDefinition {
-  const parameters = definition.parameters.filter((each) => each.key !== published.key);
-  parameters.push(published);
+  const at = definition.parameters.findIndex((each) => each.key === published.key);
+  const parameters = [...definition.parameters];
+  if (at === -1) parameters.push(published);
+  else parameters[at] = published;
+  return { ...definition, parameters };
+}
+
+/**
+ * Moves a published parameter to `toIndex` — the ORDER half of the parameter page (T423).
+ *
+ * A component's parameter page is its public interface, and the order controls appear in
+ * is the part of it the author reads first. It cannot be derived: alphabetical would put
+ * "Amount" above "Blur" whatever the component does, and insertion order records only
+ * the sequence in which somebody happened to publish. So it is authored, and stored as
+ * the order of `definition.parameters` — the same argument `StopsField` makes for a
+ * gradient's stops.
+ *
+ * Out-of-range indices CLAMP rather than refuse: "move the first one up" is a gesture a
+ * user makes constantly and a refusal for it would be noise, not information.
+ */
+export function reorderPublishedParameter(
+  definition: GraphComponentDefinition,
+  key: string,
+  toIndex: number,
+): GraphComponentDefinition {
+  const from = definition.parameters.findIndex((each) => each.key === key);
+  if (from === -1) return definition;
+  const parameters = [...definition.parameters];
+  const [moved] = parameters.splice(from, 1);
+  if (moved === undefined) return definition;
+  const to = Math.max(0, Math.min(parameters.length, Math.trunc(toIndex)));
+  parameters.splice(to, 0, moved);
   return { ...definition, parameters };
 }
 
@@ -95,15 +131,25 @@ export function unpublishParameter(
   };
 }
 
+/**
+ * Adds or re-authors a boundary port, KEEPING ITS PLACE in the port list.
+ *
+ * Same argument as `publishParameter` (T423): the order of `inputs`/`outputs` is the
+ * order the ports are drawn on every instance of the component, so re-labelling the top
+ * input must not slide it to the bottom of the node while wires are attached to it.
+ */
 export function exposePort(
   definition: GraphComponentDefinition,
   direction: "input" | "output",
   port: ExposedPort,
 ): GraphComponentDefinition {
-  const replace = (ports: ExposedPort[]): ExposedPort[] => [
-    ...ports.filter((each) => each.externalId !== port.externalId),
-    port,
-  ];
+  const replace = (ports: ExposedPort[]): ExposedPort[] => {
+    const at = ports.findIndex((each) => each.externalId === port.externalId);
+    if (at === -1) return [...ports, port];
+    const next = [...ports];
+    next[at] = port;
+    return next;
+  };
   return direction === "input"
     ? { ...definition, inputs: replace(definition.inputs) }
     : { ...definition, outputs: replace(definition.outputs) };

@@ -130,7 +130,26 @@ export const NODE_MENU: MenuSchema = {
     // rename with no name (B60, §V342). It names the command that OPENS the inline editor
     // on the node's title; that editor is what runs `node.rename`.
     { command: BEGIN_RENAME_COMMAND, label: "Rename…" },
-    { command: planned("graph.diveIn"), label: "Dive in" },
+    /**
+     * T423 — the component gestures, as a SUBMENU rather than as two more rows.
+     *
+     * "Dive in" was `planned("graph.diveIn")` from T127 until the component editor landed;
+     * it is a real command now, and "Save as component…" is the gesture that makes the
+     * whole feature discoverable, so both want a place here. The node menu is AT its
+     * eleven-item cap, and the cap's own instruction is to displace a row or open a
+     * submenu rather than raise it a second time. Nothing here was stale enough to
+     * displace, and the two belong together, so: one row, two verbs.
+     *
+     * Neither loses a door by being nested (§V78): "Dive in" keeps `i`/`Enter` and the
+     * palette, and "Save as component…" has its own binding and the palette.
+     */
+    {
+      label: "Component",
+      submenu: [
+        { command: "graph.diveIn", label: "Dive in" },
+        { command: "ui.createComponent", label: "Save as component…" },
+      ],
+    },
     { separator: true },
     { command: "graph.copySelection", label: "Copy" },
     { command: "graph.cutSelection", label: "Cut" },

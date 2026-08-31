@@ -159,10 +159,15 @@ describe("§V53 — a text context swallows the graph's single-key bindings", ()
 });
 
 /**
- * These used to be written against `L`/`graph.layout`, which was the honest example until
- * B84 built it. `i`/`graph.diveIn` replaced it: subgraphs really do not exist, so the
- * binding is still a promise rather than a dead key, and §V354's distinction survives
- * (nothing on screen offers to dive into anything).
+ * These were written against `L`/`graph.layout` until B84 built it, then against
+ * `i`/`graph.diveIn` until T423 built THAT. `e`/`ui.openShaderEditor` is the honest
+ * example now: the shader dock exists, but nothing registers the command that opens it,
+ * so the binding is still a promise rather than a dead key and §V354's distinction
+ * survives.
+ *
+ * Rewriting this describes a real move, not test maintenance: each time, a key that did
+ * nothing acquired a surface, and the example had to follow because the point of the test
+ * is the UNRESOLVED path, not any particular command.
  */
 describe("a binding whose command nothing registered", () => {
   it("reports unresolved instead of throwing or mutating", async () => {
@@ -170,13 +175,13 @@ describe("a binding whose command nothing registered", () => {
     await select(element);
     const before = runtime.bus.store.getRevision();
 
-    // `i` — dive in. Declared in the default keymap on purpose, implemented by nobody.
+    // `e` — edit/expose. Declared in the default keymap on purpose, implemented by nobody.
     expect(() => {
-      fireEvent.keyDown(element, { key: "i" });
+      fireEvent.keyDown(element, { key: "e" });
     }).not.toThrow();
 
     expect(runtime.bus.store.getRevision()).toBe(before);
-    expect(runtime.bus.hasCommand("graph.diveIn")).toBe(false);
+    expect(runtime.bus.hasCommand("ui.openShaderEditor")).toBe(false);
   });
 
   it("is reported as `unresolved` by the engine, not swallowed", () => {
@@ -192,10 +197,10 @@ describe("a binding whose command nothing registered", () => {
       onDispatch: (dispatch) => dispatches.push(dispatch),
     });
 
-    engine.handleKey({ key: "i" });
+    engine.handleKey({ key: "e" });
     expect(dispatches.at(-1)).toMatchObject({
       status: "unresolved",
-      command: "graph.diveIn",
+      command: "ui.openShaderEditor",
       consumed: false,
     });
 

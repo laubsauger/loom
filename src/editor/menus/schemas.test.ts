@@ -80,6 +80,15 @@ const APP_REGISTERED = [
   // document state, so the domain bus does not own it. Live, not planned: the menu row
   // that names it opens a real editor.
   "ui.beginRename",
+  // T423: registered by the mounted canvas chrome — `graph.diveIn`/`graph.jumpUp` by
+  // `registerComponentNavigationCommands` (`src/app/component-navigation.ts`) and
+  // `ui.createComponent` by `ComponentBar` (`src/app/component-bar.tsx`). WHICH component
+  // you are inside is view state like the viewport, so the domain bus does not own it
+  // (§V16). Live, not planned: "Dive in" opens a real surface now, which is why it left
+  // `PLANNED_COMMANDS`.
+  "graph.diveIn",
+  "graph.jumpUp",
+  "ui.createComponent",
   // B68/T441: registered by the mounted graph canvas too — `registerReferenceLinesCommand`
   // returns the store the canvas subscribes to, and the command comes with it. Whether a
   // line is DRAWN is a property of a look at the graph, not of the graph, so the domain
@@ -112,11 +121,12 @@ describe("what the menus promise but nobody has built", () => {
     // Non-vacuity: the menus really do name unimplemented commands, so an empty `missing`
     // would mean the walk broke rather than that the menus got finished.
     // T463 displaced the planned "Set colour…" row (still keymap-reachable) and B84 built
-    // the canvas menu's "Layout", so the menus now promise four unbuilt commands rather
-    // than six. The floor tracks that number down as rows get built — it is a non-vacuity
-    // guard, not a quota, and the day it reaches zero this assertion should be DELETED
-    // along with the disabled-item machinery, not weakened to `>= 0`.
-    expect(missing.length).toBeGreaterThan(3);
+    // the canvas menu's "Layout", so the menus promised four unbuilt commands rather than
+    // six; T423 built "Dive in" and it is three. The floor tracks that number down as rows
+    // get built — it is a non-vacuity guard, not a quota, and the day it reaches zero this
+    // assertion should be DELETED along with the disabled-item machinery, not weakened to
+    // `>= 0`.
+    expect(missing.length).toBeGreaterThan(2);
   });
 
   it("every command it treats as live is really on a bus", () => {

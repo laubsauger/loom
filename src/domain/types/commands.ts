@@ -88,7 +88,7 @@ export type QueryName = keyof QueryMap;
  * the two cases WRITTEN DOWN, so a gate can tell them apart.
  *
  * It is ONE list for both tables on purpose: the menus and the keymap name overlapping
- * sets (`graph.diveIn` and `ui.openNodeSearch` are named by both, and `view.frameAll` and
+ * sets (`graph.diveIn` and `ui.openNodeSearch` were named by both, and `view.frameAll` and
  * `graph.layoutAll` were before they were built), and two lists would mean promoting one
  * command required remembering two deletions.
  *
@@ -106,9 +106,7 @@ export type QueryName = keyof QueryMap;
  * which is the silent-skip failure moved one layer up rather than removed.
  */
 export type PlannedCommandName =
-  | "graph.diveIn"
   | "graph.insertConversion"
-  | "graph.jumpUp"
   | "graph.rerouteEdge"
   | "node.openColorPalette"
   | "ui.cancel"
@@ -116,9 +114,7 @@ export type PlannedCommandName =
   | "ui.openShaderEditor";
 
 export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
-  "graph.diveIn",
   "graph.insertConversion",
-  "graph.jumpUp",
   "graph.rerouteEdge",
   "node.openColorPalette",
   "ui.cancel",

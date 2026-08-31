@@ -137,6 +137,9 @@ const BUILDERS: Record<string, InputBuilder> = {
   "ui.beginRename": clickedNodeIds,
   "node.openColorPalette": nodeRef,
   "graph.diveIn": nodeRef,
+  // The whole selection, like every other multi-node action: "save these nine as a
+  // component" is the gesture, and taking only the clicked one would silently drop eight.
+  "ui.createComponent": nodeIds,
 
   "graph.insertConversion": portRef,
   "graph.rerouteEdge": edgeRef,

@@ -22,6 +22,7 @@ import {
   publishedParameterOperations,
   unexposePort as withoutExposedPort,
   unpublishParameter as withoutPublishedParameter,
+  reorderPublishedParameter,
 } from "./published-parameter.ts";
 import { buildComponentFromSelection } from "./save-selection.ts";
 import { availableUpgrade, planComponentUpgrade } from "./upgrade.ts";
@@ -62,6 +63,8 @@ declare module "../types/commands.ts" {
     /** Promote internal parameters onto the component's parameter page (T132, §V80). */
     "component.publishParameter": { input: PublishParameterInput; output: ComponentEditOutput };
     "component.unpublishParameter": { input: { key: string }; output: ComponentEditOutput };
+    /** Move a published parameter on the component's parameter page (T423, §V80). */
+    "component.reorderParameter": { input: ReorderParameterInput; output: ComponentEditOutput };
     /** Turn a published knob: every internal target, one patch, one undo step (§V80). */
     "component.setPublishedParameter": {
       input: { key: string; value: ParameterValue };
@@ -146,6 +149,12 @@ export interface PublishParameterInput {
   /** RE-AUTHORED, not copied: label, range and unit are chosen for this control (§V80). */
   definition: ParameterDefinition;
   targets: ReadonlyArray<{ nodeId: NodeId; key: string }>;
+}
+
+export interface ReorderParameterInput {
+  key: string;
+  /** Target position on the page, clamped into range. */
+  toIndex: number;
 }
 
 export interface SetParentBindingInput {
@@ -800,6 +809,34 @@ export function registerComponentCommands(bus: ShaderloomBus, options: Component
         return editOutcome(revision, false, host, diagnostics);
       }
       const ok = commitDefinition(context, withoutPublishedParameter(definition, input.key), diagnostics);
+      return editOutcome(revision, ok, host, diagnostics);
+    },
+  });
+
+  bus.registerCommand({
+    name: "component.reorderParameter",
+    description: "Move a published parameter on the component's parameter page (T423, §V80).",
+    handler: (input, context): CommandOutcome<ComponentEditOutput> => {
+      const diagnostics: RuntimeDiagnostic[] = [];
+      const revision = context.store.getRevision();
+      const definition = requireHostDefinition();
+      if (host === null || definition === undefined) {
+        diagnostics.push(NOT_INSIDE);
+        return editOutcome(revision, false, host, diagnostics);
+      }
+      if (findPublishedParameter(definition, input.key) === undefined) {
+        // Named, not silent: reordering a key that is not on the page means the caller
+        // and the definition disagree about what the page holds (§V288).
+        diagnostics.push(
+          error(
+            "component.parameter.unknown",
+            `"${definition.name}" publishes no parameter "${input.key}".`,
+          ),
+        );
+        return editOutcome(revision, false, host, diagnostics);
+      }
+      const next = reorderPublishedParameter(definition, input.key, input.toIndex);
+      const ok = commitDefinition(context, next, diagnostics);
       return editOutcome(revision, ok, host, diagnostics);
     },
   });

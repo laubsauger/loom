@@ -8,6 +8,9 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { ComponentPage } from "@editor/component/index.ts";
+import type { GraphComponentDefinition } from "@domain/types/components.ts";
+import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import { Inspector } from "@editor/inspector/index.ts";
 import type { InputResolution } from "@editor/inspector/index.ts";
 import { useKeymapPane } from "@editor/keymap/index.ts";
@@ -83,6 +86,18 @@ export function LibraryPane({ portDrag, onClearPortDrag, actions }: LibraryPaneP
 
 export interface InspectorPaneProps {
   nodeId: NodeId | null;
+  /**
+   * Set while the editor is INSIDE a component (T423): the definition being edited, and
+   * the catalogue to watch for changes to it.
+   *
+   * The page editor sits ABOVE the node inspector rather than replacing it, because both
+   * are true at once — you are editing a component AND you have one of its nodes
+   * selected, and publishing a parameter needs to see both.
+   */
+  componentPage?: {
+    definition: GraphComponentDefinition;
+    components: ComponentRegistryView;
+  };
   graph: GraphDocument;
   compiled: CompiledGraph | null;
   diagnostics: readonly RuntimeDiagnostic[];
@@ -137,6 +152,7 @@ function inputResolutionsFor(
 
 export function InspectorPane({
   nodeId,
+  componentPage,
   graph,
   compiled,
   diagnostics,
@@ -191,6 +207,16 @@ export function InspectorPane({
   return (
     <ContextMenuHost bus={bus}>
       <div {...paneProps} className={styles.scrollFill} data-testid="inspector-scroll">
+        {componentPage === undefined ? null : (
+          <ComponentPage
+            bus={bus}
+            context={invocation}
+            definition={componentPage.definition}
+            components={componentPage.components}
+            nodes={registry}
+            selectedNodeId={nodeId}
+          />
+        )}
         <Inspector
           bus={bus}
           context={invocation}

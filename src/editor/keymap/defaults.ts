@@ -145,6 +145,26 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     label: "Jump down",
   },
   {
+    /**
+     * T423 — the third door for "save the selection as a component" (§V307, §V78).
+     *
+     * `C` is OURS and says so, the way `H` is (§V354's rule): bare `c` is the colour
+     * palette, and `mod+g` is on the list of shortcuts that turned out not to be prior
+     * art and must not come back. So this is a chosen key, not a transcribed one.
+     *
+     * It names the command that OPENS the naming prompt, never `component.saveSelection`
+     * itself: that one needs a NAME, and a key press cannot carry one — B60's exact
+     * shape, and T415's answer applied again (§V342).
+     */
+    id: "ui.createComponent",
+    keys: "shift+c",
+    context: "graph",
+    command: "ui.createComponent",
+    when: "hasSelection",
+    inputFrom: { from: "selection", as: "nodeIds" },
+    label: "Save as component",
+  },
+  {
     id: "node.rename",
     keys: "n",
     context: "graph",

@@ -1,0 +1,58 @@
+/**
+ * Component chrome above the canvas (T423). T498's chrome rhythm, no second scale;
+ * every colour is a token (§V17).
+ */
+
+/**
+ * An OVERLAY rather than a row above the canvas.
+ *
+ * The canvas measures its own height against the pane, and a sibling that consumed part
+ * of it would collapse the graph (the note beside `.canvas > [data-node-info-host]` in
+ * `app-shell.module.css` records the same failure from T145). Overlaying also matches
+ * what the bar is: a statement about WHERE you are, floating over the network it
+ * describes, present only when you are somewhere other than the root.
+ */
+.bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: var(--z-canvas-overlay);
+  display: flex;
+  flex-direction: column;
+  border-bottom: var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--pane-header-h);
+  padding: var(--chrome-half-beat) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--chrome-meta);
+}
+
+.promptLabel {
+  color: var(--text-dim);
+}
+
+.promptInput {
+  flex: 0 1 var(--space-48);
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raise);
+  color: var(--text);
+  font: inherit;
+}
+
+.promptInput:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.promptMessage {
+  color: var(--warn);
+}

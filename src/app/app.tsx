@@ -26,6 +26,8 @@ import { OPEN_SETTINGS_COMMAND, ProjectSettingsHost } from "@editor/inspect/inde
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
 import { projectFps, projectRange } from "@domain/types/graph.ts";
+import { ComponentBar } from "./component-bar.tsx";
+import { useComponentEditing } from "./use-component-editing.ts";
 import { GraphPane } from "./graph-pane.tsx";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -176,6 +178,19 @@ export function App({
   const clearPortDrag = useCallback(() => setPortDrag(null), []);
 
   const graphActions = useCallback(() => actionsRef.current, []);
+
+  /**
+   * WHERE THE EDITOR IS (T423, §V82). Empty path = the root document, which is the only
+   * state this had before the component editor existed.
+   *
+   * Only the canvas and the inspector move: `compile`, the frame loop, the viewer and the
+   * transport all keep reading `runtime.bus`, because the project keeps rendering while
+   * you walk around inside it. `editing.runtime` is the same runtime with its bus swapped
+   * for the component session's, handed to those two panes through the context they
+   * already read it from.
+   */
+  const editing = useComponentEditing(runtime);
+  const insideComponent = editing.insideComponent;
 
   /**
    * A refused gesture must say so. The bus rejects an illegal connection (§V13) or a
@@ -645,41 +660,6 @@ export function App({
     frameLoop.clearDiagnostics();
   }, [autosave, frameLoop, media, project, recovery]);
 
-  const problems = useMemo<RuntimeDiagnostic[]>(() => {
-    const list: RuntimeDiagnostic[] = [];
-    if (status.kind === "unavailable") {
-      list.push({
-        severity: "error",
-        code: "gpu.unavailable",
-        message: status.reason,
-        suggestion:
-          "Editing still works. Open this in Chrome or Edge 128+ on a machine with WebGPU to render.",
-      });
-    }
-    list.push(
-      ...compile.diagnostics,
-      ...valueGraph.diagnostics,
-      ...media.diagnostics,
-      ...rejection,
-      ...autosave.diagnostics,
-      ...project.diagnostics,
-      ...recovery.diagnostics,
-      ...frameLoop.diagnostics,
-    );
-    return list;
-  }, [
-    autosave.diagnostics,
-    compile.diagnostics,
-    frameLoop.diagnostics,
-    valueGraph.diagnostics,
-    media.diagnostics,
-    project.diagnostics,
-    recovery.diagnostics,
-    rejection,
-    status,
-  ]);
-
-  const errorCount = problems.filter((diagnostic) => diagnostic.severity === "error").length;
   const selectedNodeId = selection[0] ?? null;
 
   /**
@@ -710,6 +690,55 @@ export function App({
     latestFrame: frameLoop.latestFrame,
     name: () => project.fileName ?? runtime.project.name,
   });
+
+  /**
+   * Every diagnostic the session has to offer, in one list (§V338: the honest answer has
+   * to be OBTAINABLE, which means one place holds it).
+   *
+   * Declared after `useRenderRange` rather than before it only because it now reads that
+   * hook's output — T586's free-run render warning. It is consumed first by the agent
+   * surface immediately below, so nothing moved relative to a reader.
+   */
+  const problems = useMemo<RuntimeDiagnostic[]>(() => {
+    const list: RuntimeDiagnostic[] = [];
+    if (status.kind === "unavailable") {
+      list.push({
+        severity: "error",
+        code: "gpu.unavailable",
+        message: status.reason,
+        suggestion:
+          "Editing still works. Open this in Chrome or Edge 128+ on a machine with WebGPU to render.",
+      });
+    }
+    list.push(
+      ...compile.diagnostics,
+      ...valueGraph.diagnostics,
+      ...media.diagnostics,
+      ...rejection,
+      ...autosave.diagnostics,
+      ...project.diagnostics,
+      ...recovery.diagnostics,
+      ...frameLoop.diagnostics,
+      // T586 — what the LAST TAKE had to say about itself. A refusal reaches the user
+      // through `reportRefusal`, which returns early on `applied`; a take that succeeds
+      // and is nonetheless not reproducible had no channel at all before this.
+      ...renderRange.diagnostics,
+    );
+    return list;
+  }, [
+    autosave.diagnostics,
+    compile.diagnostics,
+    frameLoop.diagnostics,
+    valueGraph.diagnostics,
+    media.diagnostics,
+    project.diagnostics,
+    recovery.diagnostics,
+    rejection,
+    renderRange.diagnostics,
+    status,
+  ]);
+
+  const errorCount = problems.filter((diagnostic) => diagnostic.severity === "error").length;
   const agentSurface = useAgentSurface(runtime, { selection, diagnostics: problems }, agentPorts);
   // T397/§V338: publishing the surface to a transport AND reporting what that publication
   // found. The row this produces is the app's only answer to "is an agent attached?".
@@ -950,6 +979,16 @@ export function App({
               runtime={runtime.nodeRuntime}
               fallbackNodeId={selectedNodeId}
             >
+              <ComponentBar
+                bus={runtime.bus}
+                context={runtime.invocation}
+                breadcrumbs={editing.breadcrumbs}
+                insideComponent={insideComponent}
+                onNavigate={editing.navigate}
+                onExit={editing.exit}
+                onCreated={onSelectionChange}
+              />
+              <AppRuntimeContext.Provider value={editing.runtime}>
               <GraphPane
                 selection={selection}
                 onSelectionChange={onSelectionChange}
@@ -958,23 +997,40 @@ export function App({
                 onPortDragChange={onPortDragChange}
                 onPatchResult={onPatchResult}
                 actionsRef={actionsRef}
-                previewBackend={backend ?? null}
-                graph={compile.graph}
-                compiledOutputs={compile.compiled?.outputs ?? []}
+                previewBackend={insideComponent ? null : (backend ?? null)}
+                graph={editing.graph}
+                /*
+                 * Empty inside a component, deliberately. `flattenComponents` prefixes an
+                 * internal node's id with its instance chain (`c1/blurA`), so the root
+                 * plan's outputs are keyed on names the internal graph never uses — and
+                 * an unprefixed id that DID match would be another node's picture on this
+                 * node's slot, which is worse than no preview (§V8, B41's shape).
+                 */
+                compiledOutputs={insideComponent ? [] : (compile.compiled?.outputs ?? [])}
                 previewFps={runtime.settings.previewFps}
                 previewLongEdge={runtime.settings.previewLongEdge}
                 previewSinks={previewSinks}
                 valueHistory={valueHistory}
               />
+              </AppRuntimeContext.Provider>
             </NodeInfoHost>
             </ErrorBoundary>
           }
           inspector={
             <ErrorBoundary name="Inspector">
+              <AppRuntimeContext.Provider value={editing.runtime}>
               <InspectorPane
                 nodeId={selectedNodeId}
-                graph={compile.graph}
-                compiled={compile.compiled}
+                {...(editing.definition === null
+                  ? {}
+                  : {
+                      componentPage: {
+                        definition: editing.definition,
+                        components: componentsView,
+                      },
+                    })}
+                graph={editing.graph}
+                compiled={insideComponent ? null : compile.compiled}
                 diagnostics={compile.diagnostics}
                 // B46/§V61: the panel resolves through the resolver the COMPILE used.
                 channels={compile.channels}
@@ -982,6 +1038,7 @@ export function App({
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
               />
+              </AppRuntimeContext.Provider>
             </ErrorBoundary>
           }
           viewer={

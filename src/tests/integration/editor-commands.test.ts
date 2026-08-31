@@ -302,8 +302,14 @@ describe("commands the keymap names but nothing implements", () => {
       // `graph.layout`/`graph.layoutAll` left this list in B84: they ARE registered now,
       // by `registerLayoutCommands` in `createDomainBus`. `view.*` stay because their
       // registrar lives beside the canvas, not on the domain bus.
-      "graph.diveIn",
-      "graph.jumpUp",
+      //
+      // T423 moved `graph.diveIn`/`graph.jumpUp` from "nobody implements it" to
+      // "registered beside the canvas", the same category `view.*` is in — WHICH component
+      // you are inside is view state, so `registerComponentNavigationCommands` lives in
+      // `src/app` and the DOMAIN bus still does not have them. §V333 is why they are not
+      // simply left here with the old reason: absence on THIS harness stopped meaning
+      // absence in the product the moment the app registered them, and the assertion that
+      // still knows the difference is `composition-seams.test.ts`, which reads both.
       "transport.togglePlay",
       "project.save",
       "runtime.resetFeedback",

@@ -140,11 +140,6 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
     reason:
       "B27 — the shader editor's debounced compile pipeline is exported from its own index and constructed only by its unit test. The panel validates on the graph compile instead, so WGSL errors appear later than the pipeline was built to show them.",
   },
-  {
-    name: "openComponentSession",
-    reason:
-      "Entering a component navigates (T130) without opening an editing session; publishing and exposing from inside a component are therefore not reachable from the canvas yet.",
-  },
 ];
 
 const TEST_FILE = /\.test\.(ts|tsx)$/;
@@ -1045,15 +1040,13 @@ function invokersOf(command: string): string[] {
  * permanent excuse.
  */
 const COMMANDS_WITH_NO_INVOKER: ReadonlyArray<{ name: string; reason: string }> = [
-  {
-    name: "component.exposePort",
-    reason:
-      "T423 — the component EDITOR does not exist. The domain half shipped (T129-T136); nothing in the canvas exposes a port yet, so there is no control to name it.",
-  },
-  { name: "component.setParentBinding", reason: "T423, same — parent-binding authoring has no surface." },
-  { name: "component.setPublishedParameter", reason: "T423, same — the published-parameter page editor has no surface." },
-  { name: "component.unexposePort", reason: "T423, same." },
-  { name: "component.unpublishParameter", reason: "T423, same." },
+  /*
+   * T423 removed five entries from this list in one edit: `component.exposePort`,
+   * `component.unexposePort`, `component.setPublishedParameter`,
+   * `component.unpublishParameter` and `component.setParentBinding`. All five were
+   * excused with "the component EDITOR does not exist"; `ComponentPage` is that editor
+   * and names every one of them. The bidirectional half of this gate is what said so.
+   */
   {
     name: "graph.revertTransaction",
     reason:
