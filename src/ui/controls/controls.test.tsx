@@ -523,3 +523,81 @@ describe("asset row layout (T543)", () => {
     expect(screen.getByText("track.wav")).toBeDefined();
   });
 });
+
+/**
+ * T652 — clicking a numeric field and clicking away must not change its value.
+ *
+ * T648 fixed the MANIFESTS — every starter component's published default now declares a
+ * step that holds it, and the catalogue's remaining 27 are frozen as a ratchet (§V597).
+ * This is the FIELD, which is where the loss actually happens and which no manifest can
+ * reach: the 27 are still live in the product, and so are the 19 vector components T648's
+ * walk cannot see.
+ *
+ * `beginTextEntry` seeds the input with `formatNumber(value)`, and blurring ran that
+ * string straight back through the commit path — parsed, quantised, emitted — for a user
+ * who typed nothing. Since a derived step's grid is an artifact of the declared range
+ * rather than an author's statement, the author's own value routinely is not on it, so
+ * the "no-op" changed the number: measured across the catalogue, 46 of 300 numeric
+ * defaults could not survive a click and a click away.
+ *
+ * §V461 — THE SPEC HERE IS THE FIXTURE AND IT IS LOAD-BEARING. The file's shared `spec`
+ * is `{ min: 0, max: 1, step: 0.01 }`, on which 0.5 sits perfectly and every assertion
+ * below would pass whether or not anything was fixed. These use `transform.s`'s real
+ * shape — a 2-vector on -8..8 with NO declared step, whose derived grid is 0.16 anchored
+ * at -8 and lands on 0.96 and 1.12 and never on 1 — which is the measured instance. A
+ * later simplification back to the tidy 0..1 spec re-blinds this completely.
+ *
+ * The catalogue-wide half (every default survives its own reset, on every shape) is in
+ * `tests/guardrails/parameter-precision.test.ts`, beside T648's own gate.
+ */
+describe("T652 — an untouched numeric field commits nothing", () => {
+  /** `transform.s`: the real spec, and the reason it can distinguish (§V461). */
+  const offGrid: NumericSpec = { min: -8, max: 8, range: "soft" };
+
+  const openField = (field: HTMLElement): void => {
+    fireEvent.pointerDown(field, { pointerId: 1, clientX: 5, button: 0 });
+    fireEvent.pointerUp(field, { pointerId: 1, clientX: 5 });
+  };
+
+  it("survives a click and a click away", () => {
+    const { field, input, onChange } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    openField(field);
+    fireEvent.blur(input);
+    // Not "emitted 1" — emitted NOTHING. A field that re-commits its own value on every
+    // blur writes an undo entry for a glance, which is its own bug (§V29).
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.getAttribute("aria-valuenow")).toBe("1");
+  });
+
+  it("survives a click and Enter, which loses the value the same way", () => {
+    // Guarded in `commitText` rather than in the blur handler precisely so these two
+    // cannot disagree: Enter on an untouched field destroyed the value too, just less
+    // accidentally, and a fix that only covered blur would be a gate with a hole in it.
+    const { field, input, onChange } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    openField(field);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("still commits when the user actually types something", () => {
+    // NON-VACUITY for both cases above: the same fixture, one keystroke different, does
+    // all the work. A guard that swallowed real entries would pass them and fail here.
+    const { field, input, changes } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    openField(field);
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes.at(-1)?.[1]).toBe("commit");
+    // 2.08, not 2: a TYPED value is still quantised onto the derived grid, and that is
+    // T567's open design call, deliberately untouched here. What this fixes is committing
+    // a number the user never entered — not what happens to one they did.
+    expect(changes.at(-1)?.[0]).toBeCloseTo(2.08, 5);
+  });
+
+  it("resets to the number the author wrote, not to the nearest grid point", () => {
+    // The other half: `onDoubleClick` ran the DEFAULT through `normalizeValue`, so
+    // double-clicking a Transform's Scale to reset it committed 0.96.
+    const { field, changes } = renderNumber({ value: 3, defaultValue: 1, spec: offGrid });
+    fireEvent.doubleClick(field);
+    expect(changes.at(-1)).toEqual([1, "commit"]);
+  });
+});

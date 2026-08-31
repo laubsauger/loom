@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { buildStarterComponents } from "../../examples/starter-components.ts";
 import { lfoNode } from "@nodes/definitions/values.ts";
-import { decimalsFor, formatNumber, normalizeValue } from "@ui/controls/drag-math.ts";
+import { decimalsFor, formatNumber, normalizeValue, quantize, resetValue, stepFor } from "@ui/controls/drag-math.ts";
+import { STARTER_COMPONENT_SPECS } from "../../examples/starter-components.ts";
 import type { NumericSpec } from "@ui/controls/types.ts";
 
 /**
@@ -167,5 +168,127 @@ describe("T648 — display-then-commit preserves the default", () => {
       healed,
       `These are no longer lossy — take them off KNOWN_LOSSY_DEFAULTS so the ratchet holds (§V541): ${healed.join(", ")}`,
     ).toEqual([]);
+  });
+});
+
+/**
+ * T652 — THE OTHER TWO PATHS A DEFAULT TRAVELS, and the shape T648's walk cannot see.
+ *
+ * T648 landed the MANIFEST property: `normalizeValue(Number(formatNumber(default)))`
+ * must equal the default, held at zero tolerance for the starter components and frozen
+ * as a 27-entry ratchet for the catalogue (§V597). That gate is above and stays exactly
+ * as it is. Two things sit outside it, and both are live data loss rather than manifest
+ * hygiene:
+ *
+ * **1. RESET TO DEFAULT.** `onDoubleClick` ran the author's default through
+ * `normalizeValue` before emitting it, so "reset" restored a grid point rather than the
+ * number the author wrote: a Transform's Scale of 1 reset to 0.96, a Blur's 8px to 7.68,
+ * a camera's 55° FOV to 54.4. Nothing gated this path at all. `resetValue` is the fix and
+ * this is its gate — over EVERY numeric default, at zero tolerance, because the value
+ * being restored was never a user entry and there is nothing about it to quantise.
+ *
+ * **2. VECTORS (§V461, one layer down).** T648's walks read `type === "number"` and stop,
+ * and a `vector` parameter carries ONE spec for all of its components — so the same
+ * derived grid misses each of them and none of it is visible to that gate. 19 of the 46
+ * lossy defaults measured are vector components, INCLUDING inside the starter set the
+ * gate above holds to zero tolerance: `FeedbackEcho.drift[1]` is -0.0008, displays
+ * "-0.00" and commits 0. A guard whose walk cannot reach half the shapes it covers
+ * reports zero and means nothing. The walk here reads both shapes.
+ *
+ * ## What this does NOT decide
+ *
+ * Whether a DERIVED step should be a quantisation grid at all remains T567's design call,
+ * untouched: a TYPED value is still quantised, and the 27-entry ratchet above still owns
+ * the inventory that decision is on the hook for. This only says the app must not damage
+ * a number on a path where the user entered nothing.
+ *
+ * The sibling half — an unedited click-and-blur committing the re-parsed display string,
+ * which is what actually destroys all 46 in the product — is a property of the FIELD
+ * rather than of a manifest, and is gated in `controls.test.tsx` where the real component
+ * can be clicked.
+ */
+
+interface NumericDefault {
+  readonly where: string;
+  readonly spec: NumericSpec;
+  readonly value: number;
+}
+
+function numericDefaults(): NumericDefault[] {
+  const found: NumericDefault[] = [];
+  const push = (where: string, spec: NumericSpec, value: unknown): void => {
+    if (typeof value === "number" && Number.isFinite(value)) found.push({ where, spec, value });
+  };
+  for (const definition of allNodeDefinitions) {
+    for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
+      const spec = parameter as NumericSpec;
+      const stored = (parameter as { default?: unknown }).default;
+      // A VECTOR is the same field repeated, and it carries ONE spec for every component
+      // — which is why `transform.s` is here twice and why the same grid can miss both.
+      if (parameter.type === "number") push(`${definition.type}.${key}`, spec, stored);
+      else if (parameter.type === "vector" && Array.isArray(stored)) {
+        stored.forEach((component, index) =>
+          push(`${definition.type}.${key}[${String(index)}]`, spec, component),
+        );
+      }
+    }
+  }
+  // §V94: a shipped component's published knobs are the same `NumberParameter` shape and
+  // are edited through the same field, so a gate that stopped at the node catalogue would
+  // leave the set every new user meets first ungated.
+  for (const component of STARTER_COMPONENT_SPECS) {
+    for (const published of component.publish) {
+      const spec = published.definition as NumericSpec;
+      const stored = (published.definition as { default?: unknown }).default;
+      if (published.definition.type === "number") push(`${component.name}.${published.key}`, spec, stored);
+      else if (published.definition.type === "vector" && Array.isArray(stored)) {
+        stored.forEach((entry, index) =>
+          push(`${component.name}.${published.key}[${String(index)}]`, spec, entry),
+        );
+      }
+    }
+  }
+  return found;
+}
+
+describe("T652 — reset restores the author's number, on every shape", () => {
+  it("resets every parameter to the number its author wrote", () => {
+    const destroyed: string[] = [];
+    for (const { where, spec, value } of numericDefaults()) {
+      const after = resetValue(value, spec);
+      if (after !== value) {
+        destroyed.push(
+          `${where}: default ${String(value)} resets to ${String(after)} — ` +
+            `min ${String(spec.min)}, max ${String(spec.max)}, step ${String(stepFor(spec))}. ` +
+            `Double-clicking this field to "reset" changes it.`,
+        );
+      }
+    }
+    expect(destroyed).toEqual([]);
+  });
+
+  it("has enough parameters under it to mean something (§V461)", () => {
+    // NON-VACUITY. The walk above reads two shapes out of two sources; a refactor that
+    // renamed `parameters` or `publish` would silently gate an empty list and stay green
+    // forever. 300 when this was written.
+    const all = numericDefaults();
+    expect(all.length).toBeGreaterThan(250);
+    expect(all.some((entry) => entry.where.startsWith("transform."))).toBe(true);
+    expect(all.some((entry) => entry.where.includes("["))).toBe(true);
+    // And the starter components really are in it — the half a node-only walk would miss.
+    expect(all.some((entry) => entry.where.startsWith("Kaleidoscope."))).toBe(true);
+  });
+
+  it("still refuses to quantise a default onto a grid nobody declared", () => {
+    // The mechanism, pinned on the measured instance so the gate above cannot pass by
+    // accident if `resetValue` ever grows a call to `quantize` again. `transform.s` is a
+    // 2-vector on -8..8 with no step: the derived grid is 0.16 anchored at -8, which
+    // lands on 0.96 and 1.12 and never on 1.
+    const scale: NumericSpec = { min: -8, max: 8, range: "soft" };
+    expect(quantize(1, scale)).not.toBe(1);
+    expect(resetValue(1, scale)).toBe(1);
+    // Clamping is still real: a default outside its own range is a manifest bug, and the
+    // field must not offer a value the parameter cannot hold.
+    expect(resetValue(99, { min: 0, max: 1 })).toBe(1);
   });
 });

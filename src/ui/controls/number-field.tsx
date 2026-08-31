@@ -6,6 +6,7 @@ import {
   DECADE_LADDER,
   DRAG_THRESHOLD_PX,
   defaultDecade,
+  resetValue,
   dragModifierFrom,
   formatDecade,
   formatNumber,
@@ -169,6 +170,24 @@ export function NumberField({
   const [ladderOpen, setLadderOpen] = useState(false);
   /** Non-null while the user is typing. Null means "showing the value". */
   const [text, setText] = useState<string | null>(null);
+  /**
+   * T652 — the exact string this field OPENED with, so an untouched entry commits nothing.
+   *
+   * A click that never moved opens the field for typing (`beginTextEntry`) and seeds it
+   * with `formatNumber(value)`. Blurring then ran that string back through the commit
+   * path — parsed, quantised, emitted — for a user who typed NOTHING. Since a derived
+   * step's grid is an artifact of the declared range rather than anything an author
+   * stated, the author's own value routinely does not sit on it: a Transform's Scale of
+   * 1 came back as 0.96, a Blur's 8px as 7.68, a camera's 55° FOV as 54.4. Measured
+   * across the catalogue, 46 of 300 numeric defaults could not survive a click and a
+   * click away. Display rounding is the other half of the same path — a drift of
+   * -0.0008 shows as "-0.00" and committed as 0.
+   *
+   * This is deliberately NOT a quantisation policy change (that is T567's call, and it
+   * is open): committing a number the user did not enter is not a commit, whatever the
+   * grid says. Escape already means "I changed nothing"; so does typing nothing.
+   */
+  const openedWith = useRef<string | null>(null);
   const [invalid, setInvalid] = useState(false);
 
   const editing = text !== null;
@@ -193,7 +212,9 @@ export function NumberField({
   );
 
   const beginTextEntry = useCallback(() => {
-    setText(formatNumber(value, spec, decade ?? undefined));
+    const opened = formatNumber(value, spec, decade ?? undefined);
+    openedWith.current = opened;
+    setText(opened);
     setInvalid(false);
     const input = inputRef.current;
     if (input === null) return;
@@ -211,6 +232,16 @@ export function NumberField({
       }
       setInvalid(false);
       setText(null);
+      // T652: the text is exactly what the field was opened with, so the user entered
+      // nothing and there is nothing to commit. Guarded HERE rather than in the blur
+      // handler so Enter and blur cannot disagree — Enter on an untouched field would
+      // otherwise destroy the value the same way, just less accidentally. Reported as
+      // valid, because "no change" is a successful outcome and Enter still re-selects.
+      if (raw === openedWith.current) {
+        openedWith.current = null;
+        return true;
+      }
+      openedWith.current = null;
       // Typed entry is unchanged on a field nobody has touched the ladder on — the
       // manifest step still quantises it. Once a rung IS picked it quantises there
       // instead, because a field that drags to 0.0001 and then rounds a TYPED 0.0001 to
@@ -227,6 +258,7 @@ export function NumberField({
   const cancelTextEntry = useCallback(() => {
     setText(null);
     setInvalid(false);
+    openedWith.current = null;
   }, []);
 
   // ---- pointer (§V20) ------------------------------------------------
@@ -329,7 +361,10 @@ export function NumberField({
       event.preventDefault();
       cancelTextEntry();
       inputRef.current?.blur();
-      emit(normalizeValue(defaultValue, spec), "commit");
+      // T652: the AUTHOR'S number, clamped into range — never snapped onto a grid they
+      // did not declare. `normalizeValue` here made "reset" a lie for every default off
+      // the derived step: double-clicking a Transform's Scale reset it to 0.96.
+      emit(resetValue(defaultValue, spec), "commit");
     },
     [cancelTextEntry, defaultValue, disabled, emit, spec],
   );

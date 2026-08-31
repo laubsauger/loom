@@ -124,6 +124,31 @@ export function clampToRange(value: number, spec: NumericSpec): number {
 }
 
 /**
+ * What "reset to default" commits (T652).
+ *
+ * The author's own number, clamped into the declared range — and deliberately NOT
+ * quantised. `quantize` snaps to `anchor + k·step`, and when no step was declared that
+ * grid is an artifact of the range rather than anything anyone stated, so an author's
+ * default routinely does not sit on it. Reset therefore returned a value the author never
+ * wrote: a Transform's Scale default of 1 reset to 0.96, a Blur's 8px to 7.68, a camera's
+ * 55° FOV to 54.4. Measured across the catalogue and the starter components, 46 of 300
+ * numeric defaults could not survive their own reset.
+ *
+ * A DECLARED step does not change the answer either, and that is the point rather than an
+ * oversight: `step: 5` with `default: 3` means the author wants 3 and drags in fives, and
+ * reset restores what they wrote. Whether a derived step should be a grid AT ALL is
+ * T567's open design call; this needs no part of it, because the value being restored was
+ * never the user's entry to quantise. T648 gated the MANIFEST round trip; this is the path
+ * no manifest can reach.
+ *
+ * `parameter-precision.test.ts` gates it over the whole catalogue.
+ */
+export function resetValue(defaultValue: number, spec: NumericSpec): number {
+  if (!Number.isFinite(defaultValue)) return clampToRange(0, spec);
+  return clampToRange(defaultValue, spec);
+}
+
+/**
  * Snap to the step grid, anchored at `min` when there is one so a range like
  * [0.5, 2.5] with step 0.5 lands on the values the author actually meant.
  */
