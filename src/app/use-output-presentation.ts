@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import type { RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { PANE_ADOPTED_EVENT } from "./pane-portal.tsx";
 import type { PresentationHandle } from "@runtime/backend/backend-types.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 
@@ -30,39 +30,85 @@ import type { ShaderloomBackend } from "@runtime/backend/index.ts";
  */
 
 export interface OutputPresentation {
-  /** Attach to the `<canvas>` the pane renders. */
-  readonly canvasRef: RefObject<HTMLCanvasElement | null>;
+  /** Attach to the `<canvas>` the pane renders. A CALLBACK ref, deliberately: the
+   * canvas mounts late (only once an output exists) and remounts on `canvasKey`, and
+   * every per-document resource below must follow the ELEMENT, not the component —
+   * an effect armed once at mount sees `null` and never arms at all. */
+  readonly canvasRef: (canvas: HTMLCanvasElement | null) => void;
+  /**
+   * T705: key the `<canvas>` element with this. It changes ONLY when the pane crosses
+   * documents (float/dock), forcing React to remount the canvas — because a WebGPU
+   * canvas that was CONFIGURED and then adopted into another document is permanently
+   * inert: `getContext` still answers, `configure` does not throw, and nothing ever
+   * paints (measured live — a floated viewer read 0.0 mean luma at full size). A
+   * canvas that reaches its new document unconfigured presents fine, so the escape is
+   * a fresh element, not a re-attach. T193's "the canvas is never remounted" survives
+   * with exactly this one exception, where the alternative is a dead picture.
+   */
+  readonly canvasKey: number;
 }
 
 export function useOutputPresentation(
   backend: ShaderloomBackend | null,
   outputId: string | null,
 ): OutputPresentation {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  const canvasRef = useCallback((canvas: HTMLCanvasElement | null) => setCanvasEl(canvas), []);
   const handleRef = useRef<PresentationHandle | null>(null);
+  /**
+   * T705: bumped when the pane's host crosses DOCUMENTS, so the presentation effect
+   * below re-runs. The surface configured in the dock does not survive the canvas
+   * being adopted into a floated window's document — the picture goes black with the
+   * element intact — so the handle is disposed and re-attached against the canvas in
+   * its new home. Rare by construction (a user float/dock), so a state tick is cheap.
+   */
+  const [epoch, setEpoch] = useState(0);
 
   // Size the drawing buffer to the laid-out box. A canvas whose backing store never
   // matches its CSS size shows a blurred or clipped image, and a zero-sized one cannot
   // be configured at all — which is why presenting waits for a real measurement.
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasEl;
     if (canvas === null) return;
+
+    /*
+     * T705 — sizing and liveness are both per DOCUMENT, so both re-arm on adoption.
+     *
+     * A ResizeObserver is a per-window object: when the viewer pane floats, the dock
+     * window's observer fires one final time mid-detach (clientWidth 0 → a 1×1
+     * backing store → the popped-out viewer read as an empty page with the right
+     * title) and then never fires again for an element living in the child document.
+     * And a CONFIGURED WebGPU canvas dies outright on adoption (see `canvasKey`).
+     *
+     * The pane host — the one element that travels with the content through every
+     * relocation (§V96) — dispatches PANE_ADOPTED_EVENT when adoption crossed
+     * documents. That bumps the epoch: React remounts the canvas (fresh element in
+     * the new document), THIS effect re-runs against it, and the observer it arms
+     * belongs to the canvas's current window, docked or floated, either direction.
+     */
     const view = canvas.ownerDocument.defaultView;
-    if (view === null || typeof view.ResizeObserver !== "function") return;
+    let observer: ResizeObserver | null = null;
+    if (view !== null && typeof view.ResizeObserver === "function") {
+      const resize = () => {
+        const ratio = view.devicePixelRatio || 1;
+        const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+        const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+      };
+      resize();
+      observer = new view.ResizeObserver(resize);
+      observer.observe(canvas);
+    }
 
-    const resize = () => {
-      const ratio = view.devicePixelRatio || 1;
-      const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
-      const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
-      if (canvas.width !== width) canvas.width = width;
-      if (canvas.height !== height) canvas.height = height;
+    const adopted = () => setEpoch((tick) => tick + 1);
+    const host = canvas.closest("[data-pane-host]");
+    host?.addEventListener(PANE_ADOPTED_EVENT, adopted);
+    return () => {
+      host?.removeEventListener(PANE_ADOPTED_EVENT, adopted);
+      observer?.disconnect();
     };
-
-    resize();
-    const observer = new view.ResizeObserver(resize);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, []);
+  }, [canvasEl]);
 
   // Attach once a backend and an output both exist. Deliberately NOT keyed on the output
   // ITSELF: a new plan renames nothing the surface cares about, and re-attaching would
@@ -72,17 +118,19 @@ export function useOutputPresentation(
   const hasOutput = outputId !== null;
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasEl;
     const current = outputRef.current;
     if (backend === null || canvas === null || current === null) return;
 
     let handle: PresentationHandle;
     try {
       handle = backend.present(canvas, { outputId: current, label: "viewer" });
-    } catch {
+    } catch (error) {
       // A backend that is disposed, uninitialised or mid-frame refuses the attach. The
-      // viewer is a window onto the render, never a reason to take the app down; the
-      // backend has already reported the reason on its own diagnostic channel.
+      // viewer is a window onto the render, never a reason to take the app down — but
+      // a swallowed refusal is how "the viewer is black and nothing says why" ships
+      // (§V469), so the reason goes to the console with its cause attached.
+      console.error("viewer: presentation attach refused", error);
       return;
     }
     handleRef.current = handle;
@@ -90,7 +138,7 @@ export function useOutputPresentation(
       handleRef.current = null;
       handle.dispose();
     };
-  }, [backend, hasOutput]);
+  }, [backend, hasOutput, canvasEl]);
 
   // Repoint rather than re-attach: `setOutput` exists so that pinning a different output
   // does not tear down and rebuild the canvas's GPU context (§V70).
@@ -99,5 +147,5 @@ export function useOutputPresentation(
     handleRef.current?.setOutput(outputId);
   }, [outputId]);
 
-  return { canvasRef };
+  return { canvasRef, canvasKey: epoch };
 }

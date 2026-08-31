@@ -212,6 +212,22 @@ export function adoptPaneHost(slot: HTMLElement, host: HTMLElement): void {
   if (host.parentElement === slot) return;
   const state = stashed.get(host) ?? capturePaneState(host);
   stashed.delete(host);
+  const documentChanged = host.ownerDocument !== slot.ownerDocument;
   slot.appendChild(host);
   restorePaneState(slot, state);
+  /*
+   * T705 — tell the pane's content it changed DOCUMENTS. A ResizeObserver belongs to
+   * the window it was constructed in: when a pane floats, an observer made in the dock
+   * fires one last time mid-detach (clientWidth 0 — which is how the viewer's canvas
+   * ended up 1×1 and the popped-out window read as an empty page) and then never
+   * again, because its element now lives in a document that window does not observe.
+   * React cannot signal this either — relocation without remount (§V96) means no
+   * fiber ever re-renders. So the HOST, the one element that provably travels with
+   * the content, carries the signal: anything holding a per-document resource listens
+   * here and re-arms against its new `ownerDocument`.
+   */
+  if (documentChanged) host.dispatchEvent(new Event(PANE_ADOPTED_EVENT));
 }
+
+/** Fired on a pane's permanent host when adoption moved it to a DIFFERENT document. */
+export const PANE_ADOPTED_EVENT = "shaderloom:pane-adopted";

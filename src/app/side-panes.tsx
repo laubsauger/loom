@@ -409,7 +409,7 @@ export function ViewerPane({
     };
   }, [bus]);
 
-  const { canvasRef } = useOutputPresentation(backend, selected?.resourceId ?? null);
+  const { canvasRef, canvasKey } = useOutputPresentation(backend, selected?.resourceId ?? null);
   /**
    * The probe's target, keyed on PRIMITIVES.
    *
@@ -626,6 +626,7 @@ export function ViewerPane({
           <p className={styles.note}>No output</p>
         ) : (
           <canvas
+            key={canvasKey}
             ref={canvasRef}
             className={styles.canvas}
             aria-label="Rendered output"

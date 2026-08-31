@@ -1255,6 +1255,87 @@ describe("a floated pane is on the same bus as the dock (§V97, T192)", () => {
   });
 });
 
+/**
+ * T705 — the pop-out viewer PAINTS, gated on the two seams that broke it.
+ *
+ * The owner's report was "an about:blank empty page with the title viewer", and the
+ * window part was fine — the failure was per-DOCUMENT resources living on the moved
+ * canvas: the dock window's ResizeObserver fired once mid-detach (writing a 1×1
+ * backing store) and never again, and a WebGPU canvas that was CONFIGURED and then
+ * adopted cross-document is permanently inert even at the right size (measured live:
+ * full-size canvas, 0.0 mean luma, getContext still answering).
+ *
+ * So the gate asserts the ESCAPE, not the window: floating must re-present onto a
+ * FRESH canvas element living in the child document — same on the way back. Asserting
+ * "a window exists with the right title" is exactly the broken state (§V655's family:
+ * the health check a collapse satisfies).
+ */
+describe("T705 — the floated viewer re-presents on a fresh canvas", () => {
+  it("presents a NEW canvas in the child document, and again when docked back", async () => {
+    const doc = document.implementation.createHTMLDocument("floating viewer");
+    const pagehide: Array<() => void> = [];
+    const child = {
+      document: doc,
+      addEventListener: (_type: "pagehide", listener: () => void) => {
+        pagehide.push(listener);
+      },
+      removeEventListener: () => {},
+      close: () => {},
+    };
+
+    const presented: HTMLCanvasElement[] = [];
+    const backend = fixtureBackend();
+    const spied: typeof backend = {
+      ...backend,
+      present: (canvas, options) => {
+        presented.push(canvas as HTMLCanvasElement);
+        return backend.present(canvas, options);
+      },
+    };
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    await mountApp({
+      status: { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend: spied },
+      runtime,
+      openPaneWindow: () => child,
+    });
+
+    // The docked viewer attached to a real canvas in the MAIN document.
+    await waitFor(() => {
+      expect(presented.length).toBeGreaterThan(0);
+    });
+    const docked = presented[presented.length - 1];
+    if (docked === undefined) throw new Error("no presented canvas");
+    expect(docked.ownerDocument).toBe(document);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Move viewer" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Float in its own window" }));
+    });
+
+    // A fresh element, in the child document — not the dock's canvas relocated. The
+    // relocated one is the one that cannot paint.
+    await waitFor(() => {
+      const latest = presented[presented.length - 1];
+      expect(latest).not.toBe(docked);
+      expect(latest?.ownerDocument).toBe(doc);
+    });
+    const floated = presented[presented.length - 1];
+
+    // Dock it back the way a user closing the popup does: the window's pagehide.
+    await act(async () => {
+      for (const listener of pagehide) listener();
+    });
+    await waitFor(() => {
+      const latest = presented[presented.length - 1];
+      expect(latest).not.toBe(floated);
+      expect(latest?.ownerDocument).toBe(document);
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------------
 // 9. New, and the confirmation that protects unsaved work (T261, §V165, §V166)
 // ---------------------------------------------------------------------------------
