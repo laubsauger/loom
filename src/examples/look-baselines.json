@@ -95,9 +95,9 @@
     "f0max": 0.0344
   },
   "E33-Obol.loom.json": {
-    "motion": 0.01256,
-    "range": 0.5953,
-    "f0max": 0.8834
+    "motion": 0.01124,
+    "range": 0.5713,
+    "f0max": 0.7051
   },
   "E34-Lidar.loom.json": {
     "motion": 0.108,
