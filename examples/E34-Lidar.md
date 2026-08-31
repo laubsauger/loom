@@ -63,11 +63,17 @@ shot ─► cut(level) ─► clip(limit) ─► halo(blur) ─► glow(add) ─
 ## Three readings of one cast
 
 Returns (hot amber, brightness 1 − distance/range), out-of-range (faint steel dots at
-the ray ends), echoes (cyan, both legs landed). These are kernel-written **tint
-classes** plus a parked-position cull — *not* `renderPoints` group predicates: the lit
-scene path has no predicate seam (T642 tracks whether it should grow one), and a
-predicate-filtered 2D overlay under its own projection cannot sit on a 3D camera's
-picture. Until T642 decides, tint-classes are the workaround here, not the idiom.
+the ray ends), echoes (cyan, both legs landed). Since T642 the echo reading is a real
+**group predicate on the geometry node** — `p.hit > 0.5 && p.hitPosition.y > -10.0` —
+§V471's selection idiom running in the lit path through the shared camera and depth
+buffer, exactly as `renderPoints` runs it (same resolver, same zero-area collapse, and
+the depth pass gates too, so an excluded echo casts no ghost shadow). This file
+originally shipped days earlier with a *parked-position cull* instead — the kernel
+moved non-echoes to y = −80 and zeroed their tint, because the seam did not exist yet —
+and the migration deleted exactly that select and that multiply while rendering a
+byte-comparable frame. The returns/out-of-range split stays a tint class on one
+geometry deliberately: both classes are *drawn*, differing only in colour, which is
+what a tint is for.
 
 ## What to look at
 

@@ -398,6 +398,7 @@
         "id": "echoes",
         "label": "echoes1",
         "parameters": {
+          "group": "p.hit > 0.5 && p.hitPosition.y > -10.0",
           "material": "spark1",
           "mode": "instances",
           "scale": 0.05,
@@ -594,7 +595,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hit\",\"type\":\"f32\",\"default\":[0]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
           "capacity": 240,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let real = p.hit * step(-10.0, p.hitPosition.y);\n  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition, real > 0.5);\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */\n  let path = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - path / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * ((0.35 + 1.10 * near) * real);\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = p.hitPosition;\n  /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */\n  let path = length(p.hitPosition - vec3f(0.0, 3.3, 0.0));\n  let near = clamp(1.0 - path / (3.4 * 1.8), 0.0, 1.0);\n  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.35 + 1.10 * near);\n  return q;\n}"
         },
         "position": {
           "x": -960,

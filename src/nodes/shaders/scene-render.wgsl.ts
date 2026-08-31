@@ -358,6 +358,44 @@ ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = r
  * Render only. Maps are refused upstream for instances (no uv yet), so this generator
  * takes no map options.
  */
+/** T642: the group option both instance generators take — the draw and its shadow. */
+export interface SceneGroupOption {
+  expression: string;
+  binds: ReadonlyArray<{ attribute: string; type: string }>;
+}
+
+/** The per-instance gate, emitted identically into the lit draw and the depth pass. */
+function groupBlocks(
+  group: SceneGroupOption | undefined,
+  baseBinding: number,
+  gatedReturn: string,
+): { bindings: string; declarations: string; gate: string } {
+  if (group === undefined) return { bindings: "", declarations: "", gate: "" };
+  const bindings = group.binds
+    .map(
+      (bind, index) =>
+        `@group(0) @binding(${baseBinding + index}) var<storage, read> group_${bind.attribute}: array<${bind.type}>;\n`,
+    )
+    .join("");
+  const declarations = `
+struct GroupPoint {
+${group.binds.map((bind) => `  ${bind.attribute}: ${bind.type},`).join("\n")}
+};
+
+fn groupMatch(p: GroupPoint) -> bool {
+  return (${group.expression});
+}
+`;
+  const gate = `  var gp: GroupPoint;
+${group.binds.map((bind) => `  gp.${bind.attribute} = group_${bind.attribute}[instance];`).join("\n")}
+  if (!groupMatch(gp)) {
+    /* Excluded: every vertex lands on one clip-space point — zero area, no cost (§V219). */
+${gatedReturn}
+  }
+`;
+  return { bindings, declarations, gate };
+}
+
 export function sceneInstancesWgsl(options: {
   model: "unlit" | "lambert" | "phong";
   lightCount: number;
@@ -369,6 +407,17 @@ export function sceneInstancesWgsl(options: {
   environment?: boolean;
   /** T624: an occlusion map is bound — see SceneShadingOptions.ambientOcclusion. */
   ambientOcclusion?: boolean;
+  /**
+   * T642: §V471's selection idiom through the shared camera and depth buffer. The SAME
+   * {expression, binds} `resolveGroupPredicate` hands renderPoints (§V349: one
+   * resolver, one concept), executed as renderPoints executes it: a per-instance
+   * vertex gate that collapses every excluded instance's vertices onto one point —
+   * zero area, no discard, no indirect rewrite, no fragment work (§V219). Excluded
+   * instances therefore cost `shapeVertexCount` trivial vertex invocations and
+   * nothing else, which is why a predicate needed no T481/T624-style pricing (§V605).
+   * Each referenced attribute is one storage buffer against the BASELINE 8 per stage.
+   */
+  group?: SceneGroupOption;
 }): string {
   const pointColor = options.pointColor === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
@@ -392,6 +441,17 @@ export function sceneInstancesWgsl(options: {
     ? `@group(0) @binding(${aoBinding}) var occlusionMap: texture_2d<f32>;\n`
     : "";
   const aoTerm = ambientOcclusion ? " * occlusion" : "";
+  /* T642: the group binds come last in the numbering, after every optional texture. */
+  const group = groupBlocks(
+    options.group,
+    aoBinding + (ambientOcclusion ? 1 : 0),
+    `    var gated: VertexOut;
+    gated.position = vec4f(2.0, 2.0, 2.0, 1.0);
+    gated.normal = vec3f(0.0, 0.0, 1.0);
+    gated.world = vec3f(0.0);
+    gated.tint = vec4f(0.0);
+    return gated;`,
+  );
   const envTerm = environment
     ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
 ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - params.material.y) * params.environment.x${aoTerm};
@@ -478,13 +538,14 @@ ${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}${aoDeclarations}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}${aoDeclarations}${group.bindings}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) world: vec3f,
   @location(2) tint: vec4f,
 };
+${group.declarations}
 
 fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
@@ -550,7 +611,7 @@ fn shapeNormal(shape: u32, v: u32) -> vec3f {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
-  let shape = u32(params.instance.y);
+${group.gate}  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
   let local = shapeVertex(shape, v) * params.instance.x;
@@ -669,8 +730,20 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 }
 
 /** The instance primitives from the light's view — shapes identical to the lit draw. */
-export function shadowInstancesWgsl(options: DepthPassOptions = {}): string {
+export function shadowInstancesWgsl(options: DepthPassOptions & { group?: SceneGroupOption } = {}): string {
   const linear = options.linearDepth === true;
+  /* T642: an excluded instance must not cast a GHOST SHADOW — the depth pass gates on
+     the same predicate, from the same shared block, or an invisible instance would
+     still darken the ground beneath where it is not. Binding 2: after params(0) and
+     positions(1), and this pass binds nothing else. */
+  const group = groupBlocks(
+    options.group,
+    2,
+    `    var gated: VertexOut;
+    gated.position = vec4f(2.0, 2.0, 2.0, 1.0);
+    gated.depth = 1.0;
+    return gated;`,
+  );
   const depthExpr = linear
     ? `dot(params.depthRow, vec4f(world, 1.0)) / max(params.depthRange.x, 1e-6)`
     : `clip.z`;
@@ -686,7 +759,7 @@ ${linearFields}};
 
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-
+${group.bindings}
 fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
@@ -732,10 +805,10 @@ struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) depth: f32,
 };
-
+${group.declarations}
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
-  let shape = u32(params.instance.y);
+${group.gate}  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
   let world = shapeVertex(shape, v) * params.instance.x + positions[instance];

@@ -76,6 +76,19 @@ export interface GeometryPayload {
    */
   readonly colorAttribute?: ScenePairRef;
   /**
+   * T642: the draw-time GROUP — §V471's selection idiom, in the scene path. The same
+   * {expression, binds} `resolveGroupPredicate` hands `renderPoints` (§V349: one
+   * resolver, one concept); the instances draw gates per instance in the vertex stage
+   * and collapses excluded ones to zero area (§V219 — no discard, no indirect rewrite,
+   * no fragment work). Instances (and, when it lands, points) mode only: a predicate
+   * that removed points from a SURFACE would punch holes in mesh connectivity, which
+   * is a different feature.
+   */
+  readonly group?: {
+    readonly expression: string;
+    readonly binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }>;
+  };
+  /**
    * T478: the GPU-resident live count, when the producer spawns and kills (T322).
    * Instances draw INDIRECTLY off it (countedDrawSupport), so a dead tail is never
    * resurrected. A counted SURFACE stays refused: grid topology addresses fixed

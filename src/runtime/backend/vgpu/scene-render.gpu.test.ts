@@ -748,3 +748,111 @@ describe("the environment lights a dielectric's body and never a metal's (T636, 
     expect(await probe(false, 0)).toBe(0);
   }, 240_000);
 });
+
+/**
+ * T642 — §V471'S SELECTION IDIOM, THROUGH THE SHARED CAMERA AND DEPTH BUFFER.
+ *
+ * One cloud, one draw, a per-instance vertex gate: `group` on the geometry node splits
+ * by predicate exactly as renderPoints does (same resolver, same zero-area collapse —
+ * §V349 by construction). The fixture is §V461-shaped: a kernel writes a `flag` the
+ * points themselves carry, the predicate reads it, and the assertions are BYTE-EXACT
+ * against an unpredicated control — an included instance renders identically to the
+ * control, an excluded one leaves exactly the background.
+ */
+describe("a geometry group predicate selects instances in the lit scene (T642, §V471, §V147)", () => {
+  const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({
+    id,
+    type,
+    definitionVersion: 1,
+    position: { x: 0, y: 0 },
+    parameters,
+    label,
+  });
+
+  const graphWithGroup = (group: string): GraphDocument =>
+    ({
+      revision: 1,
+      nodes: Object.fromEntries(
+        [
+          node("pair", "pointLine", { count: 2 }, "pair1"),
+          node("split", "pointKernel", {
+            capacity: 2,
+            attributes: JSON.stringify([
+              { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+              { name: "flag", type: "f32", default: [0] },
+            ]),
+            /* Point 0 left and flagged, point 1 right and not: the predicate has one
+               member of each class to distinguish (§V461). */
+            kernel:
+              "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n" +
+              "  q.position = vec3f(f32(ctx.index) * 1.0 - 0.5, 0.0, 0.0);\n" +
+              "  q.flag = 1.0 - f32(ctx.index);\n  return q;\n}",
+          }, "split1"),
+          node("chalk", "materialUnlit", { color: [1, 1, 1, 1] }, "chalk1"),
+          node("dots", "geometry", { mode: "instances", shape: "box", scale: 0.2, material: "chalk1", ...(group === "" ? {} : { group }) }, "dots1"),
+          node("cam", "camera", { eye: [0, 0, 1000], lookAt: [0, 0, 0], ortho: true, orthoHeight: 2, near: 900, far: 1100 }, "cam1"),
+          node("shot", "render", { scenes: "dots1", camera: "cam1", lights: "", ambientColor: [1, 1, 1, 1], ambientIntensity: 0 }, "shot1"),
+          node("out", "output", {}, "out1"),
+        ].map((entry) => [entry.id, entry]),
+      ),
+      edges: {
+        e1: { id: "e1", source: { nodeId: "pair", portId: "out" }, target: { nodeId: "split", portId: "in" } },
+        e2: { id: "e2", source: { nodeId: "split", portId: "out" }, target: { nodeId: "dots", portId: "points" } },
+        e3: { id: "e3", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    }) as never;
+
+  const rendered = async (group: string): Promise<Uint8Array> => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: graphWithGroup(group),
+      settings: SETTINGS,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const image = await backend.readOutput("target:shot:out");
+      return image.bytes;
+    } finally {
+      backend.dispose();
+    }
+  };
+
+  it("keeps the flagged instance byte-identical to the control and erases the other completely", async () => {
+    const dawn = await probeDawn();
+    if (!dawn.available) throw new Error(`Dawn unavailable: ${dawn.error}`);
+
+    const control = await rendered("");
+    const gated = await rendered("p.flag > 0.5");
+
+    /* Ortho height 2 over 64px: point 0 at x −0.5 lands at column 16, point 1 at 48. */
+    const at = (bytes: Uint8Array, column: number): number => bytes[(32 * 64 + column) * 4] ?? -1;
+    // Both drawn in the control…
+    expect(at(control, 16)).toBeGreaterThan(0);
+    expect(at(control, 48)).toBeGreaterThan(0);
+    // …the predicate keeps the flagged one EXACTLY and removes the other to the ground.
+    expect(at(gated, 16)).toBe(at(control, 16));
+    expect(at(gated, 48)).toBe(0);
+    // And the included half is byte-identical everywhere left of centre — the gate
+    // changed SELECTION, not shading.
+    for (let column = 0; column < 32; column += 1) {
+      expect(at(gated, column)).toBe(at(control, column));
+    }
+  }, 240_000);
+});

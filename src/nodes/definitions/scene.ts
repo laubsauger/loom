@@ -1,6 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
+import { resolveGroupPredicate } from "./points.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
 import { cameraPayloadMatrix, directionalShadowMatrix, lookAt } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
@@ -242,6 +243,14 @@ export const geometryNode: NodeDefinition = {
       description:
         "Multiplier on the material's base colour: per object as a value, PER POINT in Map mode (a vec4f attribute — T478). White = inherit, either way.",
     },
+    group: {
+      type: "string",
+      label: "Group",
+      default: "",
+      compileTime: true,
+      description:
+        "T642/T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.hit > 0.5. Instances mode only; referenced attributes bind on demand from the edge. Empty = all.",
+    },
   },
   compile(context): CompiledNodeDescription {
     const { nodeId, inputs, parameters, parameterMaps } = readCompileInputs(context);
@@ -313,6 +322,31 @@ export const geometryNode: NodeDefinition = {
             ],
           };
     const mode = parameters["mode"] === "instances" ? "instances" : parameters["mode"] === "points" ? "points" : "surface";
+    /*
+     * T642: the group predicate, resolved by the SAME function renderPoints uses
+     * (§V349 by construction). Instances only, and the refusal says WHY (§V606: a
+     * refusal must carry its reason, or the next reader inherits a decision nobody
+     * made): a surface draw's triangles are connectivity over ALL the grid's points,
+     * so removing some would punch holes in the mesh — hole-punching is a different
+     * feature, not a smaller version of this one.
+     */
+    const groupSource = typeof parameters["group"] === "string" ? (parameters["group"] as string).trim() : "";
+    if (groupSource !== "" && mode !== "instances") {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.scene.group",
+            message: `Node "${nodeId}": a group predicate needs mode "instances" — a ${mode} draw's triangles span every grid point, so filtering points would punch holes in the mesh rather than select from a cloud.`,
+            nodeId,
+            suggestion: "Switch Mode to Instances, or route the cloud through renderPoints.",
+          },
+        ],
+      };
+    }
+    const resolvedGroup = groupSource === "" ? undefined : resolveGroupPredicate(nodeId, groupSource, pointset);
+    if (resolvedGroup !== undefined && "refusal" in resolvedGroup) return resolvedGroup.refusal;
     if (pointset.count !== undefined && mode !== "instances") {
       return {
         passes: [],
@@ -342,6 +376,7 @@ export const geometryNode: NodeDefinition = {
           }
         : {}),
       ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
+      ...(resolvedGroup === undefined ? {} : { group: resolvedGroup }),
       ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
       material,
     };
@@ -633,12 +668,25 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:${options.prefix}:${geometryIndex}`,
             nodeId,
-            shader: shadowInstancesWgsl(depthOptions),
+            shader: shadowInstancesWgsl({
+              ...depthOptions,
+              ...(payload.group === undefined ? {} : { group: payload.group }),
+            }),
             target: options.target,
             topology: "triangle-list",
             instances: counted?.instances ?? payload.capacity,
             vertexCount: 36,
-            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+            buffers: [
+              { binding: "positions", resourceId: position.pair, half: position.half },
+              // T642: the depth pass gates on the same predicate — no ghost shadows.
+              ...(payload.group === undefined
+                ? []
+                : payload.group.binds.map((bind) => ({
+                    binding: `group_${bind.attribute}`,
+                    resourceId: bind.pair,
+                    half: bind.half,
+                  }))),
+            ],
             uniforms: {
               lightViewProjection: Array.from(options.matrix ?? []),
               instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
@@ -891,6 +939,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
             ...(environmentResource === undefined ? {} : { environment: true }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
+            ...(payload.group === undefined ? {} : { group: payload.group }),
           }),
           target,
           topology: "triangle-list",
@@ -907,6 +956,16 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                     half: payload.colorAttribute.half,
                   },
                 ]),
+            // T642: one storage buffer per attribute the predicate reads. The compiler's
+            // binding-budget check prices these against the BASELINE 8 per stage
+            // (§V588), so an over-wide predicate refuses by name before any device sees it.
+            ...(payload.group === undefined
+              ? []
+              : payload.group.binds.map((bind) => ({
+                  binding: `group_${bind.attribute}`,
+                  resourceId: bind.pair,
+                  half: bind.half,
+                }))),
           ],
           uniforms: {
             viewProjection: Array.from(viewProjectionMatrix),

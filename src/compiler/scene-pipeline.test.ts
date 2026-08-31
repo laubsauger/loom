@@ -275,6 +275,39 @@ describe("instances mode (T428b)", () => {
     expect(draw.shader).toContain("shapeVertex");
   });
 
+  it("a group predicate splits the draw AND its shadow; surface mode refuses with WHY (T642)", () => {
+    const graph = sceneGraph();
+    ((graph.nodes["grid"] as GraphNode).parameters as Record<string, unknown>)["count"] = 64;
+    const geo = (graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>;
+    geo["mode"] = "instances";
+    geo["group"] = "p.position.y > 0.0";
+    // Shadows ON, so the ghost-shadow half below is non-vacuous (§V461).
+    ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = true;
+    const compiled = compile(graph);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    // The lit draw gates per instance — same resolver, same collapse as renderPoints.
+    expect(draw.shader).toContain("groupMatch");
+    expect(draw.buffers?.some((buffer) => buffer.binding === "group_position")).toBe(true);
+    // And an excluded instance casts NO GHOST SHADOW: every shadow pass for this
+    // geometry carries the same gate and the same bind.
+    const shadowDraws = compiled.passes.filter(
+      (pass) => pass.kind === "draw" && pass.id.includes(":shadow:") && (pass as { shader?: string }).shader?.includes("shapeVertex"),
+    ) as Array<{ shader: string; buffers?: Array<{ binding: string }> }>;
+    expect(shadowDraws.length).toBeGreaterThan(0);
+    for (const shadow of shadowDraws) {
+      expect(shadow.shader).toContain("groupMatch");
+      expect(shadow.buffers?.some((buffer) => buffer.binding === "group_position")).toBe(true);
+    }
+
+    // SURFACE mode refuses, and the refusal carries its WHY (§V606): connectivity.
+    geo["mode"] = "surface";
+    const refused = compile(graph);
+    const refusal = refused.diagnostics.find((d) => d.code === "node.scene.group");
+    expect(refusal?.message).toContain("punch holes");
+    expect(refusal?.suggestion).toContain("Instances");
+  });
+
   it("maps on instances refuse BY NAME — no uv means no silent no-op (V368)", () => {
     const graph = sceneGraph({
       extraNodes: [

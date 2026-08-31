@@ -6700,18 +6700,20 @@ const LIDAR_MARK2_ATTRIBUTES = JSON.stringify([
   { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
 ]);
 
-/* Reading three: an echo counts only when BOTH legs landed. The second leg's own
-   `hit`, gated by the parking depth — a ray parked at y = −80 (first leg missed) hits
-   instantly below the field, and its hit y betrays it. Everything else is PARKED —
-   the cull for a draw path with no predicate seam (T642). */
+/* Reading three: an echo counts only when BOTH legs landed — and since T642 the
+   SELECTION lives on the DRAW, not in this kernel: echoes1 carries the group
+   predicate `p.hit > 0.5 && p.hitPosition.y > -10.0` (the second leg's own hit,
+   minus the parked first-leg misses, which re-cast from y = −80 and hit instantly
+   below the field — their hit y betrays them). This kernel only places and colours.
+   Before the seam existed it also had to CULL, by parking non-echoes at y = −80 and
+   zeroing their tint — the workaround era this example's md used to document. */
 const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  let real = p.hit * step(-10.0, p.hitPosition.y);
-  q.position = select(vec3f(0.0, -80.0, 0.0), p.hitPosition, real > 0.5);
+  q.position = p.hitPosition;
   /* round-trip attenuation, crudely: mast → surface → echo, against 1.8× range. */
   let path = length(p.hitPosition - vec3f(0.0, ${LIDAR_MAST}, 0.0));
   let near = clamp(1.0 - path / (${LIDAR_RANGE} * 1.8), 0.0, 1.0);
-  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * ((0.35 + 1.10 * near) * real);
+  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.35 + 1.10 * near);
   return q;
 }`;
 
@@ -6798,6 +6800,8 @@ const lidarDocument = document(
       }, { label: "mark2a" }),
       node("echoes", "geometry", [-640, 520], {
         mode: "instances", shape: "octahedron", scale: 0.05, material: "spark1",
+        /* T642: the reading IS a selection — §V471's idiom, in the lit path. */
+        group: "p.hit > 0.5 && p.hitPosition.y > -10.0",
       }, {
         label: "echoes1",
         parameters: {
