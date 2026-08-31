@@ -71,6 +71,23 @@ describe("T39 — node library pane", () => {
     expect(onAddNode).toHaveBeenCalledWith("test.blur");
   });
 
+  it("a double-click adds exactly ONCE — the second click of the burst is not an add (T635)", () => {
+    // The file-browser habit: a double-click is two click events, detail 1 then 2.
+    // Treating both as adds stacked two identical nodes on one spot (the ~20-blur
+    // pile-up was this gesture repeated). Single click is the stated gesture; the
+    // burst's later clicks are swallowed, while deliberate separate clicks (each a
+    // fresh burst, detail 1) still add one each.
+    const onAddNode = vi.fn();
+    render(<NodeLibrary definitions={testNodeDefinitions} onAddNode={onAddNode} />);
+    const item = screen.getByText("Blur");
+    fireEvent.click(item, { detail: 1 });
+    fireEvent.click(item, { detail: 2 });
+    expect(onAddNode).toHaveBeenCalledTimes(1);
+    // A later, separate click is a new gesture and adds again.
+    fireEvent.click(item, { detail: 1 });
+    expect(onAddNode).toHaveBeenCalledTimes(2);
+  });
+
   it("adds the top hit on Enter, so typing never needs a pointer (§V19)", () => {
     const onAddNode = vi.fn();
     render(<NodeLibrary definitions={testNodeDefinitions} onAddNode={onAddNode} />);

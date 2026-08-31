@@ -199,7 +199,19 @@ export function NodeLibrary({
                   className={cx(styles.item, "nodrag")}
                   draggable
                   onDragStart={(event) => onDragStart(event, definition)}
-                  onClick={() => add(definition)}
+                  /*
+                   * T635: SINGLE click adds — that is the stated gesture. A double-click
+                   * (the file-browser habit) is two click events, and treating both as
+                   * adds stacked two identical nodes on one spot; the owner's ~20-blur
+                   * pile-up reads as this gesture repeated. `detail > 1` is the burst's
+                   * second-and-later clicks, so a double-click adds exactly once, while
+                   * deliberate repeat-adds (clicks outside the double-click window)
+                   * still add one each.
+                   */
+                  onClick={(event) => {
+                    if (event.detail > 1) return;
+                    add(definition);
+                  }}
                   title={definition.description ?? definition.type}
                 >
                   <span className={styles.itemTitle}>{definition.title}</span>
