@@ -1,4 +1,5 @@
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
+import { previewUniforms } from "./debug-effects.ts";
 import { buildPreviewProgram, previewPassId } from "./program.ts";
 import { createPreviewScheduler } from "./schedule.ts";
 import type { PreviewScheduler } from "./schedule.ts";
@@ -14,6 +15,7 @@ import type {
   PreviewRequest,
   PreviewRuntimeHost,
   PreviewSchedule,
+  PreviewUniformUpdate,
 } from "./types.ts";
 
 /**
@@ -91,6 +93,14 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
   const scheduler: PreviewScheduler = createPreviewScheduler({ capacity: options.capacity });
   const atlas: TileAtlas = createTileAtlas({ capacity: options.capacity });
   let lastSignature: string | null = null;
+  /**
+   * B118: the lens values last PUSHED per pass, serialized. The program's signature
+   * excludes uniform values by construction (§V5), so a lens change rebuilds nothing —
+   * which means the values must travel by PUSH on the per-frame command, or they are
+   * recomputed forever and uploaded never. Cleared on a rebuild: a carried effect keeps
+   * its old uniform block, so everything active re-pushes over whatever carried.
+   */
+  const lastPushed = new Map<string, string>();
 
   const held = (entry: AllocatedPreview): boolean => atlas.get(previewKey(entry.ref)) !== undefined;
 
@@ -121,15 +131,28 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
     if (programChanged) {
       lastSignature = program.signature;
       options.host.setPreviewProgram(program);
+      lastPushed.clear();
     }
 
     const refresh: string[] = [];
     const composite: PreviewCompositeTile[] = [];
+    const uniforms: PreviewUniformUpdate[] = [];
     for (const entry of schedule.active) {
       const key = previewKey(entry.ref);
       const tile = atlas.get(key);
       if (tile === undefined) continue;
-      if (entry.due) refresh.push(previewPassId(key));
+      const passId = previewPassId(key);
+      // B118: the lens travels by VALUE on this command, and a change forces a refresh
+      // even off-cadence — an exposure nudge that waited for the next due tick would
+      // read as a dead control at low preview fps, which is the bug this fixes.
+      const values = previewUniforms(entry.request.view);
+      const serialized = JSON.stringify(values);
+      const changed = lastPushed.get(passId) !== serialized;
+      if (changed) {
+        lastPushed.set(passId, serialized);
+        uniforms.push({ passId, values });
+      }
+      if (entry.due || changed) refresh.push(passId);
       // Every active tile composites every frame, due or not: a pan moves the destination
       // rect without changing a single pixel inside the tile.
       composite.push({ ref: entry.ref, resourceId: tile.resourceId, dest: entry.request.rect });
@@ -138,6 +161,7 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
     const command: PreviewFrameCommand = {
       refresh,
       composite,
+      uniforms,
       surface: { size: [input.surface.width, input.surface.height], dpr: input.devicePixelRatio },
     };
 
@@ -163,6 +187,7 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       scheduler.reset();
       atlas.reset();
       lastSignature = null;
+      lastPushed.clear();
     },
   };
 }

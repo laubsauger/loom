@@ -1,7 +1,7 @@
 import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
-import type { EffectPassDescriptor, ResourceDescriptor } from "../backend/plan.ts";
+import type { EffectPassDescriptor, ResourceDescriptor, UniformValues } from "../backend/plan.ts";
 
 /**
  * Shared vocabulary for the preview system (T34, T35, T36).
@@ -241,6 +241,18 @@ export interface PreviewCompositeTile {
   readonly dest: PreviewRect;
 }
 
+/**
+ * B118: one pass's lens values, pushed by VALUE. The program's `signature` deliberately
+ * excludes uniform values (§V5) so a lens change cannot rebuild resources — which means a
+ * push path must exist, or exposure, mask, tonemap, checker size and signed scale are
+ * recomputed every tick and handed to a program object nobody ever uploads (§V220's
+ * two-correct-halves shape, and exactly what shipped).
+ */
+export interface PreviewUniformUpdate {
+  readonly passId: string;
+  readonly values: UniformValues;
+}
+
 /** The per-frame decision. Everything here is cheap to recompute every display frame. */
 export interface PreviewFrameCommand {
   /**
@@ -251,6 +263,8 @@ export interface PreviewFrameCommand {
   readonly refresh: ReadonlyArray<string>;
   /** Every active tile, due or not — a pan moves rects without changing pixels. */
   readonly composite: ReadonlyArray<PreviewCompositeTile>;
+  /** Lens value updates for passes whose view changed since the last push (B118). */
+  readonly uniforms?: ReadonlyArray<PreviewUniformUpdate>;
   /** Surface size in CSS px and its device pixel ratio, for the presenter's projection. */
   readonly surface: { readonly size: readonly [number, number]; readonly dpr: number };
 }

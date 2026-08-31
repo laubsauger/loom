@@ -1898,6 +1898,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           const surfaceTarget = h.surface;
           if (!active || set === undefined || surfaceTarget === undefined) return;
 
+          // B118: lens VALUES arrive on the command, because the program's signature
+          // excludes them by construction (§V5) and `updateUniforms` resolves against
+          // the MAIN program only. Without this write, exposure, channel mask, tonemap,
+          // checker size and signed scale were recomputed every tick and never uploaded.
+          for (const update of command.uniforms ?? []) {
+            const block = set.passUniforms.get(update.passId);
+            if (block) block.set(toMutable(update.values));
+          }
+
           const dpr = command.surface.dpr;
           const encodeCommand = (f: Frame): void => {
             // Ping-pong-sourced bindings swap identity per frame — re-point first,

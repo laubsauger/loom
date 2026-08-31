@@ -188,6 +188,33 @@ describe("preview system", () => {
     expect(host.programs).toHaveLength(2);
   });
 
+  it("pushes lens VALUES on the command when the view changes — the other half of §V5 (B118)", () => {
+    // The test above pins "exposure does not rebuild"; this pins that the value still
+    // ARRIVES. Alone, the first half shipped a preview whose lens was recomputed every
+    // tick and handed to a program object nobody ever uploaded — exposure, channel mask,
+    // tonemap, checker size and signed scale had never reached the GPU. Both halves must
+    // hold together: remove either and the other still passing is the bug.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    const passId = previewPassId(previewKey({ nodeId: "a", portId: "out" }));
+    run(system, [request("a")], 2);
+    // The first tick seeds the pushed set once; a steady view then pushes nothing.
+    expect(host.commands[0]?.uniforms).toHaveLength(1);
+    expect(host.commands[1]?.uniforms).toEqual([]);
+
+    run(system, [request("a", { view: { ...DEFAULT_PREVIEW_VIEW, exposureStops: 3 } })], 2, {
+      startIndex: 2,
+    });
+    expect(host.programs).toHaveLength(1); // still no rebuild —
+    const push = host.commands[2]?.uniforms;
+    expect(push).toHaveLength(1); // — and the value travels anyway,
+    expect(push?.[0]?.passId).toBe(passId);
+    expect(push?.[0]?.values["exposure"]).toBe(8); // pow(2, 3 stops), CPU-converted
+    // — and forces a refresh THIS tick, so a nudge is visible off-cadence.
+    expect(host.commands[2]?.refresh).toContain(passId);
+    expect(host.commands[3]?.uniforms).toEqual([]);
+  });
+
   it("composites every active tile every frame but refreshes only the due ones", () => {
     const host = fakeHost();
     const system = createPreviewSystem({ host, capacity: 8 });
