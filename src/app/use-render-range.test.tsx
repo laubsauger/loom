@@ -15,7 +15,12 @@ import { useRenderRange } from "./use-render-range.ts";
 /**
  * T586 — THE WIRING GUARD for the render-time honest edge.
  *
- * `freeRunRenderWarning` is proven at exact text in `domain/media/transport.test.ts`. That
+ * T645 WIDENED IT: the same seam now carries §V329's whole property, so the guard below
+ * covers a WEBCAM document too — the case T644 found, where the warning was a correct
+ * decision that structurally could not reach a live camera.
+ *
+ * `nonReproducibleRenderWarning` is proven at exact text in
+ * `domain/render/reproducibility.test.ts`. That
  * is the DECISION, and a correct decision with no construction site is the failure this
  * repo keeps catching (§V220): `renderFrameRange` has accepted an `onDiagnostic` callback
  * since T433 and NOTHING has ever passed one, so a warning built perfectly and never
@@ -48,6 +53,31 @@ function graphWith(playMode?: string): GraphDocument {
         position: { x: 0, y: 0 },
         label: "track1",
         parameters: playMode === undefined ? {} : { playMode },
+      },
+      out: {
+        id: "out",
+        type: "output",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {},
+      },
+    },
+    edges: {},
+  } as unknown as GraphDocument;
+}
+
+/** T644's document: a live camera and an Output, and nothing with a media transport. */
+function webcamGraph(): GraphDocument {
+  return {
+    revision: 1,
+    nodes: {
+      cam1: {
+        id: "cam1",
+        type: "webcam",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        label: "cam1",
+        parameters: {},
       },
       out: {
         id: "out",
@@ -179,7 +209,7 @@ describe("T586 — a take over free-run media reports itself, and a locked one d
   it("a free-run media node puts a WARNING on the session, and the take still renders", async () => {
     const { session, result, saved } = await takeOver(graphWith());
 
-    const warning = session.diagnostics.find((d) => d.code === "export.freeRunMedia");
+    const warning = session.diagnostics.find((d) => d.code === "export.nonReproducible");
     expect(warning, "the warning never reached the session — onDiagnostic is unwired").toBeDefined();
     expect(warning?.severity).toBe("warning");
     expect(warning?.message).toContain('Audio File In "track1"');
@@ -193,8 +223,36 @@ describe("T586 — a take over free-run media reports itself, and a locked one d
 
   it("the SAME document with the lock opted in renders silently", async () => {
     const { session, result } = await takeOver(graphWith("timeline"));
-    expect(session.diagnostics.map((d) => d.code)).not.toContain("export.freeRunMedia");
+    expect(session.diagnostics.map((d) => d.code)).not.toContain("export.nonReproducible");
     expect((result as unknown as { status: string }).status).toBe("applied");
+  });
+
+  /**
+   * T644 — THE CASE THAT COULD NOT REACH THIS SEAM, and the reason T645 is a property
+   * rather than a patch.
+   *
+   * A webcam declares no transport parameters, so it was invisible to every derivation the
+   * warning was built on. This take renders a live camera, produces a different file every
+   * time it runs, and before T645 came back with an empty diagnostics list. Classifying
+   * `webcam` in `NODE_REPRODUCIBILITY` does not make this pass on its own — the hook has to
+   * call the function that reads the classification, which is the half §V220 keeps catching.
+   */
+  it("T644 — a take over a WEBCAM warns too, and the take still renders", async () => {
+    const { session, result, saved } = await takeOver(webcamGraph());
+
+    const warning = session.diagnostics.find((d) => d.code === "export.nonReproducible");
+    expect(
+      warning,
+      "a take over a live camera reported nothing — §V329 has no site on this path",
+    ).toBeDefined();
+    expect(warning?.severity).toBe("warning");
+    expect(warning?.message).toContain('Webcam "cam1"');
+    expect(warning?.suggestion).toContain("Record the input to a file");
+
+    // Same ruling as T586's: the take PROCEEDS. Refusing would hand back nothing at all for
+    // a document whose only content is the camera the user pointed at something.
+    expect((result as unknown as { status: string }).status).toBe("applied");
+    expect(saved.fileName).toBe("take.0-2.mp4");
   });
 
   /**

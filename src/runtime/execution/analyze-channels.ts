@@ -59,16 +59,49 @@ export function analyzeChannelEntries(
   return entries;
 }
 
+/** How stale one Analyze node's published value is, right now (§V329). */
+export interface AnalyzeAge {
+  readonly nodeId: NodeId;
+  /**
+   * Frames between the frame this value reduces and the frame being asked about.
+   *
+   * `1` is the §V144 contract holding: the value visible while frame N renders is the
+   * reduction of frame N-1. Anything larger is a readback that has not landed yet — a
+   * plan mid-swap, a device recovering, or simply load — and it is exactly the number
+   * §V329 says must not be invisible.
+   */
+  readonly ageFrames: number;
+}
+
 export interface AnalyzeChannels {
   /** Replaces the tracked set — called after each successful compile. */
   track(entries: ReadonlyArray<AnalyzeEntry>): void;
   /**
    * Pulls every tracked buffer once, asynchronously. Call between frames; never await
    * it from inside one. Overlapping calls skip buffers still in flight.
+   *
+   * `frameIndex` is the frame that just closed — the frame whose reduction the buffer now
+   * holds. It is passed in rather than counted here because §V44 puts the clock in the
+   * caller: this module reads no clock and counts no ticks, so the same call from an
+   * offline driver stamps offline frame numbers with no branch anywhere.
    */
-  sample(): void;
+  sample(frameIndex: number): void;
   /** Synchronous, latest-completed values. Plug in front of graphChannelResolver. */
   readonly resolver: ChannelResolver;
+  /**
+   * §V329's FIRST HALF, which had no implementation anywhere until T645.
+   *
+   * "An async result in a per-frame graph must expose its staleness. A node silently
+   * showing a result from 400ms ago is the §V147 family again: the picture is plausible
+   * and wrong." Analyze has published a latest-wins number since T236 and exposed NO age
+   * at all, so a parameter driven by it showed a value from an unknown number of frames
+   * ago. This is the number, per node, and `useAnalyzeChannels` publishes it onto the
+   * per-node telemetry channel where the node info popup already reads (§V85, §V16).
+   *
+   * Only nodes with a COMPLETED readback appear. A node still waiting for its first one
+   * has no age — it has no value either, and reporting `0` would say the opposite.
+   */
+  resultAges(frameIndex: number): readonly AnalyzeAge[];
 }
 
 const OPERATION_INDEX = { average: 0, minimum: 1, maximum: 2 } as const;
@@ -78,6 +111,8 @@ export function createAnalyzeChannels(options: {
 }): AnalyzeChannels {
   let tracked: ReadonlyArray<AnalyzeEntry> = [];
   const latest = new Map<string, number>();
+  /** Channel -> the frame index whose reduction `latest` currently holds (§V329). */
+  const sourceFrame = new Map<string, number>();
   const inFlight = new Set<string>();
 
   return {
@@ -87,8 +122,13 @@ export function createAnalyzeChannels(options: {
       for (const known of [...latest.keys()]) {
         if (!names.has(known)) latest.delete(known);
       }
+      // The age must be dropped with the value it describes: a renamed or deleted node
+      // whose frame stamp survived would report an age for a number nobody can read.
+      for (const known of [...sourceFrame.keys()]) {
+        if (!names.has(known)) sourceFrame.delete(known);
+      }
     },
-    sample() {
+    sample(frameIndex) {
       for (const entry of tracked) {
         if (inFlight.has(entry.channel)) continue;
         inFlight.add(entry.channel);
@@ -97,7 +137,12 @@ export function createAnalyzeChannels(options: {
           .then((raw) => {
             const values = new Float32Array(raw, 0, 4);
             const value = values[OPERATION_INDEX[entry.operation]];
-            if (value !== undefined && Number.isFinite(value)) latest.set(entry.channel, value);
+            if (value !== undefined && Number.isFinite(value)) {
+              latest.set(entry.channel, value);
+              // Stamped with the frame the read was ISSUED for, not the frame it landed
+              // on: the buffer holds that frame's reduction whenever the copy completes.
+              sourceFrame.set(entry.channel, frameIndex);
+            }
           })
           .catch(() => {
             // A failed readback (plan mid-swap, device recovering) keeps the previous
@@ -107,6 +152,15 @@ export function createAnalyzeChannels(options: {
             inFlight.delete(entry.channel);
           });
       }
+    },
+    resultAges(frameIndex) {
+      const ages: AnalyzeAge[] = [];
+      for (const entry of tracked) {
+        const stamped = sourceFrame.get(entry.channel);
+        if (stamped === undefined) continue;
+        ages.push({ nodeId: entry.nodeId, ageFrames: frameIndex - stamped });
+      }
+      return ages;
     },
     resolver: (channel) => latest.get(channel),
   };

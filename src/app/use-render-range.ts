@@ -7,7 +7,7 @@ import type { ProjectSettings } from "@domain/types/graph.ts";
 import { frameRangeLength, projectFps, projectRange } from "@domain/types/graph.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
-import { freeRunRenderWarning } from "@domain/media/transport.ts";
+import { nonReproducibleRenderWarning } from "@domain/render/reproducibility.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
@@ -158,9 +158,10 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
         };
         setDiagnostics([]);
         /*
-         * T586's HONEST EDGE — the one thing a free-run default is not allowed to be
-         * silent about, emitted through the SAME channel the recorder's own diagnostics
-         * use so there is one answer to "what did this take have to say".
+         * T586's HONEST EDGE, WIDENED TO §V329's WHOLE PROPERTY (T645) — the things a take
+         * is not allowed to be silent about, emitted through the SAME channel the
+         * recorder's own diagnostics use so there is one answer to "what did this take
+         * have to say".
          *
          * The three options were: diverge silently, force the lock silently, or say so.
          * Forcing it would hand back a DIFFERENT take from the one the user approved on
@@ -168,9 +169,13 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
          * §V44/§V47 exists to prevent. So the take PROCEEDS and the warning names the
          * nodes — which is also why this is not a `refuse()`: `RenderRangeOutcome.refused`
          * is terminal by construction and would cancel the take.
+         *
+         * This is ONE call, not two: T586's free-run sentence is a clause of the same
+         * warning that now also names live devices (Webcam, Audio In, Mouse) and async
+         * readbacks (Analyze). A second diagnostic would be a second answer (§V109).
          */
-        const freeRun = freeRunRenderWarning(live.graph, live.registry);
-        if (freeRun !== null) onDiagnostic(freeRun);
+        const notReproducible = nonReproducibleRenderWarning(live.graph, live.registry);
+        if (notReproducible !== null) onDiagnostic(notReproducible);
         try {
           const rendered = await renderFrameRange({
             api,

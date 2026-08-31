@@ -12,6 +12,8 @@ import type { ComponentTiming, NodeTelemetry, TelemetrySource } from "@runtime/t
 import { emptyBucket, emptyNodeTelemetry } from "@runtime/telemetry/index.ts";
 import type { AgentActivity, NodeRunStatus, NodeRuntimeSnapshot } from "@editor/graph-canvas/index.ts";
 import { IDLE_RUNTIME } from "@editor/graph-canvas/index.ts";
+import type { Reproducibility } from "@domain/render/reproducibility.ts";
+import { NODE_REPRODUCIBILITY } from "@domain/render/reproducibility.ts";
 
 /**
  * The node info model — TouchDesigner's middle-click popup, as data (T145, §I.info, §V85).
@@ -108,6 +110,26 @@ export interface NodeInfo {
   readonly agent: AgentActivity | null;
   /** False when no device timestamp query exists: every gpuMs above reads null (§V86). */
   readonly timingAvailable: boolean;
+
+  /**
+   * §V329's classification for this node's TYPE (T645), shown rather than merely branched
+   * on (§V338). "Is what I am looking at reproducible?" is asked in the same breath as "is
+   * what I am looking at current?", and this is where the second one is already answered.
+   *
+   * `pure` for an unknown type too, and deliberately: a placeholder node (§V10) renders no
+   * pixels and reads no device, so claiming it makes the take non-reproducible would be a
+   * worse answer than saying nothing. The exhaustiveness gate is what stops a REAL node
+   * arriving here unclassified.
+   */
+  readonly reproducibility: Reproducibility;
+  /**
+   * §V329's STALENESS, in frames, for an `async-cached` node (T645).
+   *
+   * `null` for every other class, and for an async node whose first readback has not landed
+   * — which is a different statement from `0` and is rendered as one. Read off the per-node
+   * telemetry channel, like every other number here: this collects nothing (§V85).
+   */
+  readonly resultAgeFrames: number | null;
 }
 
 export interface NodeInfoRequest {
@@ -340,6 +362,8 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     pruned: compiled !== null && compiled.pruned.includes(nodeId),
     agent: runtime.agent,
     timingAvailable,
+    reproducibility: NODE_REPRODUCIBILITY[type] ?? "pure",
+    resultAgeFrames: runtime.resultAgeFrames,
   };
 }
 

@@ -107,6 +107,15 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     text: "This node materializes no texture in the current plan, so it has no resolution, format or memory of its own.",
   },
   {
+    file: "src/editor/inspect/node-info-popup.tsx",
+    // T645/§V329: a DIAGNOSTIC fact about this node — a take over it will not reproduce —
+    // stated where someone asks "is what I am looking at current?", with the route to
+    // making it reproduce named rather than merely withheld (§V403). Same class as the
+    // `timestamp-query` note above: not decoration, and not repeatable as a tooltip
+    // because the reader needs it at the moment they read the node's other facts.
+    text: "This node reads a live device, so what it captures depends on when a frame ran. A take will not reproduce; record the input to a file and play that back locked to the timeline.",
+  },
+  {
     file: "src/editor/inspect/performance-panel.tsx",
     text: "feature, so per-pass GPU spans are unavailable. Nothing is estimated in their place — a CPU-side figure would be a different measurement wearing the same label.",
   },

@@ -60,7 +60,19 @@ import type { DeclaredReadback, ReadbackBudget, SizedResource } from "./readback
  * `src/editor/graph-canvas/node-runtime.ts` satisfies it structurally.
  */
 export interface NodeMetricSink {
-  publish(nodeId: NodeId, patch: { gpuMs?: number | null }): void;
+  publish(
+    nodeId: NodeId,
+    patch: {
+      gpuMs?: number | null;
+      /**
+       * §V329's staleness, on the channel that already exists for exactly this shape
+       * (T645). An async node's result age changes every frame, so it belongs beside
+       * `gpuMs` — coalesced to <= 10 Hz and read by the node info popup — and NOT in the
+       * problems pane, which would take sixty entries a second.
+       */
+      resultAgeFrames?: number | null;
+    },
+  ): void;
 }
 
 /**

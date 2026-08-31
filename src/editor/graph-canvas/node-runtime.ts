@@ -62,6 +62,18 @@ export interface NodeRuntimeSnapshot {
   status: NodeRunStatus;
   /** Last measured GPU time for this node's pass, in ms. `null` = no timing yet. */
   gpuMs: number | null;
+  /**
+   * §V329 — how stale an ASYNC node's published result is, in frames (T645).
+   *
+   * `null` for every node that is not `async-cached` (see `NODE_REPRODUCIBILITY`), and for
+   * one that has not completed a readback yet. `1` is Analyze's §V144 contract holding —
+   * the value visible while frame N renders reduces frame N-1; anything larger is a
+   * readback that has not landed, which is the number §V329 says must not be invisible.
+   *
+   * Deliberately NOT structural: it changes every frame, so it rides the 100 ms metric
+   * tick with `gpuMs` rather than forcing a flush (§V16).
+   */
+  resultAgeFrames: number | null;
   /** Highest-severity diagnostic text for this node, or null (§I.diag, §V27). */
   message: string | null;
   /** Diagnostic counts behind the node badge (§V27). */
@@ -91,6 +103,7 @@ export interface NodeRuntimeSnapshot {
 export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   status: "idle",
   gpuMs: null,
+  resultAgeFrames: null,
   message: null,
   errorCount: 0,
   warningCount: 0,
@@ -126,6 +139,7 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
   return (
     a.status === b.status &&
     a.gpuMs === b.gpuMs &&
+    a.resultAgeFrames === b.resultAgeFrames &&
     a.message === b.message &&
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&

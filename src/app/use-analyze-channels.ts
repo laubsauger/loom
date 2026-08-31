@@ -7,6 +7,7 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import { analyzeChannelEntries, createAnalyzeChannels } from "@runtime/execution/index.ts";
 import type { AnalyzeEntry } from "@runtime/execution/index.ts";
+import type { NodeMetricSink } from "@runtime/telemetry/index.ts";
 
 /**
  * The CPU half of Analyze, constructed (T305, B25, §V144, §V205).
@@ -48,6 +49,21 @@ import type { AnalyzeEntry } from "@runtime/execution/index.ts";
  * §V144: the value visible while frame N renders is the reduction of the last COMPLETED
  * frame. One frame late is correct. A stall is not, and there is no `await` on this path
  * anywhere (§V184).
+ *
+ * ## And the age of it, which §V329 has required since before this node shipped (T645)
+ *
+ * "One frame late by design" is the CONTRACT. It is not a guarantee: a readback that has
+ * not landed leaves the previous value standing, deliberately, so under load or with a
+ * plan mid-swap the number a parameter is driven by is from some larger and entirely
+ * invisible number of frames ago — §V147's family, the picture that is plausible and
+ * wrong. §V329 says that age must be exposed, and had no implementation site anywhere.
+ *
+ * It goes onto the PER-NODE TELEMETRY CHANNEL, beside `gpuMs`, and the node info popup
+ * reads it there (§V85, §V16). Not the problems pane: an age changes every frame and a
+ * pane entry would be sixty rows a second, which is §V537's saturation with the volume
+ * turned up. The channel already coalesces to 10 Hz and already has one subscriber per
+ * node, so there is nothing to stand up — which is the whole reason it is the right
+ * channel rather than a new one.
  */
 
 export interface AnalyzeChannelBinding {
@@ -88,6 +104,12 @@ function trackableEntries(
 export function useAnalyzeChannels(
   backend: ShaderloomBackend | null | undefined,
   registry: NodeRegistryView,
+  /**
+   * The per-node telemetry channel §V329's staleness is published onto. Optional so a test
+   * that only cares about the resolver can leave it out; the composition root passes the
+   * graph canvas's own store, which is the ONE per-node channel (§V16).
+   */
+  sink?: NodeMetricSink | undefined,
 ): AnalyzeChannelBinding {
   // Read through a ref: the channels object is built once and must survive the backend
   // being replaced by a device-loss rebuild (§V23) without losing its latest values.
@@ -120,12 +142,27 @@ export function useAnalyzeChannels(
     [channels],
   );
 
-  const observe = useCallback(() => {
-    // See the module note: this runs inside the open frame, so the read is deferred to a
-    // microtask that drains after it closes. Not a stylistic choice — a direct call here
-    // fails the frame guard and is swallowed.
-    queueMicrotask(() => channels.sample());
-  }, [channels]);
+  const sinkRef = useRef(sink);
+  sinkRef.current = sink;
+
+  const observe = useCallback(
+    (frame: FrameEvaluationInput) => {
+      // The age of what the resolver ALREADY answered with, measured against the frame
+      // that just ran. Published before the new sample is queued, so the number describes
+      // the value this frame actually used rather than one that has not arrived yet.
+      const target = sinkRef.current;
+      if (target !== undefined) {
+        for (const age of channels.resultAges(frame.frameIndex)) {
+          target.publish(age.nodeId, { resultAgeFrames: age.ageFrames });
+        }
+      }
+      // See the module note: this runs inside the open frame, so the read is deferred to a
+      // microtask that drains after it closes. Not a stylistic choice — a direct call here
+      // fails the frame guard and is swallowed.
+      queueMicrotask(() => channels.sample(frame.frameIndex));
+    },
+    [channels],
+  );
 
   const resolver = useCallback<ChannelResolver>(
     (channel, context) => channels.resolver(channel, context),

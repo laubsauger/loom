@@ -111,7 +111,7 @@ describe("Analyze on Dawn (T236)", () => {
       // sampling until a value lands (bounded), never awaiting inside a frame.
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (channels.resolver("analyze1", {} as never) !== undefined) break;
-        channels.sample();
+        channels.sample(attempt);
         await backend.whenSettled();
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
@@ -205,7 +205,7 @@ describe("Analyze drives a parameter that changes the PICTURE (T480, §V144, §V
       // Between frames (§V48's window): the sample lands the white average, exactly 1.
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (channels.resolver("meter1", {} as never) !== undefined) break;
-        channels.sample();
+        channels.sample(attempt);
         await backend.whenSettled();
         await new Promise((resolve) => setTimeout(resolve, 0));
       }

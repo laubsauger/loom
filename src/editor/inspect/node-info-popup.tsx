@@ -223,6 +223,11 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
             picture is from the last program that compiled, where a bare "stale" reads as
             a claim about THIS node. */}
         {info.outputStale ? <Badge tone="warn">output stale</Badge> : null}
+        {/* §V329/§V338 (T645): the classification is SHOWN, not merely branched on. Not a
+            `warn` tone — a Webcam being live is what a Webcam is, and a permanent yellow
+            badge on a working node teaches people to ignore yellow (§V537). The render
+            warning is where it becomes a caveat, because that is where it costs something. */}
+        {info.reproducibility === "pure" ? null : <Badge>{info.reproducibility}</Badge>}
         {info.errorCount > 0 ? <Badge tone="error">{info.errorCount} error</Badge> : null}
         {info.warningCount > 0 ? <Badge tone="warn">{info.warningCount} warning</Badge> : null}
         <Badge>{info.status}</Badge>
@@ -257,7 +262,29 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
           <Value absent={info.lastRenderedFrame === null}>
             {info.lastRenderedFrame === null ? "never rendered" : info.lastRenderedFrame}
           </Value>
+          {/* §V329's FIRST HALF, finally rendered somewhere (T645). Analyze publishes a
+              number and has never said how old it is; "one frame late" is the contract and
+              not a guarantee, so the actual figure goes here beside the other per-frame
+              numbers. It lives on the telemetry channel rather than the problems pane
+              because it changes every frame. */}
+          {info.reproducibility === "async-cached" ? (
+            <>
+              <dt>result age</dt>
+              <Value absent={info.resultAgeFrames === null}>
+                {info.resultAgeFrames === null
+                  ? "no result yet"
+                  : `${info.resultAgeFrames} ${info.resultAgeFrames === 1 ? "frame" : "frames"} behind`}
+              </Value>
+            </>
+          ) : null}
         </dl>
+        {info.reproducibility === "external-live" ? (
+          <p className={styles.note}>
+            This node reads a live device, so what it captures depends on when a frame ran. A
+            take will not reproduce; record the input to a file and play that back locked to
+            the timeline.
+          </p>
+        ) : null}
         {info.timingAvailable ? null : (
           <p className={styles.note}>
             This device reports no <code>timestamp-query</code> feature, so per-pass GPU

@@ -224,7 +224,7 @@ describe("T615 — a component's own animation runs, per instance", () => {
       },
     });
     channels.track(entries);
-    channels.sample();
+    channels.sample(0);
 
     return Promise.resolve().then(() => {
       const first = entries[0] as (typeof entries)[number];

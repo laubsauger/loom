@@ -1,4 +1,3 @@
-import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
@@ -453,45 +452,19 @@ export function freeRunMediaNodes(
   return found;
 }
 
-/**
- * The warning itself, built HERE rather than in the render command (T586).
+/*
+ * T645 — the WARNING that used to live here now lives in `../render/reproducibility.ts`.
  *
- * The sentence is a statement about the INVARIANT — free run is not `f(frame)`, therefore
- * the take does not reproduce — and the invariant lives beside the arithmetic that makes
- * it true, not in the app layer that happens to be the first caller. It also means the
- * message is a pure function of the document and can be asserted at exact text, which a
- * `useCallback` inside a hook could not be (§V220's habit: the decision is testable
- * without standing up the thing that calls it).
+ * `freeRunRenderWarning` said one true thing about one class of node, and T644 is what the
+ * narrowness cost: `webcam` declares no transport, so `hasMediaTransport` was false, so
+ * this file never saw it, so a take over a live camera warned about nothing. The sentence
+ * it built is unchanged and is now ONE CLAUSE of a warning that also covers live devices
+ * and async readbacks, under one code, from one call site (§V109).
  *
- * WARNING, not error, and deliberately: an error reads as "this take failed", and the take
- * is fine — it is simply not reproducible, which was the user's own choice. Returning
- * `null` for a clean document is what lets the caller assert both directions.
+ * `freeRunMediaNodes` stays here because the DERIVATION belongs here: it is a fact about
+ * the media transport's own `playMode`, read through `resolveParameters`, and the
+ * reproducibility module consumes it rather than re-deriving it.
  */
-export function freeRunRenderWarning(
-  graph: GraphDocument,
-  registry: NodeRegistryView,
-): RuntimeDiagnostic | null {
-  const nodes = freeRunMediaNodes(graph, registry);
-  const first = nodes[0];
-  if (first === undefined) return null;
-  const named = nodes.map((node) => `${node.title} "${node.label}"`).join(", ");
-  const one = nodes.length === 1;
-  return {
-    severity: "warning",
-    code: "export.freeRunMedia",
-    message:
-      `${named} ${one ? "is" : "are"} on Free Run, so ${one ? "its playhead does" : "their playheads do"} ` +
-      `not derive from the frame. A take is rendered as fast as the frames encode rather than in ` +
-      `real time, so the media in this file will not line up with what you saw and heard live.`,
-    // The pane can point at one node; the message names every one of them.
-    nodeId: first.nodeId,
-    // §V338/§V403: the caveat names what would make it go away, per node, by name.
-    suggestion:
-      `Set Play Mode to "Locked to Timeline" on ${named} and render again — the position then ` +
-      `derives from the frame, so the take reproduces exactly. Leave Free Run on if the live ` +
-      `performance is what you wanted and this render is a rough.`,
-  };
-}
 
 const PLAY_MODES = new Set<string>(["timeline", "freeRun"]);
 const EXTENDS = new Set<string>(["loop", "hold", "mirror", "black"]);

@@ -247,7 +247,9 @@ export function App({
    * It is built ABOVE the compile because the compile consumes its resolver, and it reads
    * the backend through a ref so a device-loss rebuild does not lose the latest values.
    */
-  const analyze = useAnalyzeChannels(backend, runtime.registry);
+  // T645: the third argument is §V329's staleness sink — the graph canvas's own per-node
+  // channel, the same one the telemetry hub mirrors `gpuMs` into. One channel, not two.
+  const analyze = useAnalyzeChannels(backend, runtime.registry, runtime.nodeRuntime);
 
   /**
    * B27/T305 — the value graph, constructed. `createValueGraphSession` had no caller, so

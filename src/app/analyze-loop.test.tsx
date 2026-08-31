@@ -176,6 +176,76 @@ describe("T305 — the Analyze channel is constructed and sampled between frames
     runtime.dispose();
   });
 
+  /**
+   * T645 — §V329's STALENESS, on the channel and reaching a surface.
+   *
+   * `analyze-staleness.test.ts` proves the arithmetic at exact values. What that cannot see
+   * is whether anything publishes it, which is this repo's dominant failure mode (§V220,
+   * 14 instances): `createAnalyzeChannels` itself was built, unit-tested and constructed
+   * nowhere for weeks with every suite green. So this asserts the SEAM — the hook pushes
+   * the age onto the per-node telemetry channel the node info popup already reads — and it
+   * fails if the sink argument is dropped, if `observe` stops reading the frame index, or
+   * if `resultAges` is computed and thrown away.
+   */
+  it("publishes the RESULT AGE onto the per-node telemetry channel (§V329, §V85)", async () => {
+    const runtime = newRuntime();
+    const gpu = guardedBackend(0.375);
+    const published: Array<{ nodeId: string; age: number | null | undefined }> = [];
+    const sink = {
+      publish(nodeId: string, patch: { resultAgeFrames?: number | null }) {
+        published.push({ nodeId, age: patch.resultAgeFrames });
+      },
+    };
+    let analyzeNodeId = "";
+
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$meter", type: "analyze", position: { x: 240, y: 0 } },
+        {
+          op: "connect",
+          source: { nodeId: "$noise", portId: "out" },
+          target: { nodeId: "$meter", portId: "input" },
+        },
+      ]);
+      analyzeNodeId = result.output.createdIds["$meter"] ?? "";
+    });
+
+    const { result } = renderHook(() => {
+      const analyze = useAnalyzeChannels(
+        gpu.backend,
+        runtime.registry,
+        sink as unknown as Parameters<typeof useAnalyzeChannels>[2],
+      );
+      const compile = useGraphCompile(runtime, CAPABILITIES);
+      return { analyze, compile };
+    });
+    await act(async () => {
+      result.current.analyze.track(result.current.compile.graph, result.current.compile.compiled);
+    });
+
+    // Frame 0 ISSUES the first read. Nothing has landed, so nothing is published: an age
+    // for a value that does not exist would be the opposite of what §V329 asks for.
+    await act(async () => {
+      gpu.duringFrame(() => result.current.analyze.observe({ ...FRAME, frameIndex: 0 }));
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+    expect(published).toEqual([]);
+
+    // Frame 4: the frame-0 reduction has landed, so the value on screen is four frames old
+    // and now SAYS so. The exact integer is what makes this falsifiable — an implementation
+    // stamping the landing frame publishes 0 here and looks perfectly healthy.
+    await act(async () => {
+      gpu.duringFrame(() => result.current.analyze.observe({ ...FRAME, frameIndex: 4 }));
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+    expect(published).toEqual([{ nodeId: analyzeNodeId, age: 4 }]);
+
+    runtime.dispose();
+  });
+
   it("would be refused if the sample ran inside the frame — the reason for the deferral", async () => {
     // NON-VACUITY for the test above. If `observe` ever calls `sample()` synchronously,
     // this is the failure it produces: a rejected read, swallowed, and a channel that

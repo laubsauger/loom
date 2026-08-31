@@ -18,6 +18,8 @@ import { NodeInfoHost } from "./node-info-host.tsx";
 import { NodeInfoPopup } from "./node-info-popup.tsx";
 import { PerformanceView } from "./performance-panel.tsx";
 import { compiledOf, graphOf, hubWith, node, testRegistry } from "./test-support.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
 
 /**
  * The node info surface (T145, T41, §V85, §V86, §V19).
@@ -186,6 +188,72 @@ describe("the popup renders every field from a fixture, with no GPU", () => {
     render(<NodeInfoPopup info={info} />);
     expect(screen.getByText("Main / Dreamy_1 / Blur_2")).toBeTruthy();
     hub.dispose();
+  });
+});
+
+/**
+ * T645 — §V329 REACHES A HUMAN, which is the half a classification alone does not give.
+ *
+ * The map and the render warning are both checkable without any UI, and both were built
+ * that way. But §V329's first clause is about what someone SEES: "a node silently showing a
+ * result from 400ms ago is the §V147 family again". These assert the popup actually renders
+ * it — from a fixture, with no GPU, exactly as every other field here does (§V85).
+ *
+ * The age is on the TELEMETRY channel and not in the problems pane deliberately: it changes
+ * every frame, and sixty pane entries a second is §V537's saturation with the volume up.
+ */
+describe("T645 — the node info popup shows §V329's staleness and classification", () => {
+  const realRegistry = createNodeRegistry(allNodeDefinitions);
+
+  const infoFor = (type: string, runtime?: Partial<{ resultAgeFrames: number | null }>) =>
+    buildNodeInfo({
+      nodeId: "n1",
+      graph: graphOf([node("n1", type, { label: type })]),
+      registry: realRegistry,
+      compiled: compiledOf(),
+      runtime: {
+        status: "valid",
+        gpuMs: null,
+        resultAgeFrames: null,
+        message: null,
+        errorCount: 0,
+        warningCount: 0,
+        agent: null,
+        preview: null,
+        ...runtime,
+      },
+      telemetry: null,
+    });
+
+  it("shows an Analyze node's RESULT AGE, in frames, as the number it is", () => {
+    render(<NodeInfoPopup info={infoFor("analyze", { resultAgeFrames: 7 })} />);
+    expect(screen.getByText("result age")).toBeTruthy();
+    // Named at the exact value: "behind" with no number would be the useless half.
+    expect(screen.getByText("7 frames behind")).toBeTruthy();
+    expect(screen.getByText("async-cached")).toBeTruthy();
+  });
+
+  it("says 'no result yet' rather than 0 for a readback that has not landed (§V86's rule)", () => {
+    render(<NodeInfoPopup info={infoFor("analyze")} />);
+    expect(screen.getByText("no result yet")).toBeTruthy();
+    expect(screen.queryByText("0 frames behind")).toBeNull();
+  });
+
+  it("names a Webcam as a live device and says what would make it reproduce (§V403)", () => {
+    render(<NodeInfoPopup info={infoFor("webcam")} />);
+    expect(screen.getByText("external-live")).toBeTruthy();
+    expect(screen.getByText(/record the input to a file and play that back locked to/)).toBeTruthy();
+    // A live camera has no readback to be stale, so the age row must not appear at all.
+    expect(screen.queryByText("result age")).toBeNull();
+  });
+
+  it("says NOTHING for a pure node — the half that keeps the badge worth reading", () => {
+    // §V537/§V461: a badge on every node is a badge nobody sees. Blur is the ordinary case.
+    render(<NodeInfoPopup info={infoFor("blur")} />);
+    expect(screen.queryByText("result age")).toBeNull();
+    expect(screen.queryByText("pure")).toBeNull();
+    expect(screen.queryByText("external-live")).toBeNull();
+    expect(screen.queryByText("async-cached")).toBeNull();
   });
 });
 
