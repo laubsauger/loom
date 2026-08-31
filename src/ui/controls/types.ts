@@ -1,3 +1,5 @@
+import type { NumericRangeKind } from "../../domain/types/parameters.ts";
+
 /**
  * Shared vocabulary for the parameter control kit (T37).
  *
@@ -28,6 +30,15 @@ export type ValueListener<T> = (value: T, phase: EditPhase) => void;
 export interface NumericSpec {
   min?: number;
   max?: number;
+  /**
+   * §B111 — which ends of `min`/`max` are a LIMIT rather than the slider's travel.
+   *
+   * Structural, like the rest of this shape: a `NumberParameter` or `VectorParameter`
+   * carries it and satisfies `NumericSpec` unchanged. The ad-hoc specs built here (the
+   * Common section's resolution fields) declare nothing and get `bounded`, which is what
+   * they mean — a render target of -1 pixels is not a wide shot.
+   */
+  range?: NumericRangeKind;
   step?: number;
   precision?: number;
   scale?: "linear" | "log";

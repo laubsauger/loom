@@ -7,6 +7,7 @@ import type {
   StoredParameter,
 } from "../types/parameters.ts";
 import { parseExpression } from "../expressions/index.ts";
+import { numericRangeOf } from "./expression-range.ts";
 import { componentDefinition, componentNamesFor, isParameterSlot, parseComponentKey } from "./slots.ts";
 
 /**
@@ -50,20 +51,26 @@ export function validateParameterValue(
   switch (definition.type) {
     case "number": {
       if (typeof value !== "number" || !Number.isFinite(value)) return wrongType("a finite number");
-      if (definition.min !== undefined && value < definition.min) {
+      // §B111: only the ends the parameter DECLARES as limits reject. `min`/`max` alone
+      // are the slider's travel, and a stored rotation of 725° is a valid document — it
+      // is what an author who dragged past one turn, or bound `abstime * 7`, has. This is
+      // the third clamp site and it had to move with the other two, or a document the
+      // resolver now produces would fail to load (§V437: the property, not a site).
+      const range = numericRangeOf(definition);
+      if (range !== null && range.min !== null && value < range.min) {
         return error(
           "parameter.range",
-          `Parameter "${key}" is ${value}, below its minimum ${definition.min}.`,
+          `Parameter "${key}" is ${value}, below its minimum ${range.min}.`,
           nodeId,
-          `Use a value >= ${definition.min}.`,
+          `Use a value >= ${range.min}.`,
         );
       }
-      if (definition.max !== undefined && value > definition.max) {
+      if (range !== null && range.max !== null && value > range.max) {
         return error(
           "parameter.range",
-          `Parameter "${key}" is ${value}, above its maximum ${definition.max}.`,
+          `Parameter "${key}" is ${value}, above its maximum ${range.max}.`,
           nodeId,
-          `Use a value <= ${definition.max}.`,
+          `Use a value <= ${range.max}.`,
         );
       }
       return null;

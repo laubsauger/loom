@@ -114,6 +114,7 @@ export const audioFileInNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 2,
+      range: "floor",
       step: 0.01,
       description:
         "Monitoring level. Does NOT touch the analysis — the channels report the file at unity however loud you are playing it, so turning the room down does not silently rescale everything driven by it.",
@@ -160,8 +161,8 @@ export const audioPatternNode: NodeDefinition = {
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    bpm: { type: "number", label: "BPM", default: 112, min: 20, max: 300 },
-    amount: { type: "number", label: "Amount", default: 1, min: 0, max: 1, description: "Master gain on every channel." },
+    bpm: { type: "number", label: "BPM", default: 112, min: 20, max: 300, range: "floor" },
+    amount: { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Master gain on every channel." },
   },
   valueEvaluate: ({ values, frame }) => {
     const bpm = typeof values["bpm"] === "number" ? values["bpm"] : 112;

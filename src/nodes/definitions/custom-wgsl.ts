@@ -87,6 +87,7 @@ export const customWgslNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 1,
+      range: "bounded",
       description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it.",
     },
   },

@@ -17,6 +17,7 @@ export function specForVector(definition: VectorParameter): NumericSpec {
   return {
     ...(definition.min === undefined ? {} : { min: definition.min }),
     ...(definition.max === undefined ? {} : { max: definition.max }),
+    ...(definition.range === undefined ? {} : { range: definition.range }),
     ...(definition.step === undefined ? {} : { step: definition.step }),
   };
 }

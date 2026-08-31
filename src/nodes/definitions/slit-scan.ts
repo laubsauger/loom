@@ -57,6 +57,7 @@ export const slitScanNode: NodeDefinition = {
       default: SLIT_DEFAULT_FRAMES,
       min: 2,
       max: 120,
+      range: "bounded",
       step: 1,
       compileTime: true,
       description:
@@ -68,6 +69,7 @@ export const slitScanNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 1,
+      range: "bounded",
       description: "Scales the map: 1 uses the whole history, 0 freezes everything at now.",
     },
     resetPulse: {

@@ -183,7 +183,7 @@ export const textNode: NodeDefinition = {
       default: "sans-serif",
       description: "Any CSS family. Generic families always resolve; a missing one falls back.",
     },
-    size: { type: "number", label: "Size", default: 96, min: 1, max: 1024, unit: "px" },
+    size: { type: "number", label: "Size", default: 96, min: 1, max: 1024, range: "floor", unit: "px" },
     color: { type: "color", label: "Color", default: TEXT_WHITE, space: "display" },
     bgcolor: {
       type: "color",
@@ -205,6 +205,7 @@ export const textNode: NodeDefinition = {
       default: 1.2,
       min: 0.1,
       max: 8,
+      range: "floor",
       description: "Multiple of the font size between lines.",
     },
   },

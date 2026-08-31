@@ -324,14 +324,23 @@ type Coerced =
     }
   | { ok: false; message: string };
 
-/** Pins into the declared range, reporting whether it had to (T368). */
+/**
+ * Pins into the CLAMPING ends of the declared range, reporting whether it had to (T368).
+ *
+ * §B111/T537: it takes the DEFINITION rather than a loose min/max pair, because which of
+ * those two numbers is a limit and which is only slider travel is a property of the
+ * parameter and nothing else here can know it. `numericRangeOf` is the one reader of that
+ * declaration; a rotation answers `null` and reaches the early return, so it climbs.
+ */
 function clampToDeclared(
   result: number,
-  min: number | undefined,
-  max: number | undefined,
+  definition: ParameterDefinition,
 ): { value: number; clamped: { produced: number; limit: number } | null } {
-  if (min !== undefined && result < min) return { value: min, clamped: { produced: result, limit: min } };
-  if (max !== undefined && result > max) return { value: max, clamped: { produced: result, limit: max } };
+  const range = numericRangeOf(definition);
+  if (range === null) return { value: result, clamped: null };
+  const { min, max } = range;
+  if (min !== null && result < min) return { value: min, clamped: { produced: result, limit: min } };
+  if (max !== null && result > max) return { value: max, clamped: { produced: result, limit: max } };
   return { value: result, clamped: null };
 }
 
@@ -349,7 +358,7 @@ function coerceExpressionResult(definition: ParameterDefinition, result: number)
   if (!Number.isFinite(result)) return { ok: false, message: "the expression is not finite" };
   switch (definition.type) {
     case "number": {
-      const pinned = clampToDeclared(result, definition.min, definition.max);
+      const pinned = clampToDeclared(result, definition);
       return { ok: true, value: pinned.value, clamped: pinned.clamped };
     }
     case "boolean":
@@ -368,7 +377,7 @@ function coerceExpressionResult(definition: ParameterDefinition, result: number)
     case "string":
       return { ok: true, value: String(result), clamped: null };
     case "vector": {
-      const pinned = clampToDeclared(result, definition.min, definition.max);
+      const pinned = clampToDeclared(result, definition);
       return {
         ok: true,
         value: Array.from({ length: definition.size }, () => pinned.value),

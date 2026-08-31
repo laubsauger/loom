@@ -234,7 +234,7 @@ export const valueLagNode: NodeDefinition = {
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    lag: { type: "number", label: "Lag", default: 0.25, min: 0, unit: "seconds" },
+    lag: { type: "number", label: "Lag", default: 0.25, min: 0, range: "floor", unit: "seconds" },
   },
   stateful: VALUE_STATEFUL,
   valueEvaluate: (context) => smooth(context, (values) => num(values["lag"], 0.25)),
@@ -253,7 +253,7 @@ export const valueFilterNode: NodeDefinition = {
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    cutoff: { type: "number", label: "Cutoff", default: 2, min: 0.01, max: 100, unit: "hz" },
+    cutoff: { type: "number", label: "Cutoff", default: 2, min: 0.01, max: 100, range: "floor", unit: "hz" },
   },
   stateful: VALUE_STATEFUL,
   valueEvaluate: (context) =>

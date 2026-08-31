@@ -29,11 +29,84 @@ interface ParameterBase {
   inactiveWhen?: (values: Readonly<Record<string, ParameterValue>>) => string | null;
 }
 
+/**
+ * §B111/T537 — WHICH ENDS OF `min`/`max` ARE A LIMIT, and which are only a slider.
+ *
+ * ## The two ideas that were one pair of numbers
+ *
+ * `min`/`max` were doing two unrelated jobs at once: they described how far the slider
+ * travels AND they hard-pinned every resolved value. Conflated, they produced B111 —
+ * `transform.r` is declared ±360 because one turn either way is a sensible span to drag
+ * through, and an author who binds `abstime * 7` to it gets a rotation that climbs for
+ * fifty-one seconds and then sits at 360 forever. Nothing about a rotation says 360 is a
+ * maximum. 725° is a perfectly good rotation.
+ *
+ * TouchDesigner separates them, and this is a port of that model rather than an
+ * invention: a TD parameter carries `normMin`/`normMax` (the slider's travel), `min`/`max`
+ * (absolute limits) and `clampMin`/`clampMax` — two independent, OPT-IN booleans, off by
+ * default, that decide whether those limits actually bite. That is why you can multiply
+ * time into a TD rotation and watch it keep going while the slider still shows one turn.
+ *
+ * We keep ONE pair of numbers — a second pair would need a value for every parameter in
+ * the catalogue and would mostly repeat the first — and declare instead WHICH ENDS OF IT
+ * CLAMP. `min`/`max` are always the slider's travel; this field says how much more than
+ * that is true.
+ *
+ * ## Why this is declared and cannot be inferred
+ *
+ * The obvious shortcut is `unit === "degrees"`. It is wrong in the catalogue we already
+ * have: `camera.fov` is in degrees and is genuinely bounded — the projection matrix is
+ * singular at 0 and at 180, so an FOV of 725 is not a wide shot, it is a broken frame.
+ * Meanwhile `noise.r` is a rotation that declares no range at all and is therefore already
+ * unbounded, so the catalogue is inconsistent today in a way nobody decided. This is §V458
+ * exactly — code-ness had to be a declared KIND because `multiline` was a plausible-looking
+ * inference that lied — and §V437's rule that the classification be DERIVED from the
+ * registry so parameter N+1 fails the gate until its author decides.
+ *
+ * ## Why not wrap
+ *
+ * T368 considered letting cyclic parameters WRAP and rejected it, correctly: a wrap needs
+ * a PERIOD and the manifest declares a RANGE, and for ±360 the range is two periods wide,
+ * so 370 could honestly become 10 or -350. That argument still holds and this is not a
+ * wrap. `cyclic` does not fold 725 into anything — it stores 725, because the trigonometry
+ * downstream is already periodic and does not need the help. What T368 never weighed was
+ * the third option: neither clamp nor wrap. That is what TD does.
+ *
+ * ## The members
+ *
+ *  - `bounded` — BOTH ends clamp. The value is meaningless or destructive outside the
+ *    range and something downstream depends on that: an opacity, a probability, a
+ *    normalized amount, a buffer length, an FOV. Overshooting still reports the
+ *    `parameter.expression.clamped` diagnostic (T368), because on these it is true.
+ *  - `cyclic` — NEITHER end clamps, and the quantity is PERIODIC: a rotation, an angle,
+ *    a hue, a unit phase. The range is one period of slider travel. Never diagnoses,
+ *    because nothing was pinned.
+ *  - `floor` — the MINIMUM clamps, the maximum is slider travel. The largest half of the
+ *    catalogue: a radius, a blur size, a light intensity, a lag in seconds. Negative is
+ *    meaningless or breaks the shader; large is merely unusual. TD's `clampMin` alone.
+ *  - `soft` — NEITHER end clamps and the quantity is NOT periodic. A translate, a scale,
+ *    a black level. Any finite value is legal; the range is a suggestion about where the
+ *    interesting part is, which is the whole reason a slider needs one.
+ *
+ * There is deliberately no `ceiling` (max clamps, min does not). No parameter in the
+ * catalogue wants one today, and a member with no members is a guess. The gate below
+ * enumerates from the registry, so the first parameter that needs one will arrive with an
+ * author who has to add it here.
+ *
+ * DEFAULT: absent means `bounded`, which is what every parameter did before this existed,
+ * so nothing changes by omission. `parameter-range-census.test.ts` then forbids omission
+ * anywhere a `min` or `max` is declared, so the default is unreachable in the catalogue
+ * and stays only as the honest answer for the ad-hoc `NumericSpec`s the UI builds.
+ */
+export type NumericRangeKind = "bounded" | "cyclic" | "floor" | "soft";
+
 export interface NumberParameter extends ParameterBase {
   type: "number";
   default: number;
   min?: number;
   max?: number;
+  /** Which ends of `min`/`max` are a LIMIT rather than slider travel (§B111). */
+  range?: NumericRangeKind;
   step?: number;
   scale?: "linear" | "log";
   unit?: "px" | "percent" | "degrees" | "radians" | "seconds" | "hz";
@@ -64,6 +137,8 @@ export interface VectorParameter extends ParameterBase {
   default: readonly number[];
   min?: number;
   max?: number;
+  /** Which ends of `min`/`max` are a LIMIT rather than slider travel (§B111). */
+  range?: NumericRangeKind;
   step?: number;
 }
 

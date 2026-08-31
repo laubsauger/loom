@@ -76,6 +76,7 @@ export const cacheNode: NodeDefinition = {
       default: CACHE_DEFAULT_FRAMES,
       min: 2,
       max: 64,
+      range: "bounded",
       // Structural: it is the size of the allocation. A ring that could be resized by a
       // uniform would be a ring that reallocates mid-frame (§V8).
       compileTime: true,
@@ -87,6 +88,7 @@ export const cacheNode: NodeDefinition = {
       default: 1,
       min: 1,
       max: 63,
+      range: "bounded",
       // Structural: `index` picks which slice the read pass BINDS (T237). Animating time
       // is T321's job, and needs a different binding.
       compileTime: true,
@@ -109,6 +111,7 @@ export const cacheNode: NodeDefinition = {
       default: CACHE_DEFAULT_SCALE,
       min: 0.125,
       max: 1,
+      range: "bounded",
       compileTime: true,
       description: "Ring resolution as a fraction of the input. Halving it quarters the memory.",
     },

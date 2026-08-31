@@ -75,6 +75,7 @@ export const feedbackNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 1,
+      range: "bounded",
       description: "1 stores the input untouched; lower values fade toward Clear Color each frame.",
     },
     clearColor: {
@@ -127,6 +128,7 @@ export const feedbackNode: NodeDefinition = {
       default: 1,
       min: 1,
       max: MAX_SUBSTEPS,
+      range: "bounded",
       step: 1,
       description:
         "Iterations of this loop per displayed frame. 1 is one step per frame; a reaction-diffusion wants 10-50. Costs that many times the loop's GPU work.",

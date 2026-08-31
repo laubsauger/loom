@@ -153,12 +153,13 @@ export const lfoNode: NodeDefinition = {
       default: 1,
       min: 0,
       max: 100,
+      range: "floor",
       step: 0.01,
       unit: "hz",
     },
     amplitude: { type: "number", label: "Amplitude", default: 1 },
     offset: { type: "number", label: "Offset", default: 0 },
-    phase: { type: "number", label: "Phase", default: 0, min: 0, max: 1 },
+    phase: { type: "number", label: "Phase", default: 0, min: 0, max: 1, range: "cyclic" },
   },
   valueChannel: lfoValue,
   /**
@@ -203,7 +204,7 @@ export const timerNode: NodeDefinition = {
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     speed: { type: "number", label: "Speed", default: 1 },
-    delay: { type: "number", label: "Delay", default: 0, min: 0, unit: "seconds" },
+    delay: { type: "number", label: "Delay", default: 0, min: 0, range: "floor", unit: "seconds" },
   },
   valueChannel: (values, frame) =>
     Math.max(0, frame.timeSeconds - num(values["delay"], 0)) * num(values["speed"], 1),

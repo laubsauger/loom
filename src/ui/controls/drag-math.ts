@@ -99,10 +99,27 @@ export function roundToDecimals(value: number, decimals: number): number {
   return Math.round(value * factor) / factor;
 }
 
+/**
+ * Pins to the ends the spec declares as LIMITS — not to the slider's travel (§B111).
+ *
+ * The fourth clamp site, and the one the user meets first: before this, typing 725 into a
+ * Rotate field silently became 360 on commit, so the resolver could have been fixed and
+ * the parameter still could not hold the number. `cyclic` and `soft` pin neither end,
+ * `floor` pins the minimum only.
+ *
+ * `rangeFraction` deliberately still saturates at 0…1. A slider that renders 725° a
+ * hundred bar-widths to the right is not more honest, it is unusable — the BAR is the
+ * declared travel and pegs at its end, while the NUMERIC READOUT beside it shows 725. TD
+ * does exactly this, and it is why the two ideas are separable at all.
+ */
 export function clampToRange(value: number, spec: NumericSpec): number {
+  const kind = spec.range ?? "bounded";
+  if (kind === "cyclic" || kind === "soft") return value;
   let result = value;
   if (spec.min !== undefined && Number.isFinite(spec.min)) result = Math.max(result, spec.min);
-  if (spec.max !== undefined && Number.isFinite(spec.max)) result = Math.min(result, spec.max);
+  if (kind !== "floor" && spec.max !== undefined && Number.isFinite(spec.max)) {
+    result = Math.min(result, spec.max);
+  }
   return result;
 }
 

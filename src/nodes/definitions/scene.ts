@@ -50,15 +50,16 @@ export const cameraNode: NodeDefinition = {
   parameters: {
     eye: { type: "vector", size: 3, label: "Eye", default: [0, 0.5, 3] },
     lookAt: { type: "vector", size: 3, label: "Look At", default: [0, 0, 0] },
-    fov: { type: "number", label: "FOV", default: 55, min: 1, max: 179, unit: "degrees" },
-    near: { type: "number", label: "Near", default: 0.1, min: 0.001 },
-    far: { type: "number", label: "Far", default: 100, min: 0.01 },
+    fov: { type: "number", label: "FOV", default: 55, min: 1, max: 179, range: "bounded", unit: "degrees" },
+    near: { type: "number", label: "Near", default: 0.1, min: 0.001, range: "floor" },
+    far: { type: "number", label: "Far", default: 100, min: 0.01, range: "floor" },
     ortho: { type: "boolean", label: "Orthographic", default: false },
     orthoHeight: {
       type: "number",
       label: "Ortho Height",
       default: 2,
       min: 0.001,
+      range: "floor",
       inactiveWhen: (values) => (values["ortho"] === false ? "Perspective cameras size by FOV." : null),
     },
   },
@@ -100,7 +101,7 @@ export const lightNode: NodeDefinition = {
       ],
     },
     color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
-    intensity: { type: "number", label: "Intensity", default: 1, min: 0 },
+    intensity: { type: "number", label: "Intensity", default: 1, min: 0, range: "floor" },
     direction: {
       type: "vector",
       size: 3,
@@ -128,6 +129,7 @@ export const lightNode: NodeDefinition = {
       label: "Shadow Extent",
       default: 8,
       min: 0.1,
+      range: "floor",
       description:
         "World-units half-extent of the shadow volume around the origin. Explicit on purpose: nothing knows your scene's bounds, and a guessed box would crop shadows plausibly-wrong (V426).",
       inactiveWhen: (values) => (values["shadows"] === true ? null : "Only a casting light frames a shadow volume."),
@@ -219,6 +221,7 @@ export const geometryNode: NodeDefinition = {
       label: "Scale",
       default: 0.05,
       min: 0,
+      range: "floor",
       inactiveWhen: (values) => (values["mode"] === "instances" ? null : "Only instances wear a primitive."),
     },
     tint: {
@@ -385,13 +388,14 @@ export const renderNode: NodeDefinition = {
     camera: { type: "string", label: "Camera", default: "", description: "Name of a camera node." },
     lights: { type: "string", label: "Lights", default: "", description: "Space-separated light names, in order." },
     ambientColor: { type: "color", label: "Ambient", default: [1, 1, 1, 1], space: "display" },
-    ambientIntensity: { type: "number", label: "Ambient Intensity", default: 0.12, min: 0, max: 1 },
+    ambientIntensity: { type: "number", label: "Ambient Intensity", default: 0.12, min: 0, max: 1, range: "bounded" },
     background: { type: "color", label: "Background", default: [0, 0, 0, 1], space: "display" },
     environmentIntensity: {
       type: "number",
       label: "Env Intensity",
       default: 1,
       min: 0,
+      range: "floor",
       description: "Scales the wired environment's reflection. A value: drivable, never a rebuild.",
       inactiveWhen: () => null,
     },
@@ -999,8 +1003,8 @@ export const materialPhongNode: NodeDefinition = {
   parameters: {
     color: { type: "color", label: "Diffuse", default: [0.8, 0.8, 0.8, 1], space: "display" },
     specular: { type: "color", label: "Specular", default: [1, 1, 1, 1], space: "display" },
-    shininess: { type: "number", label: "Shininess", default: 48, min: 2, max: 512 },
-    roughness: { type: "number", label: "Roughness", default: 0.35, min: 0, max: 1 },
+    shininess: { type: "number", label: "Shininess", default: 48, min: 2, max: 512, range: "floor" },
+    roughness: { type: "number", label: "Roughness", default: 0.35, min: 0, max: 1, range: "bounded" },
   },
   compile: materialCompile("phong"),
 };
@@ -1017,8 +1021,8 @@ export const materialPbrNode: NodeDefinition = {
   outputs: [MATERIAL_OUT],
   parameters: {
     color: { type: "color", label: "Base Color", default: [0.8, 0.8, 0.8, 1], space: "display" },
-    metallic: { type: "number", label: "Metallic", default: 0, min: 0, max: 1 },
-    roughness: { type: "number", label: "Roughness", default: 0.5, min: 0, max: 1 },
+    metallic: { type: "number", label: "Metallic", default: 0, min: 0, max: 1, range: "bounded" },
+    roughness: { type: "number", label: "Roughness", default: 0.5, min: 0, max: 1, range: "bounded" },
   },
   compile: materialCompile("pbr"),
 };

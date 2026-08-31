@@ -144,6 +144,9 @@ export function componentDefinition(
       default: definition.default[index] ?? 0,
       ...(definition.min === undefined ? {} : { min: definition.min }),
       ...(definition.max === undefined ? {} : { max: definition.max }),
+      // §B111: a component inherits WHICH ENDS CLAMP along with the numbers. Dropping it
+      // here would clamp `rotate.y` on an instancer while `rotate` itself kept going.
+      ...(definition.range === undefined ? {} : { range: definition.range }),
       ...(definition.step === undefined ? {} : { step: definition.step }),
     };
   }

@@ -76,6 +76,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: 4096,
       min: 1,
       max: 1_000_000,
+      range: "bounded",
       step: 1,
       compileTime: true,
       description: "Allocation bound. The live count only ever shrinks from here (v1 kills; spawn is T323).",

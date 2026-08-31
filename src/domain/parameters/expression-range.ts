@@ -32,6 +32,27 @@ import type { ParameterDefinition } from "../types/parameters.ts";
  * So: the clamp stays, and the two remedies the grammar now offers are named in the
  * message (§V288). `clamp()` holds at the limit, `mod()` wraps.
  *
+ * ## AMENDED by T537 (§B111) — the third option T368 never weighed
+ *
+ * The owner hit this again, from the other end: "we need to make sure that rotations can
+ * continue on. right now they just get clamped." The three arguments above are each still
+ * true and none of them survives contact with the option they do not mention.
+ *
+ * The choice was framed as CLAMP versus WRAP, and wrap loses for exactly the reasons
+ * given. But TouchDesigner does neither: `min`/`max` are the slider's travel, `clampMin`/
+ * `clampMax` are separate opt-in flags, and with them off a rotation driven by time simply
+ * KEEPS GOING — 725° is stored as 725°, because the trigonometry downstream is already
+ * periodic and needs no help. There is no period to guess (answering the first argument),
+ * nothing is folded and so nothing is reinterpreted (the second), and every genuinely
+ * bounded parameter still clamps and still reports (the third — which is now the reason
+ * the classification is per-parameter rather than global).
+ *
+ * The three arguments were arguments against WRAPPING. They were read as arguments for
+ * CLAMPING, and the gap between those is where B111 lived for two tasks. The diagnostic
+ * T368 built is kept whole; `numericRangeOf` below now decides WHICH parameters it is
+ * true of, and E13-Prism's `abstime * 7 % 360` — a user-level workaround for this defect,
+ * carried unquestioned through T497 — no longer needs its modulo.
+ *
  * ## Two audiences, two moments
  *
  * `rangeRemedy` is the sentence, shared so the resolver and the inspector cannot drift.
@@ -46,11 +67,28 @@ export interface NumericRange {
   readonly max: number | null;
 }
 
-/** The declared bounds of a parameter an expression can overshoot; null when unbounded. */
+/**
+ * The ends that actually CLAMP; null when nothing does (§B111, T537).
+ *
+ * This is the single place the declaration is read, which is why every consumer got the
+ * fix at once rather than site by site (§V437): the resolver's clamp, the resolver's
+ * `clamped` diagnostic, the "clamps at 400 from t≈57s" forecast the inspector shows while
+ * an expression is being typed, and the remedy sentence all ask this one function. A
+ * `cyclic` parameter answers `null` here, so `abstime * 7` on a rotation is not pinned, is
+ * not warned about, and is not offered a `mod()` it does not need.
+ *
+ * `definition.min`/`max` remain the SLIDER's travel unconditionally. What varies is how
+ * many of those two numbers are also a limit, which is what `range` declares.
+ */
 export function numericRangeOf(definition: ParameterDefinition): NumericRange | null {
   if (definition.type !== "number" && definition.type !== "vector") return null;
+  // Absent means `bounded` — what every parameter did before the declaration existed, so
+  // omission changes nothing. `parameter-range-census.test.ts` forbids omission in the
+  // catalogue, so this default is only ever reached by an ad-hoc spec.
+  const kind = definition.range ?? "bounded";
+  if (kind === "cyclic" || kind === "soft") return null;
   const min = definition.min ?? null;
-  const max = definition.max ?? null;
+  const max = kind === "floor" ? null : (definition.max ?? null);
   return min === null && max === null ? null : { min, max };
 }
 

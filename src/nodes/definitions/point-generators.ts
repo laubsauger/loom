@@ -67,14 +67,14 @@ function generatorParameters(fixedShape: GeneratorShape | null): ParameterSchema
             compileTime: true,
           },
         }),
-    count: { type: "number", label: "Count", default: 4096, min: 1, max: 1_000_000, step: 1, compileTime: true },
-    cols: { type: "number", label: "Columns", default: 64, min: 1, max: 4096, step: 1, compileTime: true, inactiveWhen: usedBy("cols") },
-    rows: { type: "number", label: "Rows", default: 64, min: 1, max: 4096, step: 1, compileTime: true, inactiveWhen: usedBy("rows") },
-    sizeX: { type: "number", label: "Size X", default: 2, min: 0, inactiveWhen: usedBy("sizeX") },
-    sizeY: { type: "number", label: "Size Y", default: 2, min: 0, inactiveWhen: usedBy("sizeY") },
-    sizeZ: { type: "number", label: "Size Z", default: 2, min: 0, inactiveWhen: usedBy("sizeZ") },
-    radius: { type: "number", label: "Radius", default: 1, min: 0, inactiveWhen: usedBy("radius") },
-    radius2: { type: "number", label: "Minor Radius", default: 0.25, min: 0, inactiveWhen: usedBy("radius2") },
+    count: { type: "number", label: "Count", default: 4096, min: 1, max: 1_000_000, range: "bounded", step: 1, compileTime: true },
+    cols: { type: "number", label: "Columns", default: 64, min: 1, max: 4096, range: "bounded", step: 1, compileTime: true, inactiveWhen: usedBy("cols") },
+    rows: { type: "number", label: "Rows", default: 64, min: 1, max: 4096, range: "bounded", step: 1, compileTime: true, inactiveWhen: usedBy("rows") },
+    sizeX: { type: "number", label: "Size X", default: 2, min: 0, range: "floor", inactiveWhen: usedBy("sizeX") },
+    sizeY: { type: "number", label: "Size Y", default: 2, min: 0, range: "floor", inactiveWhen: usedBy("sizeY") },
+    sizeZ: { type: "number", label: "Size Z", default: 2, min: 0, range: "floor", inactiveWhen: usedBy("sizeZ") },
+    radius: { type: "number", label: "Radius", default: 1, min: 0, range: "floor", inactiveWhen: usedBy("radius") },
+    radius2: { type: "number", label: "Minor Radius", default: 0.25, min: 0, range: "floor", inactiveWhen: usedBy("radius2") },
   };
 }
 

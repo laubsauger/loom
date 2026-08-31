@@ -203,3 +203,65 @@ describe("a NumberParameter is usable as a NumericSpec without translation", () 
     expect(formatNumber(4, parameter)).toBe("4.0");
   });
 });
+
+/**
+ * §B111 / T537 — the SLIDER's travel and the VALUE's limits are two different things.
+ *
+ * This is the layer where the distinction is visible rather than merely true. Before
+ * T537, typing 725 into a Rotate field silently committed 360: the resolver could have
+ * been fixed and the control would still have refused to hold the number, and a UI
+ * showing 360 while the value is 725 reintroduces exactly the confusion one layer up.
+ *
+ * TouchDesigner's split, which this ports: the BAR is `min`…`max` and pegs at its end,
+ * the READOUT is the real number. Both halves are asserted, because either alone is the
+ * bug — a bar that scrolled off to a hundred widths would be unusable, and a readout
+ * that pinned would be a lie.
+ */
+describe("§B111 — which ends of min/max actually clamp is declared, not assumed", () => {
+  const ROTATE: NumberParameter = {
+    type: "number",
+    label: "Rotate",
+    default: 0,
+    min: -360,
+    max: 360,
+    range: "cyclic",
+    unit: "degrees",
+  };
+
+  // Values are chosen ON the step grid (a range 720 wide implies a 7.2 step, so 720 is
+  // exactly 100 rungs) so the assertions can be EXACT (§V218). Quantisation is a separate,
+  // pre-existing concern from clamping and must not be what these tests are measuring.
+  it("a cyclic parameter commits the value the user typed, past the slider's end", () => {
+    expect(normalizeValue(720, ROTATE)).toBe(720);
+    expect(normalizeValue(-720, ROTATE)).toBe(-720);
+    // The same numbers with the declaration flipped are the OLD behaviour, kept for
+    // everything genuinely bounded — and the pair is what makes this fixture able to
+    // tell the fix from the bug (§V461).
+    expect(normalizeValue(720, { ...ROTATE, range: "bounded" })).toBe(360);
+  });
+
+  it("the READOUT shows the real number while the BAR pegs at the declared end", () => {
+    expect(formatNumber(720, ROTATE)).toBe("720.0");
+    expect(rangeFraction(720, ROTATE)).toBe(1);
+    expect(rangeFraction(-720, ROTATE)).toBe(0);
+  });
+
+  it("floor pins the minimum only — a 512px blur is legal, a negative one is not", () => {
+    const blur: NumberParameter = { type: "number", label: "Filter Size", default: 8, min: 0, max: 128, range: "floor", unit: "px" };
+    expect(normalizeValue(512, blur)).toBe(512);
+    expect(normalizeValue(-4, blur)).toBe(0);
+  });
+
+  it("soft pins neither end", () => {
+    const translate: NumberParameter = { type: "number", label: "Translate", default: 0, min: -4, max: 4, range: "soft" };
+    expect(normalizeValue(40, translate)).toBe(40);
+    expect(normalizeValue(-40, translate)).toBe(-40);
+  });
+
+  it("an undeclared spec still clamps both ends — omission changes nothing", () => {
+    // The Common section's resolution fields are built ad hoc and declare nothing. A
+    // render target of -1 pixels is not a wide shot.
+    expect(clampToRange(70, { min: 0, max: 64 })).toBe(64);
+    expect(clampToRange(-1, { min: 0, max: 64 })).toBe(0);
+  });
+});
