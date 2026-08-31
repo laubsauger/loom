@@ -365,7 +365,7 @@ export const reactionDiffusionDocument = document(
         s4d: 1,
         speed: 0.05,
       }, { label: "broad1" }),
-      node("detail", "noise", [-900, 100], {
+      node("detail", "noise", [-900, 117], {
         type: "perlin4d",
         seed: 19,
         period: 0.13,
@@ -457,10 +457,10 @@ export const reactionDiffusionDocument = document(
           { position: 1, color: [1, 0.97, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
-      node("cycle", "lfo", [140, 560], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+      node("cycle", "lfo", [140, 637], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
         label: "lfo1",
       }),
-      node("tint", "lookup", [400, 380], { channel: "green", row: 0.5, scale: 2.4 }, {
+      node("tint", "lookup", [400, 393], { channel: "green", row: 0.5, scale: 2.4 }, {
         label: "tint1",
         parameters: {
           // §V107/§V108: the retained static is what a host with no channel attached
@@ -1949,7 +1949,7 @@ const fluidDocument = document(
       node(
         "ink",
         "circle",
-        [-40, 60],
+        [-40, 137],
         {
           mode: "fill",
           radius: [0.028, 0.028],
@@ -2612,16 +2612,16 @@ const audioRdDocument = document(
       // ---- SLOW: structure ------------------------------------------------------------
       // Substeps: low band, scaled 0..20 over a base of 14, fenced 1..34.
       node("sgain", "valueMath", [-980, 340], { operation: "multiply", operand: 20 }, { label: "sgain1" }),
-      node("sbase", "valueMath", [-740, 340], { operation: "add", operand: 14 }, { label: "sbase1" }),
-      node("scap", "valueLimit", [-500, 340], { minimum: 1, maximum: 34 }, { label: "steps1" }),
+      node("sbase", "valueMath", [-740, 403], { operation: "add", operand: 14 }, { label: "sbase1" }),
+      node("scap", "valueLimit", [-500, 403], { minimum: 1, maximum: 34 }, { label: "steps1" }),
       /* Chemistry: lowMid moves the map's white point, hard-fenced to the band where the
          pattern SURVIVES (the tutorial's "so the pattern doesn't disappear"). T562 moved
          the fence with the window below: the map's Level now sits on a much narrower
          window (see `shape1`), so the same fractional swing needs a much narrower fence —
          0.62..0.80 around a white point of 0.543 would have been the whole picture. */
-      node("wgain", "valueMath", [-980, 560], { operation: "multiply", operand: 0.06 }, { label: "wgain1" }),
-      node("wbase", "valueMath", [-740, 560], { operation: "add", operand: 0.534 }, { label: "wbase1" }),
-      node("wcap", "valueLimit", [-500, 560], { minimum: 0.528, maximum: 0.566 }, { label: "wlevel1" }),
+      node("wgain", "valueMath", [-980, 613], { operation: "multiply", operand: 0.06 }, { label: "wgain1" }),
+      node("wbase", "valueMath", [-740, 676], { operation: "add", operand: 0.534 }, { label: "wbase1" }),
+      node("wcap", "valueLimit", [-500, 660], { minimum: 0.528, maximum: 0.566 }, { label: "wlevel1" }),
 
       /* ---- FAST: events. §V471.3's idiom — one band, one property, its own gain+bias ---
        *
@@ -2636,24 +2636,24 @@ const audioRdDocument = document(
       // The three lens weights (T507). Coarse lens on the kick, mid on the snare, fine on
       // the hats — the same split the three noises were BUILT with, now audible.
       node("lagain", "valueMath", [-980, 900], { operation: "multiply", operand: 0.2 }, { label: "lagain1" }),
-      node("lena", "valueMath", [-740, 900], { operation: "add", operand: 0.018 }, { label: "lena1" }),
-      node("lbgain", "valueMath", [-980, 1100], { operation: "multiply", operand: 0.105 }, { label: "lbgain1" }),
-      node("lenb", "valueMath", [-740, 1100], { operation: "add", operand: 0.002 }, { label: "lenb1" }),
-      node("lcgain", "valueMath", [-980, 1300], { operation: "multiply", operand: 0.12 }, { label: "lcgain1" }),
-      node("lenc", "valueMath", [-740, 1300], { operation: "add", operand: 0 }, { label: "lenc1" }),
+      node("lena", "valueMath", [-740, 949], { operation: "add", operand: 0.018 }, { label: "lena1" }),
+      node("lbgain", "valueMath", [-980, 1173], { operation: "multiply", operand: 0.105 }, { label: "lbgain1" }),
+      node("lenb", "valueMath", [-740, 1222], { operation: "add", operand: 0.002 }, { label: "lenb1" }),
+      node("lcgain", "valueMath", [-980, 1446], { operation: "multiply", operand: 0.12 }, { label: "lcgain1" }),
+      node("lenc", "valueMath", [-740, 1495], { operation: "add", operand: 0 }, { label: "lenc1" }),
       /* §V471.7 — THE PALETTE SCALE ITSELF IS DRIVEN, so the ramp breathes instead of
          being a fixed grade. The third fence is T544's amendment and E31's scar: a
          gain+bias pair has to be range-checked against its TARGET or the idiom ships a
          clamp. ×4.2 over a 0..1 band spans 1.83..6.03 against a Lookup Scale declared
          -4..4, so the Limit is what keeps the value legible in the graph rather than
          silently clipped at the parameter. */
-      node("ggain", "valueMath", [-980, 1500], { operation: "multiply", operand: 4.2 }, { label: "ggain1" }),
-      node("gadd", "valueMath", [-740, 1500], { operation: "add", operand: 1.83 }, { label: "gadd1" }),
+      node("ggain", "valueMath", [-980, 1719], { operation: "multiply", operand: 4.2 }, { label: "ggain1" }),
+      node("gadd", "valueMath", [-740, 1768], { operation: "add", operand: 1.83 }, { label: "gadd1" }),
       node("grade", "valueLimit", [-500, 1500], { minimum: 1.2, maximum: 3.2 }, { label: "grade1" }),
       // The whole picture lifts for a frame. Rest 0.86 — DARKER than unity on purpose, so
       // the calm state has headroom and the hit is a lift rather than a clip.
-      node("bgain", "valueMath", [-980, 1700], { operation: "multiply", operand: 1.35 }, { label: "bgain1" }),
-      node("bright", "valueMath", [-740, 1700], { operation: "add", operand: 0.93 }, { label: "bright1" }),
+      node("bgain", "valueMath", [-980, 1992], { operation: "multiply", operand: 1.35 }, { label: "bgain1" }),
+      node("bright", "valueMath", [-740, 2041], { operation: "add", operand: 0.93 }, { label: "bright1" }),
 
       /* ---- EVENT: the seed, and it is the one thing that makes a beat legible ---------
        *
@@ -2684,12 +2684,12 @@ const audioRdDocument = document(
          pair cannot reach 1.0 (where the loop stops expanding and piles up into white) nor
          pass ~1.03 (where the corridor outruns the eye). A `valueLimit` here would be a
          fence around a range the gain already cannot leave. */
-      node("fgain", "valueMath", [-980, 2100], { operation: "multiply", operand: 0.53 }, { label: "fgain1" }),
-      node("flash", "valueMath", [-740, 2100], { operation: "add", operand: 0.02 }, { label: "flash1" }),
-      node("xgain", "valueMath", [-980, 2300], { operation: "multiply", operand: 0.017 }, { label: "xgain1" }),
-      node("xspeed", "valueMath", [-740, 2300], { operation: "add", operand: 1.012 }, { label: "xspeed1" }),
-      node("seedamt", "valueMath", [-980, 1900], { operation: "multiply", operand: -1.28 }, { label: "seedamt1" }),
-      node("seedcut", "valueMath", [-740, 1900], { operation: "add", operand: 2 }, { label: "seedcut1" }),
+      node("fgain", "valueMath", [-980, 2538], { operation: "multiply", operand: 0.53 }, { label: "fgain1" }),
+      node("flash", "valueMath", [-740, 2587], { operation: "add", operand: 0.02 }, { label: "flash1" }),
+      node("xgain", "valueMath", [-980, 2811], { operation: "multiply", operand: 0.017 }, { label: "xgain1" }),
+      node("xspeed", "valueMath", [-740, 2860], { operation: "add", operand: 1.012 }, { label: "xspeed1" }),
+      node("seedamt", "valueMath", [-980, 2265], { operation: "multiply", operand: -1.28 }, { label: "seedamt1" }),
+      node("seedcut", "valueMath", [-740, 2314], { operation: "add", operand: 2 }, { label: "seedcut1" }),
 
       // ---- the chemistry map (E2's, verbatim in spirit) -------------------------
       /* T535: `t4d` is 0.37, not 0. Zero sits ON a lattice plane of the 4D noise, where the
@@ -2710,7 +2710,7 @@ const audioRdDocument = document(
         rough: 0.5, exp: 1.25, amp: 1, offset: 0, mono: true, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.05,
       }, { label: "broad1" }),
-      node("detail", "noise", [-1460, 100], {
+      node("detail", "noise", [-1460, 117], {
         type: "perlin4d", seed: 19, period: 0.15, harmon: 3, spread: 2, gain: 0.5,
         rough: 0.6, exp: 1.2, amp: 1, offset: 0, mono: true, aspectcorrect: true,
         t4d: 0.37, s4d: 1, speed: 0.09,
@@ -2786,10 +2786,10 @@ const audioRdDocument = document(
       node("rim", "level", [-1720, -160], {
         blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1, invert: 1, opacity: 1,
       }, { label: "rim1" }),
-      node("dish", "screen", [-700, -160], { opacity: 1 }, { label: "dish1" }),
+      node("dish", "screen", [-700, -127], { opacity: 1 }, { label: "dish1" }),
 
       // ---- the simulation loop, with wind ---------------------------------------
-      node("state", "feedback", [-680, 120], { source: "pack1", persistence: 1, clearColor: [0, 0, 0, 0] }, {
+      node("state", "feedback", [-680, 146], { source: "pack1", persistence: 1, clearColor: [0, 0, 0, 0] }, {
         resolution: { mode: "fixed", width: 512, height: 512 },
         format: { mode: "fixed", format: "rgba16float" },
         parameters: { substeps: drivenSlot("steps1:low", 14) },
@@ -2871,7 +2871,7 @@ const audioRdDocument = document(
          gives a monochrome picture however many stops it has. The shipped ramp had five
          and was perfectly good; the reason it read as two colours is below, and it is not
          the ramp's fault. */
-      node("palette", "ramp", [60, 700], {
+      node("palette", "ramp", [60, 786], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
         stops: [
           { position: 0, color: [0.004, 0.006, 0.025, 1] },
@@ -2883,7 +2883,7 @@ const audioRdDocument = document(
           { position: 1, color: [1, 0.96, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
-      node("cycle", "lfo", [60, 900], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
+      node("cycle", "lfo", [60, 1043], { shape: "sine", frequency: 0.05, amplitude: 0.06, offset: 0 }, {
         label: "lfo1",
       }),
       /* ---- §V471.1: THE CHEMISTRY MAP, READ A SECOND TIME — as COLOUR -----------------
@@ -2916,8 +2916,8 @@ const audioRdDocument = document(
         blacklevel: 0, whitelevel: 1, contrast: 1, gamma1: 1, invert: 1,
         brightness: 0.17, opacity: 0,
       }, { label: "chem1" }),
-      node("blend", "add", [60, 500], {}, { label: "blend1" }),
-      node("tint", "lookup", [320, 380], { channel: "green", row: 0.5 }, {
+      node("blend", "add", [60, 513], {}, { label: "blend1" }),
+      node("tint", "lookup", [320, 393], { channel: "green", row: 0.5 }, {
         label: "tint1",
         parameters: {
           offset: drivenSlot("lfo1", 0),
@@ -3154,7 +3154,7 @@ const audioRdDocument = document(
          own LFO above moves the ramp's offset a hair at 0.05 Hz; this one turns the whole
          graded picture through ±15° of hue, so the piece never sits in one colour.
          Free-running (§V436, B98): a timeline lap must not restart the drift. */
-      node("drift", "lfo", [3700, 820], {
+      node("drift", "lfo", [3700, 857], {
         shape: "sine", frequency: 0.033, amplitude: 15, offset: 0, phase: 0,
       }, { label: "drift1" }),
       node("hue", "hsv", [3960, 600], { saturation: 1.08, value: 1 }, {
