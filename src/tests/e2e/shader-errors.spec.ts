@@ -74,22 +74,14 @@ test("editing WGSL commits through the bus as one undo entry (§V29, §V34)", as
 });
 
 /**
- * FAILING GATE — a shader edit is silently lost when you click the canvas.
+ * A shader edit survives the most ordinary way of leaving the pane: clicking the canvas,
+ * which blurs the editor AND clears the selection in one gesture. The commit must land
+ * before the pane can lose its subject — an unmount racing the `onBlur` commit is
+ * silent data loss with a status strip that says "saved".
  *
- * Measured: type into the shader editor, then click empty canvas — the most ordinary way
- * to leave a pane. The click blurs the editor AND clears the selection. `ShaderPane` reads
- * `nodeId === null` and returns its "No shader selected" branch, so `ShaderEditor`
- * unmounts; the `onBlur` commit does not survive that, and the typing is gone. The status
- * strip afterwards reads "saved", which is the worst part: the UI reports that the text
- * was stored, and it was not.
- *
- * Blurring anywhere that does NOT change the selection (the library search box, above)
- * commits correctly, which is what locates this: the commit path works, the unmount races
- * it. The fix belongs in `src/app/dock-panes.tsx` — commit before the pane can lose its
- * subject, or keep the pane mounted on the last node it was editing.
- *
- * Left red deliberately. This is data loss, and a test that avoided the gesture would
- * report a product that does not have this bug.
+ * History: this documented a real data-loss bug as a deliberately red FAILING GATE
+ * (T62, bff428a) that was fixed in 7304d96 — and then sat green-but-masked behind
+ * strict-mode selector noise until T469 scoped it; kept as a regression gate (§V569).
  */
 test("a shader edit survives clicking away onto the canvas", async ({ page }) => {
   await openApp(page);
