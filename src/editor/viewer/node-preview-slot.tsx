@@ -154,7 +154,7 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [adjustable, enter, orbitable, orbits, nodeId],
+    [adjustable, enter, orbitable, orbits],
   );
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -177,9 +177,16 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
     },
     [nodeId, orbits],
   );
-  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current?.pointerId === event.pointerId) drag.current = null;
-  }, []);
+  const onPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (drag.current?.pointerId !== event.pointerId) return;
+      drag.current = null;
+      // T692: a document-writing store (the camera gizmo) closes its undo transaction
+      // at gesture end; the inspection store declares no release and is untouched.
+      orbits?.release?.(nodeId);
+    },
+    [nodeId, orbits],
+  );
 
   /**
    * T656 — the wheel, and the reason T561 could not ship zoom.

@@ -74,7 +74,7 @@ export const cameraNode: NodeDefinition = {
       range: "cyclic",
       unit: "degrees",
       description:
-        "Bank around the view axis. Aim stays Look At's job — eye, Look At and Roll together are the full orientation (T706), so drive this to tilt the horizon without moving the shot.",
+        "Bank around the view axis. Aim stays Look At's job — eye, Look At and Roll together are the full orientation (T706), so drive this to tilt the horizon without moving the shot. The preview gizmo (T692) leaves Roll alone on purpose: banking is a framing decision you set and hold, not a navigation gesture, so it stays a number here rather than a drag.",
     },
     ortho: { type: "boolean", label: "Orthographic", default: false },
     orthoHeight: {

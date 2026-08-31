@@ -1460,6 +1460,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
         synthesis: {
+          kind: "pointset",
           depth: false,
           // T561/T675: the stock framing's basis, so the inspection orbit reproduces it at
           // identity and replaces only the VALUE (§V5) — read from the ONE orbit table, so
@@ -1855,7 +1856,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
-        synthesis: { depth: true, passes: synthPasses, ...(orbit === undefined ? {} : { orbit }) },
+        synthesis: { kind: payload.kind, depth: true, passes: synthPasses, ...(orbit === undefined ? {} : { orbit }) },
       });
     }
   }

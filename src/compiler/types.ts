@@ -1,4 +1,5 @@
 import type { EdgeId, NodeId, PortId } from "../domain/types/ids.ts";
+import type { PreviewPayloadKind } from "./preview-orbit.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { ColorPolicy, GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../domain/types/backend.ts";
@@ -135,6 +136,15 @@ export interface ResolvedOutput {
    * main program, exactly like a lens pass's source texture.
    */
   readonly synthesis?: {
+    /**
+     * T692: which payload kind this synthesis draws — stated by the compiler at the
+     * one site that knows (§V437), so a consumer deciding "does this tile get the
+     * camera GIZMO" reads a declaration instead of inferring 3D-ness from node types.
+     * A camera-kind tile is not orbitable (no `orbit` below) but IS gizmo-able: its
+     * picture draws through the document's own matrix, so a drag that WRITES the
+     * document moves the truth the tile shows rather than overriding it.
+     */
+    readonly kind?: PreviewPayloadKind;
     readonly passes: ReadonlyArray<DrawPassDescriptor>;
     /** The synthesized target needs a depth attachment (scene payloads depth-test). */
     readonly depth: boolean;

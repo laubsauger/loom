@@ -57,6 +57,12 @@ export interface PreviewOrbitStore {
    */
   zoom(nodeId: NodeId, factor: number): void;
   reset(nodeId: NodeId): void;
+  /**
+   * T692: the end of a pointer gesture. The INSPECTION store has no use for it — view
+   * state needs no commit — but the camera GIZMO store closes its undo transaction
+   * here, so one drag is one undo step. Optional so this store stays untouched.
+   */
+  release?(nodeId: NodeId): void;
 }
 
 export function createPreviewOrbitStore(): PreviewOrbitStore {

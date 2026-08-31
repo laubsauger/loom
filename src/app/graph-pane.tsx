@@ -12,6 +12,8 @@ import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import { GraphCanvas } from "@editor/graph-canvas/index.ts";
+import { type CameraPose, createCameraGizmoStore } from "@editor/viewer/camera-gizmo-store.ts";
+import { createParameterEditor } from "@editor/inspector/parameter-editor.ts";
 import { useKeymapPane } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
@@ -197,6 +199,55 @@ function GraphPaneInner({
   }, [compiledOutputs]);
 
   /**
+   * T692 — which tiles get the camera GIZMO: the compiler's own payload-kind
+   * declaration, same discipline as `orbitableNodes` above (never a node-type guess).
+   * A camera tile is deliberately NOT orbitable (its picture draws through the
+   * document's matrix, §T639(a)) — which is exactly why the same gestures may WRITE
+   * the document there: what moves on screen is the document moving.
+   */
+  const cameraGizmoNodes = useMemo(() => {
+    const nodes = new Set<NodeId>();
+    for (const output of compiledOutputs) {
+      if (output.synthesis?.kind === "camera") nodes.add(output.nodeId as NodeId);
+    }
+    return nodes;
+  }, [compiledOutputs]);
+
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  /**
+   * The document's pose, read at gesture start (§V657). Null when either vector wears
+   * a non-static envelope: a drag that clobbered a driven binding with a plain value
+   * would silently disconnect the drive, so a driven camera simply offers no gizmo.
+   */
+  const readCameraPose = useCallback((nodeId: NodeId): CameraPose | null => {
+    const node = graphRef.current.nodes[nodeId];
+    if (node === undefined) return null;
+    const vec = (key: string, fallback: readonly [number, number, number]) => {
+      const raw = node.parameters[key];
+      if (raw === undefined) return fallback;
+      if (Array.isArray(raw) && raw.length === 3 && raw.every((n) => typeof n === "number")) {
+        return [raw[0] ?? 0, raw[1] ?? 0, raw[2] ?? 0] as const;
+      }
+      return null;
+    };
+    const eye = vec("eye", [0, 0.5, 3]);
+    const lookAt = vec("lookAt", [0, 0, 0]);
+    if (eye === null || lookAt === null) return null;
+    return { eye, lookAt };
+  }, []);
+
+  const parameterEditor = useMemo(
+    () => createParameterEditor({ bus, context: invocation }),
+    [bus, invocation],
+  );
+  useEffect(() => () => parameterEditor.dispose(), [parameterEditor]);
+  const cameraGizmos = useMemo(
+    () => createCameraGizmoStore({ editor: parameterEditor, readPose: readCameraPose }),
+    [parameterEditor, readCameraPose],
+  );
+
+  /**
    * T675 — the inspection control's source for the node HEADER.
    *
    * The toggle used to be drawn on the tile and was invisible there: the shared preview
@@ -207,8 +258,14 @@ function GraphPaneInner({
    * camera (T669, answered: no ghost control that cannot work).
    */
   const previewInspect = useCallback(
-    (nodeId: NodeId) => (orbitableNodes.has(nodeId) ? previewOrbits : null),
-    [orbitableNodes, previewOrbits],
+    (nodeId: NodeId) => {
+      if (orbitableNodes.has(nodeId)) return previewOrbits;
+      // T692: a camera tile's toggle arms the DOCUMENT gizmo — offered only while the
+      // pose is plainly readable, so a driven camera shows no control that cannot work.
+      if (cameraGizmoNodes.has(nodeId) && readCameraPose(nodeId) !== null) return cameraGizmos;
+      return null;
+    },
+    [cameraGizmoNodes, cameraGizmos, orbitableNodes, previewOrbits, readCameraPose],
   );
 
   /**
@@ -280,18 +337,19 @@ function GraphPaneInner({
         );
       }
       const orbitable = orbitableNodes.has(nodeId);
+      const gizmo = !orbitable && cameraGizmoNodes.has(nodeId) && readCameraPose(nodeId) !== null;
       return (
         <NodePreviewSlot
           nodeId={nodeId}
           runtime={nodeRuntime}
           bounds={previewBounds}
           views={previewViews}
-          orbits={previewOrbits}
-          orbitable={orbitable}
+          orbits={gizmo ? cameraGizmos : previewOrbits}
+          orbitable={orbitable || gizmo}
         />
       );
     },
-    [graph, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, registry, settings, valueHistory],
+    [cameraGizmoNodes, cameraGizmos, graph, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(
