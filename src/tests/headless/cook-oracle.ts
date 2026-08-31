@@ -307,7 +307,16 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
     let plan = compileNow();
     let compiled = await backend.compile(plan);
     const outputId = (): string => {
-      const sinkOutput = plan.outputs.find((output) => output.portId === "$target");
+      // T408 follow-up: "$target" is not unique — ANY sink owns one, and E14 is the
+      // first example with two (its analyze meter and its output). Alphabetical find()
+      // returned the METER's target, so the oracle digested a static side texture and
+      // read every frame as identical — a reader-that-cannot-see, inside the oracle
+      // itself. The document's `output` node is the picture; prefer it by type.
+      const graph = store.view.getGraph();
+      const sinkOutput =
+        plan.outputs.find(
+          (output) => output.portId === "$target" && graph.nodes[output.nodeId]?.type === "output",
+        ) ?? plan.outputs.find((output) => output.portId === "$target");
       return sinkOutput?.resourceId ?? plan.outputs[0]?.resourceId ?? "";
     };
 
