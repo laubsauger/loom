@@ -308,6 +308,35 @@ describe("instances mode (T428b)", () => {
     expect(refusal?.suggestion).toContain("Instances");
   });
 
+  it("points mode draws camera-facing billboards, no shadow, group honoured (T647)", () => {
+    const graph = sceneGraph();
+    ((graph.nodes["grid"] as GraphNode).parameters as Record<string, unknown>)["count"] = 64;
+    const geo = (graph.nodes["geo"] as GraphNode).parameters as Record<string, unknown>;
+    geo["mode"] = "points";
+    geo["scale"] = 0.1;
+    geo["group"] = "p.position.y > 0.0";
+    ((graph.nodes["sun"] as GraphNode).parameters as Record<string, unknown>)["shadows"] = true;
+    const compiled = compile(graph);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const draw = drawOf(compiled);
+    // Six vertices — a card, not a box — with the camera basis in the uniforms and
+    // the SAME group gate instances carry (§V349: the third path was never born).
+    expect(draw.vertexCount).toBe(6);
+    expect(draw.uniforms?.["billboardRight"]).toBeDefined();
+    expect(draw.uniforms?.["billboardUp"]).toBeDefined();
+    expect(draw.shader).toContain("billboardRight");
+    expect(draw.shader).toContain("groupMatch");
+    // And NO shadow pass for a points geometry — a camera-facing card has no
+    // light-facing geometry, and a grid-topology cloud must not cast its MESH's ghost.
+    const shadowDraws = compiled.passes.filter(
+      (pass) => pass.kind === "draw" && pass.id.includes(":shadow:") && !pass.id.includes(":clear"),
+    );
+    expect(shadowDraws.filter((pass) => (pass as { nodeId?: string }).nodeId === draw.nodeId && (pass as { shader?: string }).shader?.includes("billboardRight"))).toEqual([]);
+    // Non-vacuous: the light IS casting (its clear pass exists), the cloud just
+    // contributes nothing to it.
+    expect(compiled.passes.some((pass) => pass.id.includes(":shadow:"))).toBe(true);
+  });
+
   it("maps on instances refuse BY NAME — no uv means no silent no-op (V368)", () => {
     const graph = sceneGraph({
       extraNodes: [

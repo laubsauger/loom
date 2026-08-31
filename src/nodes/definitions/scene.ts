@@ -212,6 +212,10 @@ export const geometryNode: NodeDefinition = {
       options: [
         { value: "surface", label: "Surface" },
         { value: "instances", label: "Instances" },
+        /* T647: camera-facing billboards — cheap reading markers with per-point colour,
+           lit through the same camera and depth buffer, honoring the same group
+           predicate. They cast no shadow (a screen-aligned card has no light-facing
+           geometry). */
         { value: "points", label: "Points" },
       ],
     },
@@ -233,7 +237,10 @@ export const geometryNode: NodeDefinition = {
       default: 0.05,
       min: 0,
       range: "floor",
-      inactiveWhen: (values) => (values["mode"] === "instances" ? null : "Only instances wear a primitive."),
+      inactiveWhen: (values) =>
+        values["mode"] === "instances" || values["mode"] === "points"
+          ? null
+          : "Scale sizes instances and point billboards; a surface spans its grid.",
     },
     tint: {
       type: "color",
@@ -249,7 +256,7 @@ export const geometryNode: NodeDefinition = {
       default: "",
       compileTime: true,
       description:
-        "T642/T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.hit > 0.5. Instances mode only; referenced attributes bind on demand from the edge. Empty = all.",
+        "T642/T333: draw only matching points — a WGSL predicate over p.<attribute>, e.g. p.hit > 0.5. Instances and Points modes; referenced attributes bind on demand from the edge. Empty = all.",
     },
   },
   compile(context): CompiledNodeDescription {
@@ -331,16 +338,16 @@ export const geometryNode: NodeDefinition = {
      * feature, not a smaller version of this one.
      */
     const groupSource = typeof parameters["group"] === "string" ? (parameters["group"] as string).trim() : "";
-    if (groupSource !== "" && mode !== "instances") {
+    if (groupSource !== "" && mode === "surface") {
       return {
         passes: [],
         diagnostics: [
           {
             severity: "error",
             code: "node.scene.group",
-            message: `Node "${nodeId}": a group predicate needs mode "instances" — a ${mode} draw's triangles span every grid point, so filtering points would punch holes in the mesh rather than select from a cloud.`,
+            message: `Node "${nodeId}": a group predicate needs a per-point mode — a surface draw's triangles span every grid point, so filtering points would punch holes in the mesh rather than select from a cloud.`,
             nodeId,
-            suggestion: "Switch Mode to Instances, or route the cloud through renderPoints.",
+            suggestion: "Switch Mode to Instances or Points, or route the cloud through renderPoints.",
           },
         ],
       };
@@ -648,6 +655,11 @@ export const renderNode: NodeDefinition = {
       geometries.forEach(({ payload }, geometryIndex) => {
         const position = payload.pairs["position"];
         if (position === undefined) return; // the lit loop refuses this by name
+        /* T647: a points-mode billboard casts NO shadow, deliberately — a camera-facing
+           card has no light-facing geometry, so a shadow from it would be a lie (and
+           without this skip a grid-topology cloud would cast its MESH's shadow, a ghost
+           of a surface nobody drew). Stated here, not silently absent (§V403). */
+        if (payload.mode === "points") return;
         if (payload.mode === "instances") {
           let counted = countedByIndex.get(geometryIndex);
           if (counted === undefined && payload.count !== undefined) {
@@ -853,17 +865,39 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
       uniformBinding: "backdrop",
       clear: true,
     } as DrawPassDescriptor);
+    /*
+     * T647: the billboard basis for points-mode geometries — camera right/up from the
+     * SAME eye/lookAt the view-projection was built from, so the cards face the camera
+     * exactly. A straight-down camera falls back to +x as up, the lookAt() convention.
+     */
+    const bbForward = (() => {
+      const delta = [
+        camera.lookAt[0] - camera.eye[0],
+        camera.lookAt[1] - camera.eye[1],
+        camera.lookAt[2] - camera.eye[2],
+      ];
+      const length = Math.hypot(delta[0] ?? 0, delta[1] ?? 0, delta[2] ?? 0) || 1;
+      return [delta[0]! / length, delta[1]! / length, delta[2]! / length] as const;
+    })();
+    const bbRight = (() => {
+      const up = Math.abs(bbForward[1]) > 0.99 ? ([1, 0, 0] as const) : ([0, 1, 0] as const);
+      const cross = [
+        bbForward[1] * up[2] - bbForward[2] * up[1],
+        bbForward[2] * up[0] - bbForward[0] * up[2],
+        bbForward[0] * up[1] - bbForward[1] * up[0],
+      ];
+      const length = Math.hypot(cross[0] ?? 0, cross[1] ?? 0, cross[2] ?? 0) || 1;
+      return [cross[0]! / length, cross[1]! / length, cross[2]! / length] as const;
+    })();
+    const bbUp = [
+      bbRight[1] * bbForward[2] - bbRight[2] * bbForward[1],
+      bbRight[2] * bbForward[0] - bbRight[0] * bbForward[2],
+      bbRight[0] * bbForward[1] - bbRight[1] * bbForward[0],
+    ] as const;
+
     geometries.forEach(({ payload, source }, index) => {
-      if (payload.mode === "points") {
-        diagnostics.push({
-          severity: "error",
-          code: "node.scene.mode",
-          message: `Node "${nodeId}": geometry "${source}" uses mode "points", which is renderPoints' job for now — surface and instances are the scene modes this build renders.`,
-          nodeId,
-        });
-        return;
-      }
-      if (payload.mode === "instances") {
+      if (payload.mode === "instances" || payload.mode === "points") {
+        const billboard = payload.mode === "points";
         const position = payload.pairs["position"];
         if (position === undefined) {
           diagnostics.push({
@@ -918,7 +952,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
         let counted = countedByIndex.get(index);
         if (counted === undefined) {
           counted = countedDrawSupport(nodeId, payload, {
-            vertexCount: 36,
+            vertexCount: billboard ? 6 : 36,
             maxInstances: Math.max(1, payload.capacity),
             argsKey: `drawArgs${index}`,
           });
@@ -940,11 +974,12 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             ...(environmentResource === undefined ? {} : { environment: true }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
             ...(payload.group === undefined ? {} : { group: payload.group }),
+            ...(billboard ? { billboard: true } : {}),
           }),
           target,
           topology: "triangle-list",
           instances: counted?.instances ?? payload.capacity,
-          vertexCount: 36,
+          vertexCount: billboard ? 6 : 36,
           buffers: [
             { binding: "positions", resourceId: position.pair, half: position.half },
             ...(payload.colorAttribute === undefined
@@ -974,7 +1009,13 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             baseColor: [...material.baseColor],
             specular: [...specularColor, shininess],
             material: [material.metallic, material.roughness, 0, 0],
-            instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+            instance: [instance.scale, billboard ? 0 : instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+            ...(billboard
+              ? {
+                  billboardRight: [bbRight[0], bbRight[1], bbRight[2], 0],
+                  billboardUp: [bbUp[0], bbUp[1], bbUp[2], 0],
+                }
+              : {}),
             ...Object.fromEntries(
               lights.flatMap((light, lightIndex) => [
                 [`light${lightIndex}Meta`, [light.type === "point" ? 1 : 0, light.intensity, 0, 0]],

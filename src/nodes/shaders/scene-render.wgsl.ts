@@ -418,8 +418,18 @@ export function sceneInstancesWgsl(options: {
    * Each referenced attribute is one storage buffer against the BASELINE 8 per stage.
    */
   group?: SceneGroupOption;
+  /**
+   * T647: POINTS mode — a camera-facing billboard per point through this same
+   * machinery (same lights, same environment, same group gate — §V349: a third path
+   * would have been born broken). The quad expands along camera right/up handed in as
+   * uniforms, its normal faces the camera (−forward), and it casts NO shadow: a
+   * screen-aligned card has no light-facing geometry, so its shadow would be a lie —
+   * the scene loop skips points geometries in the depth pass and says so there.
+   */
+  billboard?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
+  const billboard = options.billboard === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const shadows = options.shadows ?? [];
   const shadowSlotOf = (index: number): number => shadows.indexOf(index);
@@ -534,7 +544,7 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   specular: vec4f,
   material: vec4f,
   instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
-${lightField}${shadowFields}${envField}};
+${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
@@ -611,7 +621,19 @@ fn shapeNormal(shape: u32, v: u32) -> vec3f {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32) -> VertexOut {
-${group.gate}  let shape = u32(params.instance.y);
+${group.gate}${
+    billboard
+      ? `  let corner = quadCorner(min(vertex, 5u));
+  let world = positions[instance]
+    + (params.billboardRight.xyz * corner.x + params.billboardUp.xyz * corner.y) * params.instance.x;
+  var out: VertexOut;
+  out.position = params.viewProjection * vec4f(world, 1.0);
+  /* r × u = −forward for an orthonormal camera basis: the card faces the camera. */
+  out.normal = normalize(cross(params.billboardRight.xyz, params.billboardUp.xyz));
+  out.world = world;
+  out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
+  return out;`
+      : `  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
   let v = min(vertex, count - 1u);
   let local = shapeVertex(shape, v) * params.instance.x;
@@ -621,7 +643,8 @@ ${group.gate}  let shape = u32(params.instance.y);
   out.normal = shapeNormal(shape, v);
   out.world = world;
   out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
-  return out;
+  return out;`
+  }
 }
 
 @fragment

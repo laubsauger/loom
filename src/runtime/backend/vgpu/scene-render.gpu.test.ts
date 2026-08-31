@@ -769,7 +769,7 @@ describe("a geometry group predicate selects instances in the lit scene (T642, Â
     label,
   });
 
-  const graphWithGroup = (group: string): GraphDocument =>
+  const graphWithGroup = (group: string, mode: "instances" | "points" = "instances"): GraphDocument =>
     ({
       revision: 1,
       nodes: Object.fromEntries(
@@ -789,7 +789,7 @@ describe("a geometry group predicate selects instances in the lit scene (T642, Â
               "  q.flag = 1.0 - f32(ctx.index);\n  return q;\n}",
           }, "split1"),
           node("chalk", "materialUnlit", { color: [1, 1, 1, 1] }, "chalk1"),
-          node("dots", "geometry", { mode: "instances", shape: "box", scale: 0.2, material: "chalk1", ...(group === "" ? {} : { group }) }, "dots1"),
+          node("dots", "geometry", { mode, shape: "box", scale: 0.2, material: "chalk1", ...(group === "" ? {} : { group }) }, "dots1"),
           node("cam", "camera", { eye: [0, 0, 1000], lookAt: [0, 0, 0], ortho: true, orthoHeight: 2, near: 900, far: 1100 }, "cam1"),
           node("shot", "render", { scenes: "dots1", camera: "cam1", lights: "", ambientColor: [1, 1, 1, 1], ambientIntensity: 0 }, "shot1"),
           node("out", "output", {}, "out1"),
@@ -803,10 +803,10 @@ describe("a geometry group predicate selects instances in the lit scene (T642, Â
       groups: {},
     }) as never;
 
-  const rendered = async (group: string): Promise<Uint8Array> => {
+  const rendered = async (group: string, mode: "instances" | "points" = "instances"): Promise<Uint8Array> => {
     const registry = createNodeRegistry(allNodeDefinitions).view();
     const plan = compileGraph({
-      graph: graphWithGroup(group),
+      graph: graphWithGroup(group, mode),
       settings: SETTINGS,
       registry,
       capabilities: {
@@ -834,12 +834,14 @@ describe("a geometry group predicate selects instances in the lit scene (T642, Â
     }
   };
 
-  it("keeps the flagged instance byte-identical to the control and erases the other completely", async () => {
+  it.each(["instances", "points"] as const)(
+    "keeps the flagged %s-mode point byte-identical to the control and erases the other completely",
+    async (mode) => {
     const dawn = await probeDawn();
     if (!dawn.available) throw new Error(`Dawn unavailable: ${dawn.error}`);
 
-    const control = await rendered("");
-    const gated = await rendered("p.flag > 0.5");
+    const control = await rendered("", mode);
+    const gated = await rendered("p.flag > 0.5", mode);
 
     /* Ortho height 2 over 64px: point 0 at x âˆ’0.5 lands at column 16, point 1 at 48. */
     const at = (bytes: Uint8Array, column: number): number => bytes[(32 * 64 + column) * 4] ?? -1;
@@ -854,5 +856,8 @@ describe("a geometry group predicate selects instances in the lit scene (T642, Â
     for (let column = 0; column < 32; column += 1) {
       expect(at(gated, column)).toBe(at(control, column));
     }
+    /* T647's own exactness, riding the same fixture: unlit white through a billboard
+       is 255 at the card's centre â€” a lit card would read the lambert instead. */
+    expect(at(control, 16)).toBe(255);
   }, 240_000);
 });
