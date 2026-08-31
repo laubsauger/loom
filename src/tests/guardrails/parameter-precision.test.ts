@@ -131,12 +131,13 @@ describe("T648 — display-then-commit preserves the default", () => {
         const definition = published.definition as { type?: string };
         if (definition.type !== "number") continue;
         const spec = published.definition as NumericSpec;
-        if (typeof spec.default !== "number") continue;
-        if (!roundTrips(spec.default, spec)) {
+        const fallback = (published.definition as { default?: unknown }).default;
+        if (typeof fallback !== "number") continue;
+        if (!roundTrips(fallback, spec)) {
           lossy.push(
-            `${component.definition.componentId}.${published.key}: default ${String(spec.default)} ` +
-              `displays "${formatNumber(spec.default, spec)}" and commits ` +
-              `${String(normalizeValue(Number(formatNumber(spec.default, spec)), spec))}`,
+            `${component.definition.componentId}.${published.key}: default ${String(fallback)} ` +
+              `displays "${formatNumber(fallback, spec)}" and commits ` +
+              `${String(normalizeValue(Number(formatNumber(fallback, spec)), spec))}`,
           );
         }
       }
@@ -150,8 +151,9 @@ describe("T648 — display-then-commit preserves the default", () => {
       for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
         if (parameter.type !== "number") continue;
         const spec = parameter as NumericSpec;
-        if (typeof spec.default !== "number") continue;
-        if (!roundTrips(spec.default, spec)) lossyNow.add(`${definition.type}.${key}`);
+        const fallback = (parameter as { default?: unknown }).default;
+        if (typeof fallback !== "number") continue;
+        if (!roundTrips(fallback, spec)) lossyNow.add(`${definition.type}.${key}`);
       }
     }
     const newcomers = [...lossyNow].filter((name) => !KNOWN_LOSSY_DEFAULTS.has(name)).sort();
