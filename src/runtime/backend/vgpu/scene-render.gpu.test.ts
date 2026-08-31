@@ -468,12 +468,173 @@ describe("the environment reflects exactly (T482, §V147, §V361)", () => {
 
     const centre = (32 * 64 + 32) * 4;
     const mirrored = await render(true);
-    // The whole pixel IS the env term: black base kills ambient and diffuse, no lights
-    // are named, and (1 − roughness) × intensity = 1. Blue, to the byte.
-    expect([mirrored[centre], mirrored[centre + 1], mirrored[centre + 2]]).toEqual([0, 0, 255]);
+    /*
+     * The whole pixel IS the env term: black base kills ambient and diffuse, no lights
+     * are named, and (1 − roughness) × intensity = 1. What is left is T632's Fresnel,
+     * and the grid faces the on-axis camera, so this is a DIELECTRIC AT NORMAL
+     * INCIDENCE: F = F0 = 0.04, and 0.04 × 255 = 10.2. Blue, to the byte. Before T632
+     * this read 255 — a black plastic disc mirroring the sky back at full strength,
+     * which is what made the melted goo read as chrome.
+     */
+    expect([mirrored[centre], mirrored[centre + 1], mirrored[centre + 2]]).toEqual([0, 0, 10]);
 
     // §V361's cut: the same scene with nothing wired is the black mirror in a dark room.
     const cut = await render(false);
     expect([cut[centre], cut[centre + 1], cut[centre + 2]]).toEqual([0, 0, 0]);
   }, 120_000);
+});
+
+/**
+ * T632 — the assertion that separates OIL from CHROME, at BOTH ends of `metallic`
+ * (§V147 exact values, §V461 a fixture capable of distinguishing what it asserts).
+ *
+ * The gap E33-Obol's author named: an IBL-lite reflection with no view-dependent term
+ * returns the SAME environment head-on as at a grazing angle, and that is a metal. A
+ * test that only checked "the picture changed" would pass for any edit to that line, so
+ * the probe measures the SAME material at TWO KNOWN ANGLES and asserts both numbers.
+ *
+ * The angle is exact by construction rather than eyeballed. A point kernel maps the flat
+ * grid onto a plane tilted about x — position (x, y·c, −y·s) — whose central-difference
+ * normal is (0, s, c) at EVERY vertex, so the interpolated normal across the centre
+ * triangle is that vector exactly. The camera is ORTHOGRAPHIC and a thousand units back,
+ * which is what makes N·V a constant: `viewDir` is eye − world, so a near camera would
+ * give the centre texel its own slightly-off-axis view ray and the fifth power would
+ * amplify the difference. At a thousand units the deviation is 2×10⁻⁵ radians, four
+ * orders of magnitude below a byte.
+ *
+ *   c = 1.0 → N = (0,0,1) → N·V = 1     (normal incidence)
+ *   c = 0.2 → N = (0,√0.96,0.2) → N·V = 0.2  (78.5° from the normal — grazing)
+ *
+ * Specular is written to 0.8 through the VALUE path (§V5) at both ends so the ONLY thing
+ * that differs between the dielectric and the metal is `metallic` itself, and so neither
+ * end clamps at 1.0 — a metal asserted at a saturated 255 would pass with no Fresnel at
+ * all, which is exactly the blind fixture §V461 is about.
+ */
+describe("the environment reflection is VIEW-DEPENDENT for a dielectric and not for a metal (T632, §V147, §V461)", () => {
+  /** Schlick, in the test's own arithmetic — never imported from the shader. */
+  const schlick = (f0: number, nDotV: number): number => f0 + (1 - f0) * (1 - nDotV) ** 5;
+
+  const tiltedGraph = (cosTilt: number): GraphDocument => {
+    const sinTilt = Math.sqrt(1 - cosTilt * cosTilt);
+    const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({
+      id,
+      type,
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters,
+      label,
+    });
+    return {
+      revision: 1,
+      nodes: Object.fromEntries(
+        [
+          node("grid", "pointGrid", { cols: 8, rows: 8, count: 64 }, "grid1"),
+          node("tilt", "pointKernel", {
+            capacity: 64,
+            attributes: JSON.stringify([
+              { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            ]),
+            kernel:
+              "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n" +
+              `  q.position = vec3f(p.position.x, p.position.y * ${cosTilt.toFixed(17)}, -p.position.y * ${sinTilt.toFixed(17)});\n` +
+              "  return q;\n}",
+          }, "tilt1"),
+          node("geo", "geometry", { mode: "surface", material: "mirror1" }, "geo1"),
+          // Black base kills ambient and diffuse; roughness 0 leaves (1 − roughness) = 1.
+          node("mirror", "materialPhong", { color: [0, 0, 0, 1], specular: [1, 1, 1, 1], shininess: 8, roughness: 0 }, "mirror1"),
+          // Ortho, far back: one view direction for the whole frame (see the docblock).
+          node("cam", "camera", { eye: [0, 0, 1000], lookAt: [0, 0, 0], ortho: true, orthoHeight: 2, near: 900, far: 1100 }, "cam1"),
+          node("sky", "solid", { color: [0, 0, 1, 1] }, "sky1"), // display 1 decodes to linear 1
+          node(
+            "shot",
+            "render",
+            { scenes: "geo1", camera: "cam1", lights: "", ambientColor: [1, 1, 1, 1], ambientIntensity: 0 },
+            "shot1",
+          ),
+          node("out", "output", {}, "out1"),
+        ].map((entry) => [entry.id, entry]),
+      ),
+      edges: {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "tilt", portId: "in" } },
+        e2: { id: "e2", source: { nodeId: "tilt", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
+        e3: { id: "e3", source: { nodeId: "sky", portId: "out" }, target: { nodeId: "shot", portId: "environment" } },
+        e4: { id: "e4", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    } as never;
+  };
+
+  /** Blue channel of the centre texel at both values of `metallic`, for one tilt. */
+  const probe = async (cosTilt: number): Promise<{ dielectric: number; metal: number }> => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: tiltedGraph(cosTilt),
+      settings: SETTINGS,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const passId = plan.passes.find((pass) => pass.kind === "draw" && pass.id.includes(":scene:"))?.id ?? "";
+    expect(passId).not.toBe("");
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      const blueAt = async (): Promise<number> => {
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        const image = await backend.readOutput("target:shot:out");
+        return image.bytes[(32 * 64 + 32) * 4 + 2] ?? -1;
+      };
+      // §V5, the value path: specular 0.8 linear, metallic 0 — an ordinary dielectric.
+      backend.updateUniforms({ passId, values: { specular: [0.8, 0.8, 0.8, 8], material: [0, 0, 0, 0] } });
+      const dielectric = await blueAt();
+      // The SAME material with metallic driven to 1. Nothing else moves.
+      backend.updateUniforms({ passId, values: { specular: [0.8, 0.8, 0.8, 8], material: [1, 0, 0, 0] } });
+      const metal = await blueAt();
+      return { dielectric, metal };
+    } finally {
+      backend.dispose();
+    }
+  };
+
+  it("a dielectric reflects 8.9× more at 78.5° than head-on; a metal reflects the same at both, to the byte", async () => {
+    const dawn = await probeDawn();
+    if (!dawn.available) throw new Error(`Dawn unavailable: ${dawn.error}`);
+
+    const headOn = await probe(1.0);
+    const grazing = await probe(0.2);
+
+    // F0 = mix(0.04, 1.0, metallic). Specular 0.8 tints it; env colour and intensity are 1.
+    const expected = (metallic: number, nDotV: number): number =>
+      Math.round(0.8 * schlick(0.04 + 0.96 * metallic, nDotV) * 255);
+
+    // THE DIELECTRIC — the assertion this task exists for. 0.8 × 0.04 = 0.032 → 8 head-on;
+    // 0.8 × (0.04 + 0.96 × 0.8⁵) = 0.2837 → 72 at 78.5°. Same material, same light, same
+    // environment: only the angle moved, and the reflection is 9× brighter for it.
+    expect(headOn.dielectric).toBe(8);
+    expect(grazing.dielectric).toBe(72);
+    expect(headOn.dielectric).toBe(expected(0, 1));
+    expect(grazing.dielectric).toBe(expected(0, 0.2));
+    expect(grazing.dielectric / headOn.dielectric).toBeGreaterThan(8);
+
+    // THE METAL — §V461's other end. F0 = 1, so the Schlick term has nowhere to rise to
+    // and the reflection is ANGLE-INVARIANT: 0.8 × 1 = 0.8 → 204 at both angles. If F0
+    // ignored `metallic` these would read 8 and 72 like the dielectric; if the fixture
+    // were a saturated white metal both ends would read 255 and prove nothing.
+    expect(headOn.metal).toBe(204);
+    expect(grazing.metal).toBe(204);
+    expect(headOn.metal).toBe(expected(1, 1));
+    expect(grazing.metal).toBe(expected(1, 0.2));
+    expect(grazing.metal).toBe(headOn.metal);
+  }, 240_000);
 });

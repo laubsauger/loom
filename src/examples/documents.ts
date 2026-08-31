@@ -6405,7 +6405,7 @@ const obolDocument = document(
           ambientColor: [0.62, 0.68, 0.84, 1],
           ambientIntensity: 0.62,
           background: [0.008, 0.009, 0.013, 1],
-          environmentIntensity: 1.00,
+          environmentIntensity: 7.00,
           ambientOcclusion: true,
           aoRadius: 0.50,
           aoIntensity: 0.55,
@@ -6414,7 +6414,7 @@ const obolDocument = document(
         {
           label: "shot1",
           parameters: {
-            environmentIntensity: drivenSlot("envrest1", 1.00),
+            environmentIntensity: drivenSlot("envrest1", 7.00),
             aoIntensity: drivenSlot("aorest1", 0.55),
           },
         },
@@ -6441,8 +6441,19 @@ const obolDocument = document(
       node("lift", "lfo", [-2400, 2640], { shape: "sine", frequency: 0.029, amplitude: 0.30, offset: 0.78, phase: 0.0 }, { label: "lift1" }),
       node("aoswing", "valueMath", [-2080, 1560], { operation: "multiply", operand: 0.90 }, { label: "aoswing1" }),
       node("aorest", "valueMath", [-1760, 1560], { operation: "add", operand: 0.55 }, { label: "aorest1" }),
-      node("envswing", "valueMath", [-2080, 1920], { operation: "multiply", operand: 0.85 }, { label: "envswing1" }),
-      node("envrest", "valueMath", [-1760, 1920], { operation: "add", operand: 1.00 }, { label: "envrest1" }),
+      /*
+       * T632 re-exposure. These two operands set the environment intensity — rest = the
+       * `add`, melted = add + multiply — and they were authored against a reflection
+       * with NO Fresnel term, where every fragment got the environment at full strength
+       * whatever way it faced. With Schlick in place a dielectric keeps only ~4% of it
+       * head-on, and 1.00/0.85 left the goo reading as unlit clay: this example's melted
+       * albedo is deliberately near-black (see the morph kernel above — "everything
+       * worth seeing in an oil surface arrives as a reflection"), so it has nothing else
+       * to be lit BY. 7.00/9.00 restores the exposure at the angles that now carry the
+       * reflection. Measured on frames 150 (emblem) and 484 (melted).
+       */
+      node("envswing", "valueMath", [-2080, 1920], { operation: "multiply", operand: 9.00 }, { label: "envswing1" }),
+      node("envrest", "valueMath", [-1760, 1920], { operation: "add", operand: 7.00 }, { label: "envrest1" }),
       node("glossswing", "valueMath", [-2080, 2280], { operation: "multiply", operand: -0.105 }, { label: "glossswing1" }),
       node("glossrest", "valueMath", [-1760, 2280], { operation: "add", operand: 0.190 }, { label: "glossrest1" }),
     ],

@@ -540,6 +540,8 @@ describe("the environment input is REAL (T482, §V309)", () => {
     const draw = drawOf(compiled);
     expect(draw.shader).toContain("environmentMap");
     expect(draw.shader).toContain("reflect(-viewDir");
+    /* T632: the reflection is view-dependent, and the Schlick term rides in with it. */
+    expect(draw.shader).toContain("envFresnel");
     expect(draw.textures?.some((texture) => texture.binding === "environmentMap")).toBe(true);
     expect(draw.uniforms?.["environment"]).toEqual([1, 0, 0, 0]);
   });
@@ -561,6 +563,8 @@ describe("the environment input is REAL (T482, §V309)", () => {
       return compile(graph);
     })();
     expect(drawOf(without).shader).not.toContain("environmentMap");
+    /* T632 rides on the same gate: no environment wired, no Fresnel term emitted. */
+    expect(drawOf(without).shader).not.toContain("envFresnel");
     expect(drawOf(withEnv).shader).not.toBe(drawOf(without).shader);
   });
 });

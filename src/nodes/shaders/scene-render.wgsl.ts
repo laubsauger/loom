@@ -29,9 +29,10 @@ export interface SceneShadingOptions {
   readonly shadows?: ReadonlyArray<number>;
   /**
    * T482: an equirect ENVIRONMENT is wired on the render. Phong (and pbr-through-
-   * phong) adds its reflection — sampled along R, scaled by (1−roughness) and the
-   * specular tint, per T428's preserved IBL-lite plan. Lambert and unlit ignore it,
-   * STATED on the input rather than silently (V349). Absent emits byte-identical text.
+   * phong) adds its reflection — sampled along R, scaled by (1−roughness), the
+   * specular tint and (T632) a SCHLICK FRESNEL factor, per T428's preserved IBL-lite
+   * plan. Lambert and unlit ignore it, STATED on the input rather than silently
+   * (V349). Absent emits byte-identical text.
    */
   readonly environment?: boolean;
   /**
@@ -42,6 +43,43 @@ export interface SceneShadingOptions {
    */
   readonly ambientOcclusion?: boolean;
 }
+
+/**
+ * T632 — the SCHLICK FRESNEL factor on the environment reflection, shared verbatim by
+ * both generators so the surface and the instances cannot drift apart.
+ *
+ * The gap it closes (named by E33-Obol's author): an IBL-lite reflection along R with
+ * NO view-dependent term reflects the same amount head-on as at a grazing angle, and a
+ * dark surface that reflects its surroundings equally in every direction is a METAL.
+ * What separates oil from chrome is that a dielectric reflects ~4% head-on and rises to
+ * 1.0 at grazing incidence — so the environment shows only at the silhouette and the
+ * body of the object stays dark.
+ *
+ * F0 is a SCALAR, mix(0.04, 1.0, metallic), and the reflection's COLOUR stays
+ * `params.specular.rgb`, which the compiler already sets to mix(white, baseColor,
+ * metallic) for a PBR material. The product is the textbook mix(vec3(0.04), albedo,
+ * metallic) at both ends of `metallic` — a dielectric's 4% white base, a metal's own
+ * albedo — while a Phong material keeps its authored specular tint as the tint of the
+ * reflection. Two consequences worth stating: at metallic = 1 the factor is exactly 1
+ * at every angle, so METALS ARE BYTE-IDENTICAL to what shipped before this; and for
+ * everything else the factor is ≤ 1, so the environment term can only DECREASE and its
+ * grazing value is exactly the value the whole surface used to carry.
+ *
+ * `abs(dot(N, V))` rather than `max(…, 0)`: a surface has no wrong side here (T301's
+ * two-sided rule, kept by the lambert and the highlight above), and clamping a back
+ * face to zero would flare it to a full-strength reflection instead of a grazing one.
+ * The outer `max(…, 0.0)` only guards pow() against a negative base from float slop.
+ *
+ * Roughness keeps its LINEAR (1 − roughness) scale, deliberately, and it multiplies
+ * this factor rather than being folded into it. That factor is the crude stand-in for
+ * a prefiltered environment we do not have; leaving it outside means it still caps the
+ * grazing reflection at the value that material reflected before, so no rough surface
+ * can develop an edge glow it did not already have, and a rough METAL keeps its
+ * dimming instead of snapping back to a mirror.
+ */
+const FRESNEL_WGSL = `  let envF0 = mix(0.04, 1.0, params.material.x);
+  let envFresnel = envF0 + (1.0 - envF0) * pow(max(1.0 - abs(dot(normal, viewDir)), 0.0), 5.0);
+`;
 
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
@@ -102,7 +140,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   );
   let envDims = vec2f(textureDimensions(environmentMap, 0));
   let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
-  lit += envColor * params.specular.rgb * (1.0 - roughness) * params.environment.x${aoTerm};
+${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - roughness) * params.environment.x${aoTerm};
 `
     : "";
 
@@ -310,7 +348,7 @@ export function sceneInstancesWgsl(options: {
   );
   let envDims = vec2f(textureDimensions(environmentMap, 0));
   let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
-  lit += envColor * params.specular.rgb * (1.0 - params.material.y) * params.environment.x${aoTerm};
+${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - params.material.y) * params.environment.x${aoTerm};
 `
     : "";
   const shadowFactor = (index: number): string => {
