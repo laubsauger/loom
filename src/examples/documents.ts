@@ -6377,6 +6377,12 @@ export const pastureDocument = document(
   ),
 );
 
+/* The MASS's grid — recovered at T724 with the mass itself. 208x160 with wrapU, so the
+   longitude seam closes and the blob has no slit down it. */
+const OBOL_COLS = 208;
+const OBOL_ROWS = 160;
+const OBOL_POINTS = OBOL_COLS * OBOL_ROWS;
+
 /**
  * THE TILES. 1728 of them since T716, and the number is a size rather than a taste. A
  * phyllotaxis lattice of N tiles over a face of radius 0.888 has a hexagonal pitch of
@@ -6392,11 +6398,13 @@ const OBOL_SEG_ROWS = 32;
 const OBOL_SEG_POINTS = OBOL_SEG_COLS * OBOL_SEG_ROWS;
 
 /**
- * E33's WGSL PRELUDE. One definition of the emblem's field, the melt's order and the goo's
- * field. It was shared between two kernels until T716 deleted the mass; it is kept as its
- * own constant because it is the vocabulary the object is written in — the emblem's tone,
- * the order the wave arrives in, and where the goo's surface is — and `fn process` below
- * reads as a composition of it rather than as one long function.
+ * E33's SHARED WGSL. One definition of the emblem's field, the melt's order and the goo's
+ * field, pasted into BOTH kernels below. T673 shared it so a tile could not hover off the
+ * face it was inlaid into; T724 gives it a second and harder job, because the mass now
+ * has to GROW under an arriving tile at the moment that tile lands, which means both
+ * kernels have to agree about the tile's station, its order in the wave and where the
+ * goo's surface is. Two copies of that arithmetic is two chances for the skin to
+ * materialise somewhere the tiles are not.
  */
 const OBOL_PRELUDE = `const TAU: f32 = 6.28318530717958647692;
 const PI: f32 = 3.14159265358979323846;
@@ -6548,29 +6556,86 @@ fn meltDrive(v: f32) -> f32 {
 }
 `;
 
-/* THE OBJECT — all of it, since T716. The owner's own idea taken to its end: the medallion
-   is not decorated with tiles and it is not a disc with tiles on it, it IS the tiles, and
-   so is the goo. There is no mass behind them any more (`shell1`/`morph1`/`body1` are
-   deleted), which is what the owner asked for — "the obol thing should not have the disc
-   behind the cubes assembling the yinyang so that it really looks like the cubes transform
-   into the blob and vice versa".
+/**
+ * THE MASS — the organic blob, and ONLY the blob (T724). Its emblem configuration is
+ * deleted: the coin behind the mosaic was the disc the owner objected to, and it was the
+ * only thing this kernel drew at the emblem end. What is left is the shape the whole piece
+ * morphs onto, plus the rule for when it is there.
+ */
+const OBOL_KERNEL = `${OBOL_PRELUDE}
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
 
-   THE CONSEQUENCE IS THE WHOLE DESIGN. If the tiles are the only object, they have to
-   carry BOTH ends, or the morph degrades into "the tiles vanish and a blob appears" — a
-   crossfade between two clouds, which is worse than what it replaced. So the same 1728
-   elements are the medallion AND the drop, and the map between the two poses is one line:
-   the disc layout is a Fibonacci lattice (`rr = sqrt(u)`, `ang = i*137.5deg`) and the
-   Fibonacci SPHERE is the same sequence read with `z = 1 - 2u`. Every tile keeps its
-   azimuth exactly, the centre of the face goes to one pole and the rim to the other, and
-   the density is area-uniform at both ends — which is what makes an individual tile
-   FOLLOWABLE across the change rather than a dot that got re-dealt.
+  let lon = f32(ctx.dim.i) / f32(ctx.dim.cols) * TAU;
+  let lat = f32(ctx.dim.j) / f32(max(ctx.dim.rows - 1u, 1u)) * PI;
+  let s = vec3f(sin(lat) * cos(lon), sin(lat) * sin(lon), cos(lat));
 
-   Two things the mass was silently doing that this had to take over. It carried the
-   S-CURVE and the two halves' contrast, which now read from tile colour and tile spacing
-   alone (measured: the smaller tone population is 45.6% of the object, the tone contrast
-   129.6 luma, and no straight line separates the two halves better than 17.4% error — a
-   bisected disc scores 7.3%). And it gave the form its BODY, which is now self-shadowing
-   and self-occlusion between the tiles (§V617, measured below on `shards1`). */
+  /* T724 — THE MASS IS ONLY THE GOO, AND IT GROWS INTO EXISTENCE UNDER THE TILES.
+     Its emblem configuration is deleted: the coin behind the mosaic was the disc the
+     owner asked us to remove (T716), and it was the only thing this kernel did at the
+     emblem end. What is left is the organic blob — which is the gimmick — plus the rule
+     for when it is there. */
+
+  /* WHICH TILE LANDS HERE. The tiles walk a Fibonacci sphere whose latitude is z = 1 - 2u
+     against a Fibonacci disc of radius 0.930*sqrt(u), and both share their azimuth — so
+     the disc station of the tile arriving along s is recoverable exactly, and this
+     surface can be told to appear ON THAT TILE'S OWN CLOCK. That is what makes the fuse
+     read as one event instead of two: the skin materialises under a tile at the moment
+     the tile reaches it, not on a schedule of its own. */
+  let ax = vec2f(s.x, s.y);
+  let axLen = length(ax);
+  /* the pole is one point with no azimuth; give it its neighbours' RADIUS rather than
+     the disc centre's, or it grows first while everything around it grows last and the
+     mesh leaves a spike standing at the south pole. */
+  let dir2 = select(vec2f(1.0, 0.0), ax / max(axLen, 1e-6), axLen > 1e-4);
+  let station = dir2 * (0.930 * sqrt(max(0.0, (1.0 - s.z) * 0.5)));
+
+  let order = meltOrder(station);
+  let drive = meltDrive(ctx.value1);
+  let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);
+  let melt = front * front * (3.0 - 2.0 * front);
+
+  /* A BUD, not a switch. The radius runs from a speck to the field's own value on the
+     same front the tiles ride, so the drop swells out of the seam under the arriving
+     mosaic. melt is smooth in s, so the surface stays star-shaped about the origin
+     at every intermediate size and nothing tangles. The floor is not zero: a mesh
+     collapsed to a point has no normals, and 0.010 is a speck 2px across at 1280x720,
+     behind the mosaic that is still standing in front of it. */
+  q.position = obolYaw(gooAt(s, ctx.absTime) * mix(0.010, 1.0, melt), ctx.absTime);
+
+  /* ONE WET BLACK THING. There is no emblem configuration left to travel from, so there
+     is no rest tone here any more — the tiles carry the emblem, all of it. What the
+     mass keeps is the halved marbling that stops the oil reading as flat paint, and the
+     spectrum on the growth front, which is what makes the skin look like it is forming
+     rather than being revealed. */
+  let tone = taiji(station);
+  let oil = mix(vec3f(0.0125, 0.0120, 0.0195), vec3f(0.0335, 0.0315, 0.0290), tone);
+  let band = 1.0 - abs(melt * 2.0 - 1.0);
+  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));
+  let colour = oil + irid * band * band * 0.26 * (1.0 - tone * 0.55);
+  q.tint = vec4f(colour, 1.0);
+  return q;
+}`;
+
+/* THE TILES. The owner's own idea, and after T716/T724 it is the emblem end's ONLY
+   substance: the medallion is not decorated with tiles and it is not a disc with tiles on
+   it, it IS the tiles. That is what the owner asked for — "the obol thing should not have
+   the disc behind the cubes assembling the yinyang" — and the mass is grown down to a
+   speck there rather than merely hidden, so that dropping `body1` from the render changes
+   ZERO pixels of the emblem frame.
+
+   AND THE GOO END IS THE ORGANIC BLOB, which is the gimmick (T724). The tiles do not have
+   to BE the drop — a drop made of cubes is the thing the owner did not ask for. They travel
+   ONTO it and FUSE into it, which is a better event than either end alone: the mosaic opens,
+   the skin buds out underneath, and each tile lands on the surface and settles just inside
+   it. Discrete becoming continuous.
+
+   THE MAP IS WHAT MAKES THE FUSE LEGIBLE. The disc layout is a Fibonacci lattice
+   (`rr = sqrt(u)`, `ang = i*137.5deg`) and the Fibonacci SPHERE is the same sequence read
+   with `z = 1 - 2u`. Every tile keeps its azimuth exactly, the centre of the face goes to
+   one pole and the rim to the other, and the density is area-uniform at both ends — so an
+   individual tile can be FOLLOWED across the change rather than being re-dealt, and the
+   mass can invert that map to grow on the arriving tile's own clock. */
 const OBOL_SEG_KERNEL = `${OBOL_PRELUDE}
 /* Stable per-segment noise. NOT pointRand: that hash is salted with the FRAME index by
    contract, so a "random" draw taken per point changes every frame — a per-element
@@ -6594,10 +6659,13 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let rr = sqrt(u) * 0.930;
   let disc = vec2f(rr * cos(ang), rr * sin(ang));
 
-  /* CONFIGURATION A — the tile IS the medallion. There is no bed behind it any more, so
-     the face, the two tones and the dividing curve are carried by the tiles ALONE (T716);
-     the small height jitter is what keeps them reading as laid pieces rather than as one
-     plate, and it is what the key light's shadow and the occlusion pass bite on. */
+  /* CONFIGURATION A — the tile IS the medallion. There is no bed behind it (T716): the
+     face, the two tones and the dividing curve are carried by the tiles ALONE, and the
+     mass is grown down to a speck at this end of the morph so that the disc the owner
+     objected to genuinely is not there. Measured: dropping body1 from the render
+     changes ZERO pixels of the emblem frame. The small height jitter is what keeps the
+     tiles reading as laid pieces rather than as one plate, and it is what the key light's
+     shadow and the occlusion pass bite on. */
   let face = sqrt(max(0.0, 1.0 - dot(disc, disc)));
   let plateau = smoothstep(0.0, 0.36, face);
   let relief = plateau * 0.125 + 0.030 + 0.008 * segRand(ctx.index, 47u);
@@ -6611,22 +6679,22 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let zc = 1.0 - 2.0 * u;
   let ring = sqrt(max(0.0, 1.0 - zc * zc));
   let sdir = vec3f(ring * cos(ang), ring * sin(ang), zc);
-  /* AND THE DROP IS DRAWN SMALLER THAN THE FIELD, which is arithmetic rather than taste.
-     These tiles are the only body the goo has now, and the field's surface at its natural
-     size is 2.04x the area of the disc they came from — the same tiles spread over that
-     are a rind with holes in it. Coverage PARITY is 0.700; 0.620 buys the margin the lobes
-     need, because tiles are laid per unit SOLID ANGLE and a lobe at radius r thins as
-     1/r^2, so 0.620 covers out to r = 0.72 rather than to the mean. It is also the size
-     the medallion's own material makes: the plate is 0.89 in radius and 0.148 thick, and
-     that volume is a ball of radius 0.44 — the drop's mean radius is 0.38. The rind has
-     DEPTH for the same reason: a second tile behind every gap. */
-  let shell = 0.620 * (1.0 - 0.180 * segRand(ctx.index, 11u));
-  let goo = gooAt(sdir, ctx.absTime) * shell;
 
   let order = meltOrder(disc);
   let drive = meltDrive(ctx.value1);
   let front = clamp(drive * 2.35 - order * 1.35, 0.0, 1.0);
   let melt = front * front * (3.0 - 2.0 * front);
+
+  /* THE MASS IS BACK AT THIS END (T724), so the tiles no longer have to BE the skin —
+     they LAND on it. They ride a little proud of the field's own radius while the front
+     passes, which is what lets the eye follow one cube all the way in, and then settle
+     just under it: a tile drawn ON an oil drop is a barnacle, a tile drawn just inside it
+     is a tile that has fused. The drop is at full size again — T716 shrank it to 0.620
+     because 1728 fixed-size tiles could not cover a sphere twice the area of the face,
+     and with a surface under them that constraint is gone — which is the whole reason the
+     goo end is an ORGANIC BLOB again rather than a blob made of cubes. */
+  let sink = mix(1.030, 0.880, smoothstep(0.45, 1.0, front));
+  let goo = gooAt(sdir, ctx.absTime) * sink;
 
   /* The ARC. Straight-line travel between two configurations is a crossfade with extra
      steps; lifting each tile off its own normal at the half-way point makes the change a
@@ -6636,8 +6704,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   q.position = obolYaw(mix(emblem, goo, melt) + lift, ctx.absTime);
 
-  /* THE TWO HALVES ARE THE TILES' OWN COLOUR — there is no disc under them to carry the
-     S-curve, so the emblem is legible only if this tone survives at tile resolution. */
+  /* THE TWO HALVES ARE THE TILES' OWN COLOUR — at the emblem end there is nothing under
+     them to carry the S-curve, so the emblem is legible only if this tone survives at
+     tile resolution. Measured rather than hoped: see the gate in examples.gpu.test.ts. */
   let tone = taiji(disc);
   let porcelain = vec3f(0.400, 0.388, 0.360);
   let ink = vec3f(0.0180, 0.0205, 0.0295);
@@ -6670,7 +6739,7 @@ const OBOL_SWEEP_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
 }`;
 
 /**
- * E33 — Obol (T625/T624, reworked T673, T716).
+ * E33 — Obol (T625/T624, reworked T673, T716, T724).
  *
  * WHAT YOU SEE. A yin-yang medallion — SEVENTEEN HUNDRED little tiles and nothing behind
  * them — turns slowly on a dark studio sweep under two softboxes it can see in itself. It
@@ -6688,17 +6757,27 @@ const OBOL_SWEEP_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  * has already gone liquid while its rim is still a hard edge, and its own tiles in the air
  * between the two states.
  *
- * **T716: there is nothing behind the tiles, and that is the whole of it.** The owner, on
- * the T673 build: "the obol thing should not have the disc behind the cubes assembling the
- * yinyang so that it really looks like the cubes transform into the blob and vice versa".
- * The mass — a `pointTube` shell, a kernel and a surface `geometry` — is deleted, and the
- * tiles carry both ends of the morph themselves. THE MEASUREMENT THAT SAYS WHY: shrink the
- * tiles to `scale 0.007` and the T673 file's emblem is STILL a legible yin-yang (the
- * smaller of its two tone populations holds 41.3% of the object) because the disc was
- * drawing it, while this one collapses to 19.1%. That number is the owner's complaint
- * stated arithmetically, and it is why the emblem's legibility is now measured rather
- * than assumed — 45.6% / 129.6 luma of tone contrast / 17.4% straight-line error, at
- * THIS commit, with the numbers and their controls in `examples/E33-Obol.md`.
+ * **T716: nothing is behind the tiles AT THE EMBLEM END.** The owner, on the T673 build:
+ * "the obol thing should not have the disc behind the cubes assembling the yinyang". The
+ * mass's coin configuration is deleted and the mass itself is grown down to a speck there,
+ * so the tiles are the only thing drawing the medallion. THE MEASUREMENT THAT SAYS WHY:
+ * shrink the tiles to `scale 0.007` and the T673 file's emblem is STILL a legible yin-yang
+ * (the smaller of its two tone populations holds 41.3% of the object) because the disc was
+ * drawing it, while this one collapses to 19.1%. That is the owner's complaint stated
+ * arithmetically, and it is why the emblem's legibility is now measured rather than
+ * assumed — 45.6% / 129.6 luma of tone contrast / 17.4% straight-line error.
+ *
+ * **T724: and the goo end is the ORGANIC BLOB, which is the gimmick.** T716 read the note
+ * as "the mass must go" and made the goo end a blob built of cubes; the owner: "obol is
+ * supposed to morph onto the organic blob not a blob made up of cubes thats the whole
+ * gimmick on top of the reorg". The complaint was only ever about the EMBLEM end. So the
+ * mass is back at the goo end and FADES IN as the morph runs, with the tiles landing on
+ * its surface and settling just inside it — discrete becoming continuous, which is a
+ * better event than either end alone and is what makes a cube followable all the way in.
+ * Measured: dropping `body1` changes 0 pixels of the emblem frame and 106,056 of the goo
+ * frame, and the goo end's object-to-room separation recovers to 41.7 luma — past T716's
+ * 31.6 and past T673's own 38.4, because the gutters the tiles used to show through are
+ * now closed by a skin.
  *
  * ## What T673 changed, and why each was a defect rather than a preference
  *
@@ -6797,11 +6876,13 @@ const OBOL_SWEEP_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
  *  circle ─┤  │                    ┌── level ── limit ── blur ──┐
  *  circle ─┘  │                    │                            │
  *             ▼                    │                            add ── output
- *                                                  │             │
- *  pointGrid ── pointKernel ── geometry (instances)├── render ───┘
- *   (segpts1)     (segs1)         (shards1)        │   ▲  ▲
- *                                                  │   │  └── camera
- *  pointGrid ── pointKernel ── geometry (surface) ─┘   └── 3 lights
+ *  pointTube ── pointKernel ── geometry (surface) ─┐             │
+ *   (grid,wrapU)   (morph1)        (body1)         │             │
+ *                                                  ├── render ───┘
+ *  pointGrid ── pointKernel ── geometry (instances)│   ▲  ▲
+ *   (segpts1)     (segs1)         (shards1)        │   │  └── camera
+ *                                                  │   └── 3 lights
+ *  pointGrid ── pointKernel ── geometry (surface) ─┘
  *   (sweeppts1)   (sweep1)         (cyc1)
  *
  * ## What it took from §V471, and where
@@ -6952,14 +7033,58 @@ const obolDocument = document(
       ),
       node("studio", "add", [-2080, -740], {}, { label: "studio1" }),
 
-      /* ---- the material the whole object wears --------------------------------- */
+      /* ---- the emblem / the goo ---------------------------------------------- */
+      node(
+        "shell",
+        "pointTube", [-2080, 200],
+        { count: OBOL_POINTS, cols: OBOL_COLS, rows: OBOL_ROWS, radius: 1, sizeZ: 2 },
+        { label: "shell1" },
+      ),
+      node(
+        "morph",
+        "pointKernel", [-1760, 200],
+        {
+          capacity: OBOL_POINTS,
+          seed: 33,
+          attributes: JSON.stringify([
+            { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+            { name: "tint", type: "vec4f", semantic: "color", default: [1, 1, 1, 1] },
+          ]),
+          kernel: OBOL_KERNEL,
+        },
+        {
+          label: "morph1",
+          parameters: {
+            value1: drivenSlot("tide1", 0),
+            value2: drivenSlot("sheen1", 0.5),
+          },
+        },
+      ),
       node(
         "oil",
         "materialPhong", [-1760, -260],
         { color: [1, 1, 1, 1], specular: [1, 0.97, 0.93, 1], shininess: 300, roughness: 0.190 },
         { label: "oil1", parameters: { roughness: drivenSlot("glossrest1", 0.190) } },
       ),
-      /* ---- the object: the medallion and the goo, both out of the same tiles --- */
+      node(
+        "body",
+        "geometry", [-1440, 200],
+        { mode: "surface", material: "oil1", tint: [1, 1, 1, 1] },
+        {
+          label: "body1",
+          parameters: {
+            tint: {
+              mode: "map",
+              bindings: {
+                static: { kind: "static", value: [1, 1, 1, 1] },
+                map: { kind: "map", attribute: "tint" },
+              },
+            },
+          },
+        },
+      ),
+
+      /* ---- the tiles: the emblem, and the mosaic that fuses into the goo ------- */
       node(
         "segPts",
         "pointGrid", [-2080, 1280],
@@ -7118,7 +7243,7 @@ const obolDocument = document(
         "shot",
         "render", [-800, 200],
         {
-          scenes: "cyc1 shards1",
+          scenes: "cyc1 body1 shards1",
           camera: "eye1",
           lights: "key1 fill1 crown1",
           ambientColor: [0.62, 0.68, 0.84, 1],
@@ -7192,6 +7317,9 @@ const obolDocument = document(
       edge("e-fill-studio", ["fillBox", "out"], ["studio", "in2"], 1),
       edge("e-rim-studio", ["rimBand", "out"], ["studio", "in2"], 2),
       edge("e-studio-shot", ["studio", "out"], ["shot", "environment"]),
+
+      edge("e-shell-morph", ["shell", "out"], ["morph", "in"]),
+      edge("e-morph-body", ["morph", "out"], ["body", "points"]),
 
       edge("e-segpts-segs", ["segPts", "out"], ["segs", "in"]),
       edge("e-segs-shards", ["segs", "out"], ["shards", "points"]),
