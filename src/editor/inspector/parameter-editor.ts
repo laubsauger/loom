@@ -59,6 +59,11 @@ export interface ParameterEditor {
     entries: Readonly<Record<string, StoredParameter>>,
     phase: EditPhase,
   ) => void;
+  /**
+   * T601: which INNER node a component instance's preview shows. Null returns to the
+   * default — the node behind the first output socket, the component's Out (T607).
+   */
+  setComponentPreview: (nodeId: NodeId, inner: string | null) => Promise<GraphPatchResult>;
   setResolution: (
     nodeId: NodeId,
     resolution: NodeResolutionOverride | null,
@@ -222,6 +227,21 @@ export function createParameterEditor(options: ParameterEditorOptions): Paramete
     setFormat(nodeId, format) {
       return enqueue(async () => {
         const result = await bus.execute("node.setFormat", { nodeId, format }, context);
+        return report(result.output);
+      });
+    },
+
+    setComponentPreview(nodeId, inner) {
+      return enqueue(async () => {
+        const result = await bus.execute(
+          "graph.applyPatch",
+          {
+            baseRevision: bus.store.getRevision(),
+            label: inner === null ? "Reset component preview" : "Set component preview",
+            operations: [{ op: "setNodeUi", nodeId, ui: { componentPreview: inner } }],
+          },
+          context,
+        );
         return report(result.output);
       });
     },

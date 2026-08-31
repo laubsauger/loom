@@ -220,6 +220,7 @@ export function InspectorPane({
         <Inspector
           bus={bus}
           context={invocation}
+          {...(componentPage === undefined ? {} : { components: componentPage.components })}
           nodeId={nodeId}
           settings={settings}
           diagnostics={diagnostics}

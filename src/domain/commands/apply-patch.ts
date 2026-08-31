@@ -69,7 +69,7 @@ import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 /** Parameter key a shader-authorable node exposes its WGSL through. */
 export const SHADER_SOURCE_PARAMETER = "source";
 
-const UI_KEYS = new Set(["collapsed", "preview", "previewPinned", "bypassed", "muted", "background", "color"]);
+const UI_KEYS = new Set(["collapsed", "preview", "previewPinned", "bypassed", "muted", "background", "color", "componentPreview"]);
 
 class PatchAbort extends Error {
   constructor() {
@@ -753,8 +753,17 @@ function executeOperation(
         }
         if (key === "color") {
           if (typeof value !== "string") fail("node.ui.type", `ui.color must be a string.`, { nodeId: node.id });
+        } else if (key === "componentPreview") {
+          // T601: an inner node id, or null to return to the default (the Out node).
+          if (value !== null && typeof value !== "string") {
+            fail("node.ui.type", `ui.componentPreview must be a string or null.`, { nodeId: node.id });
+          }
         } else if (typeof value !== "boolean") {
           fail("node.ui.type", `ui.${key} must be a boolean.`, { nodeId: node.id });
+        }
+        if (key === "componentPreview" && value === null) {
+          delete ui[key];
+          continue;
         }
         ui[key] = value;
       }

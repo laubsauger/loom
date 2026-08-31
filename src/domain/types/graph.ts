@@ -102,6 +102,14 @@ export interface GraphNode {
      * in the context menu rather than on a button on every node.
      */
     previewPinned?: boolean;
+    /**
+     * T601: which INNER node a component instance's preview shows, by internal node id.
+     * Absent means the node behind the first output socket — the component's Out node
+     * (T607), which is TD's own default. The Common page states and edits the choice
+     * (§V499: with several outputs the default is stated, never silently first), and
+     * naming any internal node is TD's debug-view idiom. Meaningless on non-instances.
+     */
+    componentPreview?: string;
     bypassed?: boolean;
     muted?: boolean;
     /**

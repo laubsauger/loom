@@ -46,8 +46,24 @@ import styles from "./inspector.module.css";
 /** Resolution edits recreate render targets, so width/height are whole pixels. */
 const DIMENSION_SPEC: NumericSpec = { min: 1, step: 1, precision: 0 };
 
+/** T601: one choice row for a component instance's preview source. */
+export interface ComponentPreviewChoice {
+  /** Inner node id, or "" for the default entry. */
+  readonly value: string;
+  readonly label: string;
+}
+
 export interface CommonSectionProps {
   nodeId: NodeId;
+  /**
+   * T601: present only on component instances — which INNER node the instance's
+   * preview shows. The default is STATED in the list (§V499: never silently first):
+   * the entry with value "" names the Out node it falls back to.
+   */
+  componentPreview?: {
+    readonly current: string;
+    readonly choices: readonly ComponentPreviewChoice[];
+  };
   definition: NodeDefinition | undefined;
   resolution: NodeResolutionOverride | undefined;
   format: NodeFormatOverride | undefined;
@@ -60,6 +76,7 @@ export interface CommonSectionProps {
 
 export function CommonSection({
   nodeId,
+  componentPreview,
   definition,
   resolution,
   format,
@@ -147,6 +164,18 @@ export function CommonSection({
         readout is gone from here too — it lives in the inspector header now, where it
         stays visible from the Parameters tab as well (§V174).
       */}
+      {componentPreview === undefined ? null : (
+        <ControlRow label="Preview" variant={variant}>
+          <EnumField
+            label="Component preview source"
+            value={componentPreview.current}
+            options={[...componentPreview.choices]}
+            onChange={(next) => {
+              void editor.setComponentPreview(nodeId, next === "" ? null : next);
+            }}
+          />
+        </ControlRow>
+      )}
       <ControlRow label="Resolution" variant={variant}>
         <EnumField
           label="Resolution mode"

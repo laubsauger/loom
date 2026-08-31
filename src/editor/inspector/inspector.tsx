@@ -16,6 +16,8 @@ import { AudioSection } from "./audio-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
+import { parseComponentNodeType } from "@domain/components/component-type.ts";
+import type { ComponentRegistryView } from "@domain/components/index.ts";
 import { resolveParameters } from "./parameter-resolver.ts";
 import { createNodeReferenceReader } from "@domain/parameters/index.ts";
 import { resolveNodeFormat, resolveNodeSize } from "./resolution.ts";
@@ -71,6 +73,8 @@ export interface InspectorProps {
   inputResolutions?: readonly InputResolution[];
   /** Injectable for tests; otherwise the pane owns its editor. */
   editor?: ParameterEditor;
+  /** T601: the component catalogue, so an instance's Common page offers its preview source. */
+  components?: ComponentRegistryView;
   /**
    * T434(b)/T432: the session's audio capture status, for the Audio section shown on
    * audio nodes. Absent = no session capture wiring (tests, embeds) — section hidden.
@@ -106,6 +110,7 @@ export function Inspector({
   variant = "inspector",
   channels,
   audioStatus,
+  components,
 }: InspectorProps) {
   const graph = useSyncExternalStore<GraphDocument>(
     bus.store.subscribe,
@@ -219,9 +224,44 @@ export function Inspector({
   const resolvedSize = resolveNodeSize(node.resolution, definition?.resolutionPolicy, resolutionContext);
   const resolvedFormat = resolveNodeFormat(node.format, definition?.formatPolicy, formatContext);
 
+  /*
+   * T601: a component instance's Common page states and edits which INNER node the
+   * preview shows. The default entry NAMES the node it falls back to (§V499 — with
+   * several outputs nothing is silently first), and every inner node is offered:
+   * TD lets you view an internal operator while debugging.
+   */
+  const previewChoices = (() => {
+    if (components === undefined) return undefined;
+    const ref = parseComponentNodeType(node.type);
+    if (ref === null) return undefined;
+    const definitionOf = components.get(ref.componentId, ref.version);
+    if (definitionOf === undefined) return undefined;
+    const fallback = definitionOf.outputs[0]?.nodeId;
+    const fallbackNode = fallback === undefined ? undefined : definitionOf.graph.nodes[fallback];
+    const inner = Object.values(definitionOf.graph.nodes)
+      .map((entry) => ({ value: entry.id as string, label: entry.label ?? entry.id }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const current =
+      typeof node.ui?.componentPreview === "string" &&
+      definitionOf.graph.nodes[node.ui.componentPreview as NodeId] !== undefined
+        ? node.ui.componentPreview
+        : "";
+    return {
+      current,
+      choices: [
+        {
+          value: "",
+          label: `Default — ${fallbackNode?.label ?? fallback ?? "first output"}`,
+        },
+        ...inner,
+      ],
+    };
+  })();
+
   const commonSection = (
     <CommonSection
       nodeId={node.id}
+      {...(previewChoices === undefined ? {} : { componentPreview: previewChoices })}
       definition={definition}
       resolution={node.resolution}
       format={node.format}

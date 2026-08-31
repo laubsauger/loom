@@ -15,6 +15,8 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 // T532: ONE list of previewable port kinds, shared with the slot, the compiler and the
 // layout model — see `previewable.ts` on why four private copies is how B65 happened.
 import { previewablePort } from "@domain/graph/previewable.ts";
+import { parseComponentNodeType } from "@domain/components/component-type.ts";
+import type { ComponentRegistryView } from "@domain/components/index.ts";
 
 /**
  * Mounts the shared preview surface and feeds it every node's tile request (T185).
@@ -70,6 +72,8 @@ export interface NodePreviewInputs {
   readonly views?: PreviewViewSource | undefined;
   /** T561: per-node inspection orbit — this PANE's store; sampled per tick like bounds. */
   readonly orbits?: PreviewOrbitStore | undefined;
+  /** T601: resolves a component instance's preview to an INNER node's flat output row. */
+  readonly components?: ComponentRegistryView | undefined;
   readonly graph: GraphDocument;
   readonly registry: NodeRegistryView;
   readonly compiledOutputs: ReadonlyArray<ResolvedOutput>;
@@ -161,6 +165,40 @@ export function previewCandidates(
   return found;
 }
 
+/**
+ * T601: the inner node a component instance's preview shows, as a FLAT node id — or
+ * undefined for a non-instance (or an unresolvable choice, which falls back to the
+ * instance id and the ordinary not-materialized path).
+ *
+ * Default: the node behind the definition's FIRST output socket — post-T607 that is the
+ * component's Out node, which is TD's own default. `ui.componentPreview` (the Common
+ * page) may name ANY inner node instead: TD lets you view an internal operator while
+ * debugging, and the choice is stated on the page rather than silently first (§V499).
+ */
+export function componentPreviewTarget(
+  current: NodePreviewInputs,
+  nodeId: NodeId,
+): { nodeId: NodeId; portId: string } | undefined {
+  const node = current.graph.nodes[nodeId];
+  if (node === undefined || current.components === undefined) return undefined;
+  const ref = parseComponentNodeType(node.type);
+  if (ref === null) return undefined;
+  const definition = current.components.get(ref.componentId, ref.version);
+  if (definition === undefined) return undefined;
+  const chosen = node.ui?.componentPreview;
+  const inner =
+    (typeof chosen === "string" && definition.graph.nodes[chosen as NodeId] !== undefined
+      ? (chosen as NodeId)
+      : undefined) ?? definition.outputs[0]?.nodeId;
+  if (inner === undefined) return undefined;
+  const innerNode = definition.graph.nodes[inner];
+  const innerDefinition = innerNode === undefined ? undefined : current.registry.get(innerNode.type);
+  const port = innerDefinition === undefined ? undefined : previewablePort(innerDefinition.outputs);
+  if (port === undefined) return undefined;
+  // The flat id flatten mints: `${instanceId}/${innerId}` (§V82's path shape).
+  return { nodeId: `${nodeId}/${inner}` as NodeId, portId: port.id };
+}
+
 export function useNodePreviews(inputs: NodePreviewInputs): void {
   const inputsRef = useRef(inputs);
   inputsRef.current = inputs;
@@ -221,6 +259,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       );
       const requests: PreviewRequest[] = [];
       const idle: Array<{ nodeId: NodeId; portId: string }> = [];
+      /** T601: instance ref -> the FLAT sink its preview actually needs materialized. */
+      const flatSinkOf = new Map<string, { nodeId: NodeId; portId: string }>();
       /** T501: on-screen area travels, so the idle queue is ordered by the SAME rule the
        *  scheduler ranks tiles by (largest on screen first) rather than by map order. */
       const visibleIdle: Array<{ nodeId: NodeId; portId: string; area: number }> = [];
@@ -245,8 +285,22 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         // the node through the idle path below, which registers the sink that makes the
         // recompile materialize the real target — the same dance as an unmaterialized
         // texture (T252).
+        /*
+         * T601: a component instance has NO output row of its own — flatten replaced it
+         * — so its preview is an INNER node's row, addressed by the flat id. The inner
+         * node defaults to the node behind the FIRST output socket (the Out node, post
+         * T607), and the Common page can point it at ANY inner node (`ui.componentPreview`)
+         * — TD's debug-view idiom. The sink pushed back to the compiler uses the same
+         * flat id, so the chosen node is what materializes (§V487: all four sites agree).
+         */
+        const previewTarget = componentPreviewTarget(current, nodeId);
+        const sinkNodeId = previewTarget?.nodeId ?? nodeId;
+        const sinkPortId = previewTarget?.portId ?? portId;
+        if (previewTarget !== undefined) flatSinkOf.set(nodeId, previewTarget);
         const output = current.compiledOutputs.find(
-          (entry) => entry.nodeId === nodeId && entry.resourceKind !== "pointset",
+          previewTarget === undefined
+            ? (entry) => entry.nodeId === nodeId && entry.resourceKind !== "pointset"
+            : (entry) => entry.nodeId === previewTarget.nodeId && entry.resourceKind !== "pointset",
         );
         // §V111: the offset within the node (never re-measured mid-drag). §V112: the
         // node's LIVE position, read fresh every tick — the two combine into the slot's
@@ -272,13 +326,13 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
               (onScreen || current.graph.nodes[nodeId]?.ui?.previewPinned === true)
             ) {
               visibleIdle.push({
-                nodeId,
-                portId,
+                nodeId: sinkNodeId,
+                portId: sinkPortId,
                 area: Math.max(0, screen.width) * Math.max(0, screen.height),
               });
             }
           }
-          idle.push({ nodeId, portId });
+          idle.push({ nodeId: sinkNodeId, portId: sinkPortId });
           continue;
         }
         // T501: this node HAS a materialized output, so it is a request from here on and
@@ -351,7 +405,14 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       // the tile budget the scheduler enforces).
       const activeSinks = result.schedule.active
         .filter((entry) => !ungated.has(entry.ref.nodeId as string))
-        .map((entry) => ({ nodeId: entry.ref.nodeId as string, portId: entry.ref.portId }));
+        .map((entry) => {
+          // T601: an instance's tile stays keyed to the instance, but the SINK names
+          // the flat inner node — that is what the compiler can materialize.
+          const flat = flatSinkOf.get(entry.ref.nodeId as string);
+          return flat === undefined
+            ? { nodeId: entry.ref.nodeId as string, portId: entry.ref.portId }
+            : { nodeId: flat.nodeId as string, portId: flat.portId };
+        });
 
       /*
        * T501 — FIRST PAINT IS RESERVED, exactly the way §V454 reserves a base.

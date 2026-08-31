@@ -603,3 +603,88 @@ describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
     nodeRuntime.dispose();
   });
 });
+
+describe("componentPreviewTarget resolves an instance's preview to an inner node (T601)", () => {
+  const makeSystem = async () => {
+    const { createComponentSystem } = await import("@domain/components/index.ts");
+    const { createNodeRegistry } = await import("@nodes/registry/registry.ts");
+    const { allNodeDefinitions } = await import("@nodes/definitions/index.ts");
+    const { componentNodeType } = await import("@domain/components/component-type.ts");
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const definition = {
+      componentId: "fan",
+      version: 1,
+      name: "Fan",
+      graph: {
+        revision: 1,
+        nodes: {
+          entry: { id: "entry", type: "componentIn", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "feed" },
+          blurA: { id: "blurA", type: "blur", definitionVersion: 1, position: { x: 240, y: 0 }, parameters: {} },
+          exit: { id: "exit", type: "componentOut", definitionVersion: 1, position: { x: 480, y: 0 }, parameters: {}, label: "result" },
+        },
+        edges: {
+          e0: { id: "e0", source: { nodeId: "entry", portId: "out" }, target: { nodeId: "blurA", portId: "input" } },
+          e1: { id: "e1", source: { nodeId: "blurA", portId: "out" }, target: { nodeId: "exit", portId: "in" } },
+        },
+        groups: {},
+      },
+      inputs: [],
+      outputs: [],
+      parameters: [],
+    } as never;
+    const system = createComponentSystem(registry, [definition]);
+    return { system, registry, type: componentNodeType("fan", 1) };
+  };
+
+  const inputsFor = (
+    system: { nodes: unknown; components: { view(): unknown } },
+    registry: unknown,
+    type: string,
+    ui?: Record<string, unknown>,
+  ) =>
+    ({
+      graph: {
+        revision: 1,
+        nodes: { c1: { id: "c1", type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, ...(ui === undefined ? {} : { ui }) } },
+        edges: {},
+        groups: {},
+      },
+      registry: system.nodes,
+      components: system.components.view(),
+    }) as never;
+
+  it("defaults to the node behind the FIRST output socket — the Out node (T607)", async () => {
+    const { componentPreviewTarget } = await import("./use-node-previews.ts");
+    const { system, registry, type } = await makeSystem();
+    const target = componentPreviewTarget(inputsFor(system, registry, type), "c1" as never);
+    // The Out node itself is a wire; its previewable port resolves and the flat id is
+    // the §V82 path the compiler mints for it.
+    expect(target).toEqual({ nodeId: "c1/exit", portId: "out" });
+  });
+
+  it("ui.componentPreview points the preview at ANY inner node — TD's debug view", async () => {
+    const { componentPreviewTarget } = await import("./use-node-previews.ts");
+    const { system, registry, type } = await makeSystem();
+    const target = componentPreviewTarget(
+      inputsFor(system, registry, type, { componentPreview: "blurA" }),
+      "c1" as never,
+    );
+    expect(target).toEqual({ nodeId: "c1/blurA", portId: "out" });
+  });
+
+  it("an invalid choice falls back to the default rather than a dead preview", async () => {
+    const { componentPreviewTarget } = await import("./use-node-previews.ts");
+    const { system, registry, type } = await makeSystem();
+    const target = componentPreviewTarget(
+      inputsFor(system, registry, type, { componentPreview: "gone" }),
+      "c1" as never,
+    );
+    expect(target?.nodeId).toBe("c1/exit");
+  });
+
+  it("a non-instance resolves to nothing — the ordinary path is untouched", async () => {
+    const { componentPreviewTarget } = await import("./use-node-previews.ts");
+    const { system, registry } = await makeSystem();
+    expect(componentPreviewTarget(inputsFor(system, registry, "blur"), "c1" as never)).toBeUndefined();
+  });
+});

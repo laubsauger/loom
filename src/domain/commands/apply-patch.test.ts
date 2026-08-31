@@ -1129,3 +1129,55 @@ describe("graph.applyPatch — names as identifiers (T221/T222, §V128/§V129)",
     expect(cleared.diagnostics.some((d) => d.code === "node.name.stranded")).toBe(true);
   });
 });
+
+describe("setNodeUi carries componentPreview (T601)", () => {
+  it("sets a string, refuses a non-string, and null clears back to the default", async () => {
+    const { bus } = createHarness();
+    const created = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "seed",
+        operations: [{ op: "addNode", ref: "$n", type: "test.solid", position: { x: 0, y: 0 } }],
+      },
+      ctx(),
+    );
+    const nodeId = created.output.createdIds["$n"] as string;
+
+    const set = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "choose",
+        operations: [{ op: "setNodeUi", nodeId, ui: { componentPreview: "innerBlur" } }],
+      },
+      ctx(),
+    );
+    expect(set.status).toBe("applied");
+    expect(bus.store.getGraph().nodes[nodeId]?.ui?.componentPreview).toBe("innerBlur");
+
+    const bad = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "bad",
+        operations: [{ op: "setNodeUi", nodeId, ui: { componentPreview: 7 } }],
+      },
+      ctx(),
+    );
+    expect(bad.status).toBe("rejected");
+
+    const cleared = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        label: "reset",
+        operations: [{ op: "setNodeUi", nodeId, ui: { componentPreview: null } }],
+      },
+      ctx(),
+    );
+    expect(cleared.status).toBe("applied");
+    // Absence IS the default (the Out node), so clearing deletes rather than stores null.
+    expect("componentPreview" in (bus.store.getGraph().nodes[nodeId]?.ui ?? {})).toBe(false);
+  });
+});

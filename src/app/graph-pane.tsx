@@ -115,7 +115,9 @@ function GraphPaneInner({
   // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
   // from the runtime rather than threaded as a prop, because the runtime IS the loaded
   // document: `adoptDocument` builds a new one per open (`app.tsx`, `app-runtime.ts`).
-  const { bus, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
+  const { bus, components, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
+  // T601: the component catalogue view, for resolving an instance's preview target.
+  const componentsView = useMemo(() => components.view(), [components]);
   const flow = useReactFlow();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -160,6 +162,7 @@ function GraphPaneInner({
     nodeRuntime,
     views: previewViews,
     orbits: previewOrbits,
+    components: componentsView,
     getViewport,
     getNodePosition,
     previewFps,
