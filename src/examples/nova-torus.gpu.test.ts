@@ -139,9 +139,12 @@ describe("E35 — the audio drives the tube, visibly (T660, §V471)", () => {
     // The driven tube: with the pattern playing, the lowMid band holds radius2 well
     // above its 0.18 floor and the ring wears real thickness.
     expect(loud).toBeGreaterThan(0.12);
-    // Muted, radius2 sits at the floor and the ring is a thread — the reactivity IS
-    // the picture, which is the §V461 distinction: a dead audio path cannot pass.
-    expect(muted).toBeLessThan(loud * 0.6);
-    expect(muted).toBeGreaterThan(0.02); // but the torus itself still draws — muted ≠ blank
+    // T701 sharpened this: in the analyser's domain SILENCE reads 0 — exactly as a
+    // silent live track does — so a muted pattern collapses the tube entirely instead
+    // of resting on the old linear bias floor. The reactivity IS the picture (§V461):
+    // a dead audio path cannot fake the loud frame, and the muted one going ~black is
+    // the same claim from the other side. (A host with NO channel resolver still draws
+    // a sane tube — radius2's retained static is 0.3, per §V107.)
+    expect(muted).toBeLessThan(loud * 0.25);
   }, 240_000);
 });

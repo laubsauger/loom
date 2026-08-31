@@ -725,7 +725,7 @@
         "id": "glow",
         "label": "glow1",
         "parameters": {
-          "operand": 0.45,
+          "operand": -3.6202,
           "operation": "add"
         },
         "position": {
@@ -739,7 +739,7 @@
         "id": "glowG",
         "label": "glowg1",
         "parameters": {
-          "operand": 1.8,
+          "operand": 6.0207,
           "operation": "multiply"
         },
         "position": {
@@ -753,7 +753,7 @@
         "id": "grade",
         "label": "grade1",
         "parameters": {
-          "operand": 0.55,
+          "operand": -1.5173,
           "operation": "add"
         },
         "position": {
@@ -767,7 +767,7 @@
         "id": "gradeG",
         "label": "gradeg1",
         "parameters": {
-          "operand": 2.6,
+          "operand": 4.1815,
           "operation": "multiply"
         },
         "position": {
@@ -827,7 +827,7 @@
         "id": "heat",
         "label": "heat1",
         "parameters": {
-          "operand": 0.25,
+          "operand": -4.7247,
           "operation": "add"
         },
         "position": {
@@ -841,7 +841,7 @@
         "id": "heatG",
         "label": "heatg1",
         "parameters": {
-          "operand": 2.2,
+          "operand": 7.3587,
           "operation": "multiply"
         },
         "position": {
@@ -1120,7 +1120,7 @@
         "id": "sparkAdd",
         "label": "sparkadd1",
         "parameters": {
-          "operand": 0.15,
+          "operand": -2.1476,
           "operation": "add"
         },
         "position": {
@@ -1134,7 +1134,7 @@
         "id": "sparkG",
         "label": "sparkg1",
         "parameters": {
-          "operand": 6,
+          "operand": 6.9825,
           "operation": "multiply"
         },
         "position": {
@@ -1179,7 +1179,7 @@
         "id": "swell",
         "label": "swell1",
         "parameters": {
-          "operand": 0.68,
+          "operand": -1.1733,
           "operation": "add"
         },
         "position": {
@@ -1193,7 +1193,7 @@
         "id": "swellG",
         "label": "swellg1",
         "parameters": {
-          "operand": 1.25,
+          "operand": 3.724,
           "operation": "multiply"
         },
         "position": {
@@ -1218,7 +1218,7 @@
         "id": "tip",
         "label": "tip1",
         "parameters": {
-          "operand": 1,
+          "operand": -2.4465,
           "operation": "add"
         },
         "position": {
@@ -1232,7 +1232,7 @@
         "id": "tipG",
         "label": "tipg1",
         "parameters": {
-          "operand": 9,
+          "operand": 10.4737,
           "operation": "multiply"
         },
         "position": {

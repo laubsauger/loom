@@ -856,7 +856,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 0.3
               }
             },
             "mode": "driven"
@@ -1138,7 +1138,7 @@
         "id": "valuemath1",
         "label": "valuemath1",
         "parameters": {
-          "operand": 0.34,
+          "operand": 1.0129,
           "operation": "multiply"
         },
         "position": {
@@ -1152,7 +1152,7 @@
         "id": "valuemath10",
         "label": "valuemath10",
         "parameters": {
-          "operand": 0.1,
+          "operand": -7.5588,
           "operation": "add"
         },
         "position": {
@@ -1166,7 +1166,7 @@
         "id": "valuemath11",
         "label": "valuemath11",
         "parameters": {
-          "operand": 2.1,
+          "operand": 3.3773,
           "operation": "multiply"
         },
         "position": {
@@ -1180,7 +1180,7 @@
         "id": "valuemath12",
         "label": "valuemath12",
         "parameters": {
-          "operand": 1.4,
+          "operand": -0.2697,
           "operation": "add"
         },
         "position": {
@@ -1222,7 +1222,7 @@
         "id": "valuemath15",
         "label": "valuemath15",
         "parameters": {
-          "operand": 9,
+          "operand": 10.4737,
           "operation": "multiply"
         },
         "position": {
@@ -1236,7 +1236,7 @@
         "id": "valuemath16",
         "label": "valuemath16",
         "parameters": {
-          "operand": 1,
+          "operand": -2.4465,
           "operation": "add"
         },
         "position": {
@@ -1250,7 +1250,7 @@
         "id": "valuemath2",
         "label": "valuemath2",
         "parameters": {
-          "operand": 0.18,
+          "operand": -0.3241,
           "operation": "add"
         },
         "position": {
@@ -1264,7 +1264,7 @@
         "id": "valuemath3",
         "label": "valuemath3",
         "parameters": {
-          "operand": 1.5,
+          "operand": 5.0173,
           "operation": "multiply"
         },
         "position": {
@@ -1278,7 +1278,7 @@
         "id": "valuemath4",
         "label": "valuemath4",
         "parameters": {
-          "operand": 0.85,
+          "operand": -2.5418,
           "operation": "add"
         },
         "position": {
@@ -1320,7 +1320,7 @@
         "id": "valuemath7",
         "label": "valuemath7",
         "parameters": {
-          "operand": 2.2,
+          "operand": 7.3587,
           "operation": "multiply"
         },
         "position": {
@@ -1334,7 +1334,7 @@
         "id": "valuemath8",
         "label": "valuemath8",
         "parameters": {
-          "operand": 0.25,
+          "operand": -4.7247,
           "operation": "add"
         },
         "position": {
@@ -1348,7 +1348,7 @@
         "id": "valuemath9",
         "label": "valuemath9",
         "parameters": {
-          "operand": 20,
+          "operand": 23.2749,
           "operation": "multiply"
         },
         "position": {

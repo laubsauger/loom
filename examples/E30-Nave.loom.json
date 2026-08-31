@@ -14,10 +14,21 @@
           "portId": "in"
         }
       },
-      "e-bgain-bcap": {
-        "id": "e-bgain-bcap",
+      "e-bgain-bnorm": {
+        "id": "e-bgain-bnorm",
         "source": {
           "nodeId": "bgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bnorm",
+          "portId": "a"
+        }
+      },
+      "e-bnorm-bcap": {
+        "id": "e-bnorm-bcap",
+        "source": {
+          "nodeId": "bnorm",
           "portId": "out"
         },
         "target": {
@@ -193,12 +204,26 @@
         "id": "bgain",
         "label": "bgain1",
         "parameters": {
-          "operand": 0.55,
+          "operand": 1.8397,
           "operation": "multiply"
         },
         "position": {
           "x": -1740,
           "y": 960
+        },
+        "type": "valueMath"
+      },
+      "bnorm": {
+        "definitionVersion": 1,
+        "id": "bnorm",
+        "label": "bnorm1",
+        "parameters": {
+          "operand": -1.2437,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1740,
+          "y": 1180
         },
         "type": "valueMath"
       },

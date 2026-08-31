@@ -70,8 +70,8 @@
     "f0max": 0.7076
   },
   "E29-Descent.loom.json": {
-    "motion": 0.41642,
-    "range": 0.9518,
+    "motion": 0.27598,
+    "range": 0.9601,
     "f0max": 0.5982
   },
   "E3-Animated-Noise-Field.loom.json": {
@@ -85,14 +85,14 @@
     "f0max": 0.8175
   },
   "E31-Corona.loom.json": {
-    "motion": 0.0647,
+    "motion": 0.07821,
     "range": 1,
     "f0max": 0.9962
   },
   "E32-Pasture.loom.json": {
-    "motion": 0.06988,
-    "range": 0.8359,
-    "f0max": 0.1663
+    "motion": 0.06199,
+    "range": 0.7633,
+    "f0max": 0.0344
   },
   "E33-Obol.loom.json": {
     "motion": 0.01256,
@@ -105,8 +105,8 @@
     "f0max": 0.7317
   },
   "E35-Nova-Torus.loom.json": {
-    "motion": 0.08395,
-    "range": 0.9981,
+    "motion": 0.09784,
+    "range": 0.9962,
     "f0max": 0.9872
   },
   "E4-Bloom.loom.json": {

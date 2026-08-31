@@ -491,7 +491,7 @@
         "id": "hit",
         "label": "hit1",
         "parameters": {
-          "threshold": 0.5
+          "threshold": 0.84
         },
         "position": {
           "x": -1300,
@@ -706,7 +706,7 @@
         "id": "zbase",
         "label": "zbase1",
         "parameters": {
-          "operand": 1.019,
+          "operand": 0.9466,
           "operation": "add"
         },
         "position": {
@@ -734,7 +734,7 @@
         "id": "zgain",
         "label": "zgain1",
         "parameters": {
-          "operand": 0.032,
+          "operand": 0.107,
           "operation": "multiply"
         },
         "position": {

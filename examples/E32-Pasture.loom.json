@@ -246,6 +246,61 @@
           "portId": "a"
         }
       },
+      "e-envdiff-env": {
+        "id": "e-envdiff-env",
+        "source": {
+          "nodeId": "envDiff",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-envfast-envpeak": {
+        "id": "e-envfast-envpeak",
+        "source": {
+          "nodeId": "envFast",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envPeak",
+          "portId": "a"
+        }
+      },
+      "e-envmid-envpeak": {
+        "id": "e-envmid-envpeak",
+        "source": {
+          "nodeId": "envMid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envPeak",
+          "portId": "b"
+        }
+      },
+      "e-envpeak-envdiff": {
+        "id": "e-envpeak-envdiff",
+        "source": {
+          "nodeId": "envPeak",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envDiff",
+          "portId": "a"
+        }
+      },
+      "e-envslow-envdiff": {
+        "id": "e-envslow-envdiff",
+        "source": {
+          "nodeId": "envSlow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envDiff",
+          "portId": "b"
+        }
+      },
       "e-find-liftfind": {
         "id": "e-find-liftfind",
         "order": 0,
@@ -661,14 +716,36 @@
           "portId": "field"
         }
       },
-      "e-source-env": {
-        "id": "e-source-env",
+      "e-source-envfast": {
+        "id": "e-source-envfast",
         "source": {
           "nodeId": "source",
           "portId": "out"
         },
         "target": {
-          "nodeId": "env",
+          "nodeId": "envFast",
+          "portId": "in"
+        }
+      },
+      "e-source-envmid": {
+        "id": "e-source-envmid",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envMid",
+          "portId": "in"
+        }
+      },
+      "e-source-envslow": {
+        "id": "e-source-envslow",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envSlow",
           "portId": "in"
         }
       },
@@ -1085,7 +1162,7 @@
         "id": "drop",
         "label": "drop1",
         "parameters": {
-          "operand": 0.16,
+          "operand": 0.1758,
           "operation": "add"
         },
         "position": {
@@ -1131,11 +1208,77 @@
         "id": "env",
         "label": "env1",
         "parameters": {
-          "lag": 0.16
+          "maximum": 4,
+          "minimum": 0
         },
         "position": {
           "x": -2340,
+          "y": 880
+        },
+        "type": "valueLimit"
+      },
+      "envDiff": {
+        "definitionVersion": 1,
+        "id": "envDiff",
+        "label": "envdiff1",
+        "parameters": {
+          "operation": "subtract"
+        },
+        "position": {
+          "x": -2600,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "envFast": {
+        "definitionVersion": 1,
+        "id": "envFast",
+        "label": "envfast1",
+        "parameters": {
+          "lag": 0.045
+        },
+        "position": {
+          "x": -3120,
           "y": 1100
+        },
+        "type": "valueLag"
+      },
+      "envMid": {
+        "definitionVersion": 1,
+        "id": "envMid",
+        "label": "envmid1",
+        "parameters": {
+          "lag": 0.4
+        },
+        "position": {
+          "x": -3120,
+          "y": 1320
+        },
+        "type": "valueLag"
+      },
+      "envPeak": {
+        "definitionVersion": 1,
+        "id": "envPeak",
+        "label": "envpeak1",
+        "parameters": {
+          "operation": "maximum"
+        },
+        "position": {
+          "x": -2860,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "envSlow": {
+        "definitionVersion": 1,
+        "id": "envSlow",
+        "label": "envslow1",
+        "parameters": {
+          "lag": 5
+        },
+        "position": {
+          "x": -3120,
+          "y": 1540
         },
         "type": "valueLag"
       },
@@ -1292,7 +1435,7 @@
         "id": "glow",
         "label": "glow1",
         "parameters": {
-          "operand": 0.13,
+          "operand": 0.1571,
           "operation": "add"
         },
         "position": {
@@ -1320,7 +1463,7 @@
         "id": "gnaw",
         "label": "gnaw1",
         "parameters": {
-          "operand": 2,
+          "operand": 2.24,
           "operation": "add"
         },
         "position": {
@@ -1334,7 +1477,7 @@
         "id": "gnawG",
         "label": "gnawg1",
         "parameters": {
-          "operand": 2,
+          "operand": 6.6897,
           "operation": "multiply"
         },
         "position": {
@@ -1348,7 +1491,7 @@
         "id": "grade",
         "label": "grade1",
         "parameters": {
-          "operand": 0.88,
+          "operand": 0.98,
           "operation": "add"
         },
         "position": {
@@ -1362,7 +1505,7 @@
         "id": "gradeG",
         "label": "gradeg1",
         "parameters": {
-          "operand": 1,
+          "operand": 1.6083,
           "operation": "multiply"
         },
         "position": {
@@ -1643,7 +1786,7 @@
         "id": "pace",
         "label": "pace1",
         "parameters": {
-          "operand": 0.18,
+          "operand": 0.2208,
           "operation": "add"
         },
         "position": {
@@ -1657,7 +1800,7 @@
         "id": "paceG",
         "label": "paceg1",
         "parameters": {
-          "operand": 0.34,
+          "operand": 1.1372,
           "operation": "multiply"
         },
         "position": {
@@ -1894,7 +2037,7 @@
         "id": "reach",
         "label": "reach1",
         "parameters": {
-          "operand": 0.06,
+          "operand": 0.0648,
           "operation": "add"
         },
         "position": {
@@ -1908,7 +2051,7 @@
         "id": "reachG",
         "label": "reachg1",
         "parameters": {
-          "operand": 0.08,
+          "operand": 0.0931,
           "operation": "multiply"
         },
         "position": {
@@ -2072,7 +2215,7 @@
         "id": "spark",
         "label": "spark1",
         "parameters": {
-          "operand": 1.2,
+          "operand": 1.32,
           "operation": "add"
         },
         "position": {
@@ -2086,7 +2229,7 @@
         "id": "sparkG",
         "label": "sparkg1",
         "parameters": {
-          "operand": 2,
+          "operand": 2.3275,
           "operation": "multiply"
         },
         "position": {
@@ -2307,7 +2450,7 @@
         "id": "trail",
         "label": "trail1",
         "parameters": {
-          "operand": 0.6,
+          "operand": 0.6249,
           "operation": "add"
         },
         "position": {
@@ -2348,7 +2491,7 @@
         "id": "warm",
         "label": "warm1",
         "parameters": {
-          "operand": 0.55,
+          "operand": 0.571,
           "operation": "add"
         },
         "position": {
@@ -2362,7 +2505,7 @@
         "id": "warmG",
         "label": "warmg1",
         "parameters": {
-          "operand": 0.14,
+          "operand": 0.4171,
           "operation": "multiply"
         },
         "position": {

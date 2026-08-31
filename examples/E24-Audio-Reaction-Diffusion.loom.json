@@ -1139,7 +1139,7 @@
         "id": "gadd",
         "label": "gadd1",
         "parameters": {
-          "operand": 1.83,
+          "operand": -1.5095,
           "operation": "add"
         },
         "position": {
@@ -1181,7 +1181,7 @@
         "id": "ggain",
         "label": "ggain1",
         "parameters": {
-          "operand": 4.2,
+          "operand": 6.7547,
           "operation": "multiply"
         },
         "position": {
@@ -1339,7 +1339,7 @@
         "id": "lagain",
         "label": "lagain1",
         "parameters": {
-          "operand": 0.2,
+          "operand": 0.669,
           "operation": "multiply"
         },
         "position": {
@@ -1353,7 +1353,7 @@
         "id": "lbgain",
         "label": "lbgain1",
         "parameters": {
-          "operand": 0.105,
+          "operand": 0.3128,
           "operation": "multiply"
         },
         "position": {
@@ -1367,7 +1367,7 @@
         "id": "lcgain",
         "label": "lcgain1",
         "parameters": {
-          "operand": 0.12,
+          "operand": 0.1396,
           "operation": "multiply"
         },
         "position": {
@@ -1381,7 +1381,7 @@
         "id": "lena",
         "label": "lena1",
         "parameters": {
-          "operand": 0.018,
+          "operand": -0.4342,
           "operation": "add"
         },
         "position": {
@@ -1395,7 +1395,7 @@
         "id": "lenb",
         "label": "lenb1",
         "parameters": {
-          "operand": 0.002,
+          "operand": -0.1537,
           "operation": "add"
         },
         "position": {
@@ -1409,7 +1409,7 @@
         "id": "lenc",
         "label": "lenc1",
         "parameters": {
-          "operand": 0,
+          "operand": -0.046,
           "operation": "add"
         },
         "position": {
@@ -1714,7 +1714,7 @@
         "id": "sbase",
         "label": "sbase1",
         "parameters": {
-          "operand": 14,
+          "operand": -31.2246,
           "operation": "add"
         },
         "position": {
@@ -1770,7 +1770,7 @@
         "id": "sgain",
         "label": "sgain1",
         "parameters": {
-          "operand": 20,
+          "operand": 66.897,
           "operation": "multiply"
         },
         "position": {
@@ -2213,7 +2213,7 @@
         "id": "wbase",
         "label": "wbase1",
         "parameters": {
-          "operand": 0.534,
+          "operand": 0.445,
           "operation": "add"
         },
         "position": {
@@ -2241,7 +2241,7 @@
         "id": "wgain",
         "label": "wgain1",
         "parameters": {
-          "operand": 0.06,
+          "operand": 0.1788,
           "operation": "multiply"
         },
         "position": {
@@ -2283,7 +2283,7 @@
         "id": "xgain",
         "label": "xgain1",
         "parameters": {
-          "operand": 0.017,
+          "operand": 0.0569,
           "operation": "multiply"
         },
         "position": {
@@ -2297,7 +2297,7 @@
         "id": "xspeed",
         "label": "xspeed1",
         "parameters": {
-          "operand": 1.012,
+          "operand": 0.9736,
           "operation": "add"
         },
         "position": {
