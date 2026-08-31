@@ -3,6 +3,7 @@ import type { AudioFeatures, FrameEvaluationInput } from "@domain/types/frame.ts
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { computeAudioFeatures } from "./audio-features.ts";
 import { awaitMediaReady } from "./media-sources.ts";
 import type { AudioAnalysisState } from "./audio-features.ts";
@@ -101,7 +102,12 @@ function urlOf(value: unknown): string {
 /** B74: an audioFileIn with no file is a node WAITING — the status must say so. */
 export function hasUnboundAudioFile(graph: GraphDocument): boolean {
   return Object.values(graph.nodes).some(
-    (node) => node.type === "audioFileIn" && urlOf(staticValueOf(node as GraphNode, "file")).trim() === "",
+    (node) =>
+      node.type === "audioFileIn" &&
+      // T555: a node that is OFF is not waiting for anything. "Waiting for a file" beside
+      // a muted node would be the panel asking for something it would then ignore.
+      !isSilencedSource(node as GraphNode) &&
+      urlOf(staticValueOf(node as GraphNode, "file")).trim() === "",
   );
 }
 
@@ -113,6 +119,20 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
       .map((nodeId) => graph.nodes[nodeId] as GraphNode);
 
   for (const node of nodesOf("audioFileIn")) {
+    // T555 (T541's rule, the AUDIBLE half). The owner: "audio file in is muted but still
+    // audible. that probably needs to not play if the node is not actually cooking / is
+    // bypassed / muted." A silenced node is not a capture CANDIDATE at all — the exact
+    // analogue of the compiler dropping a muted node from the graph (T250) — which is
+    // what stops the sound at its source rather than turning a gain down after it.
+    //
+    // MUTE OVERRIDES `monitor`, and the ordering is structural rather than a rule someone
+    // has to remember: `monitor` says "route this to the speakers" and is only ever read
+    // for a node that got this far, so an off node never reaches the question.
+    //
+    // It also promotes the NEXT candidate, and answers for the microphone below, which
+    // has no gain stage to turn down — a muted `audioIn` must not open the device at all
+    // (§V476's spirit: a permission prompt from a node that is switched off is an ambush).
+    if (isSilencedSource(node)) continue;
     const url = urlOf(staticValueOf(node, "file"));
     if (url.trim() === "") continue;
     return {
@@ -123,7 +143,7 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
       nodeId: node.id,
     };
   }
-  const mic = nodesOf("audioIn")[0];
+  const mic = nodesOf("audioIn").find((node) => !isSilencedSource(node));
   if (mic === undefined) return null;
   const device = staticValueOf(mic, "device");
   return {

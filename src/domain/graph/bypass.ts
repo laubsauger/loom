@@ -31,3 +31,21 @@ export function bypassPassthroughPorts(
   if (input === undefined) return undefined;
   return { input: input.id, output: output.id };
 }
+
+/**
+ * Is this SOURCE node off? (T555.)
+ *
+ * For a node with NO INPUTS the two flags collapse into one answer: muted is off, and
+ * bypassed is off too, because the rule above says a node with nothing to pass through
+ * produces nothing. So a caller that only ever sees sources — the audio capture chooser,
+ * which picks between `audioFileIn` and `audioIn`, neither of which has an input — can
+ * ask this one question without a registry in its hand.
+ *
+ * It is deliberately named for what it assumes. A node WITH an input needs
+ * `bypassPassthroughPorts` and its actual wiring to answer, and the assumption is gated
+ * by test rather than left as a comment: every audio capture candidate must declare zero
+ * inputs, so giving one an input tomorrow reddens instead of silently making this lie.
+ */
+export function isSilencedSource(node: { readonly ui?: { muted?: boolean; bypassed?: boolean } }): boolean {
+  return node.ui?.muted === true || node.ui?.bypassed === true;
+}
