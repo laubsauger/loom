@@ -155,3 +155,18 @@ describe("project seed + node seed + frameIndex (§V45)", () => {
     }
   });
 });
+
+describe("rngForFrame is timeline-anchored (T515, §V453)", () => {
+  it("a lap deals the same values — the repeat is the contract, pinned", () => {
+    // Two visits to timeline frame 12 — first pass, and again after a lap (the
+    // absolute clock has moved on; the timeline reading has wrapped back). The stream
+    // keys on the TIMELINE reading, so both visits deal identically: scrubs and
+    // offline replays reproduce, and a loop repeats its randomness on purpose. A
+    // free-running stream is spelled createNodeFrameRng + absFrameIndexOf, by choice.
+    const firstLap = { timeSeconds: 0.2, deltaSeconds: 1 / 60, frameIndex: 12, mode: "realtime", randomSeed: 7, absFrameIndex: 12, absTimeSeconds: 0.2 } as const;
+    const secondLap = { ...firstLap, absFrameIndex: 612, absTimeSeconds: 10.2 };
+    expect(rngForFrame(firstLap as never, "ember").nextUint32()).toBe(
+      rngForFrame(secondLap as never, "ember").nextUint32(),
+    );
+  });
+});

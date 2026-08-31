@@ -141,6 +141,16 @@ export function createNodeFrameRng(input: NodeFrameRngInput): Rng {
 /**
  * Convenience for node evaluation: the frame input already carries the project seed
  * and frame index, so a node never needs to reach for a clock or a global (§V44).
+ *
+ * TIMELINE-ANCHORED, DELIBERATELY (T515, §V453/§V436). The stream keys on
+ * `frame.frameIndex` — the wrapping timeline reading — so the same timeline position
+ * always deals the same values: a scrub reproduces, an offline render reproduces, and
+ * a LAP REPEATS the sequence. That repeat is the contract, not an oversight, and the
+ * test suite pins it. A caller who wants fresh values on every lap — a fire that must
+ * not re-burn identically each loop — should key `createNodeFrameRng` on
+ * `absFrameIndexOf(frame)` instead, and say "free-running" where they do it. No
+ * caller exists today; this note is here so the FIRST one inherits a decision instead
+ * of a default.
  */
 export function rngForFrame(frame: FrameEvaluationInput, nodeId: string, salt?: number | string): Rng {
   return createNodeFrameRng(
