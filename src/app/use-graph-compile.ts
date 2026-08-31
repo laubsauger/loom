@@ -669,14 +669,20 @@ export function useGraphCompile(
             // reduction buffer and reads it back every frame; counted against the raw
             // document that cost was invisible in the budget panel (§V185).
             readbacks: analyzeReadbacks(result.flatGraph, runtime.registry),
-            // T256: the rollup dimension. From the DOCUMENT, because the plan carries node
-            // ids and never node types.
-            categories: nodeCategories(result.graph, runtime.registry),
+            // T256: the rollup dimension — the plan carries node ids and never node
+            // types. T629: from the FLAT document, for the same reason as `readbacks`
+            // above: the plan's pass ids name flattened inner nodes (`instance/inner`),
+            // which the raw document does not, so a component containing an animated
+            // subgraph rolled up entirely under "other" while its passes dominated the
+            // frame. `nodeCategories`' own docblock said this needed "the flattened
+            // graph, which nothing outside the compiler holds today" — T615 changed
+            // today.
+            categories: nodeCategories(result.flatGraph, runtime.registry),
           }),
     );
-    // `result.graph` moves with `result.compiled` — both come out of the same compile —
-    // so listing it costs no extra pushes and keeps the dependency honest.
-  }, [result.compiled, result.graph, runtime]);
+    // `result.flatGraph` moves with `result.compiled` — both come out of the same
+    // compile — so listing it costs no extra pushes and keeps the dependency honest.
+  }, [result.compiled, result.flatGraph, runtime]);
 
   const publishedRef = useRef<Set<NodeId>>(new Set());
   useEffect(() => {

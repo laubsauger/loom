@@ -194,12 +194,13 @@ export function categoryRollups(rows: readonly NodeCostRow[]): readonly Category
 /**
  * Node id -> manifest category, for the rollup (T256).
  *
- * Built from the DOCUMENT rather than from the plan, because the plan carries pass ids and
- * node ids and never a node type. Nodes the document does not name — the flattened
- * internals of a component instance, whose ids belong to the component's own graph — are
- * absent here and roll up under `other`. That is a stated gap, not a silent one: the
- * instance's own aggregate is what §V87 covers, and per-category attribution INSIDE a
- * component needs the flattened graph, which nothing outside the compiler holds today.
+ * Built from a document rather than from the plan, because the plan carries pass ids and
+ * node ids and never a node type. Feed it the FLATTENED document (T629): the plan's pass
+ * ids name flattened inner nodes (`instance/inner`), so categories built from the raw
+ * document rolled every component internal up under `other` — invisible exactly when a
+ * component contains the animated subgraph dominating the frame. T615 put the flat
+ * document in the app's hands; before that this attribution was impossible outside the
+ * compiler.
  */
 export function nodeCategories(
   graph: GraphDocument,
