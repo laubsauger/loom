@@ -99,6 +99,29 @@ describe("apply_graph_patch (§V32, §V35)", () => {
    * disjoint node against a stale base and now correctly APPLIES, which is the whole
    * point of the carve-out: a 60Hz human drag must not starve every agent patch.
    */
+  it("bare add_node calls CASCADE — twenty adds are a row, never a pile at the origin (T612)", async () => {
+    // The owner's screenshot: an agent added ~20 nodes with neither position nor
+    // placement and every one landed verbatim at (0,0). The cascade is deterministic
+    // (a pure function of the document), so this asserts positions, not vibes.
+    const first = await fixture.surface.callTool("add_node", { type: "test.solid" });
+    const second = await fixture.surface.callTool("add_node", { type: "test.solid" });
+    const third = await fixture.surface.callTool("add_node", { type: "test.solid" });
+    const ids = [first, second, third].map(
+      (outcome) => Object.values(patchData(outcome).createdIds)[0] as string,
+    );
+    const graph = fixture.store.view.getGraph();
+    const positions = ids.map((id) => graph.nodes[id]!.position);
+    // The first node on an empty graph belongs at the origin; each later one opens the
+    // next column in reading order — strictly increasing x, no two alike.
+    expect(positions[0]).toEqual({ x: 0, y: 0 });
+    expect(positions[1]!.x).toBeGreaterThan(positions[0]!.x);
+    expect(positions[2]!.x).toBeGreaterThan(positions[1]!.x);
+    // An EXPLICIT position is still taken verbatim — the cascade is a default, not a veto.
+    const pinned = await fixture.surface.callTool("add_node", { type: "test.solid", position: { x: 7, y: 9 } });
+    const pinnedId = Object.values(patchData(pinned).createdIds)[0] as string;
+    expect(fixture.store.view.getGraph().nodes[pinnedId]!.position).toEqual({ x: 7, y: 9 });
+  });
+
   it("reports a stale baseRevision as a conflict when the edits OVERLAP (§V33)", async () => {
     const created = await fixture.surface.callTool("add_node", { type: "test.solid" });
     const nodeId = Object.values(patchData(created).createdIds)[0] as string;

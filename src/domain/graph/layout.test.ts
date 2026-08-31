@@ -4,7 +4,7 @@ import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry, type NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
-import { layoutGraph, placeRelative, MIN_LAYOUT_COLUMN_GAP, MIN_LAYOUT_ROW_GAP } from "./layout.ts";
+import { layoutGraph, placeFree, placeRelative, MIN_LAYOUT_COLUMN_GAP, MIN_LAYOUT_ROW_GAP } from "./layout.ts";
 import { boxGap, boxesOverlap, nodeBox } from "./node-box.ts";
 
 /**
@@ -222,6 +222,69 @@ describe("B84 — layout sizes nodes through `node-box`, not a second guess", ()
           `boxes ${String(i)} and ${String(j)} are ${String(gap.x)}×${String(gap.y)} apart`,
         ).toBe(true);
       }
+    }
+  });
+});
+
+describe("placeFree (T612)", () => {
+  it("cascades: right of everything, top-aligned — twenty bare adds are a row, not a pile", () => {
+    // The owner's screenshot: ~20 nodes at (0,0) because add_node with no position
+    // and no placement took the origin verbatim, every time.
+    const graph = graphOf(
+      [
+        node("a", { x: 100, y: 50 }, { width: 200, height: 120 }),
+        node("b", { x: 400, y: 200 }, { width: 150, height: 100 }),
+      ],
+      [],
+    );
+    const at = placeFree(graph, catalogue, "solid");
+    // Right of the rightmost box (400 + 150 = 550) plus the relative gap (80),
+    // top-aligned with the graph's top (50) — the reading-direction column.
+    expect(at).toEqual({ x: 630, y: 50 });
+    // Deterministic: a pure function of the document.
+    expect(placeFree(graph, catalogue, "solid")).toEqual(at);
+  });
+
+  it("an empty graph places at the origin, where a first node belongs", () => {
+    expect(placeFree(graphOf([], []), catalogue, "solid")).toEqual({ x: 0, y: 0 });
+  });
+
+  it("steps below a hand-placed node already occupying the free column (§V461)", () => {
+    // A node parked exactly where the cascade would land: the candidate must move
+    // below it, not cover it — the distinguishing fixture, since a collision-naive
+    // cascade passes the test above just as well.
+    const graph = graphOf(
+      [
+        node("a", { x: 0, y: 0 }, { width: 200, height: 100 }),
+        node("squatter", { x: 280, y: 0 }, { width: 200, height: 150 }),
+      ],
+      [],
+    );
+    const at = placeFree(graph, catalogue, "solid");
+    expect(at.x).toBe(480 + 80); // right of the squatter, which is the rightmost box
+    // ...so no collision there; now park a THIRD node in that very spot.
+    const blocked = graphOf(
+      [
+        node("a", { x: 0, y: 0 }, { width: 200, height: 100 }),
+        node("squatter", { x: 280, y: -300 }, { width: 200, height: 150 }),
+        node("wall", { x: 560, y: -300 }, { width: 200, height: 500 }),
+      ],
+      [],
+    );
+    const past = placeFree(blocked, catalogue, "solid");
+    // The candidate column (right of x=760, top-aligned to y=-300) is clear, but a
+    // graph whose top-left is occupied by "wall" at the candidate x must step below:
+    expect(past.y).toBeGreaterThanOrEqual(-300);
+    const boxes = Object.values(blocked.nodes).map((entry) => ({
+      x: entry.position.x,
+      y: entry.position.y,
+      width: entry.size?.width ?? 178,
+      height: entry.size?.height ?? 100,
+    }));
+    for (const box of boxes) {
+      const separate =
+        past.x >= box.x + box.width || past.x + 178 <= box.x || past.y >= box.y + box.height || past.y + 60 <= box.y;
+      expect(separate, `overlaps node at ${String(box.x)},${String(box.y)}`).toBe(true);
     }
   });
 });

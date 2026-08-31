@@ -1,7 +1,7 @@
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
-import { NODE_WIDTH, nodeBox } from "./node-box.ts";
+import { NODE_WIDTH, boxesOverlap, nodeBox } from "./node-box.ts";
 
 /**
  * Deterministic auto-layout (§V78's one-implementation rule made literal): the SAME
@@ -185,6 +185,48 @@ export function layoutGraph(
  * overlap it by 62px. Collision-naive is a choice about NEIGHBOURS; it was never a licence
  * to be wrong about the anchor's own box.
  */
+/**
+ * T612: where a node lands when NOBODY said where — no `position`, no `placement`.
+ *
+ * `apply-patch` takes coordinates verbatim, so an agent that adds twenty nodes with
+ * neither ends up with twenty nodes at (0,0): an unreadable stack the owner
+ * screenshotted. Every editor answers this with a CASCADE, and so does this: the new
+ * node opens a column just right of everything that exists, top-aligned with the
+ * graph — successive placements each extend the reading direction, so a burst of
+ * agent adds becomes a row, never a pile. Deterministic (a pure function of the
+ * document), and collision-AWARE unlike `placeRelative`: hand-placed nodes can live
+ * anywhere, so the candidate steps below whatever it would cover, sized by the real
+ * box of the node being placed (B84: the 180×100 guess is how previews overlap).
+ *
+ * An empty graph places at the origin, which is where a first node belongs.
+ */
+export function placeFree(
+  graph: GraphDocument,
+  registry: NodeRegistryView,
+  type: string,
+): { x: number; y: number } {
+  const nodes = Object.values(graph.nodes);
+  if (nodes.length === 0) return { x: 0, y: 0 };
+  const boxes = nodes.map((node) => nodeBox(node, registry.get(node.type)));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const probe: GraphNode = {
+    id: "placement-probe" as NodeId,
+    type,
+    definitionVersion: 1,
+    position: { x: right + RELATIVE_COLUMN_GAP, y: top },
+    parameters: {},
+  } as GraphNode;
+  let candidate = nodeBox(probe, registry.get(type));
+  // Bounded: each step clears at least one existing box, so the loop ends.
+  for (let step = 0; step < nodes.length + 1; step += 1) {
+    const hit = boxes.find((box) => boxesOverlap(candidate, box));
+    if (hit === undefined) break;
+    candidate = { ...candidate, y: hit.y + hit.height + RELATIVE_ROW_GAP };
+  }
+  return { x: candidate.x, y: candidate.y };
+}
+
 export function placeRelative(
   graph: GraphDocument,
   registry: NodeRegistryView,

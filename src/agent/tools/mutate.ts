@@ -2,7 +2,7 @@ import type { GraphPatchOperation, TempId } from "@domain/types/patch.ts";
 import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { Revision } from "@domain/types/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
-import { placeRelative } from "@domain/graph/layout.ts";
+import { placeFree, placeRelative } from "@domain/graph/layout.ts";
 
 import {
   addNodeInput,
@@ -59,14 +59,13 @@ import type { AgentTool, ToolStatus } from "../types.ts";
  * "add a node" was not built against a snapshot; a human clicking the same button carries
  * no base revision either. Pass one when the edit depends on what you read.
  *
- * ## Two tools with nothing behind them
+ * ## One tool with nothing behind it
  *
- * `set_output` and `reset_feedback` are declared and report themselves UNAVAILABLE. There
- * is no `graph.setOutput` command (the document has no port-scoped output designation to
- * write, §V59) and no `runtime.resetFeedback` command (there is no frame loop to reset,
- * and `src/domain/commands/editor-commands.ts` says the same about the keybinding). A tool
- * that appears to work and silently does nothing is worse than one that says it is not
- * there.
+ * `set_output` is declared and reports itself UNAVAILABLE on every surface: there is no
+ * `graph.setOutput` command, because the document has no port-scoped output designation
+ * to write (§V59). A tool that appears to work and silently does nothing is worse than
+ * one that says it is not there. (`reset_feedback` used to sit beside it; T292 registered
+ * `runtime.resetFeedback` in the app and T597 registered the same body headless.)
  */
 
 const tempRef = (name: string): TempId => `$${name}`;
@@ -98,7 +97,7 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
   name: "add_node",
   title: "Add node",
   description:
-    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node. Pass placement {relativeTo, direction} to sit next to an existing node instead of inventing coordinates.",
+    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node. Pass placement {relativeTo, direction} to sit next to an existing node; with neither position nor placement, the node cascades to a free spot instead of stacking at the origin.",
   kind: "mutate",
   inputSchema: addNodeInput,
   requires: { commands: ["graph.applyPatch"] },
@@ -109,16 +108,21 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
     // T280: placement resolves against the CURRENT document, so an agent building a
     // chain never computes a coordinate — "right of the blur" is the whole statement.
     let at = input.position;
-    if (at === undefined && input.placement !== undefined) {
+    if (at === undefined) {
       const graph = await runtime.query<GraphDocument>("graph.get", {});
-      at = placeRelative(
-        graph,
-        runtime.bus.registry,
-        input.placement.relativeTo,
-        input.placement.direction ?? "right",
-      );
+      // T612: with NEITHER position nor placement, cascade instead of stacking — an
+      // agent that adds twenty nodes bare used to leave twenty nodes at (0,0).
+      at =
+        input.placement !== undefined
+          ? placeRelative(
+              graph,
+              runtime.bus.registry,
+              input.placement.relativeTo,
+              input.placement.direction ?? "right",
+            )
+          : placeFree(graph, runtime.bus.registry, input.type);
     }
-    return dispatchOperations("add_node", runtime, [operationsForAdd(input, at ?? { x: 0, y: 0 })], {
+    return dispatchOperations("add_node", runtime, [operationsForAdd(input, at)], {
       label: "Add node",
       baseRevision: input.baseRevision,
     });
