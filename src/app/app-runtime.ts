@@ -10,6 +10,8 @@ import type { NodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { createComponentSystem, registerComponentCommands } from "@domain/components/index.ts";
+import { createFlattenedGraphSource } from "./flattened-graph.ts";
+import type { FlattenedGraphSource } from "./flattened-graph.ts";
 import { installStarterComponents } from "@editor/component/index.ts";
 import type { StarterSetInstall } from "@editor/component/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -36,6 +38,17 @@ export interface AppRuntime {
   readonly registry: NodeRegistryView;
   /** Component catalogue. Definitions live here, not in the GraphDocument. */
   readonly components: ReturnType<typeof createComponentSystem>["components"];
+  /**
+   * THE flattened document, memoized per `(document revision, catalogue revision)` (T615,
+   * §V529, §V437).
+   *
+   * Built here, in the composition root, for the same reason the bus is: so there is
+   * exactly ONE, and so every per-frame CPU walk reads the same flattening rather than
+   * deriving its own. See `flattened-graph.ts` — the whole point is that a frame path
+   * cannot reach the un-flattened document, which is what makes "a component's internal
+   * animation runs" a property rather than six call sites that happen to be right.
+   */
+  readonly flattened: FlattenedGraphSource;
   /** Status / GPU-ms / agent-activity channel. Never the document store (§V16). */
   readonly nodeRuntime: NodeRuntimeStore;
   /**
@@ -262,10 +275,15 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
 
   const project = projectMetaFrom(options, projectId);
 
+  // T615: the ONE flattening. Built beside the bus so a frame path has somewhere to read
+  // the flattened document FROM, and the raw one has no reason to be read at all.
+  const flattened = createFlattenedGraphSource({ store: bus.store, registry, components });
+
   return {
     bus,
     registry,
     components,
+    flattened,
     nodeRuntime,
     telemetry,
     invocation,
@@ -284,6 +302,7 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
       return { ...project, settings: bus.store.getSettings(), graph: bus.store.getGraph() };
     },
     dispose() {
+      flattened.dispose();
       telemetry.dispose();
       nodeRuntime.dispose();
     },

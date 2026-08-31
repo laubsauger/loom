@@ -6,6 +6,11 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
+import { componentNodeType } from "@domain/components/index.ts";
+import {
+  ANIMATED_COMPONENT_ID,
+  animatedComponentDefinition,
+} from "../tests/fixtures/animated-component.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 
 /**
@@ -242,6 +247,101 @@ describe("B27 — the value graph runs, and its channels reach a resolver", () =
     const empty = result.current.diagnostics;
     act(() => result.current.evaluate(inputsAt(1, 0)));
     expect(result.current.diagnostics).toBe(empty);
+    runtime.dispose();
+  });
+});
+
+/**
+ * T615 — THE SAME HOOK, ON A COMPONENT.
+ *
+ * The cases above all use root-level nodes, which is exactly why the defect survived: on
+ * a root-level graph the raw document and the flattened one are the same nodes with the
+ * same ids, so every assertion in this file passed while a value node inside a component
+ * instance was never evaluated at all.
+ *
+ * Two instances with different published rates, because one instance passes even when the
+ * two share one bag of state (§V79, §V461).
+ */
+describe("useValueGraph on a COMPONENT — the internals evaluate, per instance (T615)", () => {
+  async function seedTwoInstances(runtime: AppRuntime): Promise<{ one: string; two: string }> {
+    runtime.components.register(animatedComponentDefinition());
+    let one = "";
+    let two = "";
+    await act(async () => {
+      const result = await seed(runtime, [
+        {
+          op: "addNode",
+          ref: "$one",
+          type: componentNodeType(ANIMATED_COMPONENT_ID, 1),
+          position: { x: 0, y: 0 },
+          parameters: { rate: 0.5 },
+        },
+        {
+          op: "addNode",
+          ref: "$two",
+          type: componentNodeType(ANIMATED_COMPONENT_ID, 1),
+          position: { x: 240, y: 0 },
+          parameters: { rate: 2 },
+        },
+      ]);
+      expect(result.status).toBe("applied");
+      one = result.output.createdIds["$one"] ?? "";
+      two = result.output.createdIds["$two"] ?? "";
+    });
+    return { one, two };
+  }
+
+  it("evaluates each instance's internal LFO, keyed by FLAT ID and reading its own rate", async () => {
+    const runtime = newRuntime();
+    const { one, two } = await seedTwoInstances(runtime);
+    const { result } = renderHook(() => useValueGraph(runtime));
+
+    act(() => {
+      for (let frameIndex = 0; frameIndex < 16; frameIndex += 1) {
+        result.current.evaluate(inputsAt(frameIndex, 0));
+      }
+    });
+
+    const bags = result.current.channels();
+    const first = bags.get(`${one}/wob`)?.["value"];
+    const second = bags.get(`${two}/wob`)?.["value"];
+    expect(typeof first).toBe("number");
+    expect(typeof second).toBe("number");
+    // Different published rate, different number. A shared evaluation would tie them.
+    expect(first).not.toBe(second);
+    runtime.dispose();
+  });
+
+  it("gives the two instances two Lag TRAJECTORIES, not one shared bag (§V79)", async () => {
+    const runtime = newRuntime();
+    const { one, two } = await seedTwoInstances(runtime);
+    const { result } = renderHook(() => useValueGraph(runtime));
+
+    const first: number[] = [];
+    const second: number[] = [];
+    act(() => {
+      for (let frameIndex = 0; frameIndex < 24; frameIndex += 1) {
+        result.current.evaluate(inputsAt(frameIndex, 0));
+        const bags = result.current.channels();
+        first.push(bags.get(`${one}/lag`)?.["value"] as number);
+        second.push(bags.get(`${two}/lag`)?.["value"] as number);
+      }
+    });
+
+    expect(first.every((value) => Number.isFinite(value))).toBe(true);
+    expect(first).not.toEqual(second);
+    runtime.dispose();
+  });
+
+  it("answers a driven channel inside a component at the FRAMELESS zero frame too", async () => {
+    const runtime = newRuntime();
+    await seedTwoInstances(runtime);
+    const { result } = renderHook(() => useValueGraph(runtime));
+    // The structural compile's question: no frame at all. Before T615 this resolved
+    // against the raw document and answered `undefined`, which the problems tab reported
+    // as "channel amt is not attached" on a graph that animates perfectly well.
+    const zeroFrame = result.current.resolver("amt", {} as never);
+    expect(typeof zeroFrame).toBe("number");
     runtime.dispose();
   });
 });

@@ -272,7 +272,20 @@ export function registerParameterCommands(
       "Fire a momentary pulse parameter. Audited, never undoable, never serialized (§V124).",
     handler: async (input, context) => {
       const nothing: PulseOutput = { fired: null };
-      const node = context.graph.nodes[input.nodeId];
+      /**
+       * The document first, the FLATTENED document second (T615, §V82).
+       *
+       * A pulse inside a component instance fires on a node that only exists once the
+       * instance is inlined: `c1/reset` is a real node in the plan and no node at all in
+       * the document. Falling through to the flattening is what makes such a pulse
+       * dispatch at all — and it keeps ONE pulse path, so the expression-fired pulse and
+       * the inspector's button still agree about what firing means, and the audit entry
+       * (§V31) is still written here where the pulse happened.
+       *
+       * `$node` is then substituted with the FLAT id, which is the id the plan uses: a
+       * Feedback inside a component clears `c1/fb`'s pair, which is the one that exists.
+       */
+      const node = context.graph.nodes[input.nodeId] ?? bus.flattenedGraph()?.nodes[input.nodeId];
       if (node === undefined) {
         return {
           status: "rejected",

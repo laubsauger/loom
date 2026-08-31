@@ -6,6 +6,7 @@ import type { NodeCompileContext, TextureFormat } from "../domain/types/node-def
 import type { ParameterValue } from "../domain/types/parameters.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "../domain/components/index.ts";
+import type { FlattenedGraph } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
 import type { DrawPassDescriptor, PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
 import type { ParameterResolution } from "./validate.ts";
@@ -71,6 +72,25 @@ export interface CompileRequest {
    * loudly, rather than rendering nothing.
    */
   readonly components?: ComponentRegistryView;
+  /**
+   * A flattening ALREADY performed, reused instead of redone (T615, §V529).
+   *
+   * `flattenComponents` is a pure function of `(graph, catalogue)` and costs 5–7× the
+   * value graph it feeds, so the per-frame values-only compile (§V163) recomputing it
+   * sixty times a second was the single largest CPU cost of an animated component
+   * document — larger than the animation it existed to serve. The composition root
+   * memoizes ONE flattening per document revision (`app/flattened-graph.ts`) and hands
+   * it here.
+   *
+   * Supplied, it WINS over `components` and `graph`: the plan is built from
+   * `flattened.graph`, which is the same document the app's value graph, pulse watcher
+   * and Analyze sampler are reading — so the CPU layer and the GPU plan cannot be looking
+   * at two different flattenings of one document.
+   *
+   * Omitted, nothing changes: `components` flattens as before, and neither flattens
+   * without it.
+   */
+  readonly flattened?: FlattenedGraph;
 }
 
 /**

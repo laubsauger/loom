@@ -4,6 +4,8 @@ import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import type { NodeId } from "@domain/types/ids.ts";
+import type { FlattenedGraph } from "@compiler/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -73,15 +75,22 @@ export interface ValueGraphBinding {
   /** One frame. Call before the animated-parameter push, every rendered frame. */
   readonly evaluate: (inputs: FrameInputs) => void;
   /**
-   * The channel BAGS from the most recently evaluated frame, keyed by node NAME (T344).
+   * The channel BAGS from the most recently evaluated frame, keyed by FLAT NODE ID
+   * (T344, T615).
    *
    * The plot in a node's body reads this, so it shows the same numbers the resolver
    * hands a driven parameter — §V275. Exposing the evaluated result rather than letting
    * a plot evaluate for itself is the whole point: a second evaluation would advance
    * every stateful stage twice per frame, and a Lag would run at double rate because
    * somebody was watching it.
+   *
+   * BY ID, not by name, since T615 — and the difference is not cosmetic. The value graph
+   * now runs on the FLATTENED document, where B41's `withUniqueNames` makes an instance's
+   * internal label depend on what else is in the document: add a root node called `wob`
+   * and every instance's inner label shifts by one. A plot keyed on name would then draw
+   * a different instance's trajectory with no error anywhere. Ids do not move.
    */
-  readonly channels: () => ReadonlyMap<string, Readonly<Record<string, number>>>;
+  readonly channels: () => ReadonlyMap<NodeId, Readonly<Record<string, number>>>;
   /** Clears every stateful stage (§V181, §V170). Transport reset and backward seek. */
   readonly reset: () => void;
   /**
@@ -122,14 +131,18 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
   const session = useMemo(() => createValueGraphSession(runtime.registry), [runtime.registry]);
 
   const latest = useRef<ChannelResolver | null>(null);
-  const latestBags = useRef<ReadonlyMap<string, Readonly<Record<string, number>>>>(new Map());
+  const latestBags = useRef<ReadonlyMap<NodeId, Readonly<Record<string, number>>>>(new Map());
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   /** Signature of what is currently reported, so an unchanged condition costs no render. */
   const reported = useRef("");
 
   const evaluate = useCallback(
     (inputs: FrameInputs) => {
-      const result = session.evaluate(runtimeRef.current.bus.store.getGraph(), inputs.frame, {
+      // T615: the FLATTENED document (§V437). Reading the raw one here is what made a
+      // value node inside a component never evaluate at all — the flat ids `c1/wob` and
+      // `c2/wob` are also what gives two instances of one Lag two trajectories (§V79),
+      // since the session keys its state by node id.
+      const result = session.evaluate(runtimeRef.current.flattened.current().graph, inputs.frame, {
         // §V182: the SAME pointer the shaders read. A second DOM listener would drift by a
         // frame and the CPU and GPU halves of one graph would disagree about the cursor.
         pointer: inputs.pointer,
@@ -137,7 +150,7 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
         ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
       });
       latest.current = result.resolver;
-      latestBags.current = result.byName;
+      latestBags.current = result.byId;
 
       const signature = result.diagnostics
         .map((diagnostic) => `${diagnostic.code}:${diagnostic.nodeId ?? ""}`)
@@ -160,8 +173,8 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
     latest.current = null;
   }, [session]);
 
-  /** Zero-frame answer for the structural compile, one walk per document revision. */
-  const structural = useRef<{ revision: number; resolver: ChannelResolver } | null>(null);
+  /** Zero-frame answer for the structural compile, one walk per FLATTENING (T615). */
+  const structural = useRef<{ flattened: FlattenedGraph; resolver: ChannelResolver } | null>(null);
 
   const resolver = useCallback<ChannelResolver>(
     (channel, context) => {
@@ -170,12 +183,18 @@ export function useValueGraph(runtime: AppRuntime): ValueGraphBinding {
       // No frame: this is the structural compile (§V44's deterministic zero frame). A
       // THROWAWAY session, never the live one — resolving here against live state would
       // advance every stateful stage once per compile, so dragging a node would move a Lag.
-      const graph = runtimeRef.current.bus.store.getGraph();
+      //
+      // T615: the FLATTENED document again, and the cache is keyed on the flattening's
+      // own identity rather than on `graph.revision`. A component-catalogue edit changes
+      // what flattening produces while the host document's revision does not move
+      // (§V210(c)) — a revision key would answer a zero-frame compile from the previous
+      // internals and report a channel that has since been renamed as "not attached".
+      const flattened = runtimeRef.current.flattened.current();
       const cached = structural.current;
-      if (cached === null || cached.revision !== graph.revision) {
+      if (cached === null || cached.flattened !== flattened) {
         const once = createValueGraphSession(runtimeRef.current.registry);
-        const result = once.evaluate(graph, ZERO_FRAME, { pointer: { x: 0, y: 0, buttons: 0 } });
-        structural.current = { revision: graph.revision, resolver: result.resolver };
+        const result = once.evaluate(flattened.graph, ZERO_FRAME, { pointer: { x: 0, y: 0, buttons: 0 } });
+        structural.current = { flattened, resolver: result.resolver };
         return result.resolver(channel, context);
       }
       return cached.resolver(channel, context);

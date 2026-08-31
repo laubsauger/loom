@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPulseWatcher } from "@domain/parameters/pulse.ts";
+import type { AppRuntime } from "./app-runtime.ts";
 
 /**
  * Expression-fired pulses, in the running app (T214, §V125).
@@ -30,8 +30,11 @@ export interface PulseFiring {
   observe: (frame: FrameEvaluationInput) => void;
 }
 
-export function usePulseFiring(bus: ShaderloomBus, context: InvocationContext): PulseFiring {
+export function usePulseFiring(runtime: AppRuntime, context: InvocationContext): PulseFiring {
+  const bus = runtime.bus;
   const watcher = useMemo(() => createPulseWatcher(bus.registry), [bus]);
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
   const contextRef = useRef(context);
   contextRef.current = context;
 
@@ -44,7 +47,12 @@ export function usePulseFiring(bus: ShaderloomBus, context: InvocationContext): 
 
   const observe = useCallback(
     (frame: FrameEvaluationInput) => {
-      const fires = watcher.step(bus.store.getGraph(), frame);
+      // T615: the FLATTENED document. On the raw one a pulse expression inside a
+      // component instance was never even looked at, so TouchDesigner's whole reset
+      // idiom — `frame % 120 == 0` on a Feedback's reset — stopped working the moment
+      // that Feedback was packaged into a component. The fires that come back name FLAT
+      // ids; `parameter.pulse` resolves those through the same flattening (§V82).
+      const fires = watcher.step(runtimeRef.current.flattened.current().graph, frame);
       for (const fire of fires) {
         void bus
           .execute(

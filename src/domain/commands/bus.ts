@@ -292,6 +292,26 @@ export interface ShaderloomBus extends AppCommandBus {
   attachChannelResolver: (read: () => ChannelResolver | undefined) => void;
   /** What is currently attached, for the composition root and its gates. */
   readonly channelResolver: () => ChannelResolver | undefined;
+  /**
+   * Publishes the composition root's ONE flattened document (T615, §V82).
+   *
+   * A command addresses a node by id, and inside a component instance the only id that
+   * exists is a FLAT one — `c1/reset` names a real node in the plan and no node at all in
+   * the document. `parameter.pulse` is the case that forced this: once the pulse watcher
+   * ran on the flattened graph (which is what makes an expression-fired pulse inside a
+   * component fire at all), every one of those fires was rejected as "no node c1/reset".
+   *
+   * A read function rather than the graph, exactly as with the channel resolver: the
+   * flattening is re-memoized per document revision, and a captured one goes stale. Last
+   * attach wins; the bus has no unregister and React mounts more than once.
+   *
+   * Null until a composition root attaches one, and null means "there is no app", not
+   * "there are no components" — a handler falls back to the document, which is what every
+   * bus without a rendered tree has always seen.
+   */
+  attachFlattenedGraph: (read: () => GraphDocument | undefined) => void;
+  /** The flattened document, or undefined when nothing has attached one. */
+  readonly flattenedGraph: () => GraphDocument | undefined;
   /** Read-only document access for the UI. Mutation stays behind `execute` (§V29). */
   readonly store: GraphStoreView;
   readonly registry: NodeRegistryView;
@@ -340,6 +360,8 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
   const queries = new Map<string, StoredQuery>();
   /** T593: null until a composition root attaches one. Null means "no app", not "empty". */
   let readChannels: (() => ChannelResolver | undefined) | null = null;
+  /** T615: likewise — null is "no app", and a handler falls back to the document. */
+  let readFlattened: (() => GraphDocument | undefined) | null = null;
 
   const bus: ShaderloomBus = {
     store: store.view,
@@ -350,6 +372,11 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
       readChannels = read;
     },
     channelResolver: () => readChannels?.() ?? undefined,
+
+    attachFlattenedGraph(read: () => GraphDocument | undefined): void {
+      readFlattened = read;
+    },
+    flattenedGraph: () => readFlattened?.() ?? undefined,
 
     registerCommand<TName extends CommandName>(registration: CommandRegistration<TName>): void {
       if (commands.has(registration.name)) {

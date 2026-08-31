@@ -1,4 +1,5 @@
-import { compileGraph } from "../../compiler/index.ts";
+import { compileGraph, flattenComponents } from "../../compiler/index.ts";
+import type { ComponentRegistryView } from "../../domain/components/index.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
@@ -83,6 +84,17 @@ export interface HeadlessRenderRequest {
    * READ, not what some upstream stage computed.
    */
   readonly recordAudio?: FeatureTrackRecorder;
+  /**
+   * The component catalogue (T615, §V47).
+   *
+   * This harness is the OFFLINE half of §V47's "same graph, same compiler" claim, and it
+   * never passed one — so an instance fell through to `component.notFlattened` and no
+   * offline render of a component document has ever been possible. The live path and this
+   * one therefore agreed about animated components only because BOTH were broken. Supplied
+   * here, one flattening is produced per render and handed to every compile below, exactly
+   * as `app/flattened-graph.ts` does for the live session.
+   */
+  readonly components?: ComponentRegistryView;
 }
 
 export interface HarnessControl {
@@ -126,8 +138,16 @@ export function compileParityGraph(
   graph: GraphDocument,
   capabilities: BackendCapabilities,
   settings: ProjectSettings = paritySettings(),
+  /** T615: the component catalogue. Omitted, an instance does not flatten (§V82, B29). */
+  components?: ComponentRegistryView,
 ): CompiledGraph {
-  return compileGraph({ graph, settings, registry: registry(), capabilities });
+  return compileGraph({
+    graph,
+    settings,
+    registry: registry(),
+    capabilities,
+    ...(components === undefined ? {} : { components }),
+  });
 }
 
 export async function renderHeadless(request: HeadlessRenderRequest): Promise<HeadlessRenderResult> {
@@ -147,7 +167,30 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       request.canvas === undefined ? {} : { canvas: request.canvas },
     );
 
-    const plan = compileParityGraph(request.graph, capabilities, settings);
+    /**
+     * T615: ONE flattening, produced once and reused by the structural compile and every
+     * per-frame one — the same shape the live session has (`app/flattened-graph.ts`).
+     * Without it the offline path either does not flatten at all (today) or re-flattens
+     * 60 times a second, which is the regression the memo exists to avoid (§V529).
+     */
+    const flattened =
+      request.components === undefined
+        ? undefined
+        : flattenComponents({
+            graph: request.graph,
+            registry: registry(),
+            components: request.components,
+          });
+    /** What the value graph and every compile read. §V437: the raw document is not it. */
+    const logicalGraph = flattened?.graph ?? request.graph;
+
+    const plan = compileGraph({
+      graph: request.graph,
+      settings,
+      registry: registry(),
+      capabilities,
+      ...(flattened === undefined ? {} : { flattened }),
+    });
     const errors = plan.diagnostics.filter((d) => d.severity === "error");
     if (errors.length > 0) {
       throw new Error(`Parity graph failed to compile: ${errors.map((d) => d.message).join("; ")}`);
@@ -199,7 +242,9 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
             // re-resolved and only changed VALUES are pushed (§V5 — a structural
             // difference is refused by the animator, never silently recompiled).
             onBeforeFrame: (inputs) => {
-              const evaluated = valueSession.evaluate(request.graph, inputs.frame, {
+              // T615: the FLATTENED document, and the SAME one every frame — so a value
+              // node inside a component evaluates here exactly as it does live.
+              const evaluated = valueSession.evaluate(logicalGraph, inputs.frame, {
                 ...(inputs.audio === undefined ? {} : { audio: inputs.audio }),
               });
               const next = compileGraph({
@@ -207,6 +252,7 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
                 settings,
                 registry: registry(),
                 capabilities,
+                ...(flattened === undefined ? {} : { flattened }),
                 resolution: { frame: inputs.frame, channels: evaluated.resolver },
               });
               animator.push(backend, plan, next);

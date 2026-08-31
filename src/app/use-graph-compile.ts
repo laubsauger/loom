@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "r
 import { compileGraph } from "@compiler/index.ts";
 import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
-import type { ActiveSink, CompiledGraph, ParameterResolution } from "@compiler/index.ts";
+import type { ActiveSink, CompiledGraph, FlattenedGraph, ParameterResolution } from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -42,6 +42,19 @@ import type { CompileResultView } from "./compile-command.ts";
 
 export interface GraphCompileResult {
   readonly graph: GraphDocument;
+  /**
+   * The SAME document with every component instance inlined (T615, §V82, §V437).
+   *
+   * Published because the CPU surfaces that run per frame have to read it and must not
+   * re-derive it: Analyze's tracked set, the value-history sampler, the media and audio
+   * source sets. Every one of those used to read the raw document, so nothing inside a
+   * component existed for them — the Analyze resource was ALLOCATED by the plan and the
+   * CPU sampler simply never asked for it.
+   *
+   * The same object `runtime.flattened.current()` returns and the same one this compile
+   * was built from, so a consumer cannot end up on a second flattening (§V109).
+   */
+  readonly flatGraph: GraphDocument;
   /**
    * The channel resolver this compile used — published so the INSPECTOR reads through it
    * too (B46, T374, §V61).
@@ -165,6 +178,7 @@ function statusFor(errors: number, warnings: number, compiled: boolean): NodeRun
 
 function compileSafely(
   graph: GraphDocument,
+  flattened: FlattenedGraph,
   runtime: AppRuntime,
   capabilities: BackendCapabilities,
   resolution: ParameterResolution = {},
@@ -193,6 +207,19 @@ function compileSafely(
        * someone tried to render one.
        */
       components: runtime.components.view(),
+      /**
+       * T615 — the flattening the app ALREADY holds, rather than a fresh one per call.
+       *
+       * `compileGraph` used to redo it inside every call, including the per-frame
+       * values-only compile (§V163). Measured on ten instances of a component holding an
+       * LFO, a Lag and a Math: `flattenComponents` alone is 5.1× the value graph it feeds
+       * (§V529), and per-frame flattening made the CORRECT version 1.4× slower than the
+       * broken one. Passing the memo makes it 1.8× faster than the broken one instead.
+       *
+       * It is also what keeps the CPU layer and the plan on ONE flattening: the value
+       * graph, the pulse watcher and the Analyze sampler read this same object.
+       */
+      flattened,
       // T252 (§V158, B18): the scheduler's KEPT set when a store is wired — the
       // partition that stops every off-screen node rendering every frame. The old
       // every-texture-node fallback stands only where no scheduler exists (tests,
@@ -319,6 +346,21 @@ export function useGraphCompile(
   );
   const catalogueRevision = useCatalogueRevision(runtime.components);
 
+  /**
+   * THE flattening, for this document revision and this catalogue revision (T615).
+   *
+   * Memoized in the composition root (`flattened-graph.ts`), read here. Both keys are
+   * already subscribed above — the document through the store, the catalogue through
+   * `useCatalogueRevision` — so this memo re-runs exactly when the flattening can have
+   * changed, and `runtime.flattened.current()` is a map lookup the rest of the time.
+   */
+  const flattened = useMemo(
+    () => runtime.flattened.current(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the two keys ARE graph and catalogueRevision.
+    [runtime, graph, catalogueRevision],
+  );
+  const flatGraph = flattened.graph;
+
   // Cache for `project.compile`, keyed by the revision it was produced from. Only a
   // compile that actually ran is cached: "no device report" must stay a live answer, not
   // a remembered empty one.
@@ -334,7 +376,9 @@ export function useGraphCompile(
    * kind of false alarm that teaches people to ignore the panel.
    */
   const channels = useMemo(() => {
-    const graphChannels = graphChannelResolver(graph, runtime.registry);
+    // T615: the FLAT document. T238's single-channel shorthand is the backstop behind the
+    // value graph, and a backstop that cannot see inside a component is not one.
+    const graphChannels = graphChannelResolver(flatGraph, runtime.registry);
     if (extraChannels.length === 0) return graphChannels;
     const merged: ChannelResolver = (channel, context) => {
       for (const resolver of extraChannels) {
@@ -347,7 +391,7 @@ export function useGraphCompile(
       return graphChannels(channel, context);
     };
     return merged;
-  }, [extraChannels, graph, runtime]);
+  }, [extraChannels, flatGraph, runtime]);
 
   /**
    * The SAME object, published to the bus (T593, B121, §V61).
@@ -375,6 +419,21 @@ export function useGraphCompile(
   }, [runtime]);
 
   /**
+   * The flattening, published to the bus for the same reason and by the same route (T615).
+   *
+   * `parameter.pulse` resolves a node out of `context.graph` — the raw document — so a
+   * pulse on a node INSIDE a component instance ("no node c1/reset") was unaddressable
+   * once the pulse watcher started seeing it. The bus is in the domain and has no handle
+   * into this tree, so the flattening reaches it the way the resolver already does: a
+   * read function attached from the one place that owns it.
+   */
+  const flattenedRef = useRef(flattened);
+  flattenedRef.current = flattened;
+  useEffect(() => {
+    runtime.bus.attachFlattenedGraph(() => flattenedRef.current.graph);
+  }, [runtime]);
+
+  /**
    * §V163's gate. `hasAnimatedParameters` is a scan of stored parameter modes — cheap,
    * and run once per document revision rather than once per frame.
    *
@@ -390,16 +449,23 @@ export function useGraphCompile(
    * DERIVED from the one store both compiles read, so they cannot disagree again.
    */
   const animate = useMemo(() => {
-    if (capabilities === null || !hasAnimatedParameters(graph)) return null;
+    // T615: the gate reads the FLAT document. This is the largest half of the defect and
+    // the least obvious: with a document whose only animation lives inside a component,
+    // `hasAnimatedParameters(raw)` answered FALSE, so `animate` was null, so there was no
+    // per-frame compile at all — which killed the component's internal EXPRESSIONS too,
+    // even though flattening preserves those perfectly. Nothing was broken about the
+    // expression; nothing was ever asked to evaluate it.
+    if (capabilities === null || !hasAnimatedParameters(flatGraph)) return null;
     return (frame: FrameEvaluationInput): CompiledGraph | null =>
       compileSafely(
         graph,
+        flattened,
         runtime,
         capabilities,
         { frame, channels },
         previewSinks === undefined ? undefined : scheduledPreviews,
       ).compiled;
-  }, [capabilities, channels, graph, runtime, previewSinks, scheduledPreviews]);
+  }, [capabilities, channels, flatGraph, flattened, graph, runtime, previewSinks, scheduledPreviews]);
 
   /**
    * The inputs of the LAST compile, for classifying the next one (T308).
@@ -455,6 +521,7 @@ export function useGraphCompile(
       // true again on exactly the machines that cannot compile.
       return {
         graph,
+        flatGraph,
         channels,
         compiled: null,
         diagnostics: [],
@@ -497,6 +564,7 @@ export function useGraphCompile(
       lastCompile.current = { ...previous, graph };
       return {
         graph,
+        flatGraph,
         channels,
         compiled: previous.view.compiled,
         diagnostics: previous.view.diagnostics,
@@ -511,6 +579,7 @@ export function useGraphCompile(
 
     const { compiled, diagnostics: rawDiagnostics } = compileSafely(
       graph,
+      flattened,
       runtime,
       capabilities,
       { channels },
@@ -533,6 +602,7 @@ export function useGraphCompile(
     };
     return {
       graph,
+      flatGraph,
       channels,
       compiled,
       diagnostics,
@@ -545,7 +615,7 @@ export function useGraphCompile(
       resetFeedback: change?.resetFeedback === true,
       documentBoundary: change?.documentBoundary === true,
     };
-  }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
+  }, [animate, channels, flatGraph, flattened, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 
   const capabilitiesRef = useRef(capabilities);
   capabilitiesRef.current = capabilities;
@@ -567,7 +637,10 @@ export function useGraphCompile(
     if (capability === null) {
       return { compiled: null, diagnostics: [NO_DEVICE_DIAGNOSTIC] };
     }
-    const view = compileSafely(current, runtime, capability);
+    // T615: the memo answers for whatever revision the STORE is on, which is the same
+    // document `current` was just read from — so this compile and the rendered one are
+    // built from one flattening even when React has not caught up yet.
+    const view = compileSafely(current, runtime.flattened.current(), runtime, capability);
     cacheRef.current = { revision: current.revision, view };
     return view;
   }, [runtime]);
@@ -592,7 +665,10 @@ export function useGraphCompile(
             // T278/§V185: what this graph costs per frame in readbacks. Derived from the
             // graph the plan was built from, so the count moves the moment an Analyze node
             // is added — which is the point: the cost has to be visible where it is made.
-            readbacks: analyzeReadbacks(result.graph, runtime.registry),
+            // T615: the FLAT document. An Analyze inside a component allocates a
+            // reduction buffer and reads it back every frame; counted against the raw
+            // document that cost was invisible in the budget panel (§V185).
+            readbacks: analyzeReadbacks(result.flatGraph, runtime.registry),
             // T256: the rollup dimension. From the DOCUMENT, because the plan carries node
             // ids and never node types.
             categories: nodeCategories(result.graph, runtime.registry),

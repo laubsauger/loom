@@ -75,6 +75,21 @@ import { bypassPassthroughPorts } from "../graph/bypass.ts";
 export interface ValueGraphResult {
   /** Channel bags keyed by node NAME (unnamed value nodes are unaddressable, like T238). */
   readonly byName: ReadonlyMap<string, ValueChannels>;
+  /**
+   * The same bags keyed by node ID (T615).
+   *
+   * A DISPLAY must read this one and never `byName`. Once the value graph runs on the
+   * flattened document, an instance's internal label is whatever B41's `withUniqueNames`
+   * made it: adding a root node called `wob` renames the FIRST instance's `wob` to `wob1`
+   * and shifts every other instance's label along with it. State is id-keyed and survives
+   * that; a plot looked up by name would silently start showing another instance's
+   * numbers, which is the failure mode nobody would report as a bug.
+   *
+   * The RESOLVER still keys on name, correctly — a `driven` parameter names a channel,
+   * and `withUniqueNames` rewrites the binding and the label together so the pair stays
+   * consistent (§V129).
+   */
+  readonly byId: ReadonlyMap<NodeId, ValueChannels>;
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
   /**
    * The resolver for `driven` parameters: `name` reads the bag's `value` channel (or
@@ -298,7 +313,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
         return keys.length === 1 ? bag[keys[0] as string] : undefined;
       };
 
-      return { byName, diagnostics, resolver };
+      return { byName, byId, diagnostics, resolver };
     },
   };
 }
