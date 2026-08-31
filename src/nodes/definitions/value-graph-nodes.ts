@@ -7,6 +7,7 @@ import type {
 } from "../../domain/types/node-definition.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 import { resolveSwitchIndex } from "./switch.ts";
+import { cycleHash } from "./values.ts";
 
 /**
  * The CHOP set (T275-T277, §V179): value-graph stages, wired `mouse1 → lag1 → param`.
@@ -335,6 +336,100 @@ export const valueSwitchNode: NodeDefinition = {
   compile: noPasses,
 };
 
+
+/**
+ * T548 — Step: hold one pseudo-random value for every N counts of the input, then move on.
+ *
+ * ## The gap it fills, and what was tried first
+ *
+ * The owner asked for "some higher level deformation that keeps active for a couple of
+ * bars or something and then lerps to the next one" — a PHRASE-length timescale, between
+ * the per-frame bands and the per-piece LFO. Two things already existed and neither one
+ * closes it:
+ *
+ *  - **the LFO's `noise` shape IS a sample-and-hold**, one held value per cycle, and would
+ *    be exactly this — except that it is FREE-RUNNING by design (B98), so its steps cannot
+ *    line up with bars. A held value that drifts against the music it is scoring is worse
+ *    than either choice made consistently;
+ *  - **an expression could do the arithmetic** — `floor`, `fract` and `sin` are all in the
+ *    grammar, so the classic `fract(sin(floor(bar / 4) * 12.9898) * 43758.5453)` parses.
+ *    But an expression's scope is `scopeFromFrame` — clocks and frame numbers — and a
+ *    CHANNEL is only reachable through `driven` mode, which reads a channel raw with no
+ *    arithmetic around it. So the expression cannot see `bar`, and this cannot be written
+ *    where it is read.
+ *
+ * `valueMath` cannot close the gap either: add/subtract/multiply/divide/min/max, and a
+ * quantiser needs a floor.
+ *
+ * ## What it deliberately is NOT
+ *
+ *  - **not a second smoother.** "Lerps to the next one" is `valueLag` after this, which
+ *    already eases every channel of its input. A step through a lag IS the ask; a node
+ *    that both picks and smooths would be two nodes wearing one hat.
+ *  - **not a stateful RNG and not an accumulator.** The pick is a pure function of the
+ *    quantised input, so an offline render reproduces it and a SCRUB lands on the same
+ *    value it had the first time through (§V44/§V47). A held value that depends on how you
+ *    ARRIVED at a frame is the class of bug T493 spent itself on.
+ *  - **not a hash of its own.** `cycleHash` is the LFO's, imported rather than rewritten,
+ *    so "the stable random for index n" has one definition in the repo (§V109).
+ *
+ * ## Clock (§V453/§V436): CLOCKLESS, and that is the interesting part
+ *
+ * It reads no clock at all — it reads a COUNT that arrives on its input — so it inherits
+ * whatever clock its source owns. Fed `bar` from Audio Pattern it is timeline-anchored,
+ * because that node is; fed a count from something free-running it is free-running. That
+ * is the answer to the swapped-source case: when the source's clock changes, the structure
+ * follows it automatically, because the structure IS the source's channels.
+ *
+ * PER CHANNEL, like the rest of the set: feed it the whole audio bag and every channel is
+ * quantised and held independently, and `step1:bar` is the one you wire. That is what lets
+ * one node serve a bag rather than needing a channel-picker that does not exist.
+ */
+export const valueStepNode: NodeDefinition = {
+  type: "valueStep",
+  version: 1,
+  title: "Step",
+  category: "value",
+  description:
+    "Holds a pseudo-random value for every N counts of its input, then steps to the next one — a phrase-length timescale. Wire bar from Audio Pattern into it and a Lag after it to get \"hold for four bars, then lerp to the next\". The pick is a pure function of the count, so a scrub and an offline render land on the same value. CLOCKLESS (§V436): it reads no clock, only a count, so it inherits whatever clock its source owns.",
+  tags: ["value", "hold", "step", "sample", "random", "chop"],
+  inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    every: {
+      type: "number",
+      label: "Every",
+      default: 4,
+      min: 1,
+      step: 1,
+      range: "floor",
+      description: "Counts per held value. Fed bar, this is bars per step; 4 is a phrase.",
+    },
+    minimum: { type: "number", label: "Minimum", default: 0 },
+    maximum: { type: "number", label: "Maximum", default: 1 },
+    seed: {
+      type: "number",
+      label: "Seed",
+      default: 0,
+      step: 1,
+      description: "Picks a different sequence of held values from the same counts.",
+    },
+  },
+  valueEvaluate: ({ inputs, values, frame }) => {
+    const every = Math.max(1, Math.floor(num(values["every"], 4)));
+    const minimum = num(values["minimum"], 0);
+    const maximum = num(values["maximum"], 1);
+    // The PROJECT seed is folded in alongside the node's own, exactly as the LFO's noise
+    // shape does it, so re-seeding a project re-rolls every held value with it.
+    const seed = Math.floor(num(values["seed"], 0)) + frame.randomSeed;
+    return mapChannels(inputs["in"] ?? {}, (value) => {
+      const index = Math.floor(value / every);
+      return minimum + (maximum - minimum) * cycleHash(index, seed);
+    });
+  },
+  compile: noPasses,
+};
+
 export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
   valueMathNode,
@@ -344,4 +439,5 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   valueLagNode,
   valueFilterNode,
   valueSwitchNode,
+  valueStepNode,
 ];

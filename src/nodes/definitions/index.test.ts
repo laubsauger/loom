@@ -130,6 +130,10 @@ describe("core catalogue (T70, T40)", () => {
       // T508: the value-graph twin of the texture Switch, and the only EXCLUSIVE join in
       // the CHOP set — wiring two sources to one port clobbers (§V457), by design.
       "valueSwitch",
+      // T548: the phrase-length timescale — hold a pick for N counts of the input, then
+      // step. Named Step rather than Hold because TD's Hold CHOP is gated by a second
+      // input and stateful; this is a pure function of a count, so a scrub reproduces.
+      "valueStep",
       // T414: sound as channels — the value family's third input source after Mouse
       // and the trio. Deliberately named for what it IS, not a TD analog.
       "audioIn",
@@ -300,6 +304,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueLimit",
         "valueMath",
         "valueSlope",
+        "valueStep",
         "valueSwitch",
         "valueTrigger",
       ].sort(),

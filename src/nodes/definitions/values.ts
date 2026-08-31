@@ -52,8 +52,15 @@ const num = (value: ParameterValue | undefined, fallback: number): number =>
 
 const frac = (value: number): number => value - Math.floor(value);
 
-/** Deterministic [0,1) hash of an integer cycle index and seed — the S&H noise shape. */
-function cycleHash(index: number, seed: number): number {
+/**
+ * Deterministic [0,1) hash of an integer cycle index and seed — the S&H noise shape.
+ *
+ * EXPORTED for T548's Step, which holds one value per N counts of its input and needs the
+ * SAME pick the LFO's noise shape makes. §V109: two "give me a stable random for index n"
+ * implementations would drift, and the drift would only show up as two nodes that look
+ * alike disagreeing about a seed.
+ */
+export function cycleHash(index: number, seed: number): number {
   let h = Math.imul(index ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(seed | 1, 0xc2b2ae35);
   h = Math.imul(h ^ (h >>> 13), 0x27d4eb2f);
   h ^= h >>> 15;

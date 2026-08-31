@@ -265,6 +265,12 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // T508: a Switch selects. It has no phase and no state, so a lap cannot reach it —
   // whatever the SELECTED input does across a loop boundary, the Switch does.
   valueSwitch: "clockless",
+  // T548: a Step quantises a COUNT that arrives on its input and hashes it. It reads no
+  // clock at all, which is deliberate rather than incidental: it INHERITS its source's
+  // clock, so bar-locked steps stay bar-locked when the source is swapped for one on a
+  // different clock. An LFO in `noise` mode is the same sample-and-hold on a clock of its
+  // OWN, and that is exactly why it could not be used for bars (B98 made it free-running).
+  valueStep: "clockless",
   audioIn: "clockless",
   audioFileIn: "clockless",
 };

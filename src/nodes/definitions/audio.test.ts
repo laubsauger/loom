@@ -212,12 +212,66 @@ describe("audioPattern (T442)", () => {
     expect(channelsAt(3.21)).toEqual(channelsAt(3.21));
   });
 
-  it("shares audioIn's channel NAMES exactly, so a live source swaps in as one node", () => {
-    const pattern = Object.keys(channelsAt(0)).sort();
+  /**
+   * T548 changed this from an equality to a SUPERSET, and the change is the design.
+   *
+   * The swap promise — replace this node with a live source and every wire survives — is
+   * about the channels a live source CAN publish, and it still holds exactly: every
+   * audioIn channel is here, under the same name. What is extra is the musical structure,
+   * and it is extra because only a node that knows its own tempo can publish it honestly.
+   * An `audioIn` cannot; §V403 says so out loud in its description rather than shipping a
+   * guessed bar count that would be confidently wrong.
+   *
+   * So the assertion is two-sided and neither side is slack: the shared set is EQUAL to
+   * audioIn's, and the extra set is EXACTLY the four structure channels. A fifth channel
+   * added to either node lands in one of those two lists and has to be argued for.
+   */
+  it("publishes every audioIn channel under the same name, so a live source still swaps in", () => {
+    const pattern = Object.keys(channelsAt(0));
     const live = Object.keys(
       registry.get("audioIn")?.valueEvaluate?.({ inputs: {}, values: {}, frame: frame(0), state: {} }) ?? {},
     ).sort();
-    expect(pattern).toEqual(live);
+    expect(pattern.filter((name) => live.includes(name)).sort()).toEqual(live);
+  });
+
+  it("adds EXACTLY the structure channels a live source cannot know (T548, §V403)", () => {
+    const pattern = Object.keys(channelsAt(0));
+    const live = Object.keys(
+      registry.get("audioIn")?.valueEvaluate?.({ inputs: {}, values: {}, frame: frame(0), state: {} }) ?? {},
+    );
+    expect(pattern.filter((name) => !live.includes(name)).sort()).toEqual(["bar", "barPhase", "beat", "beatPhase"]);
+  });
+
+  /**
+   * The structure channels, by exact value, on a clock chosen so every one of them is
+   * distinctive — §V461. At 120bpm a beat is half a second, so t = 5.25s is beat 10.5:
+   * bar 2 (of four beats), half way through beat 10, and five-eighths through bar 2. Zero
+   * appears nowhere, so a channel silently stuck at zero cannot pass this.
+   */
+  it("counts beats and bars from the in point, and ramps inside each (T548)", () => {
+    // At 120bpm a beat is half a second, so t = 5.25s is beat 10.5: beat 10, half way
+    // through it, bar 2 of four-beat bars, five-eighths through that bar. §V461 — zero
+    // appears nowhere here, so a channel silently stuck at zero cannot pass.
+    const bag = channelsAt(5.25, 1 / 60, { beatsPerBar: 4 });
+    expect(bag.beat).toBe(10);
+    expect(bag.beatPhase).toBeCloseTo(0.5, 12);
+    expect(bag.bar).toBe(2);
+    expect(bag.barPhase).toBeCloseTo(0.625, 12);
+
+    // The time signature is honoured rather than assumed: the SAME instant in 3/4 is a
+    // different bar, which is what makes `beatsPerBar` a real parameter and not decoration.
+    const waltz = channelsAt(5.25, 1 / 60, { beatsPerBar: 3 });
+    expect(waltz.bar).toBe(3);
+    expect(waltz.barPhase).toBeCloseTo(0.5, 12);
+    // And the BEAT is untouched by the signature — a bar is a grouping, not a re-clocking.
+    expect(waltz.beat).toBe(10);
+  });
+
+  it("the bar count advances and never goes backwards as the piece runs", () => {
+    // Monotone alone is satisfied by a constant, and a constant bar count is its own bug,
+    // so the exact sequence is asserted rather than the ordering.
+    const bars = [0, 2, 4, 6, 8, 10].map((seconds) => channelsAt(seconds, 1 / 60, { beatsPerBar: 4 }).bar);
+    expect(bars).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });
 

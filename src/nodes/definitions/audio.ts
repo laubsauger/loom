@@ -29,7 +29,7 @@ export const audioInNode: NodeDefinition = {
   title: "Audio In",
   category: "input",
   description:
-    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
+    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. NO beat or bar channels: a live input has no declared tempo, and a guessed one would be wrong. For musical structure, run an Audio Pattern at the tempo you are playing to and take bar/beat from there. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -100,7 +100,7 @@ export const audioFileInNode: NodeDefinition = {
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is TIMELINE-ANCHORED by default: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). NO beat or bar channels: nothing here knows an arbitrary file's tempo, and a bar count guessed from one would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there; it stays in step because both are timeline-anchored. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is TIMELINE-ANCHORED by default: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free Run gives it its own playhead that Play and Cue Pulse drive, and gives up all three of those to do it.",
   tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -156,13 +156,28 @@ export const audioPatternNode: NodeDefinition = {
   title: "Audio Pattern",
   category: "value",
   description:
-    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Same channels as Audio In (level, bands, onset, onsetCount, onsetMax), so swapping in a live source is one node. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
+    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Publishes the same level/band/onset channels as Audio In, so swapping in a live source is one node, PLUS the musical structure only a node that knows its own tempo can publish: beat and bar count from the in point, beatPhase and barPhase ramp 0..1 inside each. Wire bar into Step to hold a value for a phrase. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
   tags: ["value", "audio", "test", "beat", "pattern", "deterministic"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
     bpm: { type: "number", label: "BPM", default: 112, min: 20, max: 300, range: "floor" },
     amount: { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Master gain on every channel." },
+    /**
+     * T548 — the time signature, so `bar` means something. Four is the overwhelming
+     * default and three is the other one people actually reach for, so it is a plain
+     * number rather than an enum: 7 is a legitimate answer and a picker would refuse it.
+     */
+    beatsPerBar: {
+      type: "number",
+      label: "Beats / Bar",
+      default: 4,
+      min: 1,
+      max: 32,
+      step: 1,
+      range: "floor",
+      description: "How many beats make a bar — what the bar and barPhase channels count in.",
+    },
   },
   valueEvaluate: ({ values, frame }) => {
     const bpm = typeof values["bpm"] === "number" ? values["bpm"] : 112;
@@ -185,6 +200,31 @@ export const audioPatternNode: NodeDefinition = {
     const onsetCount = Math.max(0, Math.floor(beats) - Math.floor(Math.max(beatsBefore, 0)));
     const onset = Math.max(kick, snare, hat) * amount;
 
+    /*
+     * T548 — MUSICAL STRUCTURE AS CHANNELS, which is the middle TIMESCALE the value graph
+     * had no way to address. E24 and E31 vary at two rates: per FRAME (the bands) and per
+     * PIECE (a half-minute LFO). Nothing happened at PHRASE length, and that middle rate is
+     * most of what separates a loop from a performance.
+     *
+     * TD's Beat CHOP publishes a ramp, a pulse and a count per unit, and the ramp and the
+     * count are the two this node can honestly give: a PULSE is already `onsetCount` here,
+     * measured over the frame INTERVAL (T437), and a second pulse computed a second way
+     * would be §V109's two answers to one question.
+     *
+     * `beat` and `bar` COUNT — 0 at the in point, monotonic, integers. `beatPhase` and
+     * `barPhase` RAMP 0..1 within each. Both phases exist, rather than only the bar's:
+     * a bar phase without a beat phase invites `barPhase * beatsPerBar % 1`, which is the
+     * beat phase computed by hand and wrong at the wrap.
+     *
+     * TIMELINE-ANCHORED, inherited rather than chosen: these are `beats` — the same number
+     * the bands are already synthesized from — so structure and sound cannot disagree about
+     * where in the piece they are. That is the whole reason the count is derived HERE and
+     * not by a downstream node with a clock of its own.
+     */
+    const beatsPerBar = Math.max(1, Math.floor(typeof values["beatsPerBar"] === "number" ? values["beatsPerBar"] : 4));
+    const beatIndex = Math.floor(Math.max(0, beats));
+    const barPosition = Math.max(0, beats) / beatsPerBar;
+
     return {
       level: 0.3 * low + 0.3 * lowMid + 0.2 * highMid + 0.2 * high,
       low,
@@ -194,6 +234,10 @@ export const audioPatternNode: NodeDefinition = {
       onset,
       onsetCount,
       onsetMax: onsetCount > 0 ? amount : onset,
+      beat: beatIndex,
+      beatPhase: Math.max(0, beats) - beatIndex,
+      bar: Math.floor(barPosition),
+      barPhase: barPosition - Math.floor(barPosition),
     };
   },
   compile: (): CompiledNodeDescription => ({ passes: [] }),
