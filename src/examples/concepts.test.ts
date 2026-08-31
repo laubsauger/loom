@@ -1806,3 +1806,88 @@ describe("E27 Relief", () => {
     expect(scale).toBeGreaterThan(0);
   });
 });
+
+/**
+ * E33 Obol (T625/T624) — a yin-yang medallion BECOMING goo and back, in an ambient
+ * studio, and the first example to switch on the render's ambient occlusion.
+ *
+ * The three claims its `.md` makes that a look pass could not hold onto.
+ */
+describe("E33 Obol claims", () => {
+  const { document, plan } = example("E33-Obol.loom.json");
+  const passes = plan.passes as ReadonlyArray<{ id: string; shader?: string; textures?: ReadonlyArray<{ binding: string }> }>;
+
+  /**
+   * BECOMING, NOT CROSS-FADING. The claim is structural, not aesthetic: ONE kernel
+   * holds BOTH configurations and mixes them per point by a locally-computed amount.
+   * A cross-fade would be two renders and a blend node, and it would look like two
+   * pictures at 50%. The mix and the per-point front are what make it one object.
+   */
+  it("blends two configurations inside one kernel, by a per-point front", () => {
+    const kernel = String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
+    expect(kernel).toContain("let shape = mix(emblem, goo, melt);");
+    // And a yaw on the ABSOLUTE clock, so the piece is not a still frame wherever the
+    // value graph is idle — which is exactly what the cook oracle renders.
+    expect(kernel).toContain("let yaw = 0.21 * sin(ctx.absTime * 0.185);");
+    // The front is spatial: it is built from `order`, and `order` is built from the
+    // emblem's own dividing curve. A `melt` that read only ctx.value1 would be a
+    // cross-fade wearing a kernel.
+    expect(kernel).toMatch(/front = clamp\(drive \* [\d.]+ - order \* [\d.]+/);
+    expect(kernel).toContain("let arcTop = distance(s.xy, vec2f(0.0, 0.5)) - 0.5;");
+    // Both halves of the spike fix (see the .md): the cap, and the radius blend.
+    expect(kernel).toMatch(/clamp\(min\(abs\(arcTop\), abs\(arcBot\)\) \/ [\d.]+, 0\.0, 1\.0\) \* [\d.]+ \+ rho \* [\d.]+/);
+    // The colour is read in the MATERIAL coordinate `s`, never in the deformed
+    // position — a tint read from `q.position` slides over the goo like a projection.
+    expect(kernel).toContain("let tone = taiji(s.xy);");
+  });
+
+  /**
+   * §V437: AO is ONE switch on the render, and it reaches EVERY geometry that render
+   * names. Asserted over both of them, because a per-geometry opt-in passes a
+   * one-geometry check perfectly.
+   */
+  it("switches ambient occlusion on once and both geometries wear it", () => {
+    expect(document.graph.nodes["shot"]?.parameters["ambientOcclusion"]).toBe(true);
+    const lit = passes.filter((pass) => pass.id.includes(":scene:"));
+    expect(lit).toHaveLength(2);
+    for (const pass of lit) {
+      expect(pass.shader).toContain("let occlusion = textureLoad(occlusionMap");
+      expect((pass.textures ?? []).map((texture) => texture.binding)).toContain("occlusionMap");
+    }
+    // And the three passes that produce the map run before anything reads it.
+    const ids = passes.map((pass) => pass.id);
+    const at = (needle: string) => ids.findIndex((id) => id.includes(needle));
+    expect(at("ao:resolve")).toBeGreaterThan(at("ao:depth:clear"));
+    expect(at("ao:blur")).toBeGreaterThan(at("ao:resolve"));
+    expect(at("scene:0")).toBeGreaterThan(at("ao:blur"));
+  });
+
+  /**
+   * §V510, which this file paid for a second time: a Level's black point is a
+   * SUBTRACTION, and `add` is front + back. Without the clamp between the threshold
+   * and the blur, the bloom subtracts a large negative constant from the whole frame
+   * and the picture comes back black with a blown object in it — with every wire
+   * correct. The clamp is the node, and its floor has to be zero.
+   */
+  it("clamps the bloom threshold before it is blurred and added back", () => {
+    const clip = document.graph.nodes["clip"] as GraphNode;
+    expect(clip.type).toBe("limit");
+    expect(clip.parameters["mode"]).toBe("clamp");
+    expect(clip.parameters["low"]).toBe(0);
+    const edges = Object.values(document.graph.edges);
+    const into = (nodeId: string) => edges.filter((edge) => edge.target.nodeId === nodeId).map((edge) => edge.source.nodeId);
+    expect(into("clip")).toEqual(["cut"]);
+    expect(into("halo")).toEqual(["clip"]);
+  });
+
+  /**
+   * The studio's gradient is a POINT light and nothing else. Directional lights do not
+   * attenuate, so a backdrop lit only by them is one flat grey — which is what the
+   * first build looked like. This pins the one light whose falloff makes the pool.
+   */
+  it("lights the cyclorama with a falling-off point light", () => {
+    expect(document.graph.nodes["crown"]?.parameters["kind"]).toBe("point");
+    expect(document.graph.nodes["key"]?.parameters["kind"]).toBe("directional");
+    expect(document.graph.nodes["fill"]?.parameters["kind"]).toBe("directional");
+  });
+});

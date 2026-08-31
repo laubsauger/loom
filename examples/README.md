@@ -37,6 +37,8 @@ happened:
 | [E29 Descent](./E29-Descent.md) | a neon square tunnel you fall into, born on the beat: scale ABOVE ONE inside a feedback loop, hue rotating per pass so depth reads as colour, and NO clock read in the picture path at all (T503) |
 | [E30 Nave](./E30-Nave.md) | a fluted cathedral bore scrolling toward you and breathing on the kick — the audio-and-3D corner nothing else in the set filled, written on the ABSOLUTE clock so a timeline lap cannot touch it (T503, T489) |
 | [E31 Corona](./E31-Corona.md) | the owner's own file, adopted as the BAR (§V471): one point cloud read THREE ways by group predicate — body, crests, tips — eight per-band gain/bias pairs, and a 29-second hue cycle. Read this one before writing an example (T538) |
+| [E32 Pasture](./E32-Pasture.md) | the first example where the POINTS WRITE THE FIELD THAT STEERS THEM: five thousand animals deposit spore, a Gray-Scott reaction grows and divides it on its own, and the herd smells the reaction and grazes it back down. One cloud read FIVE ways, two of which are not pictures (T621) |
+| [E33 Obol](./E33-Obol.md) | a yin-yang medallion melting into slick oil and re-forming, in an ambient studio: the morph is a per-point blend of TWO CONFIGURATIONS with a front that leaves the emblem's own dividing curve, so it reads as becoming rather than as a cross-fade — and the first example to switch on the render's AMBIENT OCCLUSION (T624, T625) |
 
 ## Running them
 

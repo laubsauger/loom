@@ -1,0 +1,2150 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beat-source": {
+        "id": "e-beat-source",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in1"
+        }
+      },
+      "e-bite-chew": {
+        "id": "e-bite-chew",
+        "source": {
+          "nodeId": "bite",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chew",
+          "portId": "input"
+        }
+      },
+      "e-bowl-coast": {
+        "id": "e-bowl-coast",
+        "source": {
+          "nodeId": "bowl",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coast",
+          "portId": "source"
+        }
+      },
+      "e-burn-mixtrail": {
+        "id": "e-burn-mixtrail",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mixTrail",
+          "portId": "in1"
+        }
+      },
+      "e-burstg-burst": {
+        "id": "e-burstg-burst",
+        "source": {
+          "nodeId": "burstG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burst",
+          "portId": "a"
+        }
+      },
+      "e-chem-look": {
+        "id": "e-chem-look",
+        "source": {
+          "nodeId": "chem",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "look",
+          "portId": "in1"
+        }
+      },
+      "e-chew-eat": {
+        "id": "e-chew-eat",
+        "source": {
+          "nodeId": "chew",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "eat",
+          "portId": "in1"
+        }
+      },
+      "e-coast-dish": {
+        "id": "e-coast-dish",
+        "source": {
+          "nodeId": "coast",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dish",
+          "portId": "in1"
+        }
+      },
+      "e-dish-chem": {
+        "id": "e-dish-chem",
+        "source": {
+          "nodeId": "dish",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chem",
+          "portId": "input"
+        }
+      },
+      "e-dish-pack": {
+        "id": "e-dish-pack",
+        "source": {
+          "nodeId": "dish",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
+        }
+      },
+      "e-dropg-drop": {
+        "id": "e-dropg-drop",
+        "source": {
+          "nodeId": "dropG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "drop",
+          "portId": "a"
+        }
+      },
+      "e-eat-look": {
+        "id": "e-eat-look",
+        "order": 0,
+        "source": {
+          "nodeId": "eat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "look",
+          "portId": "in2"
+        }
+      },
+      "e-eat-pack": {
+        "id": "e-eat-pack",
+        "source": {
+          "nodeId": "eat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in1"
+        }
+      },
+      "e-env-dropg": {
+        "id": "e-env-dropg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dropG",
+          "portId": "a"
+        }
+      },
+      "e-env-glowg": {
+        "id": "e-env-glowg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glowG",
+          "portId": "a"
+        }
+      },
+      "e-env-gnawg": {
+        "id": "e-env-gnawg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gnawG",
+          "portId": "a"
+        }
+      },
+      "e-env-gradeg": {
+        "id": "e-env-gradeg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gradeG",
+          "portId": "a"
+        }
+      },
+      "e-env-paceg": {
+        "id": "e-env-paceg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paceG",
+          "portId": "a"
+        }
+      },
+      "e-env-reachg": {
+        "id": "e-env-reachg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "reachG",
+          "portId": "a"
+        }
+      },
+      "e-env-sparkg": {
+        "id": "e-env-sparkg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sparkG",
+          "portId": "a"
+        }
+      },
+      "e-env-trailg": {
+        "id": "e-env-trailg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trailG",
+          "portId": "a"
+        }
+      },
+      "e-env-warmg": {
+        "id": "e-env-warmg",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warmG",
+          "portId": "a"
+        }
+      },
+      "e-find-liftfind": {
+        "id": "e-find-liftfind",
+        "order": 0,
+        "source": {
+          "nodeId": "find",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftFind",
+          "portId": "in2"
+        }
+      },
+      "e-glowg-glow": {
+        "id": "e-glowg-glow",
+        "source": {
+          "nodeId": "glowG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "a"
+        }
+      },
+      "e-gnawg-gnaw": {
+        "id": "e-gnawg-gnaw",
+        "source": {
+          "nodeId": "gnawG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gnaw",
+          "portId": "a"
+        }
+      },
+      "e-gradeg-grade": {
+        "id": "e-gradeg-grade",
+        "source": {
+          "nodeId": "gradeG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grade",
+          "portId": "a"
+        }
+      },
+      "e-graze-liftgraze": {
+        "id": "e-graze-liftgraze",
+        "order": 0,
+        "source": {
+          "nodeId": "graze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftGraze",
+          "portId": "in2"
+        }
+      },
+      "e-halo-burn": {
+        "id": "e-halo-burn",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-herd-bite": {
+        "id": "e-herd-bite",
+        "source": {
+          "nodeId": "herd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bite",
+          "portId": "points"
+        }
+      },
+      "e-herd-find": {
+        "id": "e-herd-find",
+        "source": {
+          "nodeId": "herd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "find",
+          "portId": "points"
+        }
+      },
+      "e-herd-graze": {
+        "id": "e-herd-graze",
+        "source": {
+          "nodeId": "herd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "graze",
+          "portId": "points"
+        }
+      },
+      "e-herd-scout": {
+        "id": "e-herd-scout",
+        "source": {
+          "nodeId": "herd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "scout",
+          "portId": "points"
+        }
+      },
+      "e-herd-sow": {
+        "id": "e-herd-sow",
+        "source": {
+          "nodeId": "herd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sow",
+          "portId": "points"
+        }
+      },
+      "e-hue-out": {
+        "id": "e-hue-out",
+        "source": {
+          "nodeId": "hue",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-liftfind-burn": {
+        "id": "e-liftfind-burn",
+        "order": 0,
+        "source": {
+          "nodeId": "liftFind",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-liftfind-halo": {
+        "id": "e-liftfind-halo",
+        "source": {
+          "nodeId": "liftFind",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-liftgraze-liftfind": {
+        "id": "e-liftgraze-liftfind",
+        "source": {
+          "nodeId": "liftGraze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftFind",
+          "portId": "in1"
+        }
+      },
+      "e-liftscout-liftgraze": {
+        "id": "e-liftscout-liftgraze",
+        "source": {
+          "nodeId": "liftScout",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftGraze",
+          "portId": "in1"
+        }
+      },
+      "e-look-tint": {
+        "id": "e-look-tint",
+        "source": {
+          "nodeId": "look",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "source"
+        }
+      },
+      "e-loop-mixtrail": {
+        "id": "e-loop-mixtrail",
+        "order": 0,
+        "source": {
+          "nodeId": "loop",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mixTrail",
+          "portId": "in2"
+        }
+      },
+      "e-mixtrail-hue": {
+        "id": "e-mixtrail-hue",
+        "source": {
+          "nodeId": "mixTrail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hue",
+          "portId": "input"
+        }
+      },
+      "e-paceg-pace": {
+        "id": "e-paceg-pace",
+        "source": {
+          "nodeId": "paceG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pace",
+          "portId": "a"
+        }
+      },
+      "e-palette-tint": {
+        "id": "e-palette-tint",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "lookup"
+        }
+      },
+      "e-rd1-rd2": {
+        "id": "e-rd1-rd2",
+        "source": {
+          "nodeId": "rd",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd2",
+          "portId": "input"
+        }
+      },
+      "e-rd2-rd3": {
+        "id": "e-rd2-rd3",
+        "source": {
+          "nodeId": "rd2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd3",
+          "portId": "input"
+        }
+      },
+      "e-rd3-rd4": {
+        "id": "e-rd3-rd4",
+        "source": {
+          "nodeId": "rd3",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd4",
+          "portId": "input"
+        }
+      },
+      "e-rd4-rd5": {
+        "id": "e-rd4-rd5",
+        "source": {
+          "nodeId": "rd4",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd5",
+          "portId": "input"
+        }
+      },
+      "e-rd5-rd6": {
+        "id": "e-rd5-rd6",
+        "source": {
+          "nodeId": "rd5",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd6",
+          "portId": "input"
+        }
+      },
+      "e-rd6-rd7": {
+        "id": "e-rd6-rd7",
+        "source": {
+          "nodeId": "rd6",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd7",
+          "portId": "input"
+        }
+      },
+      "e-rd7-rd8": {
+        "id": "e-rd7-rd8",
+        "source": {
+          "nodeId": "rd7",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd8",
+          "portId": "input"
+        }
+      },
+      "e-rd8-smell": {
+        "id": "e-rd8-smell",
+        "source": {
+          "nodeId": "rd8",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "smell",
+          "portId": "input"
+        }
+      },
+      "e-rd8-sowin": {
+        "id": "e-rd8-sowin",
+        "order": 0,
+        "source": {
+          "nodeId": "rd8",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sowIn",
+          "portId": "in2"
+        }
+      },
+      "e-reachg-reach": {
+        "id": "e-reachg-reach",
+        "source": {
+          "nodeId": "reachG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "reach",
+          "portId": "a"
+        }
+      },
+      "e-scout-liftscout": {
+        "id": "e-scout-liftscout",
+        "order": 0,
+        "source": {
+          "nodeId": "scout",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftScout",
+          "portId": "in2"
+        }
+      },
+      "e-shape-dish": {
+        "id": "e-shape-dish",
+        "order": 0,
+        "source": {
+          "nodeId": "shape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dish",
+          "portId": "in2"
+        }
+      },
+      "e-smell-herd": {
+        "id": "e-smell-herd",
+        "source": {
+          "nodeId": "smell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "herd",
+          "portId": "field"
+        }
+      },
+      "e-source-env": {
+        "id": "e-source-env",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-source-trig": {
+        "id": "e-source-trig",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trig",
+          "portId": "in"
+        }
+      },
+      "e-sow-sowin": {
+        "id": "e-sow-sowin",
+        "source": {
+          "nodeId": "sow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sowIn",
+          "portId": "in1"
+        }
+      },
+      "e-sowin-eat": {
+        "id": "e-sowin-eat",
+        "order": 0,
+        "source": {
+          "nodeId": "sowIn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "eat",
+          "portId": "in2"
+        }
+      },
+      "e-sparkg-spark": {
+        "id": "e-sparkg-spark",
+        "source": {
+          "nodeId": "sparkG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spark",
+          "portId": "a"
+        }
+      },
+      "e-state-rd": {
+        "id": "e-state-rd",
+        "source": {
+          "nodeId": "state",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rd",
+          "portId": "input"
+        }
+      },
+      "e-swell-coast": {
+        "id": "e-swell-coast",
+        "source": {
+          "nodeId": "swell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coast",
+          "portId": "disp"
+        }
+      },
+      "e-terrain-shape": {
+        "id": "e-terrain-shape",
+        "source": {
+          "nodeId": "terrain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shape",
+          "portId": "input"
+        }
+      },
+      "e-tint-liftscout": {
+        "id": "e-tint-liftscout",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "liftScout",
+          "portId": "in1"
+        }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in2"
+        }
+      },
+      "e-trailg-trail": {
+        "id": "e-trailg-trail",
+        "source": {
+          "nodeId": "trailG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trail",
+          "portId": "a"
+        }
+      },
+      "e-trig-burstg": {
+        "id": "e-trig-burstg",
+        "source": {
+          "nodeId": "trig",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burstG",
+          "portId": "a"
+        }
+      },
+      "e-warmg-warm": {
+        "id": "e-warmg-warm",
+        "source": {
+          "nodeId": "warmG",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "warm",
+          "portId": "a"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 104
+        },
+        "position": {
+          "x": -2860,
+          "y": 1320
+        },
+        "type": "audioPattern"
+      },
+      "bite": {
+        "definitionVersion": 1,
+        "id": "bite",
+        "label": "bite1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "alpha",
+          "color": [
+            0.55,
+            0.55,
+            0.55,
+            1
+          ],
+          "count": 5000,
+          "group": "p.graze.x > 0.30",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "gnaw1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.6
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 1040,
+          "y": 440
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "renderPoints"
+      },
+      "bowl": {
+        "definitionVersion": 1,
+        "id": "bowl",
+        "label": "bowl1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "center": [
+            0.4,
+            0.54
+          ],
+          "fillcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.29,
+            0.29
+          ],
+          "softness": 0.24
+        },
+        "position": {
+          "x": -2860,
+          "y": -440
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "circle"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {
+          "opacity": {
+            "bindings": {
+              "driven": {
+                "channel": "glow1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.17
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 3380,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "burst": {
+        "definitionVersion": 1,
+        "id": "burst",
+        "label": "burst1",
+        "parameters": {
+          "operand": 0.02,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 1320
+        },
+        "type": "valueMath"
+      },
+      "burstG": {
+        "definitionVersion": 1,
+        "id": "burstG",
+        "label": "burstg1",
+        "parameters": {
+          "operand": 3.4,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1320
+        },
+        "type": "valueMath"
+      },
+      "chem": {
+        "definitionVersion": 1,
+        "id": "chem",
+        "label": "chem1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 0.26,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 1,
+          "opacity": 0,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 1560,
+          "y": 220
+        },
+        "type": "level"
+      },
+      "chew": {
+        "definitionVersion": 1,
+        "id": "chew",
+        "label": "chew1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 1300,
+          "y": 440
+        },
+        "type": "level"
+      },
+      "coast": {
+        "definitionVersion": 1,
+        "id": "coast",
+        "label": "coast1",
+        "parameters": {
+          "extend": "hold",
+          "offset": [
+            0.5,
+            0.5
+          ],
+          "sourcex": "red",
+          "sourcey": "green",
+          "weight": [
+            0.15,
+            0.15
+          ]
+        },
+        "position": {
+          "x": -2600,
+          "y": -440
+        },
+        "type": "displace"
+      },
+      "dish": {
+        "definitionVersion": 1,
+        "id": "dish",
+        "label": "dish1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -2080,
+          "y": -440
+        },
+        "type": "screen"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 24,
+          "frequency": 0.028,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": 3640,
+          "y": 220
+        },
+        "type": "lfo"
+      },
+      "drop": {
+        "definitionVersion": 1,
+        "id": "drop",
+        "label": "drop1",
+        "parameters": {
+          "operand": 0.16,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 1540
+        },
+        "type": "valueMath"
+      },
+      "dropG": {
+        "definitionVersion": 1,
+        "id": "dropG",
+        "label": "dropg1",
+        "parameters": {
+          "operand": 0.14,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1540
+        },
+        "type": "valueMath"
+      },
+      "eat": {
+        "definitionVersion": 1,
+        "id": "eat",
+        "label": "eat1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1560,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "multiply"
+      },
+      "env": {
+        "definitionVersion": 1,
+        "id": "env",
+        "label": "env1",
+        "parameters": {
+          "lag": 0.07
+        },
+        "position": {
+          "x": -2340,
+          "y": 1100
+        },
+        "type": "valueLag"
+      },
+      "find": {
+        "definitionVersion": 1,
+        "id": "find",
+        "label": "find1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.2,
+            0.55,
+            0.75,
+            1
+          ],
+          "count": 5000,
+          "group": "p.graze.z > 0.30",
+          "sizePixels": {
+            "bindings": {
+              "driven": {
+                "channel": "spark1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 1560,
+          "y": -440
+        },
+        "resolution": {
+          "height": 720,
+          "mode": "fixed",
+          "width": 1280
+        },
+        "type": "renderPoints"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "operand": 0.13,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1300,
+          "y": 1320
+        },
+        "type": "valueMath"
+      },
+      "glowG": {
+        "definitionVersion": 1,
+        "id": "glowG",
+        "label": "glowg1",
+        "parameters": {
+          "operand": 0.24,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1560,
+          "y": 1320
+        },
+        "type": "valueMath"
+      },
+      "gnaw": {
+        "definitionVersion": 1,
+        "id": "gnaw",
+        "label": "gnaw1",
+        "parameters": {
+          "operand": 2,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 1980
+        },
+        "type": "valueMath"
+      },
+      "gnawG": {
+        "definitionVersion": 1,
+        "id": "gnawG",
+        "label": "gnawg1",
+        "parameters": {
+          "operand": 2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1980
+        },
+        "type": "valueMath"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "grade1",
+        "parameters": {
+          "operand": 0.88,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1300,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "gradeG": {
+        "definitionVersion": 1,
+        "id": "gradeG",
+        "label": "gradeg1",
+        "parameters": {
+          "operand": 1,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1560,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "graze": {
+        "definitionVersion": 1,
+        "id": "graze",
+        "label": "graze1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.62,
+            0.2,
+            0.03,
+            1
+          ],
+          "count": 5000,
+          "group": "p.graze.x > 0.30",
+          "sizePixels": {
+            "bindings": {
+              "map": {
+                "attribute": "graze",
+                "channel": "w",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.2
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": 1300,
+          "y": -440
+        },
+        "resolution": {
+          "height": 720,
+          "mode": "fixed",
+          "width": 1280
+        },
+        "type": "renderPoints"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 18
+        },
+        "position": {
+          "x": 3120,
+          "y": 220
+        },
+        "type": "blur"
+      },
+      "herd": {
+        "definitionVersion": 1,
+        "id": "herd",
+        "label": "herd1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"graze\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
+          "capacity": 5000,
+          "group": "",
+          "kernel": "/* A clip unit is 640 px across x and 360 px across y on this 16:9 frame, so every\n   displacement is squashed in x to make walking ISOTROPIC ON SCREEN. One constant, and it\n   is the only thing in this kernel that knows the output's shape. */\nconst PX: vec2f = vec2f(0.5625, 1.0);\n/* The pasture, in clip space: the same disc `bowl1` cuts out of the chemistry map, and the\n   ONE number stated in two coordinate systems in this file. bowl1.center is uv with v DOWN;\n   this is clip with y UP, so (0.40, 0.54) uv is (-0.20, -0.08) clip (T512's mapping,\n   uv.y = 0.5 - y*0.5). Move one and move the other. There is deliberately NO radius here to\n   match `bowl1`'s: an animal does not know the shape of the coastline, only that it is\n   hungry and which way the middle is. Which side of the coast it is standing on it finds out\n   by starving. */\nconst HOME: vec2f = vec2f(-0.2, -0.08);\nconst RANGE: f32 = 0.42;\n\n/* WHAT AN ANIMAL SMELLS: the reaction RATE, not a concentration. U*V*V is Gray-Scott's own\n   reaction term, and it is largest exactly on a GROWING front — zero in empty plate (V=0)\n   and small inside a saturated blob (U already eaten). Steering on it puts the herd on the\n   living edge and nowhere else, which is why the swarm never piles onto a dead spot and\n   never has to be told not to. The field arrives BLURRED (`smell1`): fieldAt is a\n   textureLoad, NEAREST and unfiltered by construction (§V57), and a Gray-Scott V is\n   near-binary (§V427), so an unblurred difference of it is mostly quantisation. */\nfn forage(spot: vec2f) -> f32 {\n  let f = fieldAt(vec3f(spot, 0.0));\n  return f.r * f.g * f.g;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: firstRun is 1u on exactly the dispatches whose storage was just created or\n     cleared — the seeding signal, and the only honest one (frameIndex == 0 is a timeline\n     lap, not a fresh buffer). Scatter once, deterministically: pointRand is a hash of the\n     identity, not a stream, so the same seed lays the same herd on any device (§V45). */\n  if (ctx.firstRun == 1u) {\n    /* ON THE PASTURE, not across the frame. A uniform scatter walks a fifth of the herd\n       through the dead ground before the spring gathers it, and every one of them seeds a\n       spot out there that then persists for the rest of the run — measured: the first build\n       to get this far had the empty four fifths covered in stray colonies laid in the first\n       two seconds. sqrt() on the radius is what makes the disc UNIFORM rather than\n       centre-heavy; without it the middle is seeded four times as hard as the rim. */\n    let a = pointRand(ctx.index, 37u) * 6.2831853;\n    let r = sqrt(pointRand(ctx.index, 11u)) * 0.8;\n    let h = pointRand(ctx.index, 23u) * 6.2831853;\n    q.position = vec3f(HOME + vec2f(cos(a), sin(a)) * r * PX, 0.0);\n    q.velocity = vec3f(cos(h), sin(h), 0.0);\n    q.graze = vec4f(0.0, 0.0, 0.0, 0.0);\n    return q;\n  }\n\n  let pos = q.position.xy;\n  let dir = normalize(select(vec2f(1.0, 0.0), q.velocity.xy, dot(q.velocity.xy, q.velocity.xy) > 1e-8));\n  let nrm = vec2f(-dir.y, dir.x);\n\n  /* THREE SENSORS, not a finite difference — and this is the cheaper of the two ways to\n     get a direction out of a field. The alternative is to make the reaction shader encode\n     its own gradient into spare channels, and there are none spare (b is the chemistry\n     map, a is the kernel's initialised flag), so it would cost a second full-field pass:\n     230 400 texels. Three taps per animal costs 72 000 loads for the whole herd — a third\n     of that, with no extra node and no channel budget. Sensing scales with the HERD; a\n     field encoding scales with the FIELD, and the field is the bigger of the two.\n     ctx.value2 is the audio on the reach: the hats make the herd look further ahead. */\n  let reach = ctx.value2;\n  let sway = 0.62;\n  let leftDir = dir * cos(sway) + nrm * sin(sway);\n  let rightDir = dir * cos(sway) - nrm * sin(sway);\n  let ahead = forage(pos + dir * reach * PX);\n  let left = forage(pos + leftDir * reach * PX);\n  let right = forage(pos + rightDir * reach * PX);\n\n  /* A FIXED TURN TOWARD THE BETTER SIDE — Physarum's rule — and NOT a proportional\n     controller on (left - right)/total, which is what this kernel had for six builds and\n     which measured as doing nothing at all. The reason is worth keeping: a gain small\n     enough that a saturated sensor does not spin the animal is also too small to turn it\n     onto a feature ten pixels wide before it has walked past. ABLATION, at gain 3.6: the\n     reaction rate under the herd was 1.56x the pasture's average with steering on and\n     1.71x with the term deleted entirely. A term you can delete without the measurement\n     moving is not a mechanism, however good the sentence describing it is.\n     The 1e-4 guard is the other half: on bare ground all three sensors read zero, the\n     comparison is meaningless, and an animal that turns on noise never travels. */\n  var steer = 0.0;\n  if (max(left, right) > ahead + 1e-4) {\n    steer = select(-9.5, 9.5, left > right);\n  }\n\n  /* HUNGER RANDOMISES, and this is the line that makes `graze.y` a POLICY rather than a\n     colour. A fed animal walks its front; a starving one loses the plot and random-walks,\n     which is the only thing in the file that ever finds the NEXT colony. The picture reads\n     the same number as \"scouts\", so what you see streaming out of the cluster is literally\n     the search. The gain is 2.4 and not 7: at 7 a starved animal spins fast enough that it\n     cannot hold a heading long enough to follow a gradient at all, so hunger became a TRAP\n     — measured, the starving fraction saturated at famine 1.0 and never recovered, and the\n     \"found\" caste below rendered nothing, ever. Exploration has to stay navigable. */\n  steer = steer + (pointRand(ctx.index, 5u) - 0.5) * (0.45 + 2.4 * q.graze.y);\n\n  /* E16's spring — but keyed to HUNGER rather than to distance, and that one change is\n     what stops the picture being a circle. A distance spring draws a disc: every animal is\n     equally pulled wherever it is, so the flock fills a round region whatever the field is\n     doing underneath it, and the pasture's shape stops mattering. Gated on famine instead,\n     a WELL-FED animal is not homing at all — it stays where the food is — and only an\n     animal that has gone hungry turns back toward the middle. The flock's outline is\n     therefore drawn by the FOOD, it migrates as it eats a region down, and E16's sentence\n     still holds: the murmuration never abandons the sphere. The second term is the frame's\n     fence and nothing else: past 0.95 of a half-height from home, everything turns back. */\n  /* WHERE HOME IS THIS MINUTE. A fixed spring has a FIXED POINT, and a flock sitting on\n     its own fixed point eats one spot to the ground and stays there forever — measured, a\n     blown-out core in the same place at frames 300, 900 and 1500 with the rest of the\n     pasture untouched. §V532 is the same sentence about an expanding loop; this is the herd\n     saying it. So the roost walks a slow circle: ctx.value4 is an 83-second SAW on an\n     ANGLE, which is the one wave whose wrap is continuous once you take its cosine, and the\n     flock makes a circuit of its range, grazing it down behind and finding it regrown by\n     the time it comes round again. It is the piece's longest cycle and it is in the\n     ANIMALS, not in the grade. */\n  let home = HOME + vec2f(cos(ctx.value4), sin(ctx.value4)) * RANGE * PX;\n  let toHome = (home - pos) / PX;\n  let away = length(toHome);\n  let sinHome = (dir.x * toHome.y - dir.y * toHome.x) / max(away, 1e-5);\n  steer = steer + sinHome * (5.5 * q.graze.y + 9.0 * smoothstep(0.8, 1.2, away));\n\n  /* §V481(b) ON THE HERD, which is the half of that invariant nobody had a place to put.\n     An envelope on the turn rate is a DC term: it bends every animal the same way for as\n     long as it is up, which is a drift, not an event. A beat arrives as an ANGLE instead —\n     one frame, a different kick per animal — and because the HEADING IS STATE the swarm\n     carries the consequence for seconds afterwards. It is E24's seeded plate said in the\n     other half of the loop: the impulse is instant and the consequence is not. It is an\n     ANGLE and not a rate, and deliberately NOT multiplied by ctx.delta: a trigger has no\n     duration, so scaling it by time would be scaling an event by how long it did not last\n     (§V509). */\n  let burst = (pointRand(ctx.index, 9u) - 0.5) * ctx.value3;\n\n  let ang = atan2(dir.y, dir.x) + steer * ctx.delta + burst;\n  let walk = vec2f(cos(ang), sin(ang));\n  var nextPos = pos + walk * ctx.value1 * ctx.delta * PX;\n  /* A fence, not a mechanism — the spring above is what actually holds the herd. Anything\n     that reaches this has been pushed by a burst on the far side of the frame. */\n  nextPos = clamp(nextPos, vec2f(-1.02), vec2f(1.02));\n\n  q.velocity = vec3f(walk, 0.0);\n  q.position = vec3f(nextPos, 0.0);\n\n  /* WHAT THE ANIMAL KNOWS ABOUT ITSELF — three numbers the picture then slices on. */\n  /* THE GAIN IS MEASURED, not chosen: over the blurred field the reaction rate is 0 at the\n     median and 0.136 at the ninth decile, so x14 saturates on roughly the richest tenth of\n     the pasture and reads zero on the half of it that is bare. */\n  let meal = clamp(forage(nextPos) * 14.0, 0.0, 1.0);\n  /* A SHORT lag, 1/12 s — long enough to smooth the crossing of a single texel, short\n     enough to actually REACH what it is tracking. At 1/5 s it never did: an animal crosses\n     a front in about six frames, the lag only closes 8% of the gap per frame, and the value\n     equilibrated near the duty cycle instead of near the value — measured, it never passed\n     0.45 for any animal in the herd, so every threshold above it was dead. */\n  let fed = q.graze.x + (meal - q.graze.x) * clamp(ctx.delta * 12.0, 0.0, 1.0);\n  /* FAMINE RESETS ON A PROPER MOUTHFUL, NOT ON A BRUSH PAST ONE, and that\n     one number is the difference between a live mechanism and a decorative attribute.\n     Reset at 0.20 and every animal brushes enough structure to keep its clock at zero: the\n     scout caste renders ONE sprite in the whole frame and the hunger term in the steering\n     above multiplies by zero — an idea the file states and never delivers, which is the\n     exact failure §V471.8 records in Corona's hue drift. Measured at both settings. */\n  let famine = select(min(1.0, q.graze.y + ctx.delta / 1.6), 0.0, fed > 0.45);\n  let found = select(0.0, 1.0, q.graze.y > 0.20 && fed > 0.40);\n  /* .w is the grazer's own size in pixels: a per-point pscale (T286), so `graze1` is not\n     one sprite size for a whole layer but every animal drawn at how much it is eating. */\n  q.graze = vec4f(fed, famine, max(found, q.graze.z * exp(-ctx.delta * 0.8)), 0.7 + 1.4 * fed);\n  return q;\n}",
+          "seed": 21,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "pace1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.28
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "reach1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.08
+              }
+            },
+            "mode": "driven"
+          },
+          "value3": {
+            "bindings": {
+              "driven": {
+                "channel": "burst1:onsetCount",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.02
+              }
+            },
+            "mode": "driven"
+          },
+          "value4": {
+            "bindings": {
+              "driven": {
+                "channel": "range1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "drift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.06,
+          "value": 1
+        },
+        "position": {
+          "x": 3900,
+          "y": 0
+        },
+        "type": "hsv"
+      },
+      "liftFind": {
+        "definitionVersion": 1,
+        "id": "liftFind",
+        "label": "liftfind1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 3120,
+          "y": 0
+        },
+        "type": "screen"
+      },
+      "liftGraze": {
+        "definitionVersion": 1,
+        "id": "liftGraze",
+        "label": "liftgraze1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 2860,
+          "y": 0
+        },
+        "type": "screen"
+      },
+      "liftScout": {
+        "definitionVersion": 1,
+        "id": "liftScout",
+        "label": "liftscout1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 2600,
+          "y": 0
+        },
+        "type": "screen"
+      },
+      "look": {
+        "definitionVersion": 1,
+        "id": "look",
+        "label": "look1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 2080,
+          "y": 0
+        },
+        "resolution": {
+          "height": 720,
+          "mode": "fixed",
+          "width": 1280
+        },
+        "type": "add"
+      },
+      "loop": {
+        "definitionVersion": 1,
+        "id": "loop",
+        "label": "loop1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": {
+            "bindings": {
+              "driven": {
+                "channel": "trail1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.7
+              }
+            },
+            "mode": "driven"
+          },
+          "reset": false,
+          "source": "hue1",
+          "substeps": 1
+        },
+        "position": {
+          "x": 3380,
+          "y": 220
+        },
+        "type": "feedback"
+      },
+      "mixTrail": {
+        "definitionVersion": 1,
+        "id": "mixTrail",
+        "label": "mixtrail1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 3640,
+          "y": 0
+        },
+        "type": "screen"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 4160,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "pace": {
+        "definitionVersion": 1,
+        "id": "pace",
+        "label": "pace1",
+        "parameters": {
+          "operand": 0.18,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "paceG": {
+        "definitionVersion": 1,
+        "id": "paceG",
+        "label": "paceg1",
+        "parameters": {
+          "operand": 0.34,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 880
+        },
+        "type": "valueMath"
+      },
+      "pack": {
+        "definitionVersion": 1,
+        "id": "pack",
+        "label": "pack1",
+        "parameters": {
+          "outa": "one",
+          "outb": "in2lum",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": 1820,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "reorder"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.004,
+                0.007,
+                0.016,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.02,
+                0.05,
+                0.1,
+                1
+              ],
+              "position": 0.16
+            },
+            {
+              "color": [
+                0.03,
+                0.2,
+                0.32,
+                1
+              ],
+              "position": 0.34
+            },
+            {
+              "color": [
+                0.06,
+                0.45,
+                0.44,
+                1
+              ],
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.35,
+                0.66,
+                0.42,
+                1
+              ],
+              "position": 0.7
+            },
+            {
+              "color": [
+                0.95,
+                0.72,
+                0.3,
+                1
+              ],
+              "position": 0.86
+            },
+            {
+              "color": [
+                1,
+                0.97,
+                0.9,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": 2080,
+          "y": 440
+        },
+        "type": "ramp"
+      },
+      "range": {
+        "definitionVersion": 1,
+        "id": "range",
+        "label": "range1",
+        "parameters": {
+          "amplitude": 3.14159,
+          "frequency": 0.012,
+          "offset": 0,
+          "phase": 0,
+          "shape": "saw"
+        },
+        "position": {
+          "x": -2340,
+          "y": 1980
+        },
+        "type": "lfo"
+      },
+      "rd": {
+        "definitionVersion": 1,
+        "id": "rd",
+        "label": "rd1",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -1560,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd2": {
+        "definitionVersion": 1,
+        "id": "rd2",
+        "label": "rd2",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -1300,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd3": {
+        "definitionVersion": 1,
+        "id": "rd3",
+        "label": "rd3",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -1040,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd4": {
+        "definitionVersion": 1,
+        "id": "rd4",
+        "label": "rd4",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -780,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd5": {
+        "definitionVersion": 1,
+        "id": "rd5",
+        "label": "rd5",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd6": {
+        "definitionVersion": 1,
+        "id": "rd6",
+        "label": "rd6",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd7": {
+        "definitionVersion": 1,
+        "id": "rd7",
+        "label": "rd7",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "rd8": {
+        "definitionVersion": 1,
+        "id": "rd8",
+        "label": "rd8",
+        "parameters": {
+          "source": "@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n\nconst FEED_LOW: f32 = 0.037;\nconst KILL_LOW: f32 = 0.0600;\nconst FEED_HIGH: f32 = 0.002;\nconst KILL_HIGH: f32 = 0.0860;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // b is a 0..1 coordinate the GRAPH paints per pixel; the band it walks is above.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);\n  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);\n\n  let state = centre.rg;\n  let laplacian =\n    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: a BARE pasture, not a seeded plate.\n  let next = select(vec2f(1.0, 0.0), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+        },
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "reach": {
+        "definitionVersion": 1,
+        "id": "reach",
+        "label": "reach1",
+        "parameters": {
+          "operand": 0.06,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "reachG": {
+        "definitionVersion": 1,
+        "id": "reachG",
+        "label": "reachg1",
+        "parameters": {
+          "operand": 0.08,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "scout": {
+        "definitionVersion": 1,
+        "id": "scout",
+        "label": "scout1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": [
+            0.03,
+            0.07,
+            0.24,
+            1
+          ],
+          "count": 5000,
+          "group": "p.graze.y > 0.45",
+          "sizePixels": 0.9
+        },
+        "position": {
+          "x": 1040,
+          "y": -440
+        },
+        "resolution": {
+          "height": 720,
+          "mode": "fixed",
+          "width": 1280
+        },
+        "type": "renderPoints"
+      },
+      "shape": {
+        "definitionVersion": 1,
+        "id": "shape",
+        "label": "shape1",
+        "parameters": {
+          "blacklevel": 0.45,
+          "brightness": 0.72,
+          "contrast": 1,
+          "gamma1": 1.25,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": {
+            "bindings": {
+              "driven": {
+                "channel": "warm1:lowMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.54
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -2340,
+          "y": -220
+        },
+        "type": "level"
+      },
+      "smell": {
+        "definitionVersion": 1,
+        "id": "smell",
+        "label": "smell1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 8
+        },
+        "position": {
+          "x": 520,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "blur"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -2600,
+          "y": 1320
+        },
+        "type": "valueSwitch"
+      },
+      "sow": {
+        "definitionVersion": 1,
+        "id": "sow",
+        "label": "sow1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "alpha",
+          "color": [
+            0,
+            1,
+            0,
+            1
+          ],
+          "count": 5000,
+          "group": "",
+          "sizePixels": 3
+        },
+        "position": {
+          "x": 1040,
+          "y": 220
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "renderPoints"
+      },
+      "sowIn": {
+        "definitionVersion": 1,
+        "id": "sowIn",
+        "label": "sowin1",
+        "parameters": {
+          "opacity": {
+            "bindings": {
+              "driven": {
+                "channel": "drop1:level",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.2
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 1300,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "screen"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "operand": 1.2,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1300,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "sparkG": {
+        "definitionVersion": 1,
+        "id": "sparkG",
+        "label": "sparkg1",
+        "parameters": {
+          "operand": 2,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1560,
+          "y": 1100
+        },
+        "type": "valueMath"
+      },
+      "state": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "state",
+        "label": "state1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 1,
+          "reset": false,
+          "source": "pack1",
+          "substeps": 1
+        },
+        "position": {
+          "x": -1820,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "feedback"
+      },
+      "swell": {
+        "definitionVersion": 1,
+        "id": "swell",
+        "label": "swell1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.55,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0,
+          "period": 0.55,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 41,
+          "speed": 0.02,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2860,
+          "y": -220
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "noise"
+      },
+      "terrain": {
+        "definitionVersion": 1,
+        "id": "terrain",
+        "label": "terrain1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1.25,
+          "gain": 0.55,
+          "harmon": 4,
+          "mono": true,
+          "offset": 0,
+          "period": 0.18,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.04,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2600,
+          "y": -220
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "noise"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "channel": "green",
+          "offset": 0,
+          "row": 0.5,
+          "scale": {
+            "bindings": {
+              "driven": {
+                "channel": "grade1:highMid",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.15
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": 2340,
+          "y": 0
+        },
+        "type": "lookup"
+      },
+      "track": {
+        "definitionVersion": 1,
+        "id": "track",
+        "label": "track1",
+        "parameters": {
+          "monitor": true
+        },
+        "position": {
+          "x": -2860,
+          "y": 1540
+        },
+        "type": "audioFileIn"
+      },
+      "trail": {
+        "definitionVersion": 1,
+        "id": "trail",
+        "label": "trail1",
+        "parameters": {
+          "operand": 0.6,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1300,
+          "y": 1540
+        },
+        "type": "valueMath"
+      },
+      "trailG": {
+        "definitionVersion": 1,
+        "id": "trailG",
+        "label": "trailg1",
+        "parameters": {
+          "operand": 0.22,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1560,
+          "y": 1540
+        },
+        "type": "valueMath"
+      },
+      "trig": {
+        "definitionVersion": 1,
+        "id": "trig",
+        "label": "trig1",
+        "parameters": {
+          "threshold": 0.5
+        },
+        "position": {
+          "x": -2340,
+          "y": 1540
+        },
+        "type": "valueTrigger"
+      },
+      "warm": {
+        "definitionVersion": 1,
+        "id": "warm",
+        "label": "warm1",
+        "parameters": {
+          "operand": 0.512,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1820,
+          "y": 1760
+        },
+        "type": "valueMath"
+      },
+      "warmG": {
+        "definitionVersion": 1,
+        "id": "warmG",
+        "label": "warmg1",
+        "parameters": {
+          "operand": 0.05,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1760
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E32 Pasture",
+  "projectId": "example-e32-pasture",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 20,
+    "previewLongEdge": 192,
+    "randomSeed": 21,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

@@ -2,7 +2,7 @@ import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ScenePayload } from "../../domain/types/scene.ts";
 import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
-import { cameraPayloadMatrix, directionalShadowMatrix } from "../../domain/geometry/camera.ts";
+import { cameraPayloadMatrix, directionalShadowMatrix, lookAt } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
@@ -16,6 +16,16 @@ import {
   shadowInstancesWgsl,
   shadowSurfaceWgsl,
 } from "../shaders/scene-render.wgsl.ts";
+import { aoBlurWgsl, aoResolveWgsl, aoSampleCount } from "../shaders/scene-ao.wgsl.ts";
+
+/**
+ * T624 — the two AO constants that are NOT knobs. The bias is the slope threshold that
+ * keeps a smooth surface from occluding itself (below it, a tap is on this point's own
+ * tangent plane); the blur radius is what turns the resolve's per-pixel spiral rotation
+ * back into a smooth field. Neither is a look decision, so neither is a parameter (V90).
+ */
+const AO_BIAS = 0.025;
+const AO_BLUR_RADIUS = 3;
 
 /**
  * The 3D pipeline (T376/T377/T447): camera, light and geometry are THINGS, and a
@@ -399,6 +409,54 @@ export const renderNode: NodeDefinition = {
       description: "Scales the wired environment's reflection. A value: drivable, never a rebuild.",
       inactiveWhen: () => null,
     },
+    /*
+     * T624 — AMBIENT OCCLUSION. One switch, and every geometry this render names is
+     * occluded by every other: §V437's rule that a property is not delivered site by
+     * site. Screen-space, off this render's own camera-side depth, so it costs no
+     * per-geometry setup and nothing downstream has to know the scene's shape.
+     */
+    ambientOcclusion: {
+      type: "boolean",
+      label: "Ambient Occlusion",
+      default: false,
+      compileTime: true,
+      description:
+        "Darkens creases, contacts and cavities by how enclosed each pixel is. ADDS THREE PASSES: a camera-side depth sweep of the whole scene, a resolve and a blur, all at output resolution — priced here rather than discovered, the way a casting light is. It attenuates the AMBIENT and ENVIRONMENT terms only: occlusion is about the light that arrives from everywhere, and a key light arrives from one direction whether or not the neighbourhood is enclosed. An unlit material ignores it.",
+    },
+    aoRadius: {
+      type: "number",
+      label: "AO Radius",
+      default: 0.35,
+      min: 0.001,
+      max: 4,
+      range: "floor",
+      description:
+        "How far, IN WORLD UNITS, a surface looks for what occludes it. Scale it to your scene: a radius larger than the object darkens everything uniformly, one much smaller than a crease finds nothing.",
+      inactiveWhen: (values) => (values["ambientOcclusion"] === true ? null : "Ambient Occlusion is off."),
+    },
+    aoIntensity: {
+      type: "number",
+      label: "AO Intensity",
+      default: 1,
+      min: 0,
+      max: 2,
+      range: "bounded",
+      description: "How dark full occlusion goes. 0 is off in value while the passes still run — turn the switch off to stop paying for them.",
+      inactiveWhen: (values) => (values["ambientOcclusion"] === true ? null : "Ambient Occlusion is off."),
+    },
+    aoQuality: {
+      type: "enum",
+      label: "AO Quality",
+      default: "medium",
+      compileTime: true,
+      options: [
+        { value: "low", label: "Low (8 taps)" },
+        { value: "medium", label: "Medium (16 taps)" },
+        { value: "high", label: "High (24 taps)" },
+      ],
+      description: "Taps per pixel in the resolve. More taps is a smoother field before the blur, at a linear cost.",
+      inactiveWhen: (values) => (values["ambientOcclusion"] === true ? null : "Ambient Occlusion is off."),
+    },
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
@@ -516,11 +574,105 @@ export const renderNode: NodeDefinition = {
     /** T478: one indirect-args scratch buffer per COUNTED geometry. */
     const scratch: Array<
       | NonNullable<ReturnType<typeof countedDrawSupport>>["scratch"]
-      | { key: string; scale: number; format: "r32float"; depth: true }
+      | { key: string; scale: number; format: "r32float"; depth?: true }
     > = [];
     /** T481: counted draw support emitted once (in the shadow phase when one exists),
      *  shared by the shadow and the lit draw of the same geometry. */
     const countedByIndex = new Map<number, NonNullable<ReturnType<typeof countedDrawSupport>>>();
+
+    /*
+     * T481/T624 — ONE depth-only sweep of the scene, parameterised. The shadow phase
+     * runs it per casting light (light matrix, light-space clip depth); the AO prepass
+     * runs it once from the camera (camera matrix, linear view distance over the far
+     * plane). Same grid arithmetic, same primitive arithmetic, same counted-draw
+     * support, same silent skips where the lit loop refuses by name — extracting it is
+     * the whole point, because two copies of a depth sweep drift the moment one gains a
+     * geometry mode the other does not.
+     */
+    const emitDepthSweep = (options: {
+      readonly prefix: string;
+      readonly target: string;
+      readonly matrix: Float32Array | undefined;
+      readonly linearDepth: boolean;
+      readonly extraUniforms: Readonly<Record<string, ReadonlyArray<number>>>;
+    }): void => {
+      // The far plate: depth 1.0 everywhere first, the backdrop pattern (T444) —
+      // a cleared map must read "nothing here" and the clear colour is not ours.
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}:${options.prefix}:clear`,
+        nodeId,
+        shader: SHADOW_CLEAR_WGSL,
+        target: options.target,
+        topology: "triangle-list",
+        instances: 1,
+        vertexCount: 6,
+        clear: true,
+      } as DrawPassDescriptor);
+      const depthOptions = options.linearDepth ? { linearDepth: true } : {};
+      geometries.forEach(({ payload }, geometryIndex) => {
+        const position = payload.pairs["position"];
+        if (position === undefined) return; // the lit loop refuses this by name
+        if (payload.mode === "instances") {
+          let counted = countedByIndex.get(geometryIndex);
+          if (counted === undefined && payload.count !== undefined) {
+            const support = countedDrawSupport(nodeId, payload, {
+              vertexCount: 36,
+              maxInstances: Math.max(1, payload.capacity),
+              argsKey: `drawArgs${geometryIndex}`,
+            });
+            if (support !== undefined) {
+              counted = support;
+              countedByIndex.set(geometryIndex, support);
+              passes.push(support.argsPass);
+              scratch.push(support.scratch);
+            }
+          }
+          const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
+          passes.push({
+            kind: "draw",
+            id: `${nodeId}:${options.prefix}:${geometryIndex}`,
+            nodeId,
+            shader: shadowInstancesWgsl(depthOptions),
+            target: options.target,
+            topology: "triangle-list",
+            instances: counted?.instances ?? payload.capacity,
+            vertexCount: 36,
+            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+            uniforms: {
+              lightViewProjection: Array.from(options.matrix ?? []),
+              instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+              ...options.extraUniforms,
+            },
+            uniformBinding: "params",
+            clear: false,
+          });
+          return;
+        }
+        const topology = typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
+        if (topology === null || topology.kind !== "grid") return; // lit loop refuses
+        if (gridPointCount(topology) > payload.capacity) return;
+        const { cellsU, cellsV } = gridCellCounts(topology);
+        passes.push({
+          kind: "draw",
+          id: `${nodeId}:${options.prefix}:${geometryIndex}`,
+          nodeId,
+          shader: shadowSurfaceWgsl(depthOptions),
+          target: options.target,
+          topology: "triangle-list",
+          instances: 1,
+          vertexCount: cellsU * cellsV * 6,
+          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          uniforms: {
+            lightViewProjection: Array.from(options.matrix ?? []),
+            grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
+            ...options.extraUniforms,
+          },
+          uniformBinding: "params",
+          clear: false,
+        });
+      });
+    };
 
     /* T481: the shadow phase — every map is rendered BEFORE the lit draws that read it.
        Zero casting lights emits nothing here and nothing below changes: §V309 holds as
@@ -528,83 +680,101 @@ export const renderNode: NodeDefinition = {
     const emitShadowPasses = (): void => {
       casting.forEach(({ index: lightIndex }, slot) => {
         scratch.push({ key: `shadow${lightIndex}`, scale: 2, format: "r32float", depth: true });
-        const shadowTarget = shadowTargetOf(slot);
-        // The far plate: depth 1.0 everywhere first, the backdrop pattern (T444) —
-        // a cleared map must read "nothing here" and the clear colour is not ours.
-        passes.push({
-          kind: "draw",
-          id: `${nodeId}:shadow:${lightIndex}:clear`,
-          nodeId,
-          shader: SHADOW_CLEAR_WGSL,
-          target: shadowTarget,
-          topology: "triangle-list",
-          instances: 1,
-          vertexCount: 6,
-          clear: true,
-        } as DrawPassDescriptor);
-        geometries.forEach(({ payload }, geometryIndex) => {
-          const position = payload.pairs["position"];
-          if (position === undefined) return; // the lit loop refuses this by name
-          if (payload.mode === "instances") {
-            let counted = countedByIndex.get(geometryIndex);
-            if (counted === undefined && payload.count !== undefined) {
-              const support = countedDrawSupport(nodeId, payload, {
-                vertexCount: 36,
-                maxInstances: Math.max(1, payload.capacity),
-                argsKey: `drawArgs${geometryIndex}`,
-              });
-              if (support !== undefined) {
-                counted = support;
-                countedByIndex.set(geometryIndex, support);
-                passes.push(support.argsPass);
-                scratch.push(support.scratch);
-              }
-            }
-            const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
-            passes.push({
-              kind: "draw",
-              id: `${nodeId}:shadow:${lightIndex}:${geometryIndex}`,
-              nodeId,
-              shader: shadowInstancesWgsl(),
-              target: shadowTarget,
-              topology: "triangle-list",
-              instances: counted?.instances ?? payload.capacity,
-              vertexCount: 36,
-              buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
-              uniforms: {
-                lightViewProjection: Array.from(shadowMatrices[slot] ?? []),
-                instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
-              },
-              uniformBinding: "params",
-              clear: false,
-            });
-            return;
-          }
-          const topology = typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
-          if (topology === null || topology.kind !== "grid") return; // lit loop refuses
-          if (gridPointCount(topology) > payload.capacity) return;
-          const { cellsU, cellsV } = gridCellCounts(topology);
-          passes.push({
-            kind: "draw",
-            id: `${nodeId}:shadow:${lightIndex}:${geometryIndex}`,
-            nodeId,
-            shader: shadowSurfaceWgsl(),
-            target: shadowTarget,
-            topology: "triangle-list",
-            instances: 1,
-            vertexCount: cellsU * cellsV * 6,
-            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
-            uniforms: {
-              lightViewProjection: Array.from(shadowMatrices[slot] ?? []),
-              grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
-            },
-            uniformBinding: "params",
-            clear: false,
-          });
+        emitDepthSweep({
+          prefix: `shadow:${lightIndex}`,
+          target: shadowTargetOf(slot),
+          matrix: shadowMatrices[slot],
+          linearDepth: false,
+          extraUniforms: {},
         });
       });
     };
     emitShadowPasses();
+
+    /*
+     * T624 — the AMBIENT OCCLUSION phase. Three passes, all of them BEFORE the backdrop
+     * and the lit draws that read the result:
+     *
+     *   1. the depth sweep above, from the camera, into an r32float scratch;
+     *   2. `aoResolveWgsl` — reconstruct, estimate occlusion, write it to `aoRaw`;
+     *   3. `aoBlurWgsl` — depth-guided smoothing into `aoMap`, which the lit draws bind.
+     *
+     * §V437's shape: this is ONE switch on the render, and every geometry the render
+     * names is occluded by every other with nothing to opt in. The cost is stated on the
+     * parameter rather than discovered — an extra scene pass and two full-target passes,
+     * priced exactly the way T481 priced a casting light.
+     */
+    const aoEnabled = parameters["ambientOcclusion"] === true;
+    const aoTargetId = `scratch:${nodeId}:aoMap`;
+    if (aoEnabled) {
+      const aoDepthTarget = `scratch:${nodeId}:aoDepth`;
+      const aoRawTarget = `scratch:${nodeId}:aoRaw`;
+      const far = Math.max(camera.far, 1e-3);
+      /* Row 2 of the VIEW matrix, negated: `dot(row, vec4f(world, 1))` is the distance
+         in front of the camera. Column-major, so the row is elements 2/6/10/14. */
+      const view = lookAt(
+        [camera.eye[0], camera.eye[1], camera.eye[2]],
+        [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],
+        [0, 1, 0],
+      );
+      const depthRow = [-(view[2] ?? 0), -(view[6] ?? 0), -(view[10] ?? 0), -(view[14] ?? 0)];
+      const radius = Math.max(readNumber(parameters, "aoRadius", 0.35), 1e-4);
+      const aoIntensity = Math.max(readNumber(parameters, "aoIntensity", 1), 0);
+      /* The half-extents the resolve reconstructs by — the ONLY thing it needs of the
+         camera, which is why AO needs no matrix inverse and no camera basis. */
+      const tanHalf = Math.tan((camera.fovDeg * Math.PI) / 360);
+      const orthoHalfH = Math.max(camera.orthoHeight, 1e-6) / 2;
+      const aoProjection = camera.ortho
+        ? [orthoHalfH * aspect, orthoHalfH, far, 1]
+        : [tanHalf * aspect, tanHalf, far, 0];
+
+      scratch.push({ key: "aoDepth", scale: 1, format: "r32float", depth: true });
+      scratch.push({ key: "aoRaw", scale: 1, format: "r32float" });
+      scratch.push({ key: "aoMap", scale: 1, format: "r32float" });
+
+      emitDepthSweep({
+        prefix: "ao:depth",
+        target: aoDepthTarget,
+        matrix: viewProjectionMatrix,
+        linearDepth: true,
+        extraUniforms: { depthRow, depthRange: [far, 0, 0, 0] },
+      });
+
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}:ao:resolve`,
+        nodeId,
+        shader: aoResolveWgsl(aoSampleCount(String(parameters["aoQuality"] ?? "medium"))),
+        target: aoRawTarget,
+        topology: "triangle-list",
+        instances: 1,
+        vertexCount: 6,
+        textures: [{ binding: "depthMap", resourceId: aoDepthTarget, sampled: "unfiltered" }],
+        uniforms: { projection: aoProjection, settings: [radius, aoIntensity, AO_BIAS, 1] },
+        uniformBinding: "params",
+        clear: true,
+      } as DrawPassDescriptor);
+
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}:ao:blur`,
+        nodeId,
+        shader: aoBlurWgsl(AO_BLUR_RADIUS),
+        target: aoTargetId,
+        topology: "triangle-list",
+        instances: 1,
+        vertexCount: 6,
+        textures: [
+          { binding: "occlusionMap", resourceId: aoRawTarget, sampled: "unfiltered" },
+          { binding: "depthMap", resourceId: aoDepthTarget, sampled: "unfiltered" },
+        ],
+        /* The guide tolerance in the stored (normalised) units: half the AO radius, so a
+           tap on the far side of a silhouette is dropped and occlusion never bleeds. */
+        uniforms: { settings: [(radius * 0.5) / far, 0, 0, 0] },
+        uniformBinding: "params",
+        clear: true,
+      } as DrawPassDescriptor);
+    }
     /*
      * T444: the BACKGROUND pass — one full-target triangle-pair painting the backdrop,
      * so a render used as a material map is a PICTURE with a stage behind it rather
@@ -677,6 +847,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
           });
         }
         const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+        /* T624: an unlit material has no ambient term to occlude, so it binds nothing —
+           the shader generator makes the same call, and the two must agree. */
+        const aoActive = aoEnabled && model !== "unlit";
         const specularColor =
           material.model === "pbr"
             ? ([
@@ -717,6 +890,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
             ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
             ...(environmentResource === undefined ? {} : { environment: true }),
+            ...(aoActive ? { ambientOcclusion: true } : {}),
           }),
           target,
           topology: "triangle-list",
@@ -756,7 +930,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
               ? {}
               : { environment: [environmentIntensity, 0, 0, 0] }),
           },
-          ...(casting.length === 0 && environmentResource === undefined
+          ...(casting.length === 0 && environmentResource === undefined && !aoActive
             ? {}
             : {
                 textures: [
@@ -768,6 +942,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                   ...(environmentResource === undefined || model !== "phong"
                     ? []
                     : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
+                  ...(aoActive
+                    ? [{ binding: "occlusionMap", resourceId: aoTargetId, sampled: "unfiltered" as const }]
+                    : []),
                 ],
               }),
           uniformBinding: "params",
@@ -818,6 +995,8 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
       }
       const { cellsU, cellsV } = gridCellCounts(topology);
       const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+      /* T624: see the instances branch — unlit binds no occlusion map. */
+      const aoActive = aoEnabled && model !== "unlit";
       /*
        * T428: PBR through the Blinn-Phong path, honestly — metallic tints the
        * highlight toward the base colour (a metal's reflection is its own colour),
@@ -848,6 +1027,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
           ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
           ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
           ...(environmentResource === undefined ? {} : { environment: true }),
+          ...(aoActive ? { ambientOcclusion: true } : {}),
         }),
         target,
         topology: "triangle-list",
@@ -868,6 +1048,7 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
         ...(material.maps.albedo === undefined &&
         material.maps.roughness === undefined &&
         casting.length === 0 &&
+        !aoActive &&
         (environmentResource === undefined || model !== "phong")
           ? {}
           : {
@@ -886,6 +1067,9 @@ fn fs() -> @location(0) vec4f { return backdrop.color; }`,
                 ...(environmentResource === undefined || model !== "phong"
                   ? []
                   : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
+                ...(aoActive
+                  ? [{ binding: "occlusionMap", resourceId: aoTargetId, sampled: "unfiltered" as const }]
+                  : []),
               ],
             }),
         uniforms: {

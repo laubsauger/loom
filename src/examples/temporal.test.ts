@@ -115,6 +115,13 @@ describe("examples with a temporal loop", () => {
       // T538: the owner's own file. Its loop closes on the FINAL output (§V471.5), so the
       // trails carry the graded colour rather than a ghost of the raw render.
       "E31-Corona.loom.json",
+      // T621: E32 carries TWO loops and they are different animals. `state1` is a
+      // simulation the POINT KERNEL is inside — the herd reads the reaction and writes
+      // back into it, so the compiler's substep body contains a compute dispatch and its
+      // buffer pairs, which is why `substeps` is refused there and the reaction's speed
+      // is a chain of eight nodes instead. `loop1` is the ordinary trail, closing on the
+      // final output (§V471.5).
+      "E32-Pasture.loom.json",
       // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
       // moving point reads as a moving point rather than a stipple — the loop's fourth
       // use in the set, after a smear, a simulation and a zoom. Its persistence is a

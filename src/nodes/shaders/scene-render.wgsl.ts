@@ -34,6 +34,13 @@ export interface SceneShadingOptions {
    * STATED on the input rather than silently (V349). Absent emits byte-identical text.
    */
   readonly environment?: boolean;
+  /**
+   * T624: an ambient-occlusion map is bound, indexed by SCREEN PIXEL, and multiplies
+   * the ambient and environment terms. Not the direct lights: occlusion says how much
+   * of the surroundings a point can see, and the key light arrives from one direction
+   * whether or not the neighbourhood is enclosed. Absent emits byte-identical text.
+   */
+  readonly ambientOcclusion?: boolean;
 }
 
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
@@ -60,7 +67,14 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
       if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
         let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
         let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
-        if (sc.z - 0.002 > stored) { shadow = 0.0; }
+        /* T624 look pass: a CONSTANT bias acnes at the terminator, and every curved
+           object has one. Depth per shadow texel grows as 1/|N·L|, so the bias has to
+           grow with it — measured on E33, where 0.002 flat put a dotted crescent across
+           the lit half of a medallion and this removes it without visible peter-panning
+           (the slope term only reaches its maximum where the light is already grazing
+           and the surface is dark anyway). */
+        let bias = 0.0015 + 0.012 * (1.0 - lambert);
+        if (sc.z - bias > stored) { shadow = 0.0; }
       }
     }
 `;
@@ -72,6 +86,14 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
   /* Equirect, documented exactly: u = atan2(R.x, −R.z)/2π + 0.5, v = acos(R.y)/π. */
+  /* T624: bound after the environment, so a scene without AO emits the same bindings
+     it always did and a scene with it needs no renumbering of the shadow slots. */
+  const ambientOcclusion = options.ambientOcclusion === true && options.model !== "unlit";
+  const aoBinding = envBinding + (environment ? 1 : 0);
+  const aoDeclarations = ambientOcclusion
+    ? `@group(0) @binding(${aoBinding}) var occlusionMap: texture_2d<f32>;\n`
+    : "";
+  const aoTerm = ambientOcclusion ? " * occlusion" : "";
   const envTerm = environment
     ? `  let reflectDir = reflect(-viewDir, normal);
   let envUv = vec2f(
@@ -80,7 +102,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   );
   let envDims = vec2f(textureDimensions(environmentMap, 0));
   let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
-  lit += envColor * params.specular.rgb * (1.0 - roughness) * params.environment.x;
+  lit += envColor * params.specular.rgb * (1.0 - roughness) * params.environment.x${aoTerm};
 `
     : "";
 
@@ -139,10 +161,13 @@ ${
 `;
 
   const needsViewDir = lightCount > 0 || environment;
+  const aoLookup = ambientOcclusion
+    ? `  let occlusion = textureLoad(occlusionMap, vec2i(input.position.xy), 0).r;\n`
+    : "";
   const shading =
     options.model === "unlit"
       ? `  return vec4f(albedo.rgb, albedo.a);`
-      : `  let ambient = params.ambientColor.rgb * params.ambientColor.a;
+      : `${aoLookup}  let ambient = params.ambientColor.rgb * params.ambientColor.a${aoTerm};
   var lit = albedo.rgb * ambient;
 ${
   !needsViewDir
@@ -163,7 +188,7 @@ ${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${mapBindings}${shadowBindings}${envDeclarations}${aoDeclarations}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -252,6 +277,8 @@ export function sceneInstancesWgsl(options: {
   shadows?: ReadonlyArray<number>;
   /** T482: equirect environment wired — see SceneShadingOptions.environment. */
   environment?: boolean;
+  /** T624: an occlusion map is bound — see SceneShadingOptions.ambientOcclusion. */
+  ambientOcclusion?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
   const lightCount = Math.max(0, Math.floor(options.lightCount));
@@ -267,6 +294,14 @@ export function sceneInstancesWgsl(options: {
     ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n`
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
+  /* T624 — see the surface generator: bound after the environment, ambient and
+     environment only, byte-identical when absent. */
+  const ambientOcclusion = options.ambientOcclusion === true && options.model !== "unlit";
+  const aoBinding = envBinding + (environment ? 1 : 0);
+  const aoDeclarations = ambientOcclusion
+    ? `@group(0) @binding(${aoBinding}) var occlusionMap: texture_2d<f32>;\n`
+    : "";
+  const aoTerm = ambientOcclusion ? " * occlusion" : "";
   const envTerm = environment
     ? `  let reflectDir = reflect(-viewDir, normal);
   let envUv = vec2f(
@@ -275,7 +310,7 @@ export function sceneInstancesWgsl(options: {
   );
   let envDims = vec2f(textureDimensions(environmentMap, 0));
   let envColor = textureLoad(environmentMap, vec2i(clamp(envUv, vec2f(0.0), vec2f(1.0)) * (envDims - vec2f(1.0))), 0).rgb;
-  lit += envColor * params.specular.rgb * (1.0 - params.material.y) * params.environment.x;
+  lit += envColor * params.specular.rgb * (1.0 - params.material.y) * params.environment.x${aoTerm};
 `
     : "";
   const shadowFactor = (index: number): string => {
@@ -288,7 +323,14 @@ export function sceneInstancesWgsl(options: {
       if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
         let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
         let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
-        if (sc.z - 0.002 > stored) { shadow = 0.0; }
+        /* T624 look pass: a CONSTANT bias acnes at the terminator, and every curved
+           object has one. Depth per shadow texel grows as 1/|N·L|, so the bias has to
+           grow with it — measured on E33, where 0.002 flat put a dotted crescent across
+           the lit half of a medallion and this removes it without visible peter-panning
+           (the slope term only reaches its maximum where the light is already grazing
+           and the surface is dark anyway). */
+        let bias = 0.0015 + 0.012 * (1.0 - lambert);
+        if (sc.z - bias > stored) { shadow = 0.0; }
       }
     }
 `;
@@ -324,10 +366,13 @@ ${
 }  }
 `;
   const needsViewDir = lightCount > 0 || environment;
+  const aoLookup = ambientOcclusion
+    ? `  let occlusion = textureLoad(occlusionMap, vec2i(input.position.xy), 0).r;\n`
+    : "";
   const shading =
     options.model === "unlit"
       ? `  return vec4f(albedo.rgb, albedo.a);`
-      : `  let ambient = params.ambientColor.rgb * params.ambientColor.a;
+      : `${aoLookup}  let ambient = params.ambientColor.rgb * params.ambientColor.a${aoTerm};
   var lit = albedo.rgb * ambient;
 ${
   !needsViewDir
@@ -348,7 +393,7 @@ ${lightField}${shadowFields}${envField}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
-${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}
+${pointColor ? "@group(0) @binding(2) var<storage, read> pointColors: array<vec4f>;\n" : ""}${shadowBindings}${envDeclarations}${aoDeclarations}
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
@@ -464,12 +509,33 @@ fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
 @fragment
 fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }`;
 
+/**
+ * T624: the same depth-only draw serves the AO prepass. `linearDepth` swaps the stored
+ * value from LIGHT-SPACE CLIP DEPTH to LINEAR VIEW DISTANCE over the far plane — one
+ * extra uniform row and one changed expression, so the grid/primitive vertex arithmetic
+ * has exactly one implementation rather than a shadow copy and an AO copy that drift.
+ * `dot(depthRow, vec4f(world, 1))` is affine in world position, so interpolating it
+ * across a triangle is exact. Absent, the emitted text is byte-identical (§V309).
+ */
+export interface DepthPassOptions {
+  readonly linearDepth?: boolean;
+}
+
 /** The surface mesh from the light's view — grid arithmetic identical to the lit draw. */
-export function shadowSurfaceWgsl(): string {
+export function shadowSurfaceWgsl(options: DepthPassOptions = {}): string {
+  const linear = options.linearDepth === true;
+  const depthExpr = linear
+    ? `dot(params.depthRow, vec4f(gridPosition(gx, gy), 1.0)) / max(params.depthRange.x, 1e-6)`
+    : `clip.z`;
+  const linearFields = linear
+    ? `  depthRow: vec4f,         // dot(depthRow, vec4f(world,1)) = linear view distance
+  depthRange: vec4f,       // x = far plane
+`
+    : "";
   return `struct ShadowParams {
   lightViewProjection: mat4x4f,
   grid: vec4f,              // cols, rows, wrapU, wrapV
-};
+${linearFields}};
 
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
@@ -507,7 +573,7 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
   let clip = params.lightViewProjection * vec4f(gridPosition(gx, gy), 1.0);
   var out: VertexOut;
   out.position = clip;
-  out.depth = clip.z;
+  out.depth = ${depthExpr};
   return out;
 }
 
@@ -518,11 +584,20 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 }
 
 /** The instance primitives from the light's view — shapes identical to the lit draw. */
-export function shadowInstancesWgsl(): string {
+export function shadowInstancesWgsl(options: DepthPassOptions = {}): string {
+  const linear = options.linearDepth === true;
+  const depthExpr = linear
+    ? `dot(params.depthRow, vec4f(world, 1.0)) / max(params.depthRange.x, 1e-6)`
+    : `clip.z`;
+  const linearFields = linear
+    ? `  depthRow: vec4f,         // dot(depthRow, vec4f(world,1)) = linear view distance
+  depthRange: vec4f,       // x = far plane
+`
+    : "";
   return `struct ShadowParams {
   lightViewProjection: mat4x4f,
   instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
-};
+${linearFields}};
 
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
@@ -582,7 +657,7 @@ fn vs(@builtin(vertex_index) vertex: u32, @builtin(instance_index) instance: u32
   let clip = params.lightViewProjection * vec4f(world, 1.0);
   var out: VertexOut;
   out.position = clip;
-  out.depth = clip.z;
+  out.depth = ${depthExpr};
   return out;
 }
 

@@ -113,6 +113,7 @@ const LAST_CAPTURE = 180;
  *   E29 Descent                 0.22431   0.9900   0.6037
  *   E30 Nave                    0.00570   0.5625   0.8170
  *   E31 Corona                  0.06584   1.0000   0.9962
+ *   E33 Obol                    0.01191   0.7419   0.7621
  *
  * And what the six T518 reworked ones measured BEFORE the rework: motion 0.00000 for E1,
  * E4, E5, E6 and E11; range 0.123 for E5 and 0.255 for E8; f0max 0.0000 for E8.

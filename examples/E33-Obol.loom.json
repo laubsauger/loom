@@ -1,0 +1,1006 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-aoswing-aorest": {
+        "id": "e-aoswing-aorest",
+        "source": {
+          "nodeId": "aoswing",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "aorest",
+          "portId": "a"
+        }
+      },
+      "e-clip-halo": {
+        "id": "e-clip-halo",
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-cut-clip": {
+        "id": "e-cut-clip",
+        "source": {
+          "nodeId": "cut",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clip",
+          "portId": "input"
+        }
+      },
+      "e-envswing-envrest": {
+        "id": "e-envswing-envrest",
+        "source": {
+          "nodeId": "envswing",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envrest",
+          "portId": "a"
+        }
+      },
+      "e-fill-studio": {
+        "id": "e-fill-studio",
+        "order": 1,
+        "source": {
+          "nodeId": "fillBox",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "studio",
+          "portId": "in2"
+        }
+      },
+      "e-glossswing-glossrest": {
+        "id": "e-glossswing-glossrest",
+        "source": {
+          "nodeId": "glossswing",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glossrest",
+          "portId": "a"
+        }
+      },
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-halo-glow": {
+        "id": "e-halo-glow",
+        "order": 0,
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in2"
+        }
+      },
+      "e-key-studio": {
+        "id": "e-key-studio",
+        "order": 0,
+        "source": {
+          "nodeId": "keyBox",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "studio",
+          "portId": "in2"
+        }
+      },
+      "e-morph-body": {
+        "id": "e-morph-body",
+        "source": {
+          "nodeId": "morph",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "body",
+          "portId": "points"
+        }
+      },
+      "e-shell-morph": {
+        "id": "e-shell-morph",
+        "source": {
+          "nodeId": "shell",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "morph",
+          "portId": "in"
+        }
+      },
+      "e-shot-cut": {
+        "id": "e-shot-cut",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cut",
+          "portId": "input"
+        }
+      },
+      "e-shot-glow": {
+        "id": "e-shot-glow",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in1"
+        }
+      },
+      "e-sky-studio": {
+        "id": "e-sky-studio",
+        "source": {
+          "nodeId": "sky",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "studio",
+          "portId": "in1"
+        }
+      },
+      "e-studio-shot": {
+        "id": "e-studio-shot",
+        "source": {
+          "nodeId": "studio",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shot",
+          "portId": "environment"
+        }
+      },
+      "e-sweep-cyc": {
+        "id": "e-sweep-cyc",
+        "source": {
+          "nodeId": "sweep",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cyc",
+          "portId": "points"
+        }
+      },
+      "e-sweeppts-sweep": {
+        "id": "e-sweeppts-sweep",
+        "source": {
+          "nodeId": "sweepPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sweep",
+          "portId": "in"
+        }
+      },
+      "e-tide-aoswing": {
+        "id": "e-tide-aoswing",
+        "source": {
+          "nodeId": "tide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "aoswing",
+          "portId": "a"
+        }
+      },
+      "e-tide-envswing": {
+        "id": "e-tide-envswing",
+        "source": {
+          "nodeId": "tide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "envswing",
+          "portId": "a"
+        }
+      },
+      "e-tide-glossswing": {
+        "id": "e-tide-glossswing",
+        "source": {
+          "nodeId": "tide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glossswing",
+          "portId": "a"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "aorest": {
+        "definitionVersion": 1,
+        "id": "aorest",
+        "label": "aorest1",
+        "parameters": {
+          "operand": 0.55,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1760,
+          "y": 1560
+        },
+        "type": "valueMath"
+      },
+      "aoswing": {
+        "definitionVersion": 1,
+        "id": "aoswing",
+        "label": "aoswing1",
+        "parameters": {
+          "operand": 0.9,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1560
+        },
+        "type": "valueMath"
+      },
+      "body": {
+        "definitionVersion": 1,
+        "id": "body",
+        "label": "body1",
+        "parameters": {
+          "material": "oil1",
+          "mode": "surface",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1440,
+          "y": 200
+        },
+        "type": "geometry"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "high": 6,
+          "low": 0,
+          "mode": "clamp",
+          "steps": 4
+        },
+        "position": {
+          "x": -160,
+          "y": 660
+        },
+        "type": "limit"
+      },
+      "crown": {
+        "definitionVersion": 1,
+        "id": "crown",
+        "label": "crown1",
+        "parameters": {
+          "color": [
+            0.9,
+            0.95,
+            1,
+            1
+          ],
+          "intensity": 14,
+          "kind": "point",
+          "position": [
+            0,
+            2.9,
+            -3.4
+          ]
+        },
+        "position": {
+          "x": -1120,
+          "y": -360
+        },
+        "type": "light"
+      },
+      "cut": {
+        "definitionVersion": 1,
+        "id": "cut",
+        "label": "cut1",
+        "parameters": {
+          "blacklevel": 0.55,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "whitelevel": 1.2
+        },
+        "position": {
+          "x": -480,
+          "y": 660
+        },
+        "type": "level"
+      },
+      "cyc": {
+        "definitionVersion": 1,
+        "id": "cyc",
+        "label": "cyc1",
+        "parameters": {
+          "material": "plaster1",
+          "mode": "surface",
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1440,
+          "y": 660
+        },
+        "type": "geometry"
+      },
+      "envrest": {
+        "definitionVersion": 1,
+        "id": "envrest",
+        "label": "envrest1",
+        "parameters": {
+          "operand": 1,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1760,
+          "y": 1920
+        },
+        "type": "valueMath"
+      },
+      "envswing": {
+        "definitionVersion": 1,
+        "id": "envswing",
+        "label": "envswing1",
+        "parameters": {
+          "operand": 0.85,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 1920
+        },
+        "type": "valueMath"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            0,
+            0.78,
+            3.7
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "swing1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.y": {
+            "bindings": {
+              "driven": {
+                "channel": "lift1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.78
+              }
+            },
+            "mode": "driven"
+          },
+          "far": 40,
+          "fov": 42,
+          "lookAt": [
+            0,
+            -0.1,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": -1120,
+          "y": 100
+        },
+        "type": "camera"
+      },
+      "fill": {
+        "definitionVersion": 1,
+        "id": "fill",
+        "label": "fill1",
+        "parameters": {
+          "color": [
+            0.58,
+            0.7,
+            1,
+            1
+          ],
+          "direction": [
+            -0.8,
+            -0.06,
+            -0.6
+          ],
+          "intensity": 0.11,
+          "kind": "directional"
+        },
+        "position": {
+          "x": -1120,
+          "y": -780
+        },
+        "type": "light"
+      },
+      "fillBox": {
+        "definitionVersion": 1,
+        "id": "fillBox",
+        "label": "fillbox1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.715,
+            0.375
+          ],
+          "fillcolor": [
+            0.62,
+            0.74,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.048,
+            0.115
+          ],
+          "softness": 0.26
+        },
+        "position": {
+          "x": -2400,
+          "y": -280
+        },
+        "type": "circle"
+      },
+      "glossrest": {
+        "definitionVersion": 1,
+        "id": "glossrest",
+        "label": "glossrest1",
+        "parameters": {
+          "operand": 0.19,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1760,
+          "y": 2280
+        },
+        "type": "valueMath"
+      },
+      "glossswing": {
+        "definitionVersion": 1,
+        "id": "glossswing",
+        "label": "glossswing1",
+        "parameters": {
+          "operand": -0.105,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2080,
+          "y": 2280
+        },
+        "type": "valueMath"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "bloom1",
+        "parameters": {},
+        "position": {
+          "x": 440,
+          "y": 200
+        },
+        "type": "add"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "veil1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 34
+        },
+        "position": {
+          "x": 160,
+          "y": 660
+        },
+        "type": "blur"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            1,
+            0.95,
+            0.88,
+            1
+          ],
+          "direction": [
+            0.55,
+            -0.62,
+            -0.56
+          ],
+          "intensity": 0.26,
+          "kind": "directional",
+          "shadowExtent": 2.8,
+          "shadows": true
+        },
+        "position": {
+          "x": -1120,
+          "y": -1200
+        },
+        "type": "light"
+      },
+      "keyBox": {
+        "definitionVersion": 1,
+        "id": "keyBox",
+        "label": "keybox1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "center": [
+            0.46,
+            0.265
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.15,
+            0.052
+          ],
+          "softness": 0.22
+        },
+        "position": {
+          "x": -2400,
+          "y": -740
+        },
+        "type": "circle"
+      },
+      "lift": {
+        "definitionVersion": 1,
+        "id": "lift",
+        "label": "lift1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.029,
+          "offset": 0.78,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2400,
+          "y": 2640
+        },
+        "type": "lfo"
+      },
+      "morph": {
+        "definitionVersion": 1,
+        "id": "morph",
+        "label": "morph1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"default\":[1,1,1,1]}]",
+          "capacity": 33280,
+          "kernel": "const TAU: f32 = 6.28318530717958647692;\nconst PI: f32 = 3.14159265358979323846;\n\n/* Integer value noise. An integer hash rather than the usual fract(sin(...)) because\n   sin's precision is implementation-defined and this field decides GEOMETRY — a browser\n   and Dawn that disagreed about it would disagree about the silhouette (§V47). */\nfn ihash(cell: vec3i) -> f32 {\n  let q = vec3u(cell + vec3i(4096));\n  var n = (q.x * 1597334673u) ^ (q.y * 3812015801u) ^ (q.z * 2246822519u);\n  n = (n ^ (n >> 15u)) * 2246822519u;\n  n = (n ^ (n >> 13u)) * 3266489917u;\n  return f32(n ^ (n >> 16u)) * 2.3283064e-10;\n}\n\nfn vnoise(p: vec3f) -> f32 {\n  let base = floor(p);\n  let f = p - base;\n  let w = f * f * (3.0 - 2.0 * f);\n  let c = vec3i(base);\n  let x00 = mix(ihash(c + vec3i(0, 0, 0)), ihash(c + vec3i(1, 0, 0)), w.x);\n  let x10 = mix(ihash(c + vec3i(0, 1, 0)), ihash(c + vec3i(1, 1, 0)), w.x);\n  let x01 = mix(ihash(c + vec3i(0, 0, 1)), ihash(c + vec3i(1, 0, 1)), w.x);\n  let x11 = mix(ihash(c + vec3i(0, 1, 1)), ihash(c + vec3i(1, 1, 1)), w.x);\n  return mix(mix(x00, x10, w.y), mix(x01, x11, w.y), w.z) * 2.0 - 1.0;\n}\n\nfn fbm(p: vec3f) -> f32 {\n  /* Weighted hard toward the FIRST octave. The first build ran 0.56/0.30/0.14 and the\n     goo came back as crumpled tinfoil: high-frequency radial displacement on a closed\n     surface reads as creases, not as fluid. Goo is a few big lobes. */\n  return vnoise(p) * 0.74 + vnoise(p * 2.07 + vec3f(19.1, 7.3, 31.7)) * 0.20\n       + vnoise(p * 4.19 + vec3f(41.7, 63.1, 11.9)) * 0.06;\n}\n\n/* Six stops, and they GO somewhere: midnight, indigo, violet, magenta, amber, gold.\n   §V471.6 — a two-stop ramp is a tint; this is a journey, and only the melt FRONT\n   wears it, which is what keeps the emblem's own two tones intact behind it. */\nfn spectrum(t: f32) -> vec3f {\n  var stops = array<vec3f, 6>(\n    vec3f(0.014, 0.020, 0.058),\n    vec3f(0.048, 0.098, 0.290),\n    vec3f(0.235, 0.086, 0.372),\n    vec3f(0.556, 0.108, 0.276),\n    vec3f(0.812, 0.372, 0.104),\n    vec3f(0.972, 0.836, 0.560),\n  );\n  let x = clamp(t, 0.0, 1.0) * 5.0;\n  let lo = u32(floor(x));\n  let hi = min(lo + 1u, 5u);\n  return mix(stops[lo], stops[hi], x - floor(x));\n}\n\n/* The emblem's own field, read in the disc coordinate the medallion is built on.\n   1 is the light half, 0 the dark, dots included. Built out of SIGNED DISTANCES rather\n   than four ifs: this is a per-VERTEX attribute on a 208x160 grid, and a hard step\n   there arrives on screen as the octagonal stair the first look pass showed on both\n   dots. The edge width is a little under one cell, so the boundary is one cell of ramp\n   — an inlaid edge, not a jagged one. */\nfn taiji(p: vec2f) -> f32 {\n  let e = 0.030;\n  let dTop = distance(p, vec2f(0.0, 0.5));\n  let dBot = distance(p, vec2f(0.0, -0.5));\n  var tone = smoothstep(-e, e, p.x);\n  tone = max(tone, smoothstep(e, -e, dTop - 0.5));\n  tone = min(tone, smoothstep(-e, e, dBot - 0.5));\n  tone = min(tone, smoothstep(-e, e, dTop - 0.142));\n  tone = max(tone, smoothstep(e, -e, dBot - 0.142));\n  return tone;\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* The sphere the whole piece is parameterised on. The generator's tube topology\n     supplies wrapU, so column 0 and column cols-1 are the SAME seam and the surface\n     closes; the pole axis is z, which is what makes the medallion face the camera. */\n  let lon = f32(ctx.dim.i) / f32(ctx.dim.cols) * TAU;\n  let lat = f32(ctx.dim.j) / f32(max(ctx.dim.rows - 1u, 1u)) * PI;\n  let s = vec3f(sin(lat) * cos(lon), sin(lat) * sin(lon), cos(lat));\n\n  /* ---- CONFIGURATION A: the emblem. A medallion — the unit sphere pressed flat on\n     z, with a smoothstep profile so the faces are plateaus and the rim is a bevel a\n     highlight can run along. */\n  let face = sqrt(max(0.0, 1.0 - s.x * s.x - s.y * s.y));\n  let plateau = smoothstep(0.0, 0.72, face);\n  let coin = vec3f(s.x, s.y, select(-1.0, 1.0, s.z >= 0.0) * plateau * 0.19) * 1.02;\n  /* TILTED, and the first look pass is why. A flat medallion seen dead-on is\n     PIXEL-IDENTICAL in silhouette to a sphere, and the whole point of the emblem state\n     is that it reads as a hard, made, FLAT thing. Leaning it 17 degrees puts the rim\n     bevel on screen as a lit edge and the disc becomes a disc. */\n  let tilt = 0.30;\n  let emblem = vec3f(coin.x, coin.y * cos(tilt) - coin.z * sin(tilt), coin.y * sin(tilt) + coin.z * cos(tilt));\n\n  /* ---- CONFIGURATION B: the goo. The same sphere, radius pushed by a two-octave\n     field that TURNS relative to the body (the field rotates, not the emblem — the\n     emblem has to come back to the same orientation it left), plus a sag, because a\n     living thing under gravity is not symmetric and the yin-yang is nothing but. */\n  let spin = ctx.absTime * 0.115;\n  let turned = vec3f(s.x * cos(spin) - s.z * sin(spin), s.y, s.x * sin(spin) + s.z * cos(spin));\n  let coarse = fbm(turned * 1.02 + vec3f(0.0, ctx.absTime * 0.085, 0.0));\n  let fine = fbm(turned * 2.35 - vec3f(ctx.absTime * 0.061, 0.0, 0.0));\n  let swell = 0.870 + 0.305 * coarse + 0.060 * fine;\n  var goo = s * swell;\n  goo.y = goo.y - 0.235 * (1.0 - s.y * 0.5) * (0.55 + 0.45 * coarse);\n  goo.x = goo.x + 0.055 * sin(ctx.absTime * 0.27);\n\n  /* ---- THE SEAM, and the order things melt in. §V471.1/.2: the kernel writes the\n     attribute downstream selection reads, and here that attribute is free — it is the\n     emblem's own dividing curve. \"order\" is built from the two circles the S-curve\n     is built from, so the melt front LEAVES THE SEAM and travels outward: the boundary\n     between yin and yang is the first thing to go and the last thing to come back.\n     That is the difference between becoming and cross-fading. */\n  let rho = length(s.xy);\n  let arcTop = distance(s.xy, vec2f(0.0, 0.5)) - 0.5;\n  let arcBot = distance(s.xy, vec2f(0.0, -0.5)) - 0.5;\n  /* CAPPED, and then blended with radius, and both halves of that were paid for by a\n     look pass. Raw distance-to-the-arcs has a conical LOCAL MAXIMUM at each dot's\n     centre — so each dot was the last thing left un-melted and got drawn out into a\n     literal spike with a specular on it. The cap flattens those peaks into a plateau;\n     the radius term gives the front a global outward sweep so there is no interior\n     maximum left for the surface to be pulled towards. The seam still leads, which is\n     what the eye reads. */\n  let order = clamp(min(abs(arcTop), abs(arcBot)) / 0.42, 0.0, 1.0) * 0.6 + rho * 0.4;\n  let drive = smoothstep(0.06, 0.94, ctx.value1);\n  let front = clamp(drive * 2.15 - order * 1.15, 0.0, 1.0);\n  let melt = front * front * (3.0 - 2.0 * front);\n\n  /*\n   * A SLOW YAW, on the absolute clock, and it is not decoration — it is the piece's\n   * only motion that does NOT come through the value graph. The cook oracle renders\n   * every example without a channel resolver, so an LFO-only piece is a still frame\n   * there and its 80-frame run hashes identical; this one did, and that is a real\n   * fragility rather than a harness artefact (an idle value graph in the app is the\n   * same picture). It also earns its place visually: a turntable sway keeps the\n   * softbox reflections travelling across the surface, which is what says \"wet\".\n   */\n  let yaw = 0.21 * sin(ctx.absTime * 0.185);\n  let shape = mix(emblem, goo, melt);\n  q.position = vec3f(\n    shape.x * cos(yaw) + shape.z * sin(yaw),\n    shape.y,\n    -shape.x * sin(yaw) + shape.z * cos(yaw),\n  );\n\n  /* ---- COLOUR. Two tones painted in the MATERIAL coordinate, so the pattern travels\n     with the surface and stretches as the surface does — a tint read from the DEFORMED\n     position would slide over the goo like a projection and the whole illusion dies. */\n  let tone = taiji(s.xy);\n  let porcelain = vec3f(0.400, 0.388, 0.360);\n  let ink = vec3f(0.0180, 0.0205, 0.0295);\n  let rest = mix(ink, porcelain, tone);\n  /* Melted, both tones sink toward oil: nearly black, because everything worth seeing\n     in an oil surface arrives as a reflection, not as a diffuse colour. */\n  /* Melted, both tones sink toward oil — but not to the SAME oil. Losing the emblem\n     entirely at full melt made the goo a featureless dark lump; keeping the two tones\n     as a marbling inside the film is what says \"this used to be the emblem\". */\n  let oil = mix(vec3f(0.0130, 0.0125, 0.0205), vec3f(0.0620, 0.0580, 0.0520), tone);\n  /* The FRONT itself — a band, not the whole body — wears the spectrum, phase driven\n     so the ramp breathes rather than sitting (§V471.7). */\n  let band = 1.0 - abs(melt * 2.0 - 1.0);\n  let irid = spectrum(fract(order * 1.85 + ctx.value2 + tone * 0.18));\n  /* The front's spectrum is held back on the LIGHT half — an already-bright porcelain\n     plus a full-strength ramp clips to white and the ramp stops meaning anything. */\n  let colour = mix(rest, oil, melt) + irid * band * band * 0.26 * (1.0 - tone * 0.55);\n  q.tint = vec4f(colour, 1.0);\n  return q;\n}",
+          "seed": 33,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "tide1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "sheen1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1760,
+          "y": 200
+        },
+        "type": "pointKernel"
+      },
+      "oil": {
+        "definitionVersion": 1,
+        "id": "oil",
+        "label": "oil1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "roughness": {
+            "bindings": {
+              "driven": {
+                "channel": "glossrest1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.19
+              }
+            },
+            "mode": "driven"
+          },
+          "shininess": 300,
+          "specular": [
+            1,
+            0.97,
+            0.93,
+            1
+          ]
+        },
+        "position": {
+          "x": -1760,
+          "y": -260
+        },
+        "type": "materialPhong"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 720,
+          "y": 200
+        },
+        "type": "output"
+      },
+      "plaster": {
+        "definitionVersion": 1,
+        "id": "plaster",
+        "label": "plaster1",
+        "parameters": {
+          "color": [
+            0.185,
+            0.195,
+            0.235,
+            1
+          ],
+          "roughness": 0.58,
+          "shininess": 40,
+          "specular": [
+            0.22,
+            0.23,
+            0.29,
+            1
+          ]
+        },
+        "position": {
+          "x": -1760,
+          "y": 1060
+        },
+        "type": "materialPhong"
+      },
+      "sheen": {
+        "definitionVersion": 1,
+        "id": "sheen",
+        "label": "sheen1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.011,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2400,
+          "y": 1920
+        },
+        "type": "lfo"
+      },
+      "shell": {
+        "definitionVersion": 1,
+        "id": "shell",
+        "label": "shell1",
+        "parameters": {
+          "cols": 208,
+          "count": 33280,
+          "radius": 1,
+          "rows": 160,
+          "sizeZ": 2
+        },
+        "position": {
+          "x": -2080,
+          "y": 200
+        },
+        "type": "pointTube"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.62,
+            0.68,
+            0.84,
+            1
+          ],
+          "ambientIntensity": 0.62,
+          "ambientOcclusion": true,
+          "aoIntensity": {
+            "bindings": {
+              "driven": {
+                "channel": "aorest1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.55
+              }
+            },
+            "mode": "driven"
+          },
+          "aoQuality": "high",
+          "aoRadius": 0.5,
+          "background": [
+            0.008,
+            0.009,
+            0.013,
+            1
+          ],
+          "camera": "eye1",
+          "environmentIntensity": {
+            "bindings": {
+              "driven": {
+                "channel": "envrest1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          },
+          "lights": "key1 fill1 crown1",
+          "scenes": "cyc1 body1"
+        },
+        "position": {
+          "x": -800,
+          "y": 200
+        },
+        "type": "render"
+      },
+      "sky": {
+        "definitionVersion": 2,
+        "id": "sky",
+        "label": "sky1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.66,
+                0.72,
+                0.86,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.17,
+                0.19,
+                0.26,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                0.06,
+                0.065,
+                0.085,
+                1
+              ],
+              "position": 0.62
+            },
+            {
+              "color": [
+                0.03,
+                0.031,
+                0.038,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -2400,
+          "y": -1200
+        },
+        "type": "ramp"
+      },
+      "studio": {
+        "definitionVersion": 1,
+        "id": "studio",
+        "label": "studio1",
+        "parameters": {},
+        "position": {
+          "x": -2080,
+          "y": -740
+        },
+        "type": "add"
+      },
+      "sweep": {
+        "definitionVersion": 1,
+        "id": "sweep",
+        "label": "sweep1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 6144,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* Sized so the cove leaves the FRAME before it leaves the mesh: at the camera's\n     widest swing the far lip of an 8-unit rise was still on screen as a dark arc in\n     the top corner. Measured against the 42-degree frustum at the deepest row. */\n  let across = p.position.x * 15.0;\n  let run = (p.position.y * 0.5 + 0.5);\n  let depth = 2.5 - run * 18.5;\n  let rise = clamp((-2.0 - depth) / 13.0, 0.0, 1.0);\n  q.position = vec3f(across, -1.04 + 11.0 * rise * rise, depth);\n  return q;\n}",
+          "seed": 3
+        },
+        "position": {
+          "x": -1760,
+          "y": 660
+        },
+        "type": "pointKernel"
+      },
+      "sweepPts": {
+        "definitionVersion": 1,
+        "id": "sweepPts",
+        "label": "sweeppts1",
+        "parameters": {
+          "cols": 64,
+          "count": 6144,
+          "rows": 96,
+          "sizeX": 2,
+          "sizeY": 2
+        },
+        "position": {
+          "x": -2080,
+          "y": 660
+        },
+        "type": "pointGrid"
+      },
+      "swing": {
+        "definitionVersion": 1,
+        "id": "swing",
+        "label": "swing1",
+        "parameters": {
+          "amplitude": 1.35,
+          "frequency": 0.035,
+          "offset": 0,
+          "phase": 0.06,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2400,
+          "y": 2280
+        },
+        "type": "lfo"
+      },
+      "tide": {
+        "definitionVersion": 1,
+        "id": "tide",
+        "label": "tide1",
+        "parameters": {
+          "amplitude": 0.5,
+          "frequency": 0.062,
+          "offset": 0.5,
+          "phase": 0.75,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2400,
+          "y": 1560
+        },
+        "type": "lfo"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E33 Obol",
+  "projectId": "example-e33-obol",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 33,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
