@@ -1,4 +1,5 @@
 import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
  * `ui.openNodeSearch` — the ONE command every route to the node browser names
@@ -71,14 +72,19 @@ export interface NodeSearchHolder {
   current: NodeSearchHandlers | null;
 }
 
-const holders = new WeakMap<object, NodeSearchHolder>();
-
+/**
+ * PAGE-GLOBAL, not module-local — and this is the whole of T709's second report.
+ *
+ * A module-level `WeakMap` here made the browser die on any HMR update to this file:
+ * re-executing the module minted a second map and a second, empty holder, while the
+ * handler already on the bus kept reading the first. The surface wrote itself into the new
+ * one, the command read `null` from the old one, and refused — silently, all three doors
+ * at once, until a hard reload. Measured in Chromium against a real dev server: open
+ * before the update, dead after it, empty console. `command-holder.ts` carries the
+ * mechanism and §V483's precedent.
+ */
 export function nodeSearchHolderFor(bus: ShaderloomBus): NodeSearchHolder {
-  const existing = holders.get(bus);
-  if (existing !== undefined) return existing;
-  const holder: NodeSearchHolder = { current: null };
-  holders.set(bus, holder);
-  return holder;
+  return commandHolder<NodeSearchHandlers>(bus, OPEN_NODE_SEARCH_COMMAND);
 }
 
 export function registerNodeSearchCommand(bus: ShaderloomBus): NodeSearchHolder {
