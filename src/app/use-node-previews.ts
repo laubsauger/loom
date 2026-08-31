@@ -324,6 +324,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           // present blit, which stays a raw copy.
           view: current.views?.viewFor(nodeId) ?? DEFAULT_PREVIEW_VIEW,
           fps: current.previewFps,
+          // T563: a synthesized preview's draw passes travel with the request — the
+          // preview program owns their target and runs them on the preview cadence.
+          ...(output.synthesis === undefined ? {} : { synthesis: output.synthesis }),
         });
       }
 

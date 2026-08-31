@@ -8,6 +8,7 @@ import { createUniformAnimator } from "../../../app/animate-parameters.ts";
 import { cameraPayloadMatrix, transformPoint } from "../../../domain/geometry/camera.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
 import type { CameraPayload } from "../../../domain/types/scene.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
 
@@ -326,22 +327,30 @@ describe("the camera link, as a property (B104/T500, §V437, §V372, §V147)", (
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
     const sinks = [{ nodeId: "cam", portId: "out" }];
     const previewId = "preview:scene:cam:out";
-
-    const baseImage = await (async () => {
-      const backend = createVgpuBackend({ host: nodeGpuHost() });
+    // T563: the stock scene renders through the preview program.
+    const readPreview = async (plan: ReturnType<typeof planFor>): Promise<Uint8Array> => {
+      const { host, session } = capturingHost();
+      const backend = createVgpuBackend({ host });
       try {
         await backend.initialize({});
-        const handle = await backend.compile(planFor(previewGraph({}), sinks));
+        const handle = await backend.compile(plan);
         backend.render(handle, FRAME);
+        const device = session()?.gpu.gpu as unknown as GPUDevice;
+        drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "cam", portId: "out", tileEdge: 384 });
+        await device.queue.onSubmittedWorkDone();
         return (await backend.readOutput(previewId)).bytes;
       } finally {
         backend.dispose();
       }
-    })();
+    };
+
+    const baseImage = await readPreview(planFor(previewGraph({}), sinks));
 
     for (const [parameter, variant] of Object.entries(VARIANTS)) {
       const plan = planFor(previewGraph(variant.params), sinks);
-      const pass = plan.passes.find((entry) => entry.id === "cam#scenePreview:out") as
+      const pass = plan.outputs
+        .find((entry) => entry.nodeId === "cam" && entry.portId === "out")
+        ?.synthesis?.passes.find((entry) => entry.id === "cam#scenePreview:out") as
         | { uniforms?: Record<string, unknown> }
         | undefined;
       // The uniform IS the matrix — exactly, float for float, computed independently
@@ -351,16 +360,7 @@ describe("the camera link, as a property (B104/T500, §V437, §V372, §V147)", (
         Array.from(cameraPayloadMatrix(payloadWith(variant.params), 1)),
       );
 
-      const backend = createVgpuBackend({ host: nodeGpuHost() });
-      let image: Uint8Array;
-      try {
-        await backend.initialize({});
-        const handle = await backend.compile(plan);
-        backend.render(handle, FRAME);
-        image = (await backend.readOutput(previewId)).bytes;
-      } finally {
-        backend.dispose();
-      }
+      const image = await readPreview(plan);
       // And the pass CONSUMES it: the uniform being right while the tile never repaints
       // is precisely half of what B104 reported.
       expect(

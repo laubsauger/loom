@@ -5,7 +5,8 @@ import { pointsPreviewResourceId } from "../../../compiler/resources.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
-import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+import { probeDawn } from "./node-gpu-host.ts";
+import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
 import type { BackendCapabilities } from "../../../domain/types/backend.ts";
 import type { ProjectSettings } from "../../../domain/types/graph.ts";
 
@@ -81,7 +82,8 @@ function predictedLit(edge: number): number {
   return Math.round(Math.PI * inkRadius(edge) ** 2);
 }
 
-async function splatAt(previewLongEdge: number): Promise<Splat> {
+/** T563: `tileEdge` is the GRANTED TILE — the preview program sizes the source to it. */
+async function splatAt(tileEdge: number): Promise<Splat> {
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const plan = compileGraph({
     graph: {
@@ -98,14 +100,15 @@ async function splatAt(previewLongEdge: number): Promise<Splat> {
         },
       },
     },
-    settings: settings(previewLongEdge),
+    settings: settings(192),
     registry,
     capabilities: CAPABILITIES,
     sinks: [{ nodeId: "gen", portId: "out", kind: "preview" }],
   });
   expect(plan.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
 
-  const backend = createVgpuBackend({ host: nodeGpuHost() });
+  const { host, session } = capturingHost();
+  const backend = createVgpuBackend({ host });
   const errors: string[] = [];
   backend.onDiagnostic((diagnostic) => {
     if (diagnostic.severity === "error") errors.push(`${diagnostic.code}: ${diagnostic.message}`);
@@ -118,6 +121,9 @@ async function splatAt(previewLongEdge: number): Promise<Splat> {
       pointer: { x: 0, y: 0, buttons: 0 },
       resolution: [64, 64],
     });
+    const device = session()?.gpu.gpu as unknown as GPUDevice;
+    drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge });
+    await device.queue.onSubmittedWorkDone();
     const image = await backend.readOutput(pointsPreviewResourceId("gen", "out"));
     expect(errors).toEqual([]);
     let lit = 0;
@@ -146,10 +152,10 @@ describe("T502 on Dawn — a boosted point preview renders more picture, not a b
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    // `previewLongEdge` 96 and 576 synthesize at 192 and 1152 — the base tile, twice the
-    // setting (§V454). 192 is what EVERY synthesized preview used to get, at any setting.
-    const base = await splatAt(96);
-    const boosted = await splatAt(576);
+    // T563: the source IS the granted tile now — 192 at rest against 1152 fully
+    // boosted, the exact pair T502 measured when it proved the ink scales with area.
+    const base = await splatAt(192);
+    const boosted = await splatAt(1152);
     expect(base.size).toEqual([192, 192]);
     expect(boosted.size).toEqual([1152, 1152]);
 

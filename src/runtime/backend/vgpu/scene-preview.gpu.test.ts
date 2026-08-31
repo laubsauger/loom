@@ -5,7 +5,8 @@ import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
-import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+import { probeDawn } from "./node-gpu-host.ts";
+import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
 import { encodePng } from "../../export/png.ts";
 import type { GraphDocument, GraphNode } from "../../../domain/types/graph.ts";
 
@@ -68,7 +69,8 @@ async function renderPreviews(
     sinks: sinks.map((sink) => ({ ...sink, kind: "preview" as const })),
   } as never);
   expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-  const backend = createVgpuBackend({ host: nodeGpuHost() });
+  const { host, session } = capturingHost();
+  const backend = createVgpuBackend({ host });
   try {
     await backend.initialize({});
     const compiled = await backend.compile(plan);
@@ -77,8 +79,12 @@ async function renderPreviews(
       pointer: { x: 0, y: 0, buttons: 0 },
       resolution: [64, 64],
     });
+    // T563: the stock scenes render through the preview program, at this test's tile.
+    const device = session()?.gpu.gpu as unknown as GPUDevice;
     const images = new Map<string, Uint8Array>();
     for (const sink of sinks) {
+      drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: sink.nodeId, portId: sink.portId, tileEdge: EDGE });
+      await device.queue.onSubmittedWorkDone();
       const image = await backend.readOutput(`preview:scene:${sink.nodeId}:${sink.portId}`);
       images.set(sink.nodeId, image.bytes);
     }
@@ -89,9 +95,9 @@ async function renderPreviews(
 }
 
 /**
- * The synthesized target's edge: `previewLongEdge` × MAX_TILE_SCALE (T502, §V454) — the
- * base tile this preview is guaranteed, rather than the raw setting. Every coordinate
- * below is derived from it, so the picture asserted is the same one at any size.
+ * The tile edge these tests grant (T563: the preview program sizes the target to the
+ * granted tile). Every coordinate below is derived from it, so the picture asserted is
+ * the same one at any size.
  */
 const EDGE = 192 * 2;
 const CENTRE = EDGE / 2;

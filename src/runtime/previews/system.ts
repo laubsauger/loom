@@ -152,7 +152,14 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
         lastPushed.set(passId, serialized);
         uniforms.push({ passId, values });
       }
-      if (entry.due || changed) refresh.push(passId);
+      if (entry.due || changed) {
+        // T563: a synthesized preview re-renders its source target first — the splat or
+        // stock scene draws, in descriptor order, then the lens pass samples the result.
+        // Encode order is THIS list's order; the program's pass array is sorted for the
+        // signature and never encodes.
+        for (const synthPass of entry.request.synthesis?.passes ?? []) refresh.push(synthPass.id);
+        refresh.push(passId);
+      }
       // Every active tile composites every frame, due or not: a pan moves the destination
       // rect without changing a single pixel inside the tile.
       composite.push({ ref: entry.ref, resourceId: tile.resourceId, dest: entry.request.rect });

@@ -1,16 +1,13 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
-import { nodeNames } from "../domain/graph/names.ts";
-import { sourceReferenceTokens, sourceReferencesOf } from "../domain/graph/source-references.ts";
 import type { ScenePayload } from "../domain/types/scene.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
-import type { GraphDocument, GraphEdge } from "../domain/types/graph.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
 import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
 import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
-import type { PassDescriptor } from "../runtime/backend/plan.ts";
+import type { DrawPassDescriptor, PassDescriptor } from "../runtime/backend/plan.ts";
 import {
   estimateResourceBytes,
   passStructureKey,
@@ -27,6 +24,7 @@ import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { declaredColorSpace } from "../domain/graph/port-compat.ts";
 import { colorPolicyOf, presentDecodesSrgbSource, sinkTargetSpace } from "../domain/color/display.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
+import { synthesizeSourceReferenceEdges } from "./source-reference-edges.ts";
 import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
@@ -768,96 +766,21 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   }
   const flatGraph = flattened?.graph ?? request.graph;
 
-  // T350 (§V285): a SOURCE REFERENCE synthesizes the exact edge the wired shape had.
-  // The document stays a DAG; everything downstream — V13 validation, inheritance
-  // through the input, the temporal split, the pair, the swap — is the machinery that
-  // already existed, so the ref and the wire compile to IDENTICAL plans by
-  // construction. A dangling name and a ref-plus-wire ambiguity are both said here.
-  const graph = ((): GraphDocument => {
-    let synthesized: Record<string, GraphEdge> | undefined;
-    const names = nodeNames(flatGraph);
-    for (const nodeId of Object.keys(flatGraph.nodes).sort()) {
-      const node = flatGraph.nodes[nodeId];
-      if (node === undefined) continue;
-      for (const spec of sourceReferencesOf(node.type)) {
-        const tokens = sourceReferenceTokens(spec, node.parameters);
-        const wired = Object.values(flatGraph.edges).find(
-          (edge) => edge.target.nodeId === nodeId && edge.target.portId === spec.input,
-        );
-        if (tokens.length === 0) continue; // unwired AND unnamed = the ordinary missing-input story
-        if (wired !== undefined) {
-          diagnostics.push(
-            compilerDiagnostic(
-              "error",
-              CompilerDiagnosticCode.sourceReferenceAmbiguous,
-              `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${tokens.join(" ")}" AND has "${spec.input}" wired; one link, one truth.`,
-              { nodeId, suggestion: `Clear the ${spec.parameter} parameter, or disconnect the wire.` },
-            ),
-          );
-          continue;
-        }
-        tokens.forEach((name, index) => {
-          const sourceId = names.get(name);
-          if (sourceId === undefined) {
-            // §V369: a dangling name is an ERROR that names the name — never a quietly
-            // smaller scene. An empty render because every name dangled is the failure
-            // this refusal exists to make impossible.
-            diagnostics.push(
-              compilerDiagnostic(
-                "error",
-                CompilerDiagnosticCode.sourceReferenceMissing,
-                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", which no node in the document is called.`,
-                { nodeId, suggestion: "Name an existing node, or rename the intended one to match." },
-              ),
-            );
-            return;
-          }
-          const sourceNode = flatGraph.nodes[sourceId];
-          const sourceDefinition = sourceNode === undefined ? undefined : registry.get(sourceNode.type);
-          const sourcePort = sourceDefinition?.outputs[0]?.id;
-          if (sourcePort === undefined) {
-            diagnostics.push(
-              compilerDiagnostic(
-                "error",
-                CompilerDiagnosticCode.sourceReferenceMissing,
-                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", which has no output to reference.`,
-                { nodeId },
-              ),
-            );
-            return;
-          }
-          const consumerDefinition = registry.get(node.type);
-          const targetKind = consumerDefinition?.inputs.find((port) => port.id === spec.input)?.type.kind;
-          const sourceKind = sourceDefinition?.outputs[0]?.type.kind;
-          if (targetKind !== undefined && sourceKind !== undefined && targetKind !== sourceKind) {
-            // T447: the type check references gave up returns as a NAMED refusal — the
-            // parameter, the name, and what the named node actually is.
-            diagnostics.push(
-              compilerDiagnostic(
-                "error",
-                CompilerDiagnosticCode.sourceReferenceMissing,
-                `Node "${nodeId}" (${node.type}) names ${spec.parameter} "${name}", but "${name}" is a ${sourceNode?.type ?? "node"} and publishes no ${targetKind}.`,
-                { nodeId, suggestion: `Name a node whose output is a ${targetKind}.` },
-              ),
-            );
-            return;
-          }
-          // T447: one synthesized edge per token; `order` is the token's LIST position,
-          // so draw/light order is the user's stated order through the ordinary §V131
-          // comparator — never edge-id accident.
-          const edgeId = spec.list === true ? `ref:${nodeId}:${spec.parameter}:${index}` : `ref:${nodeId}`;
-          synthesized ??= { ...flatGraph.edges };
-          synthesized[edgeId] = {
-            id: edgeId,
-            source: { nodeId: sourceId, portId: sourcePort },
-            target: { nodeId, portId: spec.input },
-            ...(spec.list === true ? { order: index } : {}),
-          };
-        });
-      }
-    }
-    return synthesized === undefined ? flatGraph : { ...flatGraph, edges: synthesized };
-  })();
+  /**
+   * T350 (§V285) / T447 (§V373): a SOURCE REFERENCE synthesizes the exact edge the wired
+   * shape had. The document stays a DAG; everything downstream — V13 validation,
+   * inheritance through the input, the temporal split, the pair, the swap — is the
+   * machinery that already existed, so the ref and the wire compile to IDENTICAL plans by
+   * construction. A dangling name and a ref-plus-wire ambiguity are both said here.
+   *
+   * T595: the resolution moved to its own module so `project.validate` runs THIS one.
+   * While it lived inline, the bus command validated the raw document and reported
+   * `feedback.in` as an unfilled required input on a loop that compiles — a defect no
+   * legal edit could clear, because the port is filled by name.
+   */
+  const referenced = synthesizeSourceReferenceEdges(flatGraph, registry);
+  diagnostics.push(...referenced.diagnostics);
+  const graph = referenced.graph;
 
   // A sink naming an instance has to follow it into the flattening (§V25, §V28).
   const explicitSinks: ReadonlyArray<ActiveSink> | undefined =
@@ -913,14 +836,13 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
    * BASE (§V454's reserved floor), which is `previewLongEdge × MAX_TILE_SCALE`. That
    * removes the upscale at rest entirely and halves it under a full boost.
    *
-   * It is deliberately NOT the granted step, and that is §V142 holding rather than being
-   * forgotten. Sizing this from the boost means the sink set carries zoom, which means a
-   * ladder crossing RECOMPILES, which reallocates this target — and MEASURED in the
-   * running app (E16, zoomed to 4× with the transport paused): the point preview goes
-   * BLACK and stays black until playback resumes, because the splat pass lives in the
-   * main plan and the main plan does not run while paused. The preview program is
-   * transport-independent; the plan is not. Reaching the boost properly means moving
-   * synthesized previews INTO the preview program, which is a task of its own.
+   * T563 moved the synthesis into the PREVIEW PROGRAM, which was always its real home:
+   * the program owns the target (sized to the granted tile, so the boost now buys real
+   * pixels), and it rebuilds outside the frame and refreshes on the preview cadence —
+   * so the measured T502 failure (E16 at 4× zoom, paused: preview black until playback
+   * resumed, because the splat lived in the main plan and the main plan does not run
+   * while paused) cannot recur by construction. This edge is now only the NOMINAL size
+   * the projection reports for a synthesized output.
    */
   const previewTargetEdge = (): number =>
     Math.max(1, Math.round(settings.previewLongEdge)) * MAX_TILE_SCALE;
@@ -1426,40 +1348,11 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       const info = pointsetInfoByOutput.get(key);
       const position = info?.pairs["position"];
       if (info === undefined || position === undefined) continue;
-      // T502: the base tile, not `previewLongEdge`. Measured on Dawn — 24 lit texels at
-      // edge 192 against 853 at 1152, the same fraction of area — so the target's size IS
-      // the content's resolution and a bigger one buys real detail, not a bigger blur.
+      // T502/T563: the size here is NOMINAL — the preview program owns the target now
+      // and sizes it to the granted tile, so a zoom boost buys real pixels and a
+      // ladder-crossing rebuild happens outside the frame, transport-independent.
       const edgePx = previewTargetEdge();
       const previewId = pointsPreviewResourceId(nodeId, slot.portId);
-      resources.push({
-        kind: "target",
-        id: previewId,
-        size: [edgePx, edgePx],
-        format: "rgba8unorm",
-        label: `${nodeId}.${slot.portId} points preview`,
-      });
-      passes.push({
-        kind: "draw",
-        id: `${nodeId}#pointsPreview:${slot.portId}`,
-        nodeId,
-        shader: pointsPreviewWgsl({ counted: info.count !== undefined }),
-        target: previewId,
-        topology: "triangle-list",
-        instances: info.capacity,
-        vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
-        buffers: [
-          { binding: "positions", resourceId: position.pair, half: position.half },
-          ...(info.count === undefined ? [] : [{ binding: "counts", resourceId: info.count.buffer }]),
-        ],
-        uniforms: {
-          // Fixed default framing for now; T379's viewer camera can drive this as a
-          // VALUE update — the uniform is data, never structure (§V5, §V330).
-          viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
-          pointSize: POINTS_PREVIEW_POINT_SIZE,
-        },
-        uniformBinding: "params",
-        blend: "alpha",
-      });
       pointsPreviewOutputs.set(key, {
         nodeId,
         portId: slot.portId,
@@ -1469,6 +1362,38 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
+        synthesis: {
+          depth: false,
+          passes: [
+            {
+              kind: "draw",
+              id: `${nodeId}#pointsPreview:${slot.portId}`,
+              nodeId,
+              shader: pointsPreviewWgsl({ counted: info.count !== undefined }),
+              target: previewId,
+              topology: "triangle-list",
+              instances: info.capacity,
+              vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
+              buffers: [
+                // Half "read", not the in-plan half: the preview program runs BETWEEN
+                // main frames, after the swap has landed the latest state on the read
+                // half (T563; §V168 governs in-plan consumers only).
+                { binding: "positions", resourceId: position.pair, half: "read" },
+                ...(info.count === undefined
+                  ? []
+                  : [{ binding: "counts", resourceId: info.count.buffer }]),
+              ],
+              uniforms: {
+                // Fixed default framing for now; T379's viewer camera can drive this as a
+                // VALUE update — the uniform is data, never structure (§V5, §V330).
+                viewProjection: Array.from(POINTS_PREVIEW_CAMERA),
+                pointSize: POINTS_PREVIEW_POINT_SIZE,
+              },
+              uniformBinding: "params",
+              blend: "alpha",
+            },
+          ],
+        },
       });
     }
 
@@ -1564,14 +1489,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       // that matters: the policy reaches the NEXT preview kind by construction.
       const edgePx = previewTargetEdge();
       const previewId = scenePreviewResourceId(nodeId, port.id);
-      resources.push({
-        kind: "target",
-        id: previewId,
-        size: [edgePx, edgePx],
-        format: "rgba8unorm",
-        depth: true,
-        label: `${nodeId}.${port.id} ${payload.kind} preview`,
-      });
+      // T563: the target and these passes belong to the PREVIEW PROGRAM (see the
+      // `synthesis` docblock in types.ts) — the main plan carries neither.
+      const synthPasses: DrawPassDescriptor[] = [];
       const passBase = {
         kind: "draw" as const,
         id: `${nodeId}#scenePreview:${port.id}`,
@@ -1583,7 +1503,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         clear: true,
       };
       if (payload.kind === "camera") {
-        passes.push({
+        synthPasses.push({
           ...passBase,
           shader: cameraPreviewWgsl(),
           vertexCount: CAMERA_PREVIEW_VERTEX_COUNT,
@@ -1596,7 +1516,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         // The stock ball in the DEFAULT material, lit by ONLY this light, zero
         // ambient: a light at zero intensity previews black — true, and the point.
         const light = payload.light;
-        passes.push({
+        synthPasses.push({
           ...passBase,
           shader: scenePreviewBallWgsl({ model: "lambert", lightCount: 1 }),
           vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
@@ -1654,7 +1574,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
               ] as const)
             : material.specularColor;
         const geometryShininess = material.model === "pbr" ? 96 : material.shininess;
-        passes.push({
+        synthPasses.push({
           kind: "draw",
           id: `${nodeId}#scenePreviewBackdrop:${port.id}`,
           nodeId,
@@ -1682,10 +1602,12 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           light1Vector: [...SCENE_PREVIEW_FILL.direction, 0],
         };
         const geometryBuffers = [
-          { binding: "positions", resourceId: position.pair, half: position.half },
+          // Half "read": the preview program runs between main frames, after the swap
+          // (T563; §V168 governs in-plan consumers only).
+          { binding: "positions", resourceId: position.pair, half: "read" as const },
         ];
         if (payload.mode === "points") {
-          passes.push({
+          synthPasses.push({
             ...passBase,
             clear: false,
             shader: pointsPreviewWgsl({ counted: payload.count !== undefined }),
@@ -1705,7 +1627,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           });
         } else if (payload.mode === "instances") {
           const instance = payload.instance ?? { shape: "box" as const, scale: 0.05 };
-          passes.push({
+          synthPasses.push({
             ...passBase,
             clear: false,
             // Maps are refused on instances at the Render (no uv yet), so they are not
@@ -1734,7 +1656,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           if (gridPointCount(parsed) > payload.capacity) continue;
           const topology = parsed;
           const cells = gridCellCounts(topology);
-          passes.push({
+          synthPasses.push({
             ...passBase,
             clear: false,
             shader: sceneSurfaceWgsl({ model: geometryModel, lightCount: 2 }),
@@ -1764,7 +1686,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           ...(payload.maps.albedo === undefined ? {} : { albedo: true }),
           ...(payload.maps.roughness === undefined ? {} : { roughness: true }),
         };
-        passes.push({
+        synthPasses.push({
           ...passBase,
           shader: scenePreviewBallWgsl({ model, lightCount: 2, maps }),
           vertexCount: SCENE_PREVIEW_BALL_VERTEX_COUNT,
@@ -1797,6 +1719,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
           },
         });
       }
+      // A surface-mode geometry whose topology could not be used pushes only the
+      // backdrop — the refusal-by-name case keeps its honest empty frame.
       scenePreviewOutputs.set(key, {
         nodeId,
         portId: port.id,
@@ -1806,6 +1730,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         format: "rgba8unorm",
         space: colorSpaceForFormat("rgba8unorm"),
         temporal: false,
+        synthesis: { depth: true, passes: synthPasses },
       });
     }
   }

@@ -1,4 +1,5 @@
 import type {
+  DrawPassDescriptor,
   EffectPassDescriptor,
   ResourceDescriptor,
   SamplerResourceDescriptor,
@@ -53,7 +54,8 @@ export function buildPreviewProgram(
   );
   const byKey = new Map(allocations.map((allocation) => [allocation.key, allocation]));
 
-  const passes: EffectPassDescriptor[] = [];
+  const passes: (EffectPassDescriptor | DrawPassDescriptor)[] = [];
+  const synthesized: ResourceDescriptor[] = [];
   for (const entry of allocated) {
     const key = previewKey(entry.ref);
     const tile = byKey.get(key);
@@ -61,6 +63,27 @@ export function buildPreviewProgram(
     // suspension should already have prevented that; for one that is only holding a tile, it
     // is the ordinary case — it lost its slot to a preview that is actually on screen.
     if (tile === undefined) continue;
+    /*
+     * T563: a SYNTHESIZED preview's source target lives HERE, not in the main plan —
+     * sized to the granted tile (square: the stock framings are square), so a zoom
+     * boost buys real pixels, and rebuilt outside the frame like every other program
+     * resource, so a ladder crossing repaints even with the transport paused. The draw
+     * passes render it on the preview cadence; the lens pass below reads it exactly as
+     * it reads a main-plan texture.
+     */
+    const synthesis = entry.request.synthesis;
+    if (synthesis !== undefined) {
+      const edge = Math.max(1, tile.size[0] ?? 1, tile.size[1] ?? 1);
+      synthesized.push({
+        kind: "target",
+        id: entry.request.source.resourceId,
+        size: [edge, edge],
+        format: "rgba8unorm",
+        ...(synthesis.depth ? { depth: true } : {}),
+        label: `${key} synthesized preview`,
+      });
+      passes.push(...synthesis.passes);
+    }
     passes.push({
       kind: "effect",
       id: previewPassId(key),
@@ -84,7 +107,7 @@ export function buildPreviewProgram(
   passes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const resources: ResourceDescriptor[] =
-    passes.length === 0 ? [] : [PREVIEW_SAMPLER, ...atlas.descriptors()];
+    passes.length === 0 ? [] : [PREVIEW_SAMPLER, ...atlas.descriptors(), ...synthesized];
 
   return {
     resources,

@@ -268,6 +268,9 @@ export interface ExternalResources {
   readonly targets: ReadonlyMap<string, Target>;
   readonly pingPongs: ReadonlyMap<string, PingPongTargets>;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
+  /** T563: the main program's storage, for a preview program's synthesized draws. */
+  readonly buffers?: ReadonlyMap<string, StorageBuffer>;
+  readonly bufferPairs?: ReadonlyMap<string, PingPongStorage>;
 }
 
 export const noExternalResources: ExternalResources = {
@@ -530,12 +533,14 @@ export function buildResources(
   };
 
   const bufferValue = (resourceId: string, half: "read" | "write"): unknown => {
-    const plain = buffers.get(resourceId);
+    const plain = buffers.get(resourceId) ?? externals.buffers?.get(resourceId);
     if (plain) return plain;
     // T121: a pair binds the SELECTED half — a stateful kernel reads "read" and writes
     // "write", the pair swaps as one identity. Both halves swap per frame, so both are
-    // re-pointed by the backend before each render.
-    const pair = bufferPairs.get(resourceId);
+    // re-pointed by the backend before each render. External pairs (T563: a preview
+    // program's splat binding the main program's point storage) resolve the same way
+    // and are re-pointed by presentPreviews before each encode.
+    const pair = bufferPairs.get(resourceId) ?? externals.bufferPairs?.get(resourceId);
     if (pair) return half === "write" ? pair.write : pair.read;
     return undefined;
   };
@@ -602,7 +607,14 @@ export function buildResources(
         rings.has(binding.resourceId),
     );
     if (dynamicTex.length > 0) dynamicTextures.set(passId, dynamicTex);
-    const dynamicBuf = bufferBindings.filter((binding) => bufferPairs.has(binding.resourceId));
+    const dynamicBuf = bufferBindings.filter(
+      (binding) =>
+        bufferPairs.has(binding.resourceId) ||
+        externals.bufferPairs?.has(binding.resourceId) === true ||
+        // T563: a plain EXTERNAL buffer (a splat's counts) is replaced wholesale when
+        // the main program recompiles, so it is re-pointed per encode like a pair.
+        externals.buffers?.has(binding.resourceId) === true,
+    );
     if (dynamicBuf.length > 0) dynamicBuffers.set(passId, dynamicBuf);
   };
 

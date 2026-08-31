@@ -35,15 +35,15 @@ import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
  * Every scene payload preview (camera, light, material) had the same defect, which is
  * §V437 to the letter: a policy delivered kind by kind is not delivered.
  *
- * ## The rule, and why it is the BASE rather than the granted step
+ * ## The rule after T563
  *
- * A synthesized preview renders at the tile it is GUARANTEED — the base §V454 reserves,
- * `previewLongEdge × MAX_TILE_SCALE`. Not the granted step, and that is §V142 holding
- * rather than being forgotten: sizing this from the boost puts zoom in the sink set, a
- * ladder crossing then RECOMPILES, and the reallocated target is never redrawn while the
- * transport is paused — measured in the running app as a permanently black preview. The
- * boost can only reach a synthesized preview once it lives in the preview program, which
- * is transport-independent; that is a task of its own.
+ * The synthesis lives in the PREVIEW PROGRAM now: the real target is sized to the
+ * GRANTED tile (the boost finally reaches it), and it rebuilds outside the frame, so
+ * the paused-black failure that kept T502 on the base tile cannot recur. What this file
+ * still governs is the compiler's half: the NOMINAL row size (`previewTargetEdge`, the
+ * base §V454 reserves — `previewLongEdge × MAX_TILE_SCALE`) that the request path reads
+ * for aspect, kept to one reader; and the absence — no compile may put a synthesized
+ * preview target or pass into the main plan, swept across the whole catalogue.
  *
  * ## The mechanism, and this gate
  *
@@ -94,13 +94,15 @@ function oneNode(type: string): GraphDocument {
 }
 
 /**
- * Resources this compile emitted ONLY because the preview sink asked for them, with their
- * sizes. That is the definition of "synthesized" — no list of resource-id prefixes, no
- * knowledge of which kinds synthesize anything.
+ * Output rows this compile synthesized ONLY because the preview sink asked for them,
+ * with their nominal sizes. That is the definition of "synthesized" — no list of
+ * resource-id prefixes, no knowledge of which kinds synthesize anything. T563: the
+ * synthesis rides the OUTPUT ROW (the preview program owns the real target, sized to
+ * the granted tile); the row's `size` is the nominal square this rule governs, and the
+ * plan itself must stay clean of preview targets — asserted per compile, every time.
  */
 function synthesizedFor(type: string, portId: string, settings: ProjectSettings = SETTINGS) {
   const graph = oneNode(type);
-  const without = compileGraph({ graph, settings, registry, capabilities: CAPABILITIES });
   const withSink = compileGraph({
     graph,
     settings,
@@ -108,10 +110,17 @@ function synthesizedFor(type: string, portId: string, settings: ProjectSettings 
     capabilities: CAPABILITIES,
     sinks: [{ nodeId: "n1", portId, kind: "preview" }],
   });
-  const before = new Set(without.resources.map((resource) => resource.id));
-  return withSink.resources
-    .filter((resource) => !before.has(resource.id) && resource.kind === "target")
-    .map((resource) => ({ id: resource.id, size: (resource as { size: readonly [number, number] }).size }));
+  // T563's absence half, swept across the whole catalogue: no compile may put a
+  // synthesized preview target or pass into the main plan.
+  expect(
+    withSink.resources.filter((resource) => resource.id.startsWith("preview:")),
+  ).toEqual([]);
+  expect(
+    withSink.passes.filter((pass) => pass.id.includes("#pointsPreview") || pass.id.includes("#scenePreview")),
+  ).toEqual([]);
+  return withSink.outputs
+    .filter((output) => output.synthesis !== undefined)
+    .map((output) => ({ id: output.resourceId, size: output.size }));
 }
 
 /**

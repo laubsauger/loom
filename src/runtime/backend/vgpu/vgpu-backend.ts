@@ -1009,11 +1009,18 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   }
 
   function lookupTargets(outputId: string): ReadonlyArray<Target> {
-    if (!program) return [];
-    const plain = program.resources.targets.get(outputId);
-    if (plain) return [plain];
-    const pair = program.resources.pingPongs.get(outputId);
-    if (pair) return [pair.read, pair.write];
+    if (program) {
+      const plain = program.resources.targets.get(outputId);
+      if (plain) return [plain];
+      const pair = program.resources.pingPongs.get(outputId);
+      if (pair) return [pair.read, pair.write];
+    }
+    // T563: a SYNTHESIZED preview's target lives in a preview host's set, not the main
+    // program — readback (an agent's screenshot, the inspect probe) still reaches it.
+    for (const host of previewHosts) {
+      const tile = host.set?.targets.get(outputId);
+      if (tile) return [tile];
+    }
     return [];
   }
 
@@ -1108,6 +1115,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       targets: program.resources.targets,
       pingPongs: program.resources.pingPongs,
       samplers: program.resources.samplers,
+      // T563: a preview program's synthesized draws bind the main program's point
+      // storage (a splat's positions, the lifecycle's counts) as externals.
+      buffers: program.resources.buffers,
+      bufferPairs: program.resources.bufferPairs,
     };
   }
 
@@ -1686,9 +1697,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // §V60 (T173): the descriptor comes from the thing that owns the copy. vgpu's
       // read() UNPADS rows (its readback loop strips the 256-byte alignment), so the
       // returned rowStride is exactly width × bytesPerPixel — asserted, not assumed.
-      const descriptor = program?.resourceDescriptors.find(
-        (resource) => resource.id === outputId && (resource.kind === "target" || resource.kind === "pingPong"),
-      );
+      const descriptor =
+        program?.resourceDescriptors.find(
+          (resource) =>
+            resource.id === outputId && (resource.kind === "target" || resource.kind === "pingPong"),
+        ) ??
+        // T563: a synthesized preview target's descriptor lives with its preview host.
+        [...previewHosts]
+          .flatMap((host) => host.built?.resources ?? [])
+          .find((resource) => resource.id === outputId && resource.kind === "target");
       if (descriptor === undefined || (descriptor.kind !== "target" && descriptor.kind !== "pingPong")) {
         throw new Error(`readOutput("${outputId}") has no retained descriptor to interpret the bytes.`);
       }
@@ -1908,11 +1925,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           }
 
           const dpr = command.surface.dpr;
+          const clearFor = (passId: string): boolean => {
+            const pass = h.program?.passes.find((entry) => entry.id === passId);
+            return pass === undefined || !("clear" in pass) || pass.clear !== false;
+          };
           const encodeCommand = (f: Frame): void => {
             // Ping-pong-sourced bindings swap identity per frame — re-point first,
             // exactly as the main program's rebindDynamicTextures does.
             for (const [passId, bindings] of set.dynamicTextures) {
-              const drawable = set.effects.get(passId);
+              const drawable = set.effects.get(passId) ?? set.draws.get(passId);
               if (!drawable) continue;
               const values: Record<string, unknown> = {};
               for (const binding of bindings) {
@@ -1923,12 +1944,41 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
               }
               drawable.set(values);
             }
+            // T563: a synthesized draw's buffer-pair bindings chase the MAIN program's
+            // swaps — re-pointed per encode exactly as the texture pairs above are.
+            for (const [passId, bindings] of set.dynamicBuffers) {
+              const drawable = set.draws.get(passId) ?? set.effects.get(passId);
+              if (!drawable) continue;
+              const values: Record<string, unknown> = {};
+              for (const binding of bindings) {
+                const pair =
+                  set.bufferPairs.get(binding.resourceId) ??
+                  program?.resources.bufferPairs.get(binding.resourceId);
+                if (pair) {
+                  values[binding.binding] = binding.half === "write" ? pair.write : pair.read;
+                  continue;
+                }
+                // A plain external buffer (counts): a main recompile replaces the
+                // object, so bind whatever the main program holds NOW.
+                const plain =
+                  set.buffers.get(binding.resourceId) ??
+                  program?.resources.buffers.get(binding.resourceId);
+                if (plain) values[binding.binding] = plain;
+              }
+              drawable.set(values);
+            }
 
             // Refresh: only the tiles whose cadence says they are due (§V28, §V16).
+            // A synthesized preview's draw passes appear here too (T563), ahead of
+            // their lens pass — encode order IS this list's order. `clear` comes from
+            // the pass descriptor: a stock scene's backdrop clears, the object drawn
+            // over it must not.
             for (const passId of command.refresh) {
-              const drawable = set.effects.get(passId);
+              const drawable = set.effects.get(passId) ?? set.draws.get(passId);
               const resolve = set.renderTargets.get(passId);
-              if (drawable && resolve) f.pass({ target: resolve(), clear: true }, drawable);
+              if (drawable && resolve) {
+                f.pass({ target: resolve(), clear: clearFor(passId) }, drawable);
+              }
             }
 
             // Composite: every active tile, due or not — a pan moves rects without

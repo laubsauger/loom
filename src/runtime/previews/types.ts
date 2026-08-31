@@ -1,7 +1,7 @@
 import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
-import type { EffectPassDescriptor, ResourceDescriptor, UniformValues } from "../backend/plan.ts";
+import type { DrawPassDescriptor, EffectPassDescriptor, ResourceDescriptor, UniformValues } from "../backend/plan.ts";
 
 /**
  * Shared vocabulary for the preview system (T34, T35, T36).
@@ -173,6 +173,16 @@ export interface PreviewRequest {
   readonly view: PreviewView;
   /** Per-preview refresh rate override. Absent = `ProjectSettings.previewFps`. */
   readonly fps?: number;
+  /**
+   * T563: for a SYNTHESIZED preview (pointset splat, scene-payload stock scene), the
+   * draw passes that render `source.resourceId` — carried from the compiler's
+   * `ResolvedOutput.synthesis`. The preview program owns the target (sized to the
+   * granted tile) and runs these on the preview cadence, ahead of the lens pass.
+   */
+  readonly synthesis?: {
+    readonly passes: ReadonlyArray<DrawPassDescriptor>;
+    readonly depth: boolean;
+  };
 }
 
 export const SUSPEND_REASONS = [
@@ -228,7 +238,13 @@ export interface PreviewSchedule {
  */
 export interface PreviewProgram {
   readonly resources: ReadonlyArray<ResourceDescriptor>;
-  readonly passes: ReadonlyArray<EffectPassDescriptor>;
+  /**
+   * Lens effect passes, plus — for SYNTHESIZED previews (T563) — the draw passes that
+   * render the splat or stock scene into the program-owned source target. Encode order
+   * is the per-frame command's `refresh` order, never this array's (it is sorted for
+   * the signature).
+   */
+  readonly passes: ReadonlyArray<EffectPassDescriptor | DrawPassDescriptor>;
   /** Changes iff something above changed. The host rebuilds only then (§V8). */
   readonly signature: string;
 }

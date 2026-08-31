@@ -7,7 +7,7 @@ import type { ParameterValue } from "../domain/types/parameters.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "../domain/components/index.ts";
 import type { ComponentSource } from "./flatten.ts";
-import type { PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
+import type { DrawPassDescriptor, PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
 import type { ParameterResolution } from "./validate.ts";
 import type { ColorSpace } from "./color-space.ts";
 
@@ -98,6 +98,27 @@ export interface ResolvedOutput {
   readonly temporal: boolean;
   /** True when the definition declares this target output carries a depth attachment (T299, T295). */
   readonly depth?: boolean;
+  /**
+   * T563: a SYNTHESIZED preview — the pointset splat or a scene payload's stock scene.
+   *
+   * The draw passes are DATA for the PREVIEW PROGRAM, which owns the target they render
+   * into (`resourceId` above; the program sizes it to the granted tile) and runs them on
+   * the preview cadence. The main plan carries neither the passes nor the target — which
+   * is the fix for the measured T502 failure: the splat lived in the main plan, the main
+   * plan does not run while the transport is paused, so a ladder-crossing recompile
+   * reallocated the target and the preview went black until playback resumed. The
+   * preview program rebuilds outside the frame and refreshes regardless of transport.
+   *
+   * Buffer-pair bindings inside these passes bind half "read": between main frames the
+   * swap has landed the latest state on the read half, which is what a next-frame
+   * consumer sees. Texture bindings (a material's maps) resolve as externals from the
+   * main program, exactly like a lens pass's source texture.
+   */
+  readonly synthesis?: {
+    readonly passes: ReadonlyArray<DrawPassDescriptor>;
+    /** The synthesized target needs a depth attachment (scene payloads depth-test). */
+    readonly depth: boolean;
+  };
 }
 
 /**

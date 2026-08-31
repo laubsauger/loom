@@ -7,7 +7,8 @@ import { cameraPayloadMatrix } from "../domain/geometry/camera.ts";
 import { DEFAULT_MATERIAL, SCENE_PAYLOAD_KINDS } from "../domain/types/scene.ts";
 import type { ScenePayloadKind } from "../domain/types/scene.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
-import type { DrawPassDescriptor, TargetResourceDescriptor } from "../runtime/backend/plan.ts";
+import type { DrawPassDescriptor } from "../runtime/backend/plan.ts";
+import type { ResolvedOutput } from "./types.ts";
 
 /**
  * T462 (§V85): a scene payload previews as ITSELF in a stock scene — never a borrowed
@@ -94,10 +95,25 @@ function geometryGraph(parameters: Record<string, unknown>): GraphDocument {
   );
 }
 
-const previewPasses = (compiled: { passes: ReadonlyArray<unknown> }) =>
-  compiled.passes.filter((pass) =>
-    String((pass as { id: string }).id).includes("#scenePreview:"),
+/**
+ * T563: the synthesis rides the OUTPUT ROW — the preview program owns the target and
+ * runs the draws on the preview cadence. The main plan carries neither, and
+ * `mainPlanIsClean` pins that absence in every test below.
+ */
+const previewPasses = (compiled: { outputs: ReadonlyArray<ResolvedOutput> }) =>
+  compiled.outputs.flatMap((output) =>
+    (output.synthesis?.passes ?? []).filter((pass) => pass.id.includes("#scenePreview")),
   ) as DrawPassDescriptor[];
+
+const mainPlanIsClean = (compiled: {
+  passes: ReadonlyArray<unknown>;
+  resources: ReadonlyArray<{ id: string }>;
+}): boolean =>
+  !compiled.passes.some((pass) => String((pass as { id: string }).id).includes("#scenePreview")) &&
+  !compiled.resources.some((resource) => resource.id.startsWith("preview:scene:"));
+
+const rowById = (compiled: { outputs: ReadonlyArray<ResolvedOutput> }, resourceId: string) =>
+  compiled.outputs.find((output) => output.resourceId === resourceId);
 
 describe("scene payload previews are sink-gated (T462, §V309)", () => {
   it("no sink means no pass, no target, no output row", () => {
@@ -121,15 +137,13 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
       1,
     );
     expect(pass?.uniforms?.["viewProjection"]).toEqual(Array.from(expected));
-    const target = compiled.resources.find(
-      (resource) => resource.id === "preview:scene:cam:out",
-    ) as TargetResourceDescriptor;
-    expect(target?.depth).toBe(true);
-    // T502: the base tile (`previewLongEdge` × MAX_TILE_SCALE), not the raw setting —
-    // the same rule the pointset splat takes, from the same helper.
-    expect(target?.size).toEqual([384, 384]);
-    // The projection carries the row so the preview system can bind it.
-    expect(compiled.outputs.some((output) => output.resourceId === "preview:scene:cam:out")).toBe(true);
+    // T563: the target is the PREVIEW PROGRAM's (depth-tested, sized to the granted
+    // tile) — the row carries the synthesis and the plan carries nothing.
+    const row = rowById(compiled, "preview:scene:cam:out");
+    expect(row?.synthesis?.depth).toBe(true);
+    // The nominal square size the request path reads (T502's base-tile rule).
+    expect(row?.size).toEqual([384, 384]);
+    expect(mainPlanIsClean(compiled)).toBe(true);
   });
 
   it("a watched light lights the default ball with ONLY itself — zero ambient", () => {
@@ -169,9 +183,8 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
 
   it("a watched geometry draws its OWN object, backdrop first (T532, §V384)", () => {
     const compiled = compile(geometryGraph({ mode: "surface" }), [{ nodeId: "geo", portId: "out" }]);
-    const passes = compiled.passes.filter((pass) =>
-      String((pass as { id: string }).id).startsWith("geo#scenePreview"),
-    ) as DrawPassDescriptor[];
+    const passes = (rowById(compiled, "preview:scene:geo:out")?.synthesis?.passes ??
+      []) as DrawPassDescriptor[];
     // Backdrop then object, and only the backdrop clears: an unlit object on unpainted
     // black is not a preview (§V384, E25's invisible screen).
     expect(passes.map((pass) => pass.id)).toEqual([
@@ -192,8 +205,8 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
       geometryGraph({ mode: "instances", shape: "octahedron", scale: 0.25 }),
       [{ nodeId: "geo", portId: "out" }],
     );
-    const object = compiled.passes.find(
-      (pass) => (pass as { id: string }).id === "geo#scenePreview:out",
+    const object = rowById(compiled, "preview:scene:geo:out")?.synthesis?.passes.find(
+      (pass) => pass.id === "geo#scenePreview:out",
     ) as DrawPassDescriptor;
     // shape 2 = octahedron in the Render's own encoding, and the node's own scale — the
     // two things a geometry node uniquely decides, neither visible anywhere upstream.
@@ -209,8 +222,8 @@ describe("scene payload previews are sink-gated (T462, §V309)", () => {
       geometryGraph({ mode: "surface", tint: [1, 0, 0, 1] }),
       [{ nodeId: "geo", portId: "out" }],
     );
-    const object = compiled.passes.find(
-      (pass) => (pass as { id: string }).id === "geo#scenePreview:out",
+    const object = rowById(compiled, "preview:scene:geo:out")?.synthesis?.passes.find(
+      (pass) => pass.id === "geo#scenePreview:out",
     ) as DrawPassDescriptor;
     // The COMPOSED material: the default material's 0.8 grey multiplied by the node's own
     // red tint. The referenced material alone would read [0.8, 0.8, 0.8, 1] — which is
@@ -249,24 +262,18 @@ describe("every scene payload kind has a preview variant (T532, §V437)", () => 
       ),
   };
 
-  it.each(SCENE_PAYLOAD_KINDS)("%s synthesizes a preview target and a draw into it", (kind) => {
+  it.each(SCENE_PAYLOAD_KINDS)("%s synthesizes a preview row with a draw into its target", (kind) => {
     const compiled = compile(fixtures[kind](), [{ nodeId: "subject", portId: "out" }]);
     expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
-    const target = compiled.resources.find(
-      (resource) => resource.id === "preview:scene:subject:out",
-    ) as TargetResourceDescriptor | undefined;
-    expect([kind, target?.size]).toEqual([kind, [384, 384]]);
-    const draws = compiled.passes.filter(
-      (pass) =>
-        (pass as { kind: string }).kind === "draw" &&
-        (pass as { target?: string }).target === "preview:scene:subject:out",
+    // T563: the row carries everything — the target id the preview program creates
+    // (nominal square size for the request path) and the draws that render it.
+    const row = rowById(compiled, "preview:scene:subject:out");
+    expect([kind, row?.size]).toEqual([kind, [384, 384]]);
+    const draws = (row?.synthesis?.passes ?? []).filter(
+      (pass) => pass.target === "preview:scene:subject:out",
     );
     expect([kind, draws.length > 0]).toEqual([kind, true]);
-    // And the row the preview system binds, or the tile has nothing to sample.
-    expect([
-      kind,
-      compiled.outputs.some((output) => output.resourceId === "preview:scene:subject:out"),
-    ]).toEqual([kind, true]);
+    expect([kind, mainPlanIsClean(compiled)]).toEqual([kind, true]);
   });
 });
 
@@ -318,19 +325,19 @@ describe("T546 — the camera preview follows the renderer that names it", () =>
     // is about — the camera tile samples the render's own target, not a stock scene.
     expect(camRow?.resourceId).toBe(shotRow?.resourceId);
 
-    // ZERO COST is half the claim: no synthesized target, no extra draw. A re-render of
-    // the scene at preview size would show the same picture and cost a whole pass.
-    expect(compiled.resources.some((resource) => resource.id === "preview:scene:cam:out")).toBe(false);
-    expect(
-      compiled.passes.some((pass) => String((pass as { id: string }).id) === "cam#scenePreview:out"),
-    ).toBe(false);
+    // ZERO COST is half the claim: no synthesis at all — the aliased row is the
+    // renderer's own, and a synthesized row would carry draw passes here (T563 moved
+    // the discriminator onto the row itself).
+    expect(camRow?.synthesis).toBeUndefined();
   });
 
   it("ZERO renderers: the stock reference scene stands — T462's real case, untouched", () => {
     const compiled = compile(graphOf([node("cam", "camera", {}, "cam1")]), [
       { nodeId: "cam", portId: "out" },
     ]);
-    expect(compiled.resources.some((resource) => resource.id === "preview:scene:cam:out")).toBe(true);
+    // T563: "the stock scene stands" now means the row CARRIES its synthesis — the
+    // preview program owns the target, so the plan holds no preview:scene resource.
+    expect(rowById(compiled, "preview:scene:cam:out")?.synthesis?.passes.length).toBeGreaterThan(0);
     expect(rowFor(compiled, "cam")?.resourceId).toBe("preview:scene:cam:out");
     expect(
       compiled.diagnostics.some((entry) => entry.code === "compiler/camera-preview-ambiguous"),

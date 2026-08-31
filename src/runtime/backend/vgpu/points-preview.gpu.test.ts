@@ -6,7 +6,8 @@ import { viewProjection } from "../../../domain/geometry/camera.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
-import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+import { probeDawn } from "./node-gpu-host.ts";
+import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
 
 /**
  * T373 on a REAL device: a watched point generator's synthesized splat pass actually
@@ -19,7 +20,7 @@ import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
  * full-screen wash or a stuck clear both fail loudly.
  */
 
-/** The synthesized target's edge: `previewLongEdge` × MAX_TILE_SCALE (T502, §V454). */
+/** The tile edge this test grants — T563: the preview program sizes the target to it. */
 const EDGE = 384;
 const PREVIEW_LONG_EDGE = 192;
 const POINT_SIZE = 0.03; // must match POINTS_PREVIEW_POINT_SIZE in compile.ts — pinned below
@@ -66,12 +67,15 @@ describe("pointset preview splat on Dawn (T373)", () => {
     expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     expect(plan.ok).toBe(true);
     const previewId = pointsPreviewResourceId("gen", "out");
-    const pass = plan.passes.find((entry) => entry.id === "gen#pointsPreview:out");
+    // T563: the splat rides the output row's synthesis, not the plan.
+    const row = plan.outputs.find((entry) => entry.nodeId === "gen" && entry.portId === "out");
+    const pass = row?.synthesis?.passes.find((entry) => entry.id === "gen#pointsPreview:out");
     expect(pass).toBeDefined();
     // The constant this test's own projection uses must be the one the pass carries.
     expect((pass as { uniforms?: { pointSize?: number } }).uniforms?.pointSize).toBe(POINT_SIZE);
 
-    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const { host, session } = capturingHost();
+    const backend = createVgpuBackend({ host });
     const errors: string[] = [];
     backend.onDiagnostic((d) => {
       if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
@@ -84,6 +88,12 @@ describe("pointset preview splat on Dawn (T373)", () => {
         pointer: { x: 0, y: 0, buttons: 0 },
         resolution: [64, 64],
       });
+      expect(errors).toEqual([]);
+
+      // T563: encode the splat through the preview program, at this test's tile.
+      const device = session()?.gpu.gpu as unknown as GPUDevice;
+      drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge: EDGE });
+      await device.queue.onSubmittedWorkDone();
       expect(errors).toEqual([]);
 
       // The point's actual position, then the SAME projection the compiler bakes in.
@@ -143,4 +153,91 @@ describe("pointset preview splat on Dawn (T373)", () => {
       backend.dispose();
     }
   });
+
+  /**
+   * T563's PROPERTY, measured where it broke: E16 at 4× zoom with the transport PAUSED
+   * went black after a ladder crossing, because the splat pass lived in the main plan,
+   * the recompile reallocated the target, and the main plan does not run while paused.
+   * Here the main plan renders exactly ONCE (the "pause"), the tile then crosses a
+   * ladder step (192 → 1152: a fresh program, a fresh target), and the splat must still
+   * have ink — drawn by the preview program from the untouched point storage.
+   */
+  it("survives a ladder crossing with the transport paused — the E16 black preview cannot recur", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: {
+        revision: 1,
+        nodes: {
+          gen: { id: "gen", type: "pointLine", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { count: 64, sizeX: 2 } },
+        },
+        edges: {},
+        groups: {},
+      },
+      settings: {
+        outputResolution: { width: 64, height: 64 },
+        workingFormat: "rgba8unorm",
+        randomSeed: 7,
+        previewLongEdge: PREVIEW_LONG_EDGE,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      },
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      },
+      sinks: [{ nodeId: "gen", portId: "out", kind: "preview" }],
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const { host, session } = capturingHost();
+    const backend = createVgpuBackend({ host });
+    const errors: string[] = [];
+    backend.onDiagnostic((d) => {
+      if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
+    });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      // ONE main frame, then the transport "pauses": no further backend.render calls.
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const device = session()?.gpu.gpu as unknown as GPUDevice;
+      const previewId = pointsPreviewResourceId("gen", "out");
+      const lit = async (): Promise<number> => {
+        const image = await backend.readOutput(previewId);
+        let count = 0;
+        for (let index = 0; index < image.bytes.length; index += 4) {
+          if ((image.bytes[index] ?? 0) > 12) count += 1;
+        }
+        return count;
+      };
+
+      const at192 = drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge: 192 });
+      await device.queue.onSubmittedWorkDone();
+      const before = await lit();
+      expect(before).toBeGreaterThan(0);
+      at192.dispose();
+
+      // THE LADDER CROSSING, paused: a new program, a new (bigger) target — and the
+      // splat repaints from the storage the paused plan left behind. Before T563 this
+      // read ZERO lit texels and stayed zero until playback resumed.
+      drawSynthesizedPreview({ backend, device, outputs: plan.outputs, nodeId: "gen", portId: "out", tileEdge: 1152 });
+      await device.queue.onSubmittedWorkDone();
+      const after = await lit();
+      expect(after).toBeGreaterThan(before); // more picture, not black — and not a copy
+      expect(errors).toEqual([]);
+    } finally {
+      backend.dispose();
+    }
+  }, 60_000);
 });

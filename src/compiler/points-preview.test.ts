@@ -6,6 +6,7 @@ import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
 import type { DrawPassDescriptor } from "../runtime/backend/plan.ts";
+import type { ResolvedOutput } from "./types.ts";
 
 /**
  * T373 (§V85): a node whose output is a POINTSET previews as its own splat.
@@ -16,6 +17,12 @@ import type { DrawPassDescriptor } from "../runtime/backend/plan.ts";
  * for any watched pointset output — so every present and future point producer is
  * covered by construction (§V316, §V319), and OFF stays free because the synthesis is
  * gated on the same preview-sink set that gates texture materialization (§V297, §V309).
+ *
+ * T563 moved the synthesis OUT of the main plan: the draw pass now travels on the
+ * output row's `synthesis` field, and the PREVIEW PROGRAM owns the target it renders
+ * into — sized to the granted tile, rebuilt outside the frame, refreshed on the preview
+ * cadence whether or not the transport runs. The main plan carries neither the pass nor
+ * the target, and these tests assert that absence as hard as they assert the presence.
  */
 
 const registry = createNodeRegistry(allNodeDefinitions).view();
@@ -61,50 +68,63 @@ function compileWithSinks(graph: GraphDocument, sinks: Array<{ nodeId: string; p
   } as never);
 }
 
-const previewPassFor = (passes: ReadonlyArray<unknown>, nodeId: string): DrawPassDescriptor | undefined =>
-  passes.find(
-    (pass): pass is DrawPassDescriptor =>
-      (pass as { id?: string }).id === `${nodeId}#pointsPreview:out`,
+const outputFor = (
+  outputs: ReadonlyArray<ResolvedOutput>,
+  nodeId: string,
+  portId = "out",
+): ResolvedOutput | undefined =>
+  outputs.find((entry) => entry.nodeId === nodeId && entry.portId === portId);
+
+const previewPassFor = (
+  outputs: ReadonlyArray<ResolvedOutput>,
+  nodeId: string,
+  portId = "out",
+): DrawPassDescriptor | undefined =>
+  outputFor(outputs, nodeId, portId)?.synthesis?.passes.find(
+    (pass) => pass.id === `${nodeId}#pointsPreview:${portId}`,
   );
 
-describe("a watched point generator previews as its own splat (T373, §V85)", () => {
-  it("synthesizes one square target and one draw pass reading the position pair", () => {
+describe("a watched point generator previews as its own splat (T373, §V85, T563)", () => {
+  it("synthesizes one draw pass on the OUTPUT ROW, and nothing in the main plan", () => {
     const compiled = compileWithSinks(graphOf([{ id: "torus", type: "pointTorus" }]), [
       { nodeId: "torus", portId: "out" },
     ]);
     expect(compiled.ok).toBe(true);
 
-    const target = compiled.resources.find((resource) => resource.id === pointsPreviewResourceId("torus", "out"));
-    expect(target).toBeDefined();
-    expect(target?.kind).toBe("target");
-    // Square, sized from the BASE TILE this preview is guaranteed — `previewLongEdge`
-    // × MAX_TILE_SCALE (T502, §V454) — which is the tile's own framing (§V85), never the
-    // downstream renderer's. It read [192, 192] until T502, i.e. a 2× upscale into its
-    // own guaranteed tile before anyone zoomed.
-    expect((target as unknown as { size: [number, number] }).size).toEqual([384, 384]);
-    expect((target as unknown as { format: string }).format).toBe("rgba8unorm");
+    // T563 — the absence half, asserted as hard as the presence: the splat's target and
+    // pass do NOT live in the main plan. The measured T502 failure (E16 at 4× zoom,
+    // paused: preview black until playback resumed) was exactly this pass living where
+    // the transport gates execution.
+    expect(compiled.resources.some((resource) => resource.id === pointsPreviewResourceId("torus", "out"))).toBe(false);
+    expect(compiled.passes.some((pass) => pass.id.includes("#pointsPreview"))).toBe(false);
 
-    const pass = previewPassFor(compiled.passes, "torus");
+    // The outputs projection carries a bindable TARGET row for the pointset port — the
+    // id the preview program will create at the granted tile size — plus the synthesis.
+    const output = outputFor(compiled.outputs, "torus");
+    expect(output?.resourceKind).toBe("target");
+    expect(output?.resourceId).toBe(pointsPreviewResourceId("torus", "out"));
+    // Square NOMINAL size (aspect for the request path); the real edge is the tile's.
+    expect(output?.size).toEqual([384, 384]);
+    expect(output?.format).toBe("rgba8unorm");
+    expect(output?.synthesis?.depth).toBe(false);
+
+    const pass = previewPassFor(compiled.outputs, "torus");
     expect(pass).toBeDefined();
     expect(pass?.kind).toBe("draw");
     expect(pass?.target).toBe(pointsPreviewResourceId("torus", "out"));
-    // The producer's own position pair, the half holding THIS frame's data (§V168).
+    // The producer's own position pair — bound on the READ half: the preview program
+    // runs BETWEEN main frames, after the swap landed the latest state there (T563;
+    // §V168's this-frame half governs in-plan consumers only).
     const capacityResource = compiled.resources.find(
       (resource) => resource.kind === "bufferPair" && resource.id === pass?.buffers?.[0]?.resourceId,
     ) as { capacity?: number } | undefined;
     expect(capacityResource).toBeDefined();
-    expect(pass?.buffers?.[0]?.half).toBe("write");
+    expect(pass?.buffers?.[0]?.half).toBe("read");
     // Uncounted set: a literal instance count equal to the pair's capacity.
     expect(pass?.instances).toBe(capacityResource?.capacity);
     // The camera is a VALUE on the pass (§V5) — T379's viewer camera drives it later
     // without a structure change.
     expect(Array.isArray(pass?.uniforms?.["viewProjection"])).toBe(true);
-
-    // The outputs projection now carries a bindable TARGET for the pointset port, which
-    // is what the preview system's request path reads.
-    const output = compiled.outputs.find((entry) => entry.nodeId === "torus" && entry.portId === "out");
-    expect(output?.resourceKind).toBe("target");
-    expect(output?.resourceId).toBe(pointsPreviewResourceId("torus", "out"));
   });
 
   it("an UNWATCHED pointset output synthesizes nothing — off costs zero (§V297, §V309)", () => {
@@ -118,9 +138,10 @@ describe("a watched point generator previews as its own splat (T373, §V85)", ()
     expect(compiled.resources.some((resource) => resource.id.startsWith("preview:points:"))).toBe(false);
     expect(compiled.passes.some((pass) => pass.id.includes("#pointsPreview"))).toBe(false);
     // The projection keeps the marker row (or prunes the node entirely) — never a
-    // half-made preview target.
-    const output = compiled.outputs.find((entry) => entry.nodeId === "torus");
+    // half-made preview target, and no synthesis either.
+    const output = outputFor(compiled.outputs, "torus");
     expect(output?.resourceKind ?? "pointset").toBe("pointset");
+    expect(output?.synthesis).toBeUndefined();
   });
 
   it("two watched generators get two disjoint previews (§V321)", () => {
@@ -136,8 +157,8 @@ describe("a watched point generator previews as its own splat (T373, §V85)", ()
     );
     expect(compiled.ok).toBe(true);
     for (const nodeId of ["a", "b"]) {
-      expect(compiled.resources.some((resource) => resource.id === pointsPreviewResourceId(nodeId, "out"))).toBe(true);
-      const pass = previewPassFor(compiled.passes, nodeId);
+      expect(outputFor(compiled.outputs, nodeId)?.resourceId).toBe(pointsPreviewResourceId(nodeId, "out"));
+      const pass = previewPassFor(compiled.outputs, nodeId);
       expect(pass?.buffers?.[0]?.resourceId).toContain(`:${nodeId}:`);
     }
   });
@@ -147,7 +168,7 @@ describe("a watched point generator previews as its own splat (T373, §V85)", ()
       { nodeId: "sim", portId: "out" },
     ]);
     expect(compiled.ok).toBe(true);
-    const pass = previewPassFor(compiled.passes, "sim");
+    const pass = previewPassFor(compiled.outputs, "sim");
     expect(pass).toBeDefined();
     // The gate is IN the shader (§V219-style degenerate collapse), driven by the live
     // count the lifecycle keeps on the GPU — no readback, no indirect-args plumbing.
@@ -161,7 +182,7 @@ describe("a watched point generator previews as its own splat (T373, §V85)", ()
     const compiled = compileWithSinks(graphOf([{ id: "torus", type: "pointTorus" }]), [
       { nodeId: "torus", portId: "out" },
     ]);
-    const pass = previewPassFor(compiled.passes, "torus");
+    const pass = previewPassFor(compiled.outputs, "torus");
     expect(pass?.shader).not.toContain("counts");
   });
 });
@@ -179,7 +200,7 @@ describe("every pointset-producing definition is covered by construction (§V316
       const compiled = compileWithSinks(graphOf([{ id: "n1", type: definition.type }]), [
         { nodeId: "n1", portId },
       ]);
-      const pass = compiled.passes.find((entry) => entry.id === `n1#pointsPreview:${portId}`);
+      const pass = previewPassFor(compiled.outputs, "n1", portId);
       // A definition that needs an INPUT to publish its pointset cannot compile alone —
       // that is fine, but then it must have failed loudly, never compiled clean with a
       // silent empty body (§V320's cousin: absence must be an error, not a quiet miss).
