@@ -547,7 +547,10 @@ describe("E27 lifts the picture into geometry, and it moves", () => {
  * from the plan's own space (§V618, §V627). The thresholds sit well clear of both sides.
  */
 describe("E33 reads as a yin-yang without a disc behind it", () => {
-  async function luma(mutate: (graph: GraphDocument) => GraphDocument): Promise<Float64Array> {
+  async function luma(
+    mutate: (graph: GraphDocument) => GraphDocument,
+    frames: ReadonlyArray<number> = [0],
+  ): Promise<Float64Array[]> {
     const file = listExamples().find((entry) => entry.fileName === "E33-Obol.loom.json");
     if (file === undefined) throw new Error("E33 is not shipped");
     const { document } = requireExample(file);
@@ -555,33 +558,33 @@ describe("E33 reads as a yin-yang without a disc behind it", () => {
       host: nodeGpuHost(),
       graph: mutate(document.graph),
       settings: document.settings,
-      frames: 1,
-      capture: [0],
+      frames: Math.max(...frames) + 1,
+      capture: [...frames],
       outputNodeId: "out",
       fps: 60,
       animate: true,
     });
     expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     const space = result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
-    const frame = result.frames[0];
-    if (frame === undefined) throw new Error("no frame");
-    const image = toRgba8(
-      {
-        width: frame.width,
-        height: frame.height,
-        format: frame.format,
-        bytes: frame.bytes,
-        rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8),
-      },
-      { space },
-    );
-    const out = new Float64Array(image.width * image.height);
-    for (let index = 0; index < out.length; index += 1) {
-      const at = index * 4;
-      out[index] =
-        0.2126 * (image.data[at] ?? 0) + 0.7152 * (image.data[at + 1] ?? 0) + 0.0722 * (image.data[at + 2] ?? 0);
-    }
-    return out;
+    return result.frames.map((frame) => {
+      const image = toRgba8(
+        {
+          width: frame.width,
+          height: frame.height,
+          format: frame.format,
+          bytes: frame.bytes,
+          rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8),
+        },
+        { space },
+      );
+      const out = new Float64Array(image.width * image.height);
+      for (let index = 0; index < out.length; index += 1) {
+        const at = index * 4;
+        out[index] =
+          0.2126 * (image.data[at] ?? 0) + 0.7152 * (image.data[at + 1] ?? 0) + 0.0722 * (image.data[at + 2] ?? 0);
+      }
+      return out;
+    });
   }
 
   /** The key's shadow off in every render, so the cast shadow is not counted as object. */
@@ -672,14 +675,68 @@ describe("E33 reads as a yin-yang without a disc behind it", () => {
     return best;
   }
 
+  /**
+   * T724 — THE MASS IS ABSENT WHERE THE OWNER OBJECTED TO IT AND PRESENT WHERE THE GIMMICK
+   * IS, and both halves are one assertion.
+   *
+   * The owner asked twice, and the two asks pull opposite ways. First: "the obol thing
+   * should not have the disc behind the cubes assembling the yinyang". Then, on the build
+   * that deleted the mass outright: "obol is supposed to morph onto the organic blob not a
+   * blob made up of cubes thats the whole gimmick". So the mass must draw NOTHING at the
+   * emblem end and be the whole subject at the goo end, and a claim that checks only one
+   * of those passes the build that got it wrong — deleting the mass passes "absent at the
+   * emblem end", and never growing it passes "present at the goo end".
+   *
+   * Measured by DROPPING `body1` from the render and counting what changes, which is the
+   * only way to ask "is it contributing" without asking "is it in the graph": 0 pixels at
+   * frame 0 (and 0 at frame 2100, the other emblem moment), 106,056 at frame 484 (0592b2e).
+   * The zero is exact, not a threshold — the mass is grown down to a speck behind a mosaic
+   * that is still standing in front of it, so it reaches the frame not at all.
+   */
+  it("draws no pixel of the emblem and the whole subject of the goo", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const withMass = await luma((graph) => graph, [0, 484]);
+    const withoutMass = await luma(
+      (graph) => {
+        const shot = graph.nodes["shot"];
+        if (shot === undefined) throw new Error("E33 has no render");
+        const scenes = String(shot.parameters["scenes"]).split(/\s+/);
+        if (!scenes.includes("body1")) throw new Error("E33's render no longer names the mass");
+        return {
+          ...graph,
+          nodes: {
+            ...graph.nodes,
+            shot: { ...shot, parameters: { ...shot.parameters, scenes: scenes.filter((s) => s !== "body1").join(" ") } },
+          },
+        };
+      },
+      [0, 484],
+    );
+    const changed = (index: number): number => {
+      const a = withMass[index];
+      const b = withoutMass[index];
+      if (a === undefined || b === undefined) throw new Error("no frame");
+      let count = 0;
+      for (let pixel = 0; pixel < a.length; pixel += 1) if (Math.abs((a[pixel] ?? 0) - (b[pixel] ?? 0)) > 1) count += 1;
+      return count;
+    };
+    // ABSENT at the emblem end — exactly, not nearly. This is the owner's first ask.
+    expect(changed(0)).toBe(0);
+    // PRESENT at the goo end, and the subject rather than a detail. This is the second,
+    // and it is what fails if somebody deletes the mass to satisfy the first.
+    expect(changed(1)).toBeGreaterThan(50_000);
+  }, 300_000);
+
   it("carries two high-contrast halves on the tiles alone, split by a curve no line can cut", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
 
-    const [lit, bare, control] = await Promise.all([
+    const [[lit], [bare], [control]] = await Promise.all([
       luma(noShadow),
       luma((graph) => noObject(noShadow(graph))),
       luma((graph) => straightTone(noShadow(graph))),
     ]);
+    if (lit === undefined || bare === undefined || control === undefined) throw new Error("no frames");
 
     // The object's own pixels: where drawing it changed the frame. The room is excluded
     // rather than thresholded, so a dark tile against a dark backdrop still counts.

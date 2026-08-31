@@ -1867,12 +1867,16 @@ describe("E27 Relief", () => {
 });
 
 /**
- * E33 Obol (T625/T624, T673, T716) — a yin-yang medallion BECOMING goo and back, in an
- * ambient studio, and the first example to switch on the render's ambient occlusion.
+ * E33 Obol (T625/T624, T673, T716, T724) — a yin-yang medallion BECOMING goo and back, in
+ * an ambient studio, and the first example to switch on the render's ambient occlusion.
  *
- * T716 deleted the mass. There is now ONE object — 1728 instanced tiles — and it is the
- * medallion at one end of the morph and the drop at the other, so every claim below is
- * about that one system carrying both ends.
+ * THE SHAPE OF THE OBJECT, because every claim below depends on it. There are two systems:
+ * 1728 instanced tiles, and a mass. The tiles are the whole of the medallion — nothing is
+ * behind them, which is T716. The mass is the organic blob, which is the gimmick, and it
+ * GROWS from a speck into the field's own size as the morph runs, so the tiles land on a
+ * surface that materialises under them. T716 read the owner's note as "the mass must go"
+ * and made the goo end a blob built of cubes; T724 corrected that to "the mass must go AT
+ * THE EMBLEM END".
  *
  * The claims its `.md` makes that a look pass could not hold onto.
  */
@@ -1880,6 +1884,7 @@ describe("E33 Obol claims", () => {
   const { document, plan } = example("E33-Obol.loom.json");
   const passes = plan.passes as ReadonlyArray<{ id: string; shader?: string; textures?: ReadonlyArray<{ binding: string }> }>;
   const tiles = () => String((document.graph.nodes["segs"] as GraphNode).parameters["kernel"]);
+  const mass = () => String((document.graph.nodes["morph"] as GraphNode).parameters["kernel"]);
 
   /**
    * BECOMING, NOT CROSS-FADING. The claim is structural, not aesthetic: ONE kernel holds
@@ -1939,48 +1944,80 @@ describe("E33 Obol claims", () => {
   });
 
   /**
-   * T716 — ONE SET OF ELEMENTS CARRIES BOTH ENDS, AND EACH KEEPS ITS STATION.
+   * T716/T724 — THE TILE MAP IS INVERTIBLE, AND EVERY TILE KEEPS ITS STATION.
    *
-   * This claim REPLACES T673's "the mass and the segments share a byte-identical prelude".
-   * That one existed because two systems had to agree about where the seam was; the mass
-   * is deleted, there is no second system, and a claim that pins nothing is worse than no
-   * claim (§V465). What is worth pinning instead is the property the deletion created and
-   * that a still frame cannot show: the tiles are the WHOLE object at both ends, and the
-   * map between the two poses preserves each tile's identity.
+   * The tiles walk a Fibonacci lattice on the disc (`rr = sqrt(u)`, `ang = i * 137.5deg`)
+   * and the Fibonacci SPHERE is that same sequence read with `z = 1 - 2u`. Three things
+   * fall out and all three are asserted, because each one alone passes a broken build:
    *
-   * Both halves are asserted because either one alone passes a broken build. Two clouds
-   * cross-fading pass "one geometry"; an independently generated sphere direction passes
-   * "both configurations are in one kernel" and renders an IDENTICAL still frame while
-   * re-dealing every tile in motion.
+   *   - the two poses are built from ONE `u` and ONE `ang`, so a tile keeps its azimuth
+   *     and can be FOLLOWED across the morph rather than re-dealt;
+   *   - the mass INVERTS that map — it recovers the disc station of the tile arriving
+   *     along its own direction `s` — so the skin appears under a tile at the moment the
+   *     tile reaches it rather than on a schedule of its own (T724, the fuse);
+   *   - and both kernels therefore read the SAME `meltOrder`, from the same shared text.
+   *
+   * §V681 is why this is a document claim and not a look pass: de-correlate the sphere
+   * direction from the disc station and the still frame is PIXEL-IDENTICAL at both ends —
+   * the tiles occupy the same set of positions, just not the same tiles — while every
+   * cube is re-dealt in motion and the skin materialises where nothing is landing.
    */
-  it("carries both ends on one set of elements, each keeping its station", () => {
-    // ONE object in the render besides the room. `body1` — the mass — is gone, and this
-    // is the half that is cheap; the half below is the one that matters.
-    const scenes = String((document.graph.nodes["shot"] as GraphNode).parameters["scenes"]).split(/\s+/);
-    expect(scenes).toEqual(["cyc1", "shards1"]);
-    const objectGeometries = Object.values(document.graph.nodes).filter(
-      (entry) => entry.type === "geometry" && entry.parameters["material"] === "oil1",
-    );
-    expect(objectGeometries).toHaveLength(1);
-
-    // THE MAP. `u` and `ang` are computed ONCE from the element's own index, and BOTH
-    // configurations are built from them: the disc radius is sqrt(u), and the sphere's
-    // latitude is 1 - 2u, which is the same Fibonacci sequence in a second pose. The
-    // azimuth is literally the same expression in both. That is what makes an individual
-    // tile followable across the morph rather than re-dealt.
+  it("keeps the tile map invertible, so the mass can grow on the arriving tile's clock", () => {
+    // THE FORWARD MAP: one `u`, one `ang`, both poses.
     const kernel = tiles();
     expect(kernel).toContain("let u = (f32(ctx.index) + 0.5) / n;");
     expect(kernel).toContain("let ang = f32(ctx.index) * 2.39996323;");
     expect(kernel).toContain("let rr = sqrt(u) * 0.930;");
     expect(kernel).toContain("let zc = 1.0 - 2.0 * u;");
     expect(kernel).toContain("let sdir = vec3f(ring * cos(ang), ring * sin(ang), zc);");
-    // And one clock for the one object: the morph and the spectrum's phase.
+
+    // THE INVERSE, in the mass: z = 1 - 2u inverts to u = (1 - z)/2, and the disc radius
+    // is 0.930*sqrt(u). The azimuth is carried across as the direction of s.xy. Get this
+    // wrong and the surface still renders perfectly — it just grows somewhere else.
+    const body = mass();
+    expect(body).toContain("let station = dir2 * (0.930 * sqrt(max(0.0, (1.0 - s.z) * 0.5)));");
+    expect(body).toContain("let order = meltOrder(station);");
+    // The pole has no azimuth. Falling back to the disc CENTRE there would make it grow
+    // first while everything around it grows last, which stands a spike on the mesh —
+    // the same failure T673 paid for with the emblem's dots.
+    expect(body).toMatch(/dir2 = select\(vec2f\(1\.0, 0\.0\), ax \/ max\(axLen, 1e-6\), axLen > 1e-4\)/);
+
+    // ONE CLOCK for both systems, so the wave that lifts a tile is the wave that grows the
+    // skin under it. A second channel here is two events that happen to look like one.
     const channel = (id: string, slot: string) =>
       ((document.graph.nodes[id] as GraphNode).parameters[slot] as { bindings?: { driven?: { channel?: string } } })
         ?.bindings?.driven?.channel;
     expect(channel("segs", "value1")).toBe("tide1");
+    expect(channel("morph", "value1")).toBe("tide1");
     expect(channel("segs", "value2")).toBe("sheen1");
+    expect(channel("morph", "value2")).toBe("sheen1");
     expect(kernel).toContain("return smoothstep(0.18, 0.82, v);");
+    expect(body).toContain("return smoothstep(0.18, 0.82, v);");
+  });
+
+  /**
+   * T673, restored at T724 — ONE definition of the emblem's field, read by TWO systems
+   * (§V471.1/.2). This claim was retired at T716 for pinning nothing: the mass was gone,
+   * there was no second kernel, and a claim with no second reader is worse than no claim.
+   * T724 gives it a harder job than it had. The mass must now GROW under an arriving tile
+   * at the moment that tile lands, so the two kernels have to agree about the tile's
+   * station, its order in the wave AND where the goo's surface is. Two copies of that
+   * arithmetic is two chances for the skin to materialise where the tiles are not — and
+   * that drift would be a look bug with no failing test anywhere.
+   */
+  it("shares one prelude between the mass and the tiles, byte for byte", () => {
+    const body = mass();
+    const kernel = tiles();
+    for (const shared of ["fn meltOrder(d: vec2f) -> f32", "fn gooAt(", "fn emblemTilt(", "fn meltDrive("]) {
+      expect(body, `the mass is missing ${shared}`).toContain(shared);
+      expect(kernel, `the tiles are missing ${shared}`).toContain(shared);
+    }
+    // Byte-identical, not merely both-present: a prelude edited in one place is exactly
+    // the drift this claim exists to catch. Sliced at the LAST shared function rather
+    // than at `fn process`, because the tiles declare one helper of their own between the
+    // two (`segRand`, which the mass has no use for).
+    const preludeOf = (source: string) => source.slice(0, source.indexOf("fn meltDrive("));
+    expect(preludeOf(kernel)).toBe(preludeOf(body));
   });
 
   /**
@@ -2015,7 +2052,9 @@ describe("E33 Obol claims", () => {
    * self-shadowing is the only thing left giving the object a body. Measured with nothing
    * else in the scene so nothing else could be casting: 22,016 pixels of the emblem frame
    * and 11,710 of the goo frame darken when the key's shadow is switched on, and BOTH go
-   * to exactly 0 when the material is swapped for one that ignores light (bc681b7).
+   * to exactly 0 when the material is swapped for one that ignores light. At the goo end
+   * the tiles are buried just under the skin, so the number that matters there is the
+   * FULL scene's: 35,820 pixels at f484 (0592b2e).
    */
   it("draws the tiles as lit instances, so they cast and occlude", () => {
     const shards = document.graph.nodes["shards"] as GraphNode;
@@ -2028,7 +2067,7 @@ describe("E33 Obol claims", () => {
     // The depth sweep therefore takes them: one shadow draw per casting light per
     // geometry, and the tiles' is present.
     const shadowDraws = passes.filter((pass) => pass.id.includes(":shadow:"));
-    expect(shadowDraws.length).toBeGreaterThanOrEqual(2);
+    expect(shadowDraws.length).toBeGreaterThanOrEqual(3);
   });
 
   /**
@@ -2039,12 +2078,12 @@ describe("E33 Obol claims", () => {
   it("switches ambient occlusion on once and every geometry wears it", () => {
     expect(document.graph.nodes["shot"]?.parameters["ambientOcclusion"]).toBe(true);
     const lit = passes.filter((pass) => pass.id.includes(":scene:"));
-    // TWO since T716: the cyclorama and the instanced tiles. The count is asserted rather
-    // than the set iterated blindly, because a per-geometry opt-in passes a one-geometry
-    // check perfectly — and because the second one is an INSTANCED draw, which is a
-    // different generator with its own copy of the AO block (T624 gates it on
-    // `model !== "unlit"`, so an unlit mosaic would bind no occlusion map at all).
-    expect(lit).toHaveLength(2);
+    // THREE again since T724: the cyclorama, the mass and the instanced tiles. The count
+    // is asserted rather than the set iterated blindly, because a per-geometry opt-in
+    // passes a one-geometry check perfectly — and because the third one is an INSTANCED
+    // draw, which is a different generator with its own copy of the AO block (T624 gates
+    // it on `model !== "unlit"`, so an unlit mosaic would bind no occlusion map at all).
+    expect(lit).toHaveLength(3);
     for (const pass of lit) {
       expect(pass.shader).toContain("let occlusion = textureLoad(occlusionMap");
       expect((pass.textures ?? []).map((texture) => texture.binding)).toContain("occlusionMap");
