@@ -27,8 +27,8 @@ import type { PaneTreeLayout } from "./pane-tree.ts";
  * left behind (V385): a stale projection silently restores an arrangement the user
  * abandoned, where an absent one falls back to a default the user can SEE.
  *
- * Reading walks the chain: v4 → v3 (which itself migrates v2) → stock default. Every
- * stored layout goes through `repairPaneTree`, so a corrupt entry degrades to the
+ * Reading walks the chain: v5 → v4 → v3 (which itself migrates v2) → stock default.
+ * Every stored layout goes through `repairPaneTree`, so a corrupt entry degrades to the
  * default rather than an unusable shell — `readLayoutStore`'s own contract, one
  * version up.
  *
@@ -38,7 +38,16 @@ import type { PaneTreeLayout } from "./pane-tree.ts";
  * from DEFAULT_SHELL_LAYOUT at module init).
  */
 
-export const PANE_TREE_STORAGE_KEY = "shaderloom.shell.layouts.v4";
+/**
+ * v5 has the SAME SHAPE as v4. The bump is a one-time TICKET, not a schema change: it is
+ * what makes T466's repair below fire exactly once per profile and never again. A flag
+ * inside the record would do the same job, at the cost of a field in `PaneTreeStore`
+ * that means nothing to anything but the reader; the chain already speaks versions.
+ */
+export const PANE_TREE_STORAGE_KEY = "shaderloom.shell.layouts.v5";
+
+/** v4's key. Read once, repaired, and removed — see `readPaneTreeStore`. */
+export const LEGACY_PANE_TREE_STORAGE_KEY = "shaderloom.shell.layouts.v4";
 
 export interface NamedPaneTree {
   readonly id: string;
@@ -87,31 +96,8 @@ function repairNamedTrees(candidate: unknown): NamedPaneTree[] {
   return layouts;
 }
 
-/**
- * Never throws, never returns a partial store. An absent v4 record migrates the v3
- * store (which migrates v2 itself) — arrangement, selection and every named layout —
- * so upgrading costs the user nothing (V311).
- */
-export function readPaneTreeStore(
-  storage: LayoutStorage | null = defaultLayoutStorage(),
-): PaneTreeStore {
-  if (!storage) return DEFAULT_PANE_TREE_STORE;
-
-  const parsed = readJson(storage, PANE_TREE_STORAGE_KEY);
-  if (typeof parsed !== "object" || parsed === null) {
-    const flat = readLayoutStore(storage);
-    return {
-      current: treeFromShellLayout(flat.current),
-      currentId: flat.currentId,
-      layouts: flat.layouts.map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        layout: treeFromShellLayout(entry.layout),
-      })),
-    };
-  }
-
-  const source = parsed as Record<string, unknown>;
+/** One stored v4/v5 record → a usable store. Shared by both keys; they share a shape. */
+function storeFromRecord(source: Record<string, unknown>): PaneTreeStore {
   const layouts = repairNamedTrees(source["layouts"]);
   const currentId = source["currentId"];
   const known =
@@ -132,6 +118,66 @@ export function readPaneTreeStore(
   };
 }
 
+/** The id `migrateLegacyLayout` mints for a user's own pre-T426 arrangement. */
+const MIGRATED_LAYOUT_ID = "user:saved-layout";
+
+/**
+ * T466, second half (§V437). The first half changed the v2 migration to keep a user's
+ * arrangement as a named row WITHOUT selecting it — a default nobody is shown is not a
+ * default. That only ever reaches a profile that has not migrated yet, and the migration
+ * never runs twice, so every profile that had already upgraded stayed parked on the row
+ * the OLD rule selected: the owner's own, which is why they kept reporting the same
+ * thing after it was "fixed". Delivering the RULE at one site is not delivering it.
+ *
+ * So the rule is applied once, retroactively, to exactly the selection the migration
+ * minted. It is NOT a general "reset to default": the row survives untouched and one
+ * click away, nothing a person arranged by hand is read, and `user:saved-layout` is an
+ * id no other code path can produce — a layout the user saved themselves has their own
+ * name in it. V18 holds: this returns a person to the default they were never shown, it
+ * does not seize an arrangement they chose.
+ *
+ * Once, because the v5 key it is written back under makes the v4 branch unreachable
+ * afterwards. Someone who then picks "Saved layout" on purpose keeps it forever.
+ */
+function unpinMigratedSelection(store: PaneTreeStore): PaneTreeStore {
+  if (store.currentId !== MIGRATED_LAYOUT_ID) return store;
+  if (!store.layouts.some((entry) => entry.id === MIGRATED_LAYOUT_ID)) return store;
+  return applyNamedPaneTree(store, DEFAULT_LAYOUT_ID);
+}
+
+/**
+ * Never throws, never returns a partial store. An absent v5 record reads v4 (applying
+ * T466's one-time repair), and an absent v4 migrates the v3 store — which migrates v2
+ * itself — arrangement, selection and every named layout, so upgrading costs the user
+ * nothing (V311).
+ */
+export function readPaneTreeStore(
+  storage: LayoutStorage | null = defaultLayoutStorage(),
+): PaneTreeStore {
+  if (!storage) return DEFAULT_PANE_TREE_STORE;
+
+  const parsed = readJson(storage, PANE_TREE_STORAGE_KEY);
+  if (typeof parsed === "object" && parsed !== null) {
+    return storeFromRecord(parsed as Record<string, unknown>);
+  }
+
+  const legacy = readJson(storage, LEGACY_PANE_TREE_STORAGE_KEY);
+  if (typeof legacy === "object" && legacy !== null) {
+    return unpinMigratedSelection(storeFromRecord(legacy as Record<string, unknown>));
+  }
+
+  const flat = readLayoutStore(storage);
+  return unpinMigratedSelection({
+    current: treeFromShellLayout(flat.current),
+    currentId: flat.currentId,
+    layouts: flat.layouts.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      layout: treeFromShellLayout(entry.layout),
+    })),
+  });
+}
+
 /**
  * Writes v4, then keeps the v3 record honest: a faithful projection while one exists,
  * REMOVAL the moment it does not (V385). Named layouts project individually — the
@@ -146,8 +192,12 @@ export function writePaneTreeStore(
   try {
     storage.setItem(
       PANE_TREE_STORAGE_KEY,
-      JSON.stringify({ version: 4, current: store.current, currentId: store.currentId, layouts: store.layouts }),
+      JSON.stringify({ version: 5, current: store.current, currentId: store.currentId, layouts: store.layouts }),
     );
+    // V385, the same rule the v3 projection follows: v4 is now stale, and a stale record
+    // silently restores an arrangement the user has moved on from. The v3 projection
+    // below is what a downgraded build reads.
+    storage.removeItem(LEGACY_PANE_TREE_STORAGE_KEY);
     const projected = shellLayoutFromTree(store.current);
     if (projected === null) {
       storage.removeItem(LAYOUT_STORAGE_KEY);

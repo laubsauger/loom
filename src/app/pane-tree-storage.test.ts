@@ -2,12 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PANE_TREE_STORE,
+  LEGACY_PANE_TREE_STORAGE_KEY,
   PANE_TREE_STORAGE_KEY,
+  applyNamedPaneTree,
   readPaneTreeStore,
   writePaneTreeStore,
 } from "./pane-tree-storage.ts";
-import { DEFAULT_PANE_TREE, addTab, allTabs, setSplitRatio, splitLeaf } from "./pane-tree.ts";
 import {
+  DEFAULT_PANE_TREE,
+  addTab,
+  allTabs,
+  setSplitRatio,
+  shellLayoutFromTree,
+  splitLeaf,
+  treeFromShellLayout,
+} from "./pane-tree.ts";
+import {
+  DEFAULT_LAYOUT_ID,
   DEFAULT_SHELL_LAYOUT,
   LAYOUT_STORAGE_KEY,
   LAYOUT_STORE_VERSION,
@@ -142,5 +153,112 @@ describe("write keeps BOTH versions honest (V385)", () => {
     expect(store.current).toEqual(DEFAULT_PANE_TREE);
     const saved = store.layouts.find((entry) => entry.name === "Saved layout");
     expect((saved?.layout.root as { ratio: number } | undefined)?.ratio).toBe(65);
+  });
+});
+
+/**
+ * T466's second half (§V437). The rule "your migrated arrangement is KEPT but not
+ * SELECTED" shipped inside the v2 migration, and a migration runs once — so every
+ * profile that had already upgraded kept the old rule's selection forever, which is
+ * every profile that had actually been using the app. Measured, not assumed: a v4 record
+ * pinned to `user:saved-layout` renders the pre-T426 shell (inspector and viewer tabbed
+ * in one right column) while the layout menu offers "Default" as something to go and
+ * find.
+ *
+ * The fixture is the PRE-T426 arrangement, not a cosmetic tweak of the default: a
+ * fixture equal to the default cannot tell "the repair ran" from "nothing happened"
+ * (§V461). Every assertion below flips if `unpinMigratedSelection` is removed.
+ */
+describe("T466 — a profile parked on the migration's own row is unpinned, once", () => {
+  /** v2's shell as the migration reshapes it: one right column, lower section closed. */
+  const PRE_T426_TREE = treeFromShellLayout({
+    ...DEFAULT_SHELL_LAYOUT,
+    rightRows: [100, 0],
+    zones: { ...DEFAULT_SHELL_LAYOUT.zones, right: ["inspector", "viewer"], rightBottom: [] },
+    active: { ...DEFAULT_SHELL_LAYOUT.active, right: "inspector", rightBottom: null },
+  });
+
+  const MIGRATED_ROW = { id: "user:saved-layout", name: "Saved layout", layout: PRE_T426_TREE };
+
+  function pinnedV4(): LayoutStorage & { readonly map: Map<string, string> } {
+    const storage = memoryStorage();
+    storage.setItem(
+      LEGACY_PANE_TREE_STORAGE_KEY,
+      JSON.stringify({
+        version: 4,
+        current: PRE_T426_TREE,
+        currentId: MIGRATED_ROW.id,
+        layouts: [MIGRATED_ROW],
+      }),
+    );
+    return storage;
+  }
+
+  it("opens on the DEFAULT arrangement, not the migrated one", () => {
+    const store = readPaneTreeStore(pinnedV4());
+    expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
+    // The property the owner actually reported: viewer over inspector, in a sidebar
+    // split in two. Asserted on the RENDERED arrangement, because a selection that
+    // says "Default" over a Classic tree is the exact lie this repair exists to end.
+    const flat = shellLayoutFromTree(store.current);
+    expect(flat?.zones.right).toEqual(["viewer"]);
+    expect(flat?.zones.rightBottom).toEqual(["inspector"]);
+    expect(flat?.rightRows).toEqual(DEFAULT_SHELL_LAYOUT.rightRows);
+  });
+
+  it("KEEPS their arrangement as a row — nothing is seized, it is one click away", () => {
+    const store = readPaneTreeStore(pinnedV4());
+    expect(store.layouts.map((entry) => entry.name)).toEqual(["Saved layout"]);
+    expect(store.layouts[0]?.layout).toEqual(PRE_T426_TREE);
+    // And restoring it gives back exactly what they had.
+    expect(applyNamedPaneTree(store, "user:saved-layout").current).toEqual(PRE_T426_TREE);
+  });
+
+  it("fires ONCE: re-selecting the saved layout survives the next read (V18)", () => {
+    const storage = pinnedV4();
+    const reselected = applyNamedPaneTree(readPaneTreeStore(storage), MIGRATED_ROW.id);
+    writePaneTreeStore(reselected, storage);
+
+    const store = readPaneTreeStore(storage);
+    expect(store.currentId).toBe(MIGRATED_ROW.id);
+    expect(store.current).toEqual(PRE_T426_TREE);
+    // V385: the v4 record is GONE rather than left to re-trigger the repair, or to
+    // restore an arrangement a downgraded build would read as current.
+    expect(storage.map.has(LEGACY_PANE_TREE_STORAGE_KEY)).toBe(false);
+  });
+
+  it("leaves a layout the USER named alone — only the minted id is unpinned", () => {
+    const storage = memoryStorage();
+    const mine = { id: "user:stage-rig", name: "stage rig", layout: PRE_T426_TREE };
+    storage.setItem(
+      LEGACY_PANE_TREE_STORAGE_KEY,
+      JSON.stringify({ version: 4, current: PRE_T426_TREE, currentId: mine.id, layouts: [mine] }),
+    );
+    const store = readPaneTreeStore(storage);
+    expect(store.currentId).toBe(mine.id);
+    expect(store.current).toEqual(PRE_T426_TREE);
+  });
+
+  it("reaches a profile that never got as far as v4, through the v3 chain", () => {
+    const storage = memoryStorage();
+    const flat = {
+      ...DEFAULT_SHELL_LAYOUT,
+      rightRows: [100, 0] as const,
+      zones: { ...DEFAULT_SHELL_LAYOUT.zones, right: ["inspector", "viewer"], rightBottom: [] },
+      active: { ...DEFAULT_SHELL_LAYOUT.active, right: "inspector" as const, rightBottom: null },
+    };
+    storage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({
+        version: LAYOUT_STORE_VERSION,
+        current: flat,
+        currentId: "user:saved-layout",
+        layouts: [{ id: "user:saved-layout", name: "Saved layout", layout: flat }],
+      }),
+    );
+    const store = readPaneTreeStore(storage);
+    expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
+    expect(shellLayoutFromTree(store.current)?.zones.rightBottom).toEqual(["inspector"]);
+    expect(store.layouts.map((entry) => entry.name)).toEqual(["Saved layout"]);
   });
 });
