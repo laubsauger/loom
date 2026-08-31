@@ -157,6 +157,83 @@ export function compileParityGraph(
   });
 }
 
+
+/**
+ * T650 — DETERMINISTIC STAND-INS FOR MEDIA SOURCES.
+ *
+ * This harness contained zero occurrences of `registerMediaSource`, so `webcam` and
+ * `movieFileIn` rendered NOTHING, silently, in every Dawn test — every example gate and
+ * look pass over a document containing media was measuring a blank and reporting green.
+ * The third reader-that-cannot-see in this file's own history (T630: compiler warnings
+ * unreturned; T633: the oracle with no channel resolver).
+ *
+ * The stand-in is a TEST CARD, deliberately unmistakable for a capture (§V44 determinism
+ * AND obviously synthetic): saturated diagonal bars whose phase advances with the frame,
+ * salted per sourceId so two sources never match — and the first pixels of row 0 encode
+ * the FRAME INDEX in bytes, so "the playhead is f(frame)" is assertable to the byte and
+ * an off-by-one is visible rather than plausible.
+ *
+ * `text` is deliberately NOT faked (§V403): its pixels come from the browser's font
+ * stack rasterizing into a canvas, and headless has no font stack — black is the honest
+ * output of a machine that genuinely cannot draw it, and a fake glyph card would teach
+ * that text works where it does not. The media gate states that absence by name.
+ */
+export function syntheticMediaFrame(
+  sourceId: string,
+  size: readonly [number, number],
+  frameIndex: number,
+): Uint8Array {
+  const [width, height] = size;
+  const bytes = new Uint8Array(width * height * 4);
+  let salt = 0;
+  for (const char of sourceId) salt = (salt * 31 + char.charCodeAt(0)) >>> 0;
+  const bands: ReadonlyArray<readonly [number, number, number]> = [
+    [236, 32, 199], // magenta
+    [32, 221, 236], // cyan
+    [242, 226, 55], // yellow
+    [24, 24, 28], // near-black gap, so the bars read as bars
+  ];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const band = bands[(Math.floor((x + y + frameIndex * 3 + salt) / 16) % 4 + 4) % 4] ?? bands[0]!;
+      const offset = (y * width + x) * 4;
+      bytes[offset] = band[0];
+      bytes[offset + 1] = band[1];
+      bytes[offset + 2] = band[2];
+      bytes[offset + 3] = 255;
+    }
+  }
+  // Row 0, first two pixels: the frame index, little-endian across the channels.
+  bytes[0] = frameIndex & 255;
+  bytes[1] = (frameIndex >> 8) & 255;
+  bytes[2] = 170;
+  bytes[3] = 255;
+  return bytes;
+}
+
+/** Registers a test-card source for every external texture the plan declares, except text's. */
+function registerSyntheticMediaSources(
+  backend: { registerMediaSource(sourceId: string, source: { currentFrame(): { frameId: number; bytes: Uint8Array } | undefined }): () => void },
+  plan: CompiledGraph,
+  graph: GraphDocument,
+  frameOf: () => number,
+): void {
+  for (const resource of plan.resources) {
+    const entry = resource as { kind?: string; sourceId?: string; size?: readonly [number, number] };
+    if (entry.kind !== "externalTexture" || entry.sourceId === undefined || entry.size === undefined) continue;
+    const nodeId = entry.sourceId.startsWith("media:") ? entry.sourceId.slice("media:".length) : undefined;
+    if (nodeId !== undefined && graph.nodes[nodeId as keyof typeof graph.nodes]?.type === "text") continue;
+    const sourceId = entry.sourceId;
+    const size = entry.size;
+    backend.registerMediaSource(sourceId, {
+      currentFrame: () => {
+        const frameId = frameOf();
+        return { frameId, bytes: syntheticMediaFrame(sourceId, size, frameId) };
+      },
+    });
+  }
+}
+
 export async function renderHeadless(request: HeadlessRenderRequest): Promise<HeadlessRenderResult> {
   const settings = request.settings ?? paritySettings();
   const frameCount = request.frames ?? 1;
@@ -205,6 +282,9 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
 
     const outputResourceId = outputResourceIdOf(plan, outputNodeId);
     const compiled = await backend.compile(plan);
+
+    // T650: media draws SOMETHING attributable in headless, or nothing by stated design.
+    registerSyntheticMediaSources(backend, plan, logicalGraph, () => steppingFrame);
 
     const control: HarnessControl = {
       resize: (outputId, size) => {
