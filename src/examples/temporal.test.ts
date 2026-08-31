@@ -122,6 +122,13 @@ describe("examples with a temporal loop", () => {
       // is a chain of eight nodes instead. `loop1` is the ordinary trail, closing on the
       // final output (§V471.5).
       "E32-Pasture.loom.json",
+      // T711: E34's loop is the set's fifth use and the first that is SELECTIVE — a
+      // luminance threshold decides what enters it, so only the glowing marks and beams
+      // trail while the lit ground does not. It therefore does NOT close on the final
+      // output (§V471.5's shape): it closes on `smear1`, a side branch that is added back
+      // into the bloom's own composite, because a loop closing on the finished frame
+      // would smear everything the frame contains.
+      "E34-Lidar.loom.json",
       // T660: Corona's sibling keeps the same shape — trails close on the final graded
       // output (`feedback1`, `source: "null2"`), §V471.5's idea inherited intact.
       "E35-Nova-Torus.loom.json",
