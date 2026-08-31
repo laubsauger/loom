@@ -161,6 +161,8 @@ export interface FrameLoopOptions {
    * from a project the user has closed.
    */
   readonly resetFeedback?: boolean | undefined;
+  /** T552: a different document is open — the full rite: zero buffers, land on frame 0. */
+  readonly documentBoundary?: boolean | undefined;
 }
 
 export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
@@ -171,6 +173,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const onReset = options.onReset ?? null;
   const valuesOnly = options.valuesOnly ?? false;
   const resetFeedback = options.resetFeedback ?? false;
+  const documentBoundary = options.documentBoundary ?? false;
   const suppliedPointer = options.pointer;
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
@@ -212,6 +215,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   // Same reason as `valuesOnlyRef`: it accompanies a `compiled`, it does not trigger one.
   const resetFeedbackRef = useRef(resetFeedback);
   resetFeedbackRef.current = resetFeedback;
+  const documentBoundaryRef = useRef(documentBoundary);
+  documentBoundaryRef.current = documentBoundary;
   /**
    * The plan the BACKEND has actually built, which is what the uniform pushes below write
    * into — so it starts null and is set only when a compile has completed. It used to be
@@ -429,7 +434,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         const wasRunning = live.running;
         if (wasRunning) live.stop();
         transport.reset();
-        backend.resetTemporalHistory();
+        // T510: a seek REPLAYS from zero, so its clear includes the point pairs —
+        // "a SEEK zeroes frameIndex and drops the point pairs together", now true on
+        // both halves. Silent: the scrub is its own visible event (T553).
+        backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
         // §V181: the CPU half of the same rule. GPU temporal history and value-graph state
         // are both "not a function of frame index", so both are cleared before the replay
         // or the replayed frames carry a trajectory from the history just abandoned.
@@ -540,7 +548,21 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
          * Unscoped: a load invalidates every pair, not a named one, so this is the same
          * call `runtime.resetFeedback` makes with no `nodeIds` (§V126).
          */
-        if (resetFeedbackRef.current) backend.resetTemporalHistory();
+        if (documentBoundaryRef.current) {
+          /**
+           * T552/T510/T519 — the full rite for a LOAD, both halves of the audit
+           * sentence moving together: zero the point pairs (silent — the load is its
+           * own visible event, T553) AND land the transport on frame 0, so the next
+           * tick is byte-identical to a cold open and every kernel's seeding signal
+           * (`ctx.firstRun`, and the legacy frameIndex == 0 guard) fires over fresh
+           * storage. A resolution edit takes the branch below instead: textures reset,
+           * playback and simulations keep running.
+           */
+          backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
+          transportHolderFor(bus).current?.seek(0);
+        } else if (resetFeedbackRef.current) {
+          backend.resetTemporalHistory(undefined, { silent: true });
+        }
       })
       .catch((error: unknown) => {
         if (generation !== generationRef.current) return;
@@ -557,6 +579,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
           ].slice(-MAX_DIAGNOSTICS),
         );
       });
+    // `bus` deliberately excluded: it is only dereferenced inside the `.then`, and
+    // re-running this effect on a bus identity change would recompile/install a plan
+    // the T308 guard already settled. The compile lifecycle is keyed by the plan alone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backend, compiled]);
 
   const latestFrame = useCallback(() => latestFrameRef.current, []);

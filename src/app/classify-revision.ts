@@ -257,6 +257,7 @@ function documentReplaced(next: GraphDocument): RecompileDecision {
     nodes: Object.keys(next.nodes).sort() as NodeId[],
     recreateTargets: true,
     resetFeedback: true,
+    documentBoundary: true,
   };
 }
 

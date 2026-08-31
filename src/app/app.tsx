@@ -476,6 +476,7 @@ export function App({
     // temporal history, because the backend carries feedback pairs and rings over BY
     // RESOURCE ID and two documents share those ids as soon as they share node names.
     resetFeedback: compile.resetFeedback,
+    documentBoundary: compile.documentBoundary,
   });
 
   /**

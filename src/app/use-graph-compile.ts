@@ -110,6 +110,8 @@ export interface GraphCompileResult {
    * document's until `backend.compile` resolves (`use-frame-loop.ts`).
    */
   readonly resetFeedback: boolean;
+  /** T552: a different document is open — zero point storage and land on frame 0. */
+  readonly documentBoundary: boolean;
 }
 
 /**
@@ -433,6 +435,7 @@ export function useGraphCompile(
         animate: null,
         valuesOnly: false,
         resetFeedback: false,
+        documentBoundary: false,
       };
     }
     const previous = lastCompile.current;
@@ -475,6 +478,7 @@ export function useGraphCompile(
         valuesOnly: false,
         // The plan is the one already installed, so there is nothing new to land on.
         resetFeedback: false,
+        documentBoundary: false,
       };
     }
 
@@ -507,6 +511,7 @@ export function useGraphCompile(
       // asking the backend to clear a program it has not been given would be a call
       // into nothing.
       resetFeedback: change?.resetFeedback === true,
+      documentBoundary: change?.documentBoundary === true,
     };
   }, [animate, channels, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 

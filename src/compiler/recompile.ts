@@ -52,6 +52,13 @@ export interface RecompileDecision {
   readonly recreateTargets: boolean;
   /** True when temporal history can no longer be reused (§V22). */
   readonly resetFeedback: boolean;
+  /**
+   * T552/T519: a DIFFERENT DOCUMENT is open — the one case where point storage must be
+   * zeroed and the transport must land on frame 0, so the next tick is byte-identical
+   * to a cold open. Distinct from `resetFeedback` because a resolution edit resets
+   * textures but must not rewind playback or kill a running simulation.
+   */
+  readonly documentBoundary?: boolean;
 }
 
 /** The node and everything reachable forward from it, sorted. */

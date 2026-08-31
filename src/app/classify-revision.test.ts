@@ -284,6 +284,11 @@ describe("T519 — a load is a discontinuity, not a diff (B106)", () => {
     // code could not produce for a load at any strength.
     expect(decision.recreateTargets).toBe(true);
     expect(decision.resetFeedback).toBe(true);
+    // T552: and the third flag, the one only a LOAD sets. `resetFeedback` alone is
+    // what a resolution edit produces — textures reset, simulations keep running. A
+    // document boundary additionally zeroes the point buffer pairs and lands the
+    // transport on frame 0, so the loaded document opens byte-identical to a cold open.
+    expect(decision.documentBoundary).toBe(true);
     // EVERY node, because there is nothing to diff against — not the subset some
     // id-comparison happened to notice.
     expect([...decision.nodes]).toEqual(["field", "out"]);

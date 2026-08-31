@@ -110,6 +110,11 @@ describe("classifyEdit (T31, §V5)", () => {
     expect(settings.work).toBe("repropagate");
     expect(settings.recreateTargets).toBe(true);
     expect(settings.nodes).toEqual(["gen", "out", "wgsl"]);
+    // T552: as expensive as these are, none of them crosses a DOCUMENT boundary —
+    // textures reset, but running simulations and the transport must survive a
+    // resolution or settings edit. Only a load sets `documentBoundary`.
+    expect(settings.documentBoundary).toBeUndefined();
+    expect(classifyEdit({ kind: "nodeResolution", nodeId: "gen" }, context).documentBoundary).toBeUndefined();
   });
 
   it("walks downstream deterministically", () => {
