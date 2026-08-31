@@ -5,6 +5,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -92,12 +93,26 @@ function urlOf(value: unknown): string {
   return "";
 }
 
-/** Media nodes in document order, with the one input each needs. */
+/**
+ * Media nodes in document order, with the one input each needs.
+ *
+ * T577 — a node that is OFF is not one of them. This is T555's answer, not a second rule:
+ * a silenced SOURCE is not a capture candidate at all, which is the analogue of the
+ * compiler dropping a muted node from the plan (T250) and of §V504's "a muted node is not
+ * cooked". Muting a movie already removed its PICTURE — the compiler drops the node — and
+ * its SOUND — the element is created `muted` — while the decoder kept running for a
+ * texture nobody uploads, which is the wasted work this closes.
+ *
+ * `isSilencedSource` answers from the flags alone, which is only sound for a node with NO
+ * INPUTS; all three media types declare `inputs: []` and the gate in `media-mute.test.tsx`
+ * reddens if one grows an input, exactly as T555's does for the audio candidates.
+ */
 function mediaRequests(graph: GraphDocument): MediaRequest[] {
   const requests: MediaRequest[] = [];
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
     if (node === undefined || !MEDIA_TYPES.has(node.type)) continue;
+    if (isSilencedSource(node)) continue;
     requests.push({ nodeId, type: node.type, url: urlOf(node.parameters["file"]) });
   }
   return requests;
@@ -313,7 +328,12 @@ export function useMediaSources(
     const env = environment ?? browserMediaEnvironment();
     const open = requestsRef.current;
     let live = true;
-    const opened: Array<{ source: VideoMediaSource; unregister: () => void }> = [];
+    const opened: Array<{
+      source: VideoMediaSource;
+      unregister: () => void;
+      /** T577: what the cleanup has to STOP, not merely unhook. */
+      element: MediaElement;
+    }> = [];
     const textOpened: Array<{ nodeId: NodeId; source: TextMediaSource; unregister: () => void }> = [];
     // Captured here rather than read in the cleanup: by teardown the ref may already point
     // at the next render's map, and this effect must only take down what IT registered.
@@ -397,7 +417,7 @@ export function useMediaSources(
           mediaSourceIdFor(request.nodeId),
           media.source,
         );
-        opened.push({ source: media, unregister });
+        opened.push({ source: media, unregister, element });
 
         // T493: a FILE gets a transport; a camera does not. A live stream has no playhead
         // to derive — asking a webcam to seek to second four is not a thing — so the
@@ -442,6 +462,12 @@ export function useMediaSources(
       for (const entry of opened) {
         entry.unregister();
         entry.source.dispose();
+        // T577: `dispose` only unhooks the frame callback — it leaves the element PLAYING,
+        // so a node that stopped being a request went on decoding for nobody. That is the
+        // wasted work itself, and unregistering the source cannot reach it. Probed
+        // structurally through `playableMedia` for the same reason the transport does: it
+        // is the one place that knows what "an element you can drive" means.
+        playableMedia(entry.element)?.pause();
       }
       for (const entry of textOpened) {
         entry.unregister();
