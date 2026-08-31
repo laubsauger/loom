@@ -112,9 +112,14 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  * from a ballistic spray to a fire front took it from 0.02347 to 0.13639 and opened both
  * its range and its first frame to 1.0. E13's 0.14107 was simply STALE — its row now reads
  * 0.19303, and that is what HEAD measured too, before T565 touched the file. A table of
- * measurements is documentation and rots like any other (§V421); this one is not asserted
- * against, so nothing was red while it drifted. Worth knowing when reading a row as
- * evidence.
+ * measurements is documentation and rots like any other (§V421); this one was not
+ * asserted against, so nothing was red while it drifted.
+ *
+ * T584/T690 CLOSED THAT: the asserted copy now lives in `look-baselines.json`, checked
+ * per example inside this gate's own measurement. READ THE JSON AS EVIDENCE, not this
+ * table — what remains here is the historical snapshot the FLOORS below were derived
+ * from, kept because the thresholds' provenance matters and frozen because §V643 gave
+ * the live numbers a home that can actually go red.
  *
  * LIVENESS_FLOOR is 0.002. The gap it lives in is enormous and asymmetric: a genuinely
  * static plan reads EXACTLY zero (asserted below, so this is measured and not assumed),
