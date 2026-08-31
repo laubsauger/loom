@@ -10,6 +10,8 @@ import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
 import { listExamples } from "./catalogue.ts";
 import { TIER_B_CAPABILITIES, exampleRegistry, frameSequence, requireExample } from "./runner.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
+import { toRgba8 } from "../runtime/export/image.ts";
+import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
 
 /**
  * EVERY SHIPPED EXAMPLE, BUILT ON A REAL DEVICE (T362/T363, §V89, §V280).
@@ -521,6 +523,210 @@ describe("E27 lifts the picture into geometry, and it moves", () => {
     // Measured 336,347 of 921,600. A tenth of the frame is a wide margin and still fails
     // outright if the sample stops reaching position.z.
     expect(differing(flat, late)).toBeGreaterThan(90_000);
+  }, 300_000);
+});
+
+/**
+ * E33 — THE EMBLEM STILL READS AS A YIN-YANG WITH NOTHING BEHIND IT (T716).
+ *
+ * T716 deleted the mass, so the medallion's two tones and its dividing curve are carried
+ * by 1728 instanced tiles and by nothing else. "The mass is absent" is a claim about the
+ * graph and proves nothing about the picture (§V655), so this is a claim about PIXELS.
+ *
+ * Three properties, and the third is the one that cannot be faked by a two-tone disc:
+ *   - the object's pixels fall into TWO populations of comparable size,
+ *   - with a wide gap between their medians,
+ *   - and NO STRAIGHT LINE separates them. A bisected disc is cut perfectly by one; a
+ *     taiji's boundary is two arcs, so a straight cut has to give up the lobes.
+ *
+ * The control is the mutation that says the instrument can fail: replace `taiji` with a
+ * straight bisector and the third number collapses (measured 17.4% -> 7.3%) while the
+ * first two barely move, which is exactly the discrimination the claim needs.
+ *
+ * Measured at bc681b7: 45.6% / 129.6 luma / 17.4%, full resolution and display-encoded
+ * from the plan's own space (§V618, §V627). The thresholds sit well clear of both sides.
+ */
+describe("E33 reads as a yin-yang without a disc behind it", () => {
+  async function luma(mutate: (graph: GraphDocument) => GraphDocument): Promise<Float64Array> {
+    const file = listExamples().find((entry) => entry.fileName === "E33-Obol.loom.json");
+    if (file === undefined) throw new Error("E33 is not shipped");
+    const { document } = requireExample(file);
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: mutate(document.graph),
+      settings: document.settings,
+      frames: 1,
+      capture: [0],
+      outputNodeId: "out",
+      fps: 60,
+      animate: true,
+    });
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const space = result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
+    const frame = result.frames[0];
+    if (frame === undefined) throw new Error("no frame");
+    const image = toRgba8(
+      {
+        width: frame.width,
+        height: frame.height,
+        format: frame.format,
+        bytes: frame.bytes,
+        rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8),
+      },
+      { space },
+    );
+    const out = new Float64Array(image.width * image.height);
+    for (let index = 0; index < out.length; index += 1) {
+      const at = index * 4;
+      out[index] =
+        0.2126 * (image.data[at] ?? 0) + 0.7152 * (image.data[at + 1] ?? 0) + 0.0722 * (image.data[at + 2] ?? 0);
+    }
+    return out;
+  }
+
+  /** The key's shadow off in every render, so the cast shadow is not counted as object. */
+  const noShadow = (graph: GraphDocument): GraphDocument => {
+    const key = graph.nodes["key"];
+    if (key === undefined) throw new Error("E33 has no key light");
+    return { ...graph, nodes: { ...graph.nodes, key: { ...key, parameters: { ...key.parameters, shadows: false } } } };
+  };
+  const noObject = (graph: GraphDocument): GraphDocument => {
+    const shot = graph.nodes["shot"];
+    if (shot === undefined) throw new Error("E33 has no render");
+    return { ...graph, nodes: { ...graph.nodes, shot: { ...shot, parameters: { ...shot.parameters, scenes: "cyc1" } } } };
+  };
+  /** THE CONTROL: the tiles' two tones split by a straight line instead of by `taiji`. */
+  const straightTone = (graph: GraphDocument): GraphDocument => {
+    const segs = graph.nodes["segs"];
+    if (segs === undefined) throw new Error("E33 has no tile kernel");
+    const kernel = segs.parameters["kernel"];
+    if (typeof kernel !== "string" || !kernel.includes("let tone = taiji(disc);")) {
+      throw new Error("the tile kernel no longer reads its tone the way this control edits");
+    }
+    return {
+      ...graph,
+      nodes: {
+        ...graph.nodes,
+        segs: {
+          ...segs,
+          parameters: {
+            ...segs.parameters,
+            kernel: kernel.replace("let tone = taiji(disc);", "let tone = smoothstep(-0.03, 0.03, disc.x);"),
+          },
+        },
+      },
+    };
+  };
+
+  /** Otsu's threshold: the split that maximises between-class variance. */
+  function otsu(values: readonly number[]): number {
+    const histogram = new Float64Array(256);
+    for (const value of values) {
+      const bin = Math.max(0, Math.min(255, Math.round(value)));
+      histogram[bin] = (histogram[bin] ?? 0) + 1;
+    }
+    let sum = 0;
+    for (let index = 0; index < 256; index += 1) sum += index * (histogram[index] ?? 0);
+    let below = 0;
+    let weighted = 0;
+    let best = 0;
+    let bestVariance = -1;
+    for (let index = 0; index < 256; index += 1) {
+      below += histogram[index] ?? 0;
+      if (below === 0) continue;
+      const above = values.length - below;
+      if (above === 0) break;
+      weighted += index * (histogram[index] ?? 0);
+      const variance = below * above * (weighted / below - (sum - weighted) / above) ** 2;
+      if (variance > bestVariance) {
+        bestVariance = variance;
+        best = index;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The smallest share of the object a STRAIGHT LINE has to get wrong. Swept over 90
+   * orientations; for each, the pixels are projected onto the normal and the best split
+   * is found with a running count, so it is one sort per angle rather than a grid search.
+   */
+  function straightLineError(xs: readonly number[], ys: readonly number[], labels: readonly number[]): number {
+    const ones = labels.reduce((total, value) => total + value, 0);
+    let best = 1;
+    for (let step = 0; step < 90; step += 1) {
+      const theta = (step / 90) * Math.PI;
+      const nx = Math.cos(theta);
+      const ny = Math.sin(theta);
+      const projected = xs
+        .map((x, index) => ({ t: x * nx + (ys[index] ?? 0) * ny, label: labels[index] ?? 0 }))
+        .sort((a, b) => a.t - b.t);
+      let onesBefore = 0;
+      for (let cut = 0; cut <= projected.length; cut += 1) {
+        const zerosAfter = projected.length - cut - (ones - onesBefore);
+        const error = (onesBefore + zerosAfter) / projected.length;
+        best = Math.min(best, error, 1 - error);
+        if (cut < projected.length && projected[cut]?.label === 1) onesBefore += 1;
+      }
+    }
+    return best;
+  }
+
+  it("carries two high-contrast halves on the tiles alone, split by a curve no line can cut", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const [lit, bare, control] = await Promise.all([
+      luma(noShadow),
+      luma((graph) => noObject(noShadow(graph))),
+      luma((graph) => straightTone(noShadow(graph))),
+    ]);
+
+    // The object's own pixels: where drawing it changed the frame. The room is excluded
+    // rather than thresholded, so a dark tile against a dark backdrop still counts.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const values: number[] = [];
+    const controlValues: number[] = [];
+    const width = 1280;
+    for (let index = 0; index < lit.length; index += 1) {
+      if (Math.abs((lit[index] ?? 0) - (bare[index] ?? 0)) <= 2) continue;
+      xs.push(index % width);
+      ys.push(Math.floor(index / width));
+      values.push(lit[index] ?? 0);
+      controlValues.push(control[index] ?? 0);
+    }
+    // Measured 150,536 of 921,600. A face made of tiles that has lost most of its tiles
+    // fails here before any of the three numbers below is reached.
+    expect(values.length).toBeGreaterThan(100_000);
+
+    const median = (input: readonly number[]): number => {
+      const sorted = [...input].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)] ?? 0;
+    };
+    const read = (input: readonly number[]) => {
+      const cut = otsu(input);
+      const light = input.filter((value) => value > cut);
+      const dark = input.filter((value) => value <= cut);
+      return {
+        minorShare: Math.min(light.length, dark.length) / input.length,
+        contrast: median(light) - median(dark),
+        labels: input.map((value) => (value > cut ? 1 : 0)),
+      };
+    };
+
+    const shipped = read(values);
+    // TWO HALVES. Measured 0.456; one flat tone measures 0.069.
+    expect(shipped.minorShare).toBeGreaterThan(0.32);
+    // AND THEY ARE LIGHT AGAINST DARK. Measured 129.6 luma of 255.
+    expect(shipped.contrast).toBeGreaterThan(90);
+
+    // THE CURVE. Measured 0.174 shipped against 0.073 for a straight bisector; the
+    // control is rendered in the same run so the comparison cannot go stale.
+    const shippedError = straightLineError(xs, ys, shipped.labels);
+    const controlError = straightLineError(xs, ys, read(controlValues).labels);
+    expect(shippedError).toBeGreaterThan(0.12);
+    expect(controlError).toBeLessThan(0.10);
+    expect(shippedError).toBeGreaterThan(controlError * 1.5);
   }, 300_000);
 });
 
