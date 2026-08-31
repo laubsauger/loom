@@ -189,6 +189,7 @@ export interface FixtureContextOptions {
   renameNode?: GraphCanvasContextValue["renameNode"];
   renderPreview?: GraphCanvasContextValue["renderPreview"];
   renderControls?: GraphCanvasContextValue["renderControls"];
+  previewInspect?: GraphCanvasContextValue["previewInspect"];
 }
 
 export function fixtureContext(options: FixtureContextOptions): {
@@ -217,6 +218,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       renameNode: options.renameNode ?? (() => Promise.resolve(FIXTURE_RENAME_REFUSAL)),
       renderPreview: options.renderPreview,
       renderControls: options.renderControls,
+      previewInspect: options.previewInspect,
     },
   };
 }

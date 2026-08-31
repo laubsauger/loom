@@ -179,6 +179,39 @@ function GraphPaneInner({
   });
 
   /**
+   * T561/T675 — which nodes can be orbited, asked ONCE per compile instead of once per
+   * node per render.
+   *
+   * Orbitable iff the COMPILER marked this node's preview as a synthesized 3D picture
+   * with a camera to move — never inferred from a node type here, and never listed. The
+   * compiler derives that from the PAYLOAD KIND at one site (`compiler/preview-orbit.ts`),
+   * which is the owner's "inherit from a common thing": a new payload kind cannot reach
+   * this line without having stated whether it has a camera.
+   */
+  const orbitableNodes = useMemo(() => {
+    const nodes = new Set<NodeId>();
+    for (const output of compiledOutputs) {
+      if (output.synthesis?.orbit !== undefined) nodes.add(output.nodeId as NodeId);
+    }
+    return nodes;
+  }, [compiledOutputs]);
+
+  /**
+   * T675 — the inspection control's source for the node HEADER.
+   *
+   * The toggle used to be drawn on the tile and was invisible there: the shared preview
+   * surface composites over every pixel of a node's preview slot (`canvas-context.ts`
+   * carries the stacking analysis). Returning the store rather than a rendered control
+   * keeps `NodeView` free of any preview import, and returning `null` is how a node with
+   * nothing to inspect says so — a suspended preview publishes no orbit, so it offers no
+   * camera (T669, answered: no ghost control that cannot work).
+   */
+  const previewInspect = useCallback(
+    (nodeId: NodeId) => (orbitableNodes.has(nodeId) ? previewOrbits : null),
+    [orbitableNodes, previewOrbits],
+  );
+
+  /**
    * One seam, two surfaces (T185, T344).
    *
    * `NodeView` asks for "whatever this node shows" and knows nothing about either system.
@@ -229,11 +262,7 @@ function GraphPaneInner({
           <ValuePlot nodeId={nodeId} history={valueHistory} source={source} silence={silence} />
         );
       }
-      // T561: orbitable iff the COMPILER marked this node's preview as a synthesized
-      // 3D picture with a camera to move — never inferred from the node type here.
-      const orbitable = compiledOutputs.some(
-        (output) => output.nodeId === nodeId && output.synthesis?.orbit !== undefined,
-      );
+      const orbitable = orbitableNodes.has(nodeId);
       return (
         <NodePreviewSlot
           nodeId={nodeId}
@@ -245,7 +274,7 @@ function GraphPaneInner({
         />
       );
     },
-    [compiledOutputs, graph, nodeRuntime, previewBounds, previewOrbits, previewViews, registry, settings, valueHistory],
+    [graph, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(
@@ -472,6 +501,7 @@ function GraphPaneInner({
           invocation={invocation}
           runtime={nodeRuntime}
           renderPreview={renderPreview}
+          previewInspect={previewInspect}
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
           onPatchResult={onPatchResult}

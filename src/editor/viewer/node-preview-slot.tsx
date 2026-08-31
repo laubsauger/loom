@@ -91,33 +91,70 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
   const adjustable = orbitable && orbits !== undefined && mode === "adjustable";
 
   /**
-   * T561/T656: the inspection gestures, live ONLY in adjustable mode.
+   * T675 — ALT IS THE CAMERA KEY, and this is the primary fix.
    *
-   * Plain drag orbits (T561, unchanged). ALT-drag pans, and alt is the choice because it
-   * is the one modifier React Flow has not already claimed: shift is `selectionKeyCode`,
-   * meta is `multiSelectionKeyCode`, ctrl is `zoomActivationKeyCode` and the macOS
-   * context-menu chord, space is `panActivationKeyCode`. Middle-drag would be the other
-   * convention and is deliberately NOT wired: a Mac trackpad has no middle button, so it
-   * would be an affordance half the users cannot perform.
+   * The owner: "cant use orbit or any camera controls here in this geometry node… where
+   * did the button go to unlock camera controls in 3d nodes?". Geometry was orbitable the
+   * whole time; the toggle was unreachable — painted under the composited tile (see
+   * `canvas-context.ts`) and, before that, a 14px glyph at opacity 0.35 revealed on hover
+   * (T664). Their own proposal is TouchDesigner's model and is the right one: a modifier
+   * that ENTERS the mode, so the camera is reachable without finding any chrome at all.
    *
-   * The gesture arrives uncontested: the slot carries `nodrag`/`nopan` and the node view
-   * stops pointer-press propagation (§V20), so nothing here fights React Flow. All of it
-   * is VIEW STATE — the store makes no document revision and the preview tick samples it
-   * per frame, so a gesture repaints the tile and re-renders nothing.
+   * WHICH MODIFIER, and what it costs. Alt is the only one free: React Flow holds shift
+   * (`selectionKeyCode`), meta (`multiSelectionKeyCode`), ctrl (`zoomActivationKeyCode`,
+   * and the macOS context-menu chord) and space (`panActivationKeyCode`). T656 had already
+   * taken alt for PAN inside adjustable mode, so alt cannot mean two things and PAN MOVES
+   * TO SHIFT. That is a deliberate change to a T656 decision, and the reason it is safe is
+   * the reason T656 avoided shift in the first place no longer applies here: T656 was
+   * reasoning about the CANVAS, and an adjustable tile is outside React Flow's gesture
+   * space entirely — `nodrag`/`nopan` on the slot, `nowheel` while adjustable, and the
+   * node view stops the pointer press from reaching the drag listener at all (§V20). The
+   * rule is now one sentence: alt reaches the camera, shift pans instead of orbiting.
+   *
+   * Middle-drag stays deliberately unwired, for T656's reason: the owner is on a Mac
+   * trackpad, which has no middle button.
+   *
+   * TWO WAYS IN, and they differ in whether they LATCH:
+   *
+   *  - alt + press = COMMIT. The tile enters adjustable and stays there when alt is
+   *    released; the header toggle lights, and `h` or the toggle returns it home. The same
+   *    gesture orbits immediately, so the first alt-drag does the thing the owner asked
+   *    for rather than arming something.
+   *  - alt held while hovering = PEEK. The tile goes adjustable so the cursor and the
+   *    toggle say the camera is live, and releasing alt without having dragged puts it
+   *    back home. Without this the discovery is silent; with it, sweeping the canvas with
+   *    alt down does not leave a trail of tiles that have quietly stolen the wheel.
+   *
+   * All of it is VIEW STATE — the store makes no document revision and the preview tick
+   * samples it per frame, so a gesture repaints the tile and re-renders nothing but the
+   * one toggle that reports the mode.
    */
+  const peeking = useRef(false);
+  const enter = useCallback(() => {
+    if (!orbitable || orbits === undefined) return;
+    orbits.setMode(nodeId, "adjustable");
+  }, [orbitable, orbits, nodeId]);
+
   const drag = useRef<{ pointerId: number; x: number; y: number; pan: boolean } | null>(null);
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!adjustable || event.button !== 0) return;
+      if (!orbitable || orbits === undefined || event.button !== 0) return;
+      // The modifier's own path: a press with alt down reaches the camera whether or not
+      // the tile was already adjustable, and whether or not anyone found the toggle.
+      if (event.altKey) enter();
+      else if (!adjustable) return;
+      // A press that used the peek COMMITS it — that is what makes the alt release
+      // below leave an intentionally-adjusted tile alone.
+      peeking.current = false;
       drag.current = {
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
-        pan: event.altKey,
+        pan: event.shiftKey,
       };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [adjustable],
+    [adjustable, enter, orbitable, orbits, nodeId],
   );
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -128,8 +165,9 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       orbits.apply(
         nodeId,
         active.pan
-          ? // The camera follows the drag, the same convention the orbit already uses:
-            // drag right and the eye AND look-at slide right, so the object goes left.
+          ? // SHIFT-drag (T675 moved this off alt). The camera follows the drag, the same
+            // convention the orbit already uses: drag right and the eye AND look-at slide
+            // right, so the object goes left.
             { panX: dx * RADII_PER_PX, panY: -dy * RADII_PER_PX }
           : // Drag right walks the camera rightward around the object; drag up raises it.
             { azimuth: dx * RADIANS_PER_PX, elevation: -dy * RADIANS_PER_PX },
@@ -172,10 +210,6 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
     return () => element.removeEventListener("wheel", onWheel);
   }, [adjustable, nodeId, orbits]);
 
-  const toggleMode = useCallback(() => {
-    orbits?.setMode(nodeId, mode === "adjustable" ? "home" : "adjustable");
-  }, [orbits, nodeId, mode]);
-
   /**
    * T664 — `h` over the tile returns it home, so the toggle is not the only way back.
    *
@@ -195,6 +229,54 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
    * from a text field, which cannot be hovered and focused as this tile at once.
    */
   const [hovered, setHovered] = useState(false);
+
+  /**
+   * T675 — the PEEK half of the modifier path.
+   *
+   * Holding alt over an orbitable tile makes its camera live, so the affordance announces
+   * itself the instant the key goes down rather than waiting to be found. Releasing alt
+   * without having pressed puts it back home: a peek that latched would mean sweeping the
+   * canvas with alt held left every tile it passed holding the wheel, which is a worse
+   * version of the bug this task is fixing.
+   *
+   * `event.altKey` rather than `event.key === "Alt"`, so alt arriving as part of a chord
+   * still counts; the keyup half checks `altKey` going false for the same reason. The
+   * listener is attached only while a tile is hovered AND home, which is one listener for
+   * the whole canvas and none at all once a tile is committed.
+   */
+  useEffect(() => {
+    if (!hovered || !orbitable || orbits === undefined || mode !== "home") return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!event.altKey) return;
+      peeking.current = true;
+      orbits.setMode(nodeId, "adjustable");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hovered, orbitable, orbits, nodeId, mode]);
+
+  useEffect(() => {
+    if (!peeking.current || orbits === undefined) return;
+    const end = (): void => {
+      if (!peeking.current) return;
+      peeking.current = false;
+      orbits.setMode(nodeId, "home");
+    };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.altKey) return;
+      end();
+    };
+    // A pointer that leaves the tile ends the peek too: alt released outside the window
+    // never reaches the keyup listener, and a tile left adjustable by a key nobody saw is
+    // the same "control with a mind of its own" this task exists to remove.
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", end);
+    return () => {
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", end);
+    };
+  }, [orbits, nodeId, mode]);
+
   useEffect(() => {
     if (!hovered || !adjustable || orbits === undefined) return;
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -269,58 +351,32 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
+      onPointerLeave={() => {
+        setHovered(false);
+        // An un-committed peek does not survive the pointer leaving the tile.
+        if (peeking.current) {
+          peeking.current = false;
+          orbits?.setMode(nodeId, "home");
+        }
+      }}
     >
       {/*
-        T613/T656 — the toggle IS the affordance and the indicator, so there is no second
-        badge. Offered only where an orbit is (pointset and geometry syntheses): a texture
-        preview has no camera, and a CAMERA payload's tile draws through the payload's own
-        matrix, so offering to override it would be an affordance that lies (§T639(a)).
+        T675 — THE TOGGLE IS NOT HERE ANY MORE, and its absence is the fix.
+
+        T613/T656 put it at the tile's corner, TouchDesigner's position, and T664 shrank it
+        to a glyph when the word reflowed. Both were arguing about how loud a control was
+        while it was not on screen at all: the shared preview surface is a full-pane canvas
+        at `--z-canvas-overlay` (30) and everything inside a node is sealed inside
+        `.react-flow__viewport`'s stacking context at 2, so the composited tile paints over
+        anything drawn in this box, and no z-index reachable from here can cross that.
+        `pointer-events: none` on the surface is why it was invisible rather than DEAD —
+        clicks still landed, so every test that found the button by test-id and clicked it
+        passed (§V461: a DOM query cannot see occlusion).
+
+        So the control lives in the node's HEADER now, beside P/B/M, where nothing is ever
+        composited — `previewInspect` in `canvas-context.ts`. What stays here is the part
+        that must be on the picture: the gestures, and the cursor that says they are live.
       */}
-      {orbitable && orbits !== undefined ? (
-        <button
-          type="button"
-          className={cx(styles.inspectToggle, "nodrag", "nopan")}
-          data-testid={`preview-inspect-${nodeId}`}
-          data-mode={mode}
-          aria-pressed={mode === "adjustable"}
-          aria-label="Adjust this preview's camera"
-          // Labels, not prose (§V90/§V91): the copy guard caps chrome strings at a
-          // phrase, and what the gestures ARE belongs in the help surface, not here.
-          title={
-            mode === "adjustable"
-              ? "Adjusting — press, or h, to return home"
-              : "Adjust this preview's camera — orbit, zoom, pan"
-          }
-          // The press is the toggle's own; it must not also start an orbit drag.
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={toggleMode}
-        >
-          {/*
-            T664 — an ICON in a SQUARE box, never a word.
-            The first cut said HOME / ADJUST, and the owner reported it as "wonk and huge":
-            four characters becoming six grew the control by half the instant it was
-            pressed, so a control meant to say "nothing changed but the mode" visibly
-            reflowed. The CSS comment beside it already claimed the state was carried by
-            tone and never by size — the TEXT NODE was the thing breaking that claim, and
-            no amount of styling fixes a channel that is the string's own length. A glyph
-            is one width in every state and every locale. The orbit ring reads at 10px and
-            says what the mode DOES, which a word this small never did.
-          */}
-          <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" focusable="false">
-            <ellipse
-              cx="6"
-              cy="6"
-              rx="5.2"
-              ry="2.4"
-              transform="rotate(-30 6 6)"
-              fill="none"
-              stroke="currentColor"
-            />
-            <circle cx="6" cy="6" r="1.9" fill="currentColor" />
-          </svg>
-        </button>
-      ) : null}
       {preview === null ? (
         /**
          * §V303 — a slot with nothing published still has to COVER.

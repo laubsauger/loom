@@ -50,61 +50,20 @@
 }
 
 /*
- * The preview INSPECTION toggle (T656), home ↔ adjustable.
+ * T675 — the inspection toggle's rules USED TO BE HERE, and deleting them is the fix.
  *
- * The toggle is the whole indicator: T613 asked whether an off-stock preview needed a
- * badge beside it and the owner's answer removed the question, because an adjustable
- * preview is VISIBLY adjustable. So this reads two ways at once and has to survive both —
- * a quiet mark at the top of a 192px tile in home mode, and an unmissable one in
- * adjustable mode. Same box, same rhythm as the lens marker below it; the state is
- * carried by tone (--text-dim → --signal, the app's live/active amber), never by size.
+ * Nothing styled in this file can be seen over a LIVE tile. `.previewSurface`
+ * (`app/panes.module.css`) is a full-pane canvas at `--z-canvas-overlay` (30); everything
+ * in a node is sealed inside `.react-flow__viewport`'s stacking context at z-index 2, so
+ * the composited tile paints over the whole slot and no local z-index can cross those
+ * contexts. The toggle sat here at `z-index: 1`, opacity 0.35, revealed on hover — three
+ * numbers arguing about the loudness of something that was not on screen. It now lives in
+ * the node header (`nodes/node-view.tsx`, `previewInspect`), where nothing composites.
  *
- * Quiet by default (§V90): at rest in home mode it is barely there, and it comes up on
- * hover or keyboard focus. In adjustable mode it is always at full strength, because it
- * is then reporting a state the user must be able to see without hunting for it.
+ * `.lensMarker` below has the SAME defect and is NOT fixed here: it is the §V70a warning
+ * that a preview is filtered, and it is occluded exactly when the preview is live. It
+ * needs the same move and its own decision about where in the chrome it belongs.
  */
-.inspectToggle {
-  position: absolute;
-  /*
-   * Inset by a space step on both axes, which keeps the whole box inside the tile's
-   * PADDING box — §V488's lesson, where a radius clipping at the padding box cut a
-   * diagnostic mid-glyph. Flush against the corner, this would clip the same way.
-   */
-  top: var(--space-1);
-  right: var(--space-1);
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  /*
-   * T664 — SQUARE, and the SAME square in both states.
-   * The first cut was a word, HOME becoming ADJUST, and a control that grows by half
-   * when you press it reads as unstable however it is toned. Size and length are removed
-   * from the channel entirely: this box is one size always, and only its tone moves.
-   * Derived from the chrome scale rather than a new number (T498) — the micro type step
-   * plus one space step is 14px, about 7% of a 192px tile instead of the word's 23%.
-   */
-  width: calc(var(--fs-micro) + var(--space-2));
-  height: calc(var(--fs-micro) + var(--space-2));
-  padding: 0;
-  border: var(--hairline) solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-  color: var(--text-dim);
-  cursor: pointer;
-  opacity: 0.35;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-
-.inspectHost:hover .inspectToggle,
-.inspectToggle:focus-visible {
-  opacity: 1;
-}
-
-.inspectToggle[data-mode="adjustable"] {
-  border-color: var(--signal);
-  color: var(--signal);
-  opacity: 1;
-}
 
 /*
  * Lens marker (T336). Present ONLY while a preview is being shown through something other

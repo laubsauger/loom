@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
@@ -83,52 +83,58 @@ function mount(orbitable: boolean) {
   return { orbits, slot, canvasWheel };
 }
 
-function toggle(): HTMLElement {
-  return screen.getByTestId(`preview-inspect-${NODE}`);
-}
-
-/** Drag from (100,100) to (150,80): 50px right, 20px up. `alt` selects the pan gesture. */
-function drag(slot: HTMLElement, options: { alt?: boolean } = {}): void {
+/**
+ * Drag from (100,100) to (150,80): 50px right, 20px up.
+ *
+ * `alt` is T675's ENTRY modifier — it reaches the camera with no prior click on anything —
+ * and `shift` selects PAN, which T675 moved off alt so that alt could mean one thing.
+ */
+function drag(slot: HTMLElement, options: { alt?: boolean; shift?: boolean } = {}): void {
   fireEvent.pointerDown(slot, {
     pointerId: 1,
     button: 0,
     clientX: 100,
     clientY: 100,
     altKey: options.alt ?? false,
+    shiftKey: options.shift ?? false,
   });
   fireEvent.pointerMove(slot, { pointerId: 1, clientX: 150, clientY: 80 });
   fireEvent.pointerUp(slot, { pointerId: 1 });
 }
 
 describe("the preview inspection mode (T656)", () => {
-  it("HOME is the default, and the toggle says so", () => {
-    const { orbits } = mount(true);
+  it("HOME is the default, and the slot draws no control of its own (T675)", () => {
+    const { orbits, slot } = mount(true);
     expect(orbits.mode(NODE)).toBe("home");
-    expect(toggle().getAttribute("data-mode")).toBe("home");
-    expect(toggle().getAttribute("aria-pressed")).toBe("false");
+    // The toggle is NOT here any more and must not come back: anything rendered inside
+    // this box is painted over by the composited tile. `preview-inspect-chrome.test.tsx`
+    // holds that invariant; this is the local half, so a well-meaning re-add fails twice.
+    expect(screen.queryByTestId(`preview-inspect-${NODE}`)).toBeNull();
+    expect(slot.getAttribute("data-inspect")).toBe("home");
   });
 
   it("in HOME the same gestures move nothing, and the wheel still reaches the canvas", () => {
     const { orbits, slot, canvasWheel } = mount(true);
 
     drag(slot);
-    drag(slot, { alt: true });
+    drag(slot, { shift: true });
     fireEvent.wheel(slot, { deltaY: -100 });
 
     // Nothing touched the camera: the request omits `orbit` entirely, as it does today.
+    // NOTE the alt drag is deliberately absent from this list — after T675 alt is the way
+    // IN, and its own test below asserts that it works from exactly this state.
     expect(orbits.get(NODE)).toBeUndefined();
     // And the canvas got its wheel event, which is the whole reason T561 shipped no zoom.
     expect(canvasWheel).toHaveBeenCalledTimes(1);
     expect(slot.className).not.toMatch(/nowheel/);
   });
 
-  it("the toggle enters ADJUSTABLE, and then the preview owns the wheel", () => {
+  it("ADJUSTABLE gives the preview the wheel", () => {
     const { orbits, slot, canvasWheel } = mount(true);
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "adjustable"));
 
     expect(orbits.mode(NODE)).toBe("adjustable");
-    expect(toggle().getAttribute("data-mode")).toBe("adjustable");
-    expect(toggle().getAttribute("aria-pressed")).toBe("true");
+    expect(slot.getAttribute("data-inspect")).toBe("adjustable");
     expect(slot.className).toMatch(/nowheel/);
 
     fireEvent.wheel(slot, { deltaY: -100 });
@@ -138,9 +144,9 @@ describe("the preview inspection mode (T656)", () => {
     expect(canvasWheel).not.toHaveBeenCalled();
   });
 
-  it("in ADJUSTABLE a drag orbits and an alt-drag pans — the camera follows the drag", () => {
+  it("in ADJUSTABLE a drag orbits and a SHIFT-drag pans — the camera follows the drag", () => {
     const { orbits, slot } = mount(true);
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "adjustable"));
 
     drag(slot);
     expect(orbits.get(NODE)?.azimuth).toBeCloseTo(50 * 0.016, 10);
@@ -148,9 +154,10 @@ describe("the preview inspection mode (T656)", () => {
     expect(orbits.get(NODE)?.panX).toBe(0);
     expect(orbits.get(NODE)?.panY).toBe(0);
 
-    drag(slot, { alt: true });
-    // The SAME motion with alt held moves the look-at instead of turning around it, and
-    // the orbit angles are untouched — the two gestures are not the same knob.
+    drag(slot, { shift: true });
+    // The SAME motion with shift held moves the look-at instead of turning around it, and
+    // the orbit angles are untouched — the two gestures are not the same knob. Shift, not
+    // alt: T675 needed alt for the entry path, and one key cannot mean two things.
     expect(orbits.get(NODE)?.panX).toBeCloseTo(50 * 0.005, 10);
     expect(orbits.get(NODE)?.panY).toBeCloseTo(20 * 0.005, 10);
     expect(orbits.get(NODE)?.azimuth).toBeCloseTo(50 * 0.016, 10);
@@ -163,7 +170,7 @@ describe("the preview inspection mode (T656)", () => {
 
   it("the wheel clamps, so scrolling out twenty times then back in still moves", () => {
     const { orbits, slot } = mount(true);
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "adjustable"));
 
     for (let index = 0; index < 60; index += 1) fireEvent.wheel(slot, { deltaY: 100 });
     expect(orbits.get(NODE)?.distance).toBe(5);
@@ -173,20 +180,20 @@ describe("the preview inspection mode (T656)", () => {
     expect(orbits.get(NODE)?.distance).toBeCloseTo(5 * Math.exp(-0.15), 10);
   });
 
-  it("leaving ADJUSTABLE returns HOME — the toggle is also the reset", () => {
+  it("leaving ADJUSTABLE returns HOME — the mode is also the reset", () => {
     const { orbits, slot, canvasWheel } = mount(true);
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "adjustable"));
     drag(slot);
     fireEvent.wheel(slot, { deltaY: 100 });
     expect(orbits.get(NODE)).toBeDefined();
 
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "home"));
 
     expect(orbits.mode(NODE)).toBe("home");
     // Not "reset separately" — the orbit went with the mode, in one operation, so the two
     // cannot drift into disagreeing. An undefined orbit is the baked framing (§V528).
     expect(orbits.get(NODE)).toBeUndefined();
-    expect(toggle().getAttribute("data-mode")).toBe("home");
+    expect(slot.getAttribute("data-inspect")).toBe("home");
 
     // And the tile is back to today's behaviour, wheel included.
     fireEvent.wheel(slot, { deltaY: -100 });
@@ -194,25 +201,87 @@ describe("the preview inspection mode (T656)", () => {
     expect(canvasWheel).toHaveBeenCalledTimes(1);
   });
 
-  it("the toggle is ONE box in both states — no word, so no reflow (T664)", () => {
-    /**
-     * The owner's report was "that adjust button looks a bit wonk and huge". The cause
-     * was the label: HOME is four characters and ADJUST is six, so the control grew by
-     * half the moment it was pressed — while its own CSS claimed the state was carried
-     * by tone and never by size. This is that claim, asserted rather than commented:
-     * the rendered content must not vary with the mode, which a text node cannot
-     * promise in any locale and a glyph gives for free.
+  /**
+   * T675 — THE MODIFIER PATH, and this is the test the whole task turns on.
+   *
+   * The owner: "cant use orbit or any camera controls here in this geometry node… imo
+   * this should be something they inherit from a common thing". Geometry was orbitable
+   * the whole time and had been since T561 — what they could not do was FIND THE WAY IN.
+   *
+   * §V461 is why these assertions are shaped the way they are. T656's gate passed while
+   * the control was unusable, because a test can click a button by test-id that a human
+   * cannot see, and T675 then found the button was painted UNDER the composited tile. So
+   * the property asserted here is deliberately not "a control exists": it is that THE
+   * CAMERA IS REACHABLE WITH NO PRIOR CLICK ON ANY CONTROL AT ALL. Nothing in this suite
+   * touches a toggle before the modifier runs, and there is no toggle in this tree to
+   * touch — the slot renders none (T675 moved it to the node header, out from under the
+   * surface). A regression that made the modifier a no-op would leave `orbits.get(NODE)`
+   * undefined here whatever the chrome looked like.
+   */
+  it("ALT-drag reaches the camera from HOME, with no toggle pressed first", () => {
+    const { orbits, slot } = mount(true);
+    expect(orbits.mode(NODE)).toBe("home");
+    expect(screen.queryByTestId(`preview-inspect-${NODE}`)).toBeNull();
+
+    drag(slot, { alt: true });
+
+    // It ENTERED the mode and ORBITED in the same gesture. Both halves matter: an entry
+    // that only armed the tile would make the owner's first alt-drag do nothing visible,
+    // which is the failure mode they already reported once.
+    expect(orbits.mode(NODE)).toBe("adjustable");
+    expect(orbits.get(NODE)?.azimuth).toBeCloseTo(50 * 0.016, 10);
+    expect(orbits.get(NODE)?.elevation).toBeCloseTo(20 * 0.016, 10);
+    expect(orbits.get(NODE)?.panX).toBe(0);
+
+    // And it LATCHES: alt is released with the pointer, and the tile stays live so the
+    // next plain drag keeps orbiting. Leaving is explicit (the toggle, or `h`).
+    drag(slot);
+    expect(orbits.get(NODE)?.azimuth).toBeCloseTo(100 * 0.016, 10);
+  });
+
+  it("ALT held over a HOME tile PEEKS, and releasing it puts the tile back", () => {
+    /*
+     * The discovery half: the key alone makes the camera live, so the state announces
+     * itself before any gesture. It must not latch — sweeping the canvas with alt down
+     * would otherwise leave every tile it passed holding the wheel, which is a worse
+     * version of the bug being fixed here.
      */
-    const { slot } = mount(true);
-    const home = toggle().innerHTML;
-    fireEvent.click(toggle());
-    expect(toggle().getAttribute("data-mode")).toBe("adjustable");
-    expect(toggle().innerHTML).toBe(home);
-    expect(toggle().textContent).toBe("");
-    // The name is on the control, not in a word inside it, so it stays legible to a
-    // screen reader while the tile stays legible to everyone else.
-    expect(toggle().getAttribute("aria-label")).toBeTruthy();
-    expect(slot).toBeTruthy();
+    const { orbits, slot, canvasWheel } = mount(true);
+    fireEvent.pointerEnter(slot);
+
+    fireEvent.keyDown(window, { key: "Alt", altKey: true });
+    expect(orbits.mode(NODE)).toBe("adjustable");
+    expect(slot.className).toMatch(/nowheel/);
+
+    fireEvent.keyUp(window, { key: "Alt", altKey: false });
+    expect(orbits.mode(NODE)).toBe("home");
+    // The negative half §V461 asks for: the wheel is the canvas's again, through the same
+    // native ancestor listener d3-zoom really is.
+    fireEvent.wheel(slot, { deltaY: -100 });
+    expect(orbits.get(NODE)).toBeUndefined();
+    expect(canvasWheel).toHaveBeenCalledTimes(1);
+  });
+
+  it("a peek that was USED is committed — releasing alt does not undo the adjustment", () => {
+    const { orbits, slot } = mount(true);
+    fireEvent.pointerEnter(slot);
+    fireEvent.keyDown(window, { key: "Alt", altKey: true });
+
+    drag(slot); // the user did something with it
+    fireEvent.keyUp(window, { key: "Alt", altKey: false });
+
+    expect(orbits.mode(NODE)).toBe("adjustable");
+    expect(orbits.get(NODE)?.azimuth).toBeCloseTo(50 * 0.016, 10);
+  });
+
+  it("a peek ends when the pointer leaves — alt released off-window never arrives", () => {
+    const { orbits, slot } = mount(true);
+    fireEvent.pointerEnter(slot);
+    fireEvent.keyDown(window, { key: "Alt", altKey: true });
+    expect(orbits.mode(NODE)).toBe("adjustable");
+
+    fireEvent.pointerLeave(slot);
+    expect(orbits.mode(NODE)).toBe("home");
   });
 
   it("`h` over an ADJUSTABLE tile returns it home; `H` is the canvas's and stays so", () => {
@@ -220,7 +289,7 @@ describe("the preview inspection mode (T656)", () => {
     // luck: `defaults.ts` binds shifted `H` to `view.home` and records why lowercase was
     // left out — so the negative half here is that the canvas binding is untouched.
     const { orbits, slot } = mount(true);
-    fireEvent.click(toggle());
+    act(() => orbits.setMode(NODE, "adjustable"));
     fireEvent.wheel(slot, { deltaY: 100 });
     expect(orbits.get(NODE)).toBeDefined();
 
@@ -249,9 +318,10 @@ describe("the preview inspection mode (T656)", () => {
     // `orbitable={false}`, and an affordance offering to override a camera's own matrix
     // would falsify the one thing that tile exists to show (§T639(a)'s shape).
     const { orbits, slot, canvasWheel } = mount(false);
-    expect(screen.queryByTestId(`preview-inspect-${NODE}`)).toBeNull();
+    expect(slot.getAttribute("data-inspect")).toBeNull();
 
     drag(slot);
+    // The ENTRY modifier too: a slot that is not orbitable cannot be talked into it.
     drag(slot, { alt: true });
     fireEvent.wheel(slot, { deltaY: -100 });
 
@@ -293,11 +363,11 @@ describe("§V527 — inspection is VIEW state: no gesture mints a revision", () 
     const before = bus.store.getRevision();
     const graphBefore = bus.store.getGraph();
 
-    fireEvent.click(toggle()); // the mode is not an edit either
+    drag(slot, { alt: true }); // the modifier enters the mode AND orbits
     drag(slot); // orbit
-    drag(slot, { alt: true }); // pan
+    drag(slot, { shift: true }); // pan
     fireEvent.wheel(slot, { deltaY: -100 }); // zoom
-    fireEvent.click(toggle()); // and back home
+    act(() => orbits.setMode(NODE, "home")); // and back home
 
     expect(orbits.mode(NODE)).toBe("home");
     expect(bus.store.getRevision()).toBe(before);

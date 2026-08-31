@@ -16,6 +16,14 @@ import {
   resourceStructureKey,
 } from "../runtime/backend/plan.ts";
 import { describeError } from "../runtime/backend/diagnostics.ts";
+// T675: orbit capability, and the stock framings it has to reproduce, decided in ONE
+// place — a `satisfies Record<PreviewPayloadKind, …>` table rather than the two
+// hand-maintained branches that used to live in this file.
+import {
+  POINTS_PREVIEW_EYE,
+  previewOrbitBasis,
+  SCENE_PREVIEW_BALL_RIG,
+} from "./preview-orbit.ts";
 // T502: the BASE tile every preview is guaranteed (§V454). A synthesized preview and the
 // tile it fills are one picture, so one constant sizes both halves.
 import { MAX_TILE_SCALE } from "../runtime/previews/geometry.ts";
@@ -106,9 +114,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "dispatch", "draw"]);
 
-/** The eye every pointset and geometry preview looks from (T373). */
-const POINTS_PREVIEW_EYE = [1.7, 1.2, 2.4] as const;
-
 /**
  * The default framing every pointset preview shares (T373): an isometric-ish orbit at
  * the origin. One rig, not per-node state — the inspection camera (T561/T656) replaces
@@ -133,18 +138,17 @@ const pointsPreviewCamera = (aspect: number): Mat4 =>
 /** Clip-space disc half-extent — ~3px on a 192px tile, readable without occluding. */
 const POINTS_PREVIEW_POINT_SIZE = 0.03;
 
-/**
- * T462: the stock rig every scene-payload preview shares. The camera looks straight
- * down -z, so the LIGHT stock's ball presents its centre texel to the viewer exactly —
- * which is what makes the §V147 pins arithmetic instead of screenshots. The fill light's
- * direction has no z component, so its lambert term is ZERO at that centre texel: the
- * key alone sets the pinned value, and the fill only models the terminator.
- *
- * T665: the MATERIAL stock is a torus of the same outer radius (0.72 + 0.28 = 1.0), so
- * this framing is unchanged by it — but its centre texel is the HOLE, i.e. background,
- * which is the sharpest falsifiable difference from the ball and is gated as one.
+/*
+ * T462/T665: the stock rig every scene-payload preview shares lives in `preview-orbit.ts`
+ * beside the ORBIT decision that has to reproduce it (T675) — the framing and "can this
+ * kind be orbited" are one fact, and they were two. The camera looks straight down -z, so
+ * the LIGHT stock's ball presents its centre texel to the viewer exactly, which is what
+ * makes the §V147 pins arithmetic instead of screenshots. The fill light's direction has
+ * no z component, so its lambert term is ZERO at that centre texel: the key alone sets the
+ * pinned value, and the fill only models the terminator. The MATERIAL stock is a torus of
+ * the same outer radius (0.72 + 0.28 = 1.0), so this framing is unchanged by it — but its
+ * centre texel is the HOLE, i.e. background, which is gated as the difference.
  */
-const SCENE_PREVIEW_BALL_RIG = { eye: [0, 0, 2.6] as const, fovY: Math.PI / 4, near: 0.1, far: 10 };
 /** T663: the ball rig at the PROJECT's aspect — see `pointsPreviewCamera` for why. */
 const scenePreviewCamera = (aspect: number): Mat4 =>
   viewProjection(SCENE_PREVIEW_BALL_RIG.eye, [0, 0, 0], {
@@ -1442,6 +1446,10 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
       const previewSize = previewTargetSize();
       const previewAspect = previewTargetAspect();
       const previewId = pointsPreviewResourceId(nodeId, slot.portId);
+      const pointsOrbit = previewOrbitBasis("pointset", {
+        aspect: previewAspect,
+        passIds: [`${nodeId}#pointsPreview:${slot.portId}`],
+      });
       pointsPreviewOutputs.set(key, {
         nodeId,
         portId: slot.portId,
@@ -1453,16 +1461,16 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         temporal: false,
         synthesis: {
           depth: false,
-          // T561: the stock framing's basis, so the inspection orbit reproduces it at
-          // identity and replaces only the VALUE (§V5) — same numbers as
-          // `pointsPreviewCamera` above, and T663's same ASPECT: an orbit through a
-          // projection the target does not share renders stretched.
-          orbit: {
-            eye: [...POINTS_PREVIEW_EYE],
-            lookAt: [0, 0, 0],
-            aspect: previewAspect,
-            passIds: [`${nodeId}#pointsPreview:${slot.portId}`],
-          },
+          // T561/T675: the stock framing's basis, so the inspection orbit reproduces it at
+          // identity and replaces only the VALUE (§V5) — read from the ONE orbit table, so
+          // the numbers cannot drift from `pointsPreviewCamera` above, and T663's same
+          // ASPECT: an orbit through a projection the target does not share renders
+          // stretched.
+          // Spread, not assigned, for the same reason the scene site does it:
+          // `exactOptionalPropertyTypes` refuses an `undefined` here, and a kind the table
+          // declares un-orbitable must land as an ABSENT key — that is what "not
+          // orbitable" means to every reader downstream (`types.ts`, `graph-pane.tsx`).
+          ...(pointsOrbit === undefined ? {} : { orbit: pointsOrbit }),
           passes: [
             {
               kind: "draw",
@@ -1823,32 +1831,19 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         });
       }
       /*
-       * T561: the inspection orbit's basis, per rig. A CAMERA payload is deliberately
-       * not orbitable — its preview draws through the payload's own matrix, and
-       * overriding that would falsify the one thing the tile shows. The geometry rig is
-       * the pointset framing (default projection); the ball rig carries its own fovY
-       * and far plane. `passIds` names only the object pass — a geometry's backdrop has
-       * no camera to move.
+       * T561/T675: the inspection orbit's basis, by PAYLOAD KIND, from the one table.
+       *
+       * This used to be a ternary here — camera excluded, geometry special-cased, and
+       * every other kind inheriting the ball rig by falling off the end. That fall-through
+       * is what made a new payload kind's orbit a silent default nobody chose, and it is
+       * the "inherit from a common thing" the owner asked for, so it moved to
+       * `preview-orbit.ts` where a missing kind fails to compile. `passIds` names only the
+       * object pass — a geometry's backdrop has no camera to move.
        */
-      const orbit =
-        payload.kind === "camera"
-          ? undefined
-          : payload.kind === "geometry"
-            ? {
-                eye: [...POINTS_PREVIEW_EYE] as [number, number, number],
-                lookAt: [0, 0, 0] as const,
-                aspect: previewAspect,
-                passIds: [`${nodeId}#scenePreview:${port.id}`],
-              }
-            : {
-                eye: [...SCENE_PREVIEW_BALL_RIG.eye] as [number, number, number],
-                lookAt: [0, 0, 0] as const,
-                fovY: SCENE_PREVIEW_BALL_RIG.fovY,
-                near: SCENE_PREVIEW_BALL_RIG.near,
-                far: SCENE_PREVIEW_BALL_RIG.far,
-                aspect: previewAspect,
-                passIds: [`${nodeId}#scenePreview:${port.id}`],
-              };
+      const orbit = previewOrbitBasis(payload.kind, {
+        aspect: previewAspect,
+        passIds: [`${nodeId}#scenePreview:${port.id}`],
+      });
       // A surface-mode geometry whose topology could not be used pushes only the
       // backdrop — the refusal-by-name case keeps its honest empty frame.
       scenePreviewOutputs.set(key, {

@@ -86,6 +86,40 @@ export interface GraphCanvasContextValue {
    * this is where it plugs in without either track editing the other's files.
    */
   renderControls?: ((nodeId: NodeId) => ReactNode) | undefined;
+  /**
+   * T675 — the preview INSPECTION control, and the reason it is not in the preview slot.
+   *
+   * The toggle used to live at the tile's own corner, which is where TouchDesigner draws
+   * the equivalent and where T664 put it. It was invisible there, and not for the reason
+   * T664 assumed: the shared preview surface (`panes.module.css .previewSurface`) is a
+   * full-pane canvas at `--z-canvas-overlay` (30), while everything inside a node is
+   * trapped in `.react-flow__viewport`'s stacking context at z-index 2. So the composited
+   * tile PAINTS OVER any chrome inside the slot, and no z-index reachable from in here can
+   * beat it. Worse, `pointer-events: none` on that surface means the button still took
+   * clicks — invisible but live, which is why every DOM-level test passed through it
+   * (§V461: a DOM query cannot see occlusion) and why the owner reported "it maybe hidden
+   * behind the preview or something".
+   *
+   * The structural conclusion is the seam: CHROME THAT MUST BE LEGIBLE OVER A LIVE TILE
+   * CANNOT LIVE INSIDE THE TILE'S RECT. So the control moves to the node's own header row,
+   * beside P/B/M, where nothing is ever composited — and it gets the header's toggle
+   * shape for free, which is T664's "square, same box in both states" requirement
+   * satisfied by using the box the node already has.
+   *
+   * A SOURCE, not a rendered node: the mode has to re-render the toggle when a gesture on
+   * the tile changes it, and the store is the only thing that can say so. It is typed
+   * structurally rather than importing `PreviewOrbitStore` — `@editor/viewer` imports this
+   * package, so naming its type here would close a cycle. Returning `null` means this node
+   * has nothing to inspect (§V527's store never enters the document, whichever it is).
+   */
+  previewInspect?: ((nodeId: NodeId) => PreviewInspectSource | null) | undefined;
+}
+
+/** T675: the slice of the pane's inspection store the node header needs. */
+export interface PreviewInspectSource {
+  mode(nodeId: NodeId): "home" | "adjustable";
+  setMode(nodeId: NodeId, mode: "home" | "adjustable"): void;
+  subscribe(nodeId: NodeId, listener: () => void): () => void;
 }
 
 export type GraphDispatch = (operations: GraphPatchOperation[], label: string) => void;

@@ -44,7 +44,12 @@ import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
 import { parameterDependencies } from "@domain/graph/parameter-dependencies.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
-import type { GraphCanvasContextValue, GraphDispatch, NodeToggleCommand } from "./canvas-context.ts";
+import type {
+  GraphCanvasContextValue,
+  GraphDispatch,
+  NodeToggleCommand,
+  PreviewInspectSource,
+} from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
 import type { LoomEdge, LoomNode } from "./derive.ts";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
@@ -82,6 +87,9 @@ export interface GraphCanvasProps {
   runtime?: NodeRuntimeSource;
   renderPreview?: (nodeId: NodeId) => ReactNode;
   renderControls?: (nodeId: NodeId) => ReactNode;
+  /** T675: the preview inspection control's source — see `canvas-context.ts` for why the
+      control is in the node HEADER and not on the tile it drives. */
+  previewInspect?: (nodeId: NodeId) => PreviewInspectSource | null;
   /** Patch outcomes, so a rejected gesture can surface instead of failing silently. */
   onPatchResult?: (result: CommandResult<"graph.applyPatch">) => void;
   /**
@@ -108,6 +116,7 @@ export function GraphCanvas({
   runtime,
   renderPreview,
   renderControls,
+  previewInspect,
   onPatchResult,
   onSelectionChange,
   underlay,
@@ -521,6 +530,7 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
+      previewInspect,
       showProblems,
       diveIn,
       components,
@@ -538,6 +548,7 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
+      previewInspect,
       showProblems,
       diveIn,
       components,
