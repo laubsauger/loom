@@ -14,6 +14,7 @@ import type {
 } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument, ProjectSettings } from "../types/graph.ts";
+import type { ChannelResolver } from "../parameters/resolve.ts";
 import type { Revision } from "../types/ids.ts";
 import type { IdFactory } from "../graph/ids.ts";
 import type { GraphStore, GraphStoreView, HistoryOutcome } from "../graph/store.ts";
@@ -103,6 +104,35 @@ export interface CommandContext {
    * does not want.
    */
   readonly holds: (capability: CapabilityClass) => boolean;
+  /**
+   * THE channel resolver the running app is resolving `driven` parameters through, or
+   * `undefined` when no app is attached (T593, B121, B8, §V61, §V109).
+   *
+   * ## Why it arrives here rather than being built here
+   *
+   * A command that wanted channels could call `graphChannelResolver(graph, registry)` for
+   * itself — it has both. That is precisely the move B8 forbids. The app's resolver is a
+   * LADDER (`use-graph-compile.ts`): an Analyze's readback, then the value graph's CPU
+   * signal chain, then the graph shorthand as the backstop. A rebuild inside the domain
+   * would answer for the LFO/Constant/Timer trio and for nothing else, so
+   * `mouse1 → lag1 → param` and `constant1 → math1 → param` would resolve one way for the
+   * compiler and another way for the validator, on the same document, in the same tab.
+   * `use-graph-compile.ts:50` states the rule this field exists to keep: THE TWO MUST NOT
+   * BE TWO RESOLVERS.
+   *
+   * So it is the same object the plan was compiled from, published by whoever owns it
+   * (`attachChannelResolver`) and read per invocation, never a merge of the same inputs.
+   *
+   * FRAMELESS on this side. A command is asked outside any frame, and the app's resolver
+   * answers a no-frame read from a throwaway zero-frame session keyed on the document
+   * revision — so validating cannot advance a stateful stage (a Lag must not move because
+   * an agent asked whether the graph is valid).
+   *
+   * UNDEFINED IS A REAL ANSWER, and it means "no app": a headless bus, a test, an
+   * out-of-process caller. §V338 — a consumer must report that as itself and never as
+   * "the channel is not attached", which is a claim about the DOCUMENT.
+   */
+  readonly channels: ChannelResolver | undefined;
   /** The sole mutation primitive available to a handler (§V29). */
   apply: (request: ApplyRequest) => AppliedInfo;
   /**
@@ -250,6 +280,18 @@ export interface ShaderloomBus extends AppCommandBus {
   hasQuery: (name: string) => boolean;
   listCommands: () => readonly string[];
   listQueries: () => readonly string[];
+  /**
+   * Publishes the composition root's ONE channel resolver into every `CommandContext`
+   * (T593, B121). See `CommandContext.channels`.
+   *
+   * A READ FUNCTION rather than the resolver, for the same reason `attachStateSources`
+   * takes one: the app's resolver is re-memoized per document revision, and a source that
+   * captured one render's object would hand every later command a stale ladder. Last
+   * attach wins — the bus has no unregister and React mounts more than once.
+   */
+  attachChannelResolver: (read: () => ChannelResolver | undefined) => void;
+  /** What is currently attached, for the composition root and its gates. */
+  readonly channelResolver: () => ChannelResolver | undefined;
   /** Read-only document access for the UI. Mutation stays behind `execute` (§V29). */
   readonly store: GraphStoreView;
   readonly registry: NodeRegistryView;
@@ -296,11 +338,18 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
   const grants = options.grants ?? createCapabilityGrantStore();
   const commands = new Map<string, StoredCommand>();
   const queries = new Map<string, StoredQuery>();
+  /** T593: null until a composition root attaches one. Null means "no app", not "empty". */
+  let readChannels: (() => ChannelResolver | undefined) | null = null;
 
   const bus: ShaderloomBus = {
     store: store.view,
     registry,
     grants,
+
+    attachChannelResolver(read: () => ChannelResolver | undefined): void {
+      readChannels = read;
+    },
+    channelResolver: () => readChannels?.() ?? undefined,
 
     registerCommand<TName extends CommandName>(registration: CommandRegistration<TName>): void {
       if (commands.has(registration.name)) {
@@ -398,6 +447,9 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
         registry,
         store: store.view,
         ids: store.internals.ids,
+        // T593: read AT INVOCATION, so a handler sees the ladder the app is compiling
+        // through right now rather than the one it held when the command registered.
+        channels: readChannels?.() ?? undefined,
         holds: (capability: CapabilityClass): boolean => grants.has(context.actor, capability),
         applySettings: (request: ApplySettingsRequest): AppliedInfo =>
           store.internals.applySettings({

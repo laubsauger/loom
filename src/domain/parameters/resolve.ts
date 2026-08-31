@@ -621,7 +621,34 @@ function resolveStored(
     }
 
     case "driven": {
-      const supplied = context.options.channels?.(binding.channel, {
+      const resolver = context.options.channels;
+      if (resolver === undefined) {
+        /**
+         * NO RESOLVER AT ALL is not "the channel is not attached" (T593, B121, §V338).
+         *
+         * The message below is a claim about the DOCUMENT: this parameter names a channel
+         * and nothing in the project publishes it. Emitting it when the CALLER simply
+         * brought no resolver states that claim about every driven parameter in every
+         * document, which is exactly what `project.validate` did in every tab — an LFO
+         * visibly driving a parameter was reported unattached, because the reader had no
+         * way to look. An absence has to name what would make it present (§V338), so this
+         * one names the missing reader instead of accusing the graph.
+         */
+        return fallback(
+          node,
+          key,
+          definition,
+          slot,
+          diag(
+            "info",
+            "parameter.channels.unavailable",
+            `Parameter "${key}" is driven by channel "${binding.channel}", but this context has no channel resolver, so nothing could be looked up and the retained value is in effect.`,
+            node.id,
+            "Channels are published by the running app. Resolve through the app's resolver (`CommandContext.channels`, `ResolveParametersOptions.channels`) to see the driven value; a headless caller has none.",
+          ),
+        );
+      }
+      const supplied = resolver(binding.channel, {
         node,
         key,
         definition,

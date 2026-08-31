@@ -348,6 +348,31 @@ export function useGraphCompile(
   }, [extraChannels, graph, runtime]);
 
   /**
+   * The SAME object, published to the bus (T593, B121, §V61).
+   *
+   * `project.validate` lives in the domain, on the bus, with no handle into this tree. It
+   * therefore had no resolver and reported EVERY driven parameter in EVERY document as
+   * "not attached" — while this very memo was resolving the same channel for the plan a
+   * few lines below. Third instance of B8's class; the second was the inspector, which is
+   * why `channels` is published on the result at all (see the docblock above).
+   *
+   * The publication lives HERE rather than in `app.tsx` on purpose. This is where the one
+   * resolver is built, so a future consumer cannot end up reading a different one because
+   * the composition root forgot a wire — the property §V437 asks for, held at the source
+   * instead of checked off site by site.
+   *
+   * A REF, read at invocation. This memo is re-keyed per document revision, so an effect
+   * that captured today's object would hand tomorrow's command a resolver built from an
+   * older graph. Last mount wins, as with `attachStateSources` — the bus has no
+   * unregister and React mounts more than once.
+   */
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
+  useEffect(() => {
+    runtime.bus.attachChannelResolver(() => channelsRef.current);
+  }, [runtime]);
+
+  /**
    * §V163's gate. `hasAnimatedParameters` is a scan of stored parameter modes — cheap,
    * and run once per document revision rather than once per frame.
    *
