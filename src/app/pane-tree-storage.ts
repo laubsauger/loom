@@ -307,22 +307,17 @@ export function deleteNamedPaneTree(store: PaneTreeStore, id: string): PaneTreeS
 
 /**
  * Ratio noise from a live drag must not read as "modified" — compare to half a percent.
- *
- * T590's measurement found the old rounding was `ratio * 2 / 2`: half a UNIT, not half
- * a percent. Ratios live on two scales in this tree (the shell projection's splits are
- * percentages, `splitLeaf`'s are fractions), and on the fraction scale half a unit is
- * the whole range — every drag between 0.25 and 0.75 compared equal, so the modified
- * badge stayed OFF through real rearrangement. Scale-aware: fractions round to 1/200,
- * percentages to 1/2 — half a percent either way, as the sentence above always claimed.
+ * Ratios are ALWAYS percent-scale here: every producer clamps to [5, 95]
+ * (`setSplitRatio`, `splitLeaf`) or defaults to a percentage (`treeFromShellLayout`),
+ * so half a unit IS half a percent.
  */
 function normalizeTreeNode(node: PaneTreeLayout["root"]): unknown {
   if (node.kind === "leaf") return { kind: "leaf", id: node.id, tabs: node.tabs, active: node.active };
-  const scale = node.ratio <= 1 ? 200 : 2;
   return {
     kind: "split",
     id: node.id,
     direction: node.direction,
-    ratio: Math.round(node.ratio * scale) / scale,
+    ratio: Math.round(node.ratio * 2) / 2,
     first: normalizeTreeNode(node.first),
     second: normalizeTreeNode(node.second),
   };

@@ -304,3 +304,25 @@ describe("a vanished selection clears — preset or user layout, one rule (T589)
     expect(isPaneTreeModified(store)).toBe(false);
   });
 });
+
+describe("the modified badge tolerates drag jitter but sees a real move (T590 probe)", () => {
+  // All split ratios are percent-scale — every producer clamps to [5, 95] or defaults
+  // to a percentage — and the comparison rounds to half a percent. Pin both edges.
+  it("percent jitter (74 → 74.2) reads UNMODIFIED — tolerance, not exactness", () => {
+    const store = {
+      current: setSplitRatio(DEFAULT_PANE_TREE, "split-columns", 74.2),
+      currentId: DEFAULT_LAYOUT_ID,
+      layouts: [],
+    };
+    expect(isPaneTreeModified(store)).toBe(false);
+  });
+
+  it("a real drag (74 → 61) reads MODIFIED", () => {
+    const store = {
+      current: setSplitRatio(DEFAULT_PANE_TREE, "split-columns", 61),
+      currentId: DEFAULT_LAYOUT_ID,
+      layouts: [],
+    };
+    expect(isPaneTreeModified(store)).toBe(true);
+  });
+});
