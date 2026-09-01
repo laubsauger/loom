@@ -5,7 +5,7 @@ import { installDomStubs } from "../../ui/testing/install-dom-stubs.ts";
 import { alice, contextFor, createHarness } from "../../domain/commands/test-support.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "./context.ts";
 import { KeyHint } from "./key-hint.tsx";
-import { KeymapProvider } from "./keymap-provider.tsx";
+import { KeymapProvider, KeymapWindowTarget } from "./keymap-provider.tsx";
 import { createKeymapStore } from "./store.ts";
 import type { KeyBinding } from "./types.ts";
 
@@ -90,6 +90,54 @@ describe("window listener", () => {
       window.dispatchEvent(event);
     });
     expect(executed).toEqual([]);
+  });
+});
+
+/**
+ * T813 — the floated window is a second LISTEN SURFACE for the one engine (§V97).
+ * Keydown fires at the window with focus; a keymap listening only on the app's window
+ * makes a floated pane answer no shortcut at all. The stand-in for the child window is
+ * a bare EventTarget, which is exactly the contract the component holds — nothing in it
+ * may assume the app's realm.
+ */
+describe("KeymapWindowTarget (T813)", () => {
+  it("dispatches a binding from the second window, and both surfaces stay live", async () => {
+    const childWindow = new EventTarget();
+    const { executed } = setup(<KeymapWindowTarget target={childWindow} />);
+    await act(async () => {
+      childWindow.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, cancelable: true }),
+      );
+    });
+    expect(executed).toEqual(["graph.undo"]);
+    // The parent window did not hand its listener over — it EXTENDED. Same key on the
+    // app's own window still dispatches.
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
+    });
+    expect(executed).toEqual(["graph.undo", "graph.undo"]);
+  });
+
+  it("a closed float stops listening — the listener rides the target prop away", async () => {
+    const childWindow = new EventTarget();
+    const { bus, executed, store } = setup();
+    const { rerender, unmount } = render(
+      <KeymapProvider bus={bus} store={store} invocationContext={contextFor(alice)}>
+        <KeymapWindowTarget target={childWindow} />
+      </KeymapProvider>,
+    );
+    rerender(
+      <KeymapProvider bus={bus} store={store} invocationContext={contextFor(alice)}>
+        <KeymapWindowTarget target={null} />
+      </KeymapProvider>,
+    );
+    await act(async () => {
+      childWindow.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, cancelable: true }),
+      );
+    });
+    expect(executed).toEqual([]);
+    unmount();
   });
 });
 

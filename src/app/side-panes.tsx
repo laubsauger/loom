@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isComponentNodeType } from "@domain/components/component-type.ts";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import { DRAG_THRESHOLD_PX } from "@ui/controls/drag-math.ts";
 import { isDeclaredSink } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
@@ -795,6 +800,44 @@ export function ViewerPane({
     void bus.execute("view.toggleFullscreen", {}, invocation);
   }, [bus, invocation]);
 
+  /*
+   * T813 — DOUBLE-CLICK toggles fullscreen, on the owner's word ("double click to
+   * fullscreen would be a neat thing for both viewer and floating viewer anyway").
+   * A pointer gesture on the surface needs no button chrome and no keymap to reach a
+   * floated window — the command already targets `element.ownerDocument` (§V97), so
+   * the SAME handler serves the dock and the float, which is what makes this the
+   * perform-mode path rather than a nicety.
+   *
+   * THE ORBIT GUARD: double-click was free (nothing in T379/T380's orbit set uses
+   * it), but an orbit nudge small enough for the browser to still count two clicks
+   * must not fling the pane fullscreen. Any press that travels past
+   * DRAG_THRESHOLD_PX — the same 3px the number fields measured as real-click
+   * jitter — stamps a suppression window covering the double-click interval, so a
+   * drag can never end in an accidental toggle while a genuine double-click (both
+   * presses under the threshold) always fires.
+   */
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragEndedAtRef = useRef(0);
+  const onSurfacePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    pressStartRef.current = { x: event.clientX, y: event.clientY };
+  }, []);
+  const onSurfacePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pressStartRef.current;
+    pressStartRef.current = null;
+    if (start === null) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > DRAG_THRESHOLD_PX) dragEndedAtRef.current = event.timeStamp;
+  }, []);
+  const onSurfaceDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      // 500ms ≈ the platform double-click interval: any dblclick whose sequence
+      // overlaps a drag is the drag's tail, not a request.
+      if (event.timeStamp - dragEndedAtRef.current < 500) return;
+      toggleFullscreen();
+    },
+    [toggleFullscreen],
+  );
+
   return (
     <div {...viewerPaneProps} className={styles.viewer}>
       <div className={styles.bar}>
@@ -836,7 +879,14 @@ export function ViewerPane({
         </Tooltip>
       </div>
 
-      <div ref={surfaceRef} className={styles.surface} data-testid="viewer-surface">
+      <div
+        ref={surfaceRef}
+        className={styles.surface}
+        data-testid="viewer-surface"
+        onPointerDown={onSurfacePointerDown}
+        onPointerUp={onSurfacePointerUp}
+        onDoubleClick={onSurfaceDoubleClick}
+      >
         {/* T763 — a preview-off node in the viewer gets a SENTENCE, not a blank pane.
             §V297's "off means off" stands (T756's interest never revives a disabled
             node), but a silent black rectangle is the reader-that-cannot-see pointed

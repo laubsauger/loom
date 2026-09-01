@@ -63,6 +63,52 @@ export interface KeymapProviderProps {
   children?: ReactNode;
 }
 
+/**
+ * The one keydown wrapper both listen surfaces share, so the "someone closer already
+ * handled it" rule and the consume semantics cannot drift between windows (T813).
+ */
+function keydownHandlerFor(engine: KeymapEngine): (event: Event) => void {
+  return (event: Event): void => {
+    const keyboardEvent = event as KeyboardEvent;
+    // Someone closer to the action already handled it (a Radix dialog, a
+    // CodeMirror binding): the keymap does not second-guess them.
+    if (keyboardEvent.defaultPrevented) return;
+    const result = engine.handleKey(keyboardEvent);
+    if (result.consumed) {
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopPropagation();
+    }
+  };
+}
+
+/**
+ * T813 — a SECOND listen surface for the provider's ONE engine: the floated pane's
+ * child window (§V97). Keydown events fire at the window that has focus, so a keymap
+ * listening only on the app's window makes a floated viewer a surface that answers no
+ * shortcut at all — and perform mode makes that window the PRIMARY surface.
+ *
+ * Deliberately the same engine and the same resolved keymap, never a second provider: a
+ * floated window with DIFFERENT shortcuts would be worse than one with none. Context
+ * resolution already travels — `activeContextsFor` walks `closest()` from the event's
+ * own target, which lives in the child document and carries the same
+ * `data-keymap-context` attributes the docked pane had. This component only adds the
+ * listener; the provider keeps owning the engine's lifecycle, which is why there is no
+ * `engine.reset()` here — resetting a chord because a floated window CLOSED would eat
+ * the parent's half-typed sequence.
+ *
+ * Renders nothing. Mount it wherever the child window's handle lives (`FloatingPane`).
+ */
+export function KeymapWindowTarget({ target }: { target: EventTarget | null }) {
+  const context = useContext(KeymapReactContext);
+  useEffect(() => {
+    if (context === null || target === null) return;
+    const onKeyDown = keydownHandlerFor(context.engine);
+    target.addEventListener("keydown", onKeyDown);
+    return () => target.removeEventListener("keydown", onKeyDown);
+  }, [context, target]);
+  return null;
+}
+
 export function KeymapProvider({
   bus,
   store: providedStore,
@@ -108,18 +154,7 @@ export function KeymapProvider({
     const listenTarget = target === undefined ? (typeof window === "undefined" ? null : window) : target;
     if (listenTarget === null) return;
 
-    const onKeyDown = (event: Event): void => {
-      const keyboardEvent = event as KeyboardEvent;
-      // Someone closer to the action already handled it (a Radix dialog, a
-      // CodeMirror binding): the keymap does not second-guess them.
-      if (keyboardEvent.defaultPrevented) return;
-      const result = engine.handleKey(keyboardEvent);
-      if (result.consumed) {
-        keyboardEvent.preventDefault();
-        keyboardEvent.stopPropagation();
-      }
-    };
-
+    const onKeyDown = keydownHandlerFor(engine);
     listenTarget.addEventListener("keydown", onKeyDown);
     return () => {
       listenTarget.removeEventListener("keydown", onKeyDown);

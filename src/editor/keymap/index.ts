@@ -95,6 +95,7 @@ export { DEFAULT_CHORD_TIMEOUT_MS, createKeymapEngine } from "./engine.ts";
 export type { KeymapContextValue, KeymapProviderProps } from "./keymap-provider.tsx";
 export {
   KeymapProvider,
+  KeymapWindowTarget,
   useBindingKeyDisplay,
   useCommandKeyDisplay,
   useKeymap,

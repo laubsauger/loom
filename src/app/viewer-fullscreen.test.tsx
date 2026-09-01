@@ -203,6 +203,43 @@ describe("T394 — fullscreen the viewer", () => {
     runtime.dispose();
   });
 
+  /**
+   * T813 — the owner's gesture: "double click to fullscreen would be a neat thing for
+   * both viewer and floating viewer anyway". A pointer gesture on the surface needs no
+   * chrome and no keymap to reach a floated window, so the SAME handler is the whole of
+   * the perform-mode entry. The guard is the half that can silently rot: an orbit nudge
+   * that the browser still counts as two clicks must not fling the pane fullscreen.
+   */
+  it("double-click on the surface toggles fullscreen (T813)", async () => {
+    const runtime = await mountApp();
+    const surface = surfaceElement();
+
+    await act(async () => {
+      fireEvent.pointerDown(surface, { clientX: 10, clientY: 10 });
+      fireEvent.pointerUp(surface, { clientX: 10, clientY: 10 });
+      fireEvent.doubleClick(surface, { clientX: 10, clientY: 10 });
+    });
+
+    await waitFor(() => expect(spy.requests).toEqual([surface]));
+    runtime.dispose();
+  });
+
+  it("a drag's tail never fullscreens: past the 3px threshold the double-click is suppressed", async () => {
+    const runtime = await mountApp();
+    const surface = surfaceElement();
+
+    await act(async () => {
+      // An orbit-sized nudge: down at 10, up at 40 — far past DRAG_THRESHOLD_PX, close
+      // enough in time that a browser could still synthesize a dblclick from its clicks.
+      fireEvent.pointerDown(surface, { clientX: 10, clientY: 10 });
+      fireEvent.pointerUp(surface, { clientX: 40, clientY: 10 });
+      fireEvent.doubleClick(surface, { clientX: 40, clientY: 10 });
+    });
+
+    expect(spy.requests).toEqual([]);
+    runtime.dispose();
+  });
+
   it("targets the CHILD document once the viewer is floated into its own window (T393)", async () => {
     // delay: null and a widened budget: this test mounts the full App and walks three
     // real clicks; under a parallel suite the default 5s timeout flaked for three

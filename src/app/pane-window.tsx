@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { KeymapWindowTarget } from "@editor/keymap/index.ts";
 import type { PaneKey } from "./pane-tree.ts";
 import { adoptPaneHost, usePaneHosts } from "./pane-portal.tsx";
 import {
@@ -337,5 +338,15 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
     };
   }, [paneId, registry, root]);
 
-  return null;
+  /*
+   * T813 — the floated window ANSWERS SHORTCUTS. Keydown fires at the window with
+   * focus, and the app's KeymapProvider listens only on its own; without this, a
+   * floated pane is a surface no key reaches — including the viewer's fullscreen
+   * toggle, which is the shipping perform-mode path (§T110: float → second screen →
+   * fullscreen). Same engine, same resolved keymap, second listen target; the
+   * component renders nothing and unlisten rides `root` going null on close.
+   */
+  return root === null ? null : (
+    <KeymapWindowTarget target={root.ownerDocument.defaultView} />
+  );
 }
