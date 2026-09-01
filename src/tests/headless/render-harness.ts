@@ -291,8 +291,19 @@ export function syntheticInferenceFrame(
   sourceId: string,
   size: readonly [number, number],
   frameIndex: number,
+  /**
+   * T743: the DECLARED format, because the byte count depends on it.
+   *
+   * This defaulted to four bytes per texel and Pose's keypoint map is `rgba16float` —
+   * eight. Dawn refused the upload outright ("Required size for texture data layout (136)
+   * exceeds the linear data size (68)"), which was the lucky outcome: a stand-in that
+   * happened to be the RIGHT length for the wrong format would have uploaded garbage
+   * silently. A fake must be sized by the thing it is filling, not by the common case.
+   */
+  format: string = "rgba8unorm",
 ): Uint8Array {
   const [width, height] = size;
+  if (format === "rgba16float") return syntheticHalfFrame(width, height, frameIndex, sourceId);
   const bytes = new Uint8Array(width * height * 4);
   let salt = 0;
   for (const char of sourceId) salt = (salt * 31 + char.charCodeAt(0)) >>> 0;
@@ -322,6 +333,53 @@ export function syntheticInferenceFrame(
   return bytes;
 }
 
+/** IEEE-754 binary16, for the stand-in that fills a half-float target. */
+function halfBits(value: number): number {
+  const view = new DataView(new ArrayBuffer(4));
+  view.setFloat32(0, value, true);
+  const bits = view.getUint32(0, true);
+  const sign = (bits >>> 16) & 0x8000;
+  let exponent = (bits >>> 23) & 0xff;
+  let mantissa = bits & 0x7fffff;
+  if (exponent === 0xff) return sign | 0x7c00;
+  exponent = exponent - 127 + 15;
+  if (exponent >= 0x1f) return sign | 0x7c00;
+  if (exponent <= 0) {
+    if (exponent < -10) return sign;
+    mantissa = (mantissa | 0x800000) >>> (1 - exponent);
+    return sign | (mantissa >>> 13);
+  }
+  return sign | (exponent << 10) | (mantissa >>> 13);
+}
+
+/**
+ * The half-float stand-in — for Pose, a spread of plainly synthetic keypoints.
+ *
+ * Deliberately a diagonal march rather than anything body-shaped: a plausible skeleton
+ * would be the §V147 failure the Pose node's identity argument exists to refuse, and a
+ * gate's fake must never be mistakable for a measurement.
+ */
+function syntheticHalfFrame(
+  width: number,
+  height: number,
+  frameIndex: number,
+  sourceId: string,
+): Uint8Array {
+  const bytes = new Uint8Array(width * height * 8);
+  const view = new DataView(bytes.buffer);
+  let salt = 0;
+  for (const char of sourceId) salt = (salt * 31 + char.charCodeAt(0)) >>> 0;
+  const count = width * height;
+  for (let i = 0; i < count; i += 1) {
+    const t = (i + frameIndex + (salt % 7)) / Math.max(1, count);
+    view.setUint16(i * 8, halfBits(t), true);
+    view.setUint16(i * 8 + 2, halfBits(1 - t), true);
+    view.setUint16(i * 8 + 4, halfBits(1), true);
+    view.setUint16(i * 8 + 6, halfBits(1), true);
+  }
+  return bytes;
+}
+
 /**
  * Registers a result source for every `infer:` external texture the plan declares.
  *
@@ -346,18 +404,24 @@ export function registerInferenceSources(
   feed: ((nodeId: string, frameIndex: number) => Uint8Array | null) | undefined,
 ): void {
   for (const resource of plan.resources) {
-    const entry = resource as { kind?: string; sourceId?: string; size?: readonly [number, number] };
+    const entry = resource as {
+      kind?: string;
+      sourceId?: string;
+      size?: readonly [number, number];
+      format?: string;
+    };
     if (entry.kind !== "externalTexture" || entry.sourceId === undefined || entry.size === undefined) continue;
     if (!entry.sourceId.startsWith(INFERENCE_PREFIX)) continue;
     const sourceId = entry.sourceId;
     const nodeId = sourceId.slice(INFERENCE_PREFIX.length);
     const size = entry.size;
+    const format = entry.format ?? "rgba8unorm";
     backend.registerMediaSource(sourceId, {
       currentFrame: () => {
         const frameId = frameOf();
         const recorded = feed?.(nodeId, frameId);
         if (recorded === null) return undefined;
-        return { frameId, bytes: recorded ?? syntheticInferenceFrame(sourceId, size, frameId) };
+        return { frameId, bytes: recorded ?? syntheticInferenceFrame(sourceId, size, frameId, format) };
       },
     });
   }

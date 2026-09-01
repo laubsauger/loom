@@ -17,6 +17,8 @@ import { switchNode } from "./switch.ts";
 import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
 import { depthNode } from "./depth.ts";
+import { pointsFromTextureNode } from "./points-from-texture.ts";
+import { poseNode } from "./pose.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
@@ -140,6 +142,8 @@ export {
 export { feedbackNode, temporalNodes } from "./feedback.ts";
 export { cacheNode, CACHE_RING_KEY } from "./cache.ts";
 export { depthNode, DEPTH_INPUT_KEY, DEPTH_INPUT_SIDE, DEPTH_RESULT_KEY } from "./depth.ts";
+export { pointsFromTextureNode } from "./points-from-texture.ts";
+export { poseNode, POSE_INPUT_KEY, POSE_RESULT_KEY } from "./pose.ts";
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
@@ -174,6 +178,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   ...valueNodeDefinitions,
   analyzeNode,
   depthNode,
+  poseNode,
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
   audioInNode,
@@ -181,6 +186,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   audioPatternNode,
   ...sceneNodeDefinitions,
   ...pointGeneratorDefinitions,
+  pointsFromTextureNode,
   renderInstancesNode,
   renderSurfaceNode,
   pointTopologyNode,

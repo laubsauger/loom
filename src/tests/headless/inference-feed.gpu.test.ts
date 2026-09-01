@@ -348,3 +348,61 @@ describe("the shipped Depth node renders offline", () => {
     expect(orphanResources).toEqual([]);
   });
 });
+
+describe("the shipped Pose node renders offline", () => {
+  /**
+   * Pose's result texture is rgba16float at 17x1 — EIGHT bytes per texel, where depth's
+   * is four. The harness stand-in emits four, so this is the gate that catches a feed
+   * whose byte count silently disagrees with the format it is filling.
+   */
+  const poseGraph = {
+    revision: 1,
+    nodes: {
+      cam: node("cam", "noise", { type: "simplex2d", period: 0.2 }),
+      pose: node("pose", "pose"),
+      out: node("out", "output"),
+    },
+    edges: {
+      e1: edge("e1", ["cam", "out"], ["pose", "input"]),
+      e2: edge("e2", ["pose", "out"], ["out", "input"]),
+    },
+    groups: {},
+  } as never as GraphDocument;
+
+  it("does not break on the DEFAULT stand-in, whose bytes are sized for rgba8", async () => {
+    if (dawnError !== undefined) return;
+    // No `inference` feed, so every infer: texture gets the synthetic banded ramp — which
+    // is written at four bytes per texel. Pose's is eight. If the upload path cannot cope,
+    // this is where it says so rather than in a silent black frame months from now.
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: poseGraph,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+    } as never);
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("compiles and renders a pose document without error", async () => {
+    if (dawnError !== undefined) return;
+    const keypoints = new Uint8Array(17 * 8);
+    const view = new DataView(keypoints.buffer);
+    for (let i = 0; i < 17; i += 1) {
+      view.setUint16(i * 8, 0x3800, true); // x = 0.5 in half float
+      view.setUint16(i * 8 + 2, 0x3800, true); // y = 0.5
+      view.setUint16(i * 8 + 4, 0x3c00, true); // confidence = 1
+      view.setUint16(i * 8 + 6, 0x3c00, true); // alpha = 1
+    }
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: poseGraph,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => keypoints,
+    } as never);
+
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+});

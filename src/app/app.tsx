@@ -62,7 +62,7 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
-import { useDepthInference } from "./use-depth-inference.ts";
+import { useModelInference } from "./use-model-inference.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMediaSources } from "./use-media-sources.ts";
@@ -267,7 +267,7 @@ export function App({
   const analyze = useAnalyzeChannels(backend, runtime.registry, runtime.nodeRuntime);
   // T385/T715: the depth seam, beside analyze because it is the same shape — a CPU half
   // outside the plan feeding a GPU half inside it (§V585).
-  const depth = useDepthInference(backend, runtime.nodeRuntime);
+  const depth = useModelInference(backend, runtime.nodeRuntime);
 
   /**
    * B27/T305 — the value graph, constructed. `createValueGraphSession` had no caller, so

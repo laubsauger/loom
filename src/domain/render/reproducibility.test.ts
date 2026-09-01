@@ -81,6 +81,7 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       // T385/T715: inference, whose latency is unbounded rather than one frame.
       "depth:async-cached",
       "mouse:external-live",
+      "pose:async-cached",
       "webcam:external-live",
     ]);
   });

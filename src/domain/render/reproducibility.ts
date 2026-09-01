@@ -129,6 +129,10 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // numbers for the same input — which is why the gates replay a recorded result instead
   // of running a model, and why this is the cautious class rather than `pure`.
   depth: "async-cached",
+  // T743. Same class and the same reason as depth: a result on the model's schedule, not
+  // the frame's. Its unbounded latency is if anything more visible — a stale skeleton
+  // lags a moving body, where a stale depth map merely lags a moving scene.
+  pose: "async-cached",
 
   /*
    * PURE — a function of the frame and the document, and the reason the other four are
@@ -188,6 +192,12 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   textureToAttribute: "pure",
   renderPoints: "pure",
   pointGenerator: "pure",
+  // T743. PURE despite its usual diet being a Depth output. The distinction from
+  // `channelIn` is the PORT: an input edge makes the dependency explicit and the upstream
+  // node carries its own class, exactly as `blur` and `displace` do when fed by Depth.
+  // `channelIn` reads a PUBLISHED CHANNEL with no port to trace, which is why it had to
+  // wear its source's class. Classify by what the node itself does with what it is handed.
+  pointsFromTexture: "pure",
   pointGrid: "pure",
   pointLine: "pure",
   pointCircle: "pure",

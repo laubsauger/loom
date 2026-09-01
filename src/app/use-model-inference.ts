@@ -4,7 +4,13 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import type { NodeMetricSink } from "@runtime/telemetry/index.ts";
-import { DEPTH_INPUT_KEY, DEPTH_INPUT_SIDE, DEPTH_RESULT_KEY } from "@nodes/definitions/index.ts";
+import {
+  DEPTH_INPUT_KEY,
+  DEPTH_INPUT_SIDE,
+  DEPTH_RESULT_KEY,
+  POSE_INPUT_KEY,
+  POSE_RESULT_KEY,
+} from "@nodes/definitions/index.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
 import {
   createInferenceSources,
@@ -19,8 +25,14 @@ import {
   type ModelDescriptor,
 } from "@runtime/models/model-acquisition.ts";
 import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
-import { DEPTH_ACCURATE, DEPTH_LIVE } from "@runtime/models/model-catalogue.ts";
+import { DEPTH_ACCURATE, DEPTH_LIVE, POSE_ACCURATE, POSE_LIVE } from "@runtime/models/model-catalogue.ts";
 import { depthToRgba, neutralDepth, packModelInput } from "@runtime/models/depth-runner.ts";
+import {
+  POSE_INPUT_SIDE,
+  keypointsToTexture,
+  neutralPose,
+  packPoseInput,
+} from "@runtime/models/pose-runner.ts";
 import type { Notice } from "./notices.tsx";
 
 /**
@@ -47,20 +59,72 @@ import type { Notice } from "./notices.tsx";
  * configuration at all.
  */
 
-const DEPTH_TYPE = "depth";
-
-function descriptorFor(parameters: Record<string, unknown>): ModelDescriptor {
-  return parameters["model"] === "fast" ? DEPTH_LIVE : DEPTH_ACCURATE;
+/**
+ * What differs between one model node and another — and it is ONLY this.
+ *
+ * Adding pose to a seam built for depth needed no new resource kind, no new upload route
+ * and no change to the async semantics: a second row in this table, and the acquisition,
+ * the session cache, the staleness reporting and the notices all applied unchanged. That
+ * is the evidence §T736's registry is general rather than a depth-shaped path wearing a
+ * general name.
+ */
+interface InferenceKind {
+  readonly nodeType: string;
+  readonly inputKey: string;
+  readonly resultKey: string;
+  readonly inputSide: number;
+  /** ONNX tensor element type. Depth wants normalised float; MoveNet wants int32 bytes. */
+  readonly tensorType: "float32" | "int32";
+  /** NCHW for depth's ViT, NHWC for MoveNet. Getting this backwards runs and lies. */
+  dims(side: number): readonly number[];
+  descriptor(parameters: Record<string, unknown>): ModelDescriptor;
+  pack(texels: Float32Array, side: number): Float32Array | Int32Array;
+  encode(output: Float32Array, size: readonly [number, number]): Uint8Array;
+  fallback(size: readonly [number, number]): Uint8Array;
 }
 
-/** One tracked Depth node: what it needs and how big its picture is. */
+const INFERENCE_KINDS: readonly InferenceKind[] = [
+  {
+    nodeType: "depth",
+    inputKey: DEPTH_INPUT_KEY,
+    resultKey: DEPTH_RESULT_KEY,
+    inputSide: DEPTH_INPUT_SIDE,
+    tensorType: "float32",
+    dims: (side) => [1, 3, side, side],
+    descriptor: (parameters) => (parameters["model"] === "fast" ? DEPTH_LIVE : DEPTH_ACCURATE),
+    pack: (texels, side) => packModelInput(texels, side),
+    encode: (output, size) => depthToRgba(output, DEPTH_INPUT_SIDE, size[0], size[1]),
+    fallback: (size) => neutralDepth(size[0], size[1]),
+  },
+  {
+    nodeType: "pose",
+    inputKey: POSE_INPUT_KEY,
+    resultKey: POSE_RESULT_KEY,
+    inputSide: POSE_INPUT_SIDE,
+    tensorType: "int32",
+    dims: (side) => [1, side, side, 3],
+    descriptor: (parameters) => (parameters["model"] === "fast" ? POSE_LIVE : POSE_ACCURATE),
+    pack: (texels, side) => packPoseInput(texels, side),
+    // The keypoint map is a fixed 17x1 whatever the source is, so the node's size is not
+    // consulted — the joints are the data, not a picture of them.
+    encode: (output) => keypointsToTexture(output),
+    fallback: () => neutralPose(),
+  },
+];
+
+function kindFor(nodeType: string): InferenceKind | undefined {
+  return INFERENCE_KINDS.find((kind) => kind.nodeType === nodeType);
+}
+
+/** One tracked model node: what it needs and how big its output is. */
 interface DepthTarget {
   readonly nodeId: string;
+  readonly kind: InferenceKind;
   readonly descriptor: ModelDescriptor;
   readonly size: readonly [number, number];
 }
 
-export interface DepthInferenceBinding {
+export interface ModelInferenceBinding {
   /** Frame-loop observer. Publishes staleness, then queues the next inference. Stable. */
   readonly observe: (frame: FrameEvaluationInput) => void;
   /** Re-derives the tracked set. Call after each compile. Stable. */
@@ -69,10 +133,10 @@ export interface DepthInferenceBinding {
   readonly notices: readonly Notice[];
 }
 
-export function useDepthInference(
+export function useModelInference(
   backend: ShaderloomBackend | null | undefined,
   sink?: NodeMetricSink | undefined,
-): DepthInferenceBinding {
+): ModelInferenceBinding {
   const backendRef = useRef(backend);
   backendRef.current = backend;
 
@@ -148,14 +212,16 @@ export function useDepthInference(
             outputNames: readonly string[];
           };
           const ort = await import("onnxruntime-web");
-          const pixels = packModelInput(new Float32Array(input), DEPTH_INPUT_SIDE);
-          const tensor = new ort.Tensor("float32", pixels, [1, 3, DEPTH_INPUT_SIDE, DEPTH_INPUT_SIDE]);
-          const inputName = session.inputNames[0] ?? "pixel_values";
+          const { kind } = target;
+          const pixels = kind.pack(new Float32Array(input), kind.inputSide);
+          const tensor = new ort.Tensor(kind.tensorType, pixels as never, kind.dims(kind.inputSide) as number[]);
+          const inputName = session.inputNames[0];
+          if (inputName === undefined) throw new Error(`${kind.nodeType}: the session declares no input.`);
           const outputs = await session.run({ [inputName]: tensor });
-          const outputName = session.outputNames[0] ?? "predicted_depth";
-          const depth = outputs[outputName]?.data;
-          if (depth === undefined) throw new Error("The model returned no depth output.");
-          return depthToRgba(depth, DEPTH_INPUT_SIDE, target.size[0], target.size[1]);
+          const outputName = session.outputNames[0];
+          const result = outputName === undefined ? undefined : outputs[outputName]?.data;
+          if (result === undefined) throw new Error(`${kind.nodeType}: the model returned no output.`);
+          return kind.encode(result, target.size);
         },
       }),
     [sessionFor],
@@ -173,14 +239,17 @@ export function useDepthInference(
       const targets: DepthTarget[] = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
         const node = graph.nodes[nodeId];
-        if (node === undefined || node.type !== DEPTH_TYPE) continue;
-        // A Depth node the plan did not allocate resources for is UNWIRED — §V585's
+        if (node === undefined) continue;
+        const kind = kindFor(node.type);
+        if (kind === undefined) continue;
+        // A model node the plan did not allocate resources for is UNWIRED — §V585's
         // pruning. It must not be tracked, must not acquire and must not download.
-        const resultId = scratchResourceId(nodeId, DEPTH_RESULT_KEY);
+        const resultId = scratchResourceId(nodeId, kind.resultKey);
         if (!allocated.has(resultId)) continue;
         targets.push({
           nodeId,
-          descriptor: descriptorFor(node.parameters),
+          kind,
+          descriptor: kind.descriptor(node.parameters),
           size: sized.get(resultId) ?? [1, 1],
         });
       }
@@ -210,9 +279,9 @@ export function useDepthInference(
 
       const entries: InferenceEntry[] = targets.map((target) => ({
         nodeId: target.nodeId,
-        inputResourceId: scratchResourceId(target.nodeId, DEPTH_INPUT_KEY),
+        inputResourceId: scratchResourceId(target.nodeId, target.kind.inputKey),
         sourceId: inferenceSourceIdFor(target.nodeId),
-        fallback: neutralDepth(target.size[0], target.size[1]),
+        fallback: target.kind.fallback(target.size),
       }));
       sources.track(entries);
 
@@ -283,8 +352,8 @@ export function buildNotices(
       notices.push({
         id: `model-consent-${descriptor.id}`,
         tone: "info",
-        message: `Depth needs ${descriptor.label}.`,
-        detail: `${formatBytes(descriptor.bytes)}, downloaded once per machine and kept for every project. Until then Depth publishes a flat map, so the document still renders.`,
+        message: `${target.kind.nodeType === "pose" ? "Pose" : "Depth"} needs ${descriptor.label}.`,
+        detail: `${formatBytes(descriptor.bytes)}, downloaded once per machine and kept for every project. Until then the node publishes its neutral output, so the document still renders.`,
         actions: [
           { label: "Download", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
@@ -302,7 +371,7 @@ export function buildNotices(
         id: `model-failed-${descriptor.id}`,
         tone: "error",
         message: `${descriptor.label} could not be downloaded.`,
-        detail: `${state.reason}. Depth is publishing a flat map, so the document still renders.`,
+        detail: `${state.reason}. The node is publishing its neutral output, so the document still renders.`,
         actions: [
           { label: "Try again", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],

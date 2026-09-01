@@ -56,8 +56,45 @@ export const DEPTH_LIVE: ModelDescriptor = {
 
 export const DEPTH_MODELS: readonly ModelDescriptor[] = [DEPTH_ACCURATE, DEPTH_LIVE];
 
-export function depthModel(id: string): ModelDescriptor | undefined {
-  return DEPTH_MODELS.find((model) => model.id === id);
+/**
+ * MoveNet SinglePose Lightning (T743) — the pose weights, pinned the same way.
+ *
+ * Chosen because it is the only permissive pose model that is SINGLE-SHOT: ViTPose and
+ * RTMPose are top-down and need a separate person detector, which would make pose two
+ * models and a two-stage pipeline; every YOLO-pose is Ultralytics and therefore AGPL; and
+ * MediaPipe ships its own runtime with its own GPU context, which would have been a
+ * parallel stack rather than a second model through the same one.
+ */
+const POSE_REPO = "onnx-community/movenet-lightning-web";
+/** Verified 2026-09-01 against the HF model API. */
+const POSE_REVISION = "b3bef58ab3f8c766f9b6b5310493e623160c2998";
+
+const poseWeights = (file: string): string =>
+  `https://huggingface.co/${POSE_REPO}/resolve/${POSE_REVISION}/onnx/${file}`;
+
+export const POSE_ACCURATE: ModelDescriptor = {
+  id: "movenet-lightning",
+  label: "MoveNet SinglePose Lightning",
+  url: poseWeights("model.onnx"),
+  bytes: 9_366_903,
+  license: "Apache-2.0",
+};
+
+/** The 8-bit variant: a third of the download, quicker, slightly less steady. */
+export const POSE_LIVE: ModelDescriptor = {
+  id: "movenet-lightning-int8",
+  label: "MoveNet SinglePose Lightning (fast)",
+  url: poseWeights("model_int8.onnx"),
+  bytes: 2_598_245,
+  license: "Apache-2.0",
+};
+
+export const POSE_MODELS: readonly ModelDescriptor[] = [POSE_ACCURATE, POSE_LIVE];
+
+export const ALL_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...POSE_MODELS];
+
+export function modelById(id: string): ModelDescriptor | undefined {
+  return ALL_MODELS.find((model) => model.id === id);
 }
 
 /**
@@ -102,7 +139,7 @@ export const DEPTH_PROVIDERS: readonly DepthProvider[] = [
     label: "WebNN",
     reachable: false,
     // MEASURED: `navigator.ml` is undefined in Chrome 151 on macOS. WebNN is behind a
-    // flag in every Chromium and WebKit has taken no position (standards-positions #486,
+    // flag in every Chromium and WebKit has taken no position (standards-positions issue 486,
     // open since April 2025). And even where it exists the spec REMOVED `deviceType` and
     // defines no device enumeration, so a page cannot request or observe an accelerator.
     note: "navigator.ml is undefined. Unblocked when a shipping browser enables WebNN by default; even then it can never report which device it used.",

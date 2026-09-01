@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS, DEPTH_PROVIDERS, unreachableWithoutRemedy } from "./model-catalogue.ts";
+import { ALL_MODELS, DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_PROVIDERS, POSE_ACCURATE, POSE_LIVE, unreachableWithoutRemedy } from "./model-catalogue.ts";
 
 describe("the pinned model catalogue", () => {
   it("pins every model to a revision, never to a moving reference", () => {
     // A moving ref changes the bytes under a document without the document changing,
     // which would make "same graph, same picture" quietly untrue and defeat replay.
-    for (const model of DEPTH_MODELS) {
+    for (const model of ALL_MODELS) {
       expect(model.url).not.toContain("/resolve/main/");
       expect(model.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
     }
@@ -16,10 +16,17 @@ describe("the pinned model catalogue", () => {
     // would reject the real file rather than accept a corrupt one.
     expect(DEPTH_ACCURATE.bytes).toBe(99_060_839);
     expect(DEPTH_LIVE.bytes).toBe(19_126_267);
+    expect(POSE_ACCURATE.bytes).toBe(9_366_903);
+    expect(POSE_LIVE.bytes).toBe(2_598_245);
   });
 
-  it("keeps both variants on one licence and one host", () => {
-    for (const model of DEPTH_MODELS) {
+  it("gives every model a unique id, or the cache would serve one for another", () => {
+    const ids = ALL_MODELS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("keeps every variant on one licence and one host", () => {
+    for (const model of ALL_MODELS) {
       expect(model.license).toBe("Apache-2.0");
       expect(model.url.startsWith("https://huggingface.co/")).toBe(true);
     }
