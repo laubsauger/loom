@@ -171,3 +171,113 @@ export function readNodePlan(
   };
   return readExecutionPlan(plan);
 }
+
+/**
+ * T751 — THE MINIMAL GRAPH PER NODE TYPE, shared by the headless catalogue sweep
+ * (catalogue-chain.test.ts) and the Dawn one (catalogue-dawn.gpu.test.ts).
+ *
+ * Extracted because coverage-by-example is coverage BY ACCIDENT: a node type reaches a
+ * real shader compiler only if some example happens to want it, and §B146 (mirror had
+ * never compiled on any device — vec2f(bool) — while every suite stayed green) is the
+ * third §B39-shaped instance of that hole. Feeders match the port FAMILY (texture from
+ * a checker, pointset from a grid), reference parameters name kind-matched feeders, and
+ * the first output is observed the way a user would observe it.
+ */
+export function minimalGraphFor(
+  definition: {
+    readonly type: string;
+    readonly inputs: ReadonlyArray<{ id: string; type: { kind: string } }>;
+    readonly outputs: ReadonlyArray<{ id: string; type: { kind: string } }>;
+    readonly sourceReferences?: ReadonlyArray<{ parameter: string; input: string }>;
+  },
+  registry: { get(type: string): { version: number } | undefined },
+): {
+  revision: number;
+  nodes: Record<string, unknown>;
+  edges: Record<string, unknown>;
+  groups: Record<string, unknown>;
+} {
+  const mk = (id: string, type: string, parameters: Record<string, unknown> = {}) => ({
+    id,
+    type,
+    definitionVersion: registry.get(type)?.version ?? 1,
+    position: { x: 0, y: 0 },
+    parameters,
+  });
+  const mkEdge = (id: string, from: [string, string], to: [string, string]) => ({
+    id,
+    source: { nodeId: from[0], portId: from[1] },
+    target: { nodeId: to[0], portId: to[1] },
+  });
+  const nodes: Record<string, Record<string, unknown>> = {
+    subject: { ...mk("subject", definition.type), label: "subject1" },
+  };
+  if (definition.outputs.length > 0) nodes["sink"] = mk("sink", "output");
+  const edges: Record<string, unknown> = {};
+  const referenceInputs = new Set((definition.sourceReferences ?? []).map((spec) => spec.input));
+  definition.inputs.forEach((port, index) => {
+    if (referenceInputs.has(port.id)) return;
+    const feedId = `feed${index}`;
+    nodes[feedId] = mk(feedId, port.type.kind === "pointset" ? "pointGrid" : "checker");
+    edges[`in${index}`] = mkEdge(`in${index}`, [feedId, "out"], ["subject", port.id]);
+  });
+  for (const spec of definition.sourceReferences ?? []) {
+    const port = definition.inputs.find((candidate) => candidate.id === spec.input);
+    if (port === undefined) continue;
+    const subject = nodes["subject"]!;
+    const withReference = (name: string): void => {
+      subject["parameters"] = { ...(subject["parameters"] as object), [spec.parameter]: name };
+    };
+    if (port.type.kind === "texture2d") {
+      nodes["refsrc"] = { ...mk("refsrc", "checker"), label: "refsrc1" };
+      withReference("refsrc1");
+    } else if (port.type.kind === "camera") {
+      nodes["refcam"] = { ...mk("refcam", "camera"), label: "refcam1" };
+      withReference("refcam1");
+    } else if (port.type.kind === "light") {
+      nodes["reflight"] = { ...mk("reflight", "light"), label: "reflight1" };
+      withReference("reflight1");
+    } else if (port.type.kind === "scene") {
+      nodes["refgrid"] = mk("refgrid", "pointGrid");
+      nodes["refgeo"] = { ...mk("refgeo", "geometry"), label: "refgeo1" };
+      edges["refgeo-in"] = mkEdge("refgeo-in", ["refgrid", "out"], ["refgeo", "points"]);
+      withReference("refgeo1");
+    }
+    // material references stay empty: the parameter is optional and the default
+    // material is the documented fallback.
+  }
+  const firstOutput = definition.outputs[0];
+  if (firstOutput !== undefined) {
+    if (firstOutput.type.kind === "pointset") {
+      nodes["observe"] = mk("observe", "renderPoints");
+      edges["observe-in"] = mkEdge("observe-in", ["subject", firstOutput.id], ["observe", "points"]);
+      edges["sink"] = mkEdge("sink", ["observe", "out"], ["sink", "input"]);
+    } else if (
+      firstOutput.type.kind === "camera" ||
+      firstOutput.type.kind === "light" ||
+      firstOutput.type.kind === "projector" ||
+      firstOutput.type.kind === "scene" ||
+      firstOutput.type.kind === "material"
+    ) {
+      // T447: a scene THING is observed by rendering with it — assembled by NAME (V372).
+      nodes["obsgrid"] = mk("obsgrid", "pointGrid");
+      nodes["obsgeo"] = { ...mk("obsgeo", "geometry"), label: "obsgeo1" };
+      edges["obsgeo-in"] = mkEdge("obsgeo-in", ["obsgrid", "out"], ["obsgeo", "points"]);
+      nodes["obscam"] = { ...mk("obscam", "camera"), label: "obscam1" };
+      nodes["obslight"] = { ...mk("obslight", "light"), label: "obslight1" };
+      if (firstOutput.type.kind === "material") {
+        nodes["obsgeo"] = { ...nodes["obsgeo"], parameters: { material: "subject1" } };
+      }
+      nodes["observe"] = mk("observe", "render", {
+        scenes: firstOutput.type.kind === "scene" ? "subject1" : "obsgeo1",
+        camera: firstOutput.type.kind === "camera" ? "subject1" : "obscam1",
+        lights: firstOutput.type.kind === "light" ? "subject1" : "obslight1",
+        ...(firstOutput.type.kind === "projector" ? { projectors: "subject1" } : {}),
+      });
+      edges["sink"] = mkEdge("sink", ["observe", "out"], ["sink", "input"]);
+    } else {
+      edges["sink"] = mkEdge("sink", ["subject", firstOutput.id], ["sink", "input"]);
+    }
+  }
+  return { revision: 1, nodes, edges, groups: {} };
+}

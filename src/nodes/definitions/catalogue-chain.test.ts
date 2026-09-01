@@ -6,7 +6,7 @@ import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions, coreNodeDefinitions } from "./index.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
 import type { BackendCapabilities } from "../../domain/types/backend.ts";
-import type { NodeDefinition } from "../../domain/types/node-definition.ts";
+import { minimalGraphFor as sharedMinimalGraph } from "./test-support.ts";
 
 /**
  * The catalogue against the REAL compiler (T70, T40).
@@ -179,7 +179,7 @@ describe("the catalogue compiles through the real compiler", () => {
       // through the channel seam, so a texture-graph sweep has nothing to compile.
       // values.test.ts covers it where it actually runs — the parameter resolver.
       if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue;
-      const graph = minimalGraphFor(definition);
+      const graph = sharedMinimalGraph(definition, registry) as unknown as GraphDocument;
       const plan = compile(graph);
       // Not just errors: a warning here means an unknown parameter, a version mismatch or
       // a colour-space clash, all of which are real mistakes in a manifest.
@@ -240,7 +240,7 @@ describe("the catalogue compiles through the real compiler", () => {
       if (definition.passthrough !== undefined) continue; // a wire has no uniforms to check (§V130)
       if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue; // a value source has no passes (§V143)
       if (PAYLOAD_ONLY.has(definition.type)) continue; // an edge-payload transform has no passes (T302)
-      const plan = compile(minimalGraphFor(definition));
+      const plan = compile(sharedMinimalGraph(definition, registry) as unknown as GraphDocument);
       const passes = plan.passes.filter(
         (pass) =>
           (pass.kind === "effect" || pass.kind === "dispatch" || pass.kind === "draw") &&
@@ -462,95 +462,7 @@ function uniformStructMembers(shader: string, binding: string): string[] {
  * Checker is the feed because it is a generator with no inputs of its own, so the graph
  * cannot recurse, and its output type matches every input port in the catalogue.
  */
-function minimalGraphFor(definition: NodeDefinition): GraphDocument {
-  const nodes: Record<string, GraphNode> = {
-    subject: { ...node("subject", definition.type), label: "subject1" },
-  };
-  // A node WITH outputs is observed through an Output sink; an output-less node
-  // (Analyze, §V144) declares `sink: true` and observes itself.
-  if (definition.outputs.length > 0) nodes["sink"] = node("sink", "output");
-  const edges: Record<string, ReturnType<typeof edge>> = {};
+/* T751: the minimal graph lives in test-support.ts now, shared with the Dawn sweep
+   (catalogue-dawn.gpu.test.ts) — coverage-by-example is coverage by accident (§B146),
+   so the same graphs that prove the catalogue compiles headless also reach a device. */
 
-  // T447: reference-fed inputs are CONNECT-REFUSED by design — the harness must not
-  // wire what the editor forbids. Their feeders arrive by NAME through the parameter.
-  const referenceInputs = new Set((definition.sourceReferences ?? []).map((spec) => spec.input));
-
-  definition.inputs.forEach((port, index) => {
-    if (referenceInputs.has(port.id)) return;
-    const feedId = `feed${index}`;
-    // Feeders match the port FAMILY: textures come from a checker, pointsets from a
-    // point GRID (T298) — wiring a texture into a pointset port is exactly the §V13
-    // mismatch this sweep would otherwise report as a false failure. The grid rather
-    // than a kernel because it publishes analytic topology on the edge (T296), which
-    // renderSurface (T301) REQUIRES and every other pointset consumer ignores.
-    nodes[feedId] = node(feedId, port.type.kind === "pointset" ? "pointGrid" : "checker");
-    edges[`in${index}`] = edge(`in${index}`, [feedId, "out"], ["subject", port.id]);
-  });
-
-  // T447: reference parameters name kind-matched feeders — a camera for a camera slot,
-  // a light for lights, a grid-backed geometry for scenes.
-  for (const spec of definition.sourceReferences ?? []) {
-    const port = definition.inputs.find((candidate) => candidate.id === spec.input);
-    if (port === undefined) continue;
-    if (port.type.kind === "texture2d") {
-      // Feedback's source: a texture node, named (T350).
-      nodes["refsrc"] = { ...node("refsrc", "checker"), label: "refsrc1" };
-      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refsrc1" } } as GraphNode;
-    } else if (port.type.kind === "camera") {
-      nodes["refcam"] = { ...node("refcam", "camera"), label: "refcam1" };
-      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refcam1" } } as GraphNode;
-    } else if (port.type.kind === "light") {
-      nodes["reflight"] = { ...node("reflight", "light"), label: "reflight1" };
-      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "reflight1" } } as GraphNode;
-    } else if (port.type.kind === "scene") {
-      nodes["refgrid"] = node("refgrid", "pointGrid");
-      nodes["refgeo"] = { ...node("refgeo", "geometry"), label: "refgeo1" };
-      edges["refgeo-in"] = edge("refgeo-in", ["refgrid", "out"], ["refgeo", "points"]);
-      nodes.subject = { ...nodes.subject, parameters: { ...nodes.subject?.parameters, [spec.parameter]: "refgeo1" } } as GraphNode;
-    }
-    // material references stay empty: the parameter is optional and the default
-    // material is the documented fallback (T428 adds material nodes).
-  }
-
-  const firstOutput = definition.outputs[0];
-  if (firstOutput !== undefined) {
-    if (firstOutput.type.kind === "pointset") {
-      // A pointset is observed by drawing it: subject -> renderPoints -> output.
-      nodes["observe"] = node("observe", "renderPoints");
-      edges["observe-in"] = edge("observe-in", ["subject", firstOutput.id], ["observe", "points"]);
-      edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
-    } else if (
-      firstOutput.type.kind === "camera" ||
-      firstOutput.type.kind === "light" ||
-      firstOutput.type.kind === "projector" ||
-      firstOutput.type.kind === "scene" ||
-      firstOutput.type.kind === "material"
-    ) {
-      // T447: a scene THING is observed by rendering with it — assembled by NAME, the
-      // only way scene assembly travels (V372).
-      nodes["obsgrid"] = node("obsgrid", "pointGrid");
-      nodes["obsgeo"] = { ...node("obsgeo", "geometry"), label: "obsgeo1" };
-      edges["obsgeo-in"] = edge("obsgeo-in", ["obsgrid", "out"], ["obsgeo", "points"]);
-      nodes["obscam"] = { ...node("obscam", "camera"), label: "obscam1" };
-      nodes["obslight"] = { ...node("obslight", "light"), label: "obslight1" };
-      if (firstOutput.type.kind === "material") {
-        nodes["obsgeo"] = { ...(nodes["obsgeo"] as GraphNode), parameters: { material: "subject1" } };
-      }
-      const scenes = firstOutput.type.kind === "scene" ? "subject1" : "obsgeo1";
-      const camera = firstOutput.type.kind === "camera" ? "subject1" : "obscam1";
-      const lights = firstOutput.type.kind === "light" ? "subject1" : "obslight1";
-      // T704: a projector is observed the same way — a render that names it.
-      nodes["observe"] = node("observe", "render", {
-        scenes,
-        camera,
-        lights,
-        ...(firstOutput.type.kind === "projector" ? { projectors: "subject1" } : {}),
-      });
-      edges["sink"] = edge("sink", ["observe", "out"], ["sink", "input"]);
-    } else {
-      edges["sink"] = edge("sink", ["subject", firstOutput.id], ["sink", "input"]);
-    }
-  }
-
-  return { revision: 1, nodes, edges, groups: {} };
-}
