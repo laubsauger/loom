@@ -21,6 +21,27 @@ export const PROBE_RESOLUTION = { width: 192, height: 108 } as const;
 export const CAPTURE = [0, 60, 180] as const;
 export const LAST_CAPTURE = 180;
 
+/**
+ * T776 — THE ARRANGED WINDOW, and it exists because §V760 says a fixture and the gate that
+ * renders it are ONE INSTRUMENT.
+ *
+ * `audioPattern` now pulls its top end back for the last bar of every four, which is what
+ * puts its bands on real music's spread (§T776). That bar starts 3 bars in — frame 415 at
+ * bpm 104, frame 343 at bpm 126, across the nine examples that drive from it. The 181-frame
+ * window above is 3.0 s, or 1.4 bars, so it renders ONLY full bars: lengthen the fixture
+ * without lengthening the window and the gate observes exactly nothing new.
+ *
+ * Frame 440 is inside the quiet bar at EVERY bpm in the catalogue (the intersection is
+ * 415.4..457.1), so one capture serves all nine.
+ *
+ * Only those nine pay for it. The other 28 examples — and the synthetic fixtures in
+ * `liveness.test.ts`, which have no audio node at all — keep the 181-frame window and
+ * measure exactly what they measured before, which was verified by regenerating every row:
+ * 0 of 28 moved.
+ */
+export const ARRANGED_CAPTURE = [0, 60, 180, 440] as const;
+export const ARRANGED_LAST_CAPTURE = 440;
+
 const lin = (byte: number): number => {
   const c = byte / 255;
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -33,6 +54,17 @@ export interface Reading {
   readonly range: number;
   /** The brightest linear luma anywhere in frame 0. */
   readonly firstFrameMax: number;
+  /**
+   * T776 — mean |Δ| linear luma between a FULL bar (frame 180) and the arrangement's QUIET
+   * bar (frame 440). Present only for examples driven by `audioPattern`.
+   *
+   * A §V643 BASELINE, deliberately NOT a liveness floor. An example legitimately may not
+   * respond to a phrase: E32 Pasture reads 0.048 and E43 Splice 0.048 because their pictures
+   * are dominated by integrators whose time constants far outlast one bar, and that is a
+   * fact about those examples rather than a fault. A floor would condemn them; a baseline
+   * records what they do and fails when it CHANGES.
+   */
+  readonly phrase?: number;
 }
 
 /**
@@ -48,12 +80,18 @@ export async function measure(
   settings: ProjectSettings,
   outputNodeId: string,
 ): Promise<Reading> {
+  /* T776/§V760: the window is a property of the FIXTURE the graph drives from, decided here
+     so the liveness floors, the §V643 baselines and the regenerator cannot disagree about
+     it — which is why this instrument was extracted in the first place. */
+  const arranged = Object.values(graph.nodes).some((node) => node.type === "audioPattern");
+  const capture = arranged ? ARRANGED_CAPTURE : CAPTURE;
+  const lastCapture = arranged ? ARRANGED_LAST_CAPTURE : LAST_CAPTURE;
   const result = await renderHeadless({
     host: nodeGpuHost(),
     graph,
     settings: { ...settings, outputResolution: { ...PROBE_RESOLUTION } },
-    frames: LAST_CAPTURE + 1,
-    capture: [...CAPTURE],
+    frames: lastCapture + 1,
+    capture: [...capture],
     outputNodeId,
     fps: 60,
     animate: true,
@@ -100,10 +138,23 @@ export async function measure(
   let firstFrameMax = 0;
   for (const value of first) if (value > firstFrameMax) firstFrameMax = value;
 
+  /* Indices 0/1/2 are unchanged by the extra capture, so motion, range and f0max read the
+     same frames they always did and no existing baseline moves. */
+  let phrase: number | undefined;
+  if (arranged) {
+    const quiet = lumaOf(3);
+    let phraseSum = 0;
+    for (let pixel = 0; pixel < late.length; pixel += 1) {
+      phraseSum += Math.abs((quiet[pixel] ?? 0) - (late[pixel] ?? 0));
+    }
+    phrase = phraseSum / Math.max(1, late.length);
+  }
+
   return {
     motion: sum / Math.max(1, late.length),
     range: at(0.999) - at(0.001),
     firstFrameMax,
+    ...(phrase === undefined ? {} : { phrase }),
   };
 }
 

@@ -47,7 +47,8 @@
   "E24-Audio-Reaction-Diffusion.loom.json": {
     "motion": 0.01809,
     "range": 0.9794,
-    "f0max": 0
+    "f0max": 0,
+    "phrase": 0.01685
   },
   "E25-Stage.loom.json": {
     "motion": 0.0296,
@@ -72,7 +73,8 @@
   "E29-Descent.loom.json": {
     "motion": 0.27598,
     "range": 0.9601,
-    "f0max": 0.5982
+    "f0max": 0.5982,
+    "phrase": 0.12516
   },
   "E3-Animated-Noise-Field.loom.json": {
     "motion": 0.18221,
@@ -80,19 +82,22 @@
     "f0max": 0.8308
   },
   "E30-Nave.loom.json": {
-    "motion": 0.00594,
-    "range": 0.5679,
-    "f0max": 0.8175
+    "motion": 0.00551,
+    "range": 0.5545,
+    "f0max": 0.8175,
+    "phrase": 0.00691
   },
   "E31-Corona.loom.json": {
     "motion": 0.07821,
     "range": 1,
-    "f0max": 0.9962
+    "f0max": 0.9962,
+    "phrase": 0.23616
   },
   "E32-Pasture.loom.json": {
     "motion": 0.06199,
     "range": 0.7633,
-    "f0max": 0.0344
+    "f0max": 0.0344,
+    "phrase": 0.0477
   },
   "E33-Obol.loom.json": {
     "motion": 0.01128,
@@ -107,7 +112,8 @@
   "E35-Nova-Torus.loom.json": {
     "motion": 0.09784,
     "range": 0.9962,
-    "f0max": 0.9872
+    "f0max": 0.9872,
+    "phrase": 0.22236
   },
   "E36-Facade.loom.json": {
     "motion": 0.00578,
@@ -127,7 +133,8 @@
   "E39-Rosette.loom.json": {
     "motion": 0.10256,
     "range": 0.9703,
-    "f0max": 1
+    "f0max": 1,
+    "phrase": 0.08238
   },
   "E4-Bloom.loom.json": {
     "motion": 0.05572,
@@ -137,7 +144,8 @@
   "E40-Wake.loom.json": {
     "motion": 0.10159,
     "range": 0.9774,
-    "f0max": 1
+    "f0max": 1,
+    "phrase": 0.12757
   },
   "E41-Cinder.loom.json": {
     "motion": 0.04697,
@@ -152,7 +160,8 @@
   "E43-Splice.loom.json": {
     "motion": 0.02458,
     "range": 0.3728,
-    "f0max": 0.3801
+    "f0max": 0.3921,
+    "phrase": 0.04839
   },
   "E44-Sounding.loom.json": {
     "motion": 0.00311,

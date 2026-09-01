@@ -207,6 +207,40 @@ const ANALYSER_DB_SPAN = 70;
  */
 const BAND_REFERENCE_DB = { low: 68.25, lowMid: 54.84, highMid: 58.96, high: 51.08 } as const;
 
+/**
+ * T776 — THE ARRANGEMENT, and it exists because a fixture with no dynamics taught every
+ * consumer a signal real music does not send.
+ *
+ * §T701 calibrated this node's PEAK onto music's peak. Nothing calibrated its FLOOR or its
+ * SPREAD, and one scalar per band cannot carry a distribution's shape — so every band's
+ * p01 equalled its p10 equalled its MEDIAN: a periodic beat returns to the same floor every
+ * bar and spends no time below it. Measured against three recorded tracks (N=2400 each),
+ * the pattern's span (p99-p01) was `high` 0.181 vs music's 0.280-0.534 and `highMid` 0.145
+ * vs 0.345-0.447 — roughly THREE TIMES too narrow — while `low` at 0.255 vs 0.150-0.281
+ * already matched. That gap is the measured cause of §B154: a rest state fitted just under
+ * a floor real music does not have sits INSIDE music's lower tail, and E24's lens weights
+ * went negative for up to 99.9% of a track (§T738, §V756).
+ *
+ * The fix is STRUCTURE, not a smaller floor. Shrinking the constant term was tested and is
+ * WRONG: in a log domain that term sets the median as much as the floor, so the whole
+ * distribution TRANSLATES down instead of widening — the pattern's `high` median fell
+ * 0.389 -> 0.208 and E24's warpc1 went from 0% to 92.8% negative, worse than before.
+ * Spread needs the band to be sometimes ABSENT over a musical timescale, which is what an
+ * arrangement is, and brief dips will not do it: a sub-second gap is smoothed away by the
+ * Lag every consumer puts downstream. So the quiet passage is a whole BAR.
+ *
+ * PER-BAND depths, not one master gain, and that is load-bearing: a uniform pull-back blew
+ * `low`'s span to 0.601 against music's 0.150-0.281 — it would have BROKEN the one band
+ * that was already right. These depths are musically true for the same reason they measure
+ * right: a breakdown drops the top end and keeps the kick.
+ *
+ * The medians are PRESERVED (low 0.737 -> 0.734, high 0.381 -> 0.381), so the distribution
+ * widens without its centre moving and a parameter tuned to the pattern's typical value
+ * still rests where it did. What is new is the tail.
+ */
+const ARRANGEMENT_BARS = 4;
+const ARRANGEMENT_PULLBACK = { low: 0.9, lowMid: 0.4, highMid: 0.12, high: 0.07 } as const;
+
 /** T707: where a full strike's onset lands — real music's measured max (0.25-0.29, N=3). */
 const ONSET_REFERENCE = 0.28;
 
@@ -231,6 +265,21 @@ export const audioPatternNode: NodeDefinition = {
   parameters: {
     bpm: { type: "number", label: "BPM", default: 112, min: 20, max: 300, range: "floor" },
     amount: { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Master gain on every channel." },
+    /**
+     * T776 — how deeply the last bar of every four pulls back. 1 is the measured setting
+     * that puts the bands on real music's spread; 0 restores the flat pre-T776 fixture for
+     * anyone who needs the old numbers back.
+     */
+    arrangement: {
+      type: "number",
+      label: "Arrangement",
+      default: 1,
+      min: 0,
+      max: 1,
+      range: "bounded",
+      description:
+        "Depth of the four-bar arrangement: the last bar of every four drops the top end and keeps the kick, the way a breakdown does. This is what gives the bands the SPREAD real music has — a flat pattern tunes every consumer against a floor music never sends. 0 is the old flat beat.",
+    },
     /**
      * T548 — the time signature, so `bar` means something. Four is the overwhelming
      * default and three is the other one people actually reach for, so it is a plain
@@ -265,10 +314,26 @@ export const audioPatternNode: NodeDefinition = {
      * They are the input to the dB map above, and `level`'s RMS-like sum still reads
      * them directly: only the four BAND channels are published in the analyser's domain.
      */
-    const lowAmplitude = (0.12 + 0.88 * kick) * amount;
-    const lowMidAmplitude = (0.15 + 0.55 * snare + 0.15 * kick) * amount;
-    const highMidAmplitude = (0.1 + 0.5 * hat) * amount;
-    const highAmplitude = (0.06 + 0.45 * hat) * amount;
+    /*
+     * T776's arrangement. `beatsPerBar` is read here rather than further down because the
+     * bar is now structural: it decides what the BANDS do, not just what `bar` counts.
+     * A clean cut on the bar line is what a breakdown actually does, and every consumer
+     * already has a Lag to soften it.
+     *
+     * `onset` is deliberately NOT scaled: it rides the strike envelopes, and §T707
+     * established that no shipped example drives from `:onset` (they read `:onsetCount`).
+     * `level` needs no special case — it is summed from these amplitudes below.
+     */
+    const beatsPerBar = Math.max(1, Math.floor(typeof values["beatsPerBar"] === "number" ? values["beatsPerBar"] : 4));
+    const arrangement = Math.min(1, Math.max(0, typeof values["arrangement"] === "number" ? values["arrangement"] : 1));
+    const quiet = Math.max(0, beats) / beatsPerBar % ARRANGEMENT_BARS >= ARRANGEMENT_BARS - 1;
+    const pull = (band: keyof typeof ARRANGEMENT_PULLBACK): number =>
+      quiet ? 1 - arrangement * (1 - ARRANGEMENT_PULLBACK[band]) : 1;
+
+    const lowAmplitude = (0.12 + 0.88 * kick) * amount * pull("low");
+    const lowMidAmplitude = (0.15 + 0.55 * snare + 0.15 * kick) * amount * pull("lowMid");
+    const highMidAmplitude = (0.1 + 0.5 * hat) * amount * pull("highMid");
+    const highAmplitude = (0.06 + 0.45 * hat) * amount * pull("high");
     const low = toAnalyserDomain(lowAmplitude, BAND_REFERENCE_DB.low);
     const lowMid = toAnalyserDomain(lowMidAmplitude, BAND_REFERENCE_DB.lowMid);
     const highMid = toAnalyserDomain(highMidAmplitude, BAND_REFERENCE_DB.highMid);
@@ -308,7 +373,6 @@ export const audioPatternNode: NodeDefinition = {
      * where in the piece they are. That is the whole reason the count is derived HERE and
      * not by a downstream node with a clock of its own.
      */
-    const beatsPerBar = Math.max(1, Math.floor(typeof values["beatsPerBar"] === "number" ? values["beatsPerBar"] : 4));
     const beatIndex = Math.floor(Math.max(0, beats));
     const barPosition = Math.max(0, beats) / beatsPerBar;
 
