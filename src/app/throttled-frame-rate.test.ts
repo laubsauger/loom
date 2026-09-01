@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -185,22 +185,60 @@ describe("T740 — a throttled rAF must not skip the audio", () => {
  * skip with it — and nothing else would notice.
  */
 describe("T740 — the session's clock is actually told it is presenting", () => {
-  const source = readFileSync(
-    fileURLToPath(new URL("./use-frame-loop.ts", import.meta.url)),
-    "utf8",
-  );
+  /** Every `liveClock(...)` construction in the app layer, and how each one answers. */
+  const sourceOf = (file: string): string =>
+    readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8");
 
-  it("the scan finds the construction it polices — not a green from a moved file", () => {
-    expect(source).toContain("liveClock({");
+  /** The construction call, from `liveClock(` to the `)` that closes it. */
+  const construction = (source: string): string => {
+    const at = source.indexOf("liveClock(");
+    expect(at, "the scan found no liveClock construction — a moved file, not a pass").toBeGreaterThan(-1);
+    const rest = source.slice(at);
+    return rest.slice(0, rest.indexOf(");") + 2);
+  };
+
+  /**
+   * T742 — the enumeration, checked against a SCAN rather than trusted (§V453's shape).
+   *
+   * Three app-layer clocks and three different answers, which is exactly why a list that
+   * nobody derives goes stale: the frame loop presents only while its scheduler runs, a
+   * node preview always presents, and the graph background deliberately never does. A
+   * fourth `liveClock` appearing in `src/app` fails here until its author decides which.
+   */
+  const DECLARED = ["use-frame-loop.ts", "use-node-previews.ts", "use-graph-background.ts"] as const;
+
+  it("the scan finds every app-layer clock it polices, and the table covers exactly them", () => {
+    const here = fileURLToPath(new URL(".", import.meta.url));
+    const found = readdirSync(here)
+      .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+      .filter((name) => sourceOf(name).includes("liveClock("));
+    expect([...found].sort()).toEqual([...DECLARED].sort());
   });
 
-  it("`use-frame-loop` declares `presenting`, and binds it to whether the LOOP is running", () => {
-    const call = source.slice(source.indexOf("liveClock({"));
-    const construction = call.slice(0, call.indexOf("});") + 3);
-    expect(construction).toContain("presenting:");
+  it("`use-frame-loop` presents only while the LOOP IS RUNNING (T740)", () => {
+    const call = construction(sourceOf("use-frame-loop.ts"));
+    expect(call).toContain("presenting:");
     // Bound to the scheduler, not to a constant: `presenting: () => true` would put the
-    // catch-up back on the seek and the render take (see live-clock.test.ts).
-    expect(construction).toContain("running");
-    expect(construction).not.toMatch(/presenting:\s*\(\)\s*=>\s*true/);
+    // catch-up back on the seek, the step button and the render take (T433, §V44) — see
+    // live-clock.test.ts, "a step that is NOT part of a presentation".
+    expect(call).toContain("running");
+    expect(call).not.toMatch(/presenting:\s*\(\)\s*=>\s*true/);
+  });
+
+  it("`use-node-previews` ALWAYS presents — the preview and the viewer are one node (T742)", () => {
+    // It has no seek, no step and no take: every `next()` is the rAF cadence, so there is
+    // nothing to opt out of. Losing this line puts the preview back at half the viewer's
+    // rate on a throttled machine, and permanently behind after a hidden tab.
+    expect(construction(sourceOf("use-node-previews.ts"))).toMatch(
+      /presenting:\s*\(\)\s*=>\s*true/,
+    );
+  });
+
+  it("`use-graph-background` deliberately does NOT — it is ambient, with nothing to match", () => {
+    // The counterpart assertion, and it is the one that keeps the pair a DECISION rather
+    // than a copy-paste: nothing on screen is timed against the background, so it keeps
+    // §V662's safe default. If it ever gains a neighbour to disagree with, this fails and
+    // says so.
+    expect(construction(sourceOf("use-graph-background.ts"))).not.toContain("presenting");
   });
 });

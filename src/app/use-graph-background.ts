@@ -160,6 +160,17 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
 
     const host = backend.previewHost(canvas);
     const system: PreviewSystem = createPreviewSystem({ host, capacity: BACKGROUND_TILE_CAPACITY });
+    /**
+     * T742 — and this one deliberately does NOT opt into `presenting` (T740, §V724).
+     *
+     * Not an oversight, and written down so it does not get "fixed": the node previews
+     * next door DO opt in, because a preview and the viewer show the same node at the
+     * same moment and a throttled machine would otherwise draw it at two different
+     * times. The background has no such neighbour. It is AMBIENT — there is nothing on
+     * screen to compare its rate against and nobody times it — so the fixed step is both
+     * correct and the cheaper of the two, and the default (§V662's safe direction) is
+     * already the right answer.
+     */
     const clock = liveClock();
     let lastDeviceGeneration = backend.status.deviceGeneration;
     let lastDocumentIdentity = inputsRef.current.documentIdentity;

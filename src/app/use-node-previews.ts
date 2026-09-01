@@ -221,7 +221,35 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
 
     const host = backend.previewHost(canvas);
     const system: PreviewSystem = createPreviewSystem({ host, capacity: PREVIEW_TILE_CAPACITY });
-    const clock = liveClock();
+    /**
+     * T742/T740 — a preview IS a presentation, so its clock tracks real time (§V724).
+     *
+     * The deciding fact is what sits beside it: a node preview and the viewer draw THE
+     * SAME NODE, and the thing a viewer can check is the RATE. This clock has its own
+     * origin (zero at mount, not the document timeline), so the two were never equal —
+     * but under the fixed step a browser throttling rAF to 30 Hz ran the preview at HALF
+     * the viewer's rate, and a constant offset that grows without bound is a different
+     * thing from an offset. One node, animating at two speeds, on the same screen.
+     *
+     * The hidden-window case does NOT distinguish the two, and it is worth saying so
+     * because it looks like it should: the viewer's scheduler is rAF as well (vgpu's
+     * `loop`, "raf" by default, and nothing in this app asks for "timer"), so BOTH park
+     * together and both resume clamped to `maxDeltaSeconds`. The one asymmetry is T620's
+     * door below, which steps this clock while rAF is parked — and that step is now worth
+     * the measured time rather than a fixed 1/60, bounded by the same quarter-second.
+     *
+     * `() => true` rather than a running flag, and that IS the honest answer: unlike the
+     * frame loop this clock has no seek, no step button and no render take (T433) — the
+     * ONE `clock.next()` below is the rAF cadence, and the T620 convergence step that
+     * shares it wants the current time for the same reason. Nothing here can be stepped
+     * deterministically, so there is nothing to opt out.
+     *
+     * What this does NOT fix, stated rather than implied: this loop has no paced gate, so
+     * on a display FASTER than 60 Hz the preview still runs fast, exactly as it did
+     * before. The catch-up floors at one frame per tick (a fast display is a scheduler
+     * problem, `createPacedGate`), so that case is unchanged, not newly broken.
+     */
+    const clock = liveClock({ presenting: () => true });
     /**
      * T501: preview keys that have ever had a materialized output — i.e. that have had
      * their chance. Membership is what retires a first-paint reservation; it is NOT
