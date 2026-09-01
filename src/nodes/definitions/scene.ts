@@ -819,8 +819,27 @@ export const renderNode: NodeDefinition = {
       label: "Out",
       type: RGBA_TEXTURE,
     },
+    {
+      /* T722 — the camera's DEPTH, readable. emitDepthSweep already writes camera-space
+         linear distance for the AO prepass; this port is the same sweep aimed at an
+         output the graph can consume: depth of field, fog, edge detection on depth
+         discontinuities, compositing 3D against 2D. DATA, not colour (§V56): R holds
+         distance ÷ far, 0 at the eye rising to 1 at the far plane. Costs one scene
+         depth pass and one full-res target, so it is OFF until Depth Output enables
+         it — while off, this port allocates nothing (outputWhen). No space:"data"
+         claim YET, deliberately: the consumers this exists for (displace.disp,
+         remap.map, composite.mask) are all still declared linear — the T83 migration
+         notes sit on each — and a lone data port would refuse every one of them
+         (§V13). Declare them together when that migration lands. */
+      id: "depth",
+      label: "Depth",
+      type: RGBA_TEXTURE,
+      description:
+        "Camera-space depth as data: R = linear view distance ÷ far plane (0 eye, 1 far). Enable with Depth Output — off, this port produces nothing. Feed it to a blur-by-depth chain for depth of field, a mix for fog, or an edge for silhouettes.",
+    },
   ],
-  depthOutputs: ["out"],
+  depthOutputs: ["out", "depth"],
+  outputWhen: { depth: (parameters) => parameters["depthOutput"] === true },
   sourceReferences: [
     { parameter: "scenes", input: "scenes", list: true },
     { parameter: "camera", input: "camera" },
@@ -892,6 +911,16 @@ export const renderNode: NodeDefinition = {
       range: "bounded",
       description: "How dark full occlusion goes. 0 is off in value while the passes still run — turn the switch off to stop paying for them.",
       inactiveWhen: (values) => (values["ambientOcclusion"] === true ? null : "Ambient Occlusion is off."),
+    },
+    /* T722 — the switch pricing the depth read: one extra depth-only scene pass and a
+       full-res data target, stated here rather than discovered (the T481/T624 idiom). */
+    depthOutput: {
+      type: "boolean",
+      label: "Depth Output",
+      default: false,
+      compileTime: true,
+      description:
+        "Renders the camera's linear depth into the Depth output port — one extra scene depth pass, priced like a casting light. Off, the port allocates nothing.",
     },
     aoQuality: {
       type: "enum",
@@ -1308,6 +1337,33 @@ export const renderNode: NodeDefinition = {
      * parameter rather than discovered — an extra scene pass and two full-target passes,
      * priced exactly the way T481 priced a casting light.
      */
+    /*
+     * T722 — the DEPTH OUTPUT: the same parameterised depth sweep the AO prepass runs
+     * (linear view distance over the far plane), aimed at the port's own target. When
+     * AO is also on the scene is swept twice — a shared prepass is the stated
+     * follow-up, kept apart here because AO's sweep is a scratch at its own scale and
+     * this one is a consumable output at the node's resolution (correct beats clever).
+     */
+    const depthTarget = parameters["depthOutput"] === true ? outputs["depth"] : undefined;
+    if (depthTarget !== undefined) {
+      const depthView = lookAt(
+        [camera.eye[0], camera.eye[1], camera.eye[2]],
+        [camera.lookAt[0], camera.lookAt[1], camera.lookAt[2]],
+        [0, 1, 0],
+      );
+      const depthFar = Math.max(camera.far, 1e-3);
+      emitDepthSweep({
+        prefix: "depthOut",
+        target: depthTarget,
+        matrix: viewProjectionMatrix,
+        linearDepth: true,
+        extraUniforms: {
+          depthRow: [-(depthView[2] ?? 0), -(depthView[6] ?? 0), -(depthView[10] ?? 0), -(depthView[14] ?? 0)],
+          depthRange: [depthFar, 0, 0, 0],
+        },
+      });
+    }
+
     const aoEnabled = parameters["ambientOcclusion"] === true;
     const aoTargetId = `scratch:${nodeId}:aoMap`;
     if (aoEnabled) {

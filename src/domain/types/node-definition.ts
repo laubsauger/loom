@@ -270,6 +270,15 @@ export interface NodeDefinition {
    */
   depthOutputs?: ReadonlyArray<PortId>;
   /**
+   * T722: an output port that EXISTS only when a compile-time parameter enables it.
+   * The compiler skips allocating the port's target when the predicate answers false,
+   * so an off-by-default auxiliary output (the render's camera-depth read) costs zero
+   * memory and zero passes until asked for. The port stays visible in the editor —
+   * its description says which switch enables it — and wiring it while off surfaces
+   * as the ordinary missing-resource diagnostic rather than a silent black.
+   */
+  outputWhen?: Readonly<Record<PortId, (parameters: Readonly<Record<string, unknown>>) => boolean>>;
+  /**
    * T350 (§V285): this node's source is a NAME, not a wire — the named parameter
    * holds another node's name and the compiler synthesizes the edge into `input`.
    * The declaration of record; `SOURCE_REFERENCE_PARAMETERS` (domain/graph) is its

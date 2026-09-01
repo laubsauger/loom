@@ -417,6 +417,9 @@ function propagate(args: PropagationArgs): PropagationResult {
     }
 
     for (const slot of outputSlots(definition)) {
+      /* T722: a conditional output allocates nothing while its switch is off — the
+         binding loop below and the sink-default site both self-heal on the absent row. */
+      if (definition.outputWhen?.[slot.portId]?.(node.parameters ?? {}) === false) continue;
       const key = outputKey(nodeId, slot.portId);
       if (!materialized.has(key)) continue;
       // T83/B5: an EXPLICIT `space` on the output port is the author's claim and wins
