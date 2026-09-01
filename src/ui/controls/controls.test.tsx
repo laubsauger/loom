@@ -232,6 +232,96 @@ describe("typed entry (doc §8.1)", () => {
 });
 
 /**
+ * §B159 / §V776 — "seems like we cant type numbers into our sliders even after selecting.
+ * nothing happens when typing."
+ *
+ * ## What was measured, in the running app, before the fix
+ *
+ * Two candidates were filed and only one of them was real. Driven in Chromium against the
+ * dev server, on a Noise node's Amplitude field showing `1.00`:
+ *
+ *   quick click              → readonly GONE, focused, typing lands   ✅
+ *   click with 2px of jitter → readonly GONE (under the 3px threshold) ✅
+ *   click with 4px of jitter → a drag, value 1.00 → 1.20 (by design)
+ *   focus, then press `5`    → readonly PRESENT, value still `1.00`   ❌
+ *
+ * So the CLICK path was never broken; the field simply swallowed the keystroke. The
+ * `<input>` is `readOnly` until an edit is open, and the keydown's `default: return`
+ * dropped every printable key, so a focused field gave no character and no refusal.
+ *
+ * The fix is the behaviour every DAW and spreadsheet has: the keystroke that STARTS the
+ * edit is the FIRST CHARACTER OF IT. That is the half these gates pin — a control that
+ * opened text entry but seeded it with the OLD value would satisfy "typing works" and
+ * still lose the digit the user pressed.
+ */
+describe("§B159 — a focused field accepts the first keystroke (§V776)", () => {
+  /** Wide enough that 5 is a value rather than a clamp, so the commit is unambiguous. */
+  const wide: NumericSpec = { min: 0, max: 10, step: 1 };
+
+  it("opens text entry CONTAINING the digit that was typed, not the old value", () => {
+    const { input } = renderNumber({ spec: wide, value: 2 });
+    expect((input as HTMLInputElement).readOnly).toBe(true);
+
+    fireEvent.keyDown(input, { key: "5" });
+
+    expect((input as HTMLInputElement).readOnly).toBe(false);
+    // The keystroke IS the edit. `"2"` here would mean the digit was discarded in favour
+    // of the old value, which is the half of §V776 that "typing works" does not cover.
+    expect((input as HTMLInputElement).value).toBe("5");
+  });
+
+  it("commits the typed number on Enter", () => {
+    const { input, changes } = renderNumber({ spec: wide, value: 2 });
+    fireEvent.keyDown(input, { key: "5" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes).toEqual([[5, "commit"]]);
+  });
+
+  it("starts on a sign or a decimal point too, so -0.5 is reachable", () => {
+    const { input } = renderNumber({ spec: { min: -1, max: 1, step: 0.01 }, value: 0.25 });
+    fireEvent.keyDown(input, { key: "-" });
+    expect((input as HTMLInputElement).value).toBe("-");
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    fireEvent.keyDown(input, { key: "." });
+    expect((input as HTMLInputElement).value).toBe(".");
+  });
+
+  it("leaves every OTHER key to the graph keymap — undo still works here (§V53)", () => {
+    const graphKeys = vi.fn();
+    render(
+      <div onKeyDown={graphKeys}>
+        <NumberField label="Radius" value={0.5} defaultValue={0.25} spec={spec} onChange={vi.fn()} />
+      </div>,
+    );
+    const input = screen.getByRole("spinbutton", { name: "Radius" }) as HTMLInputElement;
+
+    // A bare letter is nobody's number. It must not open an edit, and it must still reach
+    // the keymap: half the app's hotkeys are single letters and a focused field is a
+    // normal place to be standing when one is pressed.
+    fireEvent.keyDown(input, { key: "z" });
+    expect(input.readOnly).toBe(true);
+    expect(graphKeys).toHaveBeenCalledTimes(1);
+
+    // mod+5 is a chord, not a digit — the keymap owns it, and no edit opens.
+    fireEvent.keyDown(input, { key: "5", metaKey: true });
+    expect(input.readOnly).toBe(true);
+    expect(graphKeys).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the click path working: a press under the drag threshold still types", () => {
+    const { field, input, onChange } = renderNumber();
+    // 2px — the measured jitter of a real click, below DRAG_THRESHOLD_PX.
+    fireEvent.pointerDown(field, { pointerId: 1, clientX: 5, button: 0 });
+    fireEvent.pointerMove(field, { pointerId: 1, clientX: 7 });
+    fireEvent.pointerUp(field, { pointerId: 1, clientX: 7 });
+    expect((input as HTMLInputElement).readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * T38 — the inspector is manifest-driven. Every member of the `ParameterDefinition`
  * union must produce a control, or a node that declares one becomes partly invisible.
  */

@@ -30,6 +30,7 @@ import styles from "./controls.module.css";
  *   click             start typing; the field accepts arithmetic
  *   double-click      reset to the manifest default
  *   Tab, then ↑ ↓     nudge one step; PageUp/PageDown ten; Home/End the range ends
+ *   0-9 - . +         start typing, WITH that key as the first character (§V776)
  *   Enter             start typing (or commit what was typed); Escape cancels
  *
  * §V20 is why the pointer handling looks so deliberate. A parameter drag must never
@@ -56,6 +57,18 @@ import styles from "./controls.module.css";
 
 /** How long a press has to sit still before it means "show me the magnitudes". */
 const LADDER_HOLD_MS = 400;
+
+/**
+ * §B159/§V776 — the keys that MEAN "I am typing a number", so pressing one opens text
+ * entry seeded with it.
+ *
+ * The field is `readOnly` until an edit is open, so before this existed the keydown's
+ * `default: return` dropped every printable key: a focused field, `5`, and nothing
+ * happened and nothing said why. Deliberately narrow — anything outside this set (`z`
+ * and every chord) still falls through to the graph keymap, because undo has to keep
+ * working while a field has focus.
+ */
+const TYPED_ENTRY_START = /^[0-9+.-]$/;
 
 /** doc §8.1 — "Parameters show units". Symbols, not words: the row is 20 px tall. */
 const UNIT_SUFFIX: Readonly<Record<NonNullable<NumberParameter["unit"]>, string>> = {
@@ -211,17 +224,37 @@ export function NumberField({
     [onChange],
   );
 
-  const beginTextEntry = useCallback(() => {
-    const opened = formatNumber(value, spec, decade ?? undefined);
-    openedWith.current = opened;
-    setText(opened);
-    setInvalid(false);
-    const input = inputRef.current;
-    if (input === null) return;
-    // Focus first: an input can only be selected once it is focusable and focused.
-    input.focus();
-    input.select();
-  }, [decade, spec, value]);
+  /**
+   * Opens text entry. With no `seed` the field shows its current value, selected, so the
+   * next keystroke replaces it — the click and `Enter`/`F2` gestures.
+   *
+   * `seed` is the keystroke that STARTED the edit (§V776): it becomes the first
+   * character of the entry rather than being discarded in favour of the old value. Such
+   * an entry carries no `openedWith`, because T652's "the user typed nothing" guard is
+   * about a string the FIELD wrote — a seeded one is a character the user pressed, so
+   * committing it is a real commit.
+   */
+  const beginTextEntry = useCallback(
+    (seed: string | null = null) => {
+      const opened = seed ?? formatNumber(value, spec, decade ?? undefined);
+      openedWith.current = seed === null ? opened : null;
+      setText(opened);
+      setInvalid(false);
+      const input = inputRef.current;
+      if (input === null) return;
+      // Focus first: an input can only be selected once it is focusable and focused.
+      input.focus();
+      if (seed === null) {
+        input.select();
+        return;
+      }
+      // The caret goes AFTER the seed so the next digit appends. Set on the string the
+      // input still holds — React re-reads the selection when it commits the new value
+      // and restores these offsets, which land at the end of the one-character seed.
+      input.setSelectionRange(seed.length, seed.length);
+    },
+    [decade, spec, value],
+  );
 
   const commitText = useCallback(
     (raw: string): boolean => {
@@ -452,6 +485,15 @@ export function NumberField({
           beginTextEntry();
           return;
         default:
+          // §B159/§V776 — a key that could BEGIN a number starts the edit and becomes its
+          // first character. Held with a modifier it is a chord, not a digit, so it is
+          // left to the keymap; so is every other printable key, which is what keeps
+          // mod+z (and plain hotkeys) working while a field has focus.
+          if (event.metaKey || event.ctrlKey || event.altKey) return;
+          if (!TYPED_ENTRY_START.test(event.key)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          beginTextEntry(event.key);
           return;
       }
     },

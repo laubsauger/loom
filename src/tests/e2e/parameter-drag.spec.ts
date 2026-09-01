@@ -132,3 +132,49 @@ test("typing a value into the field commits it, and one undo takes it back", asy
   await expect(page.locator('input[aria-label="Amplitude"]')).toHaveValue(before);
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
 });
+
+/**
+ * §B159 / §V776 — the owner's report, driven with REAL KEYSTROKES.
+ *
+ * The test above types with `fill()`, which sets the value and dispatches an input event.
+ * That is not what the owner did and it is why the bug shipped: `fill()` never presses a
+ * key, so it cannot see a control that swallows the keystroke. Measured here before the
+ * fix — focus the field, press `5`, and the field stayed `readonly` showing `1.00`.
+ *
+ * The second press is the other half of §V776. A control that opened the edit but seeded
+ * it with the OLD value would pass "typing works" and still lose the digit; asserting the
+ * field reads `52` after `5` then `2` pins both the seed AND the caret sitting after it.
+ */
+test("a focused field takes the digit that opened it, and appends the next (§B159)", async ({
+  page,
+}) => {
+  await openApp(page);
+
+  const noise = await addNode(page, "generator", "Noise");
+  await selectNode(page, noise);
+
+  const field = page.locator('input[aria-label="Amplitude"]');
+  await field.scrollIntoViewIfNeeded();
+  const before = await field.inputValue();
+
+  // No click, no Enter, no F2 — the field is merely where the keyboard is.
+  await field.focus();
+  await expect(field).toHaveAttribute("readonly", /.*/);
+
+  await page.keyboard.press("5");
+  await expect(field, "the keystroke that starts the edit IS the edit").toHaveValue("5");
+  await expect(field).not.toHaveAttribute("readonly", /.*/);
+
+  await page.keyboard.press("2");
+  await expect(field, "the caret sits after the seed, so the next digit appends").toHaveValue("52");
+
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Enter");
+  expect(await field.inputValue()).not.toBe(before);
+
+  // A letter is nobody's number: it opens no edit, so the graph keymap still owns it.
+  await page.keyboard.press("Escape");
+  await field.focus();
+  await page.keyboard.press("q");
+  await expect(field).toHaveAttribute("readonly", /.*/);
+});
