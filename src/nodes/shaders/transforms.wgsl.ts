@@ -163,7 +163,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // Fold in the ROTATED frame, then rotate back: the fold line is the rotated axis, and
   // the pivot stays put because the rotation happens around it.
   let local = invRotate2(uv - params.pivot, params.rotate);
-  let folded = select(-abs(local), abs(local), vec2f(params.keepHigh > 0.5));
+  // T749 (the B39 shape, found the moment an example first compiled this on Dawn):
+  // vec2f(bool) is not a WGSL constructor - the select mask must be vec2<bool>. The
+  // mirror node had NEVER compiled on a real device; no example carried it, so no
+  // gate ever fed it to a compiler.
+  let folded = select(-abs(local), abs(local), vec2<bool>(params.keepHigh > 0.5));
   let mixed = select(local, folded, params.axis > vec2f(0.5));
   let source = params.pivot + invRotate2(mixed, -params.rotate);
   return sampleExtend(inputTexture, inputSampler, source, params.extend);
