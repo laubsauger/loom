@@ -314,6 +314,38 @@ describe("uploads and tracking", () => {
     expect(sources.currentFrame("depth1")).toBeUndefined();
   });
 
+  it("keeps the REASON a run failed, so a held model that cannot run is not silent", async () => {
+    /*
+     * B156. Keeping the previous value on a failure is right for the picture (§V144) and
+     * was the whole story: the reason went into an empty `catch` and nowhere else. A
+     * document whose depth model downloaded and then could not start a session therefore
+     * rendered mid-grey with nothing anywhere saying why — pixel-for-pixel the state of a
+     * machine that never downloaded it, which is the pair §B156 could not tell apart.
+     */
+    let fail = true;
+    const sources = createInferenceSources({
+      readBuffer: async () => frameBuffer(9),
+      run: async () => {
+        if (fail) throw new Error("no ExecutionProvider bound");
+        return new Uint8Array([9, 9, 9, 255]);
+      },
+    });
+    sources.track([entry("depth1")]);
+
+    await sources.settle(0);
+    expect(sources.ready("depth1")).toBe(false);
+    expect(sources.lastFailure("depth1")).toBe("no ExecutionProvider bound");
+    // The contract still holds while it is failing — the node publishes its identity.
+    expect(sources.currentFrame("depth1")!.bytes[0]).toBe(GREY);
+
+    // And a success CLEARS it. A reason that outlived the failure would leave an error on
+    // screen over a document that is working, which is the opposite defect.
+    fail = false;
+    await sources.settle(1);
+    expect(sources.ready("depth1")).toBe(true);
+    expect(sources.lastFailure("depth1")).toBeUndefined();
+  });
+
   it("serves each tracked node its own result", async () => {
     const sources = createInferenceSources({
       readBuffer: async (resourceId) => frameBuffer(resourceId.startsWith("a") ? 1 : 2),

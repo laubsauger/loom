@@ -74,6 +74,17 @@ import type { Notice } from "./notices.tsx";
  */
 interface InferenceKind {
   readonly nodeType: string;
+  /** What to call it in a sentence a user reads. */
+  readonly label: string;
+  /**
+   * What the node PUBLISHES when it has no result, said as a picture (B156).
+   *
+   * The notices used to describe the download; the owner needed them to describe the
+   * SCREEN. "Depth needs Depth Anything V2" reads as an optional extra you can dismiss;
+   * "this document is showing flat grey where the relief would be" reads as the reason
+   * the picture looks inert — which is the same fact, aimed at the thing being looked at.
+   */
+  readonly neutralPicture: string;
   readonly inputKey: string;
   readonly resultKey: string;
   readonly inputSide: number;
@@ -90,6 +101,8 @@ interface InferenceKind {
 const INFERENCE_KINDS: readonly InferenceKind[] = [
   {
     nodeType: "depth",
+    label: "Depth",
+    neutralPicture: "flat grey — no relief at all, so anything reading it stays flat",
     inputKey: DEPTH_INPUT_KEY,
     resultKey: DEPTH_RESULT_KEY,
     inputSide: DEPTH_INPUT_SIDE,
@@ -102,6 +115,8 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
   },
   {
     nodeType: "pose",
+    label: "Pose",
+    neutralPicture: "an empty keypoint map — no joints at all, so anything reading it stays still",
     inputKey: POSE_INPUT_KEY,
     resultKey: POSE_RESULT_KEY,
     inputSide: POSE_INPUT_SIDE,
@@ -128,6 +143,51 @@ interface DepthTarget {
   readonly kind: InferenceKind;
   readonly descriptor: ModelDescriptor;
   readonly size: readonly [number, number];
+}
+
+/**
+ * What the RUN half has to say once ACQUISITION has already said "ready" (B156).
+ *
+ * Acquisition answers "are the bytes on this machine". It cannot answer "did they run",
+ * and the two failures are pixel-for-pixel identical: both leave the node serving its
+ * identity fallback. A model that downloaded and then could not start a session used to
+ * produce no notice, no diagnostic and no console line — a document reduced to its
+ * fallback with nothing anywhere saying why. That is the state §B156 could not be
+ * distinguished from, so it gets a name and a surface.
+ */
+type RunHealth =
+  /** Acquired, no result yet, nothing has failed — the first inference is in flight. */
+  | { readonly kind: "waiting" }
+  /** At least one result has landed. The node is live, at whatever rate the model runs. */
+  | { readonly kind: "running" }
+  /** Acquired, never produced a result, and the last attempt failed with this reason. */
+  | { readonly kind: "failed"; readonly reason: string };
+
+function sameHealth(a: RunHealth | undefined, b: RunHealth | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.kind === "failed") return b.kind === "failed" && a.reason === b.reason;
+  return a.kind === b.kind;
+}
+
+function sameHealthMap(
+  a: Readonly<Record<string, RunHealth>>,
+  b: Readonly<Record<string, RunHealth>>,
+): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) if (!sameHealth(a[key], b[key])) return false;
+  return true;
+}
+
+function sameTargets(a: readonly DepthTarget[], b: readonly DepthTarget[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((target, index) => {
+    const other = b[index];
+    return (
+      other !== undefined &&
+      target.nodeId === other.nodeId &&
+      target.descriptor.id === other.descriptor.id
+    );
+  });
 }
 
 export interface ModelInferenceBinding {
@@ -157,6 +217,20 @@ export function useModelInference(
 
   const [states, setStates] = useState<Readonly<Record<string, AcquisitionState>>>({});
   const targetsRef = useRef<readonly DepthTarget[]>([]);
+  /**
+   * The tracked set MIRRORED INTO STATE, and the duplication is the fix rather than the
+   * sloppiness (B156).
+   *
+   * `observe` and `settle` read the ref because they run per frame and must not re-render
+   * anything. `notices` is a render output and used to read the ref too — so a document
+   * that dropped its last Depth node changed no state, the memo never recomputed, and the
+   * "no model" row stayed on screen over a document that has no model node in it. A stale
+   * notice is tolerable while the notice is a quiet offer and a lie once it is a warning
+   * about the picture, which is exactly what this change makes it.
+   */
+  const [tracked, setTracked] = useState<readonly DepthTarget[]>([]);
+  const healthRef = useRef<Readonly<Record<string, RunHealth>>>({});
+  const [health, setHealth] = useState<Readonly<Record<string, RunHealth>>>({});
   const unregisterRef = useRef<Map<string, () => void>>(new Map());
 
   const store = useMemo(() => cacheModelStore(), []);
@@ -286,6 +360,9 @@ export function useModelInference(
         });
       }
       targetsRef.current = targets;
+      // Only when the SET changed: a values-only recompile re-derives the same targets
+      // sixty times a second and must not re-render the notice strip (§V16).
+      setTracked((prior) => (sameTargets(prior, targets) ? prior : targets));
 
       // Re-register only what changed, so a recompile does not drop and rebuild every
       // source and lose the picture for a frame.
@@ -334,6 +411,26 @@ export function useModelInference(
           target.publish(age.nodeId, { resultAgeFrames: age.ageFrames });
         }
       }
+      // B156: what the RUN half is doing, from the seam that is the only thing that knows.
+      // Recomputed every frame because it is three map lookups, but pushed into React
+      // state ONLY on a transition — waiting → running happens once, and waiting → failed
+      // happens once. A per-frame setState here would re-render the strip at 60 Hz and
+      // re-arm the frame loop through this binding's identity.
+      const next: Record<string, RunHealth> = {};
+      for (const candidate of targetsRef.current) {
+        if (states[candidate.descriptor.id]?.kind !== "ready") continue;
+        const reason = sources.lastFailure(candidate.nodeId);
+        next[candidate.nodeId] = sources.ready(candidate.nodeId)
+          ? { kind: "running" }
+          : reason === undefined
+            ? { kind: "waiting" }
+            : { kind: "failed", reason };
+      }
+      if (!sameHealthMap(healthRef.current, next)) {
+        healthRef.current = next;
+        setHealth(next);
+      }
+
       // Only once the weights are actually held: `sample` would otherwise call `acquire`
       // through the runner on every frame and start a download nobody agreed to.
       const ready = targetsRef.current.some(
@@ -361,8 +458,8 @@ export function useModelInference(
   );
 
   const notices = useMemo(
-    () => buildNotices(targetsRef.current, states, acquisition),
-    [states, acquisition],
+    () => buildNotices(tracked, states, acquisition, health),
+    [tracked, states, acquisition, health],
   );
 
   /**
@@ -380,16 +477,50 @@ export function useModelInference(
 /**
  * §V469: not silent, not fatal. Availability is a DECISION and gets a button; staleness
  * changes every frame and lives on the telemetry channel instead.
+ *
+ * ## B156 — the notice was true and the owner still could not read the screen
+ *
+ * The owner reported E44 Sounding as "not really doing anything". The example opens on a
+ * FLAT LATTICE by design when no model is held (§T385, §T759), so the correct no-model
+ * path and a broken example look identical, and the only thing separating them was one
+ * quiet `info` row offering a download. §T743 called that notice load-bearing for a
+ * document whose star node is unavailable. This is that warning coming true.
+ *
+ * Three rules came out of it, and each is a rewrite rather than a restyle:
+ *
+ * 1. LEAD WITH THE PICTURE, NOT THE DOWNLOAD. "Depth needs Depth Anything V2" is a fact
+ *    about a file. "This document is showing flat grey where the relief would be" is a
+ *    fact about what is on screen — the same fact, aimed at what the owner is looking at.
+ * 2. A DEGRADED DOCUMENT IS A `warn`, NOT AN `info`. It is not an optional extra; the
+ *    picture is a placeholder until it is resolved.
+ * 3. THE RUN HALF GETS ITS OWN ROWS. Acquisition only knows whether the bytes are on the
+ *    machine. "Downloaded and computing its first result" and "downloaded and could not
+ *    run" are different states from "not downloaded", they were both SILENT, and all
+ *    three previously rendered the identical flat picture. Naming them is what makes
+ *    §B156's two candidate diagnoses tellable apart from the app rather than by asking.
+ *
+ * What is deliberately NOT here: a row for a model that is running. Its rate belongs on
+ * the telemetry channel (the node info popup's "N frames behind"), because it changes
+ * every frame and §V16 caps that at 10 Hz — and because a permanent row about a thing
+ * that is working correctly is the noise §V537 warns about. A healthy running model is
+ * therefore identified by the ABSENCE of a row plus a picture that moves.
  */
 export function buildNotices(
   targets: readonly DepthTarget[],
   states: Readonly<Record<string, AcquisitionState>>,
   acquisition: { acquire(d: ModelDescriptor): unknown; cancel(id: string): void },
+  health: Readonly<Record<string, RunHealth>> = {},
 ): readonly Notice[] {
   const notices: Notice[] = [];
   const seen = new Set<string>();
+
+  // ACQUISITION is a fact about a MODEL, so one row however many nodes want it: two Depth
+  // nodes must not ask twice for the same 94 MB. The RUN half below is a fact about a
+  // NODE — one node's session can fail while another's runs — so it is a second pass with
+  // no deduplication rather than a branch inside this one.
   for (const target of targets) {
     const { descriptor } = target;
+    const { label } = target.kind;
     if (seen.has(descriptor.id)) continue;
     seen.add(descriptor.id);
     const state = states[descriptor.id] ?? { kind: "unknown" };
@@ -397,9 +528,9 @@ export function buildNotices(
     if (state.kind === "absent") {
       notices.push({
         id: `model-consent-${descriptor.id}`,
-        tone: "info",
-        message: `${target.kind.nodeType === "pose" ? "Pose" : "Depth"} needs ${descriptor.label}.`,
-        detail: `${formatBytes(descriptor.bytes)}, downloaded once per machine and kept for every project. Until then the node publishes its neutral output, so the document still renders.`,
+        tone: "warn",
+        message: `${label} has no model, so this document is showing ${target.kind.neutralPicture}.`,
+        detail: `${descriptor.label} is a ${formatBytes(descriptor.bytes)} download, made once per machine and kept for every project. The document renders without it — what you are looking at is the placeholder, not the result.`,
         actions: [
           { label: "Download", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
@@ -421,6 +552,31 @@ export function buildNotices(
         actions: [
           { label: "Try again", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
+      });
+    }
+  }
+
+  // The RUN half, per node (B156). Only reachable once acquisition says the bytes are
+  // here, which is why it is not an `else` on the loop above: "not downloaded", "computing
+  // the first one" and "downloaded and could not run" all render the identical flat
+  // picture, and the whole point is that a person can tell which one they are looking at.
+  for (const target of targets) {
+    if ((states[target.descriptor.id] ?? { kind: "unknown" }).kind !== "ready") continue;
+    const { label, neutralPicture } = target.kind;
+    const run = health[target.nodeId];
+    if (run?.kind === "waiting") {
+      notices.push({
+        id: `model-first-result-${target.nodeId}`,
+        tone: "info",
+        message: `${label} has its model and is computing its first result.`,
+        detail: `Until it lands the node is still publishing ${neutralPicture}. Results then arrive at the model's own rate, not once per frame — the node info popup reports how many frames behind the latest one is.`,
+      });
+    } else if (run?.kind === "failed") {
+      notices.push({
+        id: `model-run-failed-${target.nodeId}`,
+        tone: "error",
+        message: `${label} has its model but the inference did not run.`,
+        detail: `${run.reason}. The node is publishing ${neutralPicture}, so the document still renders — but nothing in it is responding to ${label.toLowerCase()}.`,
       });
     }
   }

@@ -126,6 +126,18 @@ export interface InferenceSources {
   resultAges(frameIndex: number): readonly InferenceAge[];
   /** Whether a node has ever produced a result. Drives the "model unavailable" surface. */
   ready(nodeId: NodeId): boolean;
+  /**
+   * Why the last run for this node failed, or `undefined` if the last one succeeded
+   * (B156).
+   *
+   * `runOnce` keeps the previous value on a failure — §V144's "stale beats stalled" — and
+   * that is right for the PICTURE and wrong for the REPORT: a model that was downloaded
+   * and then cannot run leaves a node serving its identity fallback forever, which is
+   * pixel-for-pixel the state of a machine with no model at all. The seam is the only
+   * place that sees the reason, so it keeps it; the surface decides whether it is worth
+   * saying (§V469 — not silent, not fatal).
+   */
+  lastFailure(nodeId: NodeId): string | undefined;
 }
 
 /** §V586's seam. Phrased as "is this a real-time presentation?" — see the module note. */
@@ -158,11 +170,14 @@ export function createInferenceSources(options: {
   /** nodeId -> upload generation. Bumped only when the bytes change (§V136). */
   const generation = new Map<NodeId, number>();
   const inFlight = new Set<NodeId>();
+  /** nodeId -> why the most recent run failed. Cleared by the next success (B156). */
+  const failure = new Map<NodeId, string>();
 
   const forget = (nodeId: NodeId): void => {
     latest.delete(nodeId);
     sourceFrame.delete(nodeId);
     generation.delete(nodeId);
+    failure.delete(nodeId);
   };
 
   /**
@@ -183,13 +198,17 @@ export function createInferenceSources(options: {
       latest.set(nodeId, bytes);
       sourceFrame.set(nodeId, frameIndex);
       generation.set(nodeId, (generation.get(nodeId) ?? 0) + 1);
-    } catch {
+      failure.delete(nodeId);
+    } catch (error) {
       // A failed read (plan mid-swap, device recovering) or a failed run (model not
       // acquired, backend refused) keeps the previous value — §V144's "stale beats
-      // stalled" — and the next sample retries. The LOUD half of this is not here: an
-      // unavailable model is a problems-pane diagnostic raised by the acquisition path,
-      // because it is a persistent actionable state, where staleness changes every frame
-      // and belongs on telemetry (T645's own ruling).
+      // stalled" — and the next sample retries.
+      //
+      // B156: it also RECORDS WHY, which it used not to. Swallowing the reason made a
+      // model that downloaded and then could not run indistinguishable from a machine
+      // with no model — both serve mid-grey, and neither said anything. The acquisition
+      // path cannot raise this one: acquisition succeeded. Only the run knows.
+      failure.set(nodeId, error instanceof Error ? error.message : String(error));
     } finally {
       inFlight.delete(nodeId);
     }
@@ -255,6 +274,10 @@ export function createInferenceSources(options: {
 
     ready(nodeId) {
       return latest.has(nodeId);
+    },
+
+    lastFailure(nodeId) {
+      return failure.get(nodeId);
     },
   };
 }
