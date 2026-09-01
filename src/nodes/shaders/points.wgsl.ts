@@ -278,3 +278,112 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   out_hitDistance[index] = travelled;
 }`;
 }
+
+/**
+ * Proximity (T819) — each point's K nearest neighbours within a radius, as LINKS.
+ *
+ * BRUTE FORCE, deliberately: one thread per source point scans every candidate and keeps
+ * the K nearest by insertion into a K-slot local array. At the supported envelope
+ * (N ≤ 4096, K ≤ 8) that is ~16.7M distance evaluations per frame — microsecond-scale on
+ * anything Tier B calls a GPU, and the whole cost is one multiply-add chain per pair.
+ * A SPATIAL HASH IS REFUSED BY NAME, not missed: grid binning needs atomics and a
+ * multi-pass sort, complexity bought against a workload (tens of thousands of points) no
+ * consumer asks for. If a measured need past ~16k points arrives, that is the moment to
+ * build it — against the measurement, not ahead of it.
+ *
+ * THE OUTPUT IS DRAWN, NOT CONSUMED: each link is one point whose `position` is the
+ * source and whose `tip` is the neighbour, which is exactly the pair the beam renderer
+ * already draws (geometry `mode: "beam", endpoint: "tip"` — E13's rays). A link that
+ * does not exist — beyond radius, fewer than K in range, or a dead source on a counted
+ * set — collapses to ZERO LENGTH (§V788: position == tip, zero area, no cost) with a
+ * zero tint, so the capacity stays fixed at N×K and no live-count machinery is needed.
+ *
+ * K-nearest is NOT SYMMETRIC: A→B can exist without B→A, and when both exist the line
+ * draws twice at beam alpha. Cheap, visually harmless, and deduping would cost a second
+ * pass — documented rather than fixed.
+ */
+export function pointProximityWgsl(options: { neighbors: number; counted: boolean }): string {
+  const k = Math.max(1, Math.min(8, Math.floor(options.neighbors)));
+  const countDeclaration = options.counted
+    ? "@group(0) @binding(2) var<storage, read> in_count: array<u32>;\n"
+    : "";
+  const outBase = options.counted ? 3 : 2;
+  const liveExpression = options.counted
+    ? "min(params.count, in_count[0])"
+    : "params.count";
+  return `struct ProximityParams {
+  count: u32,
+  radius: f32,
+  falloff: f32,
+};
+
+@group(0) @binding(0) var<uniform> params: ProximityParams;
+@group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
+${countDeclaration}@group(0) @binding(${outBase}) var<storage, read_write> out_position: array<vec3f>;
+@group(0) @binding(${outBase + 1}) var<storage, read_write> out_tip: array<vec3f>;
+@group(0) @binding(${outBase + 2}) var<storage, read_write> out_tint: array<vec4f>;
+
+const K: u32 = ${k}u;
+const FAR: f32 = 1.0e30;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.count) {
+    return;
+  }
+  let live = ${liveExpression};
+  let origin = in_position[index];
+  let radius = max(params.radius, 1.0e-6);
+  let r2 = radius * radius;
+
+  var bestD: array<f32, ${k}>;
+  var bestJ: array<u32, ${k}>;
+  for (var s = 0u; s < K; s += 1u) {
+    bestD[s] = FAR;
+    bestJ[s] = index;
+  }
+
+  /* A dead source on a counted set emits only parked links; the scan still runs so the
+     shader has one exit and the write below covers every slot unconditionally. */
+  let sourceLive = index < live;
+  if (sourceLive) {
+    for (var j = 0u; j < live; j += 1u) {
+      if (j == index) {
+        continue;
+      }
+      let d = in_position[j] - origin;
+      let d2 = dot(d, d);
+      if (d2 > r2 || d2 >= bestD[K - 1u]) {
+        continue;
+      }
+      bestD[K - 1u] = d2;
+      bestJ[K - 1u] = j;
+      /* Bubble the newcomer to its rank — K is tiny, this is a handful of compares. */
+      for (var s = K - 1u; s > 0u; s -= 1u) {
+        if (bestD[s] < bestD[s - 1u]) {
+          let td = bestD[s]; bestD[s] = bestD[s - 1u]; bestD[s - 1u] = td;
+          let tj = bestJ[s]; bestJ[s] = bestJ[s - 1u]; bestJ[s - 1u] = tj;
+        }
+      }
+    }
+  }
+
+  for (var s = 0u; s < K; s += 1u) {
+    let base = index * K + s;
+    let found = sourceLive && bestD[s] < FAR;
+    if (found) {
+      let d = sqrt(bestD[s]);
+      let alpha = pow(max(1.0 - d / radius, 0.0), max(params.falloff, 0.0));
+      out_position[base] = origin;
+      out_tip[base] = in_position[bestJ[s]];
+      out_tint[base] = vec4f(1.0, 1.0, 1.0, alpha);
+    } else {
+      /* §V788: the absent link is a zero-length beam — position == tip, zero area. */
+      out_position[base] = origin;
+      out_tip[base] = origin;
+      out_tint[base] = vec4f(0.0);
+    }
+  }
+}`;
+}

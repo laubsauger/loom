@@ -169,6 +169,7 @@ describe("core catalogue (T70, T40)", () => {
       "renderInstances",
       "renderSurface",
       "pointTopology",
+      "pointProximity",
       "pointKernelAdvanced",
       "slitScan",
     ]);
