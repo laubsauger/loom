@@ -8,7 +8,7 @@ import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
 import { liveCountBufferId } from "../nodes/definitions/index.ts";
-import { CINDER_ASPECT, CINDER_SCOUTS, CINDER_TTL } from "./shaders/cinder.wgsl.ts";
+import { CINDER_ASPECT, CINDER_SCOUTS, CINDER_SEEDED, CINDER_TTL } from "./shaders/cinder.wgsl.ts";
 
 /**
  * T741 — E41's claims, cross-frame BY CONSTRUCTION (§V681, §V712, §V717).
@@ -134,26 +134,32 @@ describe("E41 Cinder — a moving subject sheds motes; a still one sheds none", 
   /**
    * THE SENTENCE AS NUMBERS, both halves in one test so they share every constant.
    *
-   * Moving: the population GROWS from early to steady state (frame 12 versus 132 —
-   * more than a TTL apart, so the late reading is behaviour, not opening transient,
-   * §V717) and the steady cloud is a real population. Still: the same graph with the
-   * path LFOs' amplitude at zero has shed its warm-up transient (anything born off the
-   * cache filling in dies within one TTL = 96 frames at 60 fps) and holds ZERO motes
-   * at frame 132 — not few, none: nothing moves, so nothing clears the threshold.
+   * Read against the SAME FRAME, and that is §V774 and T793. This example used to argue
+   * from a warm-up — the population at frame 12 against frame 132 — which measured the
+   * cloud filling an empty stage rather than the thing the sentence says. It also meant
+   * frame 0 was a featureless plate and the gallery card was that plate (§V769), so T793
+   * gave the file E9 Ember's warm start. **A causal claim is a claim about the STEADY
+   * STATE, not about frame 0** — and the seed is not merely assumed gone by 132, the
+   * parked arm below MEASURES it gone: 96 frames is one full TTL and it returns to
+   * exactly the scout floor, which no surviving seeded mote could allow.
+   *
+   * Moving: at frame 132 the cloud is a real population, hundreds of live points beyond
+   * the immortal scouts. Still: the same graph with the path LFOs' amplitude at zero
+   * holds ZERO motes at the same frame — not few, none: nothing moves, so nothing clears
+   * the threshold. One frame, two wirings, opposite answers.
    */
   it(
-    "grows a population while the orb travels, and decays to exactly the scouts when it parks",
+    "holds a population while the orb travels, and exactly the scouts when it parks",
     async () => {
       // THE LEAD (T745's re-anchor, ruled primary): the GPU live count itself. Moving,
       // the population is real — hundreds of live points beyond the immortal scouts.
-      const early = await shoot(soloMotes, [12]);
       const steady = await shoot(soloMotes, [132]);
       expect(steady.liveCount - CINDER_SCOUTS).toBeGreaterThan(150);
-      expect(steady.liveCount).toBeGreaterThan(early.liveCount);
 
       // Parked: EXACTLY the scout floor — zero live points born of motion, not merely
       // zero visible pixels (a dark or off-screen mote would satisfy pixels and fail
-      // this). The transient from the cache filling in is dead within one TTL.
+      // this). This is also T793's proof that the WARM START is spent: 400 seeded motes,
+      // every one of them dead, at a frame more than a TTL past the seed.
       const parked = await shoot(
         (graph) => {
           soloMotes(graph);
@@ -170,6 +176,26 @@ describe("E41 Cinder — a moving subject sheds motes; a still one sheds none", 
     },
     300_000,
   );
+
+  /**
+   * T793 — AND IT OPENS ON THE CLOUD, which is the reason the warm start exists.
+   *
+   * §V769: frame 0 is the gallery thumbnail. Before this, frames 0 and 1 were a
+   * featureless grey plate (output maxLuma 0.279 against 0.999 from frame 2 on) because
+   * `ctx.firstRun` deliberately spawned nothing and the first real births could not
+   * appear until the cache had a frame to difference against.
+   *
+   * The seeded generation is sized from the measurement, not chosen: the moving cloud
+   * settles at 480–500 live points, so 400 seeded motes plus 96 scouts opens on the
+   * population the piece actually runs at. Asserted as an EXACT count, because the seed
+   * is a fixed allocation and a drift in it is a drift in what the card shows.
+   */
+  it("opens on the cloud rather than on an empty stage (§V769)", async () => {
+    const first = await shoot(soloMotes, [0]);
+    expect(first.liveCount).toBe(CINDER_SCOUTS + CINDER_SEEDED);
+    // And it is DRAWN, not merely allocated — the same pixel test the steady state uses.
+    expect(motePixels(first.frames[0]!).length).toBeGreaterThan(800);
+  }, 300_000);
 
   /**
    * THE MOTES ARE WHERE THE MOTION IS. Every bright pixel must sit near the orb's

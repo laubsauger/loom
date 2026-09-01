@@ -55,8 +55,8 @@ invisible **scouts** jump to fresh deterministic sites every frame (`pointRand` 
 the absolute frame, so a seek reproduces, §V44/§V45) and **spawn** where the motion alpha
 clears the threshold. Children are born at the site, die within 1.6 s, and are
 **compacted** — so the GPU live count is a meter of how much the picture is moving.
-Frame 0 is an empty stage bar the invisible scouts: everything ever visible was born
-from measured motion.
+Everything visible after the first lifetime was born from measured motion — frame 0 itself
+carries a seeded generation, which is T793 and is set out below.
 
 The budget is spent deliberately (§V588): spawning requires `id` (identity is minted at
 birth, §V73) and the picture requires `tint`, which is the whole three-attribute
@@ -67,6 +67,52 @@ draught's curl, recomputed each frame. No inertia; stated, not hidden. The spawn
 reads no field, by T744's own rule — the kernel that decided the birth is the sampling
 site, and the hook only scatters the newborn a breath from its parent.
 
+## T793 — the warm start, and why it does not weaken the claim
+
+**A causal claim is a claim about the steady state, not about frame 0** (§V774). This file
+used to open on an empty stage on purpose — `ctx.firstRun` spawned nothing, so *everything
+ever visible was born from measured motion* — and it paid for that with a black gallery
+card: frames 0 and 1 were a featureless grey plate (output max luma 0.279, against 0.999
+from frame 2 on), and **a gallery thumbnail is frame 0** (§V769).
+
+E9 Ember had already made this trade and nobody generalised it. So Cinder now takes it too:
+`ctx.firstRun` seeds **400 motes** — sized from the measurement, not chosen, because the
+moving cloud settles at 480–500 live points of which 96 are scouts — and the file opens on
+the population it actually runs at.
+
+**The seed is gone within one lifetime, and that is measured rather than asserted.** Each
+seeded mote's age is a uniform fraction of its own TTL, which is the age distribution a
+constant birth rate produces, so the generation dies off on exactly the schedule a born one
+does: nothing seeded is alive after 1.6 s — 96 frames at 60 fps. The parked arm of the lead
+claim is the proof and it needs no extra test: at **frame 132**, more than a TTL past the
+seed, the still graph returns to **exactly the scout floor of 96**, which not one surviving
+seeded mote could allow. Every claim below is read at 132 or later.
+
+**It is the same simulation, run forward — not a scatter.** `moteVel` and `moteTint` exist
+as functions precisely so the seed and the per-frame update cannot drift apart: a seeded
+mote is given the spawn hook's own birth jitter and then integrated forward by its own age
+through the same velocity, and graded by the same tint. E9 states the rule and this file
+obeys it — *a warm start computed by different arithmetic from the simulation is a warm
+start that opens on a picture the piece never shows.*
+
+**The one approximation, stated rather than buried.** A born mote's site is where the
+picture *moves*, and on the first frame there is no motion measurement to read: the cache
+is empty, so the difference is the whole picture and the packed alpha floods (measured —
+mean 1.02, and 100% of the frame over threshold at frame 0, against 3–5% from frame 1 on).
+So the seed ranks 48 deterministic sites by the field's own **luminance** and takes the
+best, which is the one thing a first frame can honestly say; for this understudy the warm
+orb is by some way the brightest thing in it, and the opening frame reads as a warm plume
+rising off the orb with older embers spread behind it. For the same reason the seeded motes
+carry the **size floor** and none of the motion bonus — there is no motion to spend. With
+real footage on branch 1 the opening generation lands on the brightest region rather than
+the moving one, for the one lifetime it exists.
+
+**What the fix cost the argument, and the honest accounting.** The lead claim used to be
+read as *the population GROWS from frame 12 to frame 132*. That comparison measured the
+cloud filling an empty stage, not the sentence, and a warm start removes it by design. The
+claim is now read where it always belonged: **one frame, two wirings, opposite answers** —
+501 live points with the orb travelling and exactly 96 with it parked, both at frame 132.
+
 ## What the claims hold, and why they are all cross-frame
 
 §V712 measured a look baseline reading identically to four decimals with every element
@@ -74,12 +120,15 @@ mis-owned; §V717 measured it sampling frames 60–180 and missing a 10× late c
 example's subject is *behaviour over time*, so `cinder-claims.gpu.test.ts` asserts:
 
 - **The sentence itself, on the population:** the GPU live count — read off the count
-  buffer through the harness's `probeBuffers` seam (§V729) — grows while the orb
-  travels, and with the path LFOs pinned it returns to **exactly the scout floor**:
-  zero live points born of motion, which is a stronger sentence than zero visible
-  pixels (a mote that is merely dark or off-screen satisfies the pixel claim and fails
-  this one). The pixel count stays as corroboration: the population died AND the
-  screen agrees.
+  buffer through the harness's `probeBuffers` seam (§V729) — is **hundreds of live points
+  beyond the scouts at frame 132 while the orb travels, and exactly the scout floor at the
+  same frame with the path LFOs pinned**: zero live points born of motion, which is a
+  stronger sentence than zero visible pixels (a mote that is merely dark or off-screen
+  satisfies the pixel claim and fails this one). The pixel count stays as corroboration:
+  the population died AND the screen agrees. Read at ONE frame since T793, because the
+  old early-versus-late reading measured a warm-up the file no longer has (see above).
+- **That it opens on its subject (§V769):** frame 0 holds exactly the scouts plus the
+  seeded generation, and draws them — the same pixel test the steady state uses.
 - **Where:** at frame 132, over 90% of mote pixels sit within reach of the orb's
   *analytic* path over the last lifetime — the LFO sine computed in the test, not the
   kernel's own arithmetic (§V683's discipline) — and essentially none sit in the region

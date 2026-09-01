@@ -148,9 +148,9 @@
     "phrase": 0.12914
   },
   "E41-Cinder.loom.json": {
-    "motion": 0.04979,
+    "motion": 0.05,
     "range": 0.9778,
-    "f0max": 0.0634
+    "f0max": 0.9855
   },
   "E42-Current.loom.json": {
     "motion": 0.0551,
