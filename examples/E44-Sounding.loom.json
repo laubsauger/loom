@@ -239,6 +239,19 @@
             1.35,
             3
           ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "pivot1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
           "fov": 44,
           "lookAt": [
             0,
@@ -372,6 +385,23 @@
           "y": 20
         },
         "type": "switch"
+      },
+      "pivot": {
+        "definitionVersion": 1,
+        "id": "pivot",
+        "label": "pivot1",
+        "parameters": {
+          "amplitude": 0.85,
+          "frequency": 0.035,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1020,
+          "y": -400
+        },
+        "type": "lfo"
       },
       "plate": {
         "definitionVersion": 1,

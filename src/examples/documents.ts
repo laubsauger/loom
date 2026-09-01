@@ -10346,16 +10346,16 @@ const spliceDocument = document(
  * Named for the nautical sense: throwing a line to find how deep the water is. `E27 Relief`
  * already carries the sculptural word, and this is the measurement rather than the carving.
  *
- *   bed1(noise, nearly still) ─┐
+ *   bed1(noise, nearly still) ─┐              pivot1(lfo) ┄drives┄► draw1.eye.x
  *   orb1(circle) ← 2 LFOs ─────┴─► stand1(add) ─┬─► pick1(switch) ─► depth1(depth)
  *   clip1(movieFileIn) ────────────── order 1 ─┘                        │
  *                                                                       ▼
- *   out1 ◄── draw1(renderInstances, 12288 boxes) ◄── cloud1(pointsFromTexture, GRID)
+ *   out1 ◄── draw1(renderInstances, 6912 boxes) ◄── cloud1(pointsFromTexture, GRID)
  *
  * ## What the picture is
  *
  * A monocular depth model turns a flat image into a distance map; `pointsFromTexture` in
- * GRID mode reads that map on a 128x96 lattice and lifts each point by what it finds. So a
+ * GRID mode reads that map on a 96x72 lattice and lifts each point by what it finds. So a
  * video becomes a relief you can look at from the side — the depth-camera look, from a
  * source that never carried depth.
  *
@@ -10382,6 +10382,29 @@ const spliceDocument = document(
  * and the node info popup reports the age in frames. The orb is deliberately fast enough
  * that the lag is plain to see. An example that hid it by choosing a slow subject would be
  * flattering the number instead of reporting it.
+ *
+ * ## The camera PIVOTS, and the sway is the depth cue rather than a garnish (B156)
+ *
+ * A relief seen from a fixed eye is a picture of a relief: the geometry carries the depth
+ * and nothing reveals it. E34 Lidar reached this the hard way and wrote it down — under no
+ * light, PARALLAX is what remains. It matters more here than there, for two reasons E34
+ * did not have:
+ *
+ *   - THE RELIEF ONLY CHANGES EVERY 2.6 SECONDS (T752), so the one thing moving at 60fps
+ *     has to be the viewpoint. The pivot does not hide the update rate — the orb still
+ *     makes the lag plain — it stops the rate from being the ONLY motion in the frame.
+ *   - IT READS THE NO-MODEL STATE HONESTLY. A flat lattice standing still is ambiguous;
+ *     the owner read it as the example doing nothing (§B156). A flat sheet SWINGING in
+ *     perspective is visibly a flat sheet, and the same swing over a real relief is
+ *     visibly not. The pivot is what makes the two states tell themselves apart in the
+ *     picture, the way the notice strip now does in words.
+ *
+ * `eye.x` swings +/-0.85 at an xz distance of 3.0 — +/-16 degrees, E34's measured figure
+ * for the same problem — at 0.035 Hz, a 28-second round trip. A drift, not a turntable.
+ * The sway only ever INCREASES the eye's distance from `lookAt` (3.31 to 3.42 at the
+ * extremes), so it cannot push the cloud out of frame; the framing is safe by margin at
+ * the near plane in both axes. The plate underneath is a 2D composite and holds still, so
+ * the cloud slides against its own image — the parallax made explicit.
  */
 const soundingDocument = document(
   "e44-sounding",
@@ -10422,7 +10445,14 @@ const soundingDocument = document(
         count: 6912, shape: "box", scale: 0.006,
         color: [0.92, 0.71, 0.45, 1],
         eye: [0, 1.35, 3.0], lookAt: [0, -0.05, 0], fov: 44,
-      }, { label: "draw1" }),
+      }, { label: "draw1", parameters: { "eye.x": drivenSlot("pivot1", 0) } }),
+      // The retained value is 0 — the authored `eye.x` — so the structural compile in the
+      // examples gate, which attaches no channels (§V108), frames exactly the shot this
+      // document was tuned against. A retained value that was not a sane picture on its
+      // own would make every gate here judge a camera nobody chose.
+      node("pivot", "lfo", [-1020, -400], {
+        shape: "sine", frequency: 0.035, amplitude: 0.85, offset: 0, phase: 0,
+      }, { label: "pivot1" }),
       // The source is ADDED under the cloud, not composited over it: `renderInstances`
       // clears to OPAQUE black, so an `over` would simply hide the plate. Additive suits
       // it anyway — the scan reads as light standing off its own image. Both states are

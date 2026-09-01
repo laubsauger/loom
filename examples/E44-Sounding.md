@@ -9,7 +9,7 @@ Named for the nautical sense: throwing a line to find how deep the water is. E27
 carries the sculptural word *Relief*; this is the measurement rather than the carving.
 
 ```
-bed1(noise, nearly still) ─┐
+bed1(noise, nearly still) ─┐              pivot1(lfo) ┄drives┄► draw1.eye.x
 orb1(circle) ← 2 LFOs ─────┴─► stand1(add) ─┬─► pick1(switch) ─► depth1(depth)
 clip1(movieFileIn) ────────────── order 1 ─┘         │                │
                                                      ▼                ▼
@@ -29,6 +29,22 @@ No example had ever exercised that path. `sounding-claims.gpu.test.ts` asserts b
 it on the position buffer rather than on pixels: mid-grey in gives a cloud whose z-spread is
 under 0.01, and a left-to-right brightness ramp gives a left-to-right rise that is monotonic
 across every one of 96 columns. A screenshot cannot tell a real relief from a plausible one.
+
+## The camera pivots, and the sway is the depth cue
+
+A relief seen from a fixed eye is a *picture* of a relief: the geometry carries the depth
+and nothing reveals it. So `pivot1` swings `draw1.eye.x` by ±0.85 at an xz distance of 3 —
+±16° — on a 28-second round trip. A drift, not a turntable.
+
+It matters more here than in the other 3D examples, for two reasons. The relief itself only
+changes every 2.6 seconds, so the one thing moving at 60fps has to be the viewpoint; and it
+is what makes the no-model state read honestly. A flat lattice standing still is ambiguous
+— it was reported as the example not doing anything. A flat sheet *swinging* in perspective
+is visibly a flat sheet, and the same swing over a real relief is visibly not.
+
+The sway only ever increases the eye's distance from `lookAt` (3.31 to 3.42 at the
+extremes), so it cannot push the cloud out of frame. Frame 0 sits at the sine's zero
+crossing, so the example still opens on exactly the shot it was framed for.
 
 ## The lattice is not a picture of the depth map, it is the depth map
 
