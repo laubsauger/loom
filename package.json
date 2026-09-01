@@ -36,6 +36,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@xyflow/react": "^12.8.2",
     "immer": "^10.1.1",
+    "onnxruntime-web": "^1.29.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-resizable-panels": "^2.1.7",

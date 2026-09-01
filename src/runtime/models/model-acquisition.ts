@@ -1,0 +1,238 @@
+/**
+ * On-demand model acquisition (T383, T715, §V147).
+ *
+ * This is the FIRST `fetch` in `src/`. Nothing in the app has ever downloaded anything at
+ * runtime, so every rule here is being set rather than followed, and the one that matters
+ * most is the first:
+ *
+ * ## Placing a node must not spend 94 MB
+ *
+ * The shipped depth model is `depth-anything-v2-small/model.onnx` — 99,060,839 bytes,
+ * chosen deliberately for quality over size. A download that large must never start
+ * because someone dropped a node on a canvas to see what it did. So the surface is split:
+ * `refresh` only ever READS the cache, and `acquire` is the only thing that opens a
+ * connection. Consent lives above this module, in the notice strip, and this module
+ * cannot bypass it because it has no path that fetches without being told to.
+ *
+ * ## Cached per MACHINE, not per project
+ *
+ * Keyed by model id in one origin-wide store, so the second project that uses depth pays
+ * nothing. §T383 also requires the other direction: an `uninstall` and a `list`, because a
+ * cache that only grows and cannot be inspected or cleared is a bug with a slow fuse.
+ *
+ * ## A truncated download is a FAILURE, not a smaller model
+ *
+ * The descriptor carries the expected byte count and a short read is refused rather than
+ * cached. Without that check a dropped connection caches a corrupt file forever and every
+ * later run fails somewhere far away, in the runtime, with a parse error that names
+ * nothing — §V147's family exactly: plausible, wrong, and expensive to trace back.
+ *
+ * ## Progress is REAL bytes
+ *
+ * Read from the stream as it arrives, not interpolated from a timer. When the server
+ * declines to send `content-length` the total falls back to the descriptor's expected
+ * size, and if that is unknown the state says how much has arrived and does not invent a
+ * denominator — a progress bar that guesses is worse than a byte count that does not.
+ */
+
+/** One acquirable model. `bytes` is what the pinned revision actually weighs. */
+export interface ModelDescriptor {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * REVISION-PINNED, never `main` (§V44's spirit applied to a download). A moving
+   * reference would let the bytes under a document change without the document changing,
+   * which breaks the record/replay gates and makes "same graph, same picture" untrue in a
+   * way no test could catch.
+   */
+  readonly url: string;
+  readonly bytes: number;
+  readonly license: string;
+}
+
+export type AcquisitionState =
+  /** The cache has not been consulted yet. Distinct from `absent`, which is an answer. */
+  | { readonly kind: "unknown" }
+  /** Not held. Nothing has been downloaded and nothing will be until `acquire` is called. */
+  | { readonly kind: "absent" }
+  | { readonly kind: "downloading"; readonly received: number; readonly total: number | undefined }
+  | { readonly kind: "ready" }
+  | { readonly kind: "failed"; readonly reason: string };
+
+/**
+ * Exactly the slice of `fetch` this module uses — a URL and an abort signal.
+ *
+ * Narrower than `typeof globalThis.fetch` on purpose: the global is overloaded and a test
+ * double cannot satisfy the overloads without lying with a cast, and a cast in a fixture
+ * is how a fixture stops matching the thing it stands in for. `globalThis.fetch` is
+ * assignable to this; so is a three-line fake.
+ */
+export type ModelFetch = (url: string, init: { readonly signal: AbortSignal }) => Promise<Response>;
+
+/** Origin-wide bytes. Injectable so a test needs no Cache API and no 94 MB. */
+export interface ModelStore {
+  get(id: string): Promise<ArrayBuffer | undefined>;
+  put(id: string, bytes: ArrayBuffer): Promise<void>;
+  delete(id: string): Promise<void>;
+  list(): Promise<ReadonlyArray<{ readonly id: string; readonly bytes: number }>>;
+}
+
+export interface ModelAcquisition {
+  stateOf(id: string): AcquisitionState;
+  /** Reads the cache. NEVER opens a connection. Safe to call when a node is placed. */
+  refresh(descriptor: ModelDescriptor): Promise<AcquisitionState>;
+  /** Downloads if absent. Only ever called after the user has agreed to spend the bytes. */
+  acquire(descriptor: ModelDescriptor): Promise<ArrayBuffer | undefined>;
+  /** Aborts an in-flight download. Nothing partial is kept. */
+  cancel(id: string): void;
+  uninstall(id: string): Promise<void>;
+  list(): Promise<ReadonlyArray<{ readonly id: string; readonly bytes: number }>>;
+}
+
+export function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const mb = value / 1_048_576;
+  if (mb < 1) return `${(value / 1024).toFixed(0)} KB`;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+/** "142 MB of 380 MB", or "142 MB" when the total is genuinely unknown. */
+export function progressText(received: number, total: number | undefined): string {
+  return total === undefined
+    ? formatBytes(received)
+    : `${formatBytes(received)} of ${formatBytes(total)}`;
+}
+
+export function createModelAcquisition(options: {
+  readonly store: ModelStore;
+  readonly fetch: ModelFetch;
+  /** Fired on every transition, including each progress tick. */
+  readonly onStateChange?: (id: string, state: AcquisitionState) => void;
+}): ModelAcquisition {
+  const states = new Map<string, AcquisitionState>();
+  const inFlight = new Map<string, Promise<ArrayBuffer | undefined>>();
+  const aborts = new Map<string, AbortController>();
+
+  const set = (id: string, state: AcquisitionState): AcquisitionState => {
+    states.set(id, state);
+    options.onStateChange?.(id, state);
+    return state;
+  };
+
+  const download = async (descriptor: ModelDescriptor): Promise<ArrayBuffer | undefined> => {
+    const { id } = descriptor;
+    const controller = new AbortController();
+    aborts.set(id, controller);
+    try {
+      const response = await options.fetch(descriptor.url, { signal: controller.signal });
+      if (!response.ok) {
+        set(id, { kind: "failed", reason: `the server answered ${response.status} ${response.statusText}` });
+        return undefined;
+      }
+
+      const header = response.headers.get("content-length");
+      const total = header === null ? (descriptor.bytes > 0 ? descriptor.bytes : undefined) : Number(header);
+      const body = response.body;
+
+      let bytes: ArrayBuffer;
+      if (body === null) {
+        // No stream to read (a test double, or a response type without one). Still
+        // correct, just without intermediate progress.
+        set(id, { kind: "downloading", received: 0, total });
+        bytes = await response.arrayBuffer();
+      } else {
+        const reader = body.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        set(id, { kind: "downloading", received, total });
+        for (;;) {
+          const step = await reader.read();
+          if (step.done) break;
+          const chunk = step.value;
+          if (chunk === undefined) continue;
+          chunks.push(chunk);
+          received += chunk.byteLength;
+          set(id, { kind: "downloading", received, total });
+        }
+        const joined = new Uint8Array(received);
+        let offset = 0;
+        for (const chunk of chunks) {
+          joined.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        bytes = joined.buffer;
+      }
+
+      // A short read is a FAILURE. Caching it would poison the machine until someone
+      // found the uninstall, and the symptom would surface far away in the runtime.
+      if (descriptor.bytes > 0 && bytes.byteLength !== descriptor.bytes) {
+        set(id, {
+          kind: "failed",
+          reason:
+            `the download ended at ${formatBytes(bytes.byteLength)} but ` +
+            `${descriptor.label} is ${formatBytes(descriptor.bytes)} — nothing was cached`,
+        });
+        return undefined;
+      }
+
+      await options.store.put(id, bytes);
+      set(id, { kind: "ready" });
+      return bytes;
+    } catch (error) {
+      // A cancel returns to ABSENT, not failed: the user chose it, and a red row for a
+      // deliberate choice is the noise §V537 warns about. Anything else is a real failure
+      // and keeps its reason.
+      const aborted = error instanceof Error && error.name === "AbortError";
+      set(id, aborted ? { kind: "absent" } : { kind: "failed", reason: describe(error) });
+      return undefined;
+    } finally {
+      aborts.delete(id);
+      inFlight.delete(id);
+    }
+  };
+
+  return {
+    stateOf(id) {
+      return states.get(id) ?? { kind: "unknown" };
+    },
+
+    async refresh(descriptor) {
+      const held = await options.store.get(descriptor.id);
+      return set(descriptor.id, held === undefined ? { kind: "absent" } : { kind: "ready" });
+    },
+
+    async acquire(descriptor) {
+      const held = await options.store.get(descriptor.id);
+      if (held !== undefined) {
+        set(descriptor.id, { kind: "ready" });
+        return held;
+      }
+      // One download per model, however many nodes ask. Two depth nodes in a document
+      // must not open two 94 MB connections — the seam's own `inFlight` discipline.
+      const running = inFlight.get(descriptor.id);
+      if (running !== undefined) return running;
+      const started = download(descriptor);
+      inFlight.set(descriptor.id, started);
+      return started;
+    },
+
+    cancel(id) {
+      aborts.get(id)?.abort();
+    },
+
+    async uninstall(id) {
+      await options.store.delete(id);
+      set(id, { kind: "absent" });
+    },
+
+    list() {
+      return options.store.list();
+    },
+  };
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
