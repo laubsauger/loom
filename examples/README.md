@@ -48,6 +48,7 @@ happened:
 | [E37 Sirocco](./E37-Sirocco.md) | the canonical TouchDesigner particle look, absent until now: eighteen thousand motes in a 3D CURL-NOISE field, each drawn as a VELOCITY STREAK — `beam` mode given `position − velocity·t` as its far end, so a fast mote draws a long ribbon and no history buffer exists. The first example to draw `geometry` in `points` mode (the mode §B132 repaired), the first consumer of T721's mapped `scale`, and a standing §V681 test: flipping the trail's sign gives every ribbon the wrong owner and moves the look baseline by 0.1% (T727) |
 | [E41 Cinder](./E41-Cinder.md) | PARTICLES FROM VIDEO — the owner's ask verbatim: a moving subject SHEDS MOTES and a still one sheds none, off E40's frame-difference instrument reused as a SPAWN FIELD. One reorder packs source colour (rgb) with motion (alpha) so a single fieldAt answers where-and-what-colour; a recycling population is reborn where the picture moves, wears the video's live colour, and is sized by T721's mapped scale. The owner's sentence is asserted on frame pairs — grows while it moves, decays to exactly none when it parks (T741, §V681, §V717) |
 | [E42 Current](./E42-Current.md) | the video as an ORIENTED FIELD — T723's first witness: a fixed grid of phong-lit tiles SPINS into the local flow and LEANS along it (the two turns COMPOSE, which is the quaternion's whole case), sized by T721 and tinted by the picture, under one raking key so orientation reads as SHADING. Calm means identity EXACTLY; the §V712 sign-flip turns every moving tile half around while the still-frame statistics move under 2% — asserted on the quaternion buffer itself (T741, §V683, §V712) |
+| [E43 Splice](./E43-Splice.md) | the custom shader AS THE STAR — the VJ glitch rack: beat-quantised slicing (bands jump, blocks tear, RGB splits) in ONE customWgsl, folded by a rotating MIRROR (its first example — and the first Dawn compile of its shader, which found it had never compiled anywhere), slammed by a crop letterbox, echoed by a kick-driven composite. amount = 0 is BYTE-IDENTICAL passthrough — §V147 extended to user WGSL for the first time — and the glitch is frozen inside a deal, re-dealt across the tick (T749, §V681) |
 | [E38 Sigil](./E38-Sigil.md) | the first example where a PICTURE decides which points belong to it, rather than what colour they are: `fieldAt` samples a drawn emblem at each grid cell and that number scales the spring that gathers the mote, so a mark assembles out of a drifting population and comes apart into it again. Membership is a property of the CELL — sampling where the mote IS instead takes 6528 members to 8302 while the look baseline does not move a digit (T727, §V681, §V684) |
 
 ## Running them
@@ -99,7 +100,18 @@ installs and compiles every file the way §V89 gates an example.
 Do not hand-edit the JSON. Edit `src/examples/documents.ts` and regenerate:
 
 ```
-node --experimental-strip-types src/examples/build-examples.ts
+node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
+```
+
+The bare `--experimental-strip-types` form does not work: the build script and everything
+it imports resolve through the `@domain`/`@editor` path aliases, and only the loader hook
+teaches Node about them. §T691 corrected three docblocks and missed this line, and a
+second worker lost time to it a week later.
+
+Five workers share this checkout, so regenerate only what your change touched:
+
+```
+node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts --only Cinder
 ```
 
 The files are written by `buildProjectFile`, the app's real save path, so a shipped example

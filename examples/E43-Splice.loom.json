@@ -1,0 +1,650 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beat-esub": {
+        "id": "e-beat-esub",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "esub",
+          "portId": "a"
+        }
+      },
+      "e-beat-gsub": {
+        "id": "e-beat-gsub",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gsub",
+          "portId": "a"
+        }
+      },
+      "e-beat-slag": {
+        "id": "e-beat-slag",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "slag",
+          "portId": "in"
+        }
+      },
+      "e-bed-stand": {
+        "id": "e-bed-stand",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in1"
+        }
+      },
+      "e-clip-pick": {
+        "id": "e-clip-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-echo-punch": {
+        "id": "e-echo-punch",
+        "source": {
+          "nodeId": "echo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "punch",
+          "portId": "in1"
+        }
+      },
+      "e-esub-emul": {
+        "id": "e-esub-emul",
+        "source": {
+          "nodeId": "esub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "emul",
+          "portId": "a"
+        }
+      },
+      "e-fold-echo": {
+        "id": "e-fold-echo",
+        "source": {
+          "nodeId": "fold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "echo",
+          "portId": "input"
+        }
+      },
+      "e-fold-slam": {
+        "id": "e-fold-slam",
+        "source": {
+          "nodeId": "fold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "slam",
+          "portId": "input"
+        }
+      },
+      "e-gsub-gmul": {
+        "id": "e-gsub-gmul",
+        "source": {
+          "nodeId": "gsub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gmul",
+          "portId": "a"
+        }
+      },
+      "e-orb-stand": {
+        "id": "e-orb-stand",
+        "source": {
+          "nodeId": "orb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in2"
+        }
+      },
+      "e-pick-splice": {
+        "id": "e-pick-splice",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "splice",
+          "portId": "input"
+        }
+      },
+      "e-punch-out": {
+        "id": "e-punch-out",
+        "source": {
+          "nodeId": "punch",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-slag-smul": {
+        "id": "e-slag-smul",
+        "source": {
+          "nodeId": "slag",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "smul",
+          "portId": "a"
+        }
+      },
+      "e-slam-punch": {
+        "id": "e-slam-punch",
+        "source": {
+          "nodeId": "slam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "punch",
+          "portId": "in2"
+        }
+      },
+      "e-splice-fold": {
+        "id": "e-splice-fold",
+        "source": {
+          "nodeId": "splice",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fold",
+          "portId": "input"
+        }
+      },
+      "e-stand-pick": {
+        "id": "e-stand-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "stand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 122
+        },
+        "position": {
+          "x": -1920,
+          "y": 420
+        },
+        "type": "audioPattern"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 0.36,
+          "aspectcorrect": true,
+          "exp": 1.6,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": -0.32,
+          "period": 0.11,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 11,
+          "speed": 0.035,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2220,
+          "y": -420
+        },
+        "type": "noise"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "file": "",
+          "playMode": "freeRun",
+          "speed": 1
+        },
+        "position": {
+          "x": -2220,
+          "y": 140
+        },
+        "type": "movieFileIn"
+      },
+      "echo": {
+        "definitionVersion": 1,
+        "id": "echo",
+        "label": "echo1",
+        "parameters": {
+          "aspectcorrect": false,
+          "extend": "zero",
+          "p": [
+            0.5,
+            0.5
+          ],
+          "r": 0,
+          "s": [
+            1.18,
+            1.18
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -1020,
+          "y": 240
+        },
+        "type": "transform"
+      },
+      "emul": {
+        "definitionVersion": 1,
+        "id": "emul",
+        "label": "ed1",
+        "parameters": {
+          "operand": 1.7,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1320,
+          "y": 660
+        },
+        "type": "valueMath"
+      },
+      "esub": {
+        "definitionVersion": 1,
+        "id": "esub",
+        "label": "esub1",
+        "parameters": {
+          "operand": -0.712,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1620,
+          "y": 660
+        },
+        "type": "valueMath"
+      },
+      "fold": {
+        "definitionVersion": 1,
+        "id": "fold",
+        "label": "fold1",
+        "parameters": {
+          "extend": "mirror",
+          "keephigh": false,
+          "mirrorx": true,
+          "mirrory": false,
+          "pivot": [
+            0.5,
+            0.5
+          ],
+          "rotate": {
+            "bindings": {
+              "driven": {
+                "channel": "spin1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 12
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1320,
+          "y": -60
+        },
+        "type": "mirror"
+      },
+      "gmul": {
+        "definitionVersion": 1,
+        "id": "gmul",
+        "label": "gd1",
+        "parameters": {
+          "operand": 5.5,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1320,
+          "y": 420
+        },
+        "type": "valueMath"
+      },
+      "gsub": {
+        "definitionVersion": 1,
+        "id": "gsub",
+        "label": "gsub1",
+        "parameters": {
+          "operand": -0.381,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1620,
+          "y": 420
+        },
+        "type": "valueMath"
+      },
+      "orb": {
+        "definitionVersion": 1,
+        "id": "orb",
+        "label": "orb1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "pathx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "pathy1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "fillcolor": [
+            1,
+            0.42,
+            0.12,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.13,
+            0.13
+          ],
+          "softness": 0.045
+        },
+        "position": {
+          "x": -2220,
+          "y": -140
+        },
+        "type": "circle"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": -420,
+          "y": -60
+        },
+        "type": "output"
+      },
+      "pathx": {
+        "definitionVersion": 1,
+        "id": "pathx",
+        "label": "pathx1",
+        "parameters": {
+          "amplitude": 0.33,
+          "frequency": 0.29,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2220,
+          "y": 420
+        },
+        "type": "lfo"
+      },
+      "pathy": {
+        "definitionVersion": 1,
+        "id": "pathy",
+        "label": "pathy1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.203,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2220,
+          "y": 700
+        },
+        "type": "lfo"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1920,
+          "y": 20
+        },
+        "type": "switch"
+      },
+      "punch": {
+        "definitionVersion": 1,
+        "id": "punch",
+        "label": "punch1",
+        "parameters": {
+          "opacity": {
+            "bindings": {
+              "driven": {
+                "channel": "ed1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "operation": "over"
+        },
+        "position": {
+          "x": -720,
+          "y": -60
+        },
+        "type": "composite"
+      },
+      "slag": {
+        "definitionVersion": 1,
+        "id": "slag",
+        "label": "slag1",
+        "parameters": {
+          "lag": 0.14
+        },
+        "position": {
+          "x": -1620,
+          "y": 900
+        },
+        "type": "valueLag"
+      },
+      "slam": {
+        "definitionVersion": 1,
+        "id": "slam",
+        "label": "slam1",
+        "parameters": {
+          "bottom": {
+            "bindings": {
+              "driven": {
+                "channel": "sl1:onset",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "left": 0,
+          "right": 1,
+          "top": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": -60
+        },
+        "type": "crop"
+      },
+      "smul": {
+        "definitionVersion": 1,
+        "id": "smul",
+        "label": "sl1",
+        "parameters": {
+          "operand": 0.24,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1320,
+          "y": 900
+        },
+        "type": "valueMath"
+      },
+      "spin": {
+        "definitionVersion": 1,
+        "id": "spin",
+        "label": "spin1",
+        "parameters": {
+          "amplitude": 22,
+          "frequency": 0.019,
+          "offset": 8,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1320,
+          "y": 1140
+        },
+        "type": "lfo"
+      },
+      "splice": {
+        "definitionVersion": 1,
+        "id": "splice",
+        "label": "splice1",
+        "parameters": {
+          "amount": {
+            "bindings": {
+              "driven": {
+                "channel": "gd1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* The slicing geometry. BANDS horizontal strips; every strip decides independently\n   whether it jumps this deal, so quiet passages tear a strip or two and loud ones\n   shred the frame — the density rides amount, not only the distance. */\nconst BANDS: f32 = 36.0;\nconst BLOCKS: vec2f = vec2f(9.0, 5.0);\nconst DEALS_PER_SECOND: f32 = 3.0;\n/* RGB split as a fraction of the band's own jump — the fringe belongs to the tear. */\nconst FRINGE: f32 = 0.35;\n\nfn hash2(a: f32, b: f32) -> f32 {\n  return fract(sin(a * 12.9898 + b * 78.233) * 43758.5453);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture, 0));\n  /* FREE-RUNNING deal clock (§V436): a timeline lap must not re-deal the glitch. */\n  let deal = floor(frameU.absTime * DEALS_PER_SECOND);\n\n  /* The band's jump: rolled per (band, deal), gated so only some bands tear, scaled\n     by amount. At amount = 0 the gate closes and the offset is EXACTLY zero. */\n  let band = floor(uv.y * BANDS);\n  let roll = hash2(band, deal);\n  let gate = select(0.0, 1.0, roll > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.85);\n  let jump = (hash2(band + 57.0, deal) - 0.5) * 0.34 * params.amount * gate;\n\n  /* The block tear: a coarser grid shifts VERTICALLY on its own roll — rarer, bigger. */\n  let block = floor(uv * BLOCKS);\n  let brollA = hash2(block.x * 31.0 + block.y, deal + 101.0);\n  let bgate = select(0.0, 1.0, brollA > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.35);\n  let lift = (hash2(block.x + block.y * 47.0, deal + 202.0) - 0.5) * 0.22 * params.amount * bgate;\n\n  let displaced = vec2f(uv.x + jump, uv.y + lift);\n\n  /* Integer-texel reads, wrapped, one per channel: the red and blue planes travel a\n     little further along the SAME tear, which is what a real capture card does when\n     the sync slips. textureLoad and not the sampler, so amount = 0 is byte-exact. */\n  let px = (fract(displaced) * dims - vec2f(0.5, 0.5));\n  let pxR = (fract(displaced + vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let pxB = (fract(displaced - vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let clampHi = dims - vec2f(1.0, 1.0);\n  let g = textureLoad(inputTexture, vec2i(clamp(round(px), vec2f(0.0), clampHi)), 0);\n  let r = textureLoad(inputTexture, vec2i(clamp(round(pxR), vec2f(0.0), clampHi)), 0);\n  let b = textureLoad(inputTexture, vec2i(clamp(round(pxB), vec2f(0.0), clampHi)), 0);\n  return vec4f(r.r, g.g, b.b, g.a);\n}"
+        },
+        "position": {
+          "x": -1620,
+          "y": -60
+        },
+        "type": "customWgsl"
+      },
+      "stand": {
+        "definitionVersion": 1,
+        "id": "stand",
+        "label": "stand1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1920,
+          "y": -280
+        },
+        "type": "add"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E43 Splice",
+  "projectId": "example-e43-splice",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 43,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
