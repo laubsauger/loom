@@ -416,6 +416,48 @@ describe("T521 — every shipped example moves, and you can see it", () => {
    * retirement leaves an entry pointing at nothing, and an exemption for a file that no
    * longer exists is an exemption nobody will ever notice is wrong (§V421).
    */
+  /**
+   * T786 — NO SHIPPED EXAMPLE OPENS ON THE 4D LATTICE PLANE, which is §T535 closed as a
+   * CLASS rather than as a list of instances (§B146's lesson, applied to a PARAMETER).
+   *
+   * `perlin4d` at `t4d: 0` sits on a lattice plane where the noise's amplitude collapses,
+   * so frame 0 is systematically flatter than every frame after it — and frame 0 is the
+   * gallery card. §T535 found that, measured it, and swept the catalogue. It swept the
+   * INSTANCES. The understudy bed that E40 Wake introduced afterwards carried `t4d: 0`,
+   * and it was copy-pasted forward into E41, E42, E43 and E44 — five examples, all of
+   * them landing AFTER the sweep that was supposed to have ended this.
+   *
+   * Measured on E41's bed, which is the one where the bed IS the opening frame: amplitude
+   * (sd of linear luma) at frame 0 was 0.04868 and climbed to 0.05878 by frame 60 — the
+   * card was 21% flatter than the picture. Off the plane it opens at 0.05962 and HOLDS.
+   *
+   * A sweep is not a fix when the thing swept is a value someone will copy. This is
+   * structural and costs no render, so the sixth copy cannot land.
+   */
+  it("puts no animated 4D noise on the lattice plane where its amplitude collapses", () => {
+    const offenders: string[] = [];
+    for (const document of EXAMPLE_DOCUMENTS) {
+      for (const node of Object.values(document.graph.nodes)) {
+        if (node.type !== "noise") continue;
+        const parameters = node.parameters as Record<string, unknown>;
+        const kind = parameters["type"];
+        // Only 4D noise HAS a fourth axis, so only 4D noise can sit on its lattice plane.
+        if (typeof kind !== "string" || !kind.endsWith("4d")) continue;
+        // A still noise never leaves frame 0, so being on the plane costs it nothing:
+        // what this catches is the frame that is unrepresentative of the ones AFTER it.
+        if (parameters["speed"] === 0) continue;
+        if (parameters["t4d"] !== 0) continue;
+        offenders.push(`${document.name} / ${node.label ?? node.id}`);
+      }
+    }
+    expect(
+      offenders,
+      `${offenders.length} animated 4D noise node(s) sit at t4d: 0, where amplitude ` +
+        `collapses — frame 0 is the gallery card and would be flatter than every frame ` +
+        `after it (T535/T786). Use an off-lattice value such as 0.37.`,
+    ).toEqual([]);
+  });
+
   it("declares exemptions only for examples that exist", () => {
     const files = new Set(
       EXAMPLE_DOCUMENTS.map((document) => `${exampleFileNameOf(document.name)}`),

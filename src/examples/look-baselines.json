@@ -142,31 +142,31 @@
     "f0max": 1
   },
   "E40-Wake.loom.json": {
-    "motion": 0.10159,
-    "range": 0.9774,
+    "motion": 0.10244,
+    "range": 0.9757,
     "f0max": 1,
-    "phrase": 0.12757
+    "phrase": 0.12914
   },
   "E41-Cinder.loom.json": {
-    "motion": 0.04697,
+    "motion": 0.04979,
     "range": 0.9778,
-    "f0max": 0.0687
+    "f0max": 0.0634
   },
   "E42-Current.loom.json": {
-    "motion": 0.0536,
-    "range": 0.9823,
+    "motion": 0.0551,
+    "range": 0.988,
     "f0max": 1
   },
   "E43-Splice.loom.json": {
-    "motion": 0.02458,
-    "range": 0.3728,
-    "f0max": 0.3921,
-    "phrase": 0.04839
+    "motion": 0.02606,
+    "range": 0.3898,
+    "f0max": 0.3874,
+    "phrase": 0.04805
   },
   "E44-Sounding.loom.json": {
-    "motion": 0.05133,
-    "range": 0.4397,
-    "f0max": 0.4812
+    "motion": 0.0513,
+    "range": 0.4407,
+    "f0max": 0.4796
   },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,

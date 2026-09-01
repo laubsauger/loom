@@ -9079,7 +9079,7 @@ const wakeDocument = document(
         mono: true,
         aspectcorrect: true,
         speed: 0.035,
-        t4d: 0,
+        t4d: 0.37, // T786: off the 4D lattice plane (T535) — t4d=0 collapses perlin4d's amplitude, so frame 0, which is the gallery card, was systematically flatter than every frame after it
         s4d: 1,
       }, { label: "bed1" }),
       node("orb", "circle", [-1620, -160], {
@@ -10029,7 +10029,7 @@ const cinderDocument = document(
       node("bed", "noise", [-2220, -420], {
         type: "perlin4d", seed: 11, period: 0.11, harmon: 3, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1.4, amp: 1.5, offset: 0.1, mono: true, aspectcorrect: true,
-        speed: 0.035, t4d: 0, s4d: 1,
+        speed: 0.035, t4d: 0.37, s4d: 1, // T786: off the 4D lattice plane (T535) — t4d=0 collapses perlin4d's amplitude, so frame 0, which is the gallery card, was systematically flatter than every frame after it
       }, { label: "bed1" }),
       node("orb", "circle", [-2220, -140], {
         mode: "fill", center: [0.5, 0.5], radius: [0.085, 0.085], softness: 0.09,
@@ -10145,7 +10145,7 @@ const currentDocument = document(
       node("bed", "noise", [-2220, -420], {
         type: "perlin4d", seed: 11, period: 0.11, harmon: 3, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1.4, amp: 1.5, offset: 0.1, mono: true, aspectcorrect: true,
-        speed: 0.035, t4d: 0, s4d: 1,
+        speed: 0.035, t4d: 0.37, s4d: 1, // T786: off the 4D lattice plane (T535) — t4d=0 collapses perlin4d's amplitude, so frame 0, which is the gallery card, was systematically flatter than every frame after it
       }, { label: "bed1" }),
       node("orb", "circle", [-2220, -140], {
         mode: "fill", center: [0.5, 0.5], radius: [0.085, 0.085], softness: 0.09,
@@ -10270,7 +10270,7 @@ const spliceDocument = document(
       node("bed", "noise", [-2220, -420], {
         type: "perlin4d", seed: 11, period: 0.11, harmon: 3, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1.6, amp: 0.36, offset: -0.32, mono: true, aspectcorrect: true,
-        speed: 0.035, t4d: 0, s4d: 1,
+        speed: 0.035, t4d: 0.37, s4d: 1, // T786: off the 4D lattice plane (T535) — t4d=0 collapses perlin4d's amplitude, so frame 0, which is the gallery card, was systematically flatter than every frame after it
       }, { label: "bed1" }),
       node("orb", "circle", [-2220, -140], {
         mode: "fill", center: [0.5, 0.5], radius: [0.13, 0.13], softness: 0.045,
@@ -10416,7 +10416,7 @@ const soundingDocument = document(
       node("bed", "noise", [-2220, -420], {
         type: "perlin4d", seed: 7, period: 0.16, harmon: 3, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1.3, amp: 1.2, offset: 0.35, mono: true, aspectcorrect: true,
-        speed: 0.03, t4d: 0, s4d: 1,
+        speed: 0.03, t4d: 0.37, s4d: 1, // T786: off the 4D lattice plane (T535) — t4d=0 collapses perlin4d's amplitude, so frame 0, which is the gallery card, was systematically flatter than every frame after it
       }, { label: "bed1" }),
       node("orb", "circle", [-2220, -140], {
         mode: "fill", center: [0.5, 0.5], radius: [0.13, 0.13], softness: 0.07,
