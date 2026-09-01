@@ -9,6 +9,9 @@ import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 import type { PixelWindow, PreviewOutputRef, ReadbackImage } from "@runtime/previews/index.ts";
 import { App } from "./app.tsx";
 import { createAppRuntime } from "./app-runtime.ts";
+import { AppRuntimeContext } from "./app-context.ts";
+import { ViewerPane } from "./side-panes.tsx";
+import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { GpuStatus } from "./gpu-status.ts";
 
@@ -297,5 +300,65 @@ describe("T622 — the OUTPUT selector speaks node names, not resource ids", () 
     expect(option?.textContent).not.toContain(solidId);
     // ...while the VALUE keys on the stable id, so pinning survives a rename (§V128).
     expect(option?.value).toBe(`${solidId}:out`);
+  });
+});
+
+describe("a preview-off node gets a sentence, not a blank pane (T763)", () => {
+  it("names the switch when the selected node has preview disabled", async () => {
+    const runtime = createAppRuntime({
+      identityStorage: null,
+      actor: { kind: "human", id: "tester", label: "Tester" },
+    });
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        operations: [
+          { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        ],
+        label: "seed",
+      },
+      runtime.invocation,
+    );
+    const nodeId = Object.keys(runtime.bus.store.getGraph().nodes)[0]!;
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        operations: [{ op: "setNodeUi", nodeId, ui: { preview: false } }],
+        label: "preview off",
+      },
+      runtime.invocation,
+    );
+    const graph = runtime.bus.store.getGraph();
+    const compiled = {
+      outputs: [
+        {
+          nodeId,
+          portId: "out",
+          resourceId: `target:${nodeId}:out`,
+          resourceKind: "target",
+          size: [64, 64],
+          format: "rgba8unorm",
+          space: "linear",
+          temporal: false,
+        },
+      ],
+      diagnostics: [],
+    };
+    render(
+      <TooltipProvider>
+        <AppRuntimeContext.Provider value={runtime}>
+          <ViewerPane compiled={compiled as never} graph={graph} backend={null} pointer={null} probe={undefined} />
+        </AppRuntimeContext.Provider>
+      </TooltipProvider>,
+    );
+    // Point the viewer at the node the way a user does (v — node.openViewer).
+    await act(async () => {
+      await runtime.bus.execute("node.openViewer", { nodeIds: [nodeId] }, runtime.invocation);
+    });
+    // The selector still lists the output; the surface explains instead of blanking.
+    expect(await screen.findByTestId("viewer-preview-off")).toBeTruthy();
+    runtime.dispose();
   });
 });

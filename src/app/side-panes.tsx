@@ -837,7 +837,16 @@ export function ViewerPane({
       </div>
 
       <div ref={surfaceRef} className={styles.surface} data-testid="viewer-surface">
-        {selected === null ? (
+        {/* T763 — a preview-off node in the viewer gets a SENTENCE, not a blank pane.
+            §V297's "off means off" stands (T756's interest never revives a disabled
+            node), but a silent black rectangle is the reader-that-cannot-see pointed
+            at the user: they toggled P, later pointed the viewer here, and nothing
+            connects the two. No auto-enable, no prompt — the switch is named. */}
+        {selected !== null && graph.nodes[selected.nodeId]?.ui?.preview === false ? (
+          <p className={styles.note} data-testid="viewer-preview-off">
+            Preview is off for this node (P re-enables)
+          </p>
+        ) : selected === null ? (
           <p className={styles.note}>No output</p>
         ) : (
           <canvas
