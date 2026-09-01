@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PaneKey } from "./pane-tree.ts";
 import { adoptPaneHost, usePaneHosts } from "./pane-portal.tsx";
+import {
+  CHILD_FRAME_DEADLINE_MS,
+  emitFloatLine,
+  formatChildMount,
+  formatFloatNote,
+  readChildMount,
+} from "./pane-window-trace.ts";
+import type { ChildMountReading, FloatStage } from "./pane-window-trace.ts";
 import styles from "./pane-window.module.css";
 
 /**
@@ -109,6 +117,15 @@ export interface FloatingPaneProps {
   readonly open?: OpenPaneWindow;
 }
 
+/** What this mount opened, kept so the trace below can re-read it long after mount. */
+interface FloatMount {
+  readonly child: PaneWindow;
+  /** The document this mount wrote into — compared against the window's CURRENT one, which
+   *  is the only way to catch T774's fourth suspect from the parent. */
+  readonly prepared: Document;
+  readonly requestedAt: number;
+}
+
 export function FloatingPane({ paneId, title, onClose, onBlocked, open }: FloatingPaneProps) {
   const registry = usePaneHosts();
   const [root, setRoot] = useState<HTMLElement | null>(null);
@@ -116,14 +133,35 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
   closeRef.current = onClose;
   const blockedRef = useRef(onBlocked);
   blockedRef.current = onBlocked;
+  const mountRef = useRef<FloatMount | null>(null);
+  /** Frames the child realm reported. Null while there is no realm to ask (§V469). */
+  const framesRef = useRef<number | null>(null);
 
   useEffect(() => {
     const opener = open ?? openBrowserPaneWindow;
     const name = `shaderloom-${paneId}`;
+    /*
+     * T774 — the sequence has to be traceable from BEFORE the first thing that can fail.
+     * With this line, "no console output at all" stops meaning four different things and
+     * starts meaning one: the float was never requested.
+     */
+    const requestedAt = performance.now();
+    emitFloatLine(
+      formatFloatNote(
+        paneId,
+        "requested",
+        `name=${name} opener=${open === undefined ? "browser" : "injected"} title=${title}`,
+      ),
+      null,
+    );
     const child = opener({ name, title: `${title} — Shaderloom` });
     if (child === null) {
       // A blocked popup must not leave the pane in limbo with nowhere to render — and
       // must not look like a button that does nothing either.
+      emitFloatLine(
+        formatFloatNote(paneId, "blocked", "the opener returned no window; docking the pane back"),
+        null,
+      );
       blockedRef.current?.(paneId);
       closeRef.current(paneId);
       return;
@@ -135,12 +173,38 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
     windowOwners.set(name, token);
 
     const doc = child.document;
+    const view = doc.defaultView;
+    // A window REUSED by name still carries the previous mount's root. Worth naming: it
+    // is the difference between "a fresh window came up empty" and "we are looking at a
+    // window somebody else already prepared".
+    const reused = doc.body?.querySelector("[data-pane-window-root]") !== null;
+    emitFloatLine(
+      formatFloatNote(
+        paneId,
+        "opened",
+        `url=${doc.URL} ready=${doc.readyState} realm=${view === null ? "none" : "yes"} reused=${reused ? "yes" : "no"} console=${view === null ? "parent-only" : "child+parent"}`,
+      ),
+      view,
+    );
+
     copyStyles(document, doc);
     doc.body.className = styles.body ?? "";
     const element = doc.createElement("div");
     element.className = styles.root ?? "";
+    element.dataset["paneWindowRoot"] = paneId;
     doc.body.appendChild(element);
+    mountRef.current = { child, prepared: doc, requestedAt };
+    framesRef.current = null;
     setRoot(element);
+
+    emitFloatLine(
+      formatFloatNote(
+        paneId,
+        "prepared",
+        `head=${doc.head.childElementCount} body=${doc.body.childElementCount} bodyClass=${doc.body.className || "none"} rootClass=${element.className || "none"}`,
+      ),
+      view,
+    );
 
     const closed = () => closeRef.current(paneId);
     child.addEventListener("pagehide", closed);
@@ -151,7 +215,33 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
     return () => {
       child.removeEventListener("pagehide", closed);
       window.removeEventListener("pagehide", closeChild);
+      // Named, because "the window opened and then went blank" and "a cleanup closed the
+      // window this mount was using" (§V334, B51) look identical from the outside.
+      emitFloatLine(
+        formatFloatNote(paneId, "closing", `name=${name} owned=${windowOwners.get(name) === token}`),
+        view,
+      );
+      if (mountRef.current?.child === child) mountRef.current = null;
       setRoot(null);
+      /*
+       * T774 — this mount's root must not outlive this mount.
+       *
+       * Found by the trace above, which printed `body=2` for the child document: under
+       * StrictMode (main.tsx) an effect runs mount → cleanup → mount, and `window.open`
+       * REUSES the window by NAME, so mount B appends a SECOND root beside mount A's and
+       * nothing ever removed the first. Both are `height: 100%` children of a `100vh`,
+       * `overflow: hidden` body (pane-window.module.css), so the EMPTY one fills the
+       * window and clips the live one out of sight — a popped-out window showing nothing,
+       * with the pane mounted perfectly inside it, and every canvas-level check passing.
+       *
+       * Deferred for exactly the reason the close below is: whoever adopts the pane next
+       * does it in a LAYOUT effect in this same commit, which runs before any microtask.
+       * By the time this runs the orphan is empty, and the emptiness check is what keeps
+       * it from ever taking live content with it.
+       */
+      queueMicrotask(() => {
+        if (element.childElementCount === 0) element.remove();
+      });
       // Deferred on purpose: the dock's outlet adopts the pane back in a LAYOUT effect
       // later in this same commit, which runs before any microtask. Closing the window
       // synchronously here would tear the child document down underneath that move and
@@ -169,6 +259,82 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
   useLayoutEffect(() => {
     if (root === null) return;
     adoptPaneHost(root, registry.container(paneId));
+  }, [paneId, registry, root]);
+
+  /*
+   * T774 — the child window reports on itself, to BOTH consoles, from mount onward.
+   *
+   * T739's viewer probe logs from the mounted pane, so it can only ever describe a mount
+   * that succeeded. The owner's re-report ("an empty about blank screen with nothing")
+   * describes one that did not, and against that fault T739's instrument is silent — which
+   * is why an absent `viewer[floated]:` line has been ambiguous between a stale tab, a
+   * failed mount, an unshipped instrument and a float that simply has not ticked yet.
+   *
+   * This effect runs after adoption, whether or not the pane has any canvas, and asks the
+   * CHILD REALM for a frame. A window rendering nothing never delivers one, so the pair of
+   * lines it produces — `child-frame` or `child-silent` — is the one fact the parent cannot
+   * derive on its own, and the fact that splits "the app is in there and looks blank" from
+   * "the app is not in there".
+   */
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (root === null || mount === null) return;
+    const view = mount.prepared.defaultView;
+    const host = registry.container(paneId);
+
+    const read = (): ChildMountReading =>
+      readChildMount({
+        child: mount.child,
+        prepared: mount.prepared,
+        root,
+        host,
+        childFrames: framesRef.current,
+        // The parent's clock throughout: a child window's `performance` has its own time
+        // origin, and an age measured across the two would be nonsense.
+        ageMs: performance.now() - mount.requestedAt,
+      });
+    const emit = (stage: FloatStage): ChildMountReading => {
+      const reading = read();
+      emitFloatLine(formatChildMount(paneId, stage, reading), view);
+      return reading;
+    };
+
+    emit("adopted");
+
+    const holder = view as (Window & { shaderloomPaneTrace?: () => ChildMountReading }) | null;
+    const trace = () => emit("alive");
+    if (holder !== null) holder.shaderloomPaneTrace = trace;
+    (window as Window & { shaderloomPaneTrace?: () => ChildMountReading }).shaderloomPaneTrace =
+      trace;
+
+    let frameId: number | null = null;
+    let deadline: number | null = null;
+    if (view !== null && typeof view.requestAnimationFrame === "function") {
+      framesRef.current = 0;
+      frameId = view.requestAnimationFrame(() => {
+        frameId = null;
+        framesRef.current = (framesRef.current ?? 0) + 1;
+        emit("child-frame");
+      });
+      // The PARENT's timer: a child that is not rendering may also not be running timers,
+      // and a deadline that needs the child to fire is no deadline at all.
+      deadline = window.setTimeout(() => {
+        deadline = null;
+        if (framesRef.current === 0) emit("child-silent");
+      }, CHILD_FRAME_DEADLINE_MS);
+    }
+
+    // Same cadence as T739's viewer probe, and unconditional for the same reason: an
+    // instrument that goes quiet once things look healthy hands silence its ambiguity back.
+    const timer = window.setInterval(() => emit("alive"), 2000);
+    return () => {
+      window.clearInterval(timer);
+      if (deadline !== null) window.clearTimeout(deadline);
+      if (frameId !== null) view?.cancelAnimationFrame?.(frameId);
+      if (holder?.shaderloomPaneTrace === trace) delete holder.shaderloomPaneTrace;
+      const parent = window as Window & { shaderloomPaneTrace?: () => ChildMountReading };
+      if (parent.shaderloomPaneTrace === trace) delete parent.shaderloomPaneTrace;
+    };
   }, [paneId, registry, root]);
 
   return null;
