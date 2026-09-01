@@ -10,6 +10,14 @@ swarm. It is one loop with the two halves of the catalogue on either side of it.
 **Every structure in this frame was deposited by an animal.** Turn the deposit off and the
 plate stays empty forever — measured below, and it is the whole reason this example exists.
 
+**It also means this file starts on a bare plate, and it is not going to be seeded** (T794).
+A frame-0 floor once made that look like a defect, because *a gallery thumbnail is frame 0*
+had been written down as though it were a law; seeding the plate would have bought a
+thumbnail by breaking the one sentence this example is for — the claim is testable at every
+frame, and a seed makes it false at all of them. The card is now sourced a second in, where
+this file reads 0.6838 and shows the lace it is about. Frame 0 stays a bare pasture, which
+is what it is.
+
 ## The thing that is new
 
 Every other example in this set is one-directional. E2 and E24 are fields that make a

@@ -6,7 +6,7 @@ import type { GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import { EXAMPLES_DIR } from "./catalogue.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
-import { PROBE_RESOLUTION, exampleFileNameOf, measure } from "./look-instrument.ts";
+import { CARD_FRAME, PROBE_RESOLUTION, exampleFileNameOf, measure } from "./look-instrument.ts";
 import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
 
 /**
@@ -37,8 +37,26 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  *     that alive.
  *  2. CONTRAST. The picture spans enough range to READ. E5 shipped with every pixel between
  *     0.00 and 0.12 — a frame that is technically a picture and visually a dark rectangle.
- *  3. FIRST FRAME. Frame 0 is not black. A gallery thumbnail is frame 0, and E8 shipped a
+ *  3. THE CARD. The frame an example is REPRESENTED by is not black. E8 shipped a
  *     completely black one because its history ring had nothing archived yet.
+ *
+ *     T794 MOVED WHICH FRAME THAT IS, from 0 to `CARD_FRAME` (60, one second in), and the
+ *     reason is that "a gallery thumbnail is frame 0" was a POLICY THIS REPO SET, not a
+ *     fact about anything. There is no card image in the codebase at all — the example
+ *     browser is text rows — so the card is whichever frame the instrument names, and
+ *     frame 0 is the single worst candidate: it is the one frame at which a simulation has
+ *     not started and a cache has nothing behind it. Held at frame 0, the rule pushed three
+ *     examples into seeding or declaring, and would have made E32 Pasture trade a
+ *     load-bearing claim ("turn the herd off and the frame stays empty forever", testable
+ *     at every frame) for a thumbnail. Sourced one second in, every shipped example passes
+ *     on its own merits and no declaration is needed by anyone.
+ *
+ *     FRAME 0 IS STILL MEASURED, and it is now answering the question it is actually good
+ *     for: WHAT A USER SEES ON OPEN. That is a milder thing than the card — a live document
+ *     starts at frame 0 and reaches the card frame in one second — so it is kept as a
+ *     §V643 baseline row (`f0max`), which reddens on any drift in either direction, rather
+ *     than as a floor. Warm starts that improve it (E9, E37, E41) are still worth having
+ *     and none of them was made pointless; they are just no longer COMPULSORY.
  *
  * They are separate assertions because they fail separately and for different reasons, and
  * an example can be honestly exempt from one and not the others (§V346).
@@ -142,18 +160,43 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  * and clears every live example, the nearest being E7 at 0.3376. Percentiles rather than
  * min and max, because one stray bright texel is not contrast.
  *
- * FIRST_FRAME_FLOOR is 0.02: "something is visible", not "the frame is bright". Every
- * example that renders anything at all on frame 0 measures at least 0.34.
+ * CARD_FLOOR is 0.02: "something is visible", not "the frame is bright".
+ *
+ * T795 — AND THE SENTENCE THAT USED TO SIT HERE WAS FALSE, which is why it is being
+ * replaced rather than edited. It read: *every example that renders anything at all on
+ * frame 0 measures at least 0.34*. That was true when the floor was set, and the floor was
+ * sized for the enormous empty gap it described — 0.02 against a population starting at
+ * 0.34, seventeen times clear. Three examples then FILLED THAT GAP without anything going
+ * red, because a floor cannot see a value that clears it: E24 Audio-RD 0.0000 (declared),
+ * E32 Pasture 0.0344 (1.7× the floor) and E41 Cinder 0.0687 (3.4×). §V768 is exactly this
+ * — a value sitting within a small multiple of a floor is a SUSPECT, not a pass — and
+ * §V766 is the other half: the drift happened in PROSE NOBODY EDITED, so nothing could
+ * have caught it. §T785 found all three by looking at frames.
+ *
+ * RE-DERIVED FROM THE CURRENT POPULATION, at the frame the floor now reads (§T794 moved it
+ * to `CARD_FRAME`). Measured over all 37 shipped examples on Dawn at this resolution:
+ *
+ *   the quietest card is E43 Splice at 0.1651, then E12 Fluid 0.3103, E10 Instanced
+ *   Torus 0.3710, and everything else above that, up to 1.0000 for eleven of them.
+ *   Nothing is black. E24 — the only example ever declared out of this property — reads
+ *   0.9048, and E32 Pasture, the survivor of the frame-0 cluster, reads 0.6838.
+ *
+ * So 0.02 is kept, and it is kept for the reason the original sentence gave rather than by
+ * inheritance: the gap is real again. Eight times below the quietest shipped card is a
+ * floor that detects a card which is BLACK, and it is honest to say that is all it detects
+ * — a merely dim card would have to be under a fiftieth of the catalogue's brightest to
+ * trip it, and §V768 says the way to catch THAT is to read a value against the population
+ * and treat a small multiple as a suspect, which is what the table above is for.
  */
 const LIVENESS_FLOOR = 0.002;
 const CONTRAST_FLOOR = 0.3;
-const FIRST_FRAME_FLOOR = 0.02;
+const CARD_FLOOR = 0.02;
 
 interface Exemption {
   /** Which properties this example is excused from, each with its own reason. */
   readonly liveness?: string;
   readonly contrast?: string;
-  readonly firstFrame?: string;
+  readonly card?: string;
   /**
    * A phrase that must appear in the example's own `.md`. This is (c): the reader of the
    * gallery gets told, in prose, why the thing they are looking at behaves this way.
@@ -179,14 +222,22 @@ const DECLARED: Readonly<Record<string, Exemption>> = {
       "initial field and nothing else. One touch and the range opens.",
     evidence: "Point at it and it stirs",
   },
-  "E24-Audio-Reaction-Diffusion.loom.json": {
-    firstFrame:
-      "A Gray-Scott simulation starts from a CLEARED state: the feedback pair's alpha is " +
-      "the seeded-start flag, so frame 0 is by construction the moment before any chemistry " +
-      "exists. The picture arrives within a few frames. Worth knowing rather than worth " +
-      "hiding, because a gallery thumbnail is frame 0 — filed for the E24 track (T518).",
-    evidence: "opens on a black frame",
-  },
+  /*
+   * T794 — E24's DECLARATION IS GONE, and deleting it is the point rather than a tidy-up.
+   *
+   * It read: "a Gray-Scott simulation starts from a CLEARED state ... worth knowing rather
+   * than worth hiding, because a gallery thumbnail is frame 0". Every word of the physics
+   * is still true and still written down in the example's own `.md`. What was NOT a
+   * property of the example is the last clause: the card policy. E24 was never exempt from
+   * "show your subject" — it was exempt from being judged at the one frame at which it
+   * cannot have one, and the two look identical from inside a declaration.
+   *
+   * §V769 warned about exactly this shape — "a declaration is for a DELIBERATE choice, not
+   * a way to retire a recurring defect" — and the recurrence proved the diagnosis: the same
+   * reasoning was re-derived independently by E32 and E41, neither of which declared, and
+   * both shipped the defect instead. At `CARD_FRAME` E24 measures 0.9048, which is a
+   * colony on a plate: it passes on its own merits with nothing excused.
+   */
 };
 
 const settingsFor = (width: number, height: number): ProjectSettings => ({
@@ -239,6 +290,26 @@ function stillFixture(): GraphDocument {
       e1: { id: "e1", source: { nodeId: "c", portId: "out" }, target: { nodeId: "l", portId: "input" } },
       e2: { id: "e2", source: { nodeId: "l", portId: "out" }, target: { nodeId: "o", portId: "input" } },
     },
+  } as unknown as GraphDocument;
+}
+
+/**
+ * T794/§V461 — A CARD THAT IS BLACK AT THE CARD FRAME, so the card floor is provably
+ * capable of failing.
+ *
+ * This mattered more once the floor moved off frame 0. The historical E8 fixture asserted
+ * against `CARD_FLOOR` above is black at frame ZERO — it is the record of what E8 shipped —
+ * and a slit-scan fills in, so it would sail past a floor read a second later. A gate whose
+ * only red-verify is at a frame it no longer reads is a gate nobody has checked.
+ *
+ * The same still fixture with the Level's brightness at 0: black at frame 0, black at
+ * frame 60, black for ever, and no clock anywhere in it.
+ */
+function blackFixture(): GraphDocument {
+  const still = stillFixture();
+  return {
+    ...still,
+    nodes: { ...still.nodes, l: nodeOf("l", "level", { brightness: 0 }) },
   } as unknown as GraphDocument;
 }
 
@@ -398,8 +469,28 @@ describe("T521 — the measurement can tell moving from still, before it judges 
 
     const slitScan = await measure(historicalSlitScan(), fixtureSettings, "out");
     expect(slitScan.range).toBeLessThan(CONTRAST_FLOOR);
-    // And its first frame was black, which is the separate property (§V346).
-    expect(slitScan.firstFrameMax).toBeLessThan(FIRST_FRAME_FLOOR);
+    // And its FIRST frame was black, which is the separate property (§V346). Kept as the
+    // historical record of what E8 shipped; it is no longer what the card floor reads,
+    // because T794 moved the card to frame 60 — see the black fixture below for the
+    // §V461 proof that the card floor itself can still fail.
+    expect(slitScan.firstFrameMax).toBeLessThan(CARD_FLOOR);
+  }, 180_000);
+
+  /**
+   * §V461 for the property T794 moved: the CARD floor, read at `CARD_FRAME`, must be able
+   * to redden. A frame-0-black example no longer trips it (that is the whole point), so the
+   * proof has to be a picture that is black a second in as well.
+   */
+  it("fails the CARD floor on a graph that is black at the card frame", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const black = await measure(blackFixture(), fixtureSettings, "o");
+    expect(black.cardMax).toBeLessThan(CARD_FLOOR);
+    // ...and the LIVE catalogue's quietest card clears it by a wide margin, which is the
+    // other half of §V461: a floor that everything fails is not a floor either.
+    const quietest = await measure(stillFixture(), fixtureSettings, "o");
+    expect(quietest.cardMax).toBeGreaterThan(CARD_FLOOR);
   }, 180_000);
 });
 
@@ -445,6 +536,8 @@ describe("T521 — every shipped example moves, and you can see it", () => {
         if (typeof kind !== "string" || !kind.endsWith("4d")) continue;
         // A still noise never leaves frame 0, so being on the plane costs it nothing:
         // what this catches is the frame that is unrepresentative of the ones AFTER it.
+        // T794 moved the CARD off frame 0; this gate stays, because frame 0 is still the
+        // frame a user opens on and a flat one is still a worse first second.
         if (parameters["speed"] === 0) continue;
         if (parameters["t4d"] !== 0) continue;
         offenders.push(`${document.name} / ${node.label ?? node.id}`);
@@ -453,8 +546,8 @@ describe("T521 — every shipped example moves, and you can see it", () => {
     expect(
       offenders,
       `${offenders.length} animated 4D noise node(s) sit at t4d: 0, where amplitude ` +
-        `collapses — frame 0 is the gallery card and would be flatter than every frame ` +
-        `after it (T535/T786). Use an off-lattice value such as 0.37.`,
+        `collapses — frame 0 is what a user OPENS on and would be flatter than every ` +
+        `frame after it (T535/T786). Use an off-lattice value such as 0.37.`,
     ).toEqual([]);
   });
 
@@ -489,7 +582,7 @@ describe("T521 — every shipped example moves, and you can see it", () => {
   for (const entry of shipped) {
     const fileName = exampleFileNameOf(entry.document.name);
     it(
-      `${entry.document.name} moves, reads, and opens on something`,
+      `${entry.document.name} moves, reads, and has a card`,
       async () => {
         const probe = await probeDawn();
         if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
@@ -522,12 +615,13 @@ describe("T521 — every shipped example moves, and you can see it", () => {
             `its 0.1st and 99.9th percentiles — too little to read as a picture.`,
         );
         assertProperty(
-          "firstFrame",
-          reading.firstFrameMax,
-          FIRST_FRAME_FLOOR,
-          declared?.firstFrame,
-          `${entry.document.name} opens on a black frame (brightest pixel ` +
-            `${reading.firstFrameMax.toFixed(4)}), and frame 0 is what the gallery shows.`,
+          "card",
+          reading.cardMax,
+          CARD_FLOOR,
+          declared?.card,
+          `${entry.document.name}'s card frame is black (brightest pixel ` +
+            `${reading.cardMax.toFixed(4)} at frame ${CARD_FRAME}). The card is sourced a ` +
+            `second in, so this is not a warm-up: the example has no picture to show.`,
         );
 
         /**

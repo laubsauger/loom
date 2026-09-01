@@ -30,10 +30,18 @@ settled by about frame twelve, and the colony takes a couple of seconds more to 
 disc. Two causes for the black, both by construction rather than defect: the
 feedback pair's alpha channel is the seeded-start flag, so frame 0 is the moment before
 any chemistry exists; and the RGB delay's deepest cache ring is seven frames long, so
-until frame seven one colour channel is still reading an empty ring. Worth stating rather
-than hiding, because a gallery thumbnail is frame 0 — and T521's liveness gate holds a
-declared exemption for exactly this, which is why the sentence has to live here where a
-reader will find it.
+until frame seven one colour channel is still reading an empty ring.
+
+**This file used to carry the only declared exemption from T521's frame-0 rule, and T794
+deleted it** — not because the physics changed but because the rule did. The sentence that
+justified the exemption was *"a gallery thumbnail is frame 0"*, and that was a policy this
+repo set rather than a fact about anything: there is no card image in the codebase, so the
+card is whichever frame the look instrument names. It now names frame 60, where this file
+measures 0.9048 — a colony on a plate — so it passes on its own merits with nothing
+excused. Two other examples had independently re-derived the same exemption and shipped a
+black card instead of declaring one, which is what made it a policy problem rather than an
+E24 problem. The black opening stays, and stays written down here, because what a user sees
+for the first fifth of a second is still worth knowing.
 
 ## Graph
 
@@ -374,8 +382,9 @@ lens motion: glass that moves disperses, and the fringing follows the warp.
 
 All three noises run on `absTime` (T497) and start at `t4d: 0.37` rather than 0 — zero sits
 on a lattice plane of the 4D noise where amplitude collapses, which makes frame 0
-systematically flatter than the piece it is supposed to represent, and frame 0 is what a
-gallery thumbnail shows (T535).
+systematically flatter than the piece it is supposed to represent, and frame 0 is the frame
+a user opens on (T535; the card itself moved to frame 60 under T794, but a flat first
+second is still a worse first second).
 
 ## The mappings, and why each is shaped the way it is
 

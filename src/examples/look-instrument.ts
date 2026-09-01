@@ -22,6 +22,24 @@ export const CAPTURE = [0, 60, 180] as const;
 export const LAST_CAPTURE = 180;
 
 /**
+ * T794 — THE FRAME THE CARD IS SOURCED FROM, and it is a POLICY rather than a law.
+ *
+ * "A gallery thumbnail is frame 0" was written down once, in E24's own declaration, and
+ * then generalised into §V769 without anyone asking whether it had to be true. It does not:
+ * there is no card image anywhere in this repo, so the card is whatever frame this file
+ * names, and frame 0 is the single worst candidate — it is the one frame at which a
+ * simulation has not started, a cache has nothing behind it, and a warm start is the only
+ * remedy. Three examples were pushed into seeding or declaring by it, and one of them
+ * (E32 Pasture) would have had to trade a load-bearing claim for a thumbnail.
+ *
+ * ONE SECOND IN. Already captured — it is the early half of the motion pair in both
+ * windows — so the card costs no extra render. §T785's contact sheets read frames 0, 60 and
+ * 180 side by side for the whole catalogue and found 60 and 180 both representative; 60 is
+ * the earlier of the two, which keeps the card close to what a viewer sees on open.
+ */
+export const CARD_FRAME = 60;
+
+/**
  * T776 — THE ARRANGED WINDOW, and it exists because §V760 says a fixture and the gate that
  * renders it are ONE INSTRUMENT.
  *
@@ -52,8 +70,26 @@ export interface Reading {
   readonly motion: number;
   /** p999 − p001 of the last frame's linear luma. */
   readonly range: number;
-  /** The brightest linear luma anywhere in frame 0. */
+  /**
+   * The brightest linear luma anywhere in frame 0 — WHAT A USER MEETS ON OPEN, and since
+   * T794 that is all it is. It stays a §V643 baseline row (`f0max`) so a regression to a
+   * black opening still reddens as drift; it is no longer a FLOOR, because a document that
+   * is dark for the first second while a simulation fills is a legitimate state and three
+   * shipped examples were in it deliberately. What used to justify the floor — "frame 0 is
+   * the gallery card" — was a POLICY, and T794 changed the policy rather than the files.
+   */
   readonly firstFrameMax: number;
+  /**
+   * T794 — THE CARD. The brightest linear luma anywhere in `CARD_FRAME`, which is the
+   * number that now carries "an example must show its subject".
+   *
+   * There is no thumbnail image in this codebase: the example browser
+   * (`src/editor/library/example-library.tsx`) is text rows, and "the gallery card" is a
+   * design contract asserted here and nowhere else. So the card is whichever frame this
+   * instrument says it is, and choosing frame 0 was never forced — it was inherited from
+   * E24's own note and never re-examined (§V769/§T786).
+   */
+  readonly cardMax: number;
   /**
    * T776 — mean |Δ| linear luma between a FULL bar (frame 180) and the arrangement's QUIET
    * bar (frame 440). Present only for examples driven by `audioPattern`.
@@ -125,6 +161,8 @@ export async function measure(
   };
 
   const first = lumaOf(0);
+  /* Capture index 1 is frame 60 in BOTH windows — it is the card frame as well as the
+     early half of the motion pair, so `cardMax` costs no extra render. */
   const early = lumaOf(1);
   const late = lumaOf(2);
 
@@ -137,6 +175,8 @@ export async function measure(
     sorted[Math.min(sorted.length - 1, Math.floor(quantile * sorted.length))] ?? 0;
   let firstFrameMax = 0;
   for (const value of first) if (value > firstFrameMax) firstFrameMax = value;
+  let cardMax = 0;
+  for (const value of early) if (value > cardMax) cardMax = value;
 
   /* Indices 0/1/2 are unchanged by the extra capture, so motion, range and f0max read the
      same frames they always did and no existing baseline moves. */
@@ -154,6 +194,7 @@ export async function measure(
     motion: sum / Math.max(1, late.length),
     range: at(0.999) - at(0.001),
     firstFrameMax,
+    cardMax,
     ...(phrase === undefined ? {} : { phrase }),
   };
 }

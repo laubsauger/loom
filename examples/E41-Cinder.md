@@ -75,6 +75,11 @@ ever visible was born from measured motion* — and it paid for that with a blac
 card: frames 0 and 1 were a featureless grey plate (output max luma 0.279, against 0.999
 from frame 2 on), and **a gallery thumbnail is frame 0** (§V769).
 
+**T794 has since moved the card to frame 60**, so this warm start is no longer *compulsory*
+— and it is kept anyway, because the thing it fixes is real on its own terms: the first two
+frames a viewer sees when they open this file used to be a grey plate. What changed is the
+justification, not the picture.
+
 E9 Ember had already made this trade and nobody generalised it. So Cinder now takes it too:
 `ctx.firstRun` seeds **400 motes** — sized from the measurement, not chosen, because the
 moving cloud settles at 480–500 live points of which 96 are scouts — and the file opens on
