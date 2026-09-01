@@ -271,3 +271,54 @@ describe("B122 — the plan reserves exactly what each generated block declares"
     expect(structMembers(hook?.shader ?? "", "kernelFrame")).not.toContain("firstRun");
   });
 });
+
+describe("the field input (T744)", () => {
+  const FIELD_KERNEL =
+    "fn process(p: Point, ctx: PointCtx) -> Point { var q = p; q.spawnCount = select(0u, 1u, fieldAt(p.position).r > 0.5); return q; }";
+
+  it("binds the field texture to the kernel pass when wired — the one existing route", () => {
+    const result = pointKernelAdvancedNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        inputs: ["field"],
+        parameters: { capacity: 256, kernel: FIELD_KERNEL },
+      }),
+    );
+    expect(result.diagnostics ?? []).toEqual([]);
+    const kernel = (result.passes as PassShape[]).find((pass) => pass.id === "sim:kernel") as
+      | (PassShape & { textures?: ReadonlyArray<{ binding: string }> })
+      | undefined;
+    expect(kernel?.textures?.map((texture) => texture.binding)).toEqual(["fieldTexture"]);
+  });
+
+  it("refuses fieldAt with nothing wired, by the same name the plain kernel uses (§V349)", () => {
+    const result = pointKernelAdvancedNode.compile(
+      compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256, kernel: FIELD_KERNEL } }),
+    );
+    expect(result.passes).toEqual([]);
+    expect((result.diagnostics ?? []).map((d) => d.message).join(" ")).toContain(
+      "nothing is wired to the field input",
+    );
+  });
+
+  it("refuses fieldAt in the SPAWN HOOK — the kernel samples, the child inherits", () => {
+    const result = pointKernelAdvancedNode.compile(
+      compileContext({
+        nodeId: "sim",
+        outputs: [],
+        inputs: ["field"],
+        parameters: {
+          capacity: 256,
+          kernel: FIELD_KERNEL,
+          spawn:
+            "fn spawn(child: Point, ctx: PointCtx) -> Point { var q = child; q.position = fieldAt(q.position).xyz; return q; }",
+        },
+      }),
+    );
+    expect(result.passes).toEqual([]);
+    expect((result.diagnostics ?? []).map((d) => d.message).join(" ")).toContain(
+      "the field input reaches the kernel only",
+    );
+  });
+});

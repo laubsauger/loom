@@ -16,6 +16,7 @@ import {
 } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL } from "../shaders/points.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
+import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readNumber } from "./parameter-readers.ts";
 import {
   parseAttributes,
@@ -67,7 +68,21 @@ export const pointKernelAdvancedNode: NodeDefinition = {
   description:
     "A per-point kernel that may kill points — survivors are compacted deterministically and the live count stays on the GPU.",
   tags: ["points", "particles", "compute", "kernel", "lifecycle", "advanced"],
-  inputs: [],
+  inputs: [
+    {
+      /* T744 — the input this node never had, found by E41: "particles from a video"
+         needs a SPAWN decision that can read a texture, and this node took no inputs at
+         all, forcing the recycling workaround. Same port, same fieldAt mapping, same
+         codegen path as the plain kernel's field (§V349 and the T743 boundary: ONE
+         texture-into-points route, never a second). */
+      id: "field",
+      label: "Field",
+      optional: true,
+      type: RGBA_TEXTURE,
+      description:
+        "Optional texture the kernel samples with fieldAt(position) — clip-space xy mapped to uv, exactly as Texture To Attribute maps it. Read with textureLoad, so data fields work on Tier B (§V57). The kernel reads it; the spawn hook does not (a child arrives as its parent's copy — stash what it needs in an attribute).",
+    },
+  ],
   outputs: [
     {
       id: "out",
@@ -104,7 +119,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point, and write \"timeline-anchored\" in a comment when you do. ctx.pointer (vec4f: x, y, buttons) and ctx.value1..value4 (this node's drivable Value parameters, T479) are available to a kernel that names them. pointRand(pointId, salt) is available.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point, and write \"timeline-anchored\" in a comment when you do. ctx.pointer (vec4f: x, y, buttons) and ctx.value1..value4 (this node's drivable Value parameters, T479) are available to a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T744) — which is what lets a kernel SPAWN where a video moves.",
     },
     group: {
       type: "code",
@@ -131,7 +146,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,
   compile(context): CompiledNodeDescription {
-    const { nodeId, parameters } = readCompileInputs(context);
+    const { nodeId, parameters, inputs } = readCompileInputs(context);
     const capacity = Math.max(1, Math.round(readNumber(parameters, "capacity", 4096)));
 
     const parsed = parseAttributes(parameters["attributes"]);
@@ -200,6 +215,9 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
     const names = attributes.map((attribute) => attribute.name);
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
+    /* T744: the SAME field path the plain kernel rides — one route into the point
+       pipeline, one fieldAt, one refusal message (§V349). */
+    const fieldTexture = inputs["field"];
     const module = generateKernelModule({
       attributes,
       reads: names,
@@ -207,6 +225,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       kernel: kernelSource,
       lifecycle: { flagsAttribute: FLAGS },
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
+      ...(fieldTexture === undefined ? {} : { field: true }),
     });
     if (!module.ok) {
       return {
@@ -335,6 +354,11 @@ export const pointKernelAdvancedNode: NodeDefinition = {
                 half: binding.role === "in" ? ("read" as const) : ("write" as const),
               },
         ),
+        /* T744: a texture binding, not a storage buffer — the §V588 attribute budget is
+           untouched, which is why this input was always affordable. */
+        ...(module.usesField && fieldTexture !== undefined
+          ? { textures: [{ binding: "fieldTexture", resourceId: fieldTexture.resource, sampled: "unfiltered" as const }] }
+          : {}),
         // T367: the pointer entry exists exactly when the generated block declares it —
         // the backend fills it per frame from the shared block's own value (§V182).
         uniforms: {

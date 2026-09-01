@@ -867,6 +867,17 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
         "born and killed, so there are no fixed cols×rows to index (T472).",
     );
   }
+  /* T744: the field reaches the KERNEL, deliberately not the hook — the child arrives
+     as its parent's copy, so the kernel (which just sampled the field to decide the
+     birth) stashes whatever the child needs in an attribute and the copy pass carries
+     it. A hook binding the texture would be a second sampling site for one decision. */
+  if (FIELD_REFERENCE.test(request.hook)) {
+    errors.push(
+      "spawn hook calls fieldAt(...), but the field input reaches the kernel only (T744) — " +
+        "sample it in the kernel that decides the birth and stash what the child needs in an " +
+        "attribute; the child arrives as its parent's copy.",
+    );
+  }
   /* T479: the hook is a second pass on the SAME node, so it reaches the same four slots —
      which is what makes "spawn with the speed the LFO says" expressible at all. */
   const hookValueSlots = referencedValueSlots(request.hook);
