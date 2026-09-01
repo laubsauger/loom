@@ -46,7 +46,6 @@ describe("classifyEdit (T31, §V5)", () => {
 
     expect(decision.work).toBe("uniform-update");
     expect(decision.nodes).toEqual(["gen"]);
-    expect(decision.recreateTargets).toBe(false);
     expect(decision.resetFeedback).toBe(false);
   });
 
@@ -61,7 +60,6 @@ describe("classifyEdit (T31, §V5)", () => {
 
     expect(decision.work).toBe("recompile-region");
     expect(decision.nodes).toEqual(["gen", "out", "wgsl"]);
-    expect(decision.recreateTargets).toBe(true);
   });
 
   it("keeps moving and selecting out of the GPU entirely", () => {
@@ -108,7 +106,6 @@ describe("classifyEdit (T31, §V5)", () => {
 
     const settings = classifyEdit({ kind: "projectSettings" }, context);
     expect(settings.work).toBe("repropagate");
-    expect(settings.recreateTargets).toBe(true);
     expect(settings.nodes).toEqual(["gen", "out", "wgsl"]);
     // T552: as expensive as these are, none of them crosses a DOCUMENT boundary —
     // textures reset, but running simulations and the transport must survive a

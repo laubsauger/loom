@@ -219,7 +219,6 @@ const NOTHING_CHANGED: RecompileDecision = {
   work: "editor-only",
   reason: "The document did not change.",
   nodes: [],
-  recreateTargets: false,
   resetFeedback: false,
 };
 
@@ -255,7 +254,6 @@ function documentReplaced(next: GraphDocument): RecompileDecision {
       "A different document is open. A load is a discontinuity, not an edit: nothing from " +
       "the previous document may be reused, however its node ids compare (T519, B106).",
     nodes: Object.keys(next.nodes).sort() as NodeId[],
-    recreateTargets: true,
     resetFeedback: true,
     documentBoundary: true,
   };

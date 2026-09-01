@@ -364,7 +364,11 @@ export function useGraphCompile(
   // Cache for `project.compile`, keyed by the revision it was produced from. Only a
   // compile that actually ran is cached: "no device report" must stay a live answer, not
   // a remembered empty one.
-  const cacheRef = useRef<{ revision: number; view: CompileResultView } | null>(null);
+  /* T764 (§B140): keyed by DOCUMENT and revision — every shipped example is revision 1,
+     so a revision-only key was structurally blind across any pair of loads and
+     `project.compile` could answer with the previous document's plan (the owner's
+     stale-listings symptom from a third seam). Same correction as T726's pin. */
+  const cacheRef = useRef<{ documentIdentity: string; revision: number; view: CompileResultView } | null>(null);
 
   /**
    * The channel resolver, for BOTH compiles (T238, T259).
@@ -560,7 +564,7 @@ export function useGraphCompile(
     // content is exactly what it was, so there is nothing to compile. Reusing the previous
     // plan is what makes "an fps edit does not recompile" true rather than intended.
     if (sameInputs && previous !== null && change !== null && change.work === "editor-only") {
-      cacheRef.current = { revision: graph.revision, view: previous.view };
+      cacheRef.current = { documentIdentity: runtime.documentIdentity, revision: graph.revision, view: previous.view };
       lastCompile.current = { ...previous, graph };
       return {
         graph,
@@ -590,7 +594,7 @@ export function useGraphCompile(
     // labels here, once — never in the 90-odd sites that mint the messages. The
     // compiled plan's own diagnostics stay raw: agents address nodes by id.
     const diagnostics = [...humanizeDiagnostics(rawDiagnostics, graph)];
-    cacheRef.current = { revision: graph.revision, view: { compiled, diagnostics } };
+    cacheRef.current = { documentIdentity: runtime.documentIdentity, revision: graph.revision, view: { compiled, diagnostics } };
     lastCompile.current = {
       graph,
       documentIdentity: runtime.documentIdentity,
@@ -632,7 +636,13 @@ export function useGraphCompile(
   const compileNow = useCallback((): CompileResultView => {
     const current = runtime.bus.store.getGraph();
     const cached = cacheRef.current;
-    if (cached !== null && cached.revision === current.revision) return cached.view;
+    if (
+      cached !== null &&
+      cached.documentIdentity === runtime.documentIdentity &&
+      cached.revision === current.revision
+    ) {
+      return cached.view;
+    }
     const capability = capabilitiesRef.current;
     if (capability === null) {
       return { compiled: null, diagnostics: [NO_DEVICE_DIAGNOSTIC] };
@@ -641,7 +651,7 @@ export function useGraphCompile(
     // document `current` was just read from — so this compile and the rendered one are
     // built from one flattening even when React has not caught up yet.
     const view = compileSafely(current, runtime.flattened.current(), runtime, capability);
-    cacheRef.current = { revision: current.revision, view };
+    cacheRef.current = { documentIdentity: runtime.documentIdentity, revision: current.revision, view };
     return view;
   }, [runtime]);
 

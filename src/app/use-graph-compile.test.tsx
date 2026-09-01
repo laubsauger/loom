@@ -193,3 +193,52 @@ describe("useGraphCompile — a component's internal animation opens the gate (T
     runtime.dispose();
   });
 });
+
+describe("project.compile answers for THIS document (T764, §B140)", () => {
+  it("does not serve document A's plan to document B when their revisions collide", async () => {
+    /* Every shipped example is revision 1, so a revision-only cache key is
+       structurally blind across ANY pair of loads — and `project.compile`'s report
+       carries an `outputs` listing, which is the owner's stale-listings symptom
+       arriving from this third seam. Two runtimes are built to the SAME revision with
+       DIFFERENT content; the hook (and with it compileNow's cache) survives the swap
+       exactly as it does across adoptDocument, which remounts nothing. */
+    const runtimeA = newRuntime();
+    await act(async () => {
+      await seed(runtimeA, [{ op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } }]);
+    });
+    const runtimeB = newRuntime();
+    await act(async () => {
+      await seed(runtimeB, [{ op: "addNode", ref: "$ramp", type: "ramp", position: { x: 0, y: 0 } }]);
+    });
+    expect(runtimeA.bus.store.getRevision()).toBe(runtimeB.bus.store.getRevision());
+    expect(runtimeA.documentIdentity).not.toBe(runtimeB.documentIdentity);
+
+    /* The window is DEVICE RECOVERY: the memo's null-capability branch returns early
+       without touching the cache, so a load during recovery leaves document A's entry
+       standing — and with a revision-only key, B's first project.compile answered with
+       A's plan and its outputs listing. (A healthy-device swap is safe by ordering:
+       the memo recompiles during render, before the command can run — the first
+       version of this test proved itself decorative against exactly that, §V461.) */
+    const { rerender } = renderHook(
+      ({ runtime, capabilities }: { runtime: AppRuntime; capabilities: BackendCapabilities | null }) =>
+        useGraphCompile(runtime, capabilities),
+      { initialProps: { runtime: runtimeA, capabilities: CAPABILITIES as BackendCapabilities | null } },
+    );
+    // Prime the cache from document A through the command itself.
+    const reportA = (await runtimeA.bus.execute("project.compile", {}, runtimeA.invocation))
+      .output as { outputs: ReadonlyArray<{ nodeId: string }> };
+    const nodeA = Object.keys(runtimeA.bus.store.getGraph().nodes)[0]!;
+    expect(reportA.outputs.some((output) => output.nodeId === nodeA)).toBe(true);
+
+    // The device drops, and the load lands while it is down.
+    rerender({ runtime: runtimeB, capabilities: null });
+    const reportB = (await runtimeB.bus.execute("project.compile", {}, runtimeB.invocation))
+      .output as { compiled: boolean; outputs: ReadonlyArray<{ nodeId: string }> };
+    // Honest answer: no device, no plan — NEVER document A's plan wearing B's name.
+    expect(reportB.outputs.some((output) => output.nodeId === nodeA)).toBe(false);
+    expect(reportB.compiled).toBe(false);
+
+    runtimeA.dispose();
+    runtimeB.dispose();
+  });
+});

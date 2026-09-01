@@ -49,7 +49,6 @@ export interface RecompileDecision {
   readonly reason: string;
   /** Nodes whose compilation may have changed. Empty when nothing GPU-side is affected. */
   readonly nodes: ReadonlyArray<NodeId>;
-  readonly recreateTargets: boolean;
   /** True when temporal history can no longer be reused (§V22). */
   readonly resetFeedback: boolean;
   /**
@@ -98,7 +97,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "editor-only",
         reason: "Layout is presentation, not execution (§V1).",
         nodes: [],
-        recreateTargets: false,
         resetFeedback: false,
       };
 
@@ -107,7 +105,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "editor-only",
         reason: "Selection lives in the editor and never reaches the plan.",
         nodes: [],
-        recreateTargets: false,
         resetFeedback: false,
       };
 
@@ -119,7 +116,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
           work: "recompile-region",
           reason: `"${structural.join(", ")}" changes which nodes render.`,
           nodes: downstreamOf(context.graph, [edit.nodeId]),
-          recreateTargets: false,
           resetFeedback: false,
         };
       }
@@ -128,7 +124,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
           work: "preview-plan",
           reason: "Only visible, pinned and switched-on previews are scheduled (§V28, §V297).",
           nodes: [edit.nodeId],
-          recreateTargets: false,
           resetFeedback: false,
         };
       }
@@ -136,7 +131,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "editor-only",
         reason: "Node chrome does not affect the plan.",
         nodes: [],
-        recreateTargets: false,
         resetFeedback: false,
       };
     }
@@ -154,7 +148,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
           work: "recompile-region",
           reason: `Parameter(s) ${compileTime.map((key) => `"${key}"`).join(", ")} are compile-time and change shader structure.`,
           nodes: downstreamOf(context.graph, [edit.nodeId]),
-          recreateTargets: false,
           resetFeedback: false,
         };
       }
@@ -162,7 +155,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "uniform-update",
         reason: "A uniform value changed; the pipeline is untouched (§V5).",
         nodes: [edit.nodeId],
-        recreateTargets: false,
         resetFeedback: false,
       };
     }
@@ -172,7 +164,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "recompile-region",
         reason: "The graph shape changed; the affected region must be recompiled.",
         nodes: downstreamOf(context.graph, edit.nodeIds),
-        recreateTargets: true,
         resetFeedback: false,
       };
 
@@ -182,14 +173,12 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
             work: "recompile-region",
             reason: "The shader's interface changed, so consumers may bind differently.",
             nodes: downstreamOf(context.graph, [edit.nodeId]),
-            recreateTargets: false,
             resetFeedback: true,
           }
         : {
             work: "recompile-shader",
             reason: "Only this shader's body changed; downstream bindings are unaffected.",
             nodes: [edit.nodeId],
-            recreateTargets: false,
             resetFeedback: false,
           };
 
@@ -198,7 +187,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "repropagate",
         reason: "Resolution is resolved at compile/resize and propagates downstream (§V21, §V50).",
         nodes: downstreamOf(context.graph, [edit.nodeId]),
-        recreateTargets: true,
         resetFeedback: true,
       };
 
@@ -207,7 +195,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "repropagate",
         reason: "Format is resolved at compile and propagates downstream (§V21, §V51).",
         nodes: downstreamOf(context.graph, [edit.nodeId]),
-        recreateTargets: true,
         resetFeedback: true,
       };
 
@@ -216,7 +203,6 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
         work: "repropagate",
         reason: "Project resolution, working format or limits changed.",
         nodes: Object.keys(context.graph.nodes).sort(),
-        recreateTargets: true,
         resetFeedback: true,
       };
   }

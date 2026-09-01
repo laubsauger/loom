@@ -282,7 +282,11 @@ describe("T519 — a load is a discontinuity, not a diff (B106)", () => {
     expect(isValuesOnly(decision)).toBe(false);
     // The two flags the pixels actually depend on. `resetFeedback` is the one the old
     // code could not produce for a load at any strength.
-    expect(decision.recreateTargets).toBe(true);
+    /* T764 (§B142): `recreateTargets` is gone — it was produced at ten sites and read
+       at zero, so "a load recreates every target" was an unenforced property. The
+       enforcement lives in the backend's boundary rite now (unscoped
+       resetTemporalHistory with buffers clears PLAIN TARGETS too), gated in
+       reset-boundary tests rather than by a flag nobody consumed. */
     expect(decision.resetFeedback).toBe(true);
     // T552: and the third flag, the one only a LOAD sets. `resetFeedback` alone is
     // what a resolution edit produces — textures reset, simulations keep running. A

@@ -602,8 +602,24 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             const ring = rings.get(id);
             return ring === undefined ? [] : [ring];
           });
+    /* T764 (§B142) — the BOUNDARY RITE clears PLAIN TARGETS too. `recreateTargets` was
+       produced at ten sites and read at zero: "a load recreates every target" was an
+       unenforced property, and the carry-over diff reuses same-id same-shape textures —
+       which two documents share the moment they share node names ("out" is in every
+       shipped example). Ping-pongs, rings and buffers were already cleared here; a
+       plain target whose first write is not a clear (an accumulating draw) was the one
+       carrier left, showing the previous document's pixels. Enforced HERE, on the same
+       unscoped-with-buffers signal the load path already sends, rather than as a flag
+       someone must remember to read (§V205: an unread decision is worse than none).
+       External textures are deliberately NOT cleared: they lack render-attachment
+       usage, and the media pipeline re-registers per document — the stated behaviour
+       is "last frame until the new source's first frame-ready, black on a cold open". */
+    const boundaryTargets =
+      options?.buffers === true && resourceIds === undefined
+        ? [...activeProgram.resources.targets.values()]
+        : [];
     temporalResets += 1;
-    if (selected.length > 0 || selectedRings.length > 0) {
+    if (selected.length > 0 || selectedRings.length > 0 || boundaryTargets.length > 0) {
       guard.assertOutsideFrame("temporal history clear");
       frame(gpu, (f) => {
         for (const pair of selected) {
@@ -614,6 +630,29 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           f.pass({ target: ring.current(), clear: true }, () => {});
         }
       });
+      /* The plain targets clear through a RAW encoder pass (loadOp clear, storeOp
+         store, no draws). Measured, not assumed: the frame()-idiom empty-pass clear
+         that works for ping-pong pairs (probed: a pair reads back 0 through it) left a
+         PLAIN target at 255 in this change's own gate — so do not unify these two
+         paths without re-running reset-boundary.gpu.test.ts against the unified one. */
+      if (boundaryTargets.length > 0) {
+        const device = gpu.gpu as GPUDevice;
+        const encoder = device.createCommandEncoder({ label: "boundary target clear" });
+        for (const target of boundaryTargets) {
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: (target as { color: { gpu: GPUTexture } }).color.gpu.createView(),
+                loadOp: "clear",
+                storeOp: "store",
+                clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              },
+            ],
+          });
+          pass.end();
+        }
+        device.queue.submit([encoder.finish()]);
+      }
       // T321: the history is an array texture now — archive the cleared frame into
       // every layer and reset the counters, outside the frame (copies self-submit).
       for (const ring of selectedRings) ring.resetHistory();
