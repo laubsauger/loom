@@ -16,6 +16,7 @@ import { componentIoDefinitions } from "./component-io.ts";
 import { switchNode } from "./switch.ts";
 import { valueNodeDefinitions } from "./values.ts";
 import { analyzeNode } from "./analyze.ts";
+import { depthNode } from "./depth.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
@@ -138,6 +139,7 @@ export {
 } from "./composite.ts";
 export { feedbackNode, temporalNodes } from "./feedback.ts";
 export { cacheNode, CACHE_RING_KEY } from "./cache.ts";
+export { depthNode, DEPTH_INPUT_KEY, DEPTH_INPUT_SIDE, DEPTH_RESULT_KEY } from "./depth.ts";
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
@@ -171,6 +173,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   switchNode,
   ...valueNodeDefinitions,
   analyzeNode,
+  depthNode,
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
   audioInNode,

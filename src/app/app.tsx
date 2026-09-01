@@ -62,6 +62,7 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
+import { useDepthInference } from "./use-depth-inference.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMediaSources } from "./use-media-sources.ts";
@@ -264,6 +265,9 @@ export function App({
   // T645: the third argument is §V329's staleness sink — the graph canvas's own per-node
   // channel, the same one the telemetry hub mirrors `gpuMs` into. One channel, not two.
   const analyze = useAnalyzeChannels(backend, runtime.registry, runtime.nodeRuntime);
+  // T385/T715: the depth seam, beside analyze because it is the same shape — a CPU half
+  // outside the plan feeding a GPU half inside it (§V585).
+  const depth = useDepthInference(backend, runtime.nodeRuntime);
 
   /**
    * B27/T305 — the value graph, constructed. `createValueGraphSession` had no caller, so
@@ -423,7 +427,8 @@ export function App({
     // never read back and the channel never published — the CPU half missing, the GPU
     // half present, and no diagnostic anywhere.
     analyze.track(compile.flatGraph, compile.compiled);
-  }, [analyze, compile.flatGraph, compile.compiled]);
+    depth.track(compile.flatGraph, compile.compiled);
+  }, [analyze, depth, compile.flatGraph, compile.compiled]);
 
   /**
    * `BackendStatus.lastBuild` → the hub (T41, T143).
@@ -495,6 +500,7 @@ export function App({
     (frame: FrameEvaluationInput) => {
       pulses.observe(frame);
       analyze.observe(frame);
+      depth.observe(frame);
       // T619: the hub's frame counters. `noteFrame` existed since T41 with ZERO product
       // callers (§V220's shape again) — so `get_runtime_metrics` told every agent
       // framesRendered: 0 while the header showed 30fps, and the per-node "frames"
@@ -502,7 +508,7 @@ export function App({
       // ("from FrameDriver.onFrame", telemetry/index.ts).
       runtime.telemetry.noteFrame(frame.frameIndex);
     },
-    [analyze, pulses, runtime],
+    [analyze, depth, pulses, runtime],
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
   const audioInput = useAudioInput(
@@ -921,8 +927,13 @@ export function App({
       });
     }
 
+    // T383/T715: model acquisition — consent before 94 MB leaves, real byte counts while
+    // it does, and a named failure if it does not. Appended last so a halted GPU or a
+    // blocked autosave still reads first.
+    list.push(...depth.notices);
+
     return list;
-  }, [autosave, floatBlocked, project, recovery, runtime.unknownParameters.length]);
+  }, [autosave, depth.notices, floatBlocked, project, recovery, runtime.unknownParameters.length]);
 
   const environment = useMemo<KeymapEnvironment>(
     () => ({ context: "global", selection, hoveredNodeId }),

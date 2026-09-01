@@ -63,19 +63,23 @@ describe("T645 — every registered node type is classified, or this fails (§V4
     expect(stale, "NODE_REPRODUCIBILITY classifies a node the registry no longer has.").toEqual([]);
   });
 
-  it("classifies exactly four nodes as not pure, and they are the four found", () => {
+  it("classifies exactly the nodes that are not pure, and names every one", () => {
     const notPure = Object.entries(NODE_REPRODUCIBILITY)
       .filter(([, value]) => value !== "pure")
       .map(([type, value]) => `${type}:${value}`)
       .sort();
-    // Named rather than counted, so a fifth arriving is a decision someone made on purpose
-    // and a fourth going missing is a red test rather than a quiet loss of coverage.
+    // NAMED rather than counted, so one arriving is a decision someone made on purpose and
+    // one going missing is a red test rather than a quiet loss of coverage. The title used
+    // to say "four" and the list has held five since T654 — a count in a name goes stale
+    // silently, which is why this one no longer carries a number.
     expect(notPure).toEqual([
       "analyze:async-cached",
       "audioIn:external-live",
-      // T654: the fifth, on purpose — channelIn's canonical diet is analyze's readback,
-      // so it wears the same class as the thing it reads (see the table's entry).
+      // T654: channelIn's canonical diet is analyze's readback, so it wears the same class
+      // as the thing it reads (see the table's entry).
       "channelIn:async-cached",
+      // T385/T715: inference, whose latency is unbounded rather than one frame.
+      "depth:async-cached",
       "mouse:external-live",
       "webcam:external-live",
     ]);

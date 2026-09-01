@@ -278,3 +278,73 @@ describe("the media test card does not claim the inference namespace", () => {
     expect(claimed).not.toContain("media:cam");
   });
 });
+
+describe("the shipped Depth node renders offline", () => {
+  /**
+   * The stand-in above proves the SEAM; this proves the NODE the owner can actually place.
+   * It uses no `nodes` extension because `depth` is in the catalogue, and no model because
+   * a gate replays a result — which is the whole reason the feed exists.
+   */
+  const depthGraph = {
+    revision: 1,
+    nodes: {
+      noise: node("noise", "noise", { type: "simplex2d", period: 0.2 }),
+      depth: node("depth", "depth"),
+      out: node("out", "output"),
+    },
+    edges: {
+      e1: edge("e1", ["noise", "out"], ["depth", "input"]),
+      e2: edge("e2", ["depth", "out"], ["out", "input"]),
+    },
+    groups: {},
+  } as never as GraphDocument;
+
+  it("compiles and draws the fed result rather than black", async () => {
+    if (dawnError !== undefined) return;
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: depthGraph,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => flatResult(200),
+    } as never);
+
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const space = result.plan.outputs.find((o) => o.resourceId === result.outputResourceId)?.space ?? "display";
+    const rgba = toRgba8(
+      {
+        width: result.frames[0]!.width,
+        height: result.frames[0]!.height,
+        format: result.frames[0]!.format,
+        rowStride: result.frames[0]!.bytes.length / result.frames[0]!.height,
+        bytes: result.frames[0]!.bytes,
+      } as never,
+      { space } as never,
+    ).data;
+    expect(meanLuma(rgba)).toBeGreaterThan(120);
+  });
+
+  it("PRUNES an unwired Depth node, so placing one downloads nothing", async () => {
+    if (dawnError !== undefined) return;
+    // §V585, on the shipped node: a Depth dropped on the canvas and left unconnected must
+    // declare no resources at all — which is what makes "placing it costs nothing" true
+    // rather than merely intended, because the app hook tracks only allocated nodes.
+    const withOrphan = {
+      ...depthGraph,
+      nodes: { ...depthGraph.nodes, lonely: node("lonely", "depth") },
+    } as never as GraphDocument;
+
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: withOrphan,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => flatResult(200),
+    } as never);
+
+    const orphanResources = result.plan.resources.filter((r) => r.id.includes("lonely"));
+    expect(orphanResources).toEqual([]);
+  });
+});

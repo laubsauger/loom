@@ -70,9 +70,11 @@ export type Reproducibility =
  * author answering "does a take over this reproduce?" — which is the whole of B98, whose
  * LFO was put on the wrong clock by nobody deciding anything.
  *
- * MOST OF THE CATALOGUE IS PURE, and the exercise is finding the ones that are not. Four
- * are not, and two of those were news: `audioIn` and `mouse` are live devices in exactly
- * the sense `webcam` is, and neither was named anywhere as a reproducibility hazard.
+ * MOST OF THE CATALOGUE IS PURE, and the exercise is finding the ones that are not. The
+ * list below is the authority and deliberately carries no count in prose — it said "four"
+ * while holding five for the whole of T654's life. Two of the originals were news:
+ * `audioIn` and `mouse` are live devices in exactly the sense `webcam` is, and neither was
+ * named anywhere as a reproducibility hazard.
  */
 export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   /*
@@ -119,6 +121,14 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // (its own docblock says external channels only). So: the cautious class, with
   // staleness visible, same as the thing it exists to read.
   channelIn: "async-cached",
+  // T385/T715. Inference arrives LATE and at its own rate, and unlike Analyze its latency
+  // is unbounded: a model slower than a frame is normal, not a fault. Live playback shows
+  // the most recent result and reports its age; an offline render BLOCKS per frame
+  // (§V586's `mode !== "realtime"`), so a take reproduces run to run on one machine. It
+  // does NOT reproduce across MACHINES — different execution providers give different
+  // numbers for the same input — which is why the gates replay a recorded result instead
+  // of running a model, and why this is the cautious class rather than `pure`.
+  depth: "async-cached",
 
   /*
    * PURE — a function of the frame and the document, and the reason the other four are
