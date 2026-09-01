@@ -759,6 +759,9 @@ export function App({
     settings: runtime.settings,
     latestFrame: frameLoop.latestFrame,
     name: () => project.fileName ?? runtime.project.name,
+    // T747: a take waits for each frame's inference instead of picking up whatever the
+    // model happened to have finished.
+    onFrameRendered: depth.settle,
   });
 
   /**

@@ -99,6 +99,20 @@ export interface RenderFrameRangeInputs {
   readonly transport: RangeTransport;
   readonly encoder: VideoEncoderSink;
   readonly onDiagnostic?: ((diagnostic: RuntimeDiagnostic) => void) | undefined;
+  /**
+   * T747: awaited after each frame is rendered, before anything steps past it.
+   *
+   * This is where an ASYNC NODE stops being wall-clock dependent. `depth` and `pose`
+   * publish "the latest completed result", which live is correct (§V144: stale beats
+   * stalled) and in a TAKE is a silently wrong file: two renders of one project pick up
+   * whatever happened to have landed, and differ. Nothing in the file says so.
+   *
+   * With this hook the export awaits the inference belonging to the frame just rendered,
+   * so the lag becomes EXACTLY ONE FRAME on every machine and every run instead of
+   * "however many frames the model was behind". See `renderFrameRange` below for why one
+   * rather than zero — it is a property of the pipeline, not a shortcut.
+   */
+  readonly onFrameRendered?: ((frameIndex: number) => Promise<void>) | undefined;
 }
 
 export interface RenderedRange {
@@ -147,6 +161,25 @@ export async function renderFrameRange(inputs: RenderFrameRangeInputs): Promise<
   let frame = transport.latestFrame();
   for (let index = range.start; index <= range.end; index += 1) {
     if (frame === null) break;
+    /*
+     * T747 — SETTLE THE FRAME THAT WAS JUST RENDERED, BEFORE STEPPING PAST IT.
+     *
+     * The render fills an inference node's model-input buffer; this awaits the model
+     * reading it. The result is uploaded by the NEXT render, so a take shows frame N's
+     * inference at frame N+1 — a lag of exactly one frame, fixed, on every machine.
+     *
+     * ONE rather than ZERO, and it is not a compromise that could be tightened later.
+     * Zero would need the frame re-rendered after the result exists, and a second render
+     * of the same frame ADVANCES EVERY TEMPORAL NODE A SECOND TIME — feedback, caches,
+     * simulations. E2, E12 and every reaction-diffusion document would render a take at
+     * double their true rate. A deterministic one-frame lag is correct; a corrupted
+     * simulation is not, and the difference is invisible in the file.
+     *
+     * The value of this is not the lag, it is that the lag is now a CONSTANT. Before it
+     * was however far behind the model happened to be — wall-clock dependent, different
+     * on every run and every machine, and nothing in the take said so.
+     */
+    await inputs.onFrameRendered?.(index);
     await recorder.captureFrame(frame.frame);
     if (index < range.end) frame = transport.stepOnce();
   }

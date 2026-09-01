@@ -251,7 +251,31 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
 };
 
 /** Why one node in the document will not reproduce. */
-export type NonReproducibleCause = "external-live" | "async-cached" | "free-run-media";
+export type NonReproducibleCause =
+  | "external-live"
+  | "async-cached"
+  | "free-run-media"
+  /**
+   * T747: an async node whose result the EXPORT PATH now waits for.
+   *
+   * Split from `async-cached` because after T747 the two are no longer true of the same
+   * thing, and one warning covering both would be false about one of them. `analyze` and
+   * `channelIn` still publish whatever landed — nothing settles their readbacks in a take.
+   * A model node's lag is now a CONSTANT, and what remains is a different caveat entirely:
+   * different inference backends produce different numbers for the same input, so the take
+   * reproduces on this machine and not necessarily on another.
+   */
+  | "model-inference";
+
+/**
+ * Node types whose async result `renderFrameRange` settles per frame (T747).
+ *
+ * A list rather than a fifth `Reproducibility` value, deliberately: the CLASSIFICATION of
+ * these nodes has not changed — they are still async-cached, still stale live, still on
+ * the telemetry channel. What changed is only what the export path does about it, which is
+ * a property of the render loop and not of the node.
+ */
+const SETTLED_BY_EXPORT: ReadonlySet<string> = new Set(["depth", "pose"]);
 
 /** One node a take cannot promise to reproduce, and enough to name it to the user. */
 export interface NonReproducibleNode {
@@ -285,7 +309,10 @@ export function nonReproducibleNodes(
       nodeId: nodeId as NodeId,
       label: node.label !== undefined && node.label !== "" ? node.label : nodeId,
       title: definition.title,
-      cause: classification,
+      cause:
+        classification === "async-cached" && SETTLED_BY_EXPORT.has(definition.type)
+          ? "model-inference"
+          : classification,
     });
   }
   for (const media of freeRunMediaNodes(graph, registry)) {
@@ -323,6 +350,7 @@ export function nonReproducibleRenderWarning(
   const freeRun = nodes.filter((node) => node.cause === "free-run-media");
   const live = nodes.filter((node) => node.cause === "external-live");
   const async_ = nodes.filter((node) => node.cause === "async-cached");
+  const models = nodes.filter((node) => node.cause === "model-inference");
 
   const clauses: string[] = [];
   const fixes: string[] = [];
@@ -353,6 +381,22 @@ export function nonReproducibleRenderWarning(
       `A live device cannot replay, so ${named(live)} has no setting that fixes this. Record the ` +
         `input to a file and play that back through Movie File In or Audio File In on ` +
         `"Locked to Timeline" if the take needs to reproduce.`,
+    );
+  }
+  if (models.length > 0) {
+    const one = models.length === 1;
+    clauses.push(
+      `${named(models)} ${one ? "runs a model" : "run models"}. The take waits for each frame's ` +
+        `result, so ${one ? "it lags" : "they lag"} by exactly one frame every time rather than by ` +
+        `however far behind the model happened to be — but a different machine's inference backend ` +
+        `produces different numbers for the same picture.`,
+    );
+    // §V403: name the route, and do not overstate the problem. This take DOES reproduce
+    // here — the caveat is about another machine, so the fix is about comparison, not
+    // about the document.
+    fixes.push(
+      `Nothing in the document to change: rendering this range again on this machine gives the same ` +
+        `file. If it has to match a render from another machine, render both on the same one.`,
     );
   }
   if (async_.length > 0) {

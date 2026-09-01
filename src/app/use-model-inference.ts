@@ -129,6 +129,15 @@ export interface ModelInferenceBinding {
   readonly observe: (frame: FrameEvaluationInput) => void;
   /** Re-derives the tracked set. Call after each compile. Stable. */
   readonly track: (graph: GraphDocument, compiled: CompiledGraph | null) => void;
+  /**
+   * T747: awaited by the export path after each frame renders (§V586's blocking half).
+   *
+   * Live, a result arriving late is correct — §V144's "stale beats stalled". In a TAKE it
+   * is a silently wrong file, so the export waits here and the lag becomes a constant.
+   * Resolves immediately when no model node is tracked, so a document without one pays
+   * nothing for the hook existing.
+   */
+  readonly settle: (frameIndex: number) => Promise<void>;
   /** Consent, progress and failure, for the strip under the top bar. */
   readonly notices: readonly Notice[];
 }
@@ -314,6 +323,20 @@ export function useModelInference(
     [sink, sources, states],
   );
 
+  const settle = useCallback(
+    async (frameIndex: number) => {
+      // Only once weights are held. Otherwise `settle` would call `acquire` through the
+      // runner and a take would start a 94 MB download nobody agreed to (§V721), and
+      // block on it — the worst possible moment to ask.
+      const ready = targetsRef.current.some(
+        (candidate) => states[candidate.descriptor.id]?.kind === "ready",
+      );
+      if (!ready) return;
+      await sources.settle(frameIndex);
+    },
+    [sources, states],
+  );
+
   const notices = useMemo(
     () => buildNotices(targetsRef.current, states, acquisition),
     [states, acquisition],
@@ -328,7 +351,7 @@ export function useModelInference(
    * transport suites went red with nothing to do with depth, and the control at clean
    * HEAD passed. A hook whose consumer keys effects on it must return a stable value.
    */
-  return useMemo(() => ({ observe, track, notices }), [observe, track, notices]);
+  return useMemo(() => ({ observe, track, settle, notices }), [observe, track, settle, notices]);
 }
 
 /**

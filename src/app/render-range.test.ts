@@ -244,3 +244,106 @@ describe("export.renderRange refuses by name (§V288)", () => {
     expect(result.output).toEqual({ rendered: false, frames: 120, fileName: null });
   });
 });
+
+/**
+ * T747 — THE EXPORT WAITS FOR THE FRAME'S INFERENCE.
+ *
+ * `depth` and `pose` publish "the latest completed result", which is right live (§V144:
+ * stale beats stalled) and is a silently wrong FILE in a take: two renders of one project
+ * pick up whatever happened to have landed and differ, with nothing in the file saying so.
+ * That outranked the worker (§T382) on §V724's logic — a hitch is audible and gets
+ * reported; a wrong take ships.
+ *
+ * ## Why this gate defers on a TIMER and not a microtask
+ *
+ * §V701: a gate that resolves its async on a microtask never opens the window a real
+ * `await` opens, so it cannot see a race living in that window — three mutations walked
+ * through §T519's gate for exactly this reason. So the settle here is held open by a
+ * deferred that only a `setTimeout` resolves, and the assertion is not "the order came out
+ * right" but "the capture was STILL OUTSTANDING while the settle was pending". A loop that
+ * dropped the await would capture inside that window and be caught.
+ */
+function deferred() {
+  let release: (() => void) | null = null;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release: () => release?.() };
+}
+
+describe("T747 — a take waits for each frame's inference", () => {
+  it("does not capture a frame while that frame's settle is still outstanding", async () => {
+    const transport = fakeTransport();
+    const encoder = fakeEncoder();
+    const gates = [deferred(), deferred(), deferred()];
+    const settled: number[] = [];
+
+    const running = renderFrameRange({
+      api: fakeExports(),
+      ref: { nodeId: "out", portId: "out" },
+      range: { start: 0, end: 2 },
+      fps: 60,
+      transport,
+      encoder,
+      onFrameRendered: async (frameIndex) => {
+        settled.push(frameIndex);
+        await gates[frameIndex]!.promise;
+      },
+    });
+
+    // Open a REAL window — a macrotask, so every microtask the loop could hide behind has
+    // already drained. If the loop were not awaiting, the capture would have happened.
+    for (const frameIndex of [0, 1, 2]) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The two operations are genuinely outstanding together: this frame's settle has
+      // been entered, and nothing has been encoded for it.
+      expect(settled).toEqual([...Array(frameIndex + 1).keys()]);
+      expect(encoder.encoded).toEqual([...Array(frameIndex).keys()]);
+      gates[frameIndex]!.release();
+    }
+
+    await running;
+    expect(encoder.encoded).toEqual([0, 1, 2]);
+  });
+
+  it("settles a frame BEFORE stepping past it, so the result belongs to that frame", async () => {
+    // Ordering, not merely presence: settling after the step would read the NEXT frame's
+    // model input and stamp it with this frame's index — an off-by-one that is invisible
+    // in the file, which is the whole family this suite exists for.
+    const transport = fakeTransport();
+    const order: string[] = [];
+    await renderFrameRange({
+      api: fakeExports(),
+      ref: { nodeId: "out", portId: "out" },
+      range: { start: 0, end: 2 },
+      fps: 60,
+      transport: {
+        ...transport,
+        stepOnce: () => {
+          order.push("step");
+          return transport.stepOnce();
+        },
+      },
+      encoder: fakeEncoder(),
+      onFrameRendered: async (frameIndex) => {
+        order.push(`settle${frameIndex}`);
+      },
+    });
+
+    expect(order).toEqual(["settle0", "step", "settle1", "step", "settle2"]);
+  });
+
+  it("is optional: a document with no model node renders exactly as before", async () => {
+    const transport = fakeTransport();
+    const encoder = fakeEncoder();
+    await renderFrameRange({
+      api: fakeExports(),
+      ref: { nodeId: "out", portId: "out" },
+      range: { start: 0, end: 2 },
+      fps: 60,
+      transport,
+      encoder,
+    });
+    expect(encoder.encoded).toEqual([0, 1, 2]);
+  });
+});

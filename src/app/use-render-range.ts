@@ -61,6 +61,12 @@ export interface UseRenderRangeInputs {
   readonly settings: ProjectSettings;
   readonly latestFrame: () => FrameInputs | null;
   readonly name: () => string;
+  /**
+   * T747: awaited after each frame renders, so an async node's result belongs to a frame
+   * rather than to whenever it happened to arrive. Optional — a session with no model
+   * node supplies nothing and the loop is unchanged.
+   */
+  readonly onFrameRendered?: ((frameIndex: number) => Promise<void>) | undefined;
   /** Test seam. The real one is a `VideoEncoder` behind the WebCodecs loader. */
   readonly loadEncoder?: typeof loadVideoEncoder;
   /** Test seam for the file ladder. */
@@ -184,6 +190,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
             fps: projectFps(live.settings),
             encoder,
             onDiagnostic,
+            ...(live.onFrameRendered === undefined ? {} : { onFrameRendered: live.onFrameRendered }),
             transport: {
               isPlaying: transport.isPlaying,
               togglePlay: transport.togglePlay,

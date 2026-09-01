@@ -126,6 +126,42 @@ describe("T644 — a take over a live device is named at render time", () => {
     expect(warning?.suggestion).toContain("node info popup");
   });
 
+  /**
+   * T747 split this from Analyze's clause, because after it the two are no longer true of
+   * the same thing. A single clause covering both would have been FALSE about one of them
+   * — and specifically it would have gone on telling users that the offline path "is not
+   * built" after it was built, which is the quietly-stale warning §V537 is about.
+   */
+  it("tells a model node's take it reproduces HERE, and names the machine as the caveat", () => {
+    const warning = nonReproducibleRenderWarning(graphWith({ d1: node("depth", "d1") }), registry);
+    expect(warning?.message).toContain('Depth "d1"');
+    expect(warning?.message).toContain("waits for each frame");
+    expect(warning?.message).toContain("different numbers");
+    expect(warning?.suggestion).toContain("same file");
+    // The stale promise must be gone for this cause: the offline path IS built now.
+    expect(warning?.message).not.toContain("latest completed readback");
+    expect(warning?.suggestion).not.toContain("is not built");
+  });
+
+  it("keeps Analyze's clause unchanged, because nothing settles ITS readback in a take", () => {
+    // The half that did NOT get fixed has to keep saying so rather than inheriting the
+    // model node's better news.
+    const warning = nonReproducibleRenderWarning(graphWith({ bright: node("analyze", "bright") }), registry);
+    expect(warning?.message).toContain("latest completed readback");
+    expect(warning?.suggestion).toContain("is not built");
+  });
+
+  it("names both causes separately when one document has both", () => {
+    const warning = nonReproducibleRenderWarning(
+      graphWith({ d1: node("depth", "d1"), bright: node("analyze", "bright") }),
+      registry,
+    );
+    expect(warning?.message).toContain('Depth "d1"');
+    expect(warning?.message).toContain('Analyze "bright"');
+    expect(warning?.message).toContain("waits for each frame");
+    expect(warning?.message).toContain("latest completed readback");
+  });
+
   it("names the two live devices nobody had written down: Audio In and Mouse", () => {
     const warning = nonReproducibleRenderWarning(
       graphWith({ mic: node("audioIn", "mic"), cursor: node("mouse", "cursor") }),
