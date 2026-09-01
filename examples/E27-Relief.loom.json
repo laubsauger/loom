@@ -81,6 +81,17 @@
           "portId": "in2"
         }
       },
+      "e-heat-braid": {
+        "id": "e-heat-braid",
+        "source": {
+          "nodeId": "heat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "braid",
+          "portId": "in2"
+        }
+      },
       "e-lift-body": {
         "id": "e-lift-body",
         "source": {
@@ -90,6 +101,73 @@
         "target": {
           "nodeId": "body",
           "portId": "points"
+        }
+      },
+      "e-moved-stir": {
+        "id": "e-moved-stir",
+        "source": {
+          "nodeId": "moved",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stir",
+          "portId": "input"
+        }
+      },
+      "e-norm-coat": {
+        "id": "e-norm-coat",
+        "source": {
+          "nodeId": "norm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "source"
+        }
+      },
+      "e-norm-heat": {
+        "id": "e-norm-heat",
+        "order": 0,
+        "source": {
+          "nodeId": "norm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heat",
+          "portId": "in1"
+        }
+      },
+      "e-norm-now": {
+        "id": "e-norm-now",
+        "source": {
+          "nodeId": "norm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "now",
+          "portId": "input"
+        }
+      },
+      "e-norm-past": {
+        "id": "e-norm-past",
+        "source": {
+          "nodeId": "norm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "past",
+          "portId": "input"
+        }
+      },
+      "e-now-moved": {
+        "id": "e-now-moved",
+        "source": {
+          "nodeId": "now",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "moved",
+          "portId": "in1"
         }
       },
       "e-palette-coat": {
@@ -103,26 +181,37 @@
           "portId": "lookup"
         }
       },
-      "e-pick-braid": {
-        "id": "e-pick-braid",
+      "e-past-moved": {
+        "id": "e-past-moved",
         "source": {
-          "nodeId": "pick",
+          "nodeId": "past",
           "portId": "out"
         },
         "target": {
-          "nodeId": "braid",
+          "nodeId": "moved",
           "portId": "in2"
         }
       },
-      "e-pick-coat": {
-        "id": "e-pick-coat",
+      "e-pick-norm": {
+        "id": "e-pick-norm",
         "source": {
           "nodeId": "pick",
           "portId": "out"
         },
         "target": {
-          "nodeId": "coat",
-          "portId": "source"
+          "nodeId": "norm",
+          "portId": "input"
+        }
+      },
+      "e-pick-roof": {
+        "id": "e-pick-roof",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "roof",
+          "portId": "input"
         }
       },
       "e-ripple-bed": {
@@ -169,6 +258,18 @@
           "portId": "input"
         }
       },
+      "e-stir-heat": {
+        "id": "e-stir-heat",
+        "order": 1,
+        "source": {
+          "nodeId": "stir",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "heat",
+          "portId": "in2"
+        }
+      },
       "e-sum-pick": {
         "id": "e-sum-pick",
         "order": 0,
@@ -190,6 +291,17 @@
         "target": {
           "nodeId": "sum",
           "portId": "in1"
+        }
+      },
+      "v-ceil-guard": {
+        "id": "v-ceil-guard",
+        "source": {
+          "nodeId": "ceil",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "guard",
+          "portId": "in"
         }
       }
     },
@@ -298,6 +410,20 @@
         },
         "type": "webcam"
       },
+      "ceil": {
+        "definitionVersion": 1,
+        "id": "ceil",
+        "label": "ceil1",
+        "parameters": {
+          "channel": "roof1",
+          "fallback": 1
+        },
+        "position": {
+          "x": -180,
+          "y": 1180
+        },
+        "type": "channelIn"
+      },
       "coat": {
         "definitionVersion": 1,
         "id": "coat",
@@ -387,6 +513,20 @@
         },
         "type": "camera"
       },
+      "guard": {
+        "definitionVersion": 1,
+        "id": "guard",
+        "label": "roofsafe1",
+        "parameters": {
+          "maximum": 2,
+          "minimum": 0.06
+        },
+        "position": {
+          "x": 120,
+          "y": 1180
+        },
+        "type": "valueLimit"
+      },
       "halo": {
         "definitionVersion": 1,
         "id": "halo",
@@ -401,6 +541,17 @@
           "y": 300
         },
         "type": "blur"
+      },
+      "heat": {
+        "definitionVersion": 1,
+        "id": "heat",
+        "label": "heat1",
+        "parameters": {},
+        "position": {
+          "x": -180,
+          "y": 940
+        },
+        "type": "add"
       },
       "lift": {
         "definitionVersion": 1,
@@ -417,6 +568,63 @@
           "y": 140
         },
         "type": "pointKernel"
+      },
+      "moved": {
+        "definitionVersion": 1,
+        "id": "moved",
+        "label": "moved1",
+        "parameters": {},
+        "position": {
+          "x": -780,
+          "y": 940
+        },
+        "type": "difference"
+      },
+      "norm": {
+        "definitionVersion": 1,
+        "id": "norm",
+        "label": "norm1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": {
+            "bindings": {
+              "driven": {
+                "channel": "roofsafe1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -1080,
+          "y": 700
+        },
+        "type": "level"
+      },
+      "now": {
+        "definitionVersion": 1,
+        "id": "now",
+        "label": "now1",
+        "parameters": {
+          "frames": 2,
+          "index": 1,
+          "scale": 1
+        },
+        "position": {
+          "x": -1380,
+          "y": 940
+        },
+        "type": "cache"
       },
       "out": {
         "definitionVersion": 1,
@@ -501,6 +709,21 @@
         },
         "type": "ramp"
       },
+      "past": {
+        "definitionVersion": 1,
+        "id": "past",
+        "label": "past1",
+        "parameters": {
+          "frames": 8,
+          "index": 6,
+          "scale": 1
+        },
+        "position": {
+          "x": -1080,
+          "y": 940
+        },
+        "type": "cache"
+      },
       "phosphor": {
         "definitionVersion": 1,
         "id": "phosphor",
@@ -559,6 +782,20 @@
         },
         "type": "noise"
       },
+      "roof": {
+        "definitionVersion": 1,
+        "id": "roof",
+        "label": "roof1",
+        "parameters": {
+          "channel": "luminance",
+          "operation": "maximum"
+        },
+        "position": {
+          "x": -480,
+          "y": 1180
+        },
+        "type": "analyze"
+      },
       "sheet": {
         "definitionVersion": 1,
         "id": "sheet",
@@ -601,6 +838,25 @@
           "y": 140
         },
         "type": "render"
+      },
+      "stir": {
+        "definitionVersion": 1,
+        "id": "stir",
+        "label": "stir1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 0.6
+        },
+        "position": {
+          "x": -480,
+          "y": 940
+        },
+        "type": "level"
       },
       "sum": {
         "definitionVersion": 1,

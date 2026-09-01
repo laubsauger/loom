@@ -4172,6 +4172,110 @@ const reliefDocument = document(
       node("cam", "webcam", [-1080, 420], {}, { label: "cam1" }),
       node("pick", "switch", [-780, 280], { index: 0 }, { label: "pick1" }),
 
+      /* T797 — THE RELIEF IS A LUMINANCE HISTOGRAM, AND A DARK ROOM HAS NO HISTOGRAM.
+         Owner: "relief when driving with camera and a rather dark image is kind a boring
+         and needs to react more to darker colors and movement of these".
+
+         The mechanism is the one T503 built: `braid1` puts the SOURCE's own luminance in
+         alpha and `lift1` pushes each point out in proportion to it. That is exactly a
+         luminance histogram stood on edge — so a dark room compresses every point into a
+         narrow band near zero and the sheet goes FLAT. Measured on a dimmed understudy
+         (x0.14, the "dark room" fixture): mean display luma 0.0159 against the lit 0.1713,
+         and the frame is a featureless navy rectangle.
+
+         THE FIX IS AN AUTO-GAIN, AND IT NEEDED NO NEW NODE. §T767 records a missing
+         normalize/running-range VALUE node and this looked like its second customer — but
+         a TEXTURE already has the primitive: `analyze` reduces its input to average /
+         minimum / MAXIMUM and publishes the number as a driven channel (T236, §V144).
+         So the observed top of the source's range drives a Level's white point and the
+         picture is re-ranged before anything reads it. Dimmed x0.14 the frame comes back
+         to 0.1961 — past the lit original — with the palette's whole climb in use again.
+
+         ONLY THE WHITE POINT IS DRIVEN, AND THAT IS §V694. A positive `blacklevel` IS a
+         subtraction and `rgba16float` does not clamp, so driving the black point from the
+         measured MINIMUM would push pixels negative on the two counts this node cannot
+         avoid: `analyze` reduces a 64x64 SUBSAMPLE (the true per-pixel floor can sit below
+         it) and answers with the LAST COMPLETED frame (§V144), so a frame that just got
+         darker is below the number being subtracted from it. A pure gain has neither
+         failure — it cannot produce a value the source did not already have the sign of.
+
+         `roofsafe1` is the rail, and it is a real one: the white point is a DIVISOR, so an
+         unfloored channel on a frame that goes black is a divide-by-nothing. 0.06 caps the
+         gain at ~17x, which is two and a half stops past the dark fixture and still short
+         of amplifying sensor noise into a mountain range. §V471(3)/T544: a gain is
+         range-checked against its target, not hopeful.
+
+         AND THE LATENCY IS DELIBERATE (§V144, §V436): the value visible while frame N
+         renders is the reduction of frame N-1, so a SEEK lands one frame on the previous
+         exposure and self-corrects on the next. That is the mild, one-frame version of the
+         history-dependence §V436 warns about — this is a per-frame range, not a running
+         one, so scrubbing is repeatable everywhere except that single frame. */
+      node("roof", "analyze", [-480, 1180], {
+        channel: "luminance", operation: "maximum",
+      }, { label: "roof1" }),
+      node("ceil", "channelIn", [-180, 1180], { channel: "roof1", fallback: 1 }, { label: "ceil1" }),
+      node("guard", "valueLimit", [120, 1180], { minimum: 0.06, maximum: 2 }, { label: "roofsafe1" }),
+      node("norm", "level", [-1080, 700], {
+        /* Black stays at 0 — see §V694 above. Everything else is identity: this node's one
+           job is the exposure, and a second job here would be a transfer curve nobody
+           asked for (the mistake T503 took out of `coat1`). */
+        blacklevel: 0, whitelevel: 1, contrast: 1, brightness: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, {
+        label: "norm1",
+        parameters: { whitelevel: drivenSlot("roofsafe1", 1) },
+      }),
+
+      /* T797(b) — MOTION INTO THE SAME ALPHA. E41 Cinder packs rgb = colour, alpha =
+         MOTION through this identical `reorder`; E27 packs rgb = colour, alpha = LUMINANCE.
+         The two examples differ by what goes in alpha and nothing else, so the second half
+         of the owner's sentence is E41's rig moved one file over: `cache` six frames back,
+         `difference`, `level` to range it (§V694: `whitelevel` alone, no subtractive
+         offset), and an `add` so the height is luminance PLUS movement. Move and you stand
+         further out of the sheet.
+
+         READ OFF `norm1`, NOT OFF `pick1`, AND THAT ORDER IS THE FINDING. The owner's
+         reading was that motion carries the frame exactly when luminance is starved. It
+         does not, and the frame says so: a frame difference of a dark picture is itself
+         dark by the same factor, and the motion rig alone on the dimmed fixture measures
+         0.0160 against the untouched 0.0159 — no visible change at all. Auto-gain first is
+         what gives the difference anything to be a difference OF; (a) is not one of two
+         independent fixes, it is the precondition for (b).
+
+         `stir1.whitelevel` is E41's own 0.6, kept rather than re-fitted: the difference is
+         taken off a source that has just been normalised to the same range in both files,
+         so the number transfers. At 0.6 the motion term moves 56% of the frame's pixels
+         (mean |Δ| 18.7/255 against the same graph with `stir1` bypassed) — a contribution,
+         not a garnish — while the lit understudy still reads as the shipped picture.
+
+         THE UNDERSTUDY IS AN HONEST-BUT-WEAK WITNESS FOR THIS HALF, and the md says so:
+         E27's performer moves EVERYWHERE (a drifting dome over a bed of noise on a live
+         4d axis), so the motion term reads here as a fine chatter over the whole sheet
+         rather than as one thing standing out of a still room. E41 had to make its bed
+         nearly still for the same claim to be legible (§V687). The witness for "the moving
+         part stands out" is branch 1.
+
+         BOTH SIDES OF THE DIFFERENCE COME OUT OF A RING, AND THAT IS THE FRAME-0 FIX.
+         §V229 says a Cache tap reads the OLDEST SLICE WRITTEN rather than black — and it
+         does, from frame 1 onward (measured: `past1` holds frame 0's picture at frames
+         1..6 while the ring fills). On FRAME 0 there is no oldest slice yet and the tap
+         reads black, so a difference taken against the LIVE source is `picture − black` =
+         the whole picture: `stir1` measured mean 0.935 / peak 1.72 on frame 0 against
+         0.015 from frame 1 on, and the sheet opened over-lifted and blown. That is §V732's
+         transient exactly — the one that was baked into E41's baseline and passed — and
+         §V769 says frame 0 is the thumbnail, so it is not a frame anyone may hand-wave.
+         E41 could guard it with `ctx.firstRun` because the decision lived in a SPAWN HOOK;
+         here the motion is already summed into alpha before any kernel sees it, so the
+         guard has to be structural. Taking the near side out of a ring too makes frame 0
+         `black − black` = 0 and every later frame identical to before: `now1` at index 1
+         needs a two-slice ring, which is the cheapest allocation the node allows. */
+      node("now", "cache", [-1380, 940], { frames: 2, index: 1, scale: 1 }, { label: "now1" }),
+      node("past", "cache", [-1080, 940], { frames: 8, index: 6, scale: 1 }, { label: "past1" }),
+      node("moved", "difference", [-780, 940], {}, { label: "moved1" }),
+      node("stir", "level", [-480, 940], {
+        blacklevel: 0, whitelevel: 0.6, contrast: 1, brightness: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "stir1" }),
+      node("heat", "add", [-180, 940], {}, { label: "heat1" }),
+
       node("palette", "ramp", [-1080, -180], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
         /* A scan-line palette: near-black in the valleys, through a cold teal and a hot
@@ -4284,11 +4388,31 @@ const reliefDocument = document(
       // alphabet.
       edge("e-sum-pick", ["sum", "out"], ["pick", "inputs"], 0),
       edge("e-cam-pick", ["cam", "out"], ["pick", "inputs"], 1),
-      edge("e-pick-coat", ["pick", "out"], ["coat", "source"]),
+      // T797 — THE EXPOSURE, and it is measured off the source BEFORE the gain, which is
+      // what keeps it a measurement rather than a loop: `roof1` reads `pick1`, `norm1`
+      // applies what `roof1` said. Nothing downstream of `norm1` feeds back into it.
+      edge("e-pick-roof", ["pick", "out"], ["roof", "input"]),
+      edge("v-ceil-guard", ["ceil", "out"], ["guard", "in"]),
+      edge("e-pick-norm", ["pick", "out"], ["norm", "input"]),
+      // ...and EVERY reader is downstream of it: the colour, the height, and the motion.
+      edge("e-norm-coat", ["norm", "out"], ["coat", "source"]),
       edge("e-palette-coat", ["palette", "out"], ["coat", "lookup"]),
-      // THE BRAID: colour in from the palette, SHAPE in from the un-coated source.
+      // T797(b) — E41's motion instrument, off the RE-RANGED source (see the note above:
+      // a difference of a dark picture is a dark difference).
+      edge("e-norm-now", ["norm", "out"], ["now", "input"]),
+      edge("e-norm-past", ["norm", "out"], ["past", "input"]),
+      // BOTH taps are rings, so the first frame differences black against black (§V229's
+      // gap on frame 0) instead of the whole picture against black (§V732/§V769).
+      edge("e-now-moved", ["now", "out"], ["moved", "in1"]),
+      edge("e-past-moved", ["past", "out"], ["moved", "in2"]),
+      edge("e-moved-stir", ["moved", "out"], ["stir", "input"]),
+      edge("e-norm-heat", ["norm", "out"], ["heat", "in1"], 0),
+      edge("e-stir-heat", ["stir", "out"], ["heat", "in2"], 1),
+      // THE BRAID: colour in from the palette, SHAPE in from the un-coated source — which
+      // is now that source's luminance PLUS its movement (T797). Only the height carries
+      // the motion; the colour path stays the picture.
       edge("e-coat-braid", ["coat", "out"], ["braid", "in1"]),
-      edge("e-pick-braid", ["pick", "out"], ["braid", "in2"]),
+      edge("e-heat-braid", ["heat", "out"], ["braid", "in2"]),
       edge("e-sheet-bridge", ["sheet", "out"], ["bridge", "points"]),
       edge("e-braid-bridge", ["braid", "out"], ["bridge", "texture"]),
       edge("e-bridge-lift", ["bridge", "out"], ["lift", "in"]),

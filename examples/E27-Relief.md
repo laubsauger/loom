@@ -8,7 +8,10 @@ that wanders across the frame. The bloom fuses thousands of separate points into
 surface. Rutt–Etra — the analog video-synth look — with a live graph where the scan
 converter used to be.
 
-**It opens playing its own performer, and your camera is one number away.**
+**It opens playing its own performer, and your camera is one number away.** Since T797 it
+also **sets its own exposure** — the frame's measured top drives the gain, so a dark room
+still gets a relief instead of a flat plate — and **movement adds height on top of
+brightness**, so what moves stands further out of the sheet.
 
 ## Graph
 
@@ -19,10 +22,22 @@ swell1(circle, centre ┄ driftx1/drifty1) ──► sum1.in1
                                               ├──────────────► pick1(switch, index 0)
 cam1(webcam) ─────────────────────────────────┘        order 1        │
                                                                       ▼
-palette1(ramp) ─────────────────────────► coat1(lookup) ◄──────────────┘
-                                              │              ┌─ pick1 (raw, for HEIGHT)
-palette1 ─► coat1(lookup) ─────────────► braid1(reorder) ◄─────┘
-                              rgb = colour, alpha = source luminance
+                             roof1(analyze, max) ◄────────────────────┤
+                                    │                                 ▼
+     ceil1(channelIn) ─► roofsafe1(valueLimit) ┄┄► whitelevel of norm1(level)
+                                                                      │
+                    ┌─────────────────────────────────────────────────┤
+                    │                                                 │
+palette1(ramp) ─► coat1(lookup) ◄─────────────────────────────────────┤ (colour)
+                    │                                                 │
+                    │        now1(cache, 1 back) ◄────────────────────┤
+                    │        past1(cache, 6 back) ◄───────────────────┤
+                    │                └──► moved1(difference) ─► stir1(level)
+                    │                                                 │
+                    │                        heat1(add) ◄── norm1 + stir1
+                    ▼                              │
+                 braid1(reorder) ◄─────────────────┘
+                        rgb = paletted colour, alpha = luminance + movement
                                               │
 grid1(pointGrid 480×220) ─► bridge1(textureToAttribute) ─► lift1(pointKernel)
                                               │
@@ -148,6 +163,101 @@ is the only depth cue left, so `sway1` swinging `eye.x` ±1.15 at 0.024 Hz — �
 distance — is what makes the near ridges slide against the far ground. Laid down it was a
 garnish; stood up it is the reason you can see depth at all.
 
+## T797 — the relief is a luminance histogram, and a dark room has no histogram
+
+Owner: *"i think relief when driving with camera and a rather dark image is kind a boring
+and needs to react more to darker colors and movement of these."*
+
+That is not a taste note, it is a description of the mechanism working exactly as built.
+`braid1` puts the source's own luminance in alpha and `lift1` pushes each point out in
+proportion to it, so **the sheet IS this frame's luminance histogram stood on edge** — and
+a dark room's histogram is a narrow band near zero. Every point lands at nearly the same
+height and the relief flattens. Rendered against a dimmed understudy (×0.14, this
+document's "dark room" fixture) the shipped file measured **mean display luma 0.0159
+against the lit 0.1713**: a featureless navy rectangle, which is precisely what was
+reported.
+
+### It needed no new node, and that is the finding
+
+§T767 records a missing normalize / running-range **value** node, and this looked like its
+second customer arriving from video after audio. It is not. **A texture already has the
+primitive**: `analyze` reduces its input to average / minimum / **maximum** and publishes
+the number as a driven channel (T236, §V144) — E14 has been closing an image→parameter loop
+with it since T654. So `roof1` measures the top of the source's range and drives the white
+point of `norm1`, and the picture is re-ranged **before anything reads it**: the colour, the
+height and the motion are all downstream of one Level. Dimmed ×0.14 the frame comes back to
+**0.1961**, past the lit original, with the palette's whole climb in use again.
+
+The gap §T767 names is real and still open — it is on the **value** side, where a band of
+audio has no equivalent of `analyze` — but a *texture* has never needed it.
+
+### Only the white point is driven, and that is §V694
+
+A positive `blacklevel` is a **subtraction**, and `rgba16float` does not clamp. Driving the
+black point from the measured *minimum* would push pixels negative on the two counts this
+node cannot avoid: `analyze` reduces a **64×64 subsample**, so the true per-pixel floor can
+sit below the number being subtracted, and it answers with the **last completed frame**
+(§V144), so a frame that just got darker is already below it. A pure gain has neither
+failure. `roofsafe1` floors the divisor at 0.06 — the white point is a *divisor*, so an
+unfloored channel on a frame that goes black is a divide-by-nothing — which caps the gain at
+about 17×: two and a half stops past the dark fixture, and short of amplifying sensor noise
+into a mountain range.
+
+**The one-frame latency is displayed, not hidden** (§V144, §V436). Frame 0 has no completed
+readback, so it renders at the fallback white point of 1.0: point a genuinely dark camera at
+it and the first frame opens dark and corrects on the second (measured on the dark fixture:
+0.0164 at frame 0, 0.1773 at frame 1). A seek does the same thing once. This is a *per-frame*
+range, not a running one, so scrubbing is repeatable everywhere except that single frame —
+which is the mild version of the history-dependence §V436 warns about, and the reason a
+running range was not built here.
+
+### Movement is E41's rig, and it is downstream of the exposure — not an alternative to it
+
+E41 Cinder packs `rgb = colour, alpha = motion` through **this same `reorder` node**;
+E27 packs `rgb = colour, alpha = luminance`. **The two examples differ by what goes in
+alpha and nothing else**, so the second half of the owner's sentence is E41's instrument
+moved one file over: `cache` six frames back, `difference`, a `level` to range it
+(`whitelevel` alone — §V694 again, no subtractive offset anywhere in this file), and an
+`add` so the height is luminance **plus** movement. Move, and you stand further out of the
+sheet.
+
+**It reads off `norm1`, not off `pick1`, and that order is the whole finding.** The natural
+reading is that a dark scene has little luminance but plenty of motion, so the motion term
+carries the frame exactly where the luminance term is starved. **It does not, and the frame
+says so**: a frame difference of a dark picture is dark by the same factor. The motion rig
+alone on the dark fixture measured **0.0160 against the untouched 0.0159** — no visible
+change at all, still a navy rectangle. Auto-gain first is what gives the difference anything
+to be a difference *of*. These are not two independent fixes; (a) is the precondition for (b).
+
+With the gain in front of it, the motion term is not decoration either: at
+`stir1.whitelevel` 0.6 — E41's own number, kept rather than re-fitted, because the
+difference is taken off a source normalised to the same range in both files — it moves
+**56% of the frame's pixels, mean |Δ| 18.7/255**, against the same graph with `stir1`
+bypassed.
+
+**The understudy is an honest but weak witness for this half, and this is the place that
+says so.** E27's performer moves *everywhere* — a drifting dome over a bed of noise on a
+live 4d axis — so the motion term reads here as a fine chatter over the whole sheet rather
+than as one thing standing out of a still room. E41 had to make its bed nearly still for the
+same claim to be legible (§V687). The witness for *the moving part stands out* is branch 1.
+
+### Both sides of the difference come out of a ring, and that is the frame-0 fix
+
+§V229 says a Cache tap reads the **oldest slice written** rather than black, and it does —
+*from frame 1 onward*. Measured: `past1` holds frame 0's picture at frames 1…6 while the
+ring fills. On **frame 0** there is no oldest slice yet and the tap reads black, so a
+difference taken against the live source is `picture − black` = the whole picture: `stir1`
+measured **mean 0.935, peak 1.72** on frame 0 against 0.015 from frame 1 on, and the sheet
+opened over-lifted and blown (whole-frame mean 0.256 against a steady 0.178).
+
+That is §V732's transient exactly — the one that was baked into a baseline and passed — and
+§V769 says frame 0 is the thumbnail, so it is not a frame anyone may hand-wave. E41 could
+guard it with `ctx.firstRun` because the decision lived in a **spawn hook**; here the motion
+is already summed into alpha before any kernel sees it, so the guard has to be structural.
+**Taking the near side out of a ring too** makes frame 0 `black − black` = 0 and leaves every
+later frame identical: `now1` at index 1 needs a two-slice ring, the cheapest allocation the
+node allows. Frame 0 now measures 0.1752 against 0.1721 at frame 1 — no flash.
+
 ## What else it proves
 
 **T478: per-point colour reaches the scene pipeline.** `body1`'s `tint` is in map mode on
@@ -188,6 +298,12 @@ roll off and Reinhard or Filmic would only darken the image. The Output stays on
 Worth stating because this looks like an HDR image and is not one: the bloom is a blur and
 an add inside the working range, not a highlight rolloff.
 
+**Re-measured after T797, because an auto-gain is exactly the change that would break it**:
+0.9995 at frames 0, 1, 2, 90 and 240 on the lit understudy and on the dark fixture. `norm1`
+does push its own output past 1 (peak 1.035 on the lit source, which is the clip the shipped
+file was quietly taking), but that is a *height* field, not a colour — the palette is what
+sets the drawn colour and its top stop is 1.0.
+
 ## Regression signatures
 
 - **A black frame on open** → the switch is selecting the webcam. Either `index` moved or
@@ -211,6 +327,20 @@ an add inside the working range, not a highlight rolloff.
 - **The mountain has a level, scooped summit** → `swell1.fillcolor` went to 1.0 and the add
   is clipping.
 - **The relief is squashed to 9:16** → the kernel's aspect stretch was removed.
+- **A dark source is a flat plate again** → the exposure loop is open. Either `roof1` lost
+  its input edge, or `norm1.whitelevel` fell back to static, or `roofsafe1` was renamed —
+  the channel is the node's *name* (§V129), so a rename silently drops the drive back to its
+  1.0 fallback and every symptom is "it looks like it did before T797".
+- **A dark source blows out into white spray** → `roofsafe1.minimum` went below 0.06 and the
+  gain is amplifying whatever the source's noise floor is.
+- **Dark pixels go negative / the low ground turns to holes** → someone drove `norm1` or
+  `stir1`'s `blacklevel` from the measured minimum. §V694: a black point is a subtraction,
+  this target does not clamp, and `analyze` is both subsampled and one frame late.
+- **The first frame is blown and over-lifted, then it settles** → `moved1`'s near side went
+  back to reading the live source instead of `now1`. On frame 0 a ring reads black, so the
+  first difference is the whole picture (§V732's transient, §V769's thumbnail).
+- **The whole sheet boils** → `stir1.whitelevel` dropped; it is a *divisor*, so smaller is
+  louder. 0.12 shreds the surface into a spray, which is what the tuning pass rejected.
 
 ## Look pass
 
@@ -229,6 +359,36 @@ luminance 0.076, everything in one mid-blue band, a flat plate with a needle in 
 nothing legible at thumbnail size. After: teal valleys, a magenta ridge, a white crest, a
 clear silhouette against the far ground, and it still reads at 220px wide — which is where
 people actually meet it. Verdict: **ships.**
+
+### T797's pass, and it was judged on a dark input (§V471)
+
+The shipped understudy is **lit**, which is very probably why the flat-in-the-dark
+behaviour shipped at all: nothing in the gate or the look pass had ever asked this file for
+a dark frame. So this pass was run against a dimmed copy of the understudy (`bed1.brightness`
+and `swell1.fillcolor` both ×0.14 — the same picture, one fourteenth of the light), at
+1280×720, frames 0, 90 and 240, and the frames were **looked at** rather than read off the
+numbers (§V732: a baseline delta has no sign).
+
+| arm | frame 90, mean display luma | what the frame shows |
+| --- | --- | --- |
+| shipped-before, lit | 0.1713 | the Rutt–Etra relief |
+| shipped-before, dark ×0.14 | 0.0159 | **a flat navy rectangle** — the report, reproduced |
+| motion rig only, dark | 0.0160 | still a flat navy rectangle |
+| the same Level with **static** 0…1, dark | 0.0159 | unchanged — so the fix is the *measurement*, not the node |
+| auto-gain, dark | 0.1961 | full relief, palette climbing again |
+| auto-gain + motion, dark | 0.1977 | the shipped file |
+| auto-gain + motion, lit | 0.1812 | still teal valleys, magenta ridge, white crest |
+
+The two controls in the middle are the ones that carried the argument. The **static-Level**
+arm says the recovery is the analyze channel and not a lucky extra pass; the **motion-only**
+arm refutes the reading that motion carries a frame whose luminance is starved.
+
+**The lit case did not break, which was the other half of the brief.** Side by side with the
+pre-T797 frame at 90 and 240: the same composition — teal valleys, magenta ridge line, white
+crest, dome silhouette against the far ground, scan lines bunching on the rising slopes. It
+is slightly hotter (0.1812 against 0.1713) because `norm1` re-ranges a source that peaked at
+1.035 and was clipping, and slightly crisper because the motion term adds high-frequency
+relief. It still reads at 220px. Verdict: **ships.**
 
 **What it is not.** The pitch promised a source with *meaning* in it — a face, a word, a
 video. The understudy here is procedural, because `text` renders through a canvas that does

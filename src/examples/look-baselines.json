@@ -61,8 +61,8 @@
     "f0max": 0.5314
   },
   "E27-Relief.loom.json": {
-    "motion": 0.0634,
-    "range": 0.9981,
+    "motion": 0.05449,
+    "range": 0.8144,
     "f0max": 0.9913
   },
   "E28-Sundial.loom.json": {
