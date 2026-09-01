@@ -122,6 +122,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `nodeTypeLabelStore()` in the SAME module — deliberately a single per-PERSON store rather than a bus-keyed one, since the settings dialog that writes it is nowhere near the canvas that reads it (T416). The product path is `nodeTypeLabelStore` in `node-view.tsx` and `project-settings.tsx`; `tests/integration/node-rename.test.tsx` flips it from the composed settings dialog and asserts the chip leaves the node.",
   },
   {
+    name: "createWorkerCore",
+    reason:
+      "Constructed by `runtime/models/inference.worker.ts`, which is a WORKER entry point — a real product root that this scan does not walk, the same gap `createHeadlessMcpServer` sits in. The split is deliberate (T382): every decision lives in the core so it can be unit-tested without starting a thread, and the worker file is a shim over it. `worker-runner.test.ts` drives the core through the full protocol — load, run, out-of-order results, a model that throws, a run before its load — and the main-thread half against a fake worker.",
+  },
+  {
     name: "createRng",
     reason:
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",

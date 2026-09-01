@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -25,6 +25,8 @@ import {
   type ModelDescriptor,
 } from "@runtime/models/model-acquisition.ts";
 import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
+import { createWorkerRunner, type WorkerRunner } from "@runtime/models/worker-runner.ts";
+import type { WorkerLike } from "@runtime/models/inference-protocol.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE, POSE_ACCURATE, POSE_LIVE } from "@runtime/models/model-catalogue.ts";
 import { depthToRgba, neutralDepth, packModelInput } from "@runtime/models/depth-runner.ts";
 import {
@@ -182,28 +184,62 @@ export function useModelInference(
     [store],
   );
 
-  /** Model id -> a loaded session, kept so a second node pays nothing. */
-  const sessionsRef = useRef<Map<string, Promise<unknown>>>(new Map());
+  /**
+   * The inference thread (T382), created LAZILY on first need.
+   *
+   * Measured: Depth Anything at 518² takes 2599 ms under wasm on one thread, and ORT falls
+   * back to one thread unless the page is cross-origin isolated, which we are not. A
+   * 16.7 ms frame cannot share that — it is not a hitch to tune away, it is structurally
+   * impossible. Pose at 18 ms would never have justified this on its own.
+   *
+   * Lazy because §V585 says a disconnected model node costs zero: a document with no Depth
+   * or Pose in it starts no thread and, since the runtime is imported inside the worker,
+   * never loads onnxruntime either.
+   *
+   * Where there is no `Worker` — jsdom, a headless harness — none is made and the runner
+   * refuses by name. The seam already treats a refused run as "keep the previous value",
+   * so a node shows its identity rather than a hole, and nothing silently falls back to
+   * running 2.6 s of inference on the frame loop.
+   */
+  const workerRef = useRef<WorkerRunner | null>(null);
+  const runnerFor = useCallback((): WorkerRunner => {
+    const existing = workerRef.current;
+    if (existing !== null) return existing;
+    if (typeof Worker === "undefined") {
+      throw new Error("This environment has no Worker, so inference cannot run off the frame loop.");
+    }
+    const worker = new Worker(new URL("../runtime/models/inference.worker.ts", import.meta.url), {
+      type: "module",
+    }) as unknown as WorkerLike;
+    const runner = createWorkerRunner({
+      worker,
+      describe: (nodeId) => {
+        const found = targetsRef.current.find((candidate) => candidate.nodeId === nodeId);
+        if (found === undefined) return undefined;
+        return {
+          modelId: found.descriptor.id,
+          nodeType: found.kind.nodeType as "depth" | "pose",
+          width: found.size[0],
+          height: found.size[1],
+          side: found.kind.inputSide,
+        };
+      },
+      weightsFor: async (modelId) => {
+        const descriptor = targetsRef.current.find((t) => t.descriptor.id === modelId)?.descriptor;
+        if (descriptor === undefined) return undefined;
+        return await acquisition.acquire(descriptor);
+      },
+    });
+    workerRef.current = runner;
+    return runner;
+  }, [acquisition]);
 
-  const sessionFor = useCallback(
-    async (descriptor: ModelDescriptor): Promise<unknown> => {
-      const existing = sessionsRef.current.get(descriptor.id);
-      if (existing !== undefined) return existing;
-      const started = (async () => {
-        const weights = await acquisition.acquire(descriptor);
-        if (weights === undefined) throw new Error(`${descriptor.label} is not available`);
-        const ort = await import("onnxruntime-web");
-        // The ladder, as the runtime expresses it (T736). WebGPU first; a machine without
-        // it falls to wasm rather than failing. What gets REPORTED is whichever one
-        // actually produced a result, never the one that was asked for (§V672).
-        return await ort.InferenceSession.create(weights, {
-          executionProviders: ["webgpu", "wasm"],
-        });
-      })();
-      sessionsRef.current.set(descriptor.id, started);
-      return started;
+  useEffect(
+    () => () => {
+      workerRef.current?.dispose();
+      workerRef.current = null;
     },
-    [acquisition],
+    [],
   );
 
   const sources = useMemo(
@@ -216,28 +252,11 @@ export function useModelInference(
           }
           return live.readBuffer(resourceId);
         },
-        run: async (nodeId, input) => {
-          const target = targetsRef.current.find((candidate) => candidate.nodeId === nodeId);
-          if (target === undefined) throw new Error(`No depth target for "${nodeId}".`);
-          const session = (await sessionFor(target.descriptor)) as {
-            run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array }>>;
-            inputNames: readonly string[];
-            outputNames: readonly string[];
-          };
-          const ort = await import("onnxruntime-web");
-          const { kind } = target;
-          const pixels = kind.pack(new Float32Array(input), kind.inputSide);
-          const tensor = new ort.Tensor(kind.tensorType, pixels as never, kind.dims(kind.inputSide) as number[]);
-          const inputName = session.inputNames[0];
-          if (inputName === undefined) throw new Error(`${kind.nodeType}: the session declares no input.`);
-          const outputs = await session.run({ [inputName]: tensor });
-          const outputName = session.outputNames[0];
-          const result = outputName === undefined ? undefined : outputs[outputName]?.data;
-          if (result === undefined) throw new Error(`${kind.nodeType}: the model returned no output.`);
-          return kind.encode(result, target.size);
-        },
+        // Packing, inference and encoding ALL happen on the worker: the two loops that
+        // walk every pixel are the ones worth moving, not just the model call.
+        run: async (nodeId, input) => runnerFor().run(nodeId, input),
       }),
-    [sessionFor],
+    [runnerFor],
   );
 
   const track = useCallback(
