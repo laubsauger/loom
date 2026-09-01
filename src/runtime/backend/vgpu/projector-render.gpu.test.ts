@@ -8,7 +8,7 @@ import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
 import { cameraPayloadMatrix, transformPoint } from "../../../domain/geometry/camera.ts";
 import { encodePng } from "../../export/png.ts";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 /**
  * T704 on a REAL device, §V147 exact values throughout.
@@ -52,6 +52,10 @@ const CAPABILITIES = {
 const registry = createNodeRegistry(allNodeDefinitions).view();
 
 const savePng = (name: string, bytes: Uint8Array): void => {
+  // §B152/T761: test-results/ is gitignored and exists on dev machines only as a
+  // side effect of Playwright's default outputDir — without this, a fresh checkout
+  // (and CI) fails here rather than in the assertion.
+  mkdirSync("test-results", { recursive: true });
   writeFileSync(`test-results/${name}`, encodePng({ width: 64, height: 64, data: bytes }).bytes);
 };
 

@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { compileGraph } from "../../../compiler/index.ts";
@@ -111,6 +111,10 @@ const texel = (bytes: Uint8Array, x: number, y: number): [number, number, number
 };
 
 const savePng = (name: string, bytes: Uint8Array): void => {
+  // §B152/T761: test-results/ is gitignored and exists on dev machines only as a
+  // side effect of Playwright's default outputDir — without this, a fresh checkout
+  // (and CI) fails here rather than in the assertion.
+  mkdirSync("test-results", { recursive: true });
   const png = encodePng({ width: EDGE, height: EDGE, data: bytes });
   writeFileSync(`test-results/${name}`, png.bytes);
 };
