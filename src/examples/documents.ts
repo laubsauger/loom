@@ -2317,8 +2317,15 @@ const prismDocument = document(
       // lambert or unlit prism has no Fresnel and therefore no rim at all. Diffuse is
       // 0.0009 linear — the body is meant to be black — and the whole read is `specular`
       // times `envFresnel`, which is 0.04 head-on and 1.0 at grazing.
-      node("glass", "materialPhong", [-1560, -640], {
-        color: [0.012, 0.013, 0.018, 1], specular: [0.86, 0.92, 1, 1], shininess: 140, roughness: 0.06,
+      /* T758 — the REAL glass (T725), on the example the owner complained about. The
+         body is transmissive now: it samples the frame behind it through the blur
+         pyramid, so the T718 interior segment — which lives inside the body since this
+         change — is seen THROUGH the front face, absorption-warmed, with dispersion
+         fringes where the rounded edges refract the fan. The rim survives by the same
+         physics under a different name: the glass model's Schlick fresnel against the
+         wired environment peaks at grazing exactly as the phong envFresnel did. */
+      node("glass", "materialGlass", [-1560, -640], {
+        ior: 1.5, roughness: 0.04, thickness: 0.8, absorption: [0.06, 0.05, 0.02, 1], dispersion: 0.06,
       }, { label: "glass1" }),
       node("solid", "geometry", [-1240, -420], { mode: "surface", material: "glass1", tint: [1, 1, 1, 1] }, { label: "solid1" }),
 

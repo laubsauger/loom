@@ -440,7 +440,13 @@ describe("E13 Prism — the picture", () => {
          lives on in prism-trace.gpu.test.ts's exact connectivity assertions (§V683).
          The FAN keeps the no-burial claim: it starts ON the exit face and leaves. */
       expect(overlap(shaftMask, deep)).toBeGreaterThan(300);
-      expect(overlap(fanMask, deep)).toBe(0);
+      /* T758 loosened this from exactly 0: the beams live INSIDE the glass body's z
+         now, so the fan's ROOT — the exit point, which is ON the face by the trace's
+         own connectivity gates — projects a few pixels into the 8px erosion under the
+         perspective camera. Measured at the swap: 3 pixels. The claim keeps its
+         discriminating power by two orders of magnitude: the red-verified real burial
+         (circumradius 0.76 → 0.95) measured 209. */
+      expect(overlap(fanMask, deep)).toBeLessThan(30);
 
       /**
        * And the fan's rays CONVERGE on the glass rather than merely missing it. The span

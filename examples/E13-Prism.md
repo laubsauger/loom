@@ -18,7 +18,7 @@ separate look decision.)
 
 ```
 bar1(pointTube) ─► form1(pointKernel) ─► solid1(geometry) ─┐
-glass1(materialPhong) ─────── by name ────────────────────┘  the glass
+glass1(materialGlass) ─────── by name ────────────────────┘  the glass (T758)
                                                               │
 spectrum1(ramp) ─► optics1.field                              │
 optics1(pointKernel) ─┬─► shaft1(geometry)  p.role < 0.5      ├─► shot1(render)
@@ -42,7 +42,7 @@ fan1.tint ← the `tint` attribute                                    the map mo
 | --- | --- | --- |
 | `bar1` | `pointTube` | a 240×45 grid with its u seam closed — the topology a prism's lateral loop needs |
 | `form1` | `pointKernel` | walks a **rounded** triangle by arc length and puts a quarter-round on each cap edge |
-| `glass1` | `materialPhong` | diffuse 0.0009 linear, specular 0.86, roughness 0.06 — the whole read is Fresnel |
+| `glass1` | `materialGlass` | the T725 transmissive surface (T758): ior 1.5, gentle absorption, dispersion 0.06 — the body SAMPLES the frame behind it, and its Schlick fresnel against the environment carries the rim |
 | `solid1` | `geometry` | `mode: surface` |
 | `spectrum1` | `ramp` | seven stops, red → violet. The kernel samples it at `u = t`, and `t` is also the refractive index |
 | `optics1` | `pointKernel` | Snell's law twice per band, 61 bands, plus the shaft and its reflected ghost |
@@ -54,12 +54,18 @@ fan1.tint ← the `tint` attribute                                    the map mo
 
 ## What it proves
 
-### The rim is `envFresnel`, used deliberately, and the geometry is built for it
+### The rim is Fresnel at grazing, and the geometry is built for it
 
-§V640 records both halves of the mechanism: the environment's Fresnel term rises to 1 at
-grazing, so a bright band on the equirect's horizon shows up as a rim — **and it does that
-only on geometry that curves away.** On a flat camera-facing surface there is barely any
-grazing for the term to find, and the same band becomes fill.
+§V640 records both halves of the mechanism: a Fresnel term rises to 1 at grazing, so a
+bright band on the equirect's horizon shows up as a rim — **and it does that only on
+geometry that curves away.** On a flat camera-facing surface there is barely any grazing
+for the term to find, and the same band becomes fill. T758 swapped which Fresnel: the
+body wears the T725 glass material now, whose Schlick term against the same environment
+peaks at grazing exactly as the phong `envFresnel` did — same physics, and the same
+§V640 ring/interior gate measures it. What the glass ADDS is transmission: the T718
+interior segment lives inside the body's depth since this change, so the thread is seen
+*through* the front face — absorption-warmed — and the rounded edges refract the beams
+into dispersion fringes that move with the aim.
 
 So `form1` builds a shape that curves exactly where the light is wanted. The cross-section
 is a rounded triangle walked by **arc length** — three straight runs joined by three 120°
@@ -180,9 +186,11 @@ one thing that would make an edge-lit prism look painted.
 
 ## What breaks here first
 
-**The material model.** The environment term is emitted only on the Blinn-Phong path.
-Make the glass a lambert or an unlit and there is no Fresnel, therefore no rim, therefore
-no glass — and nothing warns you. You get a black triangle.
+**The material model.** The rim needs a Fresnel-against-environment term, which only the
+glass and phong models carry. Make the body a lambert or an unlit and there is no
+Fresnel, therefore no rim, therefore no glass — and nothing warns you. You get a black
+triangle. (And only the GLASS model transmits: on phong the interior segment — inside
+the body since T758 — would be swallowed by an opaque solid.)
 
 **The round-over going flat.** Shrink the cap edge from 0.120 to 0.002 and the normal stops
 sweeping through grazing. The picture still renders a triangle; §V640's split falls from

@@ -1118,11 +1118,16 @@ describe("E13 Prism", () => {
    * zero (T680), and a single collimated shaft must not be pinched at all.
    */
   it("splits one pointset into a pinched fan and a parallel-sided shaft", () => {
-    const draws = sceneDraws(plan);
-    expect(draws).toHaveLength(3);
-
-    const surface = draws[0] as DrawPassDescriptor;
-    const beams = draws.slice(1);
+    /* T758: the prism's own draw moved to the TRANSMISSION phase (materialGlass draws
+       after the opaques it samples), so the scene phase carries exactly the two beam
+       draws and the body is found at its glass id. */
+    const beams = sceneDraws(plan);
+    expect(beams).toHaveLength(2);
+    const surface = plan.passes.find(
+      (pass): pass is DrawPassDescriptor =>
+        pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
+    ) as DrawPassDescriptor;
+    expect(surface).toBeDefined();
     // The surface is the prism, from its own kernel, with no predicate.
     expect(buffersOf(surface).get("positions")).toBe("scratch:form:position");
     expect(buffersOf(surface).has("group_role")).toBe(false);
@@ -1173,13 +1178,16 @@ describe("E13 Prism", () => {
     // aspectcorrect false resolves to an aspect of exactly 1 — no stretch on either axis.
     expect(band["aspect"]).toBe(1);
 
-    const draws = sceneDraws(plan);
-    const withEnvironment = draws.filter((draw) => texturesOf(draw).has("environmentMap"));
-    expect(withEnvironment).toHaveLength(1);
-    expect(texturesOf(withEnvironment[0] as DrawPassDescriptor).get("environmentMap")).toBe(
-      outputFor(plan, "studio").resourceId,
-    );
-    expect(buffersOf(withEnvironment[0] as DrawPassDescriptor).get("positions")).toBe("scratch:form:position");
+    /* T758: the reader is the GLASS draw now — its Schlick fresnel against this very
+       map is the rim — and the unlit beams still get none. */
+    const beamDraws = sceneDraws(plan);
+    expect(beamDraws.filter((draw) => texturesOf(draw).has("environmentMap"))).toHaveLength(0);
+    const glassDraw = plan.passes.find(
+      (pass): pass is DrawPassDescriptor =>
+        pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
+    ) as DrawPassDescriptor;
+    expect(texturesOf(glassDraw).get("environmentMap")).toBe(outputFor(plan, "studio").resourceId);
+    expect(buffersOf(glassDraw).get("positions")).toBe("scratch:form:position");
   });
 
   /**
@@ -1195,23 +1203,25 @@ describe("E13 Prism", () => {
    * authored in display space and the compiler decodes them, which is exactly the place a
    * "0.012 is nearly black" intuition would be wrong by a transfer curve.
    */
-  it("gives the glass a black body, no ambient, and a single hard key", () => {
-    const surface = sceneDraws(plan)[0] as DrawPassDescriptor;
+  it("gives the glass real optics and no light of its own (T758)", () => {
+    /* The body is the T725 transmissive surface: its whole read is the sampled frame
+       plus the Schlick-against-environment rim — it takes NO lights and NO ambient by
+       construction (§V617's third thing), which is what the old black-albedo/zero-
+       ambient discipline was approximating by hand. The optics are asserted as the
+       numbers the document authors: glassA = [ior, roughness, thickness, dispersion],
+       glassB.w = the same environmentIntensity the phong body used (3.2 — the rim's
+       gain did not move in the swap). */
+    const surface = plan.passes.find(
+      (pass): pass is DrawPassDescriptor =>
+        pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
+    ) as DrawPassDescriptor;
     const uniforms = uniformsOf(surface);
-
-    const albedo = uniforms["baseColor"] as readonly number[];
-    for (const channel of albedo.slice(0, 3)) expect(channel).toBeLessThan(0.002);
-    expect(uniforms["ambientColor"]).toEqual([0, 0, 0, 0]);
-    // material = [metallic, roughness, ...]: a dielectric, and barely rough, so the
-    // (1 − roughness) scale on the environment term keeps the grazing ceiling high.
-    expect((uniforms["material"] as readonly number[])[0]).toBe(0);
-    expect((uniforms["material"] as readonly number[])[1]).toBeCloseTo(0.06, 6);
-    expect((uniforms["environment"] as readonly number[])[0]).toBeCloseTo(3.2, 6);
-    // Exactly one light, and it is a hard directional — a second key would fill the body
-    // through the same two-sided lambert that makes a "back light" a second key (§V640).
-    expect(uniforms["light1Meta"]).toBeUndefined();
-    expect((uniforms["light0Meta"] as readonly number[])[0]).toBe(0);
-    expect((uniforms["light0Meta"] as readonly number[])[1]).toBeCloseTo(2.6, 6);
+    expect(uniforms["glassA"]).toEqual([1.5, 0.04, 0.8, 0.06]);
+    expect((uniforms["glassB"] as readonly number[])[3]).toBeCloseTo(3.2, 6);
+    expect(uniforms["light0Meta"]).toBeUndefined();
+    expect(uniforms["ambientColor"]).toBeUndefined();
+    // The key still lights nothing else — the beams are unlit — so its whole job stays
+    // the glint the doc describes, delivered through the environment map.
   });
 
   /**

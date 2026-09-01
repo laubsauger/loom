@@ -49,7 +49,12 @@ export const PRISM_TRACE_KERNEL_HEAD = `const PI: f32 = 3.14159265358979323846;
 const NR: vec2f = vec2f(0.86602540, 0.5);
 const NL: vec2f = vec2f(-0.86602540, 0.5);
 const ND: vec2f = vec2f(0.0, -1.0);
-const PLANE: f32 = 0.60;
+/* T758: the beams live INSIDE the body now (the cross-section's z spans ±0.55), so
+   the transmissive front face draws OVER the interior segment and the thread is seen
+   THROUGH the glass — absorption-tinted, edge-refracted. Before materialGlass this sat
+   at 0.60, in front, so the opaque solid could not swallow the beams; a glass body
+   inverts that reasoning: swallowing is the point. */
+const PLANE: f32 = 0.10;
 const ENTRY: f32 = -0.28;
 const SHAFT_LEN: f32 = 2.10;
 const GHOST_LEN: f32 = 0.90;
