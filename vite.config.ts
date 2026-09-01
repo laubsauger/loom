@@ -27,6 +27,17 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [react()],
+  /**
+   * §B151/T760: the inference worker (`use-model-inference.ts`) is a `new Worker(new
+   * URL(...), { type: "module" })` that pulls onnxruntime-web, so its bundle code-splits.
+   * Vite's default `worker.format` is "iife", and rollup refuses IIFE for a splitting
+   * build — `pnpm build` failed outright for 7 commits while lint, typecheck and 5912
+   * tests stayed green, because the test runner transforms workers instead of bundling
+   * them and never exercises this path (§V753).
+   */
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": alias(""),
