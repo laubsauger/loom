@@ -28,6 +28,8 @@ import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE, POSE_ACCURATE, POSE_LIVE } from "@runtime/models/model-catalogue.ts";
 import { depthToRgba, neutralDepth, packModelInput } from "@runtime/models/depth-runner.ts";
 import {
+  POSE_INPUT_CHANNELS,
+  POSE_INPUT_DTYPE,
   POSE_INPUT_SIDE,
   keypointsToTexture,
   neutralPose,
@@ -74,11 +76,11 @@ interface InferenceKind {
   readonly resultKey: string;
   readonly inputSide: number;
   /** ONNX tensor element type. Depth wants normalised float; MoveNet wants int32 bytes. */
-  readonly tensorType: "float32" | "int32";
+  readonly tensorType: "float32" | "int32" | "uint8";
   /** NCHW for depth's ViT, NHWC for MoveNet. Getting this backwards runs and lies. */
   dims(side: number): readonly number[];
   descriptor(parameters: Record<string, unknown>): ModelDescriptor;
-  pack(texels: Float32Array, side: number): Float32Array | Int32Array;
+  pack(texels: Float32Array, side: number): Float32Array | Int32Array | Uint8Array;
   encode(output: Float32Array, size: readonly [number, number]): Uint8Array;
   fallback(size: readonly [number, number]): Uint8Array;
 }
@@ -101,8 +103,10 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     inputKey: POSE_INPUT_KEY,
     resultKey: POSE_RESULT_KEY,
     inputSide: POSE_INPUT_SIDE,
-    tensorType: "int32",
-    dims: (side) => [1, side, side, 3],
+    // uint8 and FOUR channels, read from the model itself (see POSE_INPUT_DTYPE): the
+    // upstream card describes int32 x 3 and the web export is neither.
+    tensorType: POSE_INPUT_DTYPE,
+    dims: (side) => [1, side, side, POSE_INPUT_CHANNELS],
     descriptor: (parameters) => (parameters["model"] === "fast" ? POSE_LIVE : POSE_ACCURATE),
     pack: (texels, side) => packPoseInput(texels, side),
     // The keypoint map is a fixed 17x1 whatever the source is, so the node's size is not

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  POSE_INPUT_CHANNELS,
+  POSE_INPUT_DTYPE,
   POSE_INPUT_SIDE,
   POSE_KEYPOINTS,
   POSE_KEYPOINT_COUNT,
@@ -26,10 +28,23 @@ describe("packing MoveNet's input", () => {
    * Carrying depth's packer over would put every channel near zero and the model would
    * confidently find a person-shaped nothing — no throw, no diagnostic.
    */
-  it("emits byte-range integers, not normalised floats", () => {
+  /**
+   * The signature is the model's, not its documentation's. MoveNet's upstream card says
+   * `int32 [1,192,192,3]`; the pinned WEB export takes `uint8 [1,192,192,4]`, and ORT
+   * refuses the mismatch outright — so the first version of this packer meant pose could
+   * never produce a single result. Read from the weights on 2026-09-01, not from a README.
+   */
+  it("emits UNSIGNED BYTES, which is what the web export actually takes", () => {
     const packed = packPoseInput(new Float32Array([1, 0.5, 0, 1]), 1);
-    expect(packed).toBeInstanceOf(Int32Array);
-    expect([...packed]).toEqual([255, 128, 0]);
+    expect(POSE_INPUT_DTYPE).toBe("uint8");
+    expect(packed).toBeInstanceOf(Uint8Array);
+    expect([...packed]).toEqual([255, 128, 0, 255]);
+  });
+
+  it("emits FOUR channels, not three — alpha is part of this model's input", () => {
+    expect(POSE_INPUT_CHANNELS).toBe(4);
+    const packed = packPoseInput(new Float32Array(4 * 4), 2);
+    expect(packed.length).toBe(2 * 2 * 4);
   });
 
   it("keeps channels INTERLEAVED rather than planar", () => {
@@ -37,17 +52,23 @@ describe("packing MoveNet's input", () => {
     // [255,0, 0,255, 0,0] — the same numbers, a scrambled image, and a model that runs.
     // side 2 = 4 texels: red, green, blue, black.
     const texels = new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1]);
-    expect([...packPoseInput(texels, 2)]).toEqual([255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0]);
+    // Interleaved RGBA per pixel: red, green, blue, black — each with alpha 255.
+    expect([...packPoseInput(texels, 2)]).toEqual([
+      255, 0, 0, 255,
+      0, 255, 0, 255,
+      0, 0, 255, 255,
+      0, 0, 0, 255,
+    ]);
   });
 
   it("clamps rather than wrapping, so an HDR input cannot alias to black", () => {
     const packed = packPoseInput(new Float32Array([2.5, -1, 0.5, 1]), 1);
-    expect([...packed]).toEqual([255, 0, 128]);
+    expect([...packed]).toEqual([255, 0, 128, 255]);
   });
 
   it("sizes to the model's fixed 192, which is Lightning's graph", () => {
     expect(POSE_INPUT_SIDE).toBe(192);
-    expect(packPoseInput(new Float32Array(4 * 4), 2).length).toBe(2 * 2 * 3);
+    expect(packPoseInput(new Float32Array(4 * 4), 2).length).toBe(2 * 2 * POSE_INPUT_CHANNELS);
   });
 });
 

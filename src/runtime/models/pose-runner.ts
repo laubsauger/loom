@@ -21,22 +21,42 @@ export const POSE_KEYPOINT_COUNT = POSE_KEYPOINTS.length;
 export const POSE_INPUT_SIDE = 192;
 
 /**
- * Our `vec4f` scratch -> MoveNet's `input`, NHWC int32 in 0..255.
+ * The model's REAL input signature, read from the model rather than from its documentation.
+ *
+ * Measured 2026-09-01 by loading the pinned weights under onnxruntime-web:
+ *
+ *   pixel_values: uint8  [batch_size, 192, 192, 4]
+ *   keypoints:    float32 [1, 1, 17, 3]
+ *
+ * This is NOT what MoveNet's upstream card describes — the TensorFlow original takes
+ * `int32 [1,192,192,3]`, and that is what the first version of this file packed. The web
+ * export takes UNSIGNED BYTES and FOUR channels. ORT refuses the mismatch outright
+ * ("Unexpected input data type. Actual: (tensor(int32)), expected: (tensor(uint8))"), so
+ * pose could never have produced a single result — a whole node that cannot run, shipped
+ * green, because every gate around it stopped at the model's edge.
+ *
+ * The shape lives here as one constant and the packer derives from it, so the two cannot
+ * drift apart again.
+ */
+export const POSE_INPUT_DTYPE = "uint8" as const;
+export const POSE_INPUT_CHANNELS = 4;
+
+/**
+ * Our `vec4f` scratch -> MoveNet's `pixel_values`, NHWC uint8 in 0..255.
  *
  * Two differences from depth that are easy to carry over wrongly: the layout is
- * INTERLEAVED (NHWC), not planar, and the values are BYTE RANGE integers with no mean or
- * standard deviation applied. Feeding it normalised float would put every channel near
- * zero and the model would confidently find a person-shaped nothing.
+ * INTERLEAVED (NHWC), not planar, and the values are BYTE RANGE with no mean or standard
+ * deviation applied. Feeding it normalised float would put every channel near zero and the
+ * model would confidently find a person-shaped nothing.
  */
-export function packPoseInput(texels: Float32Array, side: number): Int32Array {
+export function packPoseInput(texels: Float32Array, side: number): Uint8Array {
   const pixels = side * side;
-  const out = new Int32Array(pixels * 3);
+  const out = new Uint8Array(pixels * POSE_INPUT_CHANNELS);
   for (let i = 0; i < pixels; i += 1) {
     const base = i * 4;
-    for (let c = 0; c < 3; c += 1) {
+    for (let c = 0; c < POSE_INPUT_CHANNELS; c += 1) {
       const value = texels[base + c] ?? 0;
-      const byte = Math.round(Math.max(0, Math.min(1, value)) * 255);
-      out[i * 3 + c] = byte;
+      out[i * POSE_INPUT_CHANNELS + c] = Math.round(Math.max(0, Math.min(1, value)) * 255);
     }
   }
   return out;
