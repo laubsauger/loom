@@ -364,7 +364,16 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // effect without rebuilding the transport (which would reset elapsed time — a rate
     // change is not a seek); the scheduler's cap is set when the loop starts, so the
     // effect below restarts it to keep the two in step.
-    const transport = liveClock({ fps: () => fpsRef.current });
+    // T740/§V662 — and the SCHEDULER is what makes a frame real-time, not this hook. The
+    // clock catches up on wall time only while the loop is running: `seek` stops the
+    // driver before replaying 0..N, the step button and `renderFrameRange` step a paused
+    // driver, and every one of those must advance exactly one frame per call or a slow
+    // machine renders a different file (T431, §V44). `driverRef` is read PER FRAME for the
+    // same reason fps is — the answer changes while the transport does not.
+    const transport = liveClock({
+      fps: () => fpsRef.current,
+      presenting: () => driverRef.current?.running === true,
+    });
 
     /**
      * The lap boundary (T433, T464).

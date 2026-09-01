@@ -74,16 +74,39 @@ describe("liveClock's absolute clock (T461)", () => {
     expect(previous).toBe(11);
   });
 
-  it("is a FRAME COUNT, not the wall clock — the determinism half (§V44, §V47)", () => {
-    // 200ms of wall time per frame against a 60fps timeline: after ten frames the wall
-    // reads 2s and the absolute clock must read 10/60. A wall-derived absTime would be an
-    // order of magnitude out here and identical to `wallSeconds`.
-    const clock = clockWithWall(60);
+  /**
+   * T740 narrowed this one. The absolute clock counts FRAMES and reports them at the
+   * timeline rate — that is still the claim, and it is what keeps `abstime` a
+   * frame-quantised number an offline render can reproduce rather than process uptime.
+   *
+   * What is no longer claimed is that the count IGNORES real time. It cannot: `abstime`
+   * and `time` must advance at the same rate or a rotation driven off `abstime` slows
+   * down the moment the browser throttles rAF — the T740 bug, relocated into the one
+   * clock that exists so nothing stalls. So the count tracks elapsed time and the GRID is
+   * the invariant: every reading is an exact multiple of 1/fps, where the wall reading is
+   * whatever the browser handed us.
+   */
+  it("is a FRAME COUNT reported on the frame grid, never a raw wall reading (§V44, §V47)", () => {
+    // 203ms per tick against 60fps: deliberately NOT a whole number of frames, so a
+    // wall-derived absTime would land off the grid and this would catch it.
+    let ms = 0;
+    const clock = liveClock({
+      fps: 60,
+      maxDeltaSeconds: 1,
+      presenting: () => true,
+      now: () => {
+        ms += 203;
+        return ms;
+      },
+    });
     for (let index = 0; index < 10; index += 1) clock.next();
     const frame = clock.next();
-    expect(frame.absTimeSeconds).toBeCloseTo(10 / 60, 6);
-    expect(frame.wallSeconds).toBeGreaterThan(1);
-    expect(frame.absTimeSeconds).not.toBeCloseTo(frame.wallSeconds ?? 0, 2);
+
+    const frames = (frame.absTimeSeconds ?? 0) * 60;
+    expect(frames).toBeCloseTo(Math.round(frames), 9);
+    expect(frame.absFrameIndex).toBe(Math.round(frames));
+    // The wall clock is where the un-quantised reading lives, and it is off the grid.
+    expect((frame.wallSeconds ?? 0) * 60).not.toBeCloseTo(Math.round((frame.wallSeconds ?? 0) * 60), 6);
   });
 
   it("advances by the NEW step after a rate change, rather than rescaling what elapsed", () => {

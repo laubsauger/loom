@@ -30,40 +30,114 @@ describe("liveClock", () => {
   });
 
   /**
-   * T271/§V172 — the default clock is the TIMELINE: frame N is exactly N/fps, with a
-   * constant step. That is what makes `time * 0.15` move evenly; a wall accumulation
-   * jitters by however much rAF jittered, which is the stutter this fixed.
+   * T271/§V172 — the default clock is the TIMELINE: frame N is exactly N/fps. That is what
+   * makes `time * 0.15` move evenly; a raw wall accumulation jitters by however much rAF
+   * jittered, which is the stutter T271 fixed.
+   *
+   * T740 narrowed the claim from "regardless of when frames arrived" to "regardless of
+   * rAF's JITTER". Ticks that arrive a few milliseconds early or late are still worth
+   * exactly one frame — the jitter is rounded away, which is the whole property — but a
+   * tick that arrives a WHOLE FRAME late is worth two, because it was.
    */
-  it("advances timeline time by exactly 1/fps regardless of when frames actually arrived", () => {
-    let t = 0;
-    const clock = liveClock({ fps: 60, now: () => (t += Math.random() * 40) });
+  it("rounds rAF jitter away: an early or late tick is still exactly one frame", () => {
+    // ±5ms around 16.67, which is what a healthy 60 Hz rAF actually looks like.
+    const arrivals = [0, 11, 33, 45, 67, 78];
+    let tick = -1;
+    const clock = liveClock({ fps: 60, presenting: () => true, now: () => arrivals[(tick += 1)] ?? 0 });
 
     const first = clock.next();
-    const second = clock.next();
-    const third = clock.next();
-
     expect(first.timeSeconds).toBe(0);
     expect(first.deltaSeconds).toBe(0);
-    expect(second.timeSeconds).toBeCloseTo(1 / 60, 12);
-    expect(second.deltaSeconds).toBeCloseTo(1 / 60, 12);
-    expect(third.timeSeconds).toBeCloseTo(2 / 60, 12);
-    expect(third.deltaSeconds).toBeCloseTo(1 / 60, 12);
+    for (let index = 1; index < arrivals.length; index += 1) {
+      const frame = clock.next();
+      expect(frame.frameIndex).toBe(index);
+      expect(frame.timeSeconds).toBeCloseTo(index / 60, 12);
+      expect(frame.deltaSeconds).toBeCloseTo(1 / 60, 12);
+    }
   });
 
-  it("publishes the wall pair alongside it, so real-world sync is still reachable", () => {
+  /**
+   * T740 — THE BUG, at the clock. A browser throttling rAF to 30 Hz on a 60 fps project is
+   * a laptop on battery, and the fixed step made the timeline run at HALF SPEED there.
+   * Audio does not slow down to match: `media-playback.ts` found the element half a second
+   * further along every second and seeked it back roughly every 0.3s, which is what the
+   * owner heard. The timeline keeps up by SKIPPING FRAME NUMBERS — drop a frame, never a
+   * sample — so time stays on the exact k/fps grid rather than becoming a wall reading.
+   */
+  it("keeps up with real time when the browser delivers HALF the ticks (T740)", () => {
     let t = 0;
-    const clock = liveClock({ fps: 60, maxDeltaSeconds: 0.25, now: () => t });
+    const clock = liveClock({ fps: 60, presenting: () => true, now: () => t });
+
+    clock.next();
+    let last = 0;
+    for (let tick = 1; tick <= 30; tick += 1) {
+      t = tick * (1000 / 30); // 30 delivered ticks in one real second
+      const frame = clock.next();
+      expect(frame.deltaSeconds).toBeCloseTo(2 / 60, 12); // two frames' worth, because it was
+      expect(frame.frameIndex).toBe(tick * 2); // and the odd frame numbers are DROPPED
+      last = frame.timeSeconds;
+    }
+    // One second of real time, one second of timeline. The old fixed step reported 0.5.
+    expect(last).toBeCloseTo(1, 9);
+  });
+
+  /**
+   * T740/§V662 — THE OTHER HALF, and the expensive one to get wrong.
+   *
+   * `renderFrameRange` steps a take one frame at a time with a GPU readback and a video
+   * encode between the steps, and `seek` replays 0..N as fast as the machine manages
+   * (§V170). Neither is a presentation: the frame index IS the take, so a step must be
+   * worth exactly one frame however long it took. A clock that measured wall time here
+   * would make a slow machine render a SHORTER, faster file from the same project — T431's
+   * replay contract broken by a fix aimed at something else entirely.
+   */
+  it("a step that is NOT part of a presentation is worth exactly one frame, whatever the wall says", () => {
+    let t = 0;
+    // 250ms per step: a heavy replay frame, and fifteen frames' worth of wall time at 60fps.
+    const clock = liveClock({ fps: 60, now: () => (t += 250) });
+
+    for (let index = 0; index < 20; index += 1) {
+      const frame = clock.next();
+      expect(frame.frameIndex).toBe(index);
+      expect(frame.absFrameIndex).toBe(index);
+      expect(frame.timeSeconds).toBeCloseTo(index / 60, 12);
+      expect(frame.deltaSeconds).toBe(index === 0 ? 0 : 1 / 60);
+    }
+  });
+
+  it("switching from presenting to stepping does not pay off a banked deficit in skipped frames", () => {
+    // The seek path: playback throttled to 30Hz (so the clock is mid-carry), then paused
+    // and stepped. The step must be one frame, not one frame plus whatever was owed.
+    let t = 0;
+    let live = true;
+    const clock = liveClock({ fps: 60, presenting: () => live, now: () => t });
+    clock.next();
+    for (let tick = 1; tick <= 10; tick += 1) {
+      t = tick * (1000 / 30);
+      clock.next();
+    }
+    live = false;
+    const before = clock.next();
+    t += 500;
+    expect(clock.next().frameIndex).toBe(before.frameIndex + 1);
+  });
+
+  it("publishes the wall pair alongside it, quantised where the wall pair is raw", () => {
+    let t = 0;
+    const clock = liveClock({ fps: 60, maxDeltaSeconds: 0.25, presenting: () => true, now: () => t });
 
     clock.next();
     t = 500; // half a second of real time for one frame
     const frame = clock.next();
 
-    // The timeline advanced one frame; the wall clock advanced half a second. Both are
-    // reported, and each is paired with ITS OWN step (§V172) — never mixed.
-    expect(frame.timeSeconds).toBeCloseTo(1 / 60, 12);
-    expect(frame.deltaSeconds).toBeCloseTo(1 / 60, 12);
+    // Both are reported and each is paired with ITS OWN step (§V172) — never mixed. They
+    // measure the same elapsed time (T740: the clamped 0.25s, not 1/60 of it) and differ
+    // in SHAPE: the timeline lands on a frame boundary, the wall reading does not have to.
     expect(frame.wallSeconds).toBeCloseTo(0.25, 12); // clamped
     expect(frame.wallDeltaSeconds).toBe(0.25);
+    expect(frame.timeSeconds).toBeCloseTo(0.25, 12);
+    expect(frame.deltaSeconds).toBeCloseTo(0.25, 12);
+    expect(frame.frameIndex).toBe(15); // 0.25s at 60fps, exactly
   });
 
   it("first frame has zero delta rather than a jump from an unset baseline", () => {
