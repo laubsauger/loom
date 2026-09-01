@@ -342,7 +342,21 @@ describe("T49 Phase 1 exit — a feedback graph runs long without accumulating G
     } finally {
       backend.dispose();
     }
-  }, 120_000);
+    /*
+     * T780 — 300 s, and the number is MEASURED rather than picked.
+     *
+     * This run takes 37-65 s alone depending on the machine's state, so the old 120 s left
+     * under 2x headroom. This project now runs several agents at once, and a jsdom suite
+     * measured 3.3x wall-time inflation at load 40 and worse at 110 — so a 2x margin is
+     * smaller than the contention the project itself routinely creates, and the test timed
+     * out for at least two workers on changes that could not have caused it.
+     *
+     * A timeout here is a HANG DETECTOR, not a performance gate: nothing in the suite
+     * asserts on duration, so a budget that only fires under contention buys no slowdown
+     * signal and costs an attribution hunt every time (§V491, §V713). 300 s is ~4.6x the
+     * slow-machine time — above the contention factor, still far below a real hang.
+     */
+  }, 300_000);
 
   it(`creates nothing but one command encoder per frame across ${FRAMES_MOCK_RUN} frames (§V8)`, async () => {
     // Dawn reports totals, not per-call counts. The mock device instruments every
