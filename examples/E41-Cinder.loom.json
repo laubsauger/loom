@@ -1,0 +1,675 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bed-stand": {
+        "id": "e-bed-stand",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in1"
+        }
+      },
+      "e-burn-lay": {
+        "id": "e-burn-lay",
+        "source": {
+          "nodeId": "burn",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lay",
+          "portId": "in2"
+        }
+      },
+      "e-clip-pick": {
+        "id": "e-clip-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-cloud-motes": {
+        "id": "e-cloud-motes",
+        "source": {
+          "nodeId": "cloud",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "motes",
+          "portId": "points"
+        }
+      },
+      "e-gain-pack": {
+        "id": "e-gain-pack",
+        "source": {
+          "nodeId": "gain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in2"
+        }
+      },
+      "e-halo-burn": {
+        "id": "e-halo-burn",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in2"
+        }
+      },
+      "e-lay-out": {
+        "id": "e-lay-out",
+        "source": {
+          "nodeId": "lay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-moved-gain": {
+        "id": "e-moved-gain",
+        "source": {
+          "nodeId": "moved",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gain",
+          "portId": "input"
+        }
+      },
+      "e-orb-stand": {
+        "id": "e-orb-stand",
+        "source": {
+          "nodeId": "orb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in2"
+        }
+      },
+      "e-pack-cloud": {
+        "id": "e-pack-cloud",
+        "source": {
+          "nodeId": "pack",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cloud",
+          "portId": "field"
+        }
+      },
+      "e-past-moved": {
+        "id": "e-past-moved",
+        "source": {
+          "nodeId": "past",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "moved",
+          "portId": "in2"
+        }
+      },
+      "e-pick-moved": {
+        "id": "e-pick-moved",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "moved",
+          "portId": "in1"
+        }
+      },
+      "e-pick-pack": {
+        "id": "e-pick-pack",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pack",
+          "portId": "in1"
+        }
+      },
+      "e-pick-past": {
+        "id": "e-pick-past",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "past",
+          "portId": "input"
+        }
+      },
+      "e-pick-under": {
+        "id": "e-pick-under",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "under",
+          "portId": "input"
+        }
+      },
+      "e-shot-burn": {
+        "id": "e-shot-burn",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "burn",
+          "portId": "in1"
+        }
+      },
+      "e-shot-halo": {
+        "id": "e-shot-halo",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-stand-pick": {
+        "id": "e-stand-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "stand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-under-lay": {
+        "id": "e-under-lay",
+        "source": {
+          "nodeId": "under",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lay",
+          "portId": "in1"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 1.5,
+          "aspectcorrect": true,
+          "exp": 1.4,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0.1,
+          "period": 0.11,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 11,
+          "speed": 0.035,
+          "spread": 2,
+          "t4d": 0,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2220,
+          "y": -420
+        },
+        "type": "noise"
+      },
+      "burn": {
+        "definitionVersion": 1,
+        "id": "burn",
+        "label": "burn1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 780,
+          "y": -60
+        },
+        "type": "add"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "file": "",
+          "playMode": "freeRun",
+          "speed": 1
+        },
+        "position": {
+          "x": -2220,
+          "y": 140
+        },
+        "type": "movieFileIn"
+      },
+      "cloud": {
+        "definitionVersion": 1,
+        "id": "cloud",
+        "label": "cloud1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"default\":[0,0,99]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0,0,0,0]}]",
+          "capacity": 4096,
+          "group": "",
+          "kernel": "const ASPECT: f32 = 1.7777777777777777;\nconst TTL: f32 = 1.6;\nconst THRESHOLD: f32 = 0.06;\nconst GATE: f32 = 0.05;\n\n/* The DRAUGHT the motes rise through — a small stream function whose CURL steers\n   them, so the cloud shears and eddies and can never bunch into a knot (E9's shape,\n   scaled for a screen-plane cloud). */\nfn draught(pos: vec2f, t: f32) -> f32 {\n  let broad = sin(pos.x * 2.6 + t * 0.5) * cos(pos.y * 3.1 - t * 0.37);\n  let fine = cos(pos.x * 7.9 - t * 0.9) * sin(pos.y * 6.3 + t * 0.7) * 0.35;\n  return broad + fine;\n}\n\nfn curl(pos: vec2f, t: f32) -> vec2f {\n  let e = 0.05;\n  let dx = draught(pos + vec2f(e, 0.0), t) - draught(pos - vec2f(e, 0.0), t);\n  let dy = draught(pos + vec2f(0.0, e), t) - draught(pos - vec2f(0.0, e), t);\n  return vec2f(dy, -dx) / (2.0 * e);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let age = p.velocity.z;\n\n  if (age >= TTL) {\n    /* DORMANT. Roll the gate; winners probe one fresh deterministic site. The salt\n       folds the absolute frame in, so the probe pattern is dense over time AND a seek\n       reproduces it exactly. */\n    q.tint = vec4f(0.0);\n    let salt = ctx.index * 977u + ctx.absFrame;\n    if (pointRand(salt, 9u) > GATE) { return q; }\n    let sx = pointRand(salt, 1u) * 2.0 - 1.0;\n    let sy = pointRand(salt, 2u) * 2.0 - 1.0;\n    let sample = fieldAt(vec3f(sx, sy, 0.0));\n    if (sample.a <= THRESHOLD) { return q; }\n    /* BORN — at the motion site, display space, with an upward kick and jitter. */\n    let jx = pointRand(salt, 21u) - 0.5;\n    q.position = vec3f(sx * ASPECT + jx * 0.03, sy + (pointRand(salt, 22u) - 0.5) * 0.03, 0.0);\n    q.velocity = vec3f(jx * 0.4, 0.12 + pointRand(salt, 23u) * 0.3, 0.0);\n    q.tint = vec4f(sample.rgb, sample.a);\n    return q;\n  }\n\n  /* A LIVE MOTE: buoyancy plus the draught's curl, through drag — the field is\n     INTEGRATED, never teleported along (§V427). */\n  var v = p.velocity.xy;\n  let force = curl(p.position.xy, ctx.absTime) * 0.5 + vec2f(0.0, 0.55) - v * 2.2;\n  v = v + force * ctx.delta;\n  q.position = vec3f(p.position.xy + v * ctx.delta, 0.0);\n  q.velocity = vec3f(v, age + ctx.delta);\n\n  /* The video's LIVE colour under the mote (field space is /ASPECT), faded by age so\n     it shrinks and dims out instead of popping. A small floor keeps a mote over a\n     black region reading as an ember — additive light, not albedo (§V644's spirit).\n     tint.a is the SIZE channel (T721 maps it): presence plus the local motion. */\n  let sample = fieldAt(vec3f(q.position.x / ASPECT, q.position.y, 0.0));\n  let fade = 1.0 - smoothstep(TTL * 0.45, TTL, q.velocity.z);\n  let glow = sample.rgb * 0.85 + vec3f(0.10, 0.07, 0.05);\n  q.tint = vec4f(glow * fade, clamp(0.55 + sample.a * 2.4, 0.55, 2.2) * fade);\n  return q;\n}",
+          "seed": 41
+        },
+        "position": {
+          "x": -720,
+          "y": -60
+        },
+        "type": "pointKernel"
+      },
+      "flare": {
+        "definitionVersion": 1,
+        "id": "flare",
+        "label": "flare1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -420,
+          "y": 240
+        },
+        "type": "materialUnlit"
+      },
+      "gain": {
+        "definitionVersion": 1,
+        "id": "gain",
+        "label": "gain1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 0.6
+        },
+        "position": {
+          "x": -1320,
+          "y": -60
+        },
+        "type": "level"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "zero",
+          "filter": "gaussian",
+          "size": 18
+        },
+        "position": {
+          "x": 480,
+          "y": -60
+        },
+        "type": "blur"
+      },
+      "lay": {
+        "definitionVersion": 1,
+        "id": "lay",
+        "label": "lay1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1080,
+          "y": -240
+        },
+        "type": "add"
+      },
+      "motes": {
+        "definitionVersion": 1,
+        "id": "motes",
+        "label": "motes1",
+        "parameters": {
+          "group": "p.velocity.z < 1.6",
+          "material": "flare1",
+          "mode": "points",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "channel": "w",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.016
+              }
+            },
+            "mode": "map"
+          },
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -120,
+          "y": -60
+        },
+        "type": "geometry"
+      },
+      "moved": {
+        "definitionVersion": 1,
+        "id": "moved",
+        "label": "moved1",
+        "parameters": {},
+        "position": {
+          "x": -1620,
+          "y": -60
+        },
+        "type": "difference"
+      },
+      "orb": {
+        "definitionVersion": 1,
+        "id": "orb",
+        "label": "orb1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "driven": {
+                "channel": "pathx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "center.y": {
+            "bindings": {
+              "driven": {
+                "channel": "pathy1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "driven"
+          },
+          "fillcolor": [
+            1,
+            0.82,
+            0.5,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.085,
+            0.085
+          ],
+          "softness": 0.09
+        },
+        "position": {
+          "x": -2220,
+          "y": -140
+        },
+        "type": "circle"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1380,
+          "y": -240
+        },
+        "type": "output"
+      },
+      "pack": {
+        "definitionVersion": 1,
+        "id": "pack",
+        "label": "pack1",
+        "parameters": {
+          "outa": "in2lum",
+          "outb": "in1b",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": -1020,
+          "y": -60
+        },
+        "type": "reorder"
+      },
+      "past": {
+        "definitionVersion": 1,
+        "id": "past",
+        "label": "past1",
+        "parameters": {
+          "frames": 8,
+          "index": 6,
+          "scale": 1
+        },
+        "position": {
+          "x": -1620,
+          "y": 240
+        },
+        "type": "cache"
+      },
+      "pathx": {
+        "definitionVersion": 1,
+        "id": "pathx",
+        "label": "pathx1",
+        "parameters": {
+          "amplitude": 0.33,
+          "frequency": 0.29,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2220,
+          "y": 420
+        },
+        "type": "lfo"
+      },
+      "pathy": {
+        "definitionVersion": 1,
+        "id": "pathy",
+        "label": "pathy1",
+        "parameters": {
+          "amplitude": 0.3,
+          "frequency": 0.203,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2220,
+          "y": 700
+        },
+        "type": "lfo"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1920,
+          "y": 20
+        },
+        "type": "switch"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "view1",
+          "lights": "",
+          "scenes": "motes1"
+        },
+        "position": {
+          "x": 180,
+          "y": -60
+        },
+        "type": "render"
+      },
+      "stand": {
+        "definitionVersion": 1,
+        "id": "stand",
+        "label": "stand1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1920,
+          "y": -280
+        },
+        "type": "add"
+      },
+      "under": {
+        "definitionVersion": 1,
+        "id": "under",
+        "label": "under1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 0.05,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -1620,
+          "y": -420
+        },
+        "type": "level"
+      },
+      "view": {
+        "definitionVersion": 1,
+        "id": "view",
+        "label": "view1",
+        "parameters": {
+          "eye": [
+            0,
+            0,
+            4
+          ],
+          "far": 40,
+          "fov": 40,
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "near": 0.1,
+          "ortho": true,
+          "orthoHeight": 2
+        },
+        "position": {
+          "x": -120,
+          "y": 240
+        },
+        "type": "camera"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E41 Cinder",
+  "projectId": "example-e41-cinder",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 41,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
