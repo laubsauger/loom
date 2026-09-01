@@ -362,39 +362,73 @@ describe("E27's optional audio and colour rotation are OFF at zero, and real abo
    * vacuous — §V147 twice over, since an identity claim passes perfectly with the wiring
    * broken.
    *
-   * The claim is RHYTHM, not level: the low band rests at 0.713 in the analyser's dB
-   * domain (T701) and `bsub1` subtracts exactly that, so between kicks the drive is
-   * essentially zero and ON the kick it is the band's full 0.26 excursion. Frames are
-   * chosen against 112 bpm at 60 fps — a beat is 32.14 frames, so frame 97 is 0.02 of a
-   * beat past the strike and frame 90 is 0.80 of a beat into the decay.
+   * ── T820 REPAIRED THIS TEST, AND THE REPAIR IS THE POINT, NOT A LOOSENING ──
    *
-   * Measured at gain 1: mean |Δ| luma 0.0746 on the strike against 0.0110 off it (lit),
-   * and 0.0914 on the strike (dark). The dark fixture moves MORE, not less — the driver is
-   * a synthesized pattern, so unlike §T797's motion term it is not starved by a dark
-   * source, and the auto-gain has already put the height field in full range for it to
-   * scale.
+   * T809 shipped this chain with NO SMOOTHING, and the owner reported the result:
+   * "relief audioreactivity is too glitchy and jumpy and jittery". `beat1`'s strike has an
+   * INSTANT attack, so the drive jumped its whole 0.262 excursion in one 16 ms frame and
+   * sagged to zero before the next beat. `env1` (`valueLag`, 40 ms attack, `releaseRatio`
+   * 8 for a 320 ms release) turns that into an envelope, and BOTH of this test's original
+   * numbers had to move because the behaviour they described was the defect:
+   *
+   *   - THE FRAME MOVED, 97 → 100, and it is DERIVED rather than hunted (§V218). A beat is
+   *     32.14 frames at 112 bpm/60 fps, so the strike lands at 96.43; a 40 ms attack is 2.4
+   *     frames, so the envelope tops out about 3.6 frames later. Measured peak: frame 100,
+   *     drive 0.1762. Frame 97 is now only 40% of the way UP the attack (0.1227), so
+   *     sampling there would have measured the ramp and called it the peak.
+   *
+   *   - THE OFF-BEAT ASSERTION INVERTED, and that inversion IS the fix. It used to demand
+   *     the picture "sits still between beats" (< 0.03, measured 0.0110) — which is exactly
+   *     the collapse-to-zero the owner was seeing as a strobe. It now demands the opposite:
+   *     the envelope SUSTAINS between beats (measured 0.0596). Rewire `bsub1 → kick1`
+   *     direct, as T809 had it, and the off-beat drive falls back to ~0.0002 and this
+   *     assertion fails loudly — which is what stops anyone "simplifying" `env1` away.
+   *
+   * SUSTAIN MUST NOT DEGENERATE INTO A CONSTANT BIAS, so the rhythm is asserted separately
+   * and on the term that actually carries it. Per-pixel |Δ| against rest is a poor rhythm
+   * discriminator here (0.0679 peak against 0.0596 off-beat, only 1.14x — the metric
+   * saturates as points cross pixels), but the audio's contribution to MEAN LUMA tracks the
+   * drive almost exactly: +0.0062 at the peak against +0.0029 off the beat, a ratio of
+   * 2.14 against the drive's own 2.24. A drive that had lost its rest subtraction would put
+   * that ratio at 1.0.
+   *
+   * The dark fixture still moves MORE, not less (0.0810 against 0.0679) — the driver is a
+   * synthesized pattern, so unlike §T797's motion term it is not starved by a dark source,
+   * and the auto-gain has already put the height field in full range for it to scale.
    */
   it("answers the KICK when the gain is turned up, and both fixtures get it", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
 
-    const litRest = await shoot(() => {}, 97);
-    const litKick = await shoot(audioAt(1), 97);
-    // Measured 0.0746 — a quarter of the frame's own mean, from one number.
+    // §V739: name the node BEFORE measuring it, so removing or renaming `env1` fails here
+    // as a missing node rather than as a number nobody can attribute.
+    const { document } = e27();
+    expect(
+      Object.values(document.graph.nodes).find((entry) => entry.label === "env1"),
+      "E27 lost `env1` — T820's envelope follower IS the fix for the reported jitter",
+    ).toMatchObject({ type: "valueLag", parameters: { lag: 0.04, releaseRatio: 8 } });
+
+    const litRest = await shoot(() => {}, 100);
+    const litKick = await shoot(audioAt(1), 100);
+    // Measured 0.0679 at the envelope's peak — the strike still reads as a strike.
     expect(compare(litRest, litKick)).toBeGreaterThan(0.03);
 
     const litOffBeatRest = await shoot(() => {}, 90);
     const litOffBeat = await shoot(audioAt(1), 90);
-    // Measured 0.0110 against the strike's 0.0746: it BREATHES on the beat rather than
-    // sitting on. A drive that had lost its rest subtraction would read the same at both.
-    expect(compare(litOffBeatRest, litOffBeat)).toBeLessThan(0.03);
-    expect(compare(litRest, litKick)).toBeGreaterThan(compare(litOffBeatRest, litOffBeat) * 3);
+    // T820, INVERTED FROM T809: measured 0.0596, where the unsmoothed chain gave 0.0110.
+    // The sheet sustains between beats instead of collapsing — delete `env1` and this dies.
+    expect(compare(litOffBeatRest, litOffBeat)).toBeGreaterThan(0.03);
+    // ...and it is still a RHYTHM and not a constant bias: the lift the audio adds at the
+    // peak is measured 2.14x the lift it adds off the beat (+0.0062 against +0.0029).
+    expect(litKick.mean - litRest.mean).toBeGreaterThan((litOffBeat.mean - litOffBeatRest.mean) * 1.8);
 
-    const darkRest = await shoot(dimmed, 97);
-    const darkKick = await shoot(both(dimmed, audioAt(1)), 97);
-    // Measured 0.0914, and the frame still clears §T797's floor rather than blowing past
+    const darkRest = await shoot(dimmed, 100);
+    const darkKick = await shoot(both(dimmed, audioAt(1)), 100);
+    // Measured 0.0810, and the frame still clears §T797's floor rather than blowing past
     // it: audio scales the LIFT, so it moves geometry, not exposure.
     expect(compare(darkRest, darkKick)).toBeGreaterThan(0.03);
     expect(darkKick.mean).toBeGreaterThan(LIVELY_FLOOR);
+    // T809's finding, re-measured under the envelope: the dark case gets MORE of the audio.
+    expect(compare(darkRest, darkKick)).toBeGreaterThan(compare(litRest, litKick));
   }, 900_000);
 
   /**

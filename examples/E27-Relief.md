@@ -45,7 +45,7 @@ palette1(ramp) ─► coat1(lookup) ◄─────────────�
                         rgb = paletted colour, alpha = luminance + movement
                                               │
 grid1(pointGrid 480×220) ─► bridge1(textureToAttribute) ─► lift1(pointKernel)
-        beat1(audioPattern) ─► bsub1(valueMath) ─► kick1(valueMath) ┄┄► lift1.value1
+  beat1(audioPattern) ─► bsub1(valueMath) ─► env1(valueLag) ─► kick1(valueMath) ┄┄► lift1.value1
                                               │
                     phosphor1(materialUnlit) ─┴─► body1(geometry: instances, tint ← sample)
                     eye1(camera, eye.x ┄ sway1)
@@ -278,7 +278,8 @@ and inert.
 
 ### The audio scales the LIFT, not the exposure
 
-`beat1(audioPattern)` → `bsub1` subtracts the low band's T701 rest of 0.713 → `kick1`
+`beat1(audioPattern)` → `bsub1` subtracts the low band's T701 rest of 0.713 → `env1`
+follows the envelope (T820, below — this is the node that stops it jittering) → `kick1`
 multiplies by the knob → `lift1.value1`, and the kernel reads it as
 `height * (1.05 + ctx.value1)`. The sheet stands further out on the kick.
 
@@ -504,3 +505,56 @@ video. The understudy here is procedural, because `text` renders through a canva
 not exist in the headless host, so a shipped word would be black in the GPU gate and in
 every look pass while being fine in the app. That is a real limitation and it is stated
 rather than worked around: the meaningful source is the one the user switches to.
+
+## T820 — the smoothing IS the point
+
+Owner, on the T809 chain: *"relief audioreactivity is too glitchy and jumpy and jittery"*.
+
+They were right, and the cause is one sentence: **T809 wired a raw per-frame band value
+straight to the lift.** No smoothing anywhere, so every frame's value was a height, and
+`beat1`'s strike has an *instant* attack — `exp(-beatPhase * 7)` is 1.0 on the beat
+boundary. Measured on the drive at `kick1.operand = 1`: the value jumped its whole **0.262**
+excursion in **one 16 ms frame**, then sagged to ~0 before the next beat. Snap, collapse,
+repeat. That is not a musical response, it is a strobe.
+
+Measured on the *picture*, per-pixel mean |Δ| against the previous frame, across the beat at
+frame 225:
+
+| arm | the strike frame | a quiet frame | between strikes |
+| --- | --- | --- | --- |
+| audio **off** (the shipped gain) | 0.0244 | 0.0228 | 0.0228 — the file's own motion floor |
+| raw drive, gain 1 | **0.0649** | 0.0228 | 0.038 – 0.042 |
+| `env1`, gain 1 | **0.0478** | 0.0243 | 0.026 |
+
+Subtracting the audio-off floor gives the part the audio is responsible for: **0.0405 on the
+strike frame, cut to 0.0234 — 42% less**, and the frames *between* strikes fall from ~0.016
+down to ~0.003, about **80% less**. The peak keeps **71%** of the raw excursion, so the kick
+still reads as a kick.
+
+### `env1` is an envelope follower, and it is one node only because of T814
+
+`valueLag` with **`lag` 0.04** and **`releaseRatio` 8**: a 40 ms attack, so a strike still
+lands inside three frames, and a 320 ms release, so at 112 bpm it has decayed to about a
+fifth by the next beat. It **pumps and resets** instead of pumping into a plateau — which is
+what a longer release buys you, and why the release is 320 ms and not 500 ms. The resting
+floor it does introduce is 22% of the peak: the sheet no longer fully collapses between
+beats, and that is the intended half of the trade.
+
+Before T814 gave the smoother a `releaseRatio`, fast-attack/slow-release took a hand-built
+chain of three or four nodes, rebuilt per example and tuned against a fixture — the exact
+duplication T738 measured and T821 exists to end. Here it is one node with two knobs.
+
+**Do not "simplify" this node away.** A straight `bsub1 → kick1` wire is not a shorter
+spelling of this graph; it is the bug the owner reported. If you are reading this because
+`env1` looks redundant with the gain at zero — it is inert at zero *by construction*, like
+everything else T809 added, and the moment anyone turns the knob up it is the difference
+between a pump and a strobe.
+
+### The order is still the identity
+
+The chain is now **bias → envelope → gain**, and `kick1` still multiplies **last**. Anything
+finite times zero is zero, so `env1` costs T809's identity claim nothing, and that is
+measured rather than argued: **12 of 12 byte hashes identical** across frames 0, 1, 2, 60, 90
+and 240, on the lit understudy *and* the ×0.14 dark fixture, before and after this node
+joined the graph. The envelope belongs between the bias and the gain rather than after it —
+after the gain it would smooth the *knob* instead of the signal.

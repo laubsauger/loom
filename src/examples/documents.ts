@@ -4296,10 +4296,34 @@ const reliefDocument = document(
          downstream of everything the exposure decided: the sheet breathes on the kick and
          the frame's re-ranging is untouched.
 
-         THE CHAIN IS BIAS-THEN-GAIN, AND THE ORDER IS THE IDENTITY. `low` rests at 0.713
-         in the analyser's dB domain (T701), so `bsub1` puts rest at zero and the drive is
-         a pure excursion. `kick1` multiplies LAST, which is what makes 0 exact: a gain of
-         zero before a bias would leave the bias behind.
+         THE CHAIN IS BIAS-ENVELOPE-GAIN, AND THE ORDER IS THE IDENTITY. `low` rests at
+         0.713 in the analyser's dB domain (T701), so `bsub1` puts rest at zero and the
+         drive is a pure excursion. `kick1` multiplies LAST, which is what makes 0 exact: a
+         gain of zero before a bias would leave the bias behind. `env1` sits BETWEEN them,
+         which costs the identity nothing (anything finite times zero is zero) and is where
+         an envelope has to go — smoothing a signal that has already been zeroed at rest is
+         the same as smoothing it before, and putting it after the gain would smooth the
+         KNOB instead of the signal.
+
+         T820 — `env1` IS NOT OPTIONAL DRESSING, IT IS THE FEATURE. Owner, on the T809
+         chain: "relief audioreactivity is too glitchy and jumpy and jittery". They were
+         right and the cause was not subtle: T809 wired a RAW per-frame band value straight
+         to the lift, so every frame's value was a height. `beat1`'s strike has an INSTANT
+         attack (`exp(-beatPhase * 7)` at phase 0), so the drive jumped its whole 0.262
+         excursion in ONE 16 ms frame and then sagged to zero before the next beat — snap,
+         collapse, repeat. Measured on the picture: the strike frame's per-pixel |Δ| against
+         the frame before it was 0.0649 where the file's own motion floor is 0.0228.
+
+         `env1` IS AN ENVELOPE FOLLOWER, and it is one node now only because T814 gave the
+         smoother a `releaseRatio` — before that this took a hand-built chain, which is
+         exactly the per-example rebuilding T738 measured and T821 is meant to end. Lag 0.04
+         is a 40 ms attack, so the strike still lands inside three frames and reads as a
+         strike; ratio 8 makes the release 320 ms, so at 112 bpm it has decayed to about a
+         fifth by the next beat — it PUMPS and resets rather than pumping into a plateau.
+         Measured at gain 1: the strike frame's audio-attributable |Δ| falls 42% and the
+         frames BETWEEN strikes fall about 80%, while the peak keeps 71% of the raw
+         excursion. DO NOT "SIMPLIFY" THIS NODE AWAY — a straight `bsub1 → kick1` wire is
+         the shipped bug, not a shorter spelling of this.
 
          AND `low` IS THE BAND THAT DOES NOT SHOW T776'S ARRANGEMENT, deliberately. The
          four-bar pull-back keeps the kick (depth 0.90 on `low` against 0.07 on `high`), so
@@ -4309,7 +4333,8 @@ const reliefDocument = document(
          is `level` or `high`, and it would swing the relief once every four bars. */
       node("beat", "audioPattern", [-1680, 1180], { bpm: 112, amount: 1 }, { label: "beat1" }),
       node("bsub", "valueMath", [-1380, 1180], { operation: "add", operand: -0.713 }, { label: "bsub1" }),
-      node("bgain", "valueMath", [-1080, 1180], { operation: "multiply", operand: 0 }, { label: "kick1" }),
+      node("env", "valueLag", [-1080, 1180], { lag: 0.04, releaseRatio: 8 }, { label: "env1" }),
+      node("bgain", "valueMath", [-780, 1180], { operation: "multiply", operand: 0 }, { label: "kick1" }),
 
       node("palette", "ramp", [-1080, -180], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
@@ -4491,7 +4516,10 @@ const reliefDocument = document(
       // T809 — the optional audio, wired but at gain zero. `kick1:low` reaches `lift1`'s
       // value slot, which is the LIFT AMPLITUDE and nothing else.
       edge("v-beat-bsub", ["beat", "out"], ["bsub", "a"]),
-      edge("v-bsub-bgain", ["bsub", "out"], ["bgain", "a"]),
+      // T820: the envelope follower goes BETWEEN the bias and the gain. `bsub1 → kick1`
+      // direct is what shipped and what the owner called jittery.
+      edge("v-bsub-env", ["bsub", "out"], ["env", "in"]),
+      edge("v-env-bgain", ["env", "out"], ["bgain", "a"]),
       // THE BRAID: colour in from the palette, SHAPE in from the un-coated source — which
       // is now that source's luminance PLUS its movement (T797). Only the height carries
       // the motion; the colour path stays the picture.

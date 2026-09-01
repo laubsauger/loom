@@ -304,15 +304,15 @@
           "portId": "a"
         }
       },
-      "v-bsub-bgain": {
-        "id": "v-bsub-bgain",
+      "v-bsub-env": {
+        "id": "v-bsub-env",
         "source": {
           "nodeId": "bsub",
           "portId": "out"
         },
         "target": {
-          "nodeId": "bgain",
-          "portId": "a"
+          "nodeId": "env",
+          "portId": "in"
         }
       },
       "v-ceil-guard": {
@@ -324,6 +324,17 @@
         "target": {
           "nodeId": "guard",
           "portId": "in"
+        }
+      },
+      "v-env-bgain": {
+        "id": "v-env-bgain",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bgain",
+          "portId": "a"
         }
       }
     },
@@ -370,7 +381,7 @@
           "operation": "multiply"
         },
         "position": {
-          "x": -1080,
+          "x": -780,
           "y": 1180
         },
         "type": "valueMath"
@@ -566,6 +577,20 @@
           "y": 560
         },
         "type": "lfo"
+      },
+      "env": {
+        "definitionVersion": 1,
+        "id": "env",
+        "label": "env1",
+        "parameters": {
+          "lag": 0.04,
+          "releaseRatio": 8
+        },
+        "position": {
+          "x": -1080,
+          "y": 1180
+        },
+        "type": "valueLag"
       },
       "eye": {
         "definitionVersion": 1,
