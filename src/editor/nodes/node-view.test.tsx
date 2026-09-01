@@ -473,9 +473,13 @@ describe("T457 (V387) — reference-fed inputs render NO socket", () => {
     // socket is exactly what remains.
     const inputs = [...container.querySelectorAll('[data-handlepos="left"]')];
     expect(inputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["environment"]);
-    // The output socket is real and stays.
+    // The output sockets are real and stay. `depth` (T722) is conditional — it
+    // ALLOCATES nothing until the Depth Output switch is on (`outputWhen`) — but its
+    // socket is always drawn: hiding it would make the port undiscoverable, and a wire
+    // into it while the switch is off reports as an ordinary missing-resource
+    // diagnostic that names the switch.
     const outputs = [...container.querySelectorAll('[data-handlepos="right"]')];
-    expect(outputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["out"]);
+    expect(outputs.map((handle) => handle.getAttribute("data-handleid"))).toEqual(["out", "depth"]);
   });
 
   it("a wireable input on the same node keeps its socket (renderSurface: points yes, camera no)", () => {
