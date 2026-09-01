@@ -101,10 +101,10 @@ export const depthNode: NodeDefinition = {
       default: "accurate",
       options: [
         { value: "accurate", label: "Accurate (94 MB)" },
-        { value: "fast", label: "Fast (18 MB)" },
+        { value: "fast", label: "Small download (18 MB)" },
       ],
       description:
-        "Which weights to use. Accurate is the full-precision model; Fast is a 4-bit variant that downloads in a fifth of the bytes and infers quicker at some cost in detail. They are separate downloads, so switching asks before it spends anything.",
+        "Which weights to use. Both produce a depth map; they differ in download size and detail. The 4-bit variant is a fifth of the bytes but is NOT faster — measured on the CPU path it is about half again slower, because unpacking 4-bit weights costs more than the memory it saves. Pick it to save the download, not to save time. They are separate downloads, so switching asks before it spends anything.",
     },
   },
   /**

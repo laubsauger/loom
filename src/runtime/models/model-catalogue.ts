@@ -41,14 +41,19 @@ export const DEPTH_ACCURATE: ModelDescriptor = {
 };
 
 /**
- * The live variant: 4-bit weights with fp16 activations, a fifth of the download and
- * quicker per frame. A DIFFERENT QUALITY POINT, not a smaller packaging of the same one —
- * so it is offered as a choice and never substituted for the accurate one behind the
- * user's back.
+ * The SMALL variant: 4-bit weights with fp16 activations, a fifth of the download.
+ *
+ * ⚠ SMALLER IS NOT FASTER, measured 2026-09-01 (§T753). On the CPU path this is
+ * **3833 ms against fp32's 2670 ms** — 1.44x SLOWER, because dequantising 4-bit weights
+ * costs more than the memory traffic it saves. It was labelled "fast" and described as
+ * "quicker per frame" on the strength of its size alone, which was never measured and is
+ * false. The honest offer is a smaller DOWNLOAD at some cost in quality and, on CPU, in
+ * speed. Whether a GPU execution provider reverses that is a separate unmeasured question
+ * and must not be assumed here either.
  */
 export const DEPTH_LIVE: ModelDescriptor = {
   id: "depth-anything-v2-small-q4f16",
-  label: "Depth Anything V2 Small (fast)",
+  label: "Depth Anything V2 Small (small download)",
   url: weights("model_q4f16.onnx"),
   bytes: 19_126_267,
   license: "Apache-2.0",
@@ -80,10 +85,15 @@ export const POSE_ACCURATE: ModelDescriptor = {
   license: "Apache-2.0",
 };
 
-/** The 8-bit variant: a third of the download, quicker, slightly less steady. */
+/**
+ * The 8-bit variant: a quarter of the download.
+ *
+ * ⚠ Also SLOWER, and by more: **67 ms against fp32's 18 ms** on the CPU path (§T753).
+ * Same lesson as the depth pair — a size ratio is not a speed ratio.
+ */
 export const POSE_LIVE: ModelDescriptor = {
   id: "movenet-lightning-int8",
-  label: "MoveNet SinglePose Lightning (fast)",
+  label: "MoveNet SinglePose Lightning (small download)",
   url: poseWeights("model_int8.onnx"),
   bytes: 2_598_245,
   license: "Apache-2.0",

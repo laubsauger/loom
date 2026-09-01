@@ -88,10 +88,10 @@ export const poseNode: NodeDefinition = {
       default: "accurate",
       options: [
         { value: "accurate", label: "Accurate (9 MB)" },
-        { value: "fast", label: "Fast (2.5 MB)" },
+        { value: "fast", label: "Small download (2.5 MB)" },
       ],
       description:
-        "Both are MoveNet SinglePose Lightning; Fast is the 8-bit variant, a third of the download and quicker per frame at some cost in steadiness. Separate downloads, so switching asks before it spends anything.",
+        "Both are MoveNet SinglePose Lightning; the 8-bit variant is a quarter of the download and is NOT faster — measured on the CPU path it is roughly three times slower. Pick it to save the download, not to save time. Separate downloads, so switching asks before it spends anything.",
     },
   },
   /**
