@@ -52,6 +52,8 @@ happened:
 | [E44 Sounding](./E44-Sounding.md) | DEPTH AS GEOMETRY, and the inference arc's first example: a monocular depth model turns a flat picture into a distance map, `pointsFromTexture` reads it on a 96x72 lattice, and the video stands up as a point cloud you can look at from the side. It opens FLAT on purpose — a 94 MB model does not download because a document was opened, so `depth` publishes the mid-grey that means no displacement and the document still renders (T755, §T385, §V721) |
 | [E38 Sigil](./E38-Sigil.md) | the first example where a PICTURE decides which points belong to it, rather than what colour they are: `fieldAt` samples a drawn emblem at each grid cell and that number scales the spring that gathers the mote, so a mark assembles out of a drifting population and comes apart into it again. Membership is a property of the CELL — sampling where the mote IS instead takes 6528 members to 8302 while the look baseline does not move a digit (T727, §V681, §V684) |
 
+| [E45 Pulse](./E45-Pulse.md) | A VJ SET, not a picture: two shots trade the frame on musical structure. A `pointProximity` constellation whose web tightens on the high band, and a once-per-bar scanline of `pointRay` casts drawing an unseen terrain as an ember ridge — crossfaded by a value held four bars (`valueStep` on `audioPattern` bar), so the cut lands on a phrase boundary, never a timer. E43's splice kernel reused for the global tear; every band drive enveloped before it touches anything visible (T819, §T548, §V788) |
+
 ## Running them
 
 The gate lives in `src/examples/` and runs with the rest of the suite:

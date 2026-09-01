@@ -1,0 +1,1022 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-aimb-castb": {
+        "id": "e-aimb-castb",
+        "source": {
+          "nodeId": "aimB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "castB",
+          "portId": "points"
+        }
+      },
+      "e-beat-hsub": {
+        "id": "e-beat-hsub",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hsub",
+          "portId": "a"
+        }
+      },
+      "e-beat-lsub": {
+        "id": "e-beat-lsub",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lsub",
+          "portId": "a"
+        }
+      },
+      "e-beat-step": {
+        "id": "e-beat-step",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "step",
+          "portId": "in"
+        }
+      },
+      "e-castb-hitsb": {
+        "id": "e-castb-hitsb",
+        "source": {
+          "nodeId": "castB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hitsB",
+          "portId": "in"
+        }
+      },
+      "e-castb-sightb": {
+        "id": "e-castb-sightb",
+        "source": {
+          "nodeId": "castB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sightB",
+          "portId": "in"
+        }
+      },
+      "e-fanb-aimb": {
+        "id": "e-fanb-aimb",
+        "source": {
+          "nodeId": "fanB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "aimB",
+          "portId": "in"
+        }
+      },
+      "e-henv-hglitch": {
+        "id": "e-henv-hglitch",
+        "source": {
+          "nodeId": "henv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hglitch",
+          "portId": "a"
+        }
+      },
+      "e-henv-hrad": {
+        "id": "e-henv-hrad",
+        "source": {
+          "nodeId": "henv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hrad",
+          "portId": "a"
+        }
+      },
+      "e-hitsb-impactsb": {
+        "id": "e-hitsb-impactsb",
+        "source": {
+          "nodeId": "hitsB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "impactsB",
+          "portId": "points"
+        }
+      },
+      "e-hrad-radd": {
+        "id": "e-hrad-radd",
+        "source": {
+          "nodeId": "hrad",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "radd",
+          "portId": "a"
+        }
+      },
+      "e-hsub-henv": {
+        "id": "e-hsub-henv",
+        "source": {
+          "nodeId": "hsub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "henv",
+          "portId": "in"
+        }
+      },
+      "e-lenv-lbreath": {
+        "id": "e-lenv-lbreath",
+        "source": {
+          "nodeId": "lenv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lbreath",
+          "portId": "a"
+        }
+      },
+      "e-lsub-lenv": {
+        "id": "e-lsub-lenv",
+        "source": {
+          "nodeId": "lsub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lenv",
+          "portId": "in"
+        }
+      },
+      "e-mix-splice": {
+        "id": "e-mix-splice",
+        "source": {
+          "nodeId": "mix",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "splice",
+          "portId": "input"
+        }
+      },
+      "e-prox-links": {
+        "id": "e-prox-links",
+        "source": {
+          "nodeId": "prox",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "links",
+          "portId": "points"
+        }
+      },
+      "e-seeda-swarm": {
+        "id": "e-seeda-swarm",
+        "source": {
+          "nodeId": "seedA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "swarm",
+          "portId": "in"
+        }
+      },
+      "e-shota-mix": {
+        "id": "e-shota-mix",
+        "source": {
+          "nodeId": "shotA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in1"
+        }
+      },
+      "e-shotb-mix": {
+        "id": "e-shotb-mix",
+        "source": {
+          "nodeId": "shotB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-sightb-raysb": {
+        "id": "e-sightb-raysb",
+        "source": {
+          "nodeId": "sightB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "raysB",
+          "portId": "points"
+        }
+      },
+      "e-splice-out": {
+        "id": "e-splice-out",
+        "source": {
+          "nodeId": "splice",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-step-lag": {
+        "id": "e-step-lag",
+        "source": {
+          "nodeId": "step",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lag",
+          "portId": "in"
+        }
+      },
+      "e-swarm-dots": {
+        "id": "e-swarm-dots",
+        "source": {
+          "nodeId": "swarm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
+        }
+      },
+      "e-swarm-prox": {
+        "id": "e-swarm-prox",
+        "source": {
+          "nodeId": "swarm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "prox",
+          "portId": "points"
+        }
+      },
+      "e-terrainb-castb": {
+        "id": "e-terrainb-castb",
+        "source": {
+          "nodeId": "terrainB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "castB",
+          "portId": "field"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "aimB": {
+        "definitionVersion": 1,
+        "id": "aimB",
+        "label": "aimB1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 180,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = vec3f(p.position.x, 1.75, (ctx.value1 * 2.0 - 1.0) * 1.5);\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "beat1:barPhase",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -2300,
+          "y": 540
+        },
+        "type": "pointKernel"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 122
+        },
+        "position": {
+          "x": -2600,
+          "y": 900
+        },
+        "type": "audioPattern"
+      },
+      "camA": {
+        "definitionVersion": 1,
+        "id": "camA",
+        "label": "camA1",
+        "parameters": {
+          "eye": [
+            0,
+            0.2,
+            3.1
+          ],
+          "eye.x": {
+            "bindings": {
+              "driven": {
+                "channel": "orbAx1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "eye.z": {
+            "bindings": {
+              "driven": {
+                "channel": "orbAz1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.9
+              }
+            },
+            "mode": "driven"
+          },
+          "lookAt": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": -1400,
+          "y": -80
+        },
+        "type": "camera"
+      },
+      "camB": {
+        "definitionVersion": 1,
+        "id": "camB",
+        "label": "camB1",
+        "parameters": {
+          "eye": [
+            0,
+            1.1,
+            3.4
+          ],
+          "lookAt": [
+            0,
+            0.1,
+            0
+          ]
+        },
+        "position": {
+          "x": -1400,
+          "y": 140
+        },
+        "type": "camera"
+      },
+      "castB": {
+        "definitionVersion": 1,
+        "id": "castB",
+        "label": "castB1",
+        "parameters": {
+          "direction": [
+            0,
+            -1,
+            0
+          ],
+          "extent": 2,
+          "heightOffset": -1.2,
+          "heightScale": 0.9,
+          "maxDistance": 4,
+          "steps": 48
+        },
+        "position": {
+          "x": -2000,
+          "y": 460
+        },
+        "type": "pointRay"
+      },
+      "dots": {
+        "definitionVersion": 1,
+        "id": "dots",
+        "label": "dots1",
+        "parameters": {
+          "material": "sparkA1",
+          "mode": "instances",
+          "scale": 0.018,
+          "shape": "octahedron",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1700,
+          "y": -480
+        },
+        "type": "geometry"
+      },
+      "fanB": {
+        "definitionVersion": 1,
+        "id": "fanB",
+        "label": "fanB1",
+        "parameters": {
+          "count": 180,
+          "sizeX": 3.4
+        },
+        "position": {
+          "x": -2600,
+          "y": 540
+        },
+        "type": "pointLine"
+      },
+      "henv": {
+        "definitionVersion": 1,
+        "id": "henv",
+        "label": "henv1",
+        "parameters": {
+          "lag": 0.03,
+          "releaseRatio": 6
+        },
+        "position": {
+          "x": -2000,
+          "y": 900
+        },
+        "type": "valueLag"
+      },
+      "hglitch": {
+        "definitionVersion": 1,
+        "id": "hglitch",
+        "label": "hd1",
+        "parameters": {
+          "operand": 2.4,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1700,
+          "y": 820
+        },
+        "type": "valueMath"
+      },
+      "hitsB": {
+        "definitionVersion": 1,
+        "id": "hitsB",
+        "label": "hitsB1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "capacity": 180,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let landed = select(0.0, 1.0, slant < 3.99);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  q.position = p.hitPosition + vec3f(0.0, 0.02, 0.0);\n  let ret = vec4f(1.0, 0.42 + 0.50 * near, 0.20, 1.0) * (0.4 + 1.8 * near);\n  q.tint = mix(vec4f(0.0), ret, landed);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1700,
+          "y": 380
+        },
+        "type": "pointKernel"
+      },
+      "hrad": {
+        "definitionVersion": 1,
+        "id": "hrad",
+        "label": "hm1",
+        "parameters": {
+          "operand": 0.25,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1700,
+          "y": 1050
+        },
+        "type": "valueMath"
+      },
+      "hsub": {
+        "definitionVersion": 1,
+        "id": "hsub",
+        "label": "hs1",
+        "parameters": {
+          "operand": -0.381,
+          "operation": "add"
+        },
+        "position": {
+          "x": -2300,
+          "y": 900
+        },
+        "type": "valueMath"
+      },
+      "impactsB": {
+        "definitionVersion": 1,
+        "id": "impactsB",
+        "label": "impactsB1",
+        "parameters": {
+          "material": "sparkB1",
+          "mode": "instances",
+          "scale": 0.05,
+          "shape": "octahedron",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1400,
+          "y": 380
+        },
+        "type": "geometry"
+      },
+      "lag": {
+        "definitionVersion": 1,
+        "id": "lag",
+        "label": "lag1",
+        "parameters": {
+          "lag": 0.4
+        },
+        "position": {
+          "x": -2000,
+          "y": 1510
+        },
+        "type": "valueLag"
+      },
+      "lbreath": {
+        "definitionVersion": 1,
+        "id": "lbreath",
+        "label": "ld1",
+        "parameters": {
+          "operand": 1.4,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1700,
+          "y": 1280
+        },
+        "type": "valueMath"
+      },
+      "lenv": {
+        "definitionVersion": 1,
+        "id": "lenv",
+        "label": "lenv1",
+        "parameters": {
+          "lag": 0.05,
+          "releaseRatio": 5
+        },
+        "position": {
+          "x": -2000,
+          "y": 1280
+        },
+        "type": "valueLag"
+      },
+      "links": {
+        "definitionVersion": 1,
+        "id": "links",
+        "label": "links1",
+        "parameters": {
+          "endpoint": "tip",
+          "material": "sparkA1",
+          "mode": "beam",
+          "scale": 0.0045,
+          "taper": 0,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1700,
+          "y": -240
+        },
+        "type": "geometry"
+      },
+      "lsub": {
+        "definitionVersion": 1,
+        "id": "lsub",
+        "label": "ls1",
+        "parameters": {
+          "operand": -0.712,
+          "operation": "add"
+        },
+        "position": {
+          "x": -2300,
+          "y": 1280
+        },
+        "type": "valueMath"
+      },
+      "mix": {
+        "definitionVersion": 1,
+        "id": "mix",
+        "label": "mix1",
+        "parameters": {
+          "cross": {
+            "bindings": {
+              "driven": {
+                "channel": "lag1:bar",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -800,
+          "y": 60
+        },
+        "type": "cross"
+      },
+      "orbAx": {
+        "definitionVersion": 1,
+        "id": "orbAx",
+        "label": "orbAx1",
+        "parameters": {
+          "amplitude": 0.7,
+          "frequency": 0.013,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2600,
+          "y": -160
+        },
+        "type": "lfo"
+      },
+      "orbAz": {
+        "definitionVersion": 1,
+        "id": "orbAz",
+        "label": "orbAz1",
+        "parameters": {
+          "amplitude": 0.7,
+          "frequency": 0.013,
+          "offset": 2.9,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2600,
+          "y": 40
+        },
+        "type": "lfo"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": -200,
+          "y": 60
+        },
+        "type": "output"
+      },
+      "prox": {
+        "definitionVersion": 1,
+        "id": "prox",
+        "label": "prox1",
+        "parameters": {
+          "falloff": 2,
+          "neighbors": 3,
+          "radius": {
+            "bindings": {
+              "driven": {
+                "channel": "rad1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.3
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -2000,
+          "y": -300
+        },
+        "type": "pointProximity"
+      },
+      "radd": {
+        "definitionVersion": 1,
+        "id": "radd",
+        "label": "rad1",
+        "parameters": {
+          "operand": 0.3,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1400,
+          "y": 1050
+        },
+        "type": "valueMath"
+      },
+      "raysB": {
+        "definitionVersion": 1,
+        "id": "raysB",
+        "label": "raysB1",
+        "parameters": {
+          "endpoint": "hitPosition",
+          "material": "sparkB1",
+          "mode": "beam",
+          "scale": 0.008,
+          "taper": 0.15,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1400,
+          "y": 620
+        },
+        "type": "geometry"
+      },
+      "seedA": {
+        "definitionVersion": 1,
+        "id": "seedA",
+        "label": "seedA1",
+        "parameters": {
+          "count": 600,
+          "radius": 1
+        },
+        "position": {
+          "x": -2600,
+          "y": -420
+        },
+        "type": "pointSphere"
+      },
+      "shotA": {
+        "definitionVersion": 1,
+        "id": "shotA",
+        "label": "shotA1",
+        "parameters": {
+          "camera": "camA1",
+          "lights": "",
+          "scenes": "dots1 links1"
+        },
+        "position": {
+          "x": -1400,
+          "y": -300
+        },
+        "type": "render"
+      },
+      "shotB": {
+        "definitionVersion": 1,
+        "id": "shotB",
+        "label": "shotB1",
+        "parameters": {
+          "camera": "camB1",
+          "lights": "",
+          "scenes": "impactsB1 raysB1"
+        },
+        "position": {
+          "x": -1100,
+          "y": 460
+        },
+        "type": "render"
+      },
+      "sightB": {
+        "definitionVersion": 1,
+        "id": "sightB",
+        "label": "sightB1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
+          "capacity": 180,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  if (ctx.index % 6u != 0u) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  q.tint = vec4f(0.55, 0.75, 1.0, 1.0) * (0.30 + 0.85 * near);\n  return q;\n}"
+        },
+        "position": {
+          "x": -1700,
+          "y": 620
+        },
+        "type": "pointKernel"
+      },
+      "sparkA": {
+        "definitionVersion": 1,
+        "id": "sparkA",
+        "label": "sparkA1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -2000,
+          "y": -560
+        },
+        "type": "materialUnlit"
+      },
+      "sparkB": {
+        "definitionVersion": 1,
+        "id": "sparkB",
+        "label": "sparkB1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1700,
+          "y": 180
+        },
+        "type": "materialUnlit"
+      },
+      "splice": {
+        "definitionVersion": 1,
+        "id": "splice",
+        "label": "spliceP1",
+        "parameters": {
+          "amount": {
+            "bindings": {
+              "driven": {
+                "channel": "hd1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* The slicing geometry. BANDS horizontal strips; every strip decides independently\n   whether it jumps this deal, so quiet passages tear a strip or two and loud ones\n   shred the frame — the density rides amount, not only the distance. */\nconst BANDS: f32 = 36.0;\nconst BLOCKS: vec2f = vec2f(9.0, 5.0);\nconst DEALS_PER_SECOND: f32 = 3.0;\n/* RGB split as a fraction of the band's own jump — the fringe belongs to the tear. */\nconst FRINGE: f32 = 0.35;\n\nfn hash2(a: f32, b: f32) -> f32 {\n  return fract(sin(a * 12.9898 + b * 78.233) * 43758.5453);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture, 0));\n  /* FREE-RUNNING deal clock (§V436): a timeline lap must not re-deal the glitch. */\n  let deal = floor(frameU.absTime * DEALS_PER_SECOND);\n\n  /* The band's jump: rolled per (band, deal), gated so only some bands tear, scaled\n     by amount. At amount = 0 the gate closes and the offset is EXACTLY zero. */\n  let band = floor(uv.y * BANDS);\n  let roll = hash2(band, deal);\n  let gate = select(0.0, 1.0, roll > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.85);\n  let jump = (hash2(band + 57.0, deal) - 0.5) * 0.34 * params.amount * gate;\n\n  /* The block tear: a coarser grid shifts VERTICALLY on its own roll — rarer, bigger. */\n  let block = floor(uv * BLOCKS);\n  let brollA = hash2(block.x * 31.0 + block.y, deal + 101.0);\n  let bgate = select(0.0, 1.0, brollA > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.35);\n  let lift = (hash2(block.x + block.y * 47.0, deal + 202.0) - 0.5) * 0.22 * params.amount * bgate;\n\n  let displaced = vec2f(uv.x + jump, uv.y + lift);\n\n  /* Integer-texel reads, wrapped, one per channel: the red and blue planes travel a\n     little further along the SAME tear, which is what a real capture card does when\n     the sync slips. textureLoad and not the sampler, so amount = 0 is byte-exact. */\n  let px = (fract(displaced) * dims - vec2f(0.5, 0.5));\n  let pxR = (fract(displaced + vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let pxB = (fract(displaced - vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let clampHi = dims - vec2f(1.0, 1.0);\n  let g = textureLoad(inputTexture, vec2i(clamp(round(px), vec2f(0.0), clampHi)), 0);\n  let r = textureLoad(inputTexture, vec2i(clamp(round(pxR), vec2f(0.0), clampHi)), 0);\n  let b = textureLoad(inputTexture, vec2i(clamp(round(pxB), vec2f(0.0), clampHi)), 0);\n  return vec4f(r.r, g.g, b.b, g.a);\n}"
+        },
+        "position": {
+          "x": -500,
+          "y": 60
+        },
+        "type": "customWgsl"
+      },
+      "step": {
+        "definitionVersion": 1,
+        "id": "step",
+        "label": "step1",
+        "parameters": {
+          "every": 4,
+          "maximum": 1,
+          "minimum": 0,
+          "seed": 5
+        },
+        "position": {
+          "x": -2300,
+          "y": 1510
+        },
+        "type": "valueStep"
+      },
+      "swarm": {
+        "definitionVersion": 1,
+        "id": "swarm",
+        "label": "swarm1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+          "capacity": 600,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = f32(ctx.index);\n  let a = pointRand(ctx.index, 1u) * 6.2831853;\n  let b = acos(2.0 * pointRand(ctx.index, 2u) - 1.0);\n  let w = 0.35 + 0.65 * pointRand(ctx.index, 3u);\n  let breath = 1.0 + 0.24 * clamp(ctx.value1, 0.0, 1.5);\n  let r = (0.72 + 0.38 * pointRand(ctx.index, 4u)) * breath;\n  let theta = a + ctx.absTime * (0.10 + 0.05 * w);\n  let wob = 0.08 * sin(ctx.absTime * (0.7 + w) + i);\n  q.position = vec3f(\n    (r + wob) * sin(b) * cos(theta),\n    (r + wob) * cos(b) * 0.86,\n    (r + wob) * sin(b) * sin(theta),\n  );\n  let warmth = pointRand(ctx.index, 5u);\n  q.tint = vec4f(0.62 + 0.30 * warmth, 0.72, 1.0 - 0.25 * warmth, 1.0);\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "ld1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
+        },
+        "position": {
+          "x": -2300,
+          "y": -420
+        },
+        "type": "pointKernel"
+      },
+      "terrainB": {
+        "definitionVersion": 1,
+        "id": "terrainB",
+        "label": "terrainB1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": false,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0,
+          "period": 0.34,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 45,
+          "speed": 0.04,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2600,
+          "y": 300
+        },
+        "type": "noise"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E45 Pulse",
+  "projectId": "example-e45-pulse",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 45,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
