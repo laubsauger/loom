@@ -31,6 +31,7 @@ import { ComponentBar } from "./component-bar.tsx";
 import { useComponentEditing } from "./use-component-editing.ts";
 import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { GraphPane } from "./graph-pane.tsx";
+import { createPreviewOrbitStore } from "@editor/viewer/index.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import { sharedGpuProbe } from "./gpu-status.ts";
@@ -252,6 +253,11 @@ export function App({
    * across two: the previous document's tiles are not coming back.
    */
   const previewSinks = usePerDocument(runtime.documentIdentity, createPreviewSinkStore);
+  /* T379 — ONE inspection-orbit store, shared by the graph pane's tiles and the viewer
+     pane: both surfaces show the SAME preview target per node (the tile's request is
+     what renders it), so one camera per node is the truthful model — a viewer drag and
+     a tile drag move the same picture. Still view state, still per document (§V255). */
+  const previewOrbits = usePerDocument(runtime.documentIdentity, createPreviewOrbitStore);
   const backend = status.kind === "ready" ? status.backend : undefined;
 
   /**
@@ -1111,6 +1117,7 @@ export function App({
                 previewSinks={previewSinks}
                 valueHistory={valueHistory}
                 componentPath={editing.path}
+                orbits={insideComponent ? undefined : previewOrbits}
               />
               </AppRuntimeContext.Provider>
             </NodeInfoHost>
@@ -1149,6 +1156,7 @@ export function App({
                 backend={backend ?? null}
                 pointer={pointer}
                 probe={agentPorts.probe}
+                orbits={previewOrbits}
               />
             </ErrorBoundary>
           }

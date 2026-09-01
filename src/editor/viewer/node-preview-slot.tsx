@@ -10,6 +10,7 @@ import { NodePreview } from "./node-preview.tsx";
 import type { PreviewOrbitStore } from "./preview-orbit-store.ts";
 import type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
 import type { PreviewViewSource } from "./preview-view-store.ts";
+import { orbitDeltaFor, zoomFactorFor } from "./orbit-gestures.ts";
 import styles from "./viewer.module.css";
 
 /**
@@ -51,20 +52,10 @@ export interface NodePreviewSlotProps {
   orbitable?: boolean;
 }
 
-/**
- * T561: radians per CSS px, chosen so a full sweep across a 192px tile is about a half
- * turn — the whole object inspectable in one gesture.
- */
-const RADIANS_PER_PX = 0.016;
-/** T656: stock radii per CSS px — a full sweep across the tile pans about one radius. */
-const RADII_PER_PX = 0.005;
-/**
- * T656: how hard the wheel bites. One 100-unit notch is e^0.15 ≈ 1.16×, so the clamped
- * 0.2…5 range is about twenty notches end to end — findable, and not a hair trigger.
- */
-const ZOOM_PER_DELTA = 0.0015;
-/** A wheel reporting LINES or PAGES rather than pixels, normalized to pixels. */
-const DELTA_MODE_SCALE = [1, 16, 100] as const;
+/* T379: the gesture ARITHMETIC moved to orbit-gestures.ts, shared with the viewer pane
+   — the owner's "inherit from a common thing". At scale 1 the numbers are exactly the
+   constants this file always had; the event wiring (alt/peek/nowheel) stays here,
+   because it is the part that genuinely differs per host. */
 
 export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbitable = false }: NodePreviewSlotProps) {
   const flow = useReactFlow();
@@ -162,16 +153,9 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       if (active === null || active.pointerId !== event.pointerId || orbits === undefined) return;
       const dx = event.clientX - active.x;
       const dy = event.clientY - active.y;
-      orbits.apply(
-        nodeId,
-        active.pan
-          ? // SHIFT-drag (T675 moved this off alt). The camera follows the drag, the same
-            // convention the orbit already uses: drag right and the eye AND look-at slide
-            // right, so the object goes left.
-            { panX: dx * RADII_PER_PX, panY: -dy * RADII_PER_PX }
-          : // Drag right walks the camera rightward around the object; drag up raises it.
-            { azimuth: dx * RADIANS_PER_PX, elevation: -dy * RADIANS_PER_PX },
-      );
+      // SHIFT-drag pans (T675 moved pan off alt); a plain drag walks the camera around
+      // the object. The arithmetic is the shared one (T379).
+      orbits.apply(nodeId, orbitDeltaFor(dx, dy, { pan: active.pan }));
       active.x = event.clientX;
       active.y = event.clientY;
     },
@@ -208,10 +192,8 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
       event.stopPropagation();
-      const scale = DELTA_MODE_SCALE[event.deltaMode] ?? 1;
-      // Scroll away from you (deltaY < 0) moves in; the exponential keeps a notch worth
-      // the same proportion of the picture at every distance.
-      orbits.zoom(nodeId, Math.exp(event.deltaY * scale * ZOOM_PER_DELTA));
+      // Scroll away from you (deltaY < 0) moves in — the shared arithmetic (T379).
+      orbits.zoom(nodeId, zoomFactorFor(event.deltaY, event.deltaMode));
     };
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);

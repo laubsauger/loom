@@ -33,6 +33,20 @@ export interface PreviewOrbit {
   readonly panX: number;
   /** T656: the same, along the camera's own up axis. */
   readonly panY: number;
+  /**
+   * T379 — a CONTENT FRAME under the deltas: re-centre the basis on what the points
+   * actually are, instead of the compiler's baked constants. The stock framings are
+   * tuned on unit-scale scenes, and a magic default strands the user off-screen on
+   * every other one — which turns "home" into the button that loses the picture. The
+   * frame carries measured bounds (centre + bounding radius); the pose keeps the STOCK
+   * viewing direction and refits the distance to the radius, and every delta applies
+   * on top exactly as it does over the baked basis. View state like everything here:
+   * absent means the baked framing, byte for byte.
+   */
+  readonly frame?: {
+    readonly lookAt: readonly [number, number, number];
+    readonly radius: number;
+  };
 }
 
 export const DEFAULT_PREVIEW_ORBIT: PreviewOrbit = Object.freeze({
@@ -49,8 +63,36 @@ export function isDefaultOrbit(orbit: PreviewOrbit): boolean {
     orbit.elevation === 0 &&
     orbit.distance === 1 &&
     orbit.panX === 0 &&
-    orbit.panY === 0
+    orbit.panY === 0 &&
+    // T379: a content frame is not the identity — the whole point is that it moves
+    // the camera off the baked constants.
+    orbit.frame === undefined
   );
+}
+
+/**
+ * T379 — the basis, re-centred on measured content. Direction is the STOCK one (the
+ * kind's designed viewpoint survives), distance refits to the bounding radius with
+ * margin: at FIT = 2.4 a unit-radius cloud fills roughly the frame the stock rigs were
+ * tuned to. Zero radius (a single point, an empty buffer) keeps the stock distance —
+ * a zoom to nothing helps nobody.
+ */
+const FRAME_FIT = 2.4;
+export function framedBasis(
+  basis: OrbitCameraBasis,
+  frame: { readonly lookAt: readonly [number, number, number]; readonly radius: number },
+): OrbitCameraBasis {
+  const dx = basis.eye[0] - basis.lookAt[0];
+  const dy = basis.eye[1] - basis.lookAt[1];
+  const dz = basis.eye[2] - basis.lookAt[2];
+  const stock = Math.max(1e-6, Math.hypot(dx, dy, dz));
+  const distance = frame.radius > 1e-6 ? frame.radius * FRAME_FIT : stock;
+  const k = distance / stock;
+  return {
+    ...basis,
+    lookAt: [frame.lookAt[0], frame.lookAt[1], frame.lookAt[2]],
+    eye: [frame.lookAt[0] + dx * k, frame.lookAt[1] + dy * k, frame.lookAt[2] + dz * k],
+  };
 }
 
 /** The camera basis a synthesis descriptor publishes for its orbitable passes. */
@@ -106,10 +148,13 @@ export interface OrbitPose {
  * is what makes it a pan rather than a second orbit: the view direction is untouched, so
  * the object slides across the frame instead of turning.
  */
-export function orbitPose(basis: OrbitCameraBasis, orbit: PreviewOrbit): OrbitPose {
+export function orbitPose(rawBasis: OrbitCameraBasis, orbit: PreviewOrbit): OrbitPose {
   // Identity SHORT-CIRCUITS to the stock pose itself: the spherical round-trip is exact
   // only in real arithmetic, and "untouched equals baked, float for float" is the claim.
-  if (isDefaultOrbit(orbit)) return { eye: basis.eye, lookAt: basis.lookAt };
+  if (isDefaultOrbit(orbit)) return { eye: rawBasis.eye, lookAt: rawBasis.lookAt };
+  // T379: a content frame re-centres the basis BEFORE the deltas, so orbiting after a
+  // frame-content orbits around the content.
+  const basis = orbit.frame === undefined ? rawBasis : framedBasis(rawBasis, orbit.frame);
   const dx = basis.eye[0] - basis.lookAt[0];
   const dy = basis.eye[1] - basis.lookAt[1];
   const dz = basis.eye[2] - basis.lookAt[2];

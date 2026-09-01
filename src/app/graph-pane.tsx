@@ -58,6 +58,8 @@ export interface GraphActions {
 }
 
 export interface GraphPaneProps {
+  /** T379: the shared inspection-orbit store (the viewer pane holds the same one). */
+  orbits?: import("@editor/viewer/index.ts").PreviewOrbitStore | undefined;
   /** Current canvas selection, so a right-click inside one acts on all of it (§V78). */
   selection: readonly NodeId[];
   onSelectionChange: (nodeIds: readonly NodeId[]) => void;
@@ -154,6 +156,7 @@ function GraphPaneInner({
   previewSinks,
   valueHistory,
   componentPath,
+  orbits,
 }: GraphPaneProps) {
   // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
   // from the runtime rather than threaded as a prop, because the runtime IS the loaded
@@ -169,9 +172,12 @@ function GraphPaneInner({
   // `NodePreviewSlot` writes each node's measured slot rect, the preview tick below reads
   // it every frame (T185, design note §3).
   const previewBounds = usePerDocument(documentIdentity, createPreviewSlotBounds);
-  // T561: per-PANE inspection orbits — a second pane on the same node is a second
-  // camera, by construction (each mounted pane creates its own store).
-  const previewOrbits = usePerDocument(documentIdentity, createPreviewOrbitStore);
+  // T561: per-PANE inspection orbits. T379 hoisted the app's instance so the VIEWER
+  // pane shares this camera — both surfaces show the same preview target per node, so
+  // one camera per node is the truthful model. A caller that passes none (tests, a
+  // second graph pane) still gets its own store, per T561's original construction.
+  const localOrbits = usePerDocument(documentIdentity, createPreviewOrbitStore);
+  const previewOrbits = orbits ?? localOrbits;
   // T336: the preview LENS. Registers `preview.setView`/`preview.resetView` and keeps their
   // default target on the selection while this pane is mounted — the pane that shows previews
   // is the one that can honestly offer a command for changing how they look (§V90).

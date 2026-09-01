@@ -22,6 +22,8 @@ import { normalizedPointer } from "@runtime/execution/index.ts";
 import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
 import { usePixelReadout } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
+import type { PreviewOrbitStore } from "@editor/viewer/index.ts";
+import { ORBIT_REFERENCE_WIDTH, orbitDeltaFor, zoomFactorFor } from "@editor/viewer/orbit-gestures.ts";
 import type { PixelProbe } from "@runtime/previews/index.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
@@ -320,6 +322,13 @@ export interface ViewerPaneProps {
   probe?: PixelProbe | undefined;
   /** Injected by the readout tests to drive its rate limiter. */
   readoutOptions?: PixelReadoutOptions;
+  /**
+   * T379 — the app's SHARED inspection-orbit store (the graph pane's tiles hold the
+   * same one). When the selected output is a synthesized 3D preview the compiler marked
+   * orbitable, the viewer surface owns orbit/pan/zoom gestures on it — view state only
+   * (§V255): no document revision, no dirty flag, nothing downstream changes.
+   */
+  orbits?: PreviewOrbitStore | undefined;
 }
 
 /**
@@ -349,6 +358,7 @@ export function ViewerPane({
   pointer = null,
   probe,
   readoutOptions,
+  orbits,
 }: ViewerPaneProps) {
   // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
@@ -429,6 +439,28 @@ export function ViewerPane({
         if (match === undefined) return null;
         setPinnedKey(outputKey(match));
         return match.portId;
+      },
+      /* T380: the keymap's `h`, through a real command so it rebinds and shows in the
+         shortcut editor — while the orbit store itself still holds no bus (§V527). */
+      cameraHome: (): boolean => {
+        const state = orbitStateRef.current;
+        if (!state.orbitable || state.orbits === undefined || state.nodeId === null) return false;
+        state.orbits.setMode(state.nodeId, "home");
+        return true;
+      },
+      /* T379: HOME DERIVES FROM CONTENT. The preview's own position buffer is read back
+         once, on this gesture (§V7: a user pressing Frame is a readback that earns
+         itself), min/max reduce on the CPU, and the store frames the measured bounds.
+         The buffer's dead tail (a counted producer) rides along in v1 — stated, and the
+         fit margin absorbs a modest tail; an exact live-count-bounded reduce is the
+         follow-up if it ever misleads. */
+      frameContent: async (): Promise<boolean> => {
+        const state = orbitStateRef.current;
+        if (!state.orbitable || state.orbits === undefined || state.nodeId === null) return false;
+        const frame = state.frameContent === undefined ? undefined : await state.frameContent();
+        if (frame === undefined || state.orbits.frameContent === undefined) return false;
+        state.orbits.frameContent(state.nodeId, frame);
+        return true;
       },
     };
     holder.current = handlers;
@@ -547,6 +579,128 @@ export function ViewerPane({
    * the SAME element. A second listener would be a second source for one device, and the
    * two would disagree by a frame about where the cursor is.
    */
+  /**
+   * T379 — THE VIEWER'S CAMERA, the owner's own complaint answered where they raised
+   * it: "cant use orbit or any camera controls here in this geometry node… this should
+   * be something they inherit from a common thing". The common thing is the same
+   * arithmetic and the SAME STORE the node tiles use (orbit-gestures.ts + the app's
+   * hoisted PreviewOrbitStore): both surfaces show the same preview target per node,
+   * so a viewer drag and a tile drag move one camera, and neither ever touches the
+   * document (§V255 — looking is not editing; no revision, no dirty flag, no change to
+   * anything downstream).
+   *
+   * The viewer owns its surface outright — no React Flow to negotiate with — so the
+   * first drag simply ENTERS adjustable and orbits: no modifier needed (the tile needs
+   * alt only because a plain drag there moves the node). Shift-drag pans, the wheel
+   * dollies, and the per-pixel feel is normalised by the surface's own width so a full
+   * sweep is the same half-turn the 192px tile gives (T561's contract). The pixel
+   * readout keeps every one of its events — a drag reads out as it orbits.
+   *
+   * Only outputs the COMPILER marked orbitable get any of this (synthesis.orbit — the
+   * §V437 declaration): a texture output has nothing to orbit, and a camera or
+   * projector tile draws through its own matrix, where an override would falsify the
+   * one thing the picture exists to show (T614/T675's refusals, honored here too).
+   */
+  const orbitNodeId = (selected?.nodeId ?? null) as NodeId | null;
+  const orbitable =
+    orbits !== undefined && orbitNodeId !== null && selected?.synthesis?.orbit !== undefined;
+  /** T379: measure the selected preview's positions — the frame-content readback. */
+  const measureBounds = useCallback(async (): Promise<
+    { lookAt: readonly [number, number, number]; radius: number } | undefined
+  > => {
+    if (backend === null || selected?.synthesis === undefined) return undefined;
+    const positions = selected.synthesis.passes
+      .flatMap((pass) => ("buffers" in pass ? (pass.buffers ?? []) : []))
+      .find((binding) => binding.binding === "positions");
+    if (positions === undefined) return undefined;
+    try {
+      const raw = new Float32Array(await backend.readBuffer(positions.resourceId));
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      for (let at = 0; at + 2 < raw.length; at += 4) {
+        const x = raw[at]!, y = raw[at + 1]!, z = raw[at + 2]!;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+      }
+      if (!Number.isFinite(minX)) return undefined;
+      const lookAt: readonly [number, number, number] = [
+        (minX + maxX) / 2,
+        (minY + maxY) / 2,
+        (minZ + maxZ) / 2,
+      ];
+      const radius = Math.max(maxX - minX, maxY - minY, maxZ - minZ) / 2;
+      return { lookAt, radius };
+    } catch {
+      return undefined;
+    }
+  }, [backend, selected]);
+  /** The command handlers read through a ref so registration stays stable (T440's
+      idiom, one shelf over). */
+  const orbitStateRef = useRef<{
+    orbits: PreviewOrbitStore | undefined;
+    nodeId: NodeId | null;
+    orbitable: boolean;
+    frameContent?: () => Promise<{ lookAt: readonly [number, number, number]; radius: number } | undefined>;
+  }>({ orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds });
+  orbitStateRef.current = { orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds };
+  const orbitDrag = useRef<{ pointerId: number; x: number; y: number; pan: boolean } | null>(null);
+  const onOrbitDown = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (!orbitable || orbits === undefined || orbitNodeId === null || event.button !== 0) return;
+      // The first drag is the way in: the viewer's surface has no competing gesture, so
+      // there is nothing for a modifier to disambiguate (the tile's alt stays a tile
+      // concern). Entering latches; the keymap's home returns (T380).
+      orbits.setMode(orbitNodeId, "adjustable");
+      orbitDrag.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        pan: event.shiftKey,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [orbitable, orbits, orbitNodeId],
+  );
+  const onOrbitMove = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const active = orbitDrag.current;
+      if (active === null || active.pointerId !== event.pointerId || orbits === undefined || orbitNodeId === null) return;
+      const width = event.currentTarget.getBoundingClientRect().width;
+      const scale = ORBIT_REFERENCE_WIDTH / Math.max(width, 1);
+      orbits.apply(
+        orbitNodeId,
+        orbitDeltaFor(event.clientX - active.x, event.clientY - active.y, { pan: active.pan, scale }),
+      );
+      active.x = event.clientX;
+      active.y = event.clientY;
+    },
+    [orbits, orbitNodeId],
+  );
+  const onOrbitUp = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (orbitDrag.current?.pointerId !== event.pointerId) return;
+      orbitDrag.current = null;
+      orbits?.release?.(orbitNodeId as NodeId);
+    },
+    [orbits, orbitNodeId],
+  );
+  /* The wheel dollies — non-passive, so the page never scrolls under a zoom. Attached
+     only while an orbitable output is selected (§V461: the mode has to turn off). */
+  const orbitElement = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const element = orbitElement.current;
+    if (element === null || !orbitable || orbits === undefined || orbitNodeId === null) return;
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      orbits.setMode(orbitNodeId, "adjustable");
+      orbits.zoom(orbitNodeId, zoomFactorFor(event.deltaY, event.deltaMode));
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [orbitable, orbits, orbitNodeId, canvasKey]);
+
   const onCanvasPointer = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       publishPointer(event);
@@ -677,15 +831,29 @@ export function ViewerPane({
         ) : (
           <canvas
             key={canvasKey}
-            ref={canvasRef}
+            ref={(element) => {
+              canvasRef(element);
+              orbitElement.current = element;
+            }}
             className={styles.canvas}
             aria-label="Rendered output"
             data-testid="viewer-canvas"
             tabIndex={0}
-            onPointerMove={onCanvasPointer}
-            onPointerDown={onCanvasPointer}
-            onPointerUp={onCanvasPointer}
+            onPointerMove={(event) => {
+              onCanvasPointer(event);
+              onOrbitMove(event);
+            }}
+            onPointerDown={(event) => {
+              onCanvasPointer(event);
+              onOrbitDown(event);
+            }}
+            onPointerUp={(event) => {
+              onCanvasPointer(event);
+              onOrbitUp(event);
+            }}
+            onPointerCancel={onOrbitUp}
             onKeyDown={onCanvasKeyDown}
+            style={orbitable ? { cursor: "grab", touchAction: "none" } : undefined}
           />
         )}
       </div>

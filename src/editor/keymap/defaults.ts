@@ -82,6 +82,23 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     label: "Frame selected",
   },
   {
+    // T380 — the viewer camera's TD-analog binds, in the keymap so they rebind and
+    // show in the shortcut editor (§V78/§V307) with hover-help, never painted on the
+    // canvas (§V90). `h` mirrors the tile gesture; `f` mirrors the graph's frame keys.
+    id: "viewer.cameraHome",
+    keys: "h",
+    context: "viewer",
+    command: "viewer.cameraHome",
+    label: "Home camera — baked framing",
+  },
+  {
+    id: "viewer.frameContent",
+    keys: "f",
+    context: "viewer",
+    command: "viewer.frameContent",
+    label: "Frame content — fit measured bounds",
+  },
+  {
     id: "node.toggleBypass",
     keys: "b",
     context: "graph",

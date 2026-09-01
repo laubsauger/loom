@@ -58,6 +58,14 @@ export interface PreviewOrbitStore {
   zoom(nodeId: NodeId, factor: number): void;
   reset(nodeId: NodeId): void;
   /**
+   * T379 — home to MEASURED CONTENT: enter adjustable with a content frame under zero
+   * deltas, so the camera looks at what the points actually are instead of the baked
+   * constants (which are tuned on unit scenes and strand the user off-screen on every
+   * other one). Optional because the camera-GIZMO store writes a document camera and
+   * has no stock basis to re-frame.
+   */
+  frameContent?(nodeId: NodeId, frame: { lookAt: readonly [number, number, number]; radius: number }): void;
+  /**
    * T692: the end of a pointer gesture. The INSPECTION store has no use for it — view
    * state needs no commit — but the camera GIZMO store closes its undo transaction
    * here, so one drag is one undo step. Optional so this store stays untouched.
@@ -107,6 +115,9 @@ export function createPreviewOrbitStore(): PreviewOrbitStore {
         distance: current.distance,
         panX: clampOrbitPan(current.panX + (delta.panX ?? 0)),
         panY: clampOrbitPan(current.panY + (delta.panY ?? 0)),
+        // T379: the content frame rides under the deltas — a drag after framing must
+        // orbit the content, not silently snap back to the baked constants.
+        ...(current.frame === undefined ? {} : { frame: current.frame }),
       }));
     },
     zoom(nodeId, factor) {
@@ -117,6 +128,15 @@ export function createPreviewOrbitStore(): PreviewOrbitStore {
     },
     reset(nodeId) {
       orbits.delete(nodeId);
+    },
+    frameContent(nodeId, frame) {
+      // Entering adjustable and setting the frame is ONE operation, like setMode's
+      // reset: a frame the mode gate swallowed would be a button that lies.
+      if (mode(nodeId) !== "adjustable") {
+        modes.set(nodeId, "adjustable");
+        for (const listener of listeners.get(nodeId) ?? []) listener();
+      }
+      orbits.set(nodeId, { ...DEFAULT_PREVIEW_ORBIT, frame });
     },
   };
 }

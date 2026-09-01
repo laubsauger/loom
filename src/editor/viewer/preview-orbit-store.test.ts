@@ -100,3 +100,27 @@ describe("the preview inspection store (T656)", () => {
     expect(store.get("n2" as NodeId)).toBeUndefined();
   });
 });
+
+describe("frame content (T379)", () => {
+  it("enters adjustable and frames in one operation; going home clears both", () => {
+    const store = createPreviewOrbitStore();
+    const node = "n1" as never;
+    const frame = { lookAt: [4, 0, -2] as const, radius: 3 };
+    // One call: no separate arming step for a gesture the user already made.
+    store.frameContent?.(node, frame);
+    expect(store.mode(node)).toBe("adjustable");
+    expect(store.get(node)?.frame).toEqual(frame);
+    // Leaving IS the reset, frame included — same statement as every other orbit state.
+    store.setMode(node, "home");
+    expect(store.get(node)).toBeUndefined();
+  });
+
+  it("deltas after a frame accumulate over it — orbiting the content, not the origin", () => {
+    const store = createPreviewOrbitStore();
+    const node = "n1" as never;
+    store.frameContent?.(node, { lookAt: [4, 0, -2], radius: 3 });
+    store.apply(node, { azimuth: 0.5 });
+    expect(store.get(node)?.azimuth).toBe(0.5);
+    expect(store.get(node)?.frame?.lookAt).toEqual([4, 0, -2]);
+  });
+});

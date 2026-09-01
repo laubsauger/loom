@@ -33,6 +33,10 @@ declare module "@domain/types/commands.ts" {
       input: { nodeIds: readonly string[] };
       output: { nodeId: string | null; portId: string | null };
     };
+    /** T380: return the viewer's inspection camera to the baked framing. */
+    "viewer.cameraHome": { input: Record<string, never>; output: { framed: boolean } };
+    /** T379/T380: frame the viewer's camera on the MEASURED content bounds. */
+    "viewer.frameContent": { input: Record<string, never>; output: { framed: boolean } };
   }
 }
 
@@ -43,6 +47,11 @@ export interface ViewerHandlers {
    * no texture output, a node downstream of a compile error.
    */
   show(nodeId: string): string | null;
+  /** T380: home the inspection camera. False = nothing orbitable is selected. */
+  cameraHome(): boolean;
+  /** T379: frame the camera on measured content. Resolves false when there is nothing
+   *  to measure (not orbitable, no backend, no position buffer). */
+  frameContent(): Promise<boolean>;
 }
 
 export interface ViewerHolder {
@@ -125,6 +134,51 @@ export function registerViewerCommands(bus: ShaderloomBus): ViewerHolder {
       return { status: "applied", revision, output: { nodeId, portId } };
     },
     rejectionOutput: () => NO_OUTPUT,
+  });
+
+  /* T380 — the camera binds go THROUGH the keymap (§V78/§V307: rebindable, visible in
+     the shortcut editor), which needs real commands. The orbit STORE still holds no bus
+     (§V527); these handlers reach INTO it from the pane, never the reverse. */
+  const cameraRefusal = (revision: number) => ({
+    status: "rejected" as const,
+    revision,
+    diagnostics: [
+      {
+        severity: "info" as const,
+        code: "viewer.noOrbit",
+        message: "The viewer is not showing an orbitable 3D preview.",
+        suggestion: "Select a geometry, points or material preview in the viewer first.",
+      },
+    ],
+    output: { framed: false },
+  });
+  bus.registerCommand({
+    name: "viewer.cameraHome",
+    description: "Return the viewer's inspection camera to its baked framing.",
+    handler: (_input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) return cameraRefusal(revision);
+      if (context.dryRun) return { status: "validated", revision, output: { framed: false } };
+      const framed = holder.current.cameraHome();
+      return framed
+        ? { status: "applied", revision, output: { framed } }
+        : cameraRefusal(revision);
+    },
+    rejectionOutput: () => ({ framed: false }),
+  });
+  bus.registerCommand({
+    name: "viewer.frameContent",
+    description: "Frame the viewer's inspection camera on the content's measured bounds.",
+    handler: async (_input, context) => {
+      const revision = context.store.getRevision();
+      if (holder.current === null) return cameraRefusal(revision);
+      if (context.dryRun) return { status: "validated", revision, output: { framed: false } };
+      const framed = await holder.current.frameContent();
+      return framed
+        ? { status: "applied", revision, output: { framed } }
+        : cameraRefusal(revision);
+    },
+    rejectionOutput: () => ({ framed: false }),
   });
 
   return holder;

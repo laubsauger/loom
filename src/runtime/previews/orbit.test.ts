@@ -6,6 +6,7 @@ import {
   isDefaultOrbit,
   orbitEye,
   orbitPose,
+  framedBasis,
   orbitUniforms,
   orbitViewProjection,
 } from "./orbit.ts";
@@ -126,5 +127,40 @@ describe("the inspection PAN (T656)", () => {
   it("pan clamps, so the object cannot be pushed off frame and lost", () => {
     const far = orbitPose(BALL, { ...DEFAULT_PREVIEW_ORBIT, panX: 50 });
     expect(far.lookAt[0]).toBeCloseTo(2 * 2.6, 10);
+  });
+});
+
+describe("the content frame (T379)", () => {
+  const BASIS = { eye: [1.7, 1.2, 2.4] as const, lookAt: [0, 0, 0] as const, aspect: 1 };
+
+  it("re-centres the basis on measured content, keeping the STOCK viewing direction", () => {
+    const framed = framedBasis(BASIS, { lookAt: [10, -3, 4], radius: 2 });
+    expect(framed.lookAt).toEqual([10, -3, 4]);
+    // Direction preserved: eye − lookAt is the stock direction, rescaled to fit.
+    const stock = Math.hypot(1.7, 1.2, 2.4);
+    const scale = (2 * 2.4) / stock; // radius × FRAME_FIT ÷ stock distance
+    expect(framed.eye[0]).toBeCloseTo(10 + 1.7 * scale, 6);
+    expect(framed.eye[1]).toBeCloseTo(-3 + 1.2 * scale, 6);
+    expect(framed.eye[2]).toBeCloseTo(4 + 2.4 * scale, 6);
+  });
+
+  it("keeps the stock distance for degenerate bounds — a zoom to nothing helps nobody", () => {
+    const framed = framedBasis(BASIS, { lookAt: [5, 5, 5], radius: 0 });
+    const stock = Math.hypot(1.7, 1.2, 2.4);
+    const dx = framed.eye[0] - 5;
+    const dy = framed.eye[1] - 5;
+    const dz = framed.eye[2] - 5;
+    expect(Math.hypot(dx, dy, dz)).toBeCloseTo(stock, 6);
+  });
+
+  it("a frame is NOT the identity: the short-circuit must not swallow it", () => {
+    const orbit = { ...DEFAULT_PREVIEW_ORBIT, frame: { lookAt: [3, 0, 0] as const, radius: 1 } };
+    expect(isDefaultOrbit(orbit)).toBe(false);
+    const pose = orbitPose(BASIS, orbit);
+    expect(pose.lookAt).toEqual([3, 0, 0]);
+    // And deltas apply ON TOP of the frame: orbiting after framing orbits the content.
+    const turned = orbitPose(BASIS, { ...orbit, azimuth: Math.PI });
+    expect(turned.lookAt[0]).toBeCloseTo(3, 6);
+    expect(turned.eye[0]).not.toBeCloseTo(pose.eye[0], 3);
   });
 });
