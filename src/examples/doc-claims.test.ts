@@ -40,12 +40,6 @@ const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> =
       "T718: a statement about a FUTURE graph, exactly the sanctioned shape — the doc says the T725 glass material now exists and that wearing it on the prism's body is a separate look decision the orchestrator holds open. If that pass lands, the node joins the graph and this exemption must be deleted with it (§V421).",
   },
   {
-    doc: "E41-Cinder.md",
-    type: "pointKernelAdvanced",
-    reason:
-      "T741: the md RECORDS why the advanced kernel is NOT in this graph — it has no field input, so a spawn decision cannot read the video, and the example recycles in a plain kernel instead. A statement about a missing capability, named so the reader does not mistake the recycle for a style choice; if the field input lands and the graph adopts the machinery, this exemption goes with it (§V421).",
-  },
-  {
     doc: "E24-Audio-Reaction-Diffusion.md",
     type: "audioIn",
     reason:

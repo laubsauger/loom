@@ -140,9 +140,9 @@
     "f0max": 1
   },
   "E41-Cinder.loom.json": {
-    "motion": 0.04862,
-    "range": 0.9797,
-    "f0max": 0.6352
+    "motion": 0.04697,
+    "range": 0.9778,
+    "f0max": 0.0687
   },
   "E42-Current.loom.json": {
     "motion": 0.0536,

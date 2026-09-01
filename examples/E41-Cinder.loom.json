@@ -277,17 +277,18 @@
         "id": "cloud",
         "label": "cloud1",
         "parameters": {
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"velocity\",\"type\":\"vec3f\",\"default\":[0,0,99]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0,0,0,0]}]",
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0,0,0,0]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]}]",
           "capacity": 4096,
           "group": "",
-          "kernel": "const ASPECT: f32 = 1.7777777777777777;\nconst TTL: f32 = 1.6;\nconst THRESHOLD: f32 = 0.06;\nconst GATE: f32 = 0.05;\n\n/* The DRAUGHT the motes rise through — a small stream function whose CURL steers\n   them, so the cloud shears and eddies and can never bunch into a knot (E9's shape,\n   scaled for a screen-plane cloud). */\nfn draught(pos: vec2f, t: f32) -> f32 {\n  let broad = sin(pos.x * 2.6 + t * 0.5) * cos(pos.y * 3.1 - t * 0.37);\n  let fine = cos(pos.x * 7.9 - t * 0.9) * sin(pos.y * 6.3 + t * 0.7) * 0.35;\n  return broad + fine;\n}\n\nfn curl(pos: vec2f, t: f32) -> vec2f {\n  let e = 0.05;\n  let dx = draught(pos + vec2f(e, 0.0), t) - draught(pos - vec2f(e, 0.0), t);\n  let dy = draught(pos + vec2f(0.0, e), t) - draught(pos - vec2f(0.0, e), t);\n  return vec2f(dy, -dx) / (2.0 * e);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let age = p.velocity.z;\n\n  if (age >= TTL) {\n    /* DORMANT. Roll the gate; winners probe one fresh deterministic site. The salt\n       folds the absolute frame in, so the probe pattern is dense over time AND a seek\n       reproduces it exactly. */\n    q.tint = vec4f(0.0);\n    let salt = ctx.index * 977u + ctx.absFrame;\n    if (pointRand(salt, 9u) > GATE) { return q; }\n    let sx = pointRand(salt, 1u) * 2.0 - 1.0;\n    let sy = pointRand(salt, 2u) * 2.0 - 1.0;\n    let sample = fieldAt(vec3f(sx, sy, 0.0));\n    if (sample.a <= THRESHOLD) { return q; }\n    /* BORN — at the motion site, display space, with an upward kick and jitter. */\n    let jx = pointRand(salt, 21u) - 0.5;\n    q.position = vec3f(sx * ASPECT + jx * 0.03, sy + (pointRand(salt, 22u) - 0.5) * 0.03, 0.0);\n    q.velocity = vec3f(jx * 0.4, 0.12 + pointRand(salt, 23u) * 0.3, 0.0);\n    q.tint = vec4f(sample.rgb, sample.a);\n    return q;\n  }\n\n  /* A LIVE MOTE: buoyancy plus the draught's curl, through drag — the field is\n     INTEGRATED, never teleported along (§V427). */\n  var v = p.velocity.xy;\n  let force = curl(p.position.xy, ctx.absTime) * 0.5 + vec2f(0.0, 0.55) - v * 2.2;\n  v = v + force * ctx.delta;\n  q.position = vec3f(p.position.xy + v * ctx.delta, 0.0);\n  q.velocity = vec3f(v, age + ctx.delta);\n\n  /* The video's LIVE colour under the mote (field space is /ASPECT), faded by age so\n     it shrinks and dims out instead of popping. A small floor keeps a mote over a\n     black region reading as an ember — additive light, not albedo (§V644's spirit).\n     tint.a is the SIZE channel (T721 maps it): presence plus the local motion. */\n  let sample = fieldAt(vec3f(q.position.x / ASPECT, q.position.y, 0.0));\n  let fade = 1.0 - smoothstep(TTL * 0.45, TTL, q.velocity.z);\n  let glow = sample.rgb * 0.85 + vec3f(0.10, 0.07, 0.05);\n  q.tint = vec4f(glow * fade, clamp(0.55 + sample.a * 2.4, 0.55, 2.2) * fade);\n  return q;\n}",
-          "seed": 41
+          "kernel": "const SCOUTS: u32 = 96u;\nconst ASPECT: f32 = 1.7777777777777777;\nconst TTL: f32 = 1.6;\nconst THRESHOLD: f32 = 0.06;\nconst AGE_Z: f32 = 0.25;\n\n/* The DRAUGHT the motes rise through — a small stream function whose CURL steers\n   them, so the cloud shears and eddies and can never bunch into a knot (E9's shape,\n   scaled for a screen-plane cloud). */\nfn draught(pos: vec2f, t: f32) -> f32 {\n  let broad = sin(pos.x * 2.6 + t * 0.5) * cos(pos.y * 3.1 - t * 0.37);\n  let fine = cos(pos.x * 7.9 - t * 0.9) * sin(pos.y * 6.3 + t * 0.7) * 0.35;\n  return broad + fine;\n}\n\nfn curl(pos: vec2f, t: f32) -> vec2f {\n  let e = 0.05;\n  let dx = draught(pos + vec2f(e, 0.0), t) - draught(pos - vec2f(e, 0.0), t);\n  let dy = draught(pos + vec2f(0.0, e), t) - draught(pos - vec2f(0.0, e), t);\n  return vec2f(dy, -dx) / (2.0 * e);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* ctx.firstRun and nothing else (T510/T579, §V495): a lap keeps this population, a\n     seek or a load rebuilds it. Frame 0 is an EMPTY stage bar the invisible scouts —\n     everything ever visible will have been born from measured motion. */\n  if (ctx.firstRun == 1u) {\n    q.id = ctx.index;\n    q.spawnCount = 0u;\n    if (ctx.index >= SCOUTS) {\n      q.alive = 0u;\n      return q;\n    }\n    q.alive = 1u;\n    q.position = vec3f(0.0);\n    q.tint = vec4f(0.0);\n    return q;\n  }\n\n  if (q.id < SCOUTS) {\n    /* A SCOUT: immortal, invisible (tint 0 — the draw's group hides it), jumping to a\n       fresh deterministic site every frame. The salt folds the absolute frame in, so\n       the probe pattern is dense over time AND a seek reproduces it (§V44/§V45). */\n    let salt = q.id * 977u + ctx.absFrame;\n    let sx = pointRand(salt, 1u) * 2.0 - 1.0;\n    let sy = pointRand(salt, 2u) * 2.0 - 1.0;\n    let sample = fieldAt(vec3f(sx, sy, 0.0));\n    q.position = vec3f(sx * ASPECT, sy, 0.0);\n    q.tint = vec4f(0.0);\n    q.spawnCount = select(0u, 1u, sample.a > THRESHOLD);\n    q.alive = 1u;\n    return q;\n  }\n\n  /* A MOTE. Age rides position.z (see the header: the schema is spent on id and tint,\n     and the encoding doubles as depth ordering). */\n  var age = -q.position.z / AGE_Z + ctx.delta;\n  if (age > TTL) {\n    q.alive = 0u;\n    return q;\n  }\n\n  /* PROCEDURAL velocity: a per-ember kick from its own minted id, buoyancy, and the\n     draught's curl. No inertia — no attribute left to store it in, and the header\n     says so rather than hiding it. */\n  let kick = vec2f(pointRand(q.id, 21u) - 0.5, 0.0) * 0.4;\n  let v = kick + curl(q.position.xy, ctx.absTime) * 0.5 + vec2f(0.0, 0.55 - age * 0.18);\n  let xy = q.position.xy + v * ctx.delta;\n  q.position = vec3f(xy, -age * AGE_Z);\n\n  /* The video's LIVE colour under the mote (field space is /ASPECT), faded by age so\n     it dims and shrinks out instead of popping. A small floor keeps a mote over a\n     black region reading as an ember — additive light, not albedo (§V644's spirit).\n     tint.w is the SIZE channel (T721 maps it): presence plus the local motion. */\n  let sample = fieldAt(vec3f(xy.x / ASPECT, xy.y, 0.0));\n  let fade = 1.0 - smoothstep(TTL * 0.45, TTL, age);\n  let glow = sample.rgb * 0.85 + vec3f(0.10, 0.07, 0.05);\n  q.tint = vec4f(glow * fade, clamp(0.55 + sample.a * 2.4, 0.55, 2.2) * fade);\n  q.alive = 1u;\n  return q;\n}",
+          "seed": 41,
+          "spawn": "fn spawn(child: Point, ctx: PointCtx) -> Point {\n  var c = child;\n  let jx = pointRand(c.id, 31u) - 0.5;\n  let jy = pointRand(c.id, 32u) - 0.5;\n  c.position = vec3f(c.position.xy + vec2f(jx, jy) * 0.04, 0.0);\n  c.tint = vec4f(0.0);\n  return c;\n}"
         },
         "position": {
           "x": -720,
           "y": -60
         },
-        "type": "pointKernel"
+        "type": "pointKernelAdvanced"
       },
       "flare": {
         "definitionVersion": 1,
@@ -359,9 +360,9 @@
         "id": "motes",
         "label": "motes1",
         "parameters": {
-          "group": "p.velocity.z < 1.6",
+          "group": "p.tint.w > 0.001",
           "material": "flare1",
-          "mode": "points",
+          "mode": "instances",
           "scale": {
             "bindings": {
               "map": {
@@ -376,6 +377,7 @@
             },
             "mode": "map"
           },
+          "shape": "quad",
           "tint": {
             "bindings": {
               "map": {

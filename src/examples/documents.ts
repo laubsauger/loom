@@ -10,7 +10,7 @@ import type { ParameterSlot, ParameterValue } from "../domain/types/parameters.t
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
 import { FLUID_VELOCITY_WGSL } from "./shaders/fluid-velocity.wgsl.ts";
 import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
-import { CINDER_ATTRIBUTES, CINDER_CAPACITY, CINDER_KERNEL } from "./shaders/cinder.wgsl.ts";
+import { CINDER_ATTRIBUTES, CINDER_CAPACITY, CINDER_KERNEL, CINDER_SPAWN } from "./shaders/cinder.wgsl.ts";
 import {
   CURRENT_ATTRIBUTES,
   CURRENT_COLS,
@@ -9952,22 +9952,23 @@ const sigilDocument = document(
  * here" and a mote asks "what colour is the picture under me" with the same fieldAt.
  * E40 built the difference instrument; this file makes it a SPAWN FIELD.
  *
- * ## The recycling population, and the count that answers the owner's sentence
+ * ## The real lifecycle, and the count that answers the owner's sentence (T745)
  *
- * The T322 spawn machinery was the plan, and the pre-build check found the wall: the
- * advanced kernel has NO field input (no inputs at all), so a spawn decision cannot
- * read the video there — reported as a capability gap rather than worked around by
- * side effect. Instead the population RECYCLES in one plain kernel (E38's pattern):
- * every point is a live mote (age < TTL, riding velocity.z — E9's idiom) or DORMANT.
- * Dormant points roll a deterministic gate each frame; winners probe a fresh site
- * (pointRand salted by the absolute frame — a seek reproduces, §V44/§V45) and are
- * REBORN where the motion alpha clears the threshold, wearing the video's colour and
- * sized by the motion (tint.a, T721's mapped scale channel). Every visible mote was
- * born from measured motion — the default age is DORMANT, so frame 0 is an empty
- * stage — and cinder-claims.gpu.test.ts asserts the owner's sentence cross-frame
- * (§V681/§V717): the live count grows while the orb travels, births land in the
- * analytic orb's neighbourhood, and pinning the subject's LFOs decays the population
- * to zero within one TTL. Three attributes = 2n+2 = exactly the baseline 8 (§V588).
+ * The first landing recycled a fixed population, because the advanced kernel took no
+ * inputs and a spawn decision could not read the video — the gap became T744, T744
+ * landed, and this file now runs the T322 machinery it always wanted: 96 immortal
+ * invisible SCOUTS jump to fresh deterministic sites every frame (pointRand salted by
+ * the absolute frame — a seek reproduces, §V44/§V45) and SPAWN where the packed
+ * field's motion alpha clears the threshold; children are born at the site, wear the
+ * video's LIVE colour under them each frame, are sized by the motion (tint.w, T721's
+ * mapped scale channel), and die within a TTL — killed and COMPACTED, so the GPU
+ * live count is a meter of how much the picture is moving. That makes the lead claim
+ * exact in the strong sense: pin the subject and the count itself returns to the
+ * scout floor — zero LIVE POINTS, not merely zero visible pixels
+ * (cinder-claims.gpu.test.ts reads the count buffer through probeBuffers, §V729).
+ * The schema is spent on id (spawning mints identity, §V73) and tint, so AGE rides
+ * position.z — which doubles as depth ordering under the ortho camera — and velocity
+ * is procedural: 2·(n−1)+2 with flags = exactly the baseline 8 (§V588).
  *
  * ## The understudy moves, and the bed holds still (§V411, §V687)
  *
@@ -10010,16 +10011,16 @@ const cinderDocument = document(
       }, { label: "pack1" }),
 
       // ---- the population: scouts spawn, motes live, paint colours ------------------
-      node("cloud", "pointKernel", [-720, -60], {
+      node("cloud", "pointKernelAdvanced", [-720, -60], {
         capacity: CINDER_CAPACITY, seed: 41, group: "",
-        attributes: CINDER_ATTRIBUTES, kernel: CINDER_KERNEL,
+        attributes: CINDER_ATTRIBUTES, kernel: CINDER_KERNEL, spawn: CINDER_SPAWN,
       }, { label: "cloud1" }),
 
       // ---- the draw: unlit billboards, sized and coloured by the paint --------------
       /* Motes are LIGHT (§V617/§V666): unlit, so they cast nothing and take nothing. */
       node("flare", "materialUnlit", [-420, 240], { color: [1, 1, 1, 1] }, { label: "flare1" }),
       node("motes", "geometry", [-120, -60], {
-        mode: "points", scale: 0.012, material: "flare1", group: "p.velocity.z < 1.6",
+        mode: "instances", shape: "quad", scale: 0.012, material: "flare1", group: "p.tint.w > 0.001",
       }, {
         label: "motes1",
         parameters: {

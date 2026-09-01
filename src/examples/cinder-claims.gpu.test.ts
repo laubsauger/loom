@@ -7,7 +7,8 @@ import type { GraphDocument } from "../domain/types/graph.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
-import { CINDER_ASPECT, CINDER_TTL } from "./shaders/cinder.wgsl.ts";
+import { liveCountBufferId } from "../nodes/definitions/index.ts";
+import { CINDER_ASPECT, CINDER_SCOUTS, CINDER_TTL } from "./shaders/cinder.wgsl.ts";
 
 /**
  * T741 — E41's claims, cross-frame BY CONSTRUCTION (§V681, §V712, §V717).
@@ -64,7 +65,7 @@ function stillSubject(graph: GraphDocument): void {
 async function shoot(
   mutate: (graph: GraphDocument) => void,
   capture: ReadonlyArray<number>,
-): Promise<Frame[]> {
+): Promise<{ frames: Frame[]; liveCount: number }> {
   const { document } = e41();
   const graph = structuredClone(document.graph) as GraphDocument;
   mutate(graph);
@@ -76,11 +77,18 @@ async function shoot(
     capture: [...capture],
     animate: true,
     outputNodeId: "out",
+    /* T745 (§V729): the LEAD claim reads the population itself — the live count after
+       compaction — because "zero live points" and "zero visible pixels" are different
+       sentences, and the count is the one the example means. */
+    probeBuffers: [liveCountBufferId("cloud")],
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
+  const countRaw = result.buffers?.[liveCountBufferId("cloud")];
+  if (countRaw === undefined) throw new Error("live count probe missing");
+  const liveCount = new Uint32Array(countRaw)[0] ?? 0;
   const space = result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
-  return result.frames.map((frame) => {
+  const frames = result.frames.map((frame) => {
     const image = toRgba8(
       {
         width: frame.width,
@@ -93,6 +101,7 @@ async function shoot(
     );
     return { w: image.width, h: image.height, d: image.data };
   });
+  return { frames, liveCount };
 }
 
 const luma = (frame: Frame, pixel: number): number =>
@@ -133,22 +142,31 @@ describe("E41 Cinder — a moving subject sheds motes; a still one sheds none", 
    * at frame 132 — not few, none: nothing moves, so nothing clears the threshold.
    */
   it(
-    "grows a population while the orb travels, and decays to exactly none when it parks",
+    "grows a population while the orb travels, and decays to exactly the scouts when it parks",
     async () => {
-      const [early, steady] = await shoot(soloMotes, [12, 132]);
-      const earlyCount = motePixels(early!).length;
-      const steadyCount = motePixels(steady!).length;
-      expect(steadyCount).toBeGreaterThan(800); // a real cloud, not a speckle
-      expect(steadyCount).toBeGreaterThan(earlyCount * 1.5); // it GREW
+      // THE LEAD (T745's re-anchor, ruled primary): the GPU live count itself. Moving,
+      // the population is real — hundreds of live points beyond the immortal scouts.
+      const early = await shoot(soloMotes, [12]);
+      const steady = await shoot(soloMotes, [132]);
+      expect(steady.liveCount - CINDER_SCOUTS).toBeGreaterThan(150);
+      expect(steady.liveCount).toBeGreaterThan(early.liveCount);
 
-      const [parked] = await shoot(
+      // Parked: EXACTLY the scout floor — zero live points born of motion, not merely
+      // zero visible pixels (a dark or off-screen mote would satisfy pixels and fail
+      // this). The transient from the cache filling in is dead within one TTL.
+      const parked = await shoot(
         (graph) => {
           soloMotes(graph);
           stillSubject(graph);
         },
         [132],
       );
-      expect(motePixels(parked!).length).toBe(0);
+      expect(parked.liveCount).toBe(CINDER_SCOUTS);
+
+      // CORROBORATION, kept deliberately: the screen agrees with the buffer. The
+      // population died AND nothing is drawn — together they close both readings.
+      expect(motePixels(steady.frames[0]!).length).toBeGreaterThan(800);
+      expect(motePixels(parked.frames[0]!).length).toBe(0);
     },
     300_000,
   );
@@ -163,7 +181,7 @@ describe("E41 Cinder — a moving subject sheds motes; a still one sheds none", 
   it(
     "sheds motes along the orb's analytic path and nowhere else",
     async () => {
-      const frame = (await shoot(soloMotes, [132]))[0]!;
+      const frame = (await shoot(soloMotes, [132])).frames[0]!;
       const pixels = motePixels(frame);
       expect(pixels.length).toBeGreaterThan(800);
 
@@ -206,7 +224,7 @@ describe("E41 Cinder — a moving subject sheds motes; a still one sheds none", 
     "colours the motes from the source under them — warm orb, warm cloud",
     async () => {
       const balance = async (mutate: (graph: GraphDocument) => void): Promise<number> => {
-        const frame = (await shoot(mutate, [132]))[0]!;
+        const frame = (await shoot(mutate, [132])).frames[0]!;
         const pixels = motePixels(frame);
         expect(pixels.length).toBeGreaterThan(400);
         let red = 0;
