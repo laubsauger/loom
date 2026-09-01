@@ -59,3 +59,71 @@ export const DEPTH_MODELS: readonly ModelDescriptor[] = [DEPTH_ACCURATE, DEPTH_L
 export function depthModel(id: string): ModelDescriptor | undefined {
   return DEPTH_MODELS.find((model) => model.id === id);
 }
+
+/**
+ * WHERE DEPTH CAN RUN — the provider set, declared (T736, §T715).
+ *
+ * The owner asked to "pick the right thing for the right platform and use case", which
+ * needs the unreachable options named rather than omitted: a provider that silently falls
+ * back removes the choice by hiding it. So every slot says whether a PAGE can reach it,
+ * and an unreachable one must say what would change that — otherwise a deferral becomes
+ * permanent by forgetting, which is the failure §V205's declaration list exists to stop.
+ *
+ * Measured 2026-09-01 on the owner's machine (Chrome 151, macOS, Apple metal-3), with
+ * WebGPU as a passing control so the negatives are trustworthy.
+ */
+export interface DepthProvider {
+  readonly id: string;
+  readonly label: string;
+  /** Whether a PAGE can reach it. Measured, never assumed. */
+  readonly reachable: boolean;
+  /** What was measured, or what would have to change. Required when unreachable. */
+  readonly note: string;
+}
+
+export const DEPTH_PROVIDERS: readonly DepthProvider[] = [
+  {
+    id: "webgpu",
+    label: "WebGPU",
+    reachable: true,
+    // `navigator.gpu` present, adapter reports vendor "apple", architecture "metal-3".
+    // This is real hardware acceleration on the Apple GPU via Metal — it is not a
+    // consolation path, it is the ONLY hardware path a page has on this machine.
+    note: "onnxruntime-web's webgpu execution provider, on the Metal adapter.",
+  },
+  {
+    id: "wasm",
+    label: "CPU (WASM)",
+    reachable: true,
+    note: "Always available. Correct and slow; the floor the ladder rests on.",
+  },
+  {
+    id: "webnn",
+    label: "WebNN",
+    reachable: false,
+    // MEASURED: `navigator.ml` is undefined in Chrome 151 on macOS. WebNN is behind a
+    // flag in every Chromium and WebKit has taken no position (standards-positions #486,
+    // open since April 2025). And even where it exists the spec REMOVED `deviceType` and
+    // defines no device enumeration, so a page cannot request or observe an accelerator.
+    note: "navigator.ml is undefined. Unblocked when a shipping browser enables WebNN by default; even then it can never report which device it used.",
+  },
+  {
+    id: "coreml",
+    label: "Core ML / Neural Engine",
+    reachable: false,
+    // MEASURED: onnxruntime-web contains ZERO occurrences of "coreml" and accepts exactly
+    // cpu | webgpu | webnn | wasm. ONNX Runtime's own EP table marks CoreML available for
+    // MacOS x64 and arm64 in the NODE binding only. Apple's Vision framework has no web
+    // surface at all: window.CoreML and window.Vision are undefined, FaceDetector and
+    // TextDetector are undefined, and the only Vision-backed web API present is
+    // BarcodeDetector, which does not do depth.
+    note: "Not in the web build and not a web API. Unblocked ONLY by a desktop shell (Electron/Tauri) running onnxruntime-node, or by WebNN shipping and routing to it invisibly.",
+  },
+];
+
+/** A slot that cannot be reached must say what would change that, or it rots quietly. */
+export function unreachableWithoutRemedy(): readonly DepthProvider[] {
+  return DEPTH_PROVIDERS.filter(
+    (provider) => !provider.reachable && !provider.note.toLowerCase().includes("unblocked"),
+  );
+}
