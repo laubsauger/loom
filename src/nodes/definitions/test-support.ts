@@ -275,6 +275,16 @@ export function minimalGraphFor(
         ...(firstOutput.type.kind === "projector" ? { projectors: "subject1" } : {}),
       });
       edges["sink"] = mkEdge("sink", ["observe", "out"], ["sink", "input"]);
+    } else if ((firstOutput.type as { space?: string }).space === "data") {
+      // T768/§V57c: a DATA output (uv, render.depth) refuses to wire into the sink's
+      // colour input — §V13 working as designed. A user observes a data field through a
+      // data consumer, so the harness does too: subject drives a Displace's field over a
+      // checker, and the displaced picture is what reaches the sink.
+      nodes["obssrc"] = mk("obssrc", "checker");
+      nodes["observe"] = mk("observe", "displace");
+      edges["observe-src"] = mkEdge("observe-src", ["obssrc", "out"], ["observe", "source"]);
+      edges["observe-in"] = mkEdge("observe-in", ["subject", firstOutput.id], ["observe", "disp"]);
+      edges["sink"] = mkEdge("sink", ["observe", "out"], ["sink", "input"]);
     } else {
       edges["sink"] = mkEdge("sink", ["subject", firstOutput.id], ["sink", "input"]);
     }

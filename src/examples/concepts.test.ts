@@ -637,22 +637,31 @@ describe("E6 Displacement Stack", () => {
   });
 
   /**
-   * The control case, and the reason the assertion above is not vacuous: encoding the
-   * displacement branch DOES get caught, by name, with the conversion node to insert. §V57
-   * is explicit that the compiler never silently converts.
+   * T768/§V57c flipped this control's meaning, and the flip IS the claim now. `disp`
+   * declares `space: "data"`, and a data input accepts ANY source space because reading
+   * bytes as data converts nothing — so encoding the displacement branch is no longer a
+   * mismatch AT ALL: the raw bytes are the offsets, whatever curve shaped them, and
+   * that is the user's field to shape. The old "encoded disp gets caught" behaviour was
+   * a symptom of `disp` being mistyped as colour.
    */
-  it("reports a mismatch when the displacement branch is encoded", () => {
+  it("accepts an encoded displacement branch without complaint — data reads raw (§V57c)", () => {
     const encoded = recompile(document, withFormat(document.graph, "place", "rgba8unorm-srgb"));
     const mismatches = encoded.diagnostics.filter(
       (d) => d.code === CompilerDiagnosticCode.colorSpaceMismatch,
     );
-
-    expect(mismatches).toHaveLength(1);
-    expect(mismatches[0]?.nodeId).toBe("warp");
-    expect(mismatches[0]?.message).toContain("encoded");
-    // Named, never fixed behind the user's back.
-    expect(mismatches[0]?.suggestion).toContain("conversion");
+    expect(mismatches).toEqual([]);
   });
+
+  /**
+   * Where the OLD control went: the mismatch is a MIXED-COLOUR-INPUTS warning, and with
+   * `disp` honestly typed `data` (exempt from the mix by design), Displace has exactly
+   * one colour input left — so no single-node format override in this document can
+   * produce the warning any more. That is not lost coverage: the mix warning and the
+   * data exemption are both pinned in `src/compiler/color-space.test.ts` ("warns on
+   * mixed colour spaces", "exempts data inputs"), where a two-colour-input fixture
+   * exists by construction. This document's claim is the two assertions above: one
+   * space end to end, and an encoded field accepted raw.
+   */
 
   /**
    * The `data` flag, which the shipped example deliberately does not use.

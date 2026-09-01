@@ -28,15 +28,20 @@ import {
  * conventions are defensible; mixing them inside one catalogue is not, so all four nodes
  * make the same one.
  *
- * WHAT THESE NODES NEED FROM THE PORT TYPE (T83, §V57): `texture2d` has no `space` field
- * yet, so these assumptions live in prose. When it lands:
- *   - Level and HSV want `space: "linear"` on both ports, and a `data` input should be a
- *     diagnostic — hue-rotating a displacement field is a mistake, not a style.
- *   - Threshold consumes colour and produces a MASK, which is `data`.
- *   - Lookup consumes `source` as `data` (an index) and `lookup` as colour, and its output
- *     carries the LOOKUP's space, not the source's. It is the one node here whose two
- *     inputs genuinely differ, which is why its format policy inherits from `lookup` while
- *     its resolution inherits from `source`.
+ * WHAT THESE NODES GOT FROM THE PORT TYPE (T83 landed the field; T768 moved the family):
+ *   - Level and HSV stay unannotated (= linear, §V57). Their protection arrived from the
+ *     OTHER side: a declared-data OUTPUT (uv, render.depth) now refuses to connect into
+ *     them at all (§V13/§V57c) — hue-rotating a displacement field is refused at the
+ *     wire, not diagnosed after.
+ *   - Threshold's note asked for a `data` output and the wish DISSOLVED rather than
+ *     landed (T768): a threshold matte is ALSO a visible b/w image people composite and
+ *     view directly, and a data output would refuse both of those uses. It stays linear
+ *     and still feeds mask.mask, because a data INPUT accepts any source (§V57c).
+ *   - Lookup's `lookup` input is GENUINELY COLOUR — its texels ARE the output colours —
+ *     so it deliberately stays out of the data family. The data-shaped thing in Lookup
+ *     is the source CHANNEL used as index, which is a parameter, not a port. Its format
+ *     policy inherits from `lookup` while its resolution inherits from `source`, the one
+ *     node here whose two inputs genuinely differ.
  *
  * The "which channel drives this?" parameter is called `channel`, not `source`: `source` is
  * the reserved key that marks a node's shader text as user-authorable
@@ -184,9 +189,12 @@ export const hsvNode: NodeDefinition = {
  * Threshold — TD's Threshold TOP.
  *
  * Produces a MASK: the same value in rgb and alpha, so it drives Mask or composites as a
- * matte with no channel shuffling in between. The output is therefore DATA in §V56 terms
- * even though it is shaped like a colour — noted on the port and worth a `space: "data"`
- * declaration once the port type has one.
+ * matte with no channel shuffling in between. The output is DATA in §V56 terms even
+ * though it is shaped like a colour — but T768 deliberately did NOT declare it
+ * `space: "data"`: a threshold matte is dual-use, equally a visible b/w image that gets
+ * composited and viewed directly, and a data declaration would refuse those wirings
+ * (§V13). Under §V57c it feeds mask.mask unconverted anyway, so the declaration would
+ * buy nothing and cost the picture use.
  */
 export const thresholdNode: NodeDefinition = {
   type: "threshold",

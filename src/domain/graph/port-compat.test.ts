@@ -197,14 +197,39 @@ describe("texture2d colour space", () => {
     expect(arePortsCompatible(tex("encoded"), tex())).toBe(false);
   });
 
-  /** The case the invariant exists for: data must never be colour-converted. */
-  it("refuses to feed a data texture into a colour input, and vice versa", () => {
+  /**
+   * §V57c (T768) — the data rule is ASYMMETRIC, and the asymmetry is the protection.
+   *
+   * A data OUTPUT into a colour input refuses: the consumer would display-decode a
+   * depth map or gamma-bend a uv field — silently moved geometry, the case the
+   * invariant exists for. A data INPUT accepts ANY source, because reading bytes as
+   * data converts nothing — a Mask takes any channel as coverage, a Displace reads any
+   * field as offsets, and noise→disp is the canonical wiring of the catalogue. The
+   * symmetric refusal this replaces broke every one of those wirings the moment a
+   * consumer declared honestly, which is why the family could not migrate until the
+   * connect gate agreed with the compiler's own propagation (T83/B5).
+   */
+  it("refuses a data OUTPUT into a colour input — the consumer would decode it", () => {
     expect(arePortsCompatible(tex("data"), tex("linear"))).toBe(false);
-    expect(arePortsCompatible(tex("linear"), tex("data"))).toBe(false);
+    expect(arePortsCompatible(tex("data"), tex())).toBe(false);
+  });
+
+  it("a data INPUT accepts any source space — reading as data is not a conversion (§V57c)", () => {
+    expect(arePortsCompatible(tex("linear"), tex("data"))).toBe(true);
+    expect(arePortsCompatible(tex(), tex("data"))).toBe(true);
+    expect(arePortsCompatible(tex("encoded"), tex("data"))).toBe(true);
   });
 
   it("accepts data into data", () => {
     expect(arePortsCompatible(tex("data"), tex("data"))).toBe(true);
+  });
+
+  it("the data-input acceptance never relaxes shape: sample and channels still match exactly", () => {
+    const dataInput = { kind: "texture2d", sample: "float", channels: 4, space: "data" } as const;
+    expect(
+      arePortsCompatible({ kind: "texture2d", sample: "float", channels: 1 }, dataInput),
+    ).toBe(false);
+    expect(arePortsCompatible({ kind: "texture2d", sample: "depth" }, dataInput)).toBe(false);
   });
 
   it("names the space in the description, so a diagnostic says which mismatched", () => {

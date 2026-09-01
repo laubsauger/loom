@@ -1,7 +1,7 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
-import { RGBA_TEXTURE } from "./common-ports.ts";
+import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import {
   CHANNEL_OPTIONS,
@@ -169,12 +169,14 @@ export const blurNode: NodeDefinition = {
  * Displace — TD's Displace TOP.
  *
  * COLOUR (§V56/§V57), and the reason this node is called out in the brief: the `disp`
- * input is DATA, not colour. Two of its channels are read as signed offsets in uv units
- * after `offset` (the value that means "no displacement", 0.5 by default) is subtracted.
- * Colour-converting it would rescale those offsets by a gamma curve and silently change
- * the geometry — the exact class of bug §V56 exists to prevent. Nothing in this node
- * converts either input, and when `texture2d.space` lands (T83) this port must be declared
- * `space: "data"` while `source` stays colour.
+ * input is DATA, not colour — declared `space: "data"` (T768). Two of its channels are
+ * read as signed offsets in uv units after `offset` (the value that means "no
+ * displacement", 0.5 by default) is subtracted. Colour-converting it would rescale those
+ * offsets by a gamma curve and silently change the geometry — the exact class of bug
+ * §V56 exists to prevent. Under §V57c the data input accepts ANY source space (a linear
+ * noise driving displacement is the canonical wiring; reading it as offsets converts
+ * nothing), and §V57a deliberately does NOT ride along: this node FILTERS its field —
+ * low-res noise driving smooth full-res displacement is the point.
  *
  * Resolution and format inherit `source`: the displaced image keeps the shape of the image
  * being displaced, not of the field doing the displacing, which may legitimately be a
@@ -192,7 +194,7 @@ export const displaceNode: NodeDefinition = {
     {
       id: "disp",
       label: "Displace",
-      type: RGBA_TEXTURE,
+      type: DATA_TEXTURE,
       description: "DATA, not colour: signed uv offsets. Never colour-convert this (§V56).",
     },
   ],
@@ -309,7 +311,7 @@ export const remapNode: NodeDefinition = {
     {
       id: "map",
       label: "UV Map",
-      type: RGBA_TEXTURE,
+      type: DATA_TEXTURE,
       description:
         "DATA, not colour: absolute uv coordinates. Its resolution is the output's. Never colour-convert this (§V56).",
     },

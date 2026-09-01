@@ -17,14 +17,24 @@ export function arePortsCompatible(source: PortType, target: PortType): boolean 
   switch (source.kind) {
     case "texture2d": {
       const b = target as Extract<PortType, { kind: "texture2d" }>;
+      if (source.sample !== b.sample || source.channels !== b.channels) return false;
+      /*
+       * §V57c (T768) — an INPUT declared `data` accepts ANY source space, because
+       * reading bytes as data is not a conversion: a Mask's mask input takes any
+       * channel as coverage, a Displace reads any field as offsets. §V13's refusal is
+       * about implicit CONVERSION, and a data input converts nothing. The compiler's
+       * space propagation has carried exactly this rule since T83/B5; this clause is
+       * the connect gate agreeing with it rather than a loosening.
+       *
+       * The refusal that STAYS is the asymmetric one, and it is the actual protection:
+       * a `data` OUTPUT into a colour input still refuses below, because the consumer
+       * would display-decode a depth map (T722's retreat, correctly refused).
+       */
+      if (declaredColorSpace(b) === "data") return true;
       // Absence normalises to "linear" (the project working space), so an unannotated
       // port and an explicitly-linear one are the SAME declaration. `channels` above is
       // deliberately not treated this way — see the note on PortType.
-      return (
-        source.sample === b.sample &&
-        source.channels === b.channels &&
-        colorSpaceOf(source) === colorSpaceOf(b)
-      );
+      return colorSpaceOf(source) === colorSpaceOf(b);
     }
     case "buffer": {
       const b = target as Extract<PortType, { kind: "buffer" }>;

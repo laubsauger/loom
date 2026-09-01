@@ -158,8 +158,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * a signed distance field drives Displace, Threshold and Mask directly. It also changes
  * what the output MEANS — in `fill` mode the output is linear colour, in `distance` mode
  * it is DATA in the red channel, in uv units, negative inside. The node's doc comment and
- * the port description both say so, and once `texture2d.space` lands (T83) this is the
- * first node in the catalogue whose declared space depends on a parameter.
+ * the port description both say so. T768 did NOT move this port to `space: "data"`: the
+ * declaration is per-port and this one's meaning depends on a PARAMETER, and under §V57c
+ * the data consumers (displace.disp, mask.mask) accept a linear source anyway — so the
+ * dual-mode port stays linear and both of its uses keep working, the same dissolution
+ * Threshold's note got.
  */
 export const CIRCLE_FRAGMENT_WGSL = `struct Params {
   fillcolor: vec4f,

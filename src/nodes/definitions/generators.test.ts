@@ -40,10 +40,13 @@ describe("generator nodes (T40)", () => {
       expect(definition.resolutionPolicy, definition.type).toEqual({ kind: "project" });
       expect(definition.formatPolicy, definition.type).toEqual({ kind: "project" });
       expect(definition.outputs.map((port) => port.id), definition.type).toEqual(["out"]);
+      // uv's output is coordinates, not light — the one generator declaring `data`
+      // (T768/§V57c); everything else is colour.
       expect(definition.outputs[0]?.type, definition.type).toEqual({
         kind: "texture2d",
         sample: "float",
         channels: 4,
+        ...(definition.type === "uv" ? { space: "data" } : {}),
       });
     }
   });

@@ -1,6 +1,6 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
-import { MAX_TEXTURE_INPUTS, RGBA_TEXTURE } from "./common-ports.ts";
+import { DATA_TEXTURE, MAX_TEXTURE_INPUTS, RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
 import {
@@ -324,10 +324,12 @@ export const crossNode: NodeDefinition = {
 /**
  * Mask — multiply an image's coverage by a mask.
  *
- * COLOUR (§V56/§V57): `mask` is DATA — a coverage value, not light. One of its channels
- * multiplies the source's ALPHA and nothing else, which is what masking means under a
- * straight-alpha convention and keeps the colour valid where coverage is partial. When
- * `texture2d.space` lands, `mask` wants `space: "data"` while `input` stays colour.
+ * COLOUR (§V56/§V57): `mask` is DATA — a coverage value, not light — declared
+ * `space: "data"` (T768) while `input` stays colour. One of its channels multiplies the
+ * source's ALPHA and nothing else, which is what masking means under a straight-alpha
+ * convention and keeps the colour valid where coverage is partial. §V57c is what lets a
+ * Threshold, a Ramp or any linear image feed this port unconverted: taking a channel as
+ * coverage is a read, not a conversion.
  *
  * TD's nearest equivalent is the Matte TOP, but it is NOT the same operator — TD's Matte
  * is a three-input over-with-matte, where this is a two-input alpha multiply. Called Mask
@@ -344,7 +346,7 @@ export const maskNode: NodeDefinition = {
     {
       id: "mask",
       label: "Mask",
-      type: RGBA_TEXTURE,
+      type: DATA_TEXTURE,
       description: "DATA, not colour: coverage. Never colour-convert this (§V56).",
     },
   ],

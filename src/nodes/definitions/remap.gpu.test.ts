@@ -62,26 +62,33 @@ function edge(id: string, from: [string, string], to: [string, string]) {
 }
 
 /**
- * uv -> Remap(source: uv, map: uv), differenced against uv and reduced to one number.
+ * ramp -> Remap(source: ramp, map: uv), differenced against the ramp and reduced to one
+ * number.
  *
- * Both inputs are the SAME generator, so a correct Remap is the identity and every channel
- * of the Difference is zero. `abs()` makes each channel non-negative, so the maximum
- * luminance bounds the per-channel error (the smallest weight is red's 0.2126).
+ * The map is the identity UV field, so a correct Remap reproduces the source and every
+ * channel of the Difference is zero. The source is a VERTICAL ramp — it varies along v,
+ * so the flipped-map case visibly breaks reproduction, which is the direction claim this
+ * test exists for. (The source used to be the uv generator itself, which was convenient
+ * until T768 declared uv's output `data`: §V13 now refuses it into Remap's colour
+ * `source` and Difference's inputs, exactly as designed — a colour source is the honest
+ * fixture.) `abs()` makes each channel non-negative, so the maximum luminance bounds the
+ * per-channel error (the smallest weight is red's 0.2126).
  */
 function identityGraph(flipv: boolean): GraphDocument {
   return {
     revision: 1,
     nodes: {
+      ramp: node("ramp", "ramp", { type: "vertical" }),
       uv: node("uv", "uv"),
       remap: node("remap", "remap", { flipv }),
       diff: node("diff", "difference"),
       meter: node("meter", "analyze", { channel: "luminance", operation: "maximum" }),
     },
     edges: {
-      e1: edge("e1", ["uv", "out"], ["remap", "source"]),
+      e1: edge("e1", ["ramp", "out"], ["remap", "source"]),
       e2: edge("e2", ["uv", "out"], ["remap", "map"]),
       e3: edge("e3", ["remap", "out"], ["diff", "in1"]),
-      e4: edge("e4", ["uv", "out"], ["diff", "in2"]),
+      e4: edge("e4", ["ramp", "out"], ["diff", "in2"]),
       e5: edge("e5", ["diff", "out"], ["meter", "input"]),
     },
     groups: {},

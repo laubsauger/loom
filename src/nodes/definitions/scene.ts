@@ -6,7 +6,7 @@ import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
 import { cameraPayloadMatrix, directionalShadowMatrix, lookAt, projectorMatrix } from "../../domain/geometry/camera.ts";
 import { gridCellCounts, gridPointCount, parseTopology } from "../../points/topology.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { RGBA_TEXTURE } from "./common-ports.ts";
+import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
 import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-reference.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
@@ -826,14 +826,14 @@ export const renderNode: NodeDefinition = {
          discontinuities, compositing 3D against 2D. DATA, not colour (§V56): R holds
          distance ÷ far, 0 at the eye rising to 1 at the far plane. Costs one scene
          depth pass and one full-res target, so it is OFF until Depth Output enables
-         it — while off, this port allocates nothing (outputWhen). No space:"data"
-         claim YET, deliberately: the consumers this exists for (displace.disp,
-         remap.map, composite.mask) are all still declared linear — the T83 migration
-         notes sit on each — and a lone data port would refuse every one of them
-         (§V13). Declare them together when that migration lands. */
+         it — while off, this port allocates nothing (outputWhen). Declared
+         space:"data" in T768's family move (the T722 landing deferred it while its
+         consumers were still linear): §V13 now refuses this depth map into a colour
+         input — a display-decoded depth field is silently bent geometry — while
+         displace.disp, remap.map and mask.mask accept it exactly. */
       id: "depth",
       label: "Depth",
-      type: RGBA_TEXTURE,
+      type: DATA_TEXTURE,
       description:
         "Camera-space depth as data: R = linear view distance ÷ far plane (0 eye, 1 far). Enable with Depth Output — off, this port produces nothing. Feed it to a blur-by-depth chain for depth of field, a mix for fog, or an edge for silhouettes.",
     },

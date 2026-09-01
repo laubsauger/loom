@@ -9,6 +9,16 @@ import type { PortType } from "../../domain/types/ports.ts";
 export const RGBA_TEXTURE: PortType = { kind: "texture2d", sample: "float", channels: 4 };
 
 /**
+ * The 4-channel float texture whose values are MEASUREMENTS, not light (§V56, §V57c,
+ * T768): uv fields, displacement offsets, coverage masks, camera depth. On an INPUT it
+ * means "read as data, accept any source space — nothing here converts"; on an OUTPUT it
+ * means "nothing downstream may display-decode this", and §V13 refuses it into a colour
+ * input outright. One constant so every member of the data family compares exactly equal
+ * by shape, the same reason RGBA_TEXTURE above exists.
+ */
+export const DATA_TEXTURE: PortType = { kind: "texture2d", sample: "float", channels: 4, space: "data" };
+
+/**
  * The value-graph port (§V179): a CPU-side channel bag, never a texture.
  *
  * Here rather than in one family's module because two now declare it — the CHOP set and

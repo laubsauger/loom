@@ -6,7 +6,7 @@ import type {
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { ColorStop } from "../../domain/types/parameters.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
-import { RGBA_TEXTURE } from "./common-ports.ts";
+import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import {
   readColor,
@@ -250,10 +250,12 @@ export const rampNode: NodeDefinition = {
 /**
  * UV — the identity coordinate field (T40).
  *
- * Its output is DATA (§V56, §V57): red is u, green is v. Nothing may colour-convert it,
- * and once `texture2d.space` exists (T83) this port must be declared `space: "data"` —
- * it is the clearest case in the catalogue, which is why it is worth having as a node
- * rather than as an implicit coordinate inside Displace.
+ * Its output is DATA (§V56, §V57): red is u, green is v — declared `space: "data"`
+ * (T768), the clearest case in the catalogue, which is why it is worth having as a node
+ * rather than as an implicit coordinate inside Displace. §V13 now refuses this output
+ * into any colour input outright: a display-decoded coordinate field is a bent lens
+ * nobody can see the cause of. Its consumers (displace.disp, remap.map) declare data
+ * and accept it exactly.
  */
 export const uvNode: NodeDefinition = {
   type: "uv",
@@ -266,7 +268,7 @@ export const uvNode: NodeDefinition = {
     {
       id: "out",
       label: "Out",
-      type: RGBA_TEXTURE,
+      type: DATA_TEXTURE,
       description: "DATA, not colour: red = u, green = v. Never colour-convert this (§V56).",
     },
   ],
