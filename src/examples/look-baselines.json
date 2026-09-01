@@ -144,6 +144,11 @@
     "range": 0.9797,
     "f0max": 0.6352
   },
+  "E42-Current.loom.json": {
+    "motion": 0.0536,
+    "range": 0.9823,
+    "f0max": 1
+  },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,
     "range": 0.4489,

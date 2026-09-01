@@ -87,6 +87,14 @@ export interface HeadlessRenderRequest {
    */
   readonly recordAudio?: FeatureTrackRecorder;
   /**
+   * T741: read these BUFFER resources back after the final frame, by plan resource id
+   * (e.g. "scratch:cloud:orient"). What a §V683-shaped claim needs is the attribute
+   * values a kernel actually wrote — pixels cannot testify about a quaternion — and
+   * this is the one seam with both the animated value graph and the backend in hand.
+   * Absent, nothing changes for any existing caller.
+   */
+  readonly probeBuffers?: ReadonlyArray<string>;
+  /**
    * T661: FEED the pointer — the audio seam's shape, pointer edition, and the fifth
    * reader-that-cannot-see in this file's history (T630, T633, T650, T655): the source
    * below existed since T69 and nothing ever fed it, so E12-Fluid — whose every force
@@ -153,6 +161,8 @@ export interface HeadlessRenderResult {
    * was byte-identical to one step).
    */
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
+  /** T741: the requested probeBuffers, read after the final frame, keyed by resource id. */
+  readonly buffers?: Readonly<Record<string, ArrayBuffer>>;
 }
 
 function registry(extra?: Iterable<NodeDefinition>) {
@@ -602,12 +612,18 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       request.betweenFrames?.(control, index);
     }
 
+    const probed: Record<string, ArrayBuffer> = {};
+    for (const resourceId of request.probeBuffers ?? []) {
+      probed[resourceId] = await backend.readBuffer(resourceId);
+    }
+
     return {
       frames: captured,
       plan,
       capabilities,
       readbacks: backend.status.readbacks,
       outputResourceId,
+      ...(request.probeBuffers === undefined ? {} : { buffers: probed }),
       // Compiler diagnostics FIRST: they are about the plan the render ran, and the
       // errors among them already threw above — what travels here is the warnings,
       // which are exactly what a byte-identical-but-wrong render hides (T630).
