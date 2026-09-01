@@ -135,8 +135,14 @@ interface Journal {
   readonly compiledUniforms: Array<Record<string, unknown>>;
 }
 
-function journallingBackend(): { backend: ShaderloomBackend; journal: Journal } {
+function journallingBackend(): {
+  backend: ShaderloomBackend;
+  journal: Journal;
+  /** T792: push a diagnostic the way the real backend would (unknown-resource bursts). */
+  emitDiagnostic(diagnostic: { severity: string; code: string; message: string }): void;
+} {
   const journal: Journal = { calls: [], compiledUniforms: [] };
+  const listeners = new Set<(diagnostic: unknown) => void>();
   const backend = {
     status: {
       initialized: true,
@@ -150,7 +156,10 @@ function journallingBackend(): { backend: ShaderloomBackend; journal: Journal } 
       stale: false,
       estimatedResourceBytes: 0,
     },
-    onDiagnostic: () => () => {},
+    onDiagnostic: (listener: (diagnostic: unknown) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     recover: async () => {},
     loop: () => ({ stop: () => {} }),
     previewHost: () => ({
@@ -178,7 +187,13 @@ function journallingBackend(): { backend: ShaderloomBackend; journal: Journal } 
     setCookPolicy() {},
     dispose: () => {},
   } as unknown as ShaderloomBackend;
-  return { backend, journal };
+  return {
+    backend,
+    journal,
+    emitDiagnostic: (diagnostic) => {
+      for (const listener of listeners) listener(diagnostic);
+    },
+  };
 }
 
 async function settle(): Promise<void> {
@@ -193,6 +208,10 @@ interface Session {
   open(text: string, fileName: string): Promise<void>;
   patch(operations: GraphPatchOperation[]): Promise<void>;
   journal: Journal;
+  /** T792: push a backend diagnostic (an unknown-resource burst, in miniature). */
+  emitDiagnostic(diagnostic: { severity: string; code: string; message: string }): void;
+  /** T792: the problems list, read through the same bus query the agent surface uses. */
+  problems(): Promise<ReadonlyArray<{ code: string }>>;
 }
 
 async function mount(): Promise<Session> {
@@ -201,7 +220,7 @@ async function mount(): Promise<Session> {
     actor: { kind: "human", id: "tester", label: "Tester" },
   });
   let current = first;
-  const { backend, journal } = journallingBackend();
+  const { backend, journal, emitDiagnostic } = journallingBackend();
   const status: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend };
 
   render(
@@ -220,6 +239,11 @@ async function mount(): Promise<Session> {
   return {
     runtime: () => current,
     journal,
+    emitDiagnostic,
+    async problems() {
+      const snapshot = await current.bus.query("diagnostics.get", {}, current.invocation);
+      return snapshot.diagnostics;
+    },
     async open(text, fileName) {
       // Through the BUS, which is the door the example library and the file picker both
       // use (§V29, §V88) — not a hand-rolled adopt that would prove something else works.
@@ -307,5 +331,56 @@ describe("T519 — a second document does not render the first one's pixels (B10
     // ...and it is not "nothing happened": the new value did reach the GPU. Without this
     // the two assertions above would pass on a gate stuck shut.
     expect(since).toContain("updateUniforms");
+  }, 30_000);
+});
+
+/**
+ * T792 — accumulated backend diagnostics belong to the DOCUMENT they were emitted under.
+ *
+ * Every document transition runs one burst of preview passes against the not-yet-adopted
+ * program, and each warns `backend/unknown-resource`. The store retained them across
+ * opens: five documents deep, the problems pane held 51 warnings spanning documents no
+ * longer on screen, and a live B155 hunt lost an hour to leads the pane itself planted.
+ * A diagnostics pane that accumulates other documents' noise teaches its reader to
+ * ignore it, which is the opposite of a diagnostics pane.
+ *
+ * T465's clear semantics make the emptying safe: anything still true about the NEW
+ * document re-reports on its own — the assertion here that a POST-open diagnostic
+ * survives is the half that keeps this from being a test of "the pane is always empty".
+ */
+describe("T792 — a document boundary empties the accumulated backend diagnostics", () => {
+  it("drops the outgoing document's warnings and keeps the new one's", async () => {
+    const session = await mount();
+    await session.open(DOCUMENT_A, "A.loom.json");
+    await waitFor(() => {
+      expect(session.journal.compiledUniforms.length).toBeGreaterThan(0);
+    });
+
+    session.emitDiagnostic({
+      severity: "warning",
+      code: "backend/unknown-resource",
+      message: 'Pass "preview/pass/field:out" binds unknown texture resource "target:field:out".',
+    });
+    await settle();
+    expect((await session.problems()).map((entry) => entry.code)).toContain(
+      "backend/unknown-resource",
+    );
+
+    await session.open(DOCUMENT_B, "B.loom.json");
+    expect((await session.problems()).map((entry) => entry.code)).not.toContain(
+      "backend/unknown-resource",
+    );
+
+    // The store still LISTENS after the boundary: a warning emitted under the new
+    // document lands, proving the emptying was a reset and not a disconnection.
+    session.emitDiagnostic({
+      severity: "warning",
+      code: "backend/unknown-resource",
+      message: 'Pass "preview/pass/out:$target" binds unknown texture resource "target:out:$target".',
+    });
+    await settle();
+    expect((await session.problems()).map((entry) => entry.code)).toContain(
+      "backend/unknown-resource",
+    );
   }, 30_000);
 });

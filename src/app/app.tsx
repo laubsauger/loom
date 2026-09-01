@@ -662,6 +662,10 @@ export function App({
    * history actor-local and entries name node ids from the PREVIOUS document, carrying
    * it across would let undo restore a node into a project that never had one.
    */
+  // T792: destructured because these two are the stable useCallbacks — depending on the
+  // hook result objects would churn `adoptDocument`'s identity every render.
+  const { clearDiagnostics: clearBackendDiagnostics } = recovery;
+  const { clearDiagnostics: clearFrameLoopDiagnostics } = frameLoop;
   const adoptDocument = useCallback(
     (result: LoadProjectSuccess) => {
       // Built outside the state updater on purpose: an updater must be pure, and React
@@ -681,9 +685,22 @@ export function App({
       setSelection([]);
       setHoveredNodeId(null);
       setRejection(NO_DIAGNOSTICS);
+      /*
+       * T792 — the ACCUMULATING diagnostic stores are about the outgoing document, so
+       * they empty at the boundary. The backend store (recovery) is the one that hurt:
+       * every document transition runs one burst of preview passes against the not-yet-
+       * adopted program and each warns `backend/unknown-resource` — five opens deep the
+       * pane held 51 of them, spanning documents no longer on screen, and the reader
+       * learns to ignore the pane (a B155 hunt lost an hour to exactly that). T465's
+       * clear-semantics hold: anything still true about the NEW document re-reports on
+       * its own and thereby proves it is live. The compile-derived half of `problems`
+       * rebuilds from the new runtime untouched.
+       */
+      clearBackendDiagnostics();
+      clearFrameLoopDiagnostics();
       onRuntimeChange?.(next);
     },
-    [onRuntimeChange, storage],
+    [clearBackendDiagnostics, clearFrameLoopDiagnostics, onRuntimeChange, storage],
   );
 
   // T189/§V93: "is there unsaved work" is the one thing that makes OPEN ask first. The
@@ -712,8 +729,11 @@ export function App({
     setSelection([]);
     setHoveredNodeId(null);
     setRejection(NO_DIAGNOSTICS);
+    // T792: same boundary, same emptying — see `adoptDocument`.
+    clearBackendDiagnostics();
+    clearFrameLoopDiagnostics();
     onRuntimeChange?.(next);
-  }, [onRuntimeChange, storage]);
+  }, [clearBackendDiagnostics, clearFrameLoopDiagnostics, onRuntimeChange, storage]);
 
   const isDirty = useCallback(() => dirtyRef.current, []);
 
