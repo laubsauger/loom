@@ -55,3 +55,54 @@ describe("T630 — renderHeadless surfaces compiler warnings", () => {
     expect(refused[0]?.message).toContain("no loop to iterate");
   });
 });
+
+/**
+ * T791 — THE PER-FRAME PLAN'S DIAGNOSTICS ARE READ.
+ *
+ * Under `animate`, the harness recompiles every frame with the live channel resolver and
+ * used to hand the result straight to `animator.push` — nobody read its diagnostics, so a
+ * per-frame ERROR was structurally invisible to every animated gate. That is the third
+ * blind spot B155 exposed: the app blacked out on diagnostics 935 green tests never saw.
+ *
+ * The fixture drives an ENUM parameter from an LFO channel. A channel delivers a number,
+ * an enum in driven mode refuses it at error severity, and — decisive for this test —
+ * the error exists ONLY in the per-frame compile: the structural compile has no channel
+ * resolver, so the driven parameter falls back at info severity and compiles clean.
+ * (If driven enums ever learn the expression path's index coercion, this fixture stops
+ * erroring and this test needs a new per-frame-only error — that is the test working.)
+ */
+describe("T791 — a per-frame compile error fails the render", () => {
+  it("throws, naming the frame, on an error only the animated path can produce", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const doc: GraphDocument = { revision: 1, nodes: {}, edges: {}, groups: {} };
+    const add = (id: string, type: string, parameters: Record<string, unknown>, label?: string): void => {
+      doc.nodes[id] = {
+        id,
+        type,
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters,
+        ...(label === undefined ? {} : { label }),
+      } as never;
+    };
+    add("wob", "lfo", { shape: "sine", frequency: 1, amplitude: 1, offset: 0, phase: 0 }, "wob1");
+    add("solid", "solid", { color: [0.25, 0.5, 0.75, 1] });
+    add("fold", "mirror", {
+      extend: {
+        mode: "driven",
+        bindings: {
+          driven: { kind: "driven", channel: "wob1" },
+          static: { kind: "static", value: "hold" },
+        },
+      },
+    });
+    add("out", "output", {});
+    doc.edges["e0"] = { id: "e0", source: { nodeId: "solid", portId: "out" }, target: { nodeId: "fold", portId: "input" } } as never;
+    doc.edges["e1"] = { id: "e1", source: { nodeId: "fold", portId: "out" }, target: { nodeId: "out", portId: "input" } } as never;
+
+    await expect(
+      renderHeadless({ host: dawnGpuHost(), graph: doc, frames: 3, animate: true }),
+    ).rejects.toThrow(/Per-frame compile produced errors[\s\S]*frame \d/);
+  });
+});

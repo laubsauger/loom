@@ -582,6 +582,8 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     // T661: ONE pointer source, hoisted so the loop below can feed it — the same object
     // the driver publishes into `frameU.pointer` and `inputs.pointer`, never a second.
     const pointerSource = createPointerSource();
+    /** T791: per-frame compile errors, deduped, with the first frame each appeared on. */
+    const perFrameErrors = new Map<string, { frameIndex: number; diagnostic: RuntimeDiagnostic }>();
     const driver = createFrameDriver({
       backend,
       ...(audioSeam === undefined ? {} : { audio: audioSeam }),
@@ -633,6 +635,26 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
                       : (name, context) => analyze.resolver(name, context) ?? evaluated.resolver(name, context),
                 },
               });
+              /*
+               * T791 — the per-frame plan's diagnostics are READ, not just pushed.
+               *
+               * `next` used to go straight to `animator.push` and nobody looked at its
+               * diagnostics — the fifth reader-that-cannot-see in this file's history
+               * (T630, T633, T650, T655 above): a per-frame ERROR was structurally
+               * invisible to every animated gate. B155 is the defect class this hides —
+               * a driven parameter whose validation errors on a live value errored here
+               * on the exact frames the signal peaked, and 935 tests stayed green while
+               * the app blacked out on the same diagnostics. Deduped by identity because
+               * the same error usually fires every frame; the throw after the loop names
+               * the first frame each one appeared on.
+               */
+              for (const diagnostic of next.diagnostics) {
+                if (diagnostic.severity !== "error") continue;
+                const key = `${diagnostic.code}|${diagnostic.nodeId ?? ""}|${diagnostic.message}`;
+                if (!perFrameErrors.has(key)) {
+                  perFrameErrors.set(key, { frameIndex: inputs.frame.frameIndex, diagnostic });
+                }
+              }
               animator.push(backend, plan, next);
             },
           }),
@@ -674,6 +696,16 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
         });
       }
       request.betweenFrames?.(control, index);
+    }
+
+    // T791: a per-frame error fails the render the way a structural one does — loudly,
+    // naming the frame it first appeared on. Green frames over a broken per-frame plan
+    // are exactly what this harness existed to prevent.
+    if (perFrameErrors.size > 0) {
+      const lines = [...perFrameErrors.values()].map(
+        (entry) => `frame ${entry.frameIndex}: ${entry.diagnostic.code}: ${entry.diagnostic.message}`,
+      );
+      throw new Error(`Per-frame compile produced errors:\n${lines.join("\n")}`);
     }
 
     const probed: Record<string, ArrayBuffer> = {};
