@@ -31,7 +31,7 @@ import { ComponentBar } from "./component-bar.tsx";
 import { useComponentEditing } from "./use-component-editing.ts";
 import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { GraphPane } from "./graph-pane.tsx";
-import { createPreviewOrbitStore } from "@editor/viewer/index.ts";
+import { createPreviewInterestStore, createPreviewOrbitStore } from "@editor/viewer/index.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import { sharedGpuProbe } from "./gpu-status.ts";
@@ -258,6 +258,10 @@ export function App({
      what renders it), so one camera per node is the truthful model — a viewer drag and
      a tile drag move the same picture. Still view state, still per document (§V255). */
   const previewOrbits = usePerDocument(runtime.documentIdentity, createPreviewOrbitStore);
+  /* T756: the viewer's preview INTEREST — which node it is presenting — consumed by the
+     graph pane's one request assembler as a pin, so a hidden tile keeps rendering while
+     the viewer looks at it. */
+  const previewInterest = usePerDocument(runtime.documentIdentity, createPreviewInterestStore);
   const backend = status.kind === "ready" ? status.backend : undefined;
 
   /**
@@ -1118,6 +1122,7 @@ export function App({
                 valueHistory={valueHistory}
                 componentPath={editing.path}
                 orbits={insideComponent ? undefined : previewOrbits}
+                interest={insideComponent ? undefined : previewInterest}
               />
               </AppRuntimeContext.Provider>
             </NodeInfoHost>
@@ -1157,6 +1162,7 @@ export function App({
                 pointer={pointer}
                 probe={agentPorts.probe}
                 orbits={previewOrbits}
+                interest={previewInterest}
               />
             </ErrorBoundary>
           }

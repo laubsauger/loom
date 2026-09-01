@@ -7,7 +7,7 @@ import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { SINK_TARGET_PORT } from "@compiler/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
-import { createPreviewSlotBounds, createPreviewViewStore } from "@editor/viewer/index.ts";
+import { createPreviewInterestStore, createPreviewSlotBounds, createPreviewViewStore } from "@editor/viewer/index.ts";
 import { DEFAULT_PREVIEW_VIEW, previewShader, previewUniforms } from "@runtime/previews/index.ts";
 import type { PreviewProgram } from "@runtime/previews/index.ts";
 import type { BackendStatus } from "@runtime/backend/index.ts";
@@ -789,5 +789,112 @@ describe("useNodePreviews binds the PORT it asked for, not the node's first row 
 
     expect(snapshot.preview?.output).toEqual({ nodeId: "n1", portId: "out" });
     expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
+  });
+});
+
+describe("the viewer's interest pins a hidden tile (T756)", () => {
+  it("requests a node with NO measured slot when the viewer presents it — as a pin, through the one path", () => {
+    const registry = createTestRegistry().view();
+    const graph = graphWith("test.blur");
+    const nodeRuntime = createNodeRuntimeStore();
+    // NO bounds published: the tile is hidden — exactly the stale-viewer case.
+    const bounds = createPreviewSlotBounds();
+
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    const canvasRef = { current: canvas };
+
+    const compiledOutputs = [
+      {
+        nodeId: "n1",
+        portId: "out",
+        resourceId: "res:n1:out",
+        resourceKind: "target" as const,
+        size: [64, 64] as const,
+        format: "rgba8unorm" as const,
+        space: "linear" as const,
+        temporal: false,
+      },
+    ];
+
+    const interest = createPreviewInterestStore();
+    interest.set("n1" as never);
+
+    renderHook(() =>
+      useNodePreviews({
+        backend: fakeBackend(),
+        canvasRef,
+        bounds,
+        graph,
+        registry,
+        compiledOutputs,
+        nodeRuntime,
+        interest,
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+
+    // The node is LIVE — a request was assembled despite the hidden tile, so the
+    // viewer's target keeps rendering. Without interest this exact setup goes idle
+    // (the assertion below the withdrawal proves the gate is the interest, §V461).
+    expect(nodeRuntime.get("n1").preview?.state.kind).toBe("live");
+    nodeRuntime.dispose();
+  });
+
+  it("goes idle again when the interest is withdrawn — a closed viewer pins nothing", () => {
+    const registry = createTestRegistry().view();
+    const graph = graphWith("test.blur");
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    const canvasRef = { current: canvas };
+    const compiledOutputs = [
+      {
+        nodeId: "n1",
+        portId: "out",
+        resourceId: "res:n1:out",
+        resourceKind: "target" as const,
+        size: [64, 64] as const,
+        format: "rgba8unorm" as const,
+        space: "linear" as const,
+        temporal: false,
+      },
+    ];
+    const interest = createPreviewInterestStore();
+    interest.set(null);
+
+    renderHook(() =>
+      useNodePreviews({
+        backend: fakeBackend(),
+        canvasRef,
+        bounds,
+        graph,
+        registry,
+        compiledOutputs,
+        nodeRuntime,
+        interest,
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+
+    expect(nodeRuntime.get("n1").preview?.state.kind ?? "idle").toBe("idle");
+    nodeRuntime.dispose();
   });
 });

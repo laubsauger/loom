@@ -60,6 +60,8 @@ export interface GraphActions {
 export interface GraphPaneProps {
   /** T379: the shared inspection-orbit store (the viewer pane holds the same one). */
   orbits?: import("@editor/viewer/index.ts").PreviewOrbitStore | undefined;
+  /** T756: the viewer's preview interest — consumed by useNodePreviews as a pin. */
+  interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
   /** Current canvas selection, so a right-click inside one acts on all of it (§V78). */
   selection: readonly NodeId[];
   onSelectionChange: (nodeIds: readonly NodeId[]) => void;
@@ -157,6 +159,7 @@ function GraphPaneInner({
   valueHistory,
   componentPath,
   orbits,
+  interest,
 }: GraphPaneProps) {
   // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
   // from the runtime rather than threaded as a prop, because the runtime IS the loaded
@@ -212,6 +215,7 @@ function GraphPaneInner({
     nodeRuntime,
     views: previewViews,
     orbits: previewOrbits,
+    ...(interest === undefined ? {} : { interest }),
     components: componentsView,
     getViewport,
     getNodePosition,

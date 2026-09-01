@@ -329,6 +329,9 @@ export interface ViewerPaneProps {
    * (§V255): no document revision, no dirty flag, nothing downstream changes.
    */
   orbits?: PreviewOrbitStore | undefined;
+  /** T756: publishes which node this viewer is presenting — the graph pane's request
+   *  assembler pins it, so a hidden tile keeps rendering under the viewer's gaze. */
+  interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
 }
 
 /**
@@ -359,6 +362,7 @@ export function ViewerPane({
   probe,
   readoutOptions,
   orbits,
+  interest,
 }: ViewerPaneProps) {
   // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
@@ -602,6 +606,13 @@ export function ViewerPane({
    * one thing the picture exists to show (T614/T675's refusals, honored here too).
    */
   const orbitNodeId = (selected?.nodeId ?? null) as NodeId | null;
+  /* T756: publish the presented node as preview interest; clear on unmount and on
+     switching away, so a closed viewer stops pinning anything. */
+  useEffect(() => {
+    if (interest === undefined) return;
+    interest.set(orbitNodeId);
+    return () => interest.set(null);
+  }, [interest, orbitNodeId]);
   const orbitable =
     orbits !== undefined && orbitNodeId !== null && selected?.synthesis?.orbit !== undefined;
   /** T379: measure the selected preview's positions — the frame-content readback. */

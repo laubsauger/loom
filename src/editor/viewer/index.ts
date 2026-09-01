@@ -43,3 +43,5 @@ export type { PreviewViewTargetHolder } from "./preview-view-command.ts";
 
 export { READOUT_INTERVAL_MS, usePixelReadout } from "./use-pixel-readout.ts";
 export type { PixelReadout, PixelReadoutOptions } from "./use-pixel-readout.ts";
+export { createPreviewInterestStore } from "./preview-interest.ts";
+export type { PreviewInterestStore } from "./preview-interest.ts";

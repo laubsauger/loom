@@ -77,6 +77,12 @@ export interface NodePreviewInputs {
   readonly views?: PreviewViewSource | undefined;
   /** T561: per-node inspection orbit — this PANE's store; sampled per tick like bounds. */
   readonly orbits?: PreviewOrbitStore | undefined;
+  /**
+   * T756: the VIEWER's interest — the node it is presenting. Treated below as a PIN, so
+   * a node whose tile is hidden keeps rendering while the viewer looks at it. One
+   * request assembler, one policy, one more reason to pin (§V730: never a second path).
+   */
+  readonly interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
   /** T601: resolves a component instance's preview to an INNER node's flat output row. */
   readonly components?: ComponentRegistryView | undefined;
   readonly graph: GraphDocument;
@@ -387,6 +393,49 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         const offset = current.bounds.get(nodeId);
         const position = current.getNodePosition(nodeId);
         if (output === undefined || offset === undefined || position === undefined) {
+          /* T756: the tile is hidden (no measured slot) but the VIEWER is presenting
+             this node — without a request its target goes stale and the viewer shows a
+             frozen picture nobody can explain. The interest is a PIN through the one
+             existing path: same request shape, `pinned: true` (the scheduler's
+             keep-alive that already bypasses visibility), an off-surface rect so the
+             tile composites nowhere, and the area budgeted like any tile. The preview
+             SWITCH still wins: an `on: false` node never reaches this branch (§V297 —
+             off means off), so interest revives hidden tiles, never disabled ones. */
+          if (
+            output !== undefined &&
+            current.interest !== undefined &&
+            (current.interest.get() === nodeId || current.interest.get() === sinkNodeId)
+          ) {
+            everMaterialized.add(`${nodeId}:${portId}`);
+            const longEdge = Math.max(output.size[0], output.size[1], 1);
+            const areaScale = Math.min(1, current.previewLongEdge / longEdge);
+            requests.push({
+              ref: { nodeId, portId: output.portId },
+              source: {
+                resourceId: output.resourceId,
+                size: output.size,
+                format: output.format,
+                space: output.space,
+              },
+              rect: { x: -100000, y: -100000, width: 1, height: 1 },
+              area: {
+                width: Math.max(1, Math.round(output.size[0] * areaScale)),
+                height: Math.max(1, Math.round(output.size[1] * areaScale)),
+              },
+              visible: false,
+              pinned: true,
+              collapsed: false,
+              occluded: false,
+              view: current.views?.viewFor(nodeId) ?? DEFAULT_PREVIEW_VIEW,
+              fps: current.previewFps,
+              ...(output.synthesis === undefined ? {} : { synthesis: output.synthesis }),
+              ...(() => {
+                const orbit = current.orbits?.get(nodeId);
+                return orbit === undefined ? {} : { orbit };
+              })(),
+            });
+            continue;
+          }
           // T252: a visible slot with NO materialized output cannot render yet, but it
           // must still register as a preview sink or it never will — the sink triggers
           // the recompile that materializes it, and the next tick fills the tile.
