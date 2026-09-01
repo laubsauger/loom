@@ -82,8 +82,6 @@ describe("E38 Sigil — the mark is the same motes every time it re-forms (T727,
       const compiled = await backend.compile(plan);
 
       let early: Float32Array | undefined;
-      let settledMark: Float32Array | undefined;
-      let settledDrift: Float32Array | undefined;
       /* Frame `period` is one whole cycle after frame 0, so the assembly plateau is back. */
       for (let frameIndex = 0; frameIndex <= period; frameIndex += 1) {
         backend.render(compiled, {
@@ -93,8 +91,8 @@ describe("E38 Sigil — the mark is the same motes every time it re-forms (T727,
         });
         if (frameIndex === 60) early = await read("scratch:gather:mark");
       }
-      settledMark = await read("scratch:gather:mark");
-      settledDrift = await read("scratch:gather:drift");
+      const settledMark = await read("scratch:gather:mark");
+      const settledDrift = await read("scratch:gather:drift");
       expect(errors).toEqual([]);
 
       // CLAIM 1 — not one slot changed sides across the whole cycle.
