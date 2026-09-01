@@ -611,15 +611,43 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
        carrier left, showing the previous document's pixels. Enforced HERE, on the same
        unscoped-with-buffers signal the load path already sends, rather than as a flag
        someone must remember to read (§V205: an unread decision is worse than none).
-       External textures are deliberately NOT cleared: they lack render-attachment
-       usage, and the media pipeline re-registers per document — the stated behaviour
-       is "last frame until the new source's first frame-ready, black on a cold open". */
-    const boundaryTargets =
-      options?.buffers === true && resourceIds === undefined
-        ? [...activeProgram.resources.targets.values()]
-        : [];
+
+       T773 (§B157, §V759) — EXTERNAL TEXTURES ARE CLEARED HERE TOO, and T764's stated
+       exception was wrong on BOTH of its clauses. It read: "they lack render-attachment
+       usage, and the media pipeline re-registers per document". (1) They HAVE
+       render-attachment usage — `resources.ts` requests `texture_binding | copy_dst |
+       render_attachment` because `copyExternalImageToTexture` REQUIRES it, so the very
+       same raw encoder pass below clears them, no new mechanism. (2) The media pipeline
+       does NOT re-register per document. `use-media-sources` keys its open effect on
+       `nodeId|type|url` with no document identity, and every shipped movie example ships
+       the SAME node id `clip` with `file: ""` — so loading a second movie example after
+       picking a video UNREGISTERS the source and registers NOTHING, while the carry-over
+       diff reuses the same-id same-size same-format external texture. Nothing then
+       overwrites it (`uploadExternalTextures` skips a resource with no registered
+       source), so document B's node blits document A's last decoded frame forever. That
+       is §B157 verbatim: "the canvas and preview stays stale on the prior one".
+
+       `lastFrameId` is reset with the pixels, and that pairing is load-bearing in the
+       OTHER direction: where a source IS still registered across the boundary (a webcam,
+       or a Text node — their key carries no url, so `nodeId|type|` is constant across
+       every document naming that id and the effect never re-runs), the source's frameId
+       has not advanced, so a clear alone would leave the texture permanently BLACK. Reset
+       together, a still-live source re-uploads its current frame on the next tick and
+       heals itself — which is why this fix needs NO document identity in the media key
+       and therefore costs no webcam permission re-prompt (§V754: the existing signal
+       gains a reason, it does not gain a policy). */
+    const boundaryScoped = options?.buffers === true && resourceIds === undefined;
+    const boundaryTargets = boundaryScoped ? [...activeProgram.resources.targets.values()] : [];
+    const boundaryExternals = boundaryScoped
+      ? [...activeProgram.resources.externalTextures.values()]
+      : [];
     temporalResets += 1;
-    if (selected.length > 0 || selectedRings.length > 0 || boundaryTargets.length > 0) {
+    if (
+      selected.length > 0 ||
+      selectedRings.length > 0 ||
+      boundaryTargets.length > 0 ||
+      boundaryExternals.length > 0
+    ) {
       guard.assertOutsideFrame("temporal history clear");
       frame(gpu, (f) => {
         for (const pair of selected) {
@@ -635,21 +663,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
          that works for ping-pong pairs (probed: a pair reads back 0 through it) left a
          PLAIN target at 255 in this change's own gate — so do not unify these two
          paths without re-running reset-boundary.gpu.test.ts against the unified one. */
-      if (boundaryTargets.length > 0) {
+      if (boundaryTargets.length > 0 || boundaryExternals.length > 0) {
         const device = gpu.gpu as GPUDevice;
         const encoder = device.createCommandEncoder({ label: "boundary target clear" });
-        for (const target of boundaryTargets) {
+        const clearView = (view: GPUTextureView) => {
           const pass = encoder.beginRenderPass({
             colorAttachments: [
-              {
-                view: (target as { color: { gpu: GPUTexture } }).color.gpu.createView(),
-                loadOp: "clear",
-                storeOp: "store",
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              },
+              { view, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } },
             ],
           });
           pass.end();
+        };
+        for (const target of boundaryTargets) {
+          clearView((target as { color: { gpu: GPUTexture } }).color.gpu.createView());
+        }
+        // T773: same path, same measured behaviour — see the boundary comment above for
+        // why an external texture can take it and why `lastFrameId` must go with it.
+        for (const entry of boundaryExternals) {
+          clearView(entry.texture.gpu.createView());
+          entry.lastFrameId = undefined;
         }
         device.queue.submit([encoder.finish()]);
       }
