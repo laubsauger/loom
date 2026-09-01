@@ -196,15 +196,23 @@ const v29RestrictedSyntax = [
 
 export default tseslint.config(
   {
-    // .probe/** is scratch API-exploration scripts (plain Node, not part of
-    // the app) — not app source, not owned by any track, not lint's concern.
+    // scratchpad/** is scratch API-exploration and probe scripts (plain Node, not
+    // part of the app) — not app source, not owned by any track, not lint's concern.
+    // SPEC §P directs probes here ("probe ∈ the scratchpad") precisely so a transient
+    // file never breaks a gate for every other session in the window it exists.
+    //
+    // §B153/T762: this entry used to read ".probe/**" and was never moved when the
+    // convention did, so `pnpm lint` reported 359 errors of which 357 were throwaway
+    // probes. Two real errors sat in that noise for hundreds of commits because the
+    // gate had become unreadable (§V752). AN IGNORE LIST HAS TO MOVE WITH THE
+    // CONVENTION IT SERVES — if probes move again, this line moves with them.
     ignores: [
       "dist/**",
       "node_modules/**",
       "coverage/**",
       "playwright-report/**",
       "test-results/**",
-      ".probe/**",
+      "scratchpad/**",
     ],
   },
   js.configs.recommended,
