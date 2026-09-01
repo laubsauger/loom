@@ -13,6 +13,11 @@ also **sets its own exposure** — the frame's measured top drives the gain, so 
 still gets a relief instead of a flat plate — and **movement adds height on top of
 brightness**, so what moves stands further out of the sheet.
 
+Since T809 it carries **two knobs that are off**: the beat can scale how far the sheet
+stands out, and the palette can travel along the ramp. Both ship at zero, and *zero* is a
+gate rather than a promise — the file with them in it renders the same bytes as the file
+without.
+
 ## Graph
 
 ```
@@ -27,7 +32,7 @@ cam1(webcam) ──────────────────────�
      ceil1(channelIn) ─► roofsafe1(valueLimit) ┄┄► whitelevel of norm1(level)
                                                                       │
                     ┌─────────────────────────────────────────────────┤
-                    │                                                 │
+     cycle1(lfo) ┄┄► offset of                                        │
 palette1(ramp) ─► coat1(lookup) ◄─────────────────────────────────────┤ (colour)
                     │                                                 │
                     │        now1(cache, 1 back) ◄────────────────────┤
@@ -40,6 +45,7 @@ palette1(ramp) ─► coat1(lookup) ◄─────────────�
                         rgb = paletted colour, alpha = luminance + movement
                                               │
 grid1(pointGrid 480×220) ─► bridge1(textureToAttribute) ─► lift1(pointKernel)
+        beat1(audioPattern) ─► bsub1(valueMath) ─► kick1(valueMath) ┄┄► lift1.value1
                                               │
                     phosphor1(materialUnlit) ─┴─► body1(geometry: instances, tint ← sample)
                     eye1(camera, eye.x ┄ sway1)
@@ -258,6 +264,99 @@ is already summed into alpha before any kernel sees it, so the guard has to be s
 later frame identical: `now1` at index 1 needs a two-slice ring, the cheapest allocation the
 node allows. Frame 0 now measures 0.1752 against 0.1721 at frame 1 — no flash.
 
+## T809 — two optional knobs, and *optional* is measured
+
+Owner: *"optional audio reactivity to drive relief in some way would be cool and also some
+sort color rotation"*.
+
+E43 Splice is the pattern (§V147). A feature that ships **off** is only honestly off if the
+frame with it in the graph is the frame without it, byte for byte — so both knobs ship at
+zero and `relief-claims` renders the file against a control with both driven bindings
+replaced by plain numbers. **0 differing pixels of 921,600**, at frame 0 and frame 90, on
+the lit understudy *and* on the ×0.14 dark fixture. The machinery is compiled, in the plan
+and inert.
+
+### The audio scales the LIFT, not the exposure
+
+`beat1(audioPattern)` → `bsub1` subtracts the low band's T701 rest of 0.713 → `kick1`
+multiplies by the knob → `lift1.value1`, and the kernel reads it as
+`height * (1.05 + ctx.value1)`. The sheet stands further out on the kick.
+
+**It could not go on the white point, and that is §V730.** The height is `luminance ×
+exposure` since T797, and `norm1.whitelevel` already has a driver — `roof1`'s measurement
+of the frame. A second driver there would be two decisions on one number, and the one that
+lost would be the auto-gain this file exists to have. The lift amplitude is the term
+*downstream* of everything the exposure decided, so audio scales it and the re-ranging is
+untouched.
+
+Measured at `kick1.operand = 1` (a full strike is the low band's 0.26 excursion, so the lift
+runs 1.05 → 1.31, about a quarter more relief):
+
+| arm | frame | mean display luma | mean \|Δ\| vs. the same frame at rest |
+| --- | --- | --- | --- |
+| lit, on the strike (f97) | 0.1816 → 0.1909 | +5.1% | **0.0746** |
+| lit, off the beat (f90) | 0.1803 → 0.1803 | — | 0.0110 |
+| dark, on the strike (f97) | 0.1977 → 0.2100 | +6.2% | **0.0914** |
+
+The 7:1 ratio between the strike and the decay is the claim: it **breathes on the beat**
+rather than sitting on. A drive that lost its rest subtraction would read the same at both.
+
+**The dark case gets MORE of it, not less, and that is the opposite of T797's motion
+finding.** §V781 records that a frame difference of a dark picture is dark by the same
+factor — the motion term was starved by darkness because it was *derived from the picture*.
+This driver is a synthesized pattern, so it is level-independent by construction, and the
+auto-gain has already put the height field in full range for it to scale. There was nothing
+to gate here.
+
+**One honest correction to the brief.** §T776's arrangement was cited as the reason the
+pattern now has phrase-length dynamics to show — and it does, but **not on `low`**. The
+per-band pull-back depths are `low` 0.90 against `high` 0.07 precisely because *a breakdown
+drops the top end and keeps the kick*, so a quiet bar moves this band by about 0.006 against
+a per-beat excursion of 0.26 — 2%. What this knob delivers is per-**beat** breathing. A
+phrase-length version would read `level` or `high` instead, and would swing the relief once
+every four bars.
+
+### The colour travels along the ramp, and it does not rotate around it
+
+`cycle1(lfo, sine, 0.035 Hz)` → `coat1.offset`. Measured at amplitude 0.1: mean |Δ| luma
+0.0464 at the bottom of the swing and 0.0485 at the top on the lit understudy, 0.0405 at
+the bottom on the dark fixture — and the dark frame at the cool end still reads **0.1641**
+mean, clear of the 0.12 floor and nowhere near the 0.0159 the original report measured.
+The white crest cools through orange to magenta and back over about 29 seconds, the ridge
+line walks down the sheet, and the composition is the same at every point of the swing.
+
+**And it is a SWEEP, not a cycle. The wrap-around was tried first and it takes the picture
+apart.** The move that would make it a true cycle is `palette1.phase` — Ramp's shader ends
+in `fract(raw)` (T556), so a phase drive walks every colour past every stop and returns,
+which is exactly what a Rutt–Etra colouriser does. Rendered at four phases across one turn
+on the lit understudy at frame 90:
+
+| ramp phase | mean | what the frame shows |
+| --- | --- | --- |
+| 0.05 | 0.1991 | **black holes punched in the summit** — the crest wraps past white to stop 0 |
+| 0.30 | 0.1993 | **the dome inverts to a black silhouette** inside a hard white outline |
+| 0.55 | 0.1204 | a posterised contour map — white islands on dark blue, no subject |
+| 0.80 | 0.1060 | the composition survives, with white specks scattered over the hills |
+
+That is not tuning, it is structural. **This ramp is monotone in luminance by design** —
+T503 chose a near-black foot and a white crest so the colour climbs with the height — and
+rotating a monotone table makes it non-monotone. The instant "brighter" stops meaning
+"further up the ramp", the relief loses the only reading it has, because `phosphor1` is
+unlit and there is no shading to fall back on. Wired at zero it would be a knob that looks
+broken the moment anyone turns it, so **it is not wired**, and the frames are recorded here
+rather than the option being quietly dropped.
+
+`coat1.offset` has the opposite property for the opposite reason: Lookup's shader is
+`clamp(index * scale + offset, 0, 1)`, so it slides and clamps instead of wrapping, and the
+monotone mapping survives. Sliding **down** is the free direction; sliding **up** buys the
+summit's detail at the top stop, which is why the swing is small. Negative is also the
+direction that could have walked a dark frame back toward the flat plate T797 fixed, and
+the gate measures that it does not.
+
+**Neither knob can reach the geometry from the colour side, or vice versa.** `braid1`
+carries the shape in alpha and the colour in rgb (T503), so the audio drive is height-only
+and the palette drive is colour-only. Neither touches the exposure loop or the motion path.
+
 ## What else it proves
 
 **T478: per-point colour reaches the scene pipeline.** `body1`'s `tint` is in map mode on
@@ -341,6 +440,16 @@ sets the drawn colour and its top stop is 1.0.
   first difference is the whole picture (§V732's transient, §V769's thumbnail).
 - **The whole sheet boils** → `stir1.whitelevel` dropped; it is a *divisor*, so smaller is
   louder. 0.12 shreds the surface into a spray, which is what the tuning pass rejected.
+- **The shipped file no longer matches its pre-T809 frames** → one of the two knobs left
+  zero. `kick1.operand` and `cycle1.amplitude` are both 0 in the shipped file and the
+  identity gate reads exactly 0 differing pixels; anything else means a default moved.
+- **Black holes in the summit, or the dome inverted to a silhouette** → someone drove
+  `palette1.phase`. See T809 above: a wrap-around rotation of a monotone palette is
+  non-monotone, and this file's only depth cues are silhouette and scan-line bunching.
+  The rotation that ships is `coat1.offset`, which clamps rather than wraps.
+- **The relief pumps on every frame instead of on the beat** → `bsub1`'s rest subtraction
+  moved off the low band's T701 value of 0.713, so the drive no longer returns to zero
+  between kicks.
 
 ## Look pass
 

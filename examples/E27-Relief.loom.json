@@ -293,6 +293,28 @@
           "portId": "in1"
         }
       },
+      "v-beat-bsub": {
+        "id": "v-beat-bsub",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bsub",
+          "portId": "a"
+        }
+      },
+      "v-bsub-bgain": {
+        "id": "v-bsub-bgain",
+        "source": {
+          "nodeId": "bsub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bgain",
+          "portId": "a"
+        }
+      },
       "v-ceil-guard": {
         "id": "v-ceil-guard",
         "source": {
@@ -307,6 +329,20 @@
     },
     "groups": {},
     "nodes": {
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 112
+        },
+        "position": {
+          "x": -1680,
+          "y": 1180
+        },
+        "type": "audioPattern"
+      },
       "bed": {
         "definitionVersion": 1,
         "id": "bed",
@@ -324,6 +360,20 @@
           "y": 300
         },
         "type": "level"
+      },
+      "bgain": {
+        "definitionVersion": 1,
+        "id": "bgain",
+        "label": "kick1",
+        "parameters": {
+          "operand": 0,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1080,
+          "y": 1180
+        },
+        "type": "valueMath"
       },
       "body": {
         "definitionVersion": 1,
@@ -388,6 +438,20 @@
         },
         "type": "textureToAttribute"
       },
+      "bsub": {
+        "definitionVersion": 1,
+        "id": "bsub",
+        "label": "bsub1",
+        "parameters": {
+          "operand": -0.713,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1380,
+          "y": 1180
+        },
+        "type": "valueMath"
+      },
       "burn": {
         "definitionVersion": 1,
         "id": "burn",
@@ -430,7 +494,19 @@
         "label": "coat1",
         "parameters": {
           "channel": "luminance",
-          "offset": 0,
+          "offset": {
+            "bindings": {
+              "driven": {
+                "channel": "cycle1",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
           "row": 0.5,
           "scale": 1
         },
@@ -439,6 +515,23 @@
           "y": -20
         },
         "type": "lookup"
+      },
+      "cycle": {
+        "definitionVersion": 1,
+        "id": "cycle",
+        "label": "cycle1",
+        "parameters": {
+          "amplitude": 0,
+          "frequency": 0.035,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1380,
+          "y": -420
+        },
+        "type": "lfo"
       },
       "driftx": {
         "definitionVersion": 1,
@@ -560,8 +653,21 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"sample\",\"type\":\"vec4f\",\"default\":[0,0,0,0]}]",
           "capacity": 105600,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:\n     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes\n     off alpha so the palette never doubles as a height curve — see the note above. */\n  let height = p.sample.a;\n  /* T676 — THE SHEET STANDS UP, 70 degrees off the floor, and ORIENTATION FOLLOWS THE\n     SOURCE.\n\n     Owner: \"its on its Back both in preview and final output. we're laying the points on\n     their back which makes sense for the mountains but looks weird when we do webcam\n     right\". That sentence is the rule, and it is why this is not a tuning change. A\n     HEIGHTFIELD is read from above, so T503 was right to lay the sheet down for the\n     noise-and-dome understudy. A SCANNED VIDEO IMAGE is read FACE-ON — you look at a face\n     the way you looked at it — and this example's real subject is the webcam on branch 1.\n     Face-on with a slight lean is also the historical Rutt-Etra frame, which is what this\n     document is quoting.\n\n     WHY 70 AND NOT THE 90 THE OWNER SAID. The owner gave a number describing the problem.\n     A true 90 with a camera in front puts the view direction straight back down the height\n     axis, which is EXACTLY the failure T503 fixed (the first build looked 86% down it and\n     the relief did not project at all). It also removes both cues this example actually\n     reads by, and it has no third one to fall back on: the material is UNLIT, so there is\n     no shading and no raking light — a bas-relief's usual mechanism is simply unavailable\n     here. What is left is SILHOUETTE against the far ground and SCAN LINES BUNCHING on a\n     rising slope, and both are obliquity cues. Leaning the sheet back 20 degrees keeps the\n     camera about 20-25 degrees off its normal: the image reads face-on, and the relief\n     still has somewhere to project.\n\n     THE GEOMETRY. The grid arrives in the xy plane. Read 'u' as across, 'v' as up the\n     sheet, 'h' as out along its normal, then rotate (v, h) about x by 70 degrees:\n       y = v*sin70 + h*cos70,  z = -v*cos70 + h*sin70\n     so the sheet's own up axis leans back and its normal leans toward the camera on +z.\n     At 0 degrees this collapses to the old (u, h, v) lay-down, which is the check that the\n     rotation is the only thing that changed.\n\n     THE 'v' SIGN IS T512's AND IT SURVIVES INTACT. The bridge reads\n     uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output\n     shows at the TOP of the frame. Laid flat, the top of a picture belonged at the FAR\n     edge, which is z NEGATIVE from a camera on +z. STOOD UP, the top of a picture belongs\n     at the TOP, which is y POSITIVE — and the same negation delivers both, because the\n     rotation carries it. Read the mapping in points/codegen.ts rather than guessing: this\n     sign is coupled to it and B105 is what guessing costs.\n\n     Baked rather than parameterised: this kernel has exactly one consumer, the 'lift1'\n     node below. A shared kernel that could only do one orientation would be the same fault\n     as two hand-maintained branches — but there is nothing here to share it with.\n     Sampled on a square (the mapping demands it), drawn 16:9. */\n  let v = p.position.y * 1.15;\n  let h = height * 1.05 - 0.16;\n  q.position = vec3f(p.position.x * 1.7778, v * 0.9397 + h * 0.3420, -v * 0.3420 + h * 0.9397);\n  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same\n     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT\n     would have made the low ground transparent as well as dark. */\n  q.sample = vec4f(p.sample.rgb, 1.0);\n  return q;\n}",
-          "seed": 41
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* p.sample is the bridge's pair, bound from UPSTREAM (T401), and it carries TWO fields:\n     rgb is the paletted colour, alpha is the SOURCE's own luminance (braid1). Height comes\n     off alpha so the palette never doubles as a height curve — see the note above. */\n  let height = p.sample.a;\n  /* T676 — THE SHEET STANDS UP, 70 degrees off the floor, and ORIENTATION FOLLOWS THE\n     SOURCE.\n\n     Owner: \"its on its Back both in preview and final output. we're laying the points on\n     their back which makes sense for the mountains but looks weird when we do webcam\n     right\". That sentence is the rule, and it is why this is not a tuning change. A\n     HEIGHTFIELD is read from above, so T503 was right to lay the sheet down for the\n     noise-and-dome understudy. A SCANNED VIDEO IMAGE is read FACE-ON — you look at a face\n     the way you looked at it — and this example's real subject is the webcam on branch 1.\n     Face-on with a slight lean is also the historical Rutt-Etra frame, which is what this\n     document is quoting.\n\n     WHY 70 AND NOT THE 90 THE OWNER SAID. The owner gave a number describing the problem.\n     A true 90 with a camera in front puts the view direction straight back down the height\n     axis, which is EXACTLY the failure T503 fixed (the first build looked 86% down it and\n     the relief did not project at all). It also removes both cues this example actually\n     reads by, and it has no third one to fall back on: the material is UNLIT, so there is\n     no shading and no raking light — a bas-relief's usual mechanism is simply unavailable\n     here. What is left is SILHOUETTE against the far ground and SCAN LINES BUNCHING on a\n     rising slope, and both are obliquity cues. Leaning the sheet back 20 degrees keeps the\n     camera about 20-25 degrees off its normal: the image reads face-on, and the relief\n     still has somewhere to project.\n\n     THE GEOMETRY. The grid arrives in the xy plane. Read 'u' as across, 'v' as up the\n     sheet, 'h' as out along its normal, then rotate (v, h) about x by 70 degrees:\n       y = v*sin70 + h*cos70,  z = -v*cos70 + h*sin70\n     so the sheet's own up axis leans back and its normal leans toward the camera on +z.\n     At 0 degrees this collapses to the old (u, h, v) lay-down, which is the check that the\n     rotation is the only thing that changed.\n\n     THE 'v' SIGN IS T512's AND IT SURVIVES INTACT. The bridge reads\n     uv.y = 0.5 - position.y*0.5, so position.y = +1 is TEXEL ROW 0 — the row an output\n     shows at the TOP of the frame. Laid flat, the top of a picture belonged at the FAR\n     edge, which is z NEGATIVE from a camera on +z. STOOD UP, the top of a picture belongs\n     at the TOP, which is y POSITIVE — and the same negation delivers both, because the\n     rotation carries it. Read the mapping in points/codegen.ts rather than guessing: this\n     sign is coupled to it and B105 is what guessing costs.\n\n     Baked rather than parameterised: this kernel has exactly one consumer, the 'lift1'\n     node below. A shared kernel that could only do one orientation would be the same fault\n     as two hand-maintained branches — but there is nothing here to share it with.\n     Sampled on a square (the mapping demands it), drawn 16:9. */\n  let v = p.position.y * 1.15;\n  /* T809 — THE AUDIO SCALES THE LIFT AMPLITUDE, AND NOTHING ELSE.\n     ctx.value1 is the kick, rest-subtracted so silence IS zero (T479, T701). It is added\n     to the 1.05 here rather than driving norm1's white point, because the white point\n     belongs to the exposure loop and a second driver on it would fight the normalisation\n     T797 just gave this file (§V730: one decision, one site). Shipped at gain 0, which\n     makes this term EXACTLY 1.05 + 0.0 — an f32 add of zero is exact, so the shipped\n     picture is byte-identical to the pre-T809 file and relief-claims measures it. */\n  let h = height * (1.05 + ctx.value1) - 0.16;\n  q.position = vec3f(p.position.x * 1.7778, v * 0.9397 + h * 0.3420, -v * 0.3420 + h * 0.9397);\n  /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same\n     attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT\n     would have made the low ground transparent as well as dark. */\n  q.sample = vec4f(p.sample.rgb, 1.0);\n  return q;\n}",
+          "seed": 41,
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "kick1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
           "x": 120,

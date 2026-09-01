@@ -589,7 +589,11 @@ describe("E27 lifts the picture into geometry, and it moves", () => {
       const lift = graph.nodes["lift"];
       if (lift === undefined) throw new Error("E27 has no lift node");
       const kernel = lift.parameters["kernel"];
-      if (typeof kernel !== "string" || !kernel.includes("height * 1.05")) {
+      // T809 moved the gain from a constant to `1.05 + ctx.value1` (the audio scales the
+      // lift amplitude), so this control now zeroes the whole term rather than the
+      // constant — the substring is asserted first so a kernel edit fails LOUDLY here
+      // instead of silently turning the control into a no-op.
+      if (typeof kernel !== "string" || !kernel.includes("height * (1.05 + ctx.value1)")) {
         throw new Error("the lift kernel no longer carries the height gain this control edits");
       }
       return {
@@ -598,7 +602,10 @@ describe("E27 lifts the picture into geometry, and it moves", () => {
           ...graph.nodes,
           lift: {
             ...lift,
-            parameters: { ...lift.parameters, kernel: kernel.replace("height * 1.05", "height * 0.0") },
+            parameters: {
+              ...lift.parameters,
+              kernel: kernel.replace("height * (1.05 + ctx.value1)", "height * 0.0"),
+            },
           },
         },
       };

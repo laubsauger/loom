@@ -83,6 +83,49 @@ function stillHeight(graph: GraphDocument): void {
   edge.source = { nodeId: "norm", portId: "out" };
 }
 
+/** T809: one parameter, by node id, so a mutator reads as the knob it turns. */
+function setParameter(graph: GraphDocument, nodeId: string, key: string, value: unknown): void {
+  const node = graph.nodes[nodeId];
+  if (node === undefined) throw new Error(`E27 lost \`${nodeId}\``);
+  (node.parameters as Record<string, unknown>)[key] = value;
+}
+
+/**
+ * T809 — THE CONTROL FOR THE IDENTITY CLAIM. Both driven bindings are replaced by plain
+ * numbers, so the audio chain and the colour LFO are still in the graph, still in the
+ * plan and still compiled, but nothing they publish can reach a pixel. If the shipped
+ * file (both knobs at zero) does not render the SAME BYTES as this, then "optional" is a
+ * promise rather than a gate.
+ */
+function severed(graph: GraphDocument): void {
+  setParameter(graph, "lift", "value1", 0);
+  setParameter(graph, "coat", "offset", 0);
+}
+
+/** T809: the audio knob — the gain the shipped file holds at 0. */
+function audioAt(gain: number): (graph: GraphDocument) => void {
+  return (graph) => setParameter(graph, "bgain", "operand", gain);
+}
+
+/**
+ * T809: the colour knob, sampled at a chosen point of its swing. The LFO's own `phase`
+ * moves where in the cycle frame 90 lands, so one 91-frame render reaches an extreme of a
+ * 29-second sweep — 0.1975 is the top of it and 0.6975 the bottom.
+ */
+function colourAt(amplitude: number, phase: number): (graph: GraphDocument) => void {
+  return (graph) => {
+    setParameter(graph, "cycle", "amplitude", amplitude);
+    setParameter(graph, "cycle", "phase", phase);
+  };
+}
+
+/** Both mutators, in order. */
+function both(...steps: ReadonlyArray<(graph: GraphDocument) => void>): (graph: GraphDocument) => void {
+  return (graph) => {
+    for (const step of steps) step(graph);
+  };
+}
+
 interface Reading {
   /** Mean display-encoded luma, 0..1. The "is there a picture" number. */
   readonly mean: number;
@@ -144,6 +187,15 @@ function compare(a: Reading, b: Reading): number {
   let total = 0;
   for (let at = 0; at < a.luma.length; at += 1) total += Math.abs((a.luma[at] ?? 0) - (b.luma[at] ?? 0));
   return total / a.luma.length;
+}
+
+/** T809: how many pixels differ AT ALL — the identity claim's own number. */
+function differing(a: Reading, b: Reading): number {
+  let count = 0;
+  for (let at = 0; at < a.luma.length; at += 1) {
+    if ((a.luma[at] ?? 0) !== (b.luma[at] ?? 0)) count += 1;
+  }
+  return count;
 }
 
 describe("E27 sets its own exposure, and a dark room still gets a relief (T797)", () => {
@@ -254,4 +306,130 @@ describe("E27 sets its own exposure, and a dark room still gets a relief (T797)"
     expect(first.mean / settled.mean).toBeGreaterThan(0.85);
     expect(first.mean / settled.mean).toBeLessThan(1.15);
   }, 240_000);
+});
+
+/**
+ * T809 — THE TWO OPTIONAL ADDITIONS, AND "OPTIONAL" IS A GATE HERE RATHER THAN A PROMISE.
+ *
+ * Owner: "optional audio reactivity to drive relief in some way would be cool and also
+ * some sort color rotation". E43 Splice's `amount = 0` identity claim is the pattern
+ * (§V147): a feature that ships OFF is only honestly off if the frame with it in the graph
+ * is the frame without it, byte for byte — and the file it has to leave alone is the one
+ * §T797 tuned two hours earlier, on BOTH of its fixtures.
+ *
+ * Two knobs, and each is a single number:
+ *   - `kick1.operand` (0) — the low band's gain onto `lift1.value1`, which is the kernel's
+ *     LIFT AMPLITUDE. Not the exposure: `norm1`'s white point belongs to `roof1`, and a
+ *     second driver there would fight the normalisation this file just gained (§V730).
+ *   - `cycle1.amplitude` (0) — an LFO onto `coat1.offset`, which slides the picture along
+ *     the ramp. Colour only: `braid1` carries the shape in alpha (T503), so this drive
+ *     cannot reach the geometry, the exposure, or the motion path.
+ *
+ * Both are measured on the LIT understudy and on §T797's ×0.14 dark fixture, because "the
+ * lit one still reads as the picture it does now" and "the dark one is not made worse" are
+ * two different claims and a gate that renders one of them cannot see the other (§V461).
+ */
+describe("E27's optional audio and colour rotation are OFF at zero, and real above it (T809)", () => {
+  /**
+   * THE IDENTITY CLAIM, and it is the whole reason the word "optional" is allowed in the
+   * row. The control is not "the same file rendered twice" — it is the same file with both
+   * DRIVEN BINDINGS replaced by plain numbers, so the audioPattern, the two valueMaths and
+   * the LFO are all still in the graph and in the plan, and only their reach is cut.
+   *
+   * Measured on Dawn while writing this: 0 differing pixels of 921,600, at frame 0 and at
+   * frame 90, on both fixtures. Frame 0 is in because §V769 says frame 0 is what a user
+   * sees on open and because §T797's `now1` guard lives there — an addition that perturbed
+   * the cache ring would show up there first.
+   */
+  it("is BYTE-IDENTICAL to the file T797 left, on the lit understudy and on the dark fixture", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    for (const [name, base] of [["lit", () => {}], ["dark", dimmed]] as const) {
+      for (const frame of [0, 90]) {
+        const shipped = await shoot(base, frame);
+        const control = await shoot(both(base, severed), frame);
+        expect({ arm: name, frame, differing: differing(shipped, control) }).toEqual({
+          arm: name,
+          frame,
+          differing: 0,
+        });
+      }
+    }
+  }, 900_000);
+
+  /**
+   * AND THE KNOB IS NOT DEAD, which is the assertion that stops the one above being
+   * vacuous — §V147 twice over, since an identity claim passes perfectly with the wiring
+   * broken.
+   *
+   * The claim is RHYTHM, not level: the low band rests at 0.713 in the analyser's dB
+   * domain (T701) and `bsub1` subtracts exactly that, so between kicks the drive is
+   * essentially zero and ON the kick it is the band's full 0.26 excursion. Frames are
+   * chosen against 112 bpm at 60 fps — a beat is 32.14 frames, so frame 97 is 0.02 of a
+   * beat past the strike and frame 90 is 0.80 of a beat into the decay.
+   *
+   * Measured at gain 1: mean |Δ| luma 0.0746 on the strike against 0.0110 off it (lit),
+   * and 0.0914 on the strike (dark). The dark fixture moves MORE, not less — the driver is
+   * a synthesized pattern, so unlike §T797's motion term it is not starved by a dark
+   * source, and the auto-gain has already put the height field in full range for it to
+   * scale.
+   */
+  it("answers the KICK when the gain is turned up, and both fixtures get it", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const litRest = await shoot(() => {}, 97);
+    const litKick = await shoot(audioAt(1), 97);
+    // Measured 0.0746 — a quarter of the frame's own mean, from one number.
+    expect(compare(litRest, litKick)).toBeGreaterThan(0.03);
+
+    const litOffBeatRest = await shoot(() => {}, 90);
+    const litOffBeat = await shoot(audioAt(1), 90);
+    // Measured 0.0110 against the strike's 0.0746: it BREATHES on the beat rather than
+    // sitting on. A drive that had lost its rest subtraction would read the same at both.
+    expect(compare(litOffBeatRest, litOffBeat)).toBeLessThan(0.03);
+    expect(compare(litRest, litKick)).toBeGreaterThan(compare(litOffBeatRest, litOffBeat) * 3);
+
+    const darkRest = await shoot(dimmed, 97);
+    const darkKick = await shoot(both(dimmed, audioAt(1)), 97);
+    // Measured 0.0914, and the frame still clears §T797's floor rather than blowing past
+    // it: audio scales the LIFT, so it moves geometry, not exposure.
+    expect(compare(darkRest, darkKick)).toBeGreaterThan(0.03);
+    expect(darkKick.mean).toBeGreaterThan(LIVELY_FLOOR);
+  }, 900_000);
+
+  /**
+   * THE COLOUR SWEEP, AND ITS TWO ENDS BOTH HAVE TO SURVIVE THE DARK FIXTURE.
+   *
+   * `coat1.offset` slides the picture along the ramp and CLAMPS at the ends — Lookup's
+   * shader is `clamp(index * scale + offset, 0, 1)`. That clamp is the reason this is what
+   * ships rather than a true wrap-around rotation of `palette1.phase`: this ramp is
+   * monotone in luminance by design (T503), a wrap makes it non-monotone, and the .md
+   * records what four phases of that looked like. A slide keeps the monotone mapping, so
+   * the relief stays legible at every point of the swing.
+   *
+   * Measured at amplitude 0.1: mean |Δ| luma 0.0464 at the bottom of the swing and 0.0485
+   * at the top (lit), 0.0405 at the bottom (dark) — and the DARK frame at the cool end
+   * still reads 0.1641 mean, well clear of §T797's 0.12 floor and nowhere near the 0.03
+   * that flat-navy failure measured. That last number is the one that matters: sliding the
+   * palette DOWN is the move that could have walked a dark frame back into the failure
+   * §T797 just fixed, and it does not.
+   */
+  it("moves the colour at both ends of its swing without walking the dark case back to flat", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+
+    const litRest = await shoot(() => {}, 90);
+    const litDown = await shoot(colourAt(0.1, 0.6975), 90);
+    const litUp = await shoot(colourAt(0.1, 0.1975), 90);
+    // Measured 0.0464 and 0.0485. Both ends move, and the picture is not just dimming:
+    // the swing is symmetric about the shipped frame.
+    expect(compare(litRest, litDown)).toBeGreaterThan(0.02);
+    expect(compare(litRest, litUp)).toBeGreaterThan(0.02);
+    expect(litDown.mean).toBeLessThan(litRest.mean);
+    expect(litUp.mean).toBeGreaterThan(litRest.mean);
+
+    const darkDown = await shoot(both(dimmed, colourAt(0.1, 0.6975)), 90);
+    // Measured 0.1641 against the 0.0159 the report reproduced. Cooler, still a relief.
+    expect(darkDown.mean).toBeGreaterThan(LIVELY_FLOOR);
+    expect(darkDown.bright).toBeGreaterThan(0.02);
+  }, 900_000);
 });

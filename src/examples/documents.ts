@@ -4109,7 +4109,14 @@ const RELIEF_LIFT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
      as two hand-maintained branches — but there is nothing here to share it with.
      Sampled on a square (the mapping demands it), drawn 16:9. */
   let v = p.position.y * 1.15;
-  let h = height * 1.05 - 0.16;
+  /* T809 — THE AUDIO SCALES THE LIFT AMPLITUDE, AND NOTHING ELSE.
+     ctx.value1 is the kick, rest-subtracted so silence IS zero (T479, T701). It is added
+     to the 1.05 here rather than driving norm1's white point, because the white point
+     belongs to the exposure loop and a second driver on it would fight the normalisation
+     T797 just gave this file (§V730: one decision, one site). Shipped at gain 0, which
+     makes this term EXACTLY 1.05 + 0.0 — an f32 add of zero is exact, so the shipped
+     picture is byte-identical to the pre-T809 file and relief-claims measures it. */
+  let h = height * (1.05 + ctx.value1) - 0.16;
   q.position = vec3f(p.position.x * 1.7778, v * 0.9397 + h * 0.3420, -v * 0.3420 + h * 0.9397);
   /* Alpha has done its job, so it goes back to 1 before the draw: body1 maps this same
      attribute onto the material TINT (T478), and a tint whose alpha carried the HEIGHT
@@ -4276,6 +4283,34 @@ const reliefDocument = document(
       }, { label: "stir1" }),
       node("heat", "add", [-180, 940], {}, { label: "heat1" }),
 
+      /* T809 — OPTIONAL AUDIO, ON THE LIFT AMPLITUDE, AND ZERO IS AN IDENTITY.
+         Owner: "optional audio reactivity to drive relief in some way would be cool".
+         E43 Splice is the pattern (§V147): `optional` is worth nothing as a promise and
+         everything as a GATE, so the shipped gain is 0 and `relief-claims` renders the
+         file with the chain in place and compares BYTES against the pre-T809 frames.
+
+         WHERE IT IS ALLOWED TO PUSH. The height is `luminance x exposure` since T797, and
+         the exposure loop OWNS `norm1.whitelevel` — a second driver there would be two
+         decisions on one number, fighting the normalisation this file just gained (§V730).
+         So the audio scales the kernel's LIFT AMPLITUDE instead, which is the one term
+         downstream of everything the exposure decided: the sheet breathes on the kick and
+         the frame's re-ranging is untouched.
+
+         THE CHAIN IS BIAS-THEN-GAIN, AND THE ORDER IS THE IDENTITY. `low` rests at 0.713
+         in the analyser's dB domain (T701), so `bsub1` puts rest at zero and the drive is
+         a pure excursion. `kick1` multiplies LAST, which is what makes 0 exact: a gain of
+         zero before a bias would leave the bias behind.
+
+         AND `low` IS THE BAND THAT DOES NOT SHOW T776'S ARRANGEMENT, deliberately. The
+         four-bar pull-back keeps the kick (depth 0.90 on `low` against 0.07 on `high`), so
+         a breakdown moves this band by about 0.006 against a per-beat excursion of 0.26 —
+         2%. What this drives is therefore per-BEAT breathing, not a phrase-length dynamic,
+         and the reader should not go looking for one here. A phrase-length version of this
+         is `level` or `high`, and it would swing the relief once every four bars. */
+      node("beat", "audioPattern", [-1680, 1180], { bpm: 112, amount: 1 }, { label: "beat1" }),
+      node("bsub", "valueMath", [-1380, 1180], { operation: "add", operand: -0.713 }, { label: "bsub1" }),
+      node("bgain", "valueMath", [-1080, 1180], { operation: "multiply", operand: 0 }, { label: "kick1" }),
+
       node("palette", "ramp", [-1080, -180], {
         type: "horizontal", interp: "smooth", phase: 0, period: 1,
         /* A scan-line palette: near-black in the valleys, through a cold teal and a hot
@@ -4292,9 +4327,47 @@ const reliefDocument = document(
           { position: 1, color: [1, 0.97, 0.9, 1] },
         ],
       }, { label: "palette1", definitionVersion: 2 }),
+      /* T809 — THE PALETTE TRAVELS, and it is a SWEEP rather than a wrap-around cycle.
+         That distinction was measured, not chosen (§V471), and the reason to write it down
+         is that the wrap-around is the one that sounds right.
+
+         WHAT WAS TRIED FIRST. Ramp's own `phase` is the only parameter in this file that
+         truly rotates a colour table — the shader ends in `fract(raw)` (T556), so a phase
+         drive walks every colour past every stop and back. Rendered at four phases across
+         one turn (0.05 / 0.30 / 0.55 / 0.80) it takes the picture apart, and the mechanism
+         is structural rather than a tuning miss: THIS RAMP IS MONOTONE IN LUMINANCE BY
+         DESIGN (T503 chose a near-black foot and a white crest so the colour climbs with
+         the height), and rotating a monotone table makes it non-monotone. So "brighter"
+         stops meaning "further up the ramp", and the relief loses the only reading it has:
+         at 0.05 the crest wraps past white and punches BLACK HOLES in the summit; at 0.30
+         the dome inverts to a black silhouette inside a white outline; at 0.55 the frame
+         is a posterised contour map of white islands. Held in the graph at zero it would
+         be a knob that looks broken the moment anyone turns it, so it is not wired.
+
+         WHAT SHIPS. Lookup's shader is `clamp(index * scale + offset, 0, 1)`, so driving
+         `offset` slides the picture ALONG the ramp and clamps at the ends — it never
+         wraps, which means it never breaks the monotone mapping. The colours still travel
+         (a white crest cools to orange and magenta, the ridge line moves down the sheet,
+         the teal ground deepens) and the composition survives every phase of the swing.
+         Negative is the free direction; positive costs the summit's detail to the top
+         stop, which is why the swing is small.
+
+         AND IT CANNOT REACH THE GEOMETRY. `braid1` carries the shape in alpha and the
+         colour in rgb (T503), so this is a colour-only drive by construction — it cannot
+         fight T797's exposure loop or its motion path, both of which are in alpha.
+
+         Shipped at `cycle1.amplitude = 0`. An LFO returns `offset + amplitude * wave`, so
+         that is EXACTLY 0.0 and the frame is the one T797 left. */
       node("coat", "lookup", [-780, -20], {
         channel: "luminance", row: 0.5, scale: 1, offset: 0,
-      }, { label: "coat1" }),
+      }, { label: "coat1", parameters: { offset: drivenSlot("cycle1", 0) } }),
+      /* 0.035 Hz is §V471(8)'s long cycle — about 29 seconds, and incommensurate with the
+         sway (0.024) and both drifts (0.019, 0.013), so no two laps of the camera meet the
+         same palette. Sine rather than saw: a saw would snap the colour back at the wrap,
+         and a clamped sweep has no wrap to hide it in. */
+      node("cycle", "lfo", [-1380, -420], {
+        shape: "sine", frequency: 0.035, amplitude: 0, offset: 0, phase: 0,
+      }, { label: "cycle1" }),
       /* T503 — TWO FIELDS, ONE BRIDGE. rgb is the paletted colour; ALPHA is the source's
          own luminance, straight off `pick1` before the palette touched it. There is exactly
          one texture-to-points bridge in the catalogue and it carries four channels, so the
@@ -4318,7 +4391,14 @@ const reliefDocument = document(
           { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
         ]),
         kernel: RELIEF_LIFT_KERNEL,
-      }, { label: "lift1" }),
+      }, {
+        label: "lift1",
+        /* T479: a value write per frame, never a rebuild (§V5). Retained 0 as well as
+           driven 0, so a host with no channels attached renders the same picture — and so
+           a rename of `kick1` falls back to the shipped file rather than to a surprise
+           (§V129 is the reason that matters). */
+        parameters: { value1: drivenSlot("kick1:low", 0) },
+      }),
 
       /* UNLIT, and that is the look: a phosphor does not have a diffuse response. The
          colour comes entirely from T478's per-point TINT, so `render`'s light list is
@@ -4408,6 +4488,10 @@ const reliefDocument = document(
       edge("e-moved-stir", ["moved", "out"], ["stir", "input"]),
       edge("e-norm-heat", ["norm", "out"], ["heat", "in1"], 0),
       edge("e-stir-heat", ["stir", "out"], ["heat", "in2"], 1),
+      // T809 — the optional audio, wired but at gain zero. `kick1:low` reaches `lift1`'s
+      // value slot, which is the LIFT AMPLITUDE and nothing else.
+      edge("v-beat-bsub", ["beat", "out"], ["bsub", "a"]),
+      edge("v-bsub-bgain", ["bsub", "out"], ["bgain", "a"]),
       // THE BRAID: colour in from the palette, SHAPE in from the un-coated source — which
       // is now that source's luminance PLUS its movement (T797). Only the height carries
       // the motion; the colour path stays the picture.
