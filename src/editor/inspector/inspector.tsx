@@ -13,6 +13,7 @@ import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { AudioSection } from "./audio-section.tsx";
+import { WebcamSection } from "./webcam-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
@@ -288,6 +289,17 @@ export function Inspector({
       />
     ) : null;
 
+  /* T810: the webcam gets its camera picker the way the mic got its device picker —
+     keyed on the node TYPE the media hook itself keys on. */
+  const webcamSection =
+    node.type === "webcam" ? (
+      <WebcamSection
+        nodeId={node.id}
+        device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
+        editor={editor}
+      />
+    ) : null;
+
   const parameterSections =
     groups.length === 0 ? (
       // §V91: name the STATE, not the pane's purpose. A node with no parameters is a
@@ -371,6 +383,7 @@ export function Inspector({
         {unknownNotice}
         {parameterSections}
         {audioSection}
+        {webcamSection}
         {commonSection}
       </div>
     );
@@ -388,6 +401,7 @@ export function Inspector({
         <TabsContent className={cx(styles.page, styles.page)} value="parameters">
           {parameterSections}
           {audioSection}
+          {webcamSection}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
           {commonSection}

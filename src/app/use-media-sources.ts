@@ -68,8 +68,14 @@ import type { TextAlign, TextMediaSource, TextRaster, TextVerticalAlign } from "
 export interface MediaEnvironment {
   /** Creates a video element bound to `url`, already playing. Throws to report failure. */
   openFile(url: string): Promise<MediaElement>;
-  /** Opens the default camera. Throws (permission denied, no device) to report failure. */
-  openCamera(): Promise<MediaElement>;
+  /**
+   * Opens a camera. T810: an empty `device` is the system default; a non-empty one is
+   * an EXACT `deviceId` and a vanished device throws `OverconstrainedError` — the open
+   * loop owns the retry-bare fallback and the diagnostic that names it, so the
+   * environment stays a dumb door (the same split `use-audio-input` made for T434).
+   * Throws (permission denied, no device) to report failure.
+   */
+  openCamera(device: string): Promise<MediaElement>;
   /** Text rasterizer factory (T243). Defaults to the browser one. */
   createTextSource?(): TextMediaSource;
 }
@@ -81,6 +87,8 @@ interface MediaRequest {
   readonly type: string;
   /** The file a movie node names. Empty for a webcam, and for a movie with no file yet. */
   readonly url: string;
+  /** T810: the webcam's chosen camera ("" = system default). Empty for every other type. */
+  readonly device: string;
 }
 
 /** What a node's `file` parameter holds. Stored by whatever UI wrote it, so read widely. */
@@ -113,7 +121,17 @@ function mediaRequests(graph: GraphDocument): MediaRequest[] {
     const node = graph.nodes[nodeId];
     if (node === undefined || !MEDIA_TYPES.has(node.type)) continue;
     if (isSilencedSource(node)) continue;
-    requests.push({ nodeId, type: node.type, url: urlOf(node.parameters["file"]) });
+    requests.push({
+      nodeId,
+      type: node.type,
+      url: urlOf(node.parameters["file"]),
+      // T810: raw read, like `url` above — the picker writes a plain string commit, and
+      // driving a camera choice from an expression is not a thing this hook supports.
+      device:
+        node.type === "webcam" && typeof node.parameters["device"] === "string"
+          ? node.parameters["device"]
+          : "",
+    });
   }
   return requests;
 }
@@ -210,10 +228,16 @@ export function browserMediaEnvironment(): MediaEnvironment {
       video.src = url;
       return prepare(video);
     },
-    async openCamera() {
+    async openCamera(device) {
       const media = navigator.mediaDevices;
       if (media === undefined) throw new Error("This browser exposes no camera API.");
-      const stream = await media.getUserMedia({ video: true, audio: false });
+      // T810: an exact deviceId when one is chosen, exactly as the microphone path
+      // (T434). A vanished device throws OverconstrainedError, which the open loop
+      // turns into a named fallback rather than a silent default.
+      const stream = await media.getUserMedia({
+        video: device.trim() === "" ? true : { deviceId: { exact: device } },
+        audio: false,
+      });
       const video = document.createElement("video");
       video.srcObject = stream;
       return prepare(video);
@@ -300,7 +324,11 @@ export function useMediaSources(
   // The identity that decides whether a source must be re-opened: which nodes, of which
   // type, naming which file. A node moving on the canvas must not restart a camera.
   const requests = useMemo(() => mediaRequests(graph), [graph]);
-  const key = requests.map((request) => `${request.nodeId}|${request.type}|${request.url}`).join("\n");
+  // T810: `device` is part of a request's identity — picking a different camera must
+  // re-run the open effect, or the picker writes a parameter nothing reads until reload.
+  const key = requests
+    .map((request) => `${request.nodeId}|${request.type}|${request.url}|${request.device}`)
+    .join("\n");
 
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
@@ -393,10 +421,37 @@ export function useMediaSources(
         }
         let element: MediaElement;
         try {
-          element =
-            request.type === "webcam"
-              ? await env.openCamera()
-              : await env.openFile(request.url);
+          if (request.type === "webcam") {
+            try {
+              element = await env.openCamera(request.device);
+            } catch (constrained) {
+              /*
+               * T810 — the chosen camera has VANISHED (unplugged between sessions).
+               * Falling back silently would leave the picker lying about what is live,
+               * so the fallback is taken AND named — the same two-step the microphone
+               * path made for T434. Any other failure (permission denied, no camera at
+               * all) falls through to the ordinary unavailable diagnostic, and the
+               * §V687 understudy keeps the document playing either way.
+               */
+              if (
+                request.device === "" ||
+                (constrained as { name?: string }).name !== "OverconstrainedError"
+              ) {
+                throw constrained;
+              }
+              reported.push(
+                diagnostic(
+                  request.nodeId,
+                  `The selected camera for "${request.nodeId}" is unavailable; using the system default.`,
+                  "Re-pick a camera in the inspector, or leave it on the system default.",
+                ),
+              );
+              if (live) setDiagnostics([...reported]);
+              element = await env.openCamera("");
+            }
+          } else {
+            element = await env.openFile(request.url);
+          }
         } catch (error) {
           reported.push(
             diagnostic(

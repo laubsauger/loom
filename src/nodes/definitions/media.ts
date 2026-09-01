@@ -123,7 +123,21 @@ export const webcamNode: NodeDefinition = {
   tags: ["media", "camera", "live", "capture"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
-  parameters: {},
+  parameters: {
+    /**
+     * T810 — which camera, mirroring the microphone's `device` (T434) so the two read
+     * as one convention. Empty string is the system default; the inspector's picker
+     * writes an exact `deviceId`. The open path retries bare when the exact device has
+     * vanished (unplugged between sessions), and says so — never bricks the node.
+     */
+    device: {
+      type: "string",
+      label: "Device",
+      default: "",
+      description:
+        "Camera device id, from the inspector's device picker. Empty = the system default. Device names are hidden by the browser until camera access is granted.",
+    },
+  },
   resolutionPolicy: { kind: "project" },
   compile: compileMedia,
 };

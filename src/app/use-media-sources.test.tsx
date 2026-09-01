@@ -190,6 +190,85 @@ describe("media sources reach the backend (T264)", () => {
     expect(registered.size).toBe(0);
   });
 
+  /**
+   * T810 — the picker's parameter actually STEERS the open. Without this, a written
+   * `device` is a string nothing reads, which is the shape the owner hit: "webcam node
+   * needs a way to pick the camera no?".
+   */
+  it("opens the CHOSEN camera: the node's device parameter reaches getUserMedia", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const element = fakeElement();
+    const askedFor: string[] = [];
+    const environment: MediaEnvironment = {
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: (device: string) => {
+        askedFor.push(device);
+        return Promise.resolve(element as unknown as MediaElement);
+      },
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ cam: { type: "webcam", parameters: { device: "usb-cam-7" } } })}
+          environment={environment}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    expect(askedFor).toEqual(["usb-cam-7"]);
+  });
+
+  /**
+   * T810, the half that bites later: a camera unplugged between sessions. The exact
+   * constraint throws OverconstrainedError; the fallback is taken AND named — silent
+   * would leave the picker lying about what is live (the T434 contract, camera edition).
+   */
+  it("a vanished chosen camera falls back to the default AND says so", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const element = fakeElement();
+    const messages: string[][] = [];
+    const askedFor: string[] = [];
+    const environment: MediaEnvironment = {
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: (device: string) => {
+        askedFor.push(device);
+        if (device !== "") {
+          return Promise.reject(
+            Object.assign(new Error("gone"), { name: "OverconstrainedError" }),
+          );
+        }
+        return Promise.resolve(element as unknown as MediaElement);
+      },
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ cam: { type: "webcam", parameters: { device: "unplugged-9" } } })}
+          environment={environment}
+          onDiagnostics={(next) => messages.push([...next])}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    expect(askedFor).toEqual(["unplugged-9", ""]);
+    const latest = messages.at(-1) ?? [];
+    expect(latest.some((message) => message.includes("system default"))).toBe(true);
+  });
+
   it("does not open anything for a movie node with no file yet", async () => {
     const runtime = newRuntime();
     const { backend, registered } = fakeBackend();
