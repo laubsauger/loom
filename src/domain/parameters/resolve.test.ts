@@ -379,6 +379,49 @@ describe("parameter modes (T203, §V107)", () => {
     expect(attached.get("gain")).toMatchObject({ value: 32, mode: "driven", driven: true });
   });
 
+  /**
+   * B155 — a channel overshooting a bounded range was an ERROR, and the error was fatal.
+   *
+   * E43 drives a 0…1 `amount` from an audio band, and the band grazes ~1.06 at a peak —
+   * the signal working, not a wrong document. The raw value went to the manifest check,
+   * came back `parameter.range` at error severity, snapped the value to the retained
+   * fallback (0 — glitch dead), and because the app's structural compile resolves with
+   * the LIVE channel resolver, a compile landing on a peak turned `plan.ok` false and
+   * blacked out the whole document. A driven number now pins into its declared range
+   * exactly as an expression result does (T368), with the same warning-severity report.
+   */
+  it("pins a driven number into its declared range and SAYS SO — never an error (B155)", () => {
+    const stored = slot("driven", {
+      driven: { kind: "driven", channel: "gd1:high" },
+      static: { kind: "static", value: 0 },
+    });
+    const resolved = resolveParameters(nodeWith({ gain: stored }), solidLike, {
+      channels: (channel) => (channel === "gd1:high" ? 67.9245 : undefined),
+    });
+    const entry = resolved.get("gain");
+    expect(entry?.value).toBe(64); // the limit, not the retained fallback
+    expect(entry?.driven).toBe(true);
+    expect(entry?.diagnostic?.code).toBe("parameter.driven.clamped");
+    expect(entry?.diagnostic?.severity).toBe("warning"); // fatal error was the bug
+    expect(entry?.diagnostic?.message).toContain('"gain"');
+    expect(entry?.diagnostic?.message).toContain("gd1:high"); // the channel, by name
+    expect(entry?.diagnostic?.message).toContain("67.9245"); // what it actually produced
+    expect(entry?.diagnostic?.message).toContain("0…64"); // the declared bounds
+    expect(resolved.diagnostics.some((d) => d.severity === "error")).toBe(false);
+  });
+
+  it("stays quiet while the channel is inside the range — the warning is not ambient", () => {
+    const stored = slot("driven", {
+      driven: { kind: "driven", channel: "gd1:high" },
+      static: { kind: "static", value: 0 },
+    });
+    const resolved = resolveParameters(nodeWith({ gain: stored }), solidLike, {
+      channels: () => 32,
+    });
+    expect(resolved.get("gain")?.value).toBe(32);
+    expect(resolved.diagnostics).toEqual([]);
+  });
+
   it("retains every mode's payload across the active-mode switch (§V108)", () => {
     // The same slot resolved twice with only `mode` differing: neither resolution
     // destroys or ignores the other mode's payload.

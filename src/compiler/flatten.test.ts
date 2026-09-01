@@ -317,6 +317,47 @@ describe("pruning after flattening (§V25)", () => {
   });
 });
 
+describe("edge order through a flattening (§V131, B155)", () => {
+  /**
+   * B155 — the flattened edge copy dropped `order`, and the failure was invisible from
+   * either side alone: the compiler's variadic sort is correct (declared order first,
+   * id as tiebreak), and the harness compiles a component-free document WITHOUT
+   * flattening, so every gate saw the declared order. The APP always flattens (it
+   * passes `components`), so in the running app every variadic port fell back to the
+   * id tiebreak — E43's Switch arrived inverted (`e-clip-pick` sorts before
+   * `e-stand-pick`), index 0 presented the fileless movie clip, and the whole rack
+   * behind it rendered black while `src/examples` stayed green on Dawn.
+   *
+   * The ids here are chosen so the ALPHABETICAL order contradicts the DECLARED order:
+   * a test whose two orders agree cannot fail when the field is dropped.
+   */
+  it("a variadic port's DECLARED order survives — the id tiebreak must not decide", () => {
+    const graph = graphOf(
+      [
+        testNode("gen", "fx.generator"),
+        testNode("plate", "fx.generator"),
+        testNode("mix", "fx.composite"),
+        testNode("out", "fx.output"),
+      ],
+      {
+        // Sorts FIRST by id, declared SECOND by order.
+        "e-a": { ...testEdge("e-a", ["plate", "out"], ["mix", "layers"]), order: 1 },
+        // Sorts second by id, declared FIRST.
+        "e-z": { ...testEdge("e-z", ["gen", "out"], ["mix", "layers"]), order: 0 },
+        "e-out": testEdge("e-out", ["mix", "out"], ["out", "source"]),
+      },
+    );
+    const compiled = compileWith([], graph);
+    const mix = passFor(compiled, "mix");
+    const genTarget = passFor(compiled, "gen")?.target;
+    const plateTarget = passFor(compiled, "plate")?.target;
+    expect(genTarget).toBeDefined();
+    expect(plateTarget).toBeDefined();
+    // layer0 is the DECLARED first input (gen, order 0), not the alphabetical first.
+    expect(mix?.textures?.map((texture) => texture.resourceId)).toEqual([genTarget, plateTarget]);
+  });
+});
+
 describe("the not-flattened tripwire", () => {
   it("fails loudly when an instance reaches node compilation", () => {
     // The registry knows the component type, so the instance validates and compiles — but

@@ -511,7 +511,22 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
         continue;
       }
       const flatEdgeId = flattenedNodeId(input.prefix, edgeId);
-      edges[flatEdgeId] = { id: flatEdgeId, source: { ...source }, target: { ...target } };
+      /*
+       * B155 — `order` MUST survive flattening (§V131). This copy dropped it, and the
+       * failure was invisible from either side alone: the compiler's own sort is
+       * correct (declared order first, id as tiebreak), and the harness compiles a
+       * component-free document WITHOUT flattening — so every gate saw the declared
+       * order. The APP always flattens (it passes `components`), so in the running app
+       * every variadic port fell back to the id tiebreak. E43/E41: `e-clip-pick`
+       * sorts before `e-stand-pick`, the Switch's inputs arrived inverted, index 0
+       * presented the fileless movie clip, and the whole rack behind it went black.
+       */
+      edges[flatEdgeId] = {
+        id: flatEdgeId,
+        ...(edge.order === undefined ? {} : { order: edge.order }),
+        source: { ...source },
+        target: { ...target },
+      };
     }
 
     const inputs = new Map<PortId, FlatEndpoint>();

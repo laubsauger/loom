@@ -684,9 +684,41 @@ function resolveStored(
         armedKinds && typeof supplied === "number" && Number.isFinite(supplied)
           ? supplied !== 0
           : supplied;
-      const checked = checkAgainstManifest(key, definition, value, node);
+      /*
+       * B155 — a driven number PINS into its declared range, exactly as an expression
+       * result does (T368), and for a harder reason: an expression's overshoot is
+       * authored text the author can amend, but a channel's overshoot is a LIVE SIGNAL
+       * (an audio band grazing its bound at a peak is the signal working, not a wrong
+       * document). Before this, the overshoot went to `checkAgainstManifest` raw and
+       * came back an ERROR — which snapped the value to the retained fallback, and,
+       * because a structural compile resolves with the app's live channel resolver,
+       * turned `plan.ok` false and blacked out the whole document whenever the compile
+       * happened to land on a peak (E43: `gd1:high` at 1.06 on a 0…1 `amount`).
+       * Validation of a document must not depend on what the audio was doing at the
+       * instant of the compile.
+       */
+      const pinned =
+        definition.type === "number" && typeof value === "number" && Number.isFinite(value)
+          ? clampToDeclared(value, definition)
+          : { value, clamped: null };
+      const checked = checkAgainstManifest(key, definition, pinned.value, node);
       if (checked.diagnostic !== null) return fallback(node, key, definition, slot, checked.diagnostic);
-      return { value: checked.value, mode: "driven", source: "driven", driven: true, diagnostic: null };
+      return {
+        value: checked.value,
+        mode: "driven",
+        source: "driven",
+        driven: true,
+        diagnostic:
+          pinned.clamped === null
+            ? null
+            : diag(
+                "warning",
+                "parameter.driven.clamped",
+                `Parameter "${key}" is driven by channel "${binding.channel}", which produced ${round4(pinned.clamped.produced)}, outside its range ${describeBounds(definition)}; the value in effect is clamped to ${pinned.clamped.limit}.`,
+                node.id,
+                "Scale or offset the channel upstream if the clamp is not the intent.",
+              ),
+      };
     }
 
     case "map": {

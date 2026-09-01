@@ -47,6 +47,7 @@ describe("B95 — animate compiles with the scheduler's sinks", () => {
   it("stays a values-only variation when a preview is suspended", async () => {
     const runtime = newRuntime();
     let level = "";
+    let lfo = "";
     let lfoName = "";
     let extra = "";
     await act(async () => {
@@ -72,9 +73,38 @@ describe("B95 — animate compiles with the scheduler's sinks", () => {
       const created = (result.output as { createdIds: Record<string, string> }).createdIds;
       level = created["$level"] ?? "";
       extra = created["$extra"] ?? "";
-      lfoName = runtime.bus.store.getGraph().nodes[created["$lfo"] ?? ""]?.label ?? "";
+      lfo = created["$lfo"] ?? "";
+      lfoName = runtime.bus.store.getGraph().nodes[lfo]?.label ?? "";
     });
     expect(lfoName).not.toBe("");
+
+    /**
+     * B155 made the drive HONEST, and this fixture had to follow: a stock LFO (−1…1)
+     * on a floor-0 brightness spends half its cycle out of range, and at t=5 the old
+     * resolver ERRORED there and fell back to the retained static 1 — so the uniform
+     * "movement" this test measured was the fallback moving, not the drive. The driven
+     * value now pins into range, which parks the old fixture at 0 on both sampled
+     * frames. Offset 2 keeps the whole swing inside the range, and 0.05 Hz puts t=5 a
+     * quarter cycle up (2 → 3): the movement is the LFO's own.
+     */
+    await act(async () => {
+      const result = await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "lfo range",
+          operations: [
+            {
+              op: "setParameters",
+              nodeId: lfo,
+              parameters: { frequency: 0.05, amplitude: 1, offset: 2 },
+            } as GraphPatchOperation,
+          ],
+        },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+    });
 
     await act(async () => {
       const result = await runtime.bus.execute(
