@@ -154,6 +154,11 @@
     "range": 0.3728,
     "f0max": 0.3801
   },
+  "E44-Sounding.loom.json": {
+    "motion": 0.00311,
+    "range": 0.4454,
+    "f0max": 0.4812
+  },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,
     "range": 0.4489,

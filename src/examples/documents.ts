@@ -10299,6 +10299,122 @@ const spliceDocument = document(
   ),
 );
 
+/**
+ * E44 — Sounding (T755). DEPTH AS GEOMETRY — the first example of the inference arc.
+ *
+ * Named for the nautical sense: throwing a line to find how deep the water is. `E27 Relief`
+ * already carries the sculptural word, and this is the measurement rather than the carving.
+ *
+ *   bed1(noise, nearly still) ─┐
+ *   orb1(circle) ← 2 LFOs ─────┴─► stand1(add) ─┬─► pick1(switch) ─► depth1(depth)
+ *   clip1(movieFileIn) ────────────── order 1 ─┘                        │
+ *                                                                       ▼
+ *   out1 ◄── draw1(renderInstances, 12288 boxes) ◄── cloud1(pointsFromTexture, GRID)
+ *
+ * ## What the picture is
+ *
+ * A monocular depth model turns a flat image into a distance map; `pointsFromTexture` in
+ * GRID mode reads that map on a 128x96 lattice and lifts each point by what it finds. So a
+ * video becomes a relief you can look at from the side — the depth-camera look, from a
+ * source that never carried depth.
+ *
+ * ## It opens FLAT, on purpose, and that is the design rather than a shortfall
+ *
+ * A 94 MB model does not download because a document was opened (§V721). Until it is
+ * acquired, `depth1` publishes flat mid-grey — the value `displace` defines as no
+ * displacement — so this cloud is a FLAT SHEET and the document renders. Press Download in
+ * the notice strip and the same sheet lifts into relief. No example had ever exercised
+ * that path, and `sounding-claims.gpu.test.ts` asserts both ends of it: mid-grey in gives a
+ * cloud with no measurable relief, a known ramp in gives relief in the known direction.
+ *
+ * ## The understudy moves, and that is load-bearing (§V687)
+ *
+ * The subject is depth over TIME, so the synthetic performer is an orb on two free-running
+ * LFOs above a nearly-still perlin bed: the bed gives the model something to place, the orb
+ * gives it something that moves. Point `clip1` at real footage (pick1.index = 1) and the
+ * same lattice reads whatever the video contains.
+ *
+ * ## The update rate is visible, and the doc says so rather than hiding it
+ *
+ * Measured: depth is 2599 ms per inference under wasm on one thread (T382). Off the frame
+ * loop the picture stays at 60fps, but the RELIEF only changes about every 2.6 seconds,
+ * and the node info popup reports the age in frames. The orb is deliberately fast enough
+ * that the lag is plain to see. An example that hid it by choosing a slow subject would be
+ * flattering the number instead of reporting it.
+ */
+const soundingDocument = document(
+  "e44-sounding",
+  "E44 Sounding",
+  settings({ randomSeed: 44 }),
+  graph(
+    [
+      // ---- the source and its understudy (E41's rig, reused deliberately) ----------
+      node("bed", "noise", [-2220, -420], {
+        type: "perlin4d", seed: 7, period: 0.16, harmon: 3, spread: 2, gain: 0.5,
+        rough: 0.5, exp: 1.3, amp: 1.2, offset: 0.35, mono: true, aspectcorrect: true,
+        speed: 0.03, t4d: 0, s4d: 1,
+      }, { label: "bed1" }),
+      node("orb", "circle", [-2220, -140], {
+        mode: "fill", center: [0.5, 0.5], radius: [0.13, 0.13], softness: 0.07,
+        fillcolor: [1, 0.93, 0.82, 1], bgcolor: [0, 0, 0, 0], aspectcorrect: true,
+      }, { label: "orb1", parameters: { "center.x": drivenSlot("pathx1", 0.5), "center.y": drivenSlot("pathy1", 0.5) } }),
+      node("pathx", "lfo", [-2220, 420], { shape: "sine", frequency: 0.31, amplitude: 0.3, offset: 0.5, phase: 0 }, { label: "pathx1" }),
+      node("pathy", "lfo", [-2220, 700], { shape: "sine", frequency: 0.223, amplitude: 0.26, offset: 0.5, phase: 0.25 }, { label: "pathy1" }),
+      node("clip", "movieFileIn", [-2220, 140], { file: "", playMode: "freeRun", speed: 1 }, { label: "clip1" }),
+      node("stand", "add", [-1920, -280], { opacity: 1 }, { label: "stand1" }),
+      node("pick", "switch", [-1920, 20], { index: 0 }, { label: "pick1" }),
+
+      // ---- the inference, and the lattice that reads it ----------------------------
+      node("depth", "depth", [-1620, -60], { model: "accurate" }, { label: "depth1" }),
+      node("cloud", "pointsFromTexture", [-1320, -60], {
+        mode: "grid", cols: 96, rows: 72, sizeX: 2.6, sizeY: 1.95, depth: 1.9, threshold: 0.02,
+      }, { label: "cloud1" }),
+
+      // ---- the look: a dense box cloud, lit, seen from off-axis so relief reads -----
+      node("draw", "renderInstances", [-1020, -60], {
+        /*
+         * 6912 = cols x rows exactly, and `scale` is HALF the lattice spacing (2.6/96 =
+         * 0.027) on purpose: at the spacing itself the boxes touch and the cloud fuses
+         * into an opaque slab with the relief showing only as faint contour lines. It has
+         * to read as points for the depth to read at all.
+         */
+        count: 6912, shape: "box", scale: 0.006,
+        color: [0.92, 0.71, 0.45, 1],
+        eye: [0, 1.35, 3.0], lookAt: [0, -0.05, 0], fov: 44,
+      }, { label: "draw1" }),
+      // The source is ADDED under the cloud, not composited over it: `renderInstances`
+      // clears to OPAQUE black, so an `over` would simply hide the plate. Additive suits
+      // it anyway — the scan reads as light standing off its own image. Both states are
+      // then a picture: flat, the grid lies on the plate; with depth, it lifts (§V471).
+      node("plate", "add", [-720, -60], { opacity: 1 }, { label: "plate1" }),
+      node("dim", "level", [-1320, 300], {
+        /*
+         * LINEAR, and the number looks wrong until you remember that (§V587/§V56). The
+         * output display-encodes, so linear 0.15 arrives on screen as about 0.44 grey —
+         * which is why an earlier pass at "dim" made the plate LIGHTER. 0.035 linear is
+         * the roughly 0.2 the picture wants.
+         */
+        blacklevel: 0, whitelevel: 1, gamma1: 1, contrast: 1, brightness: 0.035, invert: 0, opacity: 1,
+      }, { label: "dim1" }),
+      node("out", "output", [-420, -60], {}, { label: "out1" }),
+    ],
+    [
+      edge("e-bed-stand", ["bed", "out"], ["stand", "in1"]),
+      edge("e-orb-stand", ["orb", "out"], ["stand", "in2"]),
+      // BRANCH 0 is the understudy, BRANCH 1 is the footage, and the ORDER SAYS SO (§V131).
+      edge("e-stand-pick", ["stand", "out"], ["pick", "inputs"], 0),
+      edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 1),
+      edge("e-pick-depth", ["pick", "out"], ["depth", "input"]),
+      edge("e-depth-cloud", ["depth", "out"], ["cloud", "texture"]),
+      edge("e-cloud-draw", ["cloud", "out"], ["draw", "points"]),
+      edge("e-pick-dim", ["pick", "out"], ["dim", "input"]),
+      edge("e-draw-plate", ["draw", "out"], ["plate", "in1"]),
+      edge("e-dim-plate", ["dim", "out"], ["plate", "in2"]),
+      edge("e-plate-out", ["plate", "out"], ["out", "input"]),
+    ],
+  ),
+);
+
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
   reactionDiffusionDocument,
@@ -10336,4 +10452,5 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   cinderDocument,
   currentDocument,
   spliceDocument,
+  soundingDocument,
 ];
