@@ -47,9 +47,9 @@ track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
              ├─► wgain1·wbase1·wlevel1 ┄► shape1.whitelevel         (lowMid)
              └─► xgain1·xspeed1 ┄► grow1.s                          (low)
    FAST ── snap1(lag 0.04) ◄───────────────┤
-             ├─► lagain1·lena1 ┄► warpa1.weight                     (low)
-             ├─► lbgain1·lenb1 ┄► warpb1.weight                     (lowMid)
-             ├─► lcgain1·lenc1 ┄► warpc1.weight                     (high)
+             ├─► lagain1·lena1·lenswa1 ┄► warpa1.weight             (low)
+             ├─► lbgain1·lenb1·lenswb1 ┄► warpb1.weight             (lowMid)
+             ├─► lcgain1·lenc1·lenswc1 ┄► warpc1.weight             (high)
              ├─► ggain1·gadd1·grade1 ┄► tint1.scale                 (highMid)
              └─► bgain1·bright1 ┄► glow1.brightness                 (level)
   EVENT ── trig1(trigger) ◄────────────────┘
@@ -324,6 +324,38 @@ weight**:
 
 The weights come down as the frequency goes up for the same reason a fractal's gain does:
 equal weight at every scale is white noise, not depth.
+
+### The lens weights are fenced, and what that does and does not fix (T738)
+
+Each of the three weights ends in a Limit — `lenswa1`, `lenswb1`, `lenswc1` — floored at
+**0** and capped at `gain + bias`, which is exactly what the chain emits when its band
+saturates at 1.0. The cap therefore never clips anything the chain can legitimately
+produce; it states the chain's full travel in the graph. The floor is the part that
+matters.
+
+Without it, these three pairs were the only gain+bias chains in the document without the
+range check `steps1`, `wlevel1` and `grade1` all have, and under real music that omission
+**inverted a lens**. Measured on three recorded tracks, 2400 frames each:
+`warpc1.weight` ran negative for **20.2%, 32.7% and 99.9%** of the three tracks — on the
+bass-heavy one its median was **-0.0454**, negative for effectively the whole piece. A
+negative displace weight is not a quiet lens, it is one pushing the picture the other way.
+
+The fence lives on the chain and **not** on the parameter on purpose. `displace.weight` is
+declared -2..2 because a signed weight is meaningful — E12-Fluid's `advect1` uses weight
+**-1** to advect backward. "Never negative" is true of *this chain*, not of the node.
+
+**What it does not fix.** On material with little or no top end, `warpc1` now rests at its
+floor — the fine lens is **off for the whole track** rather than inverted. That is honest,
+not fixed: an inverted lens is a wrong picture, an absent one is a missing effect, and
+this trades the first for the second. The cause is upstream of E24 — the bias was tuned
+against `audioPattern`, whose 1st percentile equals its median because a periodic beat
+returns to the same floor every bar, so a rest state fitted just under that floor sits
+*inside* real music's lower tail. `grade1` shows the same thing at its other rail, pinned
+low for 96.9% of that track. Fixing the tuning basis rather than the consumers is T766.
+
+A band the music does not contain is a separate matter again: that track's `high` has a
+median of **0.000**, so the fine lens has nothing to respond to and resting off is the
+correct behaviour, not a shortfall.
 
 **All three amounts are on the audio now (T560), one band each**, which is what finally
 makes this structure audible: coarse on the kick, mid on the snare, fine on the hats.

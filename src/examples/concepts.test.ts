@@ -1745,19 +1745,31 @@ describe("E24 Audio Reaction-Diffusion", () => {
       ((document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
         bindings?: { driven?: { channel?: string } };
       }).bindings?.driven?.channel;
-    expect(driven("warpA", "weight.x")).toBe("lena1:low");
-    expect(driven("warpB", "weight.x")).toBe("lenb1:lowMid");
-    expect(driven("warpC", "weight.x")).toBe("lenc1:high");
+    expect(driven("warpA", "weight.x")).toBe("lenswa1:low");
+    expect(driven("warpB", "weight.x")).toBe("lenswb1:lowMid");
+    expect(driven("warpC", "weight.x")).toBe("lenswc1:high");
     expect(driven("tint", "scale")).toBe("grade1:highMid");
     expect(driven("glow", "brightness")).toBe("bright1:level");
     // Five DIFFERENT bands: one master gain moving everything together is the thing
     // §V471.3 exists to rule out.
     const bands = new Set(
-      ["lena1:low", "lenb1:lowMid", "lenc1:high", "grade1:highMid", "bright1:level"].map(
+      ["lenswa1:low", "lenswb1:lowMid", "lenswc1:high", "grade1:highMid", "bright1:level"].map(
         (channel) => channel.split(":")[1],
       ),
     );
     expect(bands.size).toBe(5);
+    /*
+     * T738 — and the three lens weights read a FENCED value, not the bare gain+bias.
+     * This is the assertion that would have failed before the fix: under real music the
+     * unfenced chains ran NEGATIVE (warpc1 for 99.9% of one track), and a negative
+     * displace weight inverts the lens instead of quieting it. The floor is the claim —
+     * so it is asserted as a floor of exactly 0, not merely "a Limit exists".
+     */
+    for (const id of ["acap", "bcap", "ccap"]) {
+      const fence = document.graph.nodes[id] as GraphNode;
+      expect(fence.type, `${id} must fence its lens weight`).toBe("valueLimit");
+      expect(fence.parameters["minimum"], `${id} must floor at zero`).toBe(0);
+    }
   });
 
   /**

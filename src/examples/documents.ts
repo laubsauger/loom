@@ -2793,6 +2793,37 @@ const audioRdDocument = document(
       node("lenb", "valueMath", [-740, 1238], { operation: "add", operand: -0.1537 }, { label: "lenb1" }),
       node("lcgain", "valueMath", [-980, 1446], { operation: "multiply", operand: 0.1396 }, { label: "lcgain1" }),
       node("lenc", "valueMath", [-740, 1511], { operation: "add", operand: -0.046 }, { label: "lenc1" }),
+      /* T738 — THE THREE LENS WEIGHTS GET THE FENCE THE OTHER CHAINS ALREADY HAD.
+       *
+       * §V544's rule is stated above and obeyed by `steps1`, `wlevel1` and `grade1`: a
+       * gain+bias pair is range-checked against its TARGET or the idiom ships a clamp.
+       * These three pairs never got theirs, and under real music that omission INVERTS a
+       * lens. Measured on three recorded tracks (N=2400 each): `warpc1.weight` runs
+       * negative for 20.2% / 32.7% / 99.9% of the track — on the bass-heavy one its
+       * median is -0.0454, i.e. negative for effectively the WHOLE piece.
+       *
+       * A negative displace weight is not a quiet lens, it is an INVERTED one: the picture
+       * is pushed the other way. Note the fence lives HERE and not on the parameter —
+       * `displace.weight` is declared -2..2 on purpose and E12-Fluid's `advect1` USES
+       * weight -1 for backward advection, so the signed range is correct and narrowing it
+       * would break fluid silently. "Never negative" is true of THIS chain, not of the
+       * node, so it is declared where this chain lives (§V544's "legible in the graph
+       * rather than silently clipped at the parameter").
+       *
+       * The bounds are a RANGE STATEMENT, not a taste knob: floor 0 because a lens at
+       * rest is OFF, ceiling = gain + bias, which is exactly what the chain emits when
+       * its band saturates at 1.0. So the ceiling never clips anything the chain can
+       * legitimately produce — it states the chain's full travel in the graph.
+       *
+       * What this does NOT fix: on material with no top end the fine lens now RESTS OFF
+       * for the whole track instead of running inverted. Off is honest and inverted is a
+       * wrong picture, but it is a missing effect, not a working one — the md says so
+       * plainly, and the cause (a bias tuned against a pattern whose p01 equals its
+       * median) is §T766's, not this fence's.
+       */
+      node("acap", "valueLimit", [-500, 965], { minimum: 0, maximum: 0.2348 }, { label: "lenswa1" }),
+      node("bcap", "valueLimit", [-500, 1238], { minimum: 0, maximum: 0.1591 }, { label: "lenswb1" }),
+      node("ccap", "valueLimit", [-500, 1511], { minimum: 0, maximum: 0.0936 }, { label: "lenswc1" }),
       /* §V471.7 — THE PALETTE SCALE ITSELF IS DRIVEN, so the ramp breathes instead of
          being a fixed grade. The third fence is T544's amendment and E31's scar: a
          gain+bias pair has to be range-checked against its TARGET or the idiom ships a
@@ -2801,7 +2832,7 @@ const audioRdDocument = document(
          silently clipped at the parameter. */
       node("ggain", "valueMath", [-980, 1719], { operation: "multiply", operand: 6.7547 }, { label: "ggain1" }),
       node("gadd", "valueMath", [-740, 1784], { operation: "add", operand: -1.5095 }, { label: "gadd1" }),
-      node("grade", "valueLimit", [-500, 1500], { minimum: 1.2, maximum: 3.2 }, { label: "grade1" }),
+      node("grade", "valueLimit", [-500, 1784], { minimum: 1.2, maximum: 3.2 }, { label: "grade1" }),
       // The whole picture lifts for a frame. Rest 0.86 — DARKER than unity on purpose, so
       // the calm state has headroom and the hit is a lift rather than a clip.
       node("bgain", "valueMath", [-980, 1992], { operation: "multiply", operand: 1.35 }, { label: "bgain1" }),
@@ -3269,8 +3300,8 @@ const audioRdDocument = document(
       }, {
         label: "warpa1",
         parameters: {
-          "weight.x": drivenSlot("lena1:low", 0.062),
-          "weight.y": drivenSlot("lena1:low", 0.062),
+          "weight.x": drivenSlot("lenswa1:low", 0.062),
+          "weight.y": drivenSlot("lenswa1:low", 0.062),
         },
       }),
       node("lensB", "noise", [2140, 860], {
@@ -3283,8 +3314,8 @@ const audioRdDocument = document(
       }, {
         label: "warpb1",
         parameters: {
-          "weight.x": drivenSlot("lenb1:lowMid", 0.024),
-          "weight.y": drivenSlot("lenb1:lowMid", 0.024),
+          "weight.x": drivenSlot("lenswb1:lowMid", 0.024),
+          "weight.y": drivenSlot("lenswb1:lowMid", 0.024),
         },
       }),
       node("warpC", "displace", [2660, 380], {
@@ -3292,8 +3323,8 @@ const audioRdDocument = document(
       }, {
         label: "warpc1",
         parameters: {
-          "weight.x": drivenSlot("lenc1:high", 0.011),
-          "weight.y": drivenSlot("lenc1:high", 0.011),
+          "weight.x": drivenSlot("lenswc1:high", 0.011),
+          "weight.y": drivenSlot("lenswc1:high", 0.011),
         },
       }),
 
@@ -3353,6 +3384,9 @@ const audioRdDocument = document(
       edge("e-lbgain-lenb", ["lbgain", "out"], ["lenb", "a"]),
       edge("e-snap-lcgain", ["snap", "out"], ["lcgain", "a"]),
       edge("e-lcgain-lenc", ["lcgain", "out"], ["lenc", "a"]),
+      edge("e-lena-acap", ["lena", "out"], ["acap", "in"]),
+      edge("e-lenb-bcap", ["lenb", "out"], ["bcap", "in"]),
+      edge("e-lenc-ccap", ["lenc", "out"], ["ccap", "in"]),
       edge("e-snap-ggain", ["snap", "out"], ["ggain", "a"]),
       edge("e-ggain-gadd", ["ggain", "out"], ["gadd", "a"]),
       edge("e-gadd-grade", ["gadd", "out"], ["grade", "in"]),
