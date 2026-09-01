@@ -17,6 +17,7 @@ import type {
   PresentableCanvas,
   PresentationHandle,
   PresentationOptions,
+  PresentationReport,
   PreviewFrameCommand,
   PreviewHostHandle,
   PreviewProgram,
@@ -167,6 +168,15 @@ interface PresentationState {
   /** The exact object currently bound as the blit source, for change detection. */
   boundSource: Target | PingPongTargets | undefined;
   disposed: boolean;
+  /**
+   * T739 diagnostics. `surfaceGeneration` is which device `surface` was configured
+   * against, read only while `surface` exists so a stale value can never be reported.
+   * The counter and timestamp are what separate "painting black" from "not painting at
+   * all" — the fork nobody in this project can see with their own eyes.
+   */
+  surfaceGeneration: number | undefined;
+  presentedFrames: number;
+  lastPresentTime: number | undefined;
 }
 
 /** Presenting is a GPU-to-GPU copy (§V7): sample the output, write the surface. */
@@ -1061,6 +1071,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           alphaMode: "opaque",
           ...(p.label === undefined ? {} : { label: p.label }),
         });
+        // T739: record WHICH device this canvas got configured against. A floated
+        // viewer's canvas is a fresh element in another document (§V659) and the
+        // question "was it configured, and against the live device" is otherwise
+        // unanswerable from outside.
+        p.surfaceGeneration = deviceGeneration;
       }
       const source = presentationSource(p.outputId);
       if (source === undefined) {
@@ -1336,6 +1351,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // same way rebindDynamicTextures treats plan passes.
       if (isPair(p.boundSource)) p.blit.set({ blitSource: p.boundSource.read.color });
       f.pass({ target: p.surface, clear: true }, p.blit);
+      // T739: counted HERE, after the four guards above, so the number means "a blit was
+      // actually encoded for this surface" and not "a frame happened somewhere".
+      p.presentedFrames += 1;
+      p.lastPresentTime = performance.now();
     }
   }
 
@@ -1860,6 +1879,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         blit: undefined,
         boundSource: undefined,
         disposed: false,
+        surfaceGeneration: undefined,
+        presentedFrames: 0,
+        lastPresentTime: undefined,
       };
       presentations.set(p.id, p);
       if (session) ensurePresentation(p);
@@ -1874,6 +1896,20 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           p.outputId = outputId;
           p.boundSource = undefined;
           if (session && currentFrame === undefined) ensurePresentation(p);
+        },
+        describe(): PresentationReport {
+          return {
+            id: p.id,
+            outputId: p.outputId,
+            surfaceConfigured: p.surface !== undefined,
+            blitReady: p.blit !== undefined,
+            sourceBound: p.boundSource !== undefined,
+            presentedFrames: p.presentedFrames,
+            lastPresentTime: p.lastPresentTime ?? null,
+            // Only meaningful alongside a live surface; a device rebuild clears
+            // `surface` and `ensureAllPresentations` re-stamps the generation.
+            deviceGeneration: p.surface === undefined ? null : (p.surfaceGeneration ?? null),
+          };
         },
         dispose() {
           if (p.disposed) return;

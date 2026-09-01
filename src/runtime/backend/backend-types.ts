@@ -46,6 +46,38 @@ export interface PresentationOptions {
   readonly label?: string;
 }
 
+/**
+ * What one presentation can say about itself (T739).
+ *
+ * Exists because "the popped-out viewer does not paint" is a question NO agent in this
+ * project can answer by measurement: the browser environment has no WebGPU and Dawn has
+ * no DOM, so nobody here can watch a floated canvas paint. The runtime CAN say whether it
+ * is still encoding blits into that surface, and the fork the whole diagnosis hangs on —
+ * painting black versus not painting at all — is exactly the difference between
+ * `presentedFrames` climbing and `presentedFrames` frozen. So the unanswerable question
+ * becomes a console line the owner reads, the same trick as the boot stamp.
+ */
+export interface PresentationReport {
+  readonly id: string;
+  readonly outputId: string;
+  /** `getContext("webgpu")` answered AND `configure()` succeeded on this canvas. */
+  readonly surfaceConfigured: boolean;
+  /** The blit effect exists — i.e. a source resolved at least once. */
+  readonly blitReady: boolean;
+  /** A source texture is bound right now. False means the output produces nothing. */
+  readonly sourceBound: boolean;
+  /** Blit passes encoded for this surface since it was attached. */
+  readonly presentedFrames: number;
+  /** `performance.now()` of the last encoded present; null if there has never been one. */
+  readonly lastPresentTime: number | null;
+  /**
+   * Which device generation the live surface was configured against (§V23 bumps it on
+   * every rebuild). Null when there is no surface. A number BELOW the backend's current
+   * `deviceGeneration` is a surface that outlived its device.
+   */
+  readonly deviceGeneration: number | null;
+}
+
 /** One live presentation. The same output may be presented on any number of surfaces (§V70). */
 export interface PresentationHandle {
   readonly id: string;
@@ -54,6 +86,13 @@ export interface PresentationHandle {
   setOutput(outputId: string): void;
   /** Detaches the surface and frees the canvas for a new context. */
   dispose(): void;
+  /**
+   * T739 diagnostics. OPTIONAL so the many hand-written fake backends in the test suite
+   * keep satisfying this interface unchanged — a diagnostic must not cost a refactor of
+   * everything that ever stubbed a handle. Callers report its ABSENCE rather than
+   * quietly omitting the fields (§V469: a swallowed "cannot say" reads as "nothing wrong").
+   */
+  describe?(): PresentationReport;
 }
 
 /** Reuse accounting for one structural compile (T143). */

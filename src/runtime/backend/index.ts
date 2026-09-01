@@ -14,6 +14,7 @@ export type {
   PresentableCanvas,
   PresentationHandle,
   PresentationOptions,
+  PresentationReport,
   PreviewHostHandle,
   ShaderCompileResult,
   ShaderloomBackend,

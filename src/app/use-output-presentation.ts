@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PANE_ADOPTED_EVENT } from "./pane-portal.tsx";
+import { formatViewerReading, readViewer } from "./viewer-probe.ts";
+import type { ViewerReading } from "./viewer-probe.ts";
 import type { PresentationHandle } from "@runtime/backend/backend-types.ts";
 import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 
@@ -146,6 +148,66 @@ export function useOutputPresentation(
     if (outputId === null) return;
     handleRef.current?.setOutput(outputId);
   }, [outputId]);
+
+  /*
+   * T739 — the canvas reports its own state.
+   *
+   * "The popped-out viewer does not paint" cannot be verified by anyone working on this
+   * project: there is no WebGPU in our browser environment and no DOM in Dawn, so a
+   * floated canvas painting is unobservable from here in both directions. Rather than
+   * infer it, the running app says it — `viewer-probe.ts` explains the fork.
+   *
+   * WHERE IT LOGS: the parent window's console, always, because that is the devtools the
+   * owner already has open and where the boot stamp lands. WHEN: on an interval only
+   * while the canvas lives in ANOTHER document — the floated case, the one under
+   * suspicion — so ordinary docked use stays silent. And on demand in either case
+   * through a function installed on whichever window the canvas is in, so the docked
+   * baseline is one call away.
+   */
+  useEffect(() => {
+    const canvas = canvasEl;
+    if (canvas === null) return;
+    const view = canvas.ownerDocument.defaultView;
+
+    const read = (): ViewerReading =>
+      readViewer({
+        canvas,
+        handle: handleRef.current,
+        deviceGeneration: backend?.status.deviceGeneration ?? null,
+        appDocument: document,
+        // The parent realm's clock: the backend stamps present times with it, and a
+        // child window's `performance` has its own time origin.
+        now: performance.now(),
+      });
+
+    const probe = () => {
+      const reading = read();
+      console.info(formatViewerReading(reading));
+      return reading;
+    };
+
+    const floated = canvas.ownerDocument !== document;
+    const holder = view as (Window & { shaderloomViewerProbe?: () => ViewerReading }) | null;
+    if (holder !== null) holder.shaderloomViewerProbe = probe;
+
+    if (!floated) {
+      return () => {
+        if (holder?.shaderloomViewerProbe === probe) delete holder.shaderloomViewerProbe;
+      };
+    }
+
+    console.info(
+      "viewer: floated — reporting every 2s below; call shaderloomViewerProbe() in either window for a reading now",
+    );
+    // The parent's timer on purpose: a child window that is throttled or mid-teardown
+    // still gets reported on, and the interval dies with this effect either way.
+    const timer = window.setInterval(probe, 2000);
+    probe();
+    return () => {
+      window.clearInterval(timer);
+      if (holder?.shaderloomViewerProbe === probe) delete holder.shaderloomViewerProbe;
+    };
+  }, [backend, canvasEl]);
 
   return { canvasRef, canvasKey: epoch };
 }
