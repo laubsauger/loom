@@ -5,6 +5,7 @@ import type {
   ValueChannels,
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
+import type { NumberParameter } from "../../domain/types/parameters.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 import { resolveSwitchIndex } from "./switch.ts";
 import { cycleHash } from "./values.ts";
@@ -218,6 +219,34 @@ export const valueTriggerNode: NodeDefinition = {
  * The shared one-pole smoother of Lag and Filter: the state eases toward the input
  * with a per-frame coefficient derived from the time constant — frame-rate independent
  * BY DERIVATION, not by tuning, so 30fps offline and 60fps live converge identically.
+ *
+ * ── T814 — RELEASE RATIO, the asymmetry knob, and it is deliberately UNIT-FREE ──
+ *
+ * Lag and Filter are ONE smoother parameterised two ways, and the family only stays one
+ * family if the second knob is the same knob on both. A pair of absolute times could not
+ * be: Lag would grow an "attack seconds / release seconds" pair and Filter an "attack hz /
+ * release hz" pair, which is two different parameters wearing one name, and the second one
+ * would need a sentinel default ("0 means follow the other") that steals a meaningful
+ * value. A RATIO multiplies whichever time constant the node already computed, so it means
+ * exactly the same thing in both — and its neutral value is a real number rather than a
+ * sentinel.
+ *
+ * 1 is symmetric (today, exactly). Above 1 the fall is slower than the rise: fast attack,
+ * slow release, TD's Lag CHOP with Lag Up below Lag Down, and the envelope shape every
+ * audio chain in this project hand-builds. Below 1 is the mirror — snap down, ease up.
+ *
+ * NO SECOND CLOCK (§V436/§V453). Direction is decided by comparing THIS frame's input to
+ * the state the smoother already holds; nothing here reads a clock position, and the only
+ * time this function has ever read stays `frame.deltaSeconds`. So both nodes remain
+ * DELTA-DRIVEN with the ratio at any setting: a timeline lap carries a real step (T464)
+ * and the held value crosses it untouched. Stated rather than assumed, because "it
+ * obviously reads nothing" is how the LFO landed on the wrong clock (B98).
+ *
+ * IDENTITY AT THE DEFAULT IS EXACT, NOT APPROXIMATE. At ratio 1, `attack * 1 === attack`
+ * in IEEE-754, so `release` is the same double as `attack`, `kFall` is the same double as
+ * `kRise`, and the per-channel select below can only return the single `k` this function
+ * computed before T814. A document that never sets the parameter is not merely close to
+ * its old output, it is bit-for-bit that output (§V147: measured, in the report).
  */
 function smooth(
   context: ValueEvaluateContext,
@@ -225,10 +254,13 @@ function smooth(
 ): ValueChannels {
   const bag = context.inputs["in"] ?? {};
   const held = (context.state["held"] ?? {}) as Record<string, number>;
-  const seconds = Math.max(1e-6, secondsFor(context.values));
-  const k = 1 - Math.exp(-context.frame.deltaSeconds / seconds);
+  const attack = Math.max(1e-6, secondsFor(context.values));
+  const release = Math.max(1e-6, attack * Math.max(0, num(context.values["releaseRatio"], 1)));
+  const kRise = 1 - Math.exp(-context.frame.deltaSeconds / attack);
+  const kFall = 1 - Math.exp(-context.frame.deltaSeconds / release);
   const out = mapChannels(bag, (value, name) => {
     const current = held[name] ?? value; // first sight: start ON the input, no swoop-in
+    const k = value > current ? kRise : kFall;
     const next = context.frame.deltaSeconds <= 0 ? current : current + (value - current) * k;
     held[name] = next;
     return next;
@@ -237,42 +269,119 @@ function smooth(
   return out;
 }
 
-/** T277 — Lag: eases toward the input over `lag` seconds. */
+/**
+ * T814 — the asymmetry knob, identical on both twins (see `smooth` for why it is a ratio).
+ *
+ * `step` is declared rather than derived, and that is B80/T648 rather than taste: a numeric
+ * parameter that declares only a range hands one derived number to the drag rate, the
+ * display decimals AND the commit grid at once, and this range would derive a grid that
+ * cannot hold its own default.
+ */
+const RELEASE_RATIO_PARAMETER: NumberParameter = {
+  type: "number",
+  label: "Release Ratio",
+  description:
+    "Multiplies the smoothing time while a channel is FALLING. 1 smooths both directions alike, which is what this node has always done. Above 1 the fall is slower than the rise — fast attack, slow release, the envelope shape. Below 1 snaps down and eases up. Unitless on purpose: it means the same thing on Lag and on Filter.",
+  default: 1,
+  min: 0,
+  max: 10,
+  step: 0.01,
+  range: "floor",
+};
+
+/** T277 — Lag: eases toward the input over `lag` seconds. T814 gave it the release ratio. */
 export const valueLagNode: NodeDefinition = {
   type: "valueLag",
   version: 1,
   title: "Lag",
   category: "value",
   description:
-    "Smooths every channel toward its input over the lag time. The classic mouse-follow feel. DELTA-DRIVEN (§V436): the ease reads the frame STEP, not a clock position, so its held value survives a timeline loop intact rather than restarting.",
-  tags: ["value", "smooth", "ease", "chop"],
+    "Smooths every channel toward its input over the lag time. The classic mouse-follow feel. Release Ratio makes the fall slower than the rise (T814): at 1 both directions ease alike, above 1 it chases upward and settles back slowly — fast attack, slow release. DELTA-DRIVEN (§V436): the ease reads the frame STEP, not a clock position, so its held value survives a timeline loop intact rather than restarting, and the ratio adds no clock of its own — it compares this frame's input to the value already held.",
+  tags: ["value", "smooth", "ease", "attack", "release", "chop"],
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    lag: { type: "number", label: "Lag", default: 0.25, min: 0, range: "floor", unit: "seconds" },
+    lag: {
+      type: "number",
+      label: "Lag",
+      description: "The time a channel takes to ease toward its input. With Release Ratio above 1, this is the RISE time.",
+      default: 0.25,
+      min: 0,
+      range: "floor",
+      unit: "seconds",
+    },
+    releaseRatio: RELEASE_RATIO_PARAMETER,
   },
   stateful: VALUE_STATEFUL,
   valueEvaluate: (context) => smooth(context, (values) => num(values["lag"], 0.25)),
   compile: noPasses,
 };
 
-/** T277 — Filter: the same smoother parameterised as a cutoff, for signal-shaped uses. */
+/**
+ * T277 — Filter: the same smoother parameterised as a cutoff, for signal-shaped uses.
+ *
+ * T814 — MODE, and it is on THIS twin only, which is a judgement rather than an oversight.
+ *
+ * The high-pass is the residual of the low-pass this node already computes: `input − held`,
+ * one subtraction, no second state and no second coefficient. What it gives you is
+ * TRANSIENTS ONLY — the part of a signal the smoother could not keep up with, which is a
+ * band's attack with its level removed, and there is no other way to say that in the value
+ * graph today.
+ *
+ * WHY LAG DOES NOT GET IT. The release ratio is a property of the SMOOTHER, so it belongs
+ * to both parameterisations of it or the family splits. A mode is a choice of what you TAP
+ * OFF the smoother, and "Lag" names the tap: a Lag whose output is the residual is not
+ * lagging anything, and the node's own title would stop describing it. Low-pass and
+ * high-pass are filter words on a node parameterised in Hz, and a user who wants the
+ * residual of a Lag can still take it — `in` to Lag, then Math in subtract mode with the
+ * raw signal on B — which is exactly the wiring this mode saves on the Filter.
+ *
+ * The mode does not change the CLOCK: the subtraction is per-sample and reads nothing.
+ * Both branches leave the node DELTA-DRIVEN (§V436).
+ */
 export const valueFilterNode: NodeDefinition = {
   type: "valueFilter",
   version: 1,
   title: "Filter",
   category: "value",
   description:
-    "One-pole low-pass per channel, parameterised as a cutoff frequency. DELTA-DRIVEN (§V436), like Lag: the frame STEP sets the coefficient, so a timeline loop does not reset the filter state.",
-  tags: ["value", "lowpass", "filter", "chop"],
+    "One-pole filter per channel, parameterised as a cutoff frequency. LOW-PASS keeps what changes slower than the cutoff; HIGH-PASS keeps what changes faster — the transients, with the level subtracted out. Release Ratio makes the fall slower than the rise (T814), the fast-attack/slow-release envelope shape. DELTA-DRIVEN (§V436), like Lag: the frame STEP sets the coefficient, so a timeline loop does not reset the filter state, and neither the mode nor the ratio reads a clock of its own.",
+  tags: ["value", "lowpass", "highpass", "filter", "transient", "chop"],
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {
-    cutoff: { type: "number", label: "Cutoff", default: 2, min: 0.01, max: 100, range: "floor", unit: "hz" },
+    cutoff: {
+      type: "number",
+      label: "Cutoff",
+      description: "The corner frequency. Low-pass keeps what is slower than this; high-pass keeps what is faster.",
+      default: 2,
+      min: 0.01,
+      max: 100,
+      range: "floor",
+      unit: "hz",
+    },
+    releaseRatio: RELEASE_RATIO_PARAMETER,
+    mode: {
+      type: "enum",
+      label: "Mode",
+      description:
+        "Low-pass passes the smoothed signal. High-pass passes what is left over — the part the smoother could not follow, which sits at zero while a signal is steady and spikes on every transient.",
+      default: "lowpass",
+      options: [
+        { value: "lowpass", label: "Low-pass" },
+        { value: "highpass", label: "High-pass" },
+      ],
+    },
   },
   stateful: VALUE_STATEFUL,
-  valueEvaluate: (context) =>
-    smooth(context, (values) => 1 / (2 * Math.PI * Math.max(0.01, num(values["cutoff"], 2)))),
+  valueEvaluate: (context) => {
+    const lowpass = smooth(context, (values) => 1 / (2 * Math.PI * Math.max(0.01, num(values["cutoff"], 2))));
+    if (context.values["mode"] !== "highpass") return lowpass;
+    // The residual, per channel. First sight holds the input, so a high-pass opens at 0
+    // rather than at the signal's level — the transient reading, from the first frame.
+    const bag = context.inputs["in"] ?? {};
+    return mapChannels(lowpass, (held, name) => (bag[name] ?? held) - held);
+  },
   compile: noPasses,
 };
 
