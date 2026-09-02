@@ -362,11 +362,16 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     }
     if (!report.timestampQuery) {
       // §V12: optional, so it degrades to "no per-pass GPU timings", never to a hard failure.
+      // B172/§V469: and the message names the REAL cause. "Not requested" and "not
+      // supported" are different facts and only the second is the device's — the old copy
+      // said the device reported no feature while the truth was that nobody had asked.
       hub.report(
         backendDiagnostic(
           "info",
           BackendDiagnosticCode.timestampUnavailable,
-          "timestamp-query is unavailable; per-pass GPU timings are disabled.",
+          report.timestampQueryRequested === true
+            ? "The device did not grant timestamp-query although the request asked for it; per-pass GPU timings are disabled."
+            : "timestamp-query was not requested — this adapter did not offer it, or its feature list could not be read. Per-pass GPU timings are disabled.",
         ),
       );
     }
@@ -489,7 +494,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       }
       session = next;
       deviceGeneration += 1;
-      capabilities = describeCapabilities(next.gpu);
+      capabilities = describeCapabilities(next.gpu, next.requestedFeatures);
       reportCapabilities(capabilities);
       watchDeviceLoss(next);
       attachErrorNet(next);
@@ -1452,14 +1457,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
     async initialize(options) {
       if (disposed) throw new Error("initialize() called after dispose().");
-      if (session) return capabilities ?? describeCapabilities(session.gpu);
+      if (session) return capabilities ?? describeCapabilities(session.gpu, session.requestedFeatures);
 
       initOptions = options;
       try {
         const created = await host.create(options);
         session = created;
         deviceGeneration += 1;
-        capabilities = describeCapabilities(created.gpu);
+        capabilities = describeCapabilities(created.gpu, created.requestedFeatures);
         reportCapabilities(capabilities);
         // §V199: compat mode is NOT a target. The point/geometry render path is
         // vertex-pulling from SoA storage, which compat's zero vertex-stage storage

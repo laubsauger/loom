@@ -100,7 +100,12 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
   },
   {
     file: "src/editor/inspect/node-info-popup.tsx",
-    text: "feature, so per-pass GPU spans cannot be measured. No timing is estimated in its place.",
+    // B172/§V469: the note used to read "This device reports no timestamp-query feature"
+    // — technically true and misleading, because nothing in the product had ever ASKED
+    // for the feature and WebGPU grants none it was not asked for. The replacement names
+    // which of the two facts this is: not-requested and not-supported are different, and
+    // only one of them is the device's.
+    text: "feature. Loom requests it whenever the adapter offers it, so this is the adapter not offering it rather than a request Loom skipped; the device diagnostic names which. No timing is estimated in its place.",
   },
   {
     file: "src/editor/inspect/node-info-popup.tsx",
@@ -117,7 +122,8 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
   },
   {
     file: "src/editor/inspect/performance-panel.tsx",
-    text: "feature, so per-pass GPU spans are unavailable. Nothing is estimated in their place — a CPU-side figure would be a different measurement wearing the same label.",
+    // B172/§V469 — see the node-info-popup entry above; same sentence, same correction.
+    text: "feature. Loom requests it whenever the adapter offers it, so this is the adapter not offering it rather than a request Loom skipped; the device diagnostic names which. Nothing is estimated in their place — a CPU-side figure would be a different measurement wearing the same label.",
   },
   {
     file: "src/editor/inspect/performance-panel.tsx",

@@ -10,6 +10,13 @@ export interface BackendCapabilities {
   features: ReadonlyArray<string>;
   formats: ReadonlyArray<TextureFormat>;
   timestampQuery: boolean;
+  /**
+   * B172 (§V469): whether the device request ASKED for `timestamp-query`. Absent/false
+   * with `timestampQuery: false` means WE did not ask; true with `timestampQuery: false`
+   * means the adapter does not offer it. Two different facts, and only the second is the
+   * device's — so the diagnostic and the panel copy must not conflate them.
+   */
+  timestampQueryRequested?: boolean;
   limits: Readonly<Record<string, number>>;
 }
 

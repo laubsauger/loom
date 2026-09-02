@@ -99,7 +99,7 @@ export const addNode: AgentTool<AddNodeInput, PatchToolData> = {
   name: "add_node",
   title: "Add node",
   description:
-    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node. Pass placement {relativeTo, direction} to sit next to an existing node; with neither position nor placement, the node cascades to a free spot instead of stacking at the origin.",
+    "Add one node of a registered type. The stable id comes back in createdIds under the ref $node. Prefer placement {relativeTo, direction} over inventing coordinates: name the node you are about to wire this one to and it lands beside that node in reading order, so a chain built this way needs no tidy afterwards. With neither position nor placement the node cascades to a free spot instead of stacking at the origin. Pass position only to pin an exact coordinate.",
   kind: "mutate",
   inputSchema: addNodeInput,
   requires: { commands: ["graph.applyPatch"] },
@@ -165,12 +165,22 @@ function operationsForAdd(
  * An empty graph, an empty selection and an already-tidy graph come back as the command's
  * own named refusals (§V288) instead of a fabricated `applied` with zero operations, which
  * is what this tool used to answer for the empty case.
+ *
+ * ## T971 — the DESCRIPTION says WHEN, because that is the only thing an agent reads
+ *
+ * The tool existed and nothing reached for it. A model never reads this comment, never
+ * reads §V389's gate, and never sees the failure until a gate rejects a graph it already
+ * built — the only text in its context is the description string below. So the string
+ * carries the trigger ("after a batch of adds and wires"), the subset form (`nodeIds`,
+ * which tidies just those nodes into the positions a whole-graph tidy would give them),
+ * and the one prohibition that matters: NOT after every mutation, because that fights
+ * explicit control and would move nodes a human placed by hand.
  */
 export const layoutGraphTool: AgentTool<LayoutGraphInput, PatchToolData> = {
   name: "layout_graph",
   title: "Layout graph",
   description:
-    "Auto-arrange nodes in reading order: data flows left to right, ranks by depth from the sources, deterministic. Restrict with nodeIds; one undo step.",
+    "Auto-arrange nodes in reading order: data flows left to right, ranks by depth from the sources, deterministic. Call it once after a batch of adds and wires — that is when a graph drifts into overlaps, and it is the same tidy the canvas Layout row and the L key run. Restrict with nodeIds to move only those nodes, into the positions a whole-graph tidy would give them; omit nodeIds for the whole document. Do not call it after every single edit: it moves nodes a user placed by hand. One undo step.",
   kind: "mutate",
   inputSchema: layoutGraphInput,
   requires: { commands: ["graph.layoutAll"] },

@@ -48,10 +48,14 @@ import { pocSettings } from "./poc-graph.ts";
  * is wired to the real export interface (§V48) over a real Dawn device, and the PNG that
  * comes back is checked for its signature bytes and its dimensions.
  *
- * "Reads GPU timings" is the clause that invites a fabricated number. This machine's Dawn
- * device reports no timestamp-query, so §V86's requirement is that every millisecond field
- * reads UNAVAILABLE rather than zero — and that is what is asserted. A test asserting
- * `frameGpuMs >= 0` would pass against a product that made the number up.
+ * "Reads GPU timings" is the clause that invites a fabricated number. §V86's requirement is
+ * that a millisecond field is a MEASURED duration or the word unavailable, never a zero
+ * standing in for something nothing measured — so what is asserted is that the metrics
+ * MIRROR the device (`timingAvailable` equals `capabilities.timestampQuery`) and that the
+ * number is null or strictly positive. A test asserting `frameGpuMs >= 0` would pass
+ * against a product that made the number up. (This clause used to assert
+ * `timestampQuery === false`, which looked like a fact about Dawn and was really B172 —
+ * nothing ever REQUESTED the feature, so no device could report it.)
  *
  * ## What this file gates, and what it does not
  *
@@ -444,12 +448,27 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
       expect(metrics.lastFrameIndex).toBe(4);
       expect(metrics.estimatedResourceBytes).toBe(plan.estimatedResourceBytes);
 
-      // §V86 / §V12: this Dawn build reports no timestamp-query, so the ONLY correct
-      // answer is that timings are unavailable and every millisecond field is null. A
-      // zero here would be a number the agent could act on and nothing measured it.
-      expect(capabilities.timestampQuery).toBe(false);
-      expect(metrics.timingAvailable).toBe(false);
-      expect(metrics.frameGpuMs).toBeNull();
+      /**
+       * §V86 / §V12 — THE NUMBER IS MEASURED OR IT IS ABSENT. Never a zero.
+       *
+       * This used to assert `capabilities.timestampQuery === false`, which read as a fact
+       * about Dawn and was really a fact about B172: nothing in the product ever ASKED for
+       * `timestamp-query`, so no device could ever have it. Now that the host asks, this
+       * Dawn build grants it — and pinning the old value would have gated the bug.
+       *
+       * So the claim moves to where it always belonged: the agent's metrics MIRROR the
+       * device and never overstate it, and a millisecond field is a real duration or null.
+       * Whether this machine has the feature is gated on its own, over the device request,
+       * in `runtime/backend/vgpu/timestamp-feature.gpu.test.ts` (B172).
+       */
+      expect(metrics.timingAvailable).toBe(capabilities.timestampQuery);
+      if (!capabilities.timestampQuery) {
+        expect(metrics.frameGpuMs).toBeNull();
+      } else {
+        // Measured, or not yet landed — spans arrive a frame or two after submit. What it
+        // must never be is 0: that is the fabricated number an agent would act on.
+        expect(metrics.frameGpuMs === null || metrics.frameGpuMs > 0).toBe(true);
+      }
     } finally {
       hub.dispose();
       backend.dispose();

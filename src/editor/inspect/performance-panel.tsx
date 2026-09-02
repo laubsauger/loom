@@ -342,8 +342,10 @@ export function PerformanceView({
         </div>
         {snapshot.timingAvailable ? null : (
           <p className={styles.note}>
-            This device reports no <code>timestamp-query</code> feature, so per-pass GPU
-            spans are unavailable. Nothing is estimated in their place — a CPU-side
+            Per-pass GPU spans need the optional <code>timestamp-query</code>
+            feature. Loom requests it whenever the adapter offers it, so this is the
+            adapter not offering it rather than a request Loom skipped; the device
+            diagnostic names which. Nothing is estimated in their place — a CPU-side
             figure would be a different measurement wearing the same label.
           </p>
         )}

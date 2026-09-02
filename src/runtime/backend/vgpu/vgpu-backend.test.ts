@@ -119,6 +119,52 @@ describe("vgpu backend — initialization and capabilities", () => {
     expect(diagnostics.map((d) => d.code)).not.toContain(BackendDiagnosticCode.timestampUnavailable);
   });
 
+  /**
+   * B172 — THE TEST THAT WOULD HAVE CAUGHT IT.
+   *
+   * The case above proves the PLUMBING: hand `initialize` a `requiredFeatures` array and
+   * the capability report reflects it. Nothing proved that the PRODUCT ever passes one,
+   * and it did not — `"timestamp-query"` appeared in a `requiredFeatures` array in this
+   * file and nowhere else in the repository, while `gpu-status.ts` (the one production
+   * caller) calls `initialize({})`. WebGPU grants an optional feature only if the request
+   * named it, so `features.has("timestamp-query")` could never be true on any machine.
+   *
+   * So this asserts the bare production call, both ways round: adapter offers it → the
+   * device has it and nothing complains; adapter does not → it is absent, the app still
+   * initializes and renders (§V12), and the diagnostic blames the ADAPTER rather than the
+   * request, because here the request was genuinely made (§V469).
+   */
+  it("ASKS for timestamp-query on the bare production call when the adapter offers it (B172)", async () => {
+    const { backend, diagnostics } = await harness({ features: ["timestamp-query"] });
+
+    expect(backend.capabilities?.timestampQuery).toBe(true);
+    expect(backend.capabilities?.timestampQueryRequested).toBe(true);
+    expect(backend.capabilities?.features).toContain("timestamp-query");
+    expect(diagnostics.map((d) => d.code)).not.toContain(BackendDiagnosticCode.timestampUnavailable);
+  });
+
+  it("omits it on the bare production call when the adapter does not offer it (B172, §V12)", async () => {
+    const { backend, diagnostics } = await harness({ features: [] });
+
+    expect(backend.capabilities?.timestampQuery).toBe(false);
+    // Asked for nothing optional, because there was nothing on offer to ask for — an
+    // optional feature never becomes a required one, so the device still comes up.
+    expect(backend.capabilities?.timestampQueryRequested).toBe(false);
+    expect(backend.capabilities?.features).not.toContain("timestamp-query");
+    const note = diagnostics.find((d) => d.code === BackendDiagnosticCode.timestampUnavailable);
+    expect(note?.severity).toBe("info");
+    // §V469: the message says WHICH of the two facts this is. "Not requested" and "not
+    // supported" are different, and the old copy asserted the second while meaning the
+    // first — it read "timestamp-query is unavailable" over a request that never asked.
+    expect(note?.message).toContain("not requested");
+    expect(note?.message).toContain("adapter");
+    expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+    const plan = await backend.compile(fixturePlan());
+    backend.render(plan, frameInputs(0));
+    expect(backend.status.framesSubmitted).toBe(1);
+  });
+
   it("reports the baseline tier and the limits the compiler needs", async () => {
     const { backend } = await harness();
     const capabilities = backend.capabilities;

@@ -51,6 +51,27 @@ import { exampleRegistry } from "./runner.ts";
 const MIN_VERTICAL_GUTTER = 32;
 const MIN_HORIZONTAL_GUTTER = 16;
 
+/**
+ * T971 — A GATE THAT FAILS WITHOUT NAMING THE TOOL THAT FIXES IT IS A TEST PRETENDING TO
+ * BE GUIDANCE.
+ *
+ * The remedy has existed since T279/B84 and nothing pointed at it: this failure listed the
+ * offending pairs and stopped, so every reader — human or agent — had to already know that
+ * `layout_graph` is the deterministic tidy, that it is the SAME bus command as the canvas
+ * "Layout" row and the `L` key (§V191), and that `nodeIds` tidies a SUBSET into the
+ * positions a whole-graph tidy would give it. One string turns each future failure into an
+ * instruction, and it costs nothing on the green path (a message is only rendered on
+ * failure).
+ *
+ * Deliberately NOT an auto-tidy: that would move nodes a human placed by hand, and these
+ * example layouts are hand-authored (§V389 is a gate on AUTHORED geometry).
+ */
+const REMEDY =
+  "Fix with the deterministic tidy rather than by hand: the `layout_graph` agent tool, " +
+  "the canvas Layout row, or the `L` key — all one bus command (§V191). Pass `nodeIds` " +
+  "to move only the nodes named above, into the positions a whole-graph tidy would give " +
+  "them; omit it to tidy the document.";
+
 /* T956: E47 instances a library component, whose type ("component:depthPoints@1")
    resolves only through the component-aware registry — the same pair the runner and the
    loader use, fed the starter definitions the shipped file embeds. */
@@ -113,7 +134,7 @@ describe("§V389 — shipped example layouts are size-aware (T460)", () => {
           const gap = boxGap(a.box, b.box);
           return `${a.id} (${a.type}) and ${b.id} (${b.type}) overlap by ${String(-gap.x)}×${String(-gap.y)}px`;
         });
-      expect(collisions, collisions.join("\n")).toEqual([]);
+      expect(collisions, [...collisions, REMEDY].join("\n")).toEqual([]);
     },
   );
 
@@ -131,7 +152,7 @@ describe("§V389 — shipped example layouts are size-aware (T460)", () => {
           const gap = boxGap(a.box, b.box);
           return `${a.id} and ${b.id}: x gap ${String(gap.x)} (need ${String(MIN_HORIZONTAL_GUTTER)}), y gap ${String(gap.y)} (need ${String(MIN_VERTICAL_GUTTER)})`;
         });
-      expect(tight, tight.join("\n")).toEqual([]);
+      expect(tight, [...tight, REMEDY].join("\n")).toEqual([]);
     },
   );
 });

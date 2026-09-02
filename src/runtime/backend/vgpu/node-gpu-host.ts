@@ -1,5 +1,5 @@
 import { init } from "vgpu/node";
-import { DESIRED_LIMITS } from "./gpu-host.ts";
+import { DESIRED_LIMITS, OPTIONAL_FEATURES } from "./gpu-host.ts";
 import type { DeviceLossInfo, GpuHost, GpuSession } from "./gpu-host.ts";
 
 /**
@@ -93,20 +93,51 @@ async function initWithLimitLadder(base: Parameters<typeof init>[0]): Promise<Aw
   return init(base);
 }
 
+/**
+ * B172: the node entry exposes no adapter before device creation, so the OPTIONAL
+ * features are negotiated the same way the limits are — ASK, and fall back to the bare
+ * ask when the adapter refuses. vgpu's rejection is clean and cheap (*Adapter does not
+ * support requested feature(s)*), and a required feature that is genuinely missing still
+ * fails loudly on the second attempt, which is the error worth reporting.
+ *
+ * Not skipped for headless: `src/examples/runner.ts`, the cook oracle and the MCP server
+ * all run this host, and "headless Dawn has no timestamp-query" was never a fact about
+ * Dawn — it was this file never asking.
+ */
+async function initWithOptionalFeatures(
+  base: Parameters<typeof init>[0],
+  required: ReadonlyArray<string>,
+): Promise<{ gpu: Awaited<ReturnType<typeof init>>; requestedFeatures: ReadonlyArray<string> }> {
+  const wanted = [...required, ...OPTIONAL_FEATURES.filter((feature) => !required.includes(feature))];
+  try {
+    const gpu = await initWithLimitLadder({
+      ...base,
+      requiredFeatures: [...wanted] as GPUFeatureName[],
+    });
+    return { gpu, requestedFeatures: wanted };
+  } catch {
+    const gpu = await initWithLimitLadder({
+      ...base,
+      ...(required.length === 0 ? {} : { requiredFeatures: [...required] as GPUFeatureName[] }),
+    });
+    return { gpu, requestedFeatures: required };
+  }
+}
+
 /** `GpuHost` backed by Dawn, for headless render and parity testing (§V47, T67, T69). */
 export function nodeGpuHost(): GpuHost {
   return {
     label: "dawn",
     async create(options): Promise<GpuSession> {
-      const gpu = await initWithLimitLadder({
-        label: "loom-headless",
-        ...(options.powerPreference === undefined
-          ? {}
-          : { powerPreference: options.powerPreference }),
-        ...(options.requiredFeatures === undefined
-          ? {}
-          : { requiredFeatures: [...options.requiredFeatures] as GPUFeatureName[] }),
-      });
+      const { gpu, requestedFeatures } = await initWithOptionalFeatures(
+        {
+          label: "loom-headless",
+          ...(options.powerPreference === undefined
+            ? {}
+            : { powerPreference: options.powerPreference }),
+        },
+        options.requiredFeatures ?? [],
+      );
 
       // Dawn's GPUDevice does expose `lost`; mirror browserGpuHost's handling rather
       // than assuming it, so a Dawn build without it degrades instead of throwing.
@@ -119,6 +150,7 @@ export function nodeGpuHost(): GpuHost {
       return {
         gpu,
         deviceLost,
+        requestedFeatures,
         dispose() {
           gpu.dispose();
         },

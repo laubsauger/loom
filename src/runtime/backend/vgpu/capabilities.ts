@@ -9,6 +9,13 @@ import type { TextureFormat } from "../../../domain/types/node-definition.ts";
  * Nothing optional is assumed. Everything here is read off the device that was actually
  * created; `timestampQuery` in particular is reported, never required — `timer(gpu)` throws
  * VGPU-TIMER-INVALID without the feature, so callers must check this flag first.
+ *
+ * B172: reading the device is necessary and was not sufficient. A WebGPU device carries an
+ * optional feature ONLY IF `requestDevice` named it, so `features.has("timestamp-query")`
+ * over a request that never asked is false on every machine in the world — which is what
+ * shipped, and what made an honest "unavailable" panel permanently wrong about the cause.
+ * The host now negotiates the ask (`negotiatedFeatures`) and hands it back here, so the
+ * report says both what was GRANTED and what was ASKED FOR.
  */
 
 /** Limits the compiler and resource caps care about (§V24). */
@@ -74,7 +81,16 @@ function classifyTier(features: ReadonlySet<string>, limits: Record<string, numb
   return headroom && features.has("float32-filterable") ? "A" : "B";
 }
 
-export function describeCapabilities(gpu: Gpu): BackendCapabilities {
+export function describeCapabilities(
+  gpu: Gpu,
+  /**
+   * B172: what the device request ASKED FOR (`GpuSession.requestedFeatures`). WebGPU
+   * grants an optional feature only if it was named, so "absent" has two causes — the
+   * adapter did not offer it, or nobody asked — and only the first is the device's fault
+   * (§V469). Omitted = unknown, which reads as "not asked" rather than inventing a claim.
+   */
+  requestedFeatures?: ReadonlyArray<string>,
+): BackendCapabilities {
   const features = new Set<string>(gpu.device.features as ReadonlySet<string>);
   const limits = readLimits(gpu.device.limits);
 
@@ -83,6 +99,7 @@ export function describeCapabilities(gpu: Gpu): BackendCapabilities {
     features: [...features].sort(),
     formats: supportedFormats(),
     timestampQuery: features.has("timestamp-query"),
+    timestampQueryRequested: (requestedFeatures ?? []).includes("timestamp-query"),
     limits,
   };
 }

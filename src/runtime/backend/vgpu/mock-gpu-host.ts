@@ -1,4 +1,5 @@
 import { createMockAdapter, getMockGPUDeviceInstrumentation, init } from "vgpu/mock";
+import { negotiatedFeatures } from "./gpu-host.ts";
 import type { DeviceLossInfo, GpuHost, GpuSession } from "./gpu-host.ts";
 
 /** `@vgpu/core` is a transitive dependency, so the type is derived rather than imported. */
@@ -129,11 +130,16 @@ export function mockGpuHost(options: MockGpuHostOptions = {}): MockGpuHost {
       });
     },
     async create(backendOptions): Promise<GpuSession> {
+      // B172: the mock adapter's feature list stands in for a real adapter's offer, so a
+      // test that calls `initialize({})` against a host advertising `timestamp-query`
+      // exercises the SAME negotiation the browser and Dawn hosts run. Without this the
+      // mock could only ever prove the plumbing, never that production asks.
+      const requestedFeatures = negotiatedFeatures(backendOptions.requiredFeatures, features);
       const gpu = await init({
         adapter: createMockAdapter({ features: [...features] }),
-        ...(backendOptions.requiredFeatures === undefined
+        ...(requestedFeatures.length === 0
           ? {}
-          : { requiredFeatures: [...backendOptions.requiredFeatures] as GPUFeatureName[] }),
+          : { requiredFeatures: [...requestedFeatures] as GPUFeatureName[] }),
       });
       sessionsCreated += 1;
       if (options.validateShader !== undefined) {
@@ -149,6 +155,7 @@ export function mockGpuHost(options: MockGpuHostOptions = {}): MockGpuHost {
       return {
         gpu,
         deviceLost,
+        requestedFeatures,
         dispose() {
           gpu.dispose();
         },
