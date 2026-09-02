@@ -26,7 +26,7 @@ clip1(movieFileIn) ────────────────────�
                                      gain1(level, whitelevel ┄ bite1) ◄──┘
                                           │
                     ┌─────────────────────┼─────────────────────┐
-        shiftr1(transform) ┄ tear1   (unshifted green)   shiftb1(transform) ┄ tearb1
+        shiftr1(transform) ┄ tear1   (unshifted green)   shiftb1(transform) ┄ tearn1
                     └─► fuser1(reorder) ─► fuseb1(reorder) ◄────┘
                                                 │
                               born1(add) ◄──────┘        loop1(feedback, source born1)
@@ -39,7 +39,7 @@ clip1(movieFileIn) ────────────────────�
 
 beat1(audioPattern) ─► smooth1(valueLag) ─┬─► biteg1 ─► biteb1 ─► bite1(valueLimit)
                                           ├─► tearg1 ─► tearb1 ─► tear1(valueLimit)
-                                          ├─► tearng1 ─► tearnb1 ─► tearb1(valueLimit)
+                                          ├─► tearng1 ─► tearnb1 ─► tearn1(valueLimit)
                                           └─► holdg1 ─► holdb1 ─► hold1(valueLimit)
 ```
 
