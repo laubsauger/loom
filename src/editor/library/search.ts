@@ -32,22 +32,65 @@ function wordPrefixHit(haystack: string, needle: string): boolean {
   return haystack.split(/[^a-z0-9]+/).some((word) => word.startsWith(needle));
 }
 
-/** Relevance of one definition for a query, or null when it does not match at all. */
-export function matchScore(definition: NodeDefinition, query: string): number | null {
+/**
+ * The five fields any catalogue entry offers a search (T846).
+ *
+ * `key` is the entry's machine name — a node's `type`, an example's file stem. It is
+ * scored beside the title because people search for both: "blur" is a type, "Gaussian
+ * Blur" is a title, and a catalogue that only indexed one of them would miss half the
+ * queries put to it.
+ */
+export interface SearchableEntry {
+  readonly title: string;
+  readonly key: string;
+  // Explicitly `| undefined` under `exactOptionalPropertyTypes`: a definition whose
+  // `tags` is present-and-undefined has to be assignable, or every caller needs a spread.
+  readonly tags?: readonly string[] | undefined;
+  readonly category: string;
+  readonly description?: string | undefined;
+}
+
+/**
+ * THE relevance tiers — one ladder, and the only one (T846, §V748).
+ *
+ * Extracted from `matchScore` when the example library needed the same ranking over a
+ * different record type. §V748's rule for an extraction is identity at the incumbent's
+ * parameters: this is the node ladder verbatim, with `type` renamed to `key`, and
+ * `search.test.ts` is the pin — it was not touched when this moved, so it still asserts
+ * the node library's ranking on the same fixtures and would redden on any drift.
+ *
+ * A second ladder would have been the drift §V487 describes: two scoring policies that
+ * agree until someone tunes one of them.
+ */
+export function entryScore(entry: SearchableEntry, query: string): number | null {
   const needle = query.trim().toLowerCase();
   if (needle === "") return 0;
 
-  const title = definition.title.toLowerCase();
-  const type = definition.type.toLowerCase();
+  const title = entry.title.toLowerCase();
+  const key = entry.key.toLowerCase();
 
-  if (title === needle || type === needle) return EXACT;
-  if (title.startsWith(needle) || type.startsWith(needle)) return PREFIX;
-  if (wordPrefixHit(title, needle) || wordPrefixHit(type, needle)) return WORD_PREFIX;
-  if (title.includes(needle) || type.includes(needle)) return SUBSTRING;
-  if ((definition.tags ?? []).some((tag) => tag.toLowerCase().includes(needle))) return TAG;
-  if (definition.category.toLowerCase().includes(needle)) return CATEGORY;
-  if ((definition.description ?? "").toLowerCase().includes(needle)) return DESCRIPTION;
+  if (title === needle || key === needle) return EXACT;
+  if (title.startsWith(needle) || key.startsWith(needle)) return PREFIX;
+  if (wordPrefixHit(title, needle) || wordPrefixHit(key, needle)) return WORD_PREFIX;
+  if (title.includes(needle) || key.includes(needle)) return SUBSTRING;
+  if ((entry.tags ?? []).some((tag) => tag.toLowerCase().includes(needle))) return TAG;
+  if (entry.category.toLowerCase().includes(needle)) return CATEGORY;
+  if ((entry.description ?? "").toLowerCase().includes(needle)) return DESCRIPTION;
   return null;
+}
+
+/** Relevance of one definition for a query, or null when it does not match at all. */
+export function matchScore(definition: NodeDefinition, query: string): number | null {
+  return entryScore(
+    {
+      title: definition.title,
+      key: definition.type,
+      tags: definition.tags,
+      category: definition.category,
+      description: definition.description,
+    },
+    query,
+  );
 }
 
 /** Ranked search. Ties break on title so the list never reshuffles between renders. */
@@ -151,9 +194,13 @@ export function filterLibrary(
  *
  * Sorted, so the two surfaces present the same order as well as the same members —
  * "same set, different order" is a drift a set comparison would not catch.
+ *
+ * Generic since T846: the example library's category filter is a THIRD surface asking
+ * the same question of a different record, and §V754 says a new reason to do X becomes a
+ * new input to the existing policy rather than a new policy. Node callers are unchanged.
  */
-export function categoriesOf(definitions: readonly NodeDefinition[]): string[] {
-  return [...new Set(definitions.map((definition) => definition.category))].sort();
+export function categoriesOf(items: readonly { readonly category: string }[]): string[] {
+  return [...new Set(items.map((item) => item.category))].sort();
 }
 
 export interface CategoryBucket {
@@ -161,17 +208,42 @@ export interface CategoryBucket {
   definitions: readonly NodeDefinition[];
 }
 
-/** Groups a result list by category, categories alphabetical, members in list order. */
-export function groupByCategory(definitions: readonly NodeDefinition[]): CategoryBucket[] {
-  const buckets = new Map<string, NodeDefinition[]>();
-  for (const definition of definitions) {
-    const bucket = buckets.get(definition.category);
-    if (bucket === undefined) buckets.set(definition.category, [definition]);
-    else bucket.push(definition);
+export interface Grouped<T> {
+  category: string;
+  items: readonly T[];
+}
+
+/**
+ * THE grouping — categories alphabetical, members in list order, and the only one.
+ *
+ * Generic since T846/§T863, for the same reason `entryScore` is: the example pane groups
+ * its rows exactly as the node pane groups its own, and a second implementation is a
+ * second set of ordering rules to keep in step. `groupByCategory` below is the node
+ * library's name for it, kept so no node caller changes (§V748).
+ *
+ * Members keep the LIST order they arrived in, which means a ranked search stays ranked
+ * inside each bucket — grouping re-shelves the results, it does not re-sort them.
+ */
+export function groupEntries<T extends { readonly category: string }>(
+  items: readonly T[],
+): Grouped<T>[] {
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const bucket = buckets.get(item.category);
+    if (bucket === undefined) buckets.set(item.category, [item]);
+    else bucket.push(item);
   }
   return [...buckets.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([category, members]) => ({ category, definitions: members }));
+    .map(([category, members]) => ({ category, items: members }));
+}
+
+/** Groups a result list by category, categories alphabetical, members in list order. */
+export function groupByCategory(definitions: readonly NodeDefinition[]): CategoryBucket[] {
+  return groupEntries(definitions).map(({ category, items }) => ({
+    category,
+    definitions: items,
+  }));
 }
 
 const TEXTURE_CHANNEL_LABEL: Readonly<Record<1 | 2 | 4, string>> = {

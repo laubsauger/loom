@@ -17,7 +17,7 @@ export { ExampleLibrary } from "./example-library.tsx";
 export type { ExampleLibraryProps } from "./example-library.tsx";
 
 export { listExampleProjects } from "./example-catalogue.ts";
-export type { ExampleProject } from "./example-catalogue.ts";
+export type { ExampleCategory, ExampleProject } from "./example-catalogue.ts";
 
 export { useDocumentDirty } from "./document-dirty.ts";
 export type { DocumentDirty } from "./document-dirty.ts";

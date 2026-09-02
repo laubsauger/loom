@@ -261,6 +261,18 @@
   white-space: nowrap;
 }
 
+/*
+ * §T855: on the example pane the trigger shares a ROW with the search field, so it
+ * centres against the taller input instead of hanging off the top of it. `flex-start` is
+ * still right in the node pane's column toolbar, which is why this overrides rather than
+ * replaces. The floor keeps the shortest label ("All") from collapsing to a nub.
+ */
+.saveRow .filterTrigger {
+  align-self: center;
+  min-width: 4.5rem;
+  text-align: center;
+}
+
 .filterTrigger::after {
   content: " \25BE";
   opacity: 0.6;
@@ -272,4 +284,61 @@
 
 .filterMenu .categories {
   margin: 0;
+}
+
+/*
+ * The example hover card (T846). Layout only — the frame, ground and shadow are the
+ * tooltip primitive's, so the card is the same object the rest of the app hovers (§V17)
+ * rather than a second popup vocabulary. It inherits the tooltip's 280px cap on purpose:
+ * that is a comfortable measure for one paragraph, and a card that grew to fit the
+ * longest description would be a panel.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/*
+ * §T863: the count beside a category header. The header already says WHICH kind; the
+ * count is the other half of what a group header is for, and it is the one thing a
+ * per-row badge could never have told you.
+ */
+.groupCount {
+  margin-left: var(--space-2);
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-weight: normal;
+  letter-spacing: normal;
+}
+
+.cardThumb {
+  display: block;
+  width: 100%;
+  /* Every example outputs 16:9, so the box is declared rather than measured — the card
+     does not reflow when the image arrives, and it holds its shape if one never does. */
+  aspect-ratio: 16 / 9;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  object-fit: cover;
+}
+
+.cardTitle {
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  font-weight: var(--weight-header);
+}
+
+.cardMeta {
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.cardText {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-prose);
 }
