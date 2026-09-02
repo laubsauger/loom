@@ -5,7 +5,7 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { customWgslNode, declaresUniformBlock, paramsStructFields } from "./custom-wgsl.ts";
+import { customWgslNode, declaresUniformBlock, reflectParamsStruct } from "./custom-wgsl.ts";
 import {
   CUSTOM_WGSL_DEFAULT_SOURCE,
   CUSTOM_WGSL_SHARED_BINDING,
@@ -245,48 +245,62 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   });
 
   /**
-   * T880 — the uniform SLOTS. A shader opts into a fixed vocabulary by naming a field in its
-   * own `struct Params`, and gets EXACTLY those bound — the property that keeps E43/E45's
-   * §V147 identity intact (an amount-only kernel is handed only `amount`, never a colour).
+   * T880 — the shader's `struct Params` reflects into the node's controls (code-first). A
+   * shader gets EXACTLY the fields it declares bound, each shaped to its WGSL type — the
+   * property that keeps E43/E45's §V147 identity intact (an amount-only kernel is handed only
+   * `amount`, never a colour it never named).
    */
-  describe("the uniform slots (T880, B)", () => {
+  describe("the reflected parameters (T880)", () => {
     const withParams = (fields: string) => `${SHARED_UNIFORMS_WGSL}
 struct Params { ${fields} };
 @group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
-@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return params.color1 * params.scalar1; }`;
+@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return params.lightColor * params.orbitSpeed; }`;
 
-    it("parses the field names its own Params struct declares, ignoring comments", () => {
-      const fields = paramsStructFields(withParams("color1: vec4f, scalar1: f32, /* color2 */"));
-      expect([...fields].sort()).toEqual(["color1", "scalar1"]);
+    it("reflects each field's name and WGSL type, ignoring comments", () => {
+      const fields = reflectParamsStruct(withParams("lightColor: vec4f, orbitSpeed: f32, /* skip: u32 */"));
+      expect(fields).toEqual([
+        { name: "lightColor", wgsl: "vec4f" },
+        { name: "orbitSpeed", wgsl: "f32" },
+      ]);
     });
 
-    it("binds ONLY the slots the struct declares — a colour when asked, its value from the param", () => {
-      const source = withParams("color1: vec4f, scalar1: f32,");
-      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, color1: [0.2, 0.4, 0.6, 1], scalar1: 0.5 } }));
-      expect(pass.uniforms).toEqual({ color1: [0.2, 0.4, 0.6, 1], scalar1: 0.5 });
-      // The slots the struct did NOT name are never handed to the kernel.
-      expect(pass.uniforms).not.toHaveProperty("color2");
+    it("grows a typed parameter PER field — a colour by name, a number for f32", () => {
+      const schema = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: withParams("lightColor: vec4f, orbitSpeed: f32,") });
+      expect(schema["lightColor"]?.type).toBe("color"); // named a colour → RGBA picker
+      expect(schema["orbitSpeed"]?.type).toBe("number"); // plain f32 → a number
+      expect(schema["lightColor"]?.label).toBe("Light Color");
+      // The source editor is always present; a field the struct did not name is not.
+      expect(schema[SHADER_SOURCE_PARAMETER]?.type).toBe("code");
+      expect(schema["scalar9"]).toBeUndefined();
+    });
+
+    it("a vec4f NOT named as a colour stays a vector, not a picker (the vec3f/vec4f fork)", () => {
+      const schema = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: withParams("offset: vec4f,") });
+      expect(schema["offset"]?.type).toBe("vector");
+    });
+
+    it("binds ONLY the declared fields, each shaped to its type", () => {
+      const source = withParams("lightColor: vec4f, orbitSpeed: f32,");
+      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, lightColor: [0.2, 0.4, 0.6, 1], orbitSpeed: 0.5 } }));
+      expect(pass.uniforms).toEqual({ lightColor: [0.2, 0.4, 0.6, 1], orbitSpeed: 0.5 });
       expect(pass.uniforms).not.toHaveProperty("amount");
-      expect(pass.uniforms).not.toHaveProperty("scalar2");
     });
 
     it("keeps §V147: an amount-only kernel is still handed amount and nothing else", () => {
       const source = withParams("amount: f32,");
-      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, amount: 0, color1: [1, 0, 0, 1] } }));
-      // color1 is set on the node but the shader never declared it, so it is not bound —
-      // the E43 identity (amount = 0 → byte-identical) cannot be perturbed by an unused slot.
+      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, amount: 0, lightColor: [1, 0, 0, 1] } }));
+      // lightColor is set on the node but the shader never declared it, so it is not bound —
+      // the E43 identity (amount = 0 → byte-identical) cannot be perturbed by an unused control.
       expect(pass.uniforms).toEqual({ amount: 0 });
     });
 
-    it("dims a slot the shader has not declared (§V146), and lights it once declared", () => {
-      const declares = customWgslNode.parameters["color1"];
-      if (declares?.type !== "color") throw new Error("color1 is not a colour param");
-      const off = declares.inactiveWhen?.({ [SHADER_SOURCE_PARAMETER]: "struct Params { amount: f32, };" });
-      const on = declares.inactiveWhen?.({ [SHADER_SOURCE_PARAMETER]: "struct Params { color1: vec4f, };" });
-      expect(typeof off).toBe("string"); // a reason to dim it
-      expect(on).toBeNull(); // declared → active
+    it("a vec3f colour takes rgb, a vec4f colour takes rgba", () => {
+      const three = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withParams("tint: vec3f,"), tint: [0.1, 0.2, 0.3, 1] } }));
+      expect(three.uniforms).toEqual({ tint: [0.1, 0.2, 0.3] });
+      const four = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withParams("tint: vec4f,"), tint: [0.1, 0.2, 0.3, 0.4] } }));
+      expect(four.uniforms).toEqual({ tint: [0.1, 0.2, 0.3, 0.4] });
     });
   });
 });

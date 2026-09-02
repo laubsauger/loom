@@ -3,8 +3,8 @@ import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { readNumber, readColor } from "./parameter-readers.ts";
-import type { ParameterValue } from "../../domain/types/parameters.ts";
+import { readNumber, readColor, readVector } from "./parameter-readers.ts";
+import type { ParameterDefinition, ParameterSchema } from "../../domain/types/parameters.ts";
 import {
   CUSTOM_WGSL_DEFAULT_SOURCE,
   CUSTOM_WGSL_SAMPLER_BINDING,
@@ -60,40 +60,95 @@ export function declaresUniformBlock(source: string, name: string): boolean {
   return new RegExp(`var\\s*<\\s*uniform\\s*>\\s*${name}\\s*:`).test(stripComments(source));
 }
 
+/** One field of a shader's `struct Params`: its name and its WGSL type. */
+interface ReflectedField {
+  readonly name: string;
+  readonly wgsl: string;
+}
+
 /**
- * The field names a `struct Params { … }` declares (T880, B). Same deterministic scan as
- * `declaresUniformBlock` — not a WGSL parser — so a shader gets EXACTLY the slots it names
- * and no more: a kernel binding only `amount` (E43/E45, whose §V147 identity depends on it)
- * is handed only `amount`, never a colour it never declared. The fixed slot vocabulary below
- * is TouchDesigner's model — generic slots the shader opts into by name, the meaningful names
- * living on a component's published parameters.
+ * The fields a `struct Params { … }` declares (T880, code-first reflection). A deterministic
+ * scan, not a WGSL parser — enough to turn a shader's own uniform struct into node controls,
+ * so a customWgsl's parameters ARE its shader's parameters (the owner's ask; §V805). A kernel
+ * with no `Params` block, or one listing only `amount` (E43/E45, whose §V147 identity depends
+ * on it), reflects to exactly that and no more. Exported for the node's own tests.
  */
-export function paramsStructFields(source: string): ReadonlySet<string> {
+export function reflectParamsStruct(source: string): readonly ReflectedField[] {
   const match = /struct\s+Params\s*\{([^}]*)\}/.exec(stripComments(source));
-  if (match === null) return new Set();
-  const fields = new Set<string>();
+  if (match === null) return [];
+  const fields: ReflectedField[] = [];
   for (const line of (match[1] ?? "").split(/[,;\n]/)) {
-    const field = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/.exec(line);
-    if (field !== null && field[1] !== undefined) fields.add(field[1]);
+    const field = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_]+)/.exec(line);
+    if (field?.[1] !== undefined && field[2] !== undefined) fields.push({ name: field[1], wgsl: field[2] });
   }
   return fields;
 }
 
-/** A slot dims in the inspector unless the shader's own `Params` struct declares it. */
-function unlessDeclared(field: string): (values: Readonly<Record<string, ParameterValue>>) => string | null {
-  return (values) => {
-    const source = values[SHADER_SOURCE_PARAMETER];
-    const text = typeof source === "string" ? source : "";
-    return paramsStructFields(text).has(field)
-      ? null
-      : `Add \`${field}\` to your \`struct Params\` to use this slot.`;
-  };
+/** A field whose NAME reads as colour intent gets an RGBA picker; every other vector stays one. */
+function looksLikeColour(name: string): boolean {
+  return /colou?r|tint|rgb|albedo|emissi/i.test(name);
 }
 
-/** The colour slots a shader may opt into — vec4f in the struct, an RGBA picker on the node. */
-const COLOR_SLOTS = ["color1", "color2", "color3"] as const;
-/** The scalar slots — f32 in the struct, a number on the node. Generic on purpose (TD's model). */
-const SCALAR_SLOTS = ["scalar1", "scalar2", "scalar3", "scalar4"] as const;
+/** A readable label from a camelCase / snake_case field name. */
+function labelOf(name: string): string {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * The node control a struct field maps to (T880). f32 → a number; vec2/3/4 → a vector, or an
+ * RGBA picker when the NAME reads as a colour (the vec3f/vec4f fork the orchestrator flagged —
+ * resolved by the author's own naming, never a guess from the bare type). Matrices, arrays and
+ * textures are not v1 controls and reflect to nothing.
+ */
+function paramForField(field: ReflectedField): ParameterDefinition | undefined {
+  const label = labelOf(field.name);
+  const description = `Reaches the kernel as \`params.${field.name}\` (${field.wgsl}).`;
+  // `amount` keeps its historical 0..1 slider so E43/E45 read exactly as they always have.
+  if (field.name === "amount" && field.wgsl === "f32") {
+    return { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it." };
+  }
+  switch (field.wgsl) {
+    case "f32":
+      return { type: "number", label, default: 0, description };
+    case "i32":
+    case "u32":
+      return { type: "number", label, default: 0, step: 1, description };
+    case "vec2f":
+      return { type: "vector", size: 2, label, default: [0, 0], description };
+    case "vec3f":
+      return looksLikeColour(field.name)
+        ? { type: "color", label, default: [1, 1, 1, 1], space: "display", description }
+        : { type: "vector", size: 3, label, default: [0, 0, 0], description };
+    case "vec4f":
+      return looksLikeColour(field.name)
+        ? { type: "color", label, default: [1, 1, 1, 1], space: "display", description }
+        : { type: "vector", size: 4, label, default: [0, 0, 0, 0], description };
+    default:
+      return undefined;
+  }
+}
+
+/** The always-present source editor — shared by the static fallback schema and the reflected one. */
+const SOURCE_PARAM: ParameterDefinition = {
+  type: "code",
+  language: "wgsl",
+  label: "Source",
+  default: CUSTOM_WGSL_DEFAULT_SOURCE,
+  compileTime: true,
+};
+
+/** The schema a customWgsl node carries, reflected from its own `source` (T880). */
+function reflectedSchema(source: string): ParameterSchema {
+  const schema: ParameterSchema = { [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM };
+  if (declaresUniformBlock(source, CUSTOM_WGSL_UNIFORM_BINDING)) {
+    for (const field of reflectParamsStruct(source)) {
+      const param = paramForField(field);
+      if (param !== undefined) schema[field.name] = param;
+    }
+  }
+  return schema;
+}
 
 export const customWgslNode: NodeDefinition = {
   type: "customWgsl",
@@ -103,20 +158,13 @@ export const customWgslNode: NodeDefinition = {
   description: "A user-authored WGSL fragment effect (v1 contract, §I).",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+  /**
+   * The STATIC fallback (T880): what a fresh drop and the type-only contexts (palette, help)
+   * see — the source editor and the historical `amount`. A placed node's real controls come
+   * from `parametersFor` below, reflected from its own shader.
+   */
   parameters: {
-    [SHADER_SOURCE_PARAMETER]: {
-      type: "code",
-      language: "wgsl",
-      label: "Source",
-      default: CUSTOM_WGSL_DEFAULT_SOURCE,
-      compileTime: true,
-    },
-    /**
-     * The one generic scalar the contract's `Params` block carries. It has no meaning of
-     * its own — the kernel decides what it scales — which is why it is `amount` and not
-     * something that implies a unit. NOT `compileTime`: changing it is a uniform write,
-     * not a rebuild (§V5), which is the whole reason a kernel wants a uniform at all.
-     */
+    [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM,
     amount: {
       type: "number",
       label: "Amount",
@@ -126,20 +174,16 @@ export const customWgslNode: NodeDefinition = {
       range: "bounded",
       description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it.",
     },
-    /**
-     * The uniform SLOTS (T880): a fixed vocabulary a shader opts into by naming the field in
-     * its own `struct Params`. Each is a normal parameter — drivable by a value node, bindable,
-     * and publishable on a component's page, which is where the meaningful name ("Light Color",
-     * "Orbit Speed") lives. A slot the shader does not declare is dimmed and never bound, so a
-     * kernel that wants only `amount` is unchanged (§V147). TouchDesigner's Vectors pages, ours.
-     */
-    color1: { type: "color", label: "Color 1", default: [1, 1, 1, 1], space: "display", description: "Reaches the kernel as `params.color1` (vec4f), if declared.", inactiveWhen: unlessDeclared("color1") },
-    color2: { type: "color", label: "Color 2", default: [1, 1, 1, 1], space: "display", description: "Reaches the kernel as `params.color2` (vec4f), if declared.", inactiveWhen: unlessDeclared("color2") },
-    color3: { type: "color", label: "Color 3", default: [1, 1, 1, 1], space: "display", description: "Reaches the kernel as `params.color3` (vec4f), if declared.", inactiveWhen: unlessDeclared("color3") },
-    scalar1: { type: "number", label: "Scalar 1", default: 0, description: "Reaches the kernel as `params.scalar1` (f32), if declared.", inactiveWhen: unlessDeclared("scalar1") },
-    scalar2: { type: "number", label: "Scalar 2", default: 0, description: "Reaches the kernel as `params.scalar2` (f32), if declared.", inactiveWhen: unlessDeclared("scalar2") },
-    scalar3: { type: "number", label: "Scalar 3", default: 0, description: "Reaches the kernel as `params.scalar3` (f32), if declared.", inactiveWhen: unlessDeclared("scalar3") },
-    scalar4: { type: "number", label: "Scalar 4", default: 0, description: "Reaches the kernel as `params.scalar4` (f32), if declared.", inactiveWhen: unlessDeclared("scalar4") },
+  },
+  /**
+   * PER-INSTANCE reflection (T880, §V805): the node's controls ARE its shader's `struct
+   * Params`. Declare `orbitSpeed: f32` or `lightColor: vec4f` and the knob appears — named,
+   * typed, drivable and publishable — so a shader stops being a one-scalar black box. The
+   * static schema above stays the fallback where there is no stored source to read.
+   */
+  parametersFor(stored) {
+    const raw = stored[SHADER_SOURCE_PARAMETER];
+    return reflectedSchema(typeof raw === "string" ? raw : CUSTOM_WGSL_DEFAULT_SOURCE);
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
   formatPolicy: { kind: "inherit", input: "input" },
@@ -155,18 +199,27 @@ export const customWgslNode: NodeDefinition = {
     const sourceValue = parameters[SHADER_SOURCE_PARAMETER];
     const shader = typeof sourceValue === "string" ? sourceValue : CUSTOM_WGSL_DEFAULT_SOURCE;
 
-    // Bind ONLY the slots the shader's own `struct Params` declares (T880): vgpu refuses a
-    // value with no matching field, and E43/E45's §V147 identity depends on `amount` being
-    // the only thing bound to their kernels — so the set is read from the source, not assumed.
+    // Bind EXACTLY the fields the shader's own `struct Params` declares (T880), each shaped to
+    // its WGSL type. vgpu refuses a value with no matching field, and E43/E45's §V147 identity
+    // depends on `amount` being the only thing bound to their kernels — so the set is read from
+    // the source, never assumed. The values come from `parameters`, resolved against the SAME
+    // reflected schema (the compiler resolves through `parametersFor`), so a driven or bound
+    // control lands here.
     const uniforms: Record<string, number | readonly number[]> = {};
     if (declaresUniformBlock(shader, CUSTOM_WGSL_UNIFORM_BINDING)) {
-      const fields = paramsStructFields(shader);
-      if (fields.has("amount")) uniforms["amount"] = readNumber(parameters, "amount", 1);
-      for (const slot of COLOR_SLOTS) {
-        if (fields.has(slot)) uniforms[slot] = readColor(parameters, slot, [1, 1, 1, 1]);
-      }
-      for (const slot of SCALAR_SLOTS) {
-        if (fields.has(slot)) uniforms[slot] = readNumber(parameters, slot, 0);
+      for (const field of reflectParamsStruct(shader)) {
+        const param = paramForField(field);
+        if (param === undefined) continue;
+        if (param.type === "number") {
+          uniforms[field.name] = readNumber(parameters, field.name, typeof param.default === "number" ? param.default : 0);
+        } else if (param.type === "color") {
+          const rgba = readColor(parameters, field.name, [1, 1, 1, 1]);
+          // vec3f colour takes rgb; vec4f takes rgba — matched to the declared type.
+          uniforms[field.name] = field.wgsl === "vec3f" ? [rgba[0] ?? 0, rgba[1] ?? 0, rgba[2] ?? 0] : rgba;
+        } else if (param.type === "vector") {
+          const size = field.wgsl === "vec2f" ? 2 : field.wgsl === "vec3f" ? 3 : 4;
+          uniforms[field.name] = readVector(parameters, field.name, new Array<number>(size).fill(0));
+        }
       }
     }
 

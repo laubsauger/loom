@@ -251,6 +251,17 @@ export interface NodeDefinition {
   inputs: PortDefinition[];
   outputs: PortDefinition[];
   parameters: ParameterSchema;
+  /**
+   * PER-INSTANCE schema (T880). Almost every node's parameters are fixed by its TYPE, so
+   * `parameters` above is the whole story and this is absent. A `customWgsl` is the
+   * exception the owner asked for: its controls are its shader's own `struct Params`, so the
+   * SET of parameters depends on the node's stored `source`, not just its type. When present,
+   * this derives the effective schema from the node's stored values; `parameters` remains the
+   * fallback for type-only contexts (the palette, a fresh drop) and for every node without it.
+   * The reflected schema MUST still contain the static keys a fresh node stores, so a value
+   * already on disk keeps a home.
+   */
+  parametersFor?(stored: Readonly<Record<string, unknown>>): ParameterSchema;
   resolutionPolicy?: ResolutionPolicy;
   formatPolicy?: FormatPolicy;
   temporal?: TemporalDefinition;

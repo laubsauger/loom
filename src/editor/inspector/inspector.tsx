@@ -6,6 +6,10 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
+import { nodeHasAnimatedParameters } from "@domain/channels/graph-channels.ts";
+import type { FrameInputs } from "@domain/types/backend.ts";
+import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import { CodeField } from "@editor/shader-editor/index.ts";
@@ -181,7 +185,7 @@ export function Inspector({
   const resolved = resolveParameters(node, definition, {
     nodes: createNodeReferenceReader({
       graph,
-      schemaOf: (target) => bus.registry.get(target.type)?.parameters,
+      schemaOf: (target) => effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
     }),
     /**
      * B46 — and deliberately with NO `frame`.

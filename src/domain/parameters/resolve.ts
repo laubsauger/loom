@@ -1006,6 +1006,19 @@ export function resolveParameterSchema(
 }
 
 /**
+ * The schema THIS node instance carries (T880). For almost every node it is the type's
+ * static `parameters`; a `customWgsl` derives it from its own stored `source` (its shader's
+ * `struct Params`), so a node's controls follow its shader. The static schema is the fallback
+ * for every node without the hook and for the type-only contexts (palette, a fresh drop).
+ */
+export function effectiveParameterSchema(
+  definition: NodeDefinition | undefined,
+  stored: Readonly<Record<string, unknown>>,
+): ParameterSchema {
+  return definition?.parametersFor?.(stored) ?? definition?.parameters ?? {};
+}
+
+/**
  * Effective parameters of a node, in manifest order. An unknown node type (§V10
  * placeholder) resolves to nothing rather than guessing a schema.
  */
@@ -1014,5 +1027,5 @@ export function resolveParameters(
   definition: NodeDefinition | undefined,
   options: ResolveParametersOptions = {},
 ): ResolvedParameters {
-  return resolveParameterSchema(node, definition?.parameters ?? {}, options);
+  return resolveParameterSchema(node, effectiveParameterSchema(definition, node.parameters), options);
 }

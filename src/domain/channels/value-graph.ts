@@ -5,7 +5,7 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { NodeDefinition, ValueChannels } from "../types/node-definition.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { ChannelResolver } from "../parameters/resolve.ts";
-import { resolveParameterSchema } from "../parameters/resolve.ts";
+import { resolveParameterSchema, effectiveParameterSchema } from "../parameters/resolve.ts";
 import { bypassPassthroughPorts } from "../graph/bypass.ts";
 
 /**
@@ -278,7 +278,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
         }
 
         // Frame-scoped, channel-free parameter resolution (see the module note).
-        const resolved = resolveParameterSchema(node, member.definition.parameters, { frame });
+        const resolved = resolveParameterSchema(node, effectiveParameterSchema(member.definition, node.parameters), { frame });
         const state = states.get(nodeId) ?? {};
         states.set(nodeId, state);
 

@@ -5,7 +5,7 @@ import type { NodeDefinition } from "../domain/types/node-definition.ts";
 import type { ParameterSchema, ParameterValue } from "../domain/types/parameters.ts";
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
-import { resolveParameterSchema, type ParameterMapBinding } from "../domain/parameters/resolve.ts";
+import { resolveParameterSchema, effectiveParameterSchema, type ParameterMapBinding } from "../domain/parameters/resolve.ts";
 import { createNodeReferenceReader } from "../domain/parameters/node-references.ts";
 import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
@@ -220,7 +220,10 @@ export function validateGraph(
     }
     const resolvedParameters = resolveNodeParameters(
       node,
-      definition.parameters,
+      // T880: the node's EFFECTIVE schema — a customWgsl reflects its own shader's struct, so
+      // a control it declares (orbitSpeed, lightColor) resolves and reaches the kernel. Every
+      // other node returns its static schema unchanged.
+      effectiveParameterSchema(definition, node.parameters),
       definition.type,
       diagnostics,
       resolution,
