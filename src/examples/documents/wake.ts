@@ -13,7 +13,7 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  *   gain1(level, whitelevel ┄ bite1) ◄────────────────────────────────── ┘
  *        │
  *        ├─► shiftr1(transform ┄ tear1) ─► fuser1(reorder) ─┐
- *        └─► shiftb1(transform ┄ tearb1) ─► fuseb1(reorder) ┴─► born1(add) ◄─ loop1(feedback)
+ *        └─► shiftb1(transform ┄ tearn1) ─► fuseb1(reorder) ┴─► born1(add) ◄─ loop1(feedback)
  *                                                                  │
  *                             born1 ─► paint1(lookup ◄─ palette1) ─┴─► lay1(add) ─► trim1 ─► out1
  *
@@ -149,7 +149,7 @@ export const wakeDocument = document(
         xord: "srt",
         extend: "hold",
         aspectcorrect: false,
-      }, { label: "shiftb1", parameters: { "t.x": drivenSlot("tearb1:high", -0.006), } }),
+      }, { label: "shiftb1", parameters: { "t.x": drivenSlot("tearn1:high", -0.006), } }),
       node("fuser", "reorder", [-60, 60], {
         outr: "in2r",
         outg: "in1g",
@@ -229,7 +229,7 @@ export const wakeDocument = document(
       node("tear", "valueLimit", [-580, 880], { minimum: 0.001, maximum: 0.03 }, { label: "tear1" }),
       node("tearng", "valueMath", [-1100, 1140], { operation: "multiply", operand: -0.03 }, { label: "tearng1" }),
       node("tearnb", "valueMath", [-840, 1140], { operation: "add", operand: -0.004 }, { label: "tearnb1" }),
-      node("tearn", "valueLimit", [-580, 1140], { minimum: -0.03, maximum: -0.001 }, { label: "tearb1" }),
+      node("tearn", "valueLimit", [-580, 1140], { minimum: -0.03, maximum: -0.001 }, { label: "tearn1" }),
 
       node("holdg", "valueMath", [-1100, 1400], { operation: "multiply", operand: 0.032 }, { label: "holdg1" }),
       node("holdb", "valueMath", [-840, 1400], { operation: "add", operand: 0.93 }, { label: "holdb1" }),

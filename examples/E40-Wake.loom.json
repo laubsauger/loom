@@ -932,7 +932,7 @@
           "t.x": {
             "bindings": {
               "driven": {
-                "channel": "tearb1:high",
+                "channel": "tearn1:high",
                 "kind": "driven"
               },
               "static": {
@@ -1062,7 +1062,7 @@
       "tearn": {
         "definitionVersion": 1,
         "id": "tearn",
-        "label": "tearb1",
+        "label": "tearn1",
         "parameters": {
           "maximum": -0.001,
           "minimum": -0.03

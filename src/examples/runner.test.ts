@@ -164,6 +164,31 @@ describe.each(examples)("example $fileName", (file) => {
   });
 
   /**
+   * T826/§B163 — a LABEL IS AN ADDRESS, so it must be unique per document (§V782's family).
+   *
+   * A driven or bound parameter names its source by LABEL (`drivenSlot("tearn1:high")`),
+   * and `nodeNames` resolves a label to the FIRST node id that carries it and silently
+   * drops the rest — so two nodes sharing a label is not an error, it is a binding that
+   * quietly resolves to whichever id sorts first while the branch it was built for goes
+   * dead. E40 shipped exactly that: `tearb` and `tearn` both labelled `tearb1`, and
+   * `shiftb1` bound the positive intermediate instead of the negative clamp. A count, not
+   * `nodeNames`, because the point is to catch the collision the resolver hides.
+   */
+  it("gives every node a UNIQUE label — a label is an address (§B163)", () => {
+    const { document } = requireExample(file);
+    const seen = new Map<string, string>();
+    const collisions: string[] = [];
+    for (const [nodeId, node] of Object.entries(document.graph.nodes)) {
+      const label = node.label;
+      if (label === undefined) continue;
+      const prior = seen.get(label);
+      if (prior !== undefined) collisions.push(`"${label}" on both ${prior} and ${nodeId}`);
+      else seen.set(label, nodeId);
+    }
+    expect(collisions).toEqual([]);
+  });
+
+  /**
    * §V89 determinism, first half: the compiler is a pure function of the file.
    *
    * Two independent trips from the same bytes — parse, migrate, validate, prune, order,
