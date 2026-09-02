@@ -1,4 +1,6 @@
 import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
+import { SHADER_SOURCE_PARAMETER } from "@domain/commands/apply-patch.ts";
+import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { PRISM_TRACE_KERNEL_HEAD, prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
 import { PRISM_EDGE, PRISM_HALF, PRISM_RC, PRISM_RHO } from "../shaders/prism-geometry.ts";
 
@@ -225,53 +227,74 @@ const RHO: f32 = ${PRISM_RHO};
 const HALF: f32 = ${PRISM_HALF};
 const EDGE: f32 = ${PRISM_EDGE};
 
-/* The INSET CONTOUR — the level set sd2 = -pull, walked by arc length. T937 replaced the
-   old scale-pullback cap (whose world depth varied along the contour) with this, because
-   only the level set matches a constant-radius SDF rounding; a normal offset of the
-   outer contour self-intersects at the corners (EDGE > RHO). */
-fn insetContour(u: f32, pull: f32) -> vec2f {
-  let rc = max(RHO - pull, 0.0);
-  let D = RC - 2.0 * RHO - 2.0 * max(pull - RHO, 0.0);
-  let seg = sqrt(3.0) * D;
-  let arc = rc * TAU / 3.0;
-  let unit = seg + arc;
-  let s = u * 3.0 * unit;
-  let k = floor(min(s / unit, 2.999999));
-  let local = s - k * unit;
-  let phi = PI * 0.5 + k * TAU / 3.0;
-  let c = vec2f(cos(phi), sin(phi)) * D;
-  if (local < arc && rc > 0.0) {
-    let psi = phi - PI / 3.0 + local / rc;
-    return c + vec2f(cos(psi), sin(psi)) * rc;
-  }
-  let t = select(0.0, max((local - arc) / seg, 0.0), seg > 0.0);
-  let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));
-  let a2 = c + outward * rc;
-  let phi2 = phi + TAU / 3.0;
-  let b2 = vec2f(cos(phi2), sin(phi2)) * D + outward * rc;
-  return mix(a2, b2, t);
+/* T928 — the FACETED inset contour: the level set of the diamond-cut cross-section at
+   -pull. Six planes inset together; while pull < RHO the corner chamfer still bites and
+   the contour is a hexagon, past it the corner collapses onto the sharp vertex (the
+   faces inset 2:1 faster than the cut). Mirrored float64 in prism-geometry.ts; the
+   |sd3| < 1e-6 gate holds the two together. */
+fn contourNormal(k: u32) -> vec2f {
+  if (k == 0u) { return vec2f(0.86602540, 0.5); }
+  if (k == 1u) { return vec2f(-0.86602540, 0.5); }
+  return vec2f(0.0, -1.0);
 }
 
-/* Flat cap disc, quarter-round cap edge of radius EDGE on the inset level sets,
-   straight barrel, and back. The cap collapses to the axis at a = 0 and a = 1. */
+fn meet2(n1: vec2f, o1: f32, n2: vec2f, o2: f32) -> vec2f {
+  let det = n1.x * n2.y - n1.y * n2.x;
+  return vec2f(o1 * n2.y - o2 * n1.y, n1.x * o2 - n2.x * o1) / det;
+}
+
+fn insetContour(u: f32, pull: f32) -> vec2f {
+  let face = RC * 0.5 - pull;
+  let cut = RC - RHO - pull;
+  var verts: array<vec2f, 6>;
+  for (var k = 0u; k < 3u; k = k + 1u) {
+    let nA = contourNormal(k);
+    let nB = contourNormal((k + 1u) % 3u);
+    let nC = -contourNormal((k + 2u) % 3u);
+    let sharp = meet2(nA, face, nB, face);
+    if (dot(sharp, nC) > cut) {
+      verts[k * 2u] = meet2(nA, face, nC, cut);
+      verts[k * 2u + 1u] = meet2(nC, cut, nB, face);
+    } else {
+      verts[k * 2u] = sharp;
+      verts[k * 2u + 1u] = sharp;
+    }
+  }
+  var lengths: array<f32, 6>;
+  var total = 0.0;
+  for (var i = 0u; i < 6u; i = i + 1u) {
+    lengths[i] = distance(verts[i], verts[(i + 1u) % 6u]);
+    total = total + lengths[i];
+  }
+  var s = fract(u) * total;
+  for (var i = 0u; i < 6u; i = i + 1u) {
+    if (s <= lengths[i] || i == 5u) {
+      let f = select(0.0, min(s / lengths[i], 1.0), lengths[i] > 0.0);
+      return mix(verts[i], verts[(i + 1u) % 6u], f);
+    }
+    s = s - lengths[i];
+  }
+  return verts[0];
+}
+
+/* Flat cap disc, ONE straight 45-degree chamfer band (the diamond cut), straight
+   barrel, and back. The cap collapses to the axis at a = 0 and a = 1. */
 fn shell(u: f32, a: f32) -> vec3f {
   if (a <= 0.10) {
     let t = a / 0.10;
     return vec3f(insetContour(u, EDGE) * t, HALF);
   }
   if (a <= 0.36) {
-    let th = (a - 0.10) / 0.26 * (PI * 0.5);
-    let pull = EDGE * (1.0 - sin(th));
-    return vec3f(insetContour(u, pull), HALF - EDGE * (1.0 - cos(th)));
+    let s = (a - 0.10) / 0.26;
+    return vec3f(insetContour(u, EDGE * (1.0 - s)), HALF - EDGE * s);
   }
   if (a <= 0.64) {
     let t = (a - 0.36) / 0.28;
     return vec3f(insetContour(u, 0.0), mix(HALF - EDGE, -(HALF - EDGE), t));
   }
   if (a <= 0.90) {
-    let th = (0.90 - a) / 0.26 * (PI * 0.5);
-    let pull = EDGE * (1.0 - sin(th));
-    return vec3f(insetContour(u, pull), -(HALF - EDGE * (1.0 - cos(th))));
+    let s = (0.90 - a) / 0.26;
+    return vec3f(insetContour(u, EDGE * (1.0 - s)), -(HALF - EDGE * s));
   }
   let t = (1.0 - a) / 0.10;
   return vec3f(insetContour(u, EDGE) * t, -HALF);
@@ -297,6 +320,42 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   pos = vec3f(pos.x, pos.y * cx - pos.z * sx, pos.y * sx + pos.z * cx);
   q.position = pos;
   return q;
+}`;
+
+/**
+ * T945a — THE BEAM IN THE GLASS'S EYES. materialGlass's reflection samples ONLY the
+ * environment equirect, so the beams could never sparkle in the body no matter how the
+ * edges were cut. Rather than a new shading path, the environment itself carries the
+ * lamp: this shader adds a bright angular spot AT the lamp's direction into the studio
+ * equirect. Painted by DIRECTION distance, not uv distance — the lamp lives in the
+ * z = 0 plane where equirect azimuth is degenerate, and a uv-space spot would tear as
+ * the lamp crosses x = 0; an angular gaussian is continuous everywhere. `lampPhi` rides
+ * the same follow1 expression family as everything else the hand steers.
+ */
+const BEAM_ENV_WGSL = `${SHARED_UNIFORMS_WGSL}
+struct Params {
+  lampPhi: f32,
+  gain: f32,
+};
+
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@group(0) @binding(3) var<uniform> params: Params;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let color = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  /* Inverse of the renderer's sampleEnvironment mapping (scene-render.wgsl.ts):
+     u = atan2(x, -z)/2pi + 0.5, v = acos(y)/pi. */
+  let azimuth = (uv.x - 0.5) * 6.2831853;
+  let polar = uv.y * 3.14159265;
+  let d = vec3f(sin(polar) * sin(azimuth), cos(polar), -sin(polar) * cos(azimuth));
+  let lamp = vec3f(cos(params.lampPhi), sin(params.lampPhi), 0.0);
+  let angle = acos(clamp(dot(d, lamp), -1.0, 1.0));
+  /* A hot core and a soft halo — what a bare beam source looks like to a glossy face. */
+  let spot = exp(-(angle * angle) / (0.06 * 0.06)) + 0.25 * exp(-(angle * angle) / (0.30 * 0.30));
+  return vec4f(color.rgb + vec3f(1.0, 0.98, 0.94) * spot * params.gain, color.a);
 }`;
 
 /** `tip` is the beam's far end (T680 binds it by name); `role` is what splits ONE
@@ -637,6 +696,7 @@ export const prismDocument = document(
       } }),
 
       // ---- the studio: an equirect whose horizon IS the rim -----------------------
+
       // v = acos(R.y)/pi, so 0.5 is the horizon; u = atan2(R.x, -R.z)/2pi + 0.5. A normal
       // lying in the cross-section plane reflects to (0,0,-1) and lands at (0.5, 0.5)
       // EXACTLY — §V640's band, at the address §V640 gives for it. The cap's normal
@@ -657,6 +717,18 @@ export const prismDocument = document(
         fillcolor: [0.74, 0.84, 1, 1], bgcolor: [0, 0, 0, 1], aspectcorrect: false,
       }, { label: "band1" }),
       node("studio", "add", [-1560, -900], {}, { label: "studio1", resolution: { mode: "fixed", width: 512, height: 256 } }),
+      // T945a: the lamp painted INTO the environment — see BEAM_ENV_WGSL.
+      node("beamglow", "customWgsl", [-1240, -900], {
+        [SHADER_SOURCE_PARAMETER]: BEAM_ENV_WGSL,
+        gain: 2.2,
+      }, {
+        label: "beamglow1",
+        parameters: {
+          // The lamp's azimuth in radians: phi = (185 - 360x) degrees, the same arc the
+          // trace walks (T929) — one hand, one number, a third reader.
+          lampPhi: expressionSlot("3.2289 - 6.2832 * clamp(op('follow1').chan.x, 0, 1)", 3.2289),
+        },
+      }),
 
       // ---- the shot --------------------------------------------------------------
       // ONE job: the direction is the mirror of the view about the upper-left
@@ -723,7 +795,8 @@ export const prismDocument = document(
 
       edge("e-sky-studio", ["sky", "out"], ["studio", "in1"]),
       edge("e-band-studio", ["band", "out"], ["studio", "in2"], 0),
-      edge("e-studio-shot", ["studio", "out"], ["shot", "environment"]),
+      edge("e-studio-beamglow", ["studio", "out"], ["beamglow", "input"]),
+      edge("e-beamglow-shot", ["beamglow", "out"], ["shot", "environment"]),
 
       edge("e-shot-cut", ["shot", "out"], ["cut", "input"]),
       edge("e-cut-clip", ["cut", "out"], ["clip", "input"]),

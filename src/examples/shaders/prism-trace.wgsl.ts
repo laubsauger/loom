@@ -175,28 +175,24 @@ fn reflect3(i: vec3f, n: vec3f) -> vec3f {
    prism-geometry.test.ts to 1e-6 at every mesh vertex. */
 const BEVEL: f32 = 0.046;
 
-fn sdSegment2(p: vec2f, a: vec2f, b: vec2f) -> f32 {
-  let ab = b - a;
-  let h = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
-  return length(p - a - ab * h);
-}
-
-fn sdSharpTri(p: vec2f, r: f32) -> f32 {
-  let inside = max(max(dot(p, NR), dot(p, NL)), dot(p, ND)) - r;
-  if (inside <= 0.0) { return inside; }
-  let v0 = -2.0 * r * NR;
-  let v1 = -2.0 * r * NL;
-  let v2 = -2.0 * r * ND;
-  return min(min(sdSegment2(p, v0, v1), sdSegment2(p, v1, v2)), sdSegment2(p, v2, v0));
-}
-
+/* T928 — DIAMOND CUT (prism-geometry.ts, the one description): the cross-section is a
+   hexagon — three faces, three flat corner chamfers (depth BEVEL along the vertex) —
+   and the cap edge is a single 45-degree chamfer of depth EDGE. Max-of-planes: inside
+   exact, outside a safe underestimate near vertices (the T920 march precedent), and
+   the gradient normals are FLAT per facet with sharp creases — each facet catches the
+   environment's lamp spot (T945a) as a glint instead of a smear, which is the point. */
 fn sdBody2(p: vec2f) -> f32 {
-  return sdSharpTri(p, RI - BEVEL) - BEVEL;
+  let cut = 2.0 * RI - BEVEL;
+  var d = max(max(dot(p, NR), dot(p, NL)), dot(p, ND)) - RI;
+  d = max(d, max(max(-dot(p, NR), -dot(p, NL)), -dot(p, ND)) - cut);
+  return d;
 }
 
 fn sdBody(p: vec3f) -> f32 {
-  let q = vec2f(sdBody2(p.xy) + EDGE, abs(p.z) - (HALF - EDGE));
-  return min(max(q.x, q.y), 0.0) + length(max(q, vec2f(0.0))) - EDGE;
+  let flat = sdBody2(p.xy);
+  let cap = abs(p.z) - HALF;
+  let chamfer = (flat + abs(p.z) - HALF + EDGE) * 0.70710678;
+  return max(max(flat, cap), chamfer);
 }
 
 /* The boundary's own normal — a GRADIENT: it sweeps continuously through the corner

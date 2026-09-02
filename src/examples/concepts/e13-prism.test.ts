@@ -138,7 +138,9 @@ describe("E13 Prism", () => {
       (pass): pass is DrawPassDescriptor =>
         pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
     ) as DrawPassDescriptor;
-    expect(texturesOf(glassDraw).get("environmentMap")).toBe(outputFor(plan, "studio").resourceId);
+    // T945a: the environment the glass reflects is the studio PLUS the lamp's own spot
+    // (beamglow) — which is how the beam reaches the facets' glints.
+    expect(texturesOf(glassDraw).get("environmentMap")).toBe(outputFor(plan, "beamglow").resourceId);
     expect(buffersOf(glassDraw).get("positions")).toBe("scratch:form:position");
   });
 

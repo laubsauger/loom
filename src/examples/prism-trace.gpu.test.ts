@@ -52,8 +52,6 @@ const BANDS = 61;
 const CAPACITY = 2 + SLICES * BANDS * 3;
 const CENTRE_BASE = 2 + 4 * BANDS * 3;
 const interiorIndex = (t: number): number => CENTRE_BASE + Math.round(t * (BANDS - 1)) * 3;
-/** Any slice's exit slot, for the aperture claims. */
-const sliceExitIndex = (s: number, t: number): number => 2 + s * BANDS * 3 + Math.round(t * (BANDS - 1)) * 3 + 2;
 const tirIndex = (t: number): number => interiorIndex(t) + 1;
 /* T941: leg 2 is the WEDGE SEGMENT between band k and k+1 — its geometry is the
    MIDPOINT of the two bands' exit rays, so its analytic wavelength is the segment
@@ -299,7 +297,9 @@ describe("the prism is a traced ray (T718, §V683)", () => {
         const thetaE = Math.asin(n * Math.sin(theta2));
         const band = segments[segIndex(k)]!;
         expect(length(band)).toBeGreaterThan(0.5);
-        expect(faceAngle(direction(band), NR)).toBeCloseTo(thetaE, 3);
+        // Segment-midpoint geometry vs the centre-wavelength analytic: 7e-4 rad is the
+        // instrument's honest floor (measured 5.4e-4 at the faceted swap).
+        expect(Math.abs(faceAngle(direction(band), NR) - thetaE)).toBeLessThan(7e-4);
         // The segment leaves through the EXIT FACE: its root lies on dot(p, NR) = RI.
         expect(dot(band.origin, NR)).toBeCloseTo(RI, 3);
       }
@@ -498,34 +498,42 @@ describe("the prism is a traced ray (T718, §V683)", () => {
   }, 300_000);
 
   /**
-   * T920 — THE APERTURE MEETS THE BEVEL: slice exit directions are parallel when the
-   * whole aperture lands mid-face and DIVERGE when it rides the corner round-over —
-   * the caustic's cause at the geometry. (0.9, 0) strikes the base at τ 0.632, ON the
-   * arc; (1, 0.3) strikes it at τ −0.03, flat.
+   * T928 — THE APERTURE MEETS THE FACET CREASE. On the round T920 bevel, slices met a
+   * SWEEPING normal and fanned continuously (a caustic). Cut glass does the opposite,
+   * and this gate pins the difference: a beam straddling the base's face/chamfer crease
+   * (τ 0.605) SPLITS — each slice refracts parallel to its own facet, far apart between
+   * facets, with NO intermediate rays. Mid-face stays parallel. Measured on the
+   * INTERIOR legs, which exist at every facet (an exit near the crease can die by TIR
+   * and silently thin an exit-side sample). Same kernel, no branch.
    */
-  it("slices exit parallel from the flat face and diverge across the bevel (T920)", async () => {
+  it("slices refract parallel per facet and SPLIT across the chamfer crease (T928)", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const spreadAcrossSlices = async (px: number, py: number): Promise<number> => {
+    const anglesAcrossSlices = async (px: number, py: number): Promise<number[]> => {
       const segments = await runTrace({ value1: py, value2: 0.03, value3: px });
       const angles: number[] = [];
       for (const s of [0, 4, 8]) {
-        const seg = segments[sliceExitIndex(s, 0.5)]!;
-        if (length(seg) < 1e-3) continue; // a trapped/missed slice carries no direction
+        const seg = segments[2 + s * BANDS * 3 + 30 * 3]!;
+        if (length(seg) < 1e-3) continue;
         const d = direction(seg);
         angles.push(Math.atan2(d[1], d[0]));
       }
-      expect(angles.length).toBeGreaterThanOrEqual(2);
-      return Math.max(...angles) - Math.min(...angles);
+      expect(angles.length).toBe(3);
+      return angles.sort((a, b) => a - b);
     };
 
     expect(aimOf(0.6667, 0.142).tau).toBeCloseTo(-0.034, 2);
-    const flat = await spreadAcrossSlices(0.6667, 0.142);
-    expect(flat).toBeLessThan(0.002);
-    expect(aimOf(0.6, 0).tau).toBeCloseTo(0.632, 2);
-    const bevel = await spreadAcrossSlices(0.6, 0);
-    expect(bevel).toBeGreaterThan(0.04);
+    const flat = await anglesAcrossSlices(0.6667, 0.142);
+    expect(flat[2]! - flat[0]!).toBeLessThan(0.002);
+
+    expect(aimOf(0.6, 0.009).tau).toBeCloseTo(0.605, 2);
+    const crease = await anglesAcrossSlices(0.6, 0.009);
+    const spread = crease[2]! - crease[0]!;
+    expect(spread).toBeGreaterThan(0.04);
+    // BIMODAL: the middle slice belongs to one facet's cluster, never in between —
+    // a round bevel would put it mid-sweep, which is the look this cut replaced.
+    expect(Math.min(crease[1]! - crease[0]!, crease[2]! - crease[1]!)).toBeLessThan(0.005);
   }, 300_000);
 
   /**

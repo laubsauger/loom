@@ -285,10 +285,11 @@ describe("E13 Prism — the picture", () => {
         }
       }
       // A mask that collapsed would satisfy any ratio, so both populations are real first.
-      // T940 re-measured: at env 0.7 (the dark room) the interior mask thins to 17.7k —
-      // still 8x the ring's floor; the RATIO claims below are the physics.
+      // T940 re-measured at env 0.7: 17.7k; T928's diamond cut thins the silhouette
+      // again (13.6k — flat facets show the camera less grazing area than a round-over).
+      // Still 6x the ring's floor; the RATIO claims below are the physics (§V751).
       expect(ringCount).toBeGreaterThan(2000);
-      expect(bodyCount).toBeGreaterThan(15000);
+      expect(bodyCount).toBeGreaterThan(12000);
 
       const ring = ringDelta / ringCount;
       const body = bodyDelta / bodyCount;
