@@ -98,7 +98,9 @@ const HAND_GAIN: f32 = 400.0;
 /* How far along the face the pointer walks the entry point, tip to tail. The face's
    half-length is RI·√3 = 0.658, so ±0.8 runs PAST both vertices — which is the state
    the owner asked for: the beam misses the glass. */
-const REACH: f32 = 1.6;
+/* T915b: how far x walks the entry up the face. ENTRY + WALK runs past the apex, so the
+   top of the sweep is a real miss, as the owner asked for. */
+const WALK: f32 = 1.35;
 const ROOT3: f32 = 1.7320508;
 /* A missed beam has to still be a beam: it carries straight on past where the glass
    isn't, instead of stopping at a face it never met. */
@@ -293,15 +295,23 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* T857 — E13's aim idiom, and it is a BLEND: the pointer TAKES the aim while it is
      moving and hands it back when it stops. 'hand' is the pointer's own activity, and
      it is exactly 0 for a cursor that has never moved. */
-  let hand = clamp(ctx.value4 * HAND_GAIN, 0.0, 1.0);
+  /* T915b — EXCLUSIVE MOUSE CONTROL, the owner's second ask: "no resets no auto swing
+     and swivel". The old chain blended the pointer against a rest pose by a DECAYING
+     velocity signal (stir→urge→hold), so every gesture un-did itself — a reset wearing a
+     smoothing chain. Now the pointer OWNS both axes, through nothing but a position lag:
+     x walks the entry point up the face (past the apex = a real miss), y sets the angle
+     across the full 6°–84° band. A parked cursor is a parked beam, forever. (0,0) — the
+     never-moved pointer and every headless gate — is ENTRY at 6°: near-normal incidence,
+     the converged white line Snell owes it, which TIRs at the exit face into the clean
+     white V of the reference's near-perpendicular shot. */
   let px = clamp(ctx.value3, 0.0, 1.0);
-  let theta = mix(mix(THETA_HI, THETA_LO, clamp(ctx.value1, 0.0, 1.0)),
-                  mix(HAND_HI, HAND_LO, px), hand) * PI / 180.0;
+  let py = clamp(ctx.value1, 0.0, 1.0);
+  let theta = mix(HAND_LO, HAND_HI, py) * PI / 180.0;
   let inward = -NR;
   let cs = cos(-theta);
   let sn = sin(-theta);
   let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);
-  let tau = mix(ENTRY, REACH * (0.5 - px), hand);
+  let tau = ENTRY + px * WALK;
   let pe = NR * RI + vec2f(-NR.y, NR.x) * tau;
   let onFace = abs(tau) < RI * ROOT3;
   /* T920: the trace marches from OUTSIDE the body along the beam, so the entry point —
