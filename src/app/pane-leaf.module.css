@@ -15,12 +15,84 @@
   gap: 0;
 }
 
+/* T853: the strip is the pane's HEADER, so it sits on the chrome band rather than on the
+   body's own fill — see --bg-header for the L* numbers and the direction of the step.
+   Qualified by `.leaf` so it outranks the `.list` background in the tabs primitive by
+   SPECIFICITY; both are single-class otherwise and the winner would depend on which
+   stylesheet the bundler happened to emit second. */
+.leaf .strip {
+  background: var(--bg-header);
+}
+
 .tab {
   cursor: grab;
 }
 
 .tab:active {
   cursor: grabbing;
+}
+
+/* ---- T854: a close on EVERY tab, not just the active one ------------------------ */
+
+/* The × is a sibling of the tab button (a button cannot nest), laid OVER the trigger's
+   own right padding rather than beside it, so the active tab's amber underline still
+   runs the full width of the tab instead of stopping short of the close. */
+.tabSlot {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Two classes, so this wins over the primitive's `.trigger` padding without depending
+   on which stylesheet the bundler emits first. */
+.tabSlot .tab {
+  padding-right: var(--space-6);
+}
+
+.tabClose {
+  position: absolute;
+  top: 50%;
+  right: var(--space-1);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  line-height: 1;
+  cursor: pointer;
+  /* Hover-revealed: five tabs each showing a permanent × is more chrome than the strip
+     can carry at 24px. Opacity, never `display` — the button stays in the accessibility
+     tree and keeps its width, so revealing it does not reflow the strip. */
+  opacity: 0;
+  /* And UNCLICKABLE while hidden. Opacity alone leaves a live hit target sitting over the
+     tab's right edge, so a click there would CLOSE a tab whose × the user never saw —
+     an invisible destructive control. On a touch device the first tap therefore selects
+     the tab and reveals the ×, and the second tap closes it, which is the right order. */
+  pointer-events: none;
+  transition:
+    opacity var(--dur-instant) var(--ease-out),
+    color var(--dur-instant) var(--ease-out);
+}
+
+.tabSlot:hover .tabClose,
+.tabSlot:focus-within .tabClose {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tabClose:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .stripTrailing {

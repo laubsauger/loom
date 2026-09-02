@@ -76,6 +76,26 @@
   --bg-sunken: #0d111a; /* wells, inset tracks, graph void */
   --bg-hover: #202633;
   --bg-active: #2c3444;
+  /* T853 — the pane's CHROME band: its header and its tab strip, as distinct from the
+     body they label. The owner: "a tiny little bit of a different shade of bg color then
+     the body of the panes." A strip at the body's own value reads as one surface and the
+     boundary is carried by the hairline alone.
+
+     NO NEW COLOUR: this is an ALIAS onto the ladder rung BELOW --bg-panel, one step, and
+     the step is DOWNWARD on purpose. The three previous rounds on this exact band all
+     overshot upward — "ever so slightly too bright", "dial down a tiny little bit more" —
+     and the rungs above the pane fill are nowhere near a tiny step:
+
+       --bg-void   L*  8.14   this band          ΔL* -1.56 from the body
+       --bg-panel  L*  9.70   the pane body
+       --bg-hover  L* 15.13   a hover state      ΔL* +5.43  (and semantically a state)
+       --bg-raise  L* 16.60   menus, popovers    ΔL* +6.90
+
+     So down is the only step on the scale small enough to be the "tiny" that was asked
+     for. If the next round wants the band lighter or wider, RE-POINT THIS ONE ALIAS —
+     that is what it is for; do not re-hex it in a component. --divider-line (L* 19.86)
+     still clears this band by 11.7, so the lit-seam rule T708 gates is untouched. */
+  --bg-header: var(--bg-void);
   /* T708: the graph's dot grid. Its own token rather than --line because the two
      have different jobs and different grounds: a hairline rules a PANEL, the dots
      sit on the graph void, and at r=0.5 a dot needs far more separation than a

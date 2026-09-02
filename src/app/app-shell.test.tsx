@@ -994,6 +994,99 @@ describe("T835 — a pane that already has a tab can gain another", () => {
 });
 
 /**
+ * T854 — the owner: "seems like we still cant close a tab in a pane individually."
+ *
+ * The same shape as T835. `closeTab` shipped and `onCloseTab` was wired, but only into
+ * the move menu, which renders for the ACTIVE tab — so a background tab had no route out
+ * at all without first being selected. These pin the door, and that it is still a
+ * DIFFERENT door from the leaf's "Close area": one takes a tab, the other takes the area
+ * and every tab in it (§V340).
+ */
+describe("T854 — every tab carries its own close", () => {
+  it("closes a NON-ACTIVE tab without selecting it first", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} />);
+
+    // The bottom leaf holds five tabs. Make one that is NOT first the active one, so
+    // "did the click select before closing?" has a visible answer: a close that ran
+    // through selection would hand active back to tabs[0] (shader editor).
+    const bottom = zoneElement("bottom");
+    await user.click(within(bottom).getByRole("tab", { name: "problems" }));
+    expect(findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.active).toBe(
+      findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs[1]?.key,
+    );
+
+    await user.click(within(bottom).getByRole("button", { name: "Close examples" }));
+
+    const leaf = findLeaf(readPaneTreeStore(storage).current, "leaf-bottom");
+    expect(leaf?.tabs.map((tab) => tab.role)).toEqual(["shader", "problems", "performance", "agent"]);
+    // Untouched: the tab you were looking at is still the tab you are looking at.
+    expect(leaf?.active).toBe(leaf?.tabs[1]?.key);
+    expect(within(zoneElement("bottom")).getByRole("tab", { name: "problems" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(zoneElement("bottom")).queryByRole("tab", { name: "examples" })).toBeNull();
+  });
+
+  it("closing the ACTIVE tab leaves a sensible active tab behind", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} problems={<div>problems slot</div>} />);
+
+    const bottom = zoneElement("bottom");
+    expect(within(bottom).getByRole("tab", { name: "shader editor" }).getAttribute("aria-selected")).toBe("true");
+    await user.click(within(bottom).getByRole("button", { name: "Close shader editor" }));
+
+    // `closeTab`'s own rule, reached through the strip: active falls to the first
+    // remaining tab, never to null while tabs remain.
+    const leaf = findLeaf(readPaneTreeStore(storage).current, "leaf-bottom");
+    expect(leaf?.tabs.map((tab) => tab.role)).toEqual(["problems", "performance", "examples", "agent"]);
+    expect(leaf?.active).toBe(leaf?.tabs[0]?.key);
+    const after = zoneElement("bottom");
+    expect(within(after).getByRole("tab", { name: "problems" }).getAttribute("aria-selected")).toBe("true");
+    expect(after.contains(screen.getByText("problems slot"))).toBe(true);
+  });
+
+  it("closing the LAST tab empties the leaf and asks what it should show — it does not close the area", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} />);
+
+    // The right leaf holds exactly one tab, so this is the "only tab" case.
+    await user.click(within(zoneElement("right")).getByRole("button", { name: "Close viewer" }));
+
+    // The AREA survives with no tabs — the leaf-stays policy `closeTab` already had,
+    // not a second policy invented at the affordance. Closing the leaf is still its own,
+    // explicit act, so the × can never strand a user in a vanished pane.
+    const leaf = findLeaf(readPaneTreeStore(storage).current, "leaf-right");
+    expect(leaf?.tabs).toEqual([]);
+    expect(leaf?.active).toBeNull();
+    expect(screen.getByTestId("leaf-picker-leaf-right")).toBeDefined();
+    expect(screen.queryByText("viewer slot")).toBeNull();
+  });
+
+  it("keeps the tab's close and the LEAF's close as two different acts (§V340)", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} />);
+
+    // One × takes ONE tab; the leaf and its sibling tab stay.
+    await user.click(within(zoneElement("left")).getByRole("button", { name: "Close node library" }));
+    expect(findLeaf(readPaneTreeStore(storage).current, "leaf-left")?.tabs.map((tab) => tab.role)).toEqual([
+      "components",
+    ]);
+    expect(document.querySelector('[data-pane-leaf="leaf-left"]')).not.toBeNull();
+
+    // "Close area" still takes the whole area with the tab still in it — unchanged.
+    await user.click(
+      within(zoneElement("left")).getByRole("button", { name: "Split or close this pane area" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Close area" }));
+    expect(findLeaf(readPaneTreeStore(storage).current, "leaf-left")).toBeUndefined();
+    expect(document.querySelector('[data-pane-leaf="leaf-left"]')).toBeNull();
+  });
+});
+
+/**
  * T486 (V423) — the owner's trap, walked in the shell: close the bottom AREA, then
  * bring it back from the layout menu. A control that lists what is PRESENT cannot
  * restore what is ABSENT, so the menu offers closed ROLES — the possibility space —

@@ -25,6 +25,11 @@ import styles from "./pane-leaf.module.css";
  * lists every other leaf by label, Float, and Close. Splitting and closing the LEAF
  * live in the leaf's own menu, so a docking system is never mouse-only furniture.
  *
+ * T854's per-tab × is a POINTER shortcut, deliberately outside the roving index: arrowing
+ * to a tab already selects it, so the keyboard route to closing any tab is arrow-then-menu
+ * and no tab is keyboard-unclosable. Giving each × its own tab stop would put N stops in
+ * the strip and cost the single-stop property this docblock promises.
+ *
  * ## The empty leaf is a QUESTION, not a void
  *
  * A fresh split opens EMPTY on purpose (T406): the user says what it shows via the role
@@ -148,31 +153,54 @@ export function PaneLeafView({
     <section className={styles.leaf} data-pane-leaf={leafId} aria-label={label}>
       <div className={cx(tabStyles.list, styles.strip)} role="tablist" ref={listRef} aria-label={label}>
         {tabs.map((tab, index) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            id={`${baseId}-tab-${tab.key}`}
-            aria-controls={`${baseId}-panel-${tab.key}`}
-            aria-selected={tab.key === activeTab?.key}
-            tabIndex={tab.key === activeTab?.key ? 0 : -1}
-            data-state={tab.key === activeTab?.key ? "active" : "inactive"}
-            data-pane-tab={tab.key}
-            data-pane-role={tab.role}
-            className={cx(tabStyles.trigger, styles.tab)}
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/x-shaderloom-pane", tab.key);
-              onDragTab(tab.key);
-            }}
-            onDragEnd={() => onDragTab(null)}
-            onClick={() => onSelect(leafId, tab.key)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-          >
-            {tab.title}
-            {tab.badge !== undefined && tab.badge > 0 ? <TabBadge tone="error">{tab.badge}</TabBadge> : null}
-          </button>
+          /* T854: the tab and its × are SIBLINGS. A button inside a button is invalid
+             HTML, and nesting would also fold the close into the tab's accessible name.
+             `role="presentation"` keeps the wrapper out of the a11y tree so the tablist
+             still owns its tabs directly. */
+          <div key={tab.key} role="presentation" className={styles.tabSlot}>
+            <button
+              type="button"
+              role="tab"
+              id={`${baseId}-tab-${tab.key}`}
+              aria-controls={`${baseId}-panel-${tab.key}`}
+              aria-selected={tab.key === activeTab?.key}
+              tabIndex={tab.key === activeTab?.key ? 0 : -1}
+              data-state={tab.key === activeTab?.key ? "active" : "inactive"}
+              data-pane-tab={tab.key}
+              data-pane-role={tab.role}
+              className={cx(tabStyles.trigger, styles.tab)}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/x-shaderloom-pane", tab.key);
+                onDragTab(tab.key);
+              }}
+              onDragEnd={() => onDragTab(null)}
+              onClick={() => onSelect(leafId, tab.key)}
+              onKeyDown={(event) => onKeyDown(event, index)}
+            >
+              {tab.title}
+              {tab.badge !== undefined && tab.badge > 0 ? <TabBadge tone="error">{tab.badge}</TabBadge> : null}
+            </button>
+            {/* T854, the owner: "we still cant close a tab in a pane individually."
+                `closeTab` shipped and `onCloseTab` was wired — but only into the move
+                menu, which renders for the ACTIVE tab, so a background tab could not be
+                closed without first being selected. This is that same operation given a
+                door on every tab; it is NOT the leaf's Close, which takes the whole area
+                and every tab in it (§V340: what a control closes is part of what it is).
+                `tabIndex={-1}` on purpose — the strip is ONE tab stop with a roving
+                index (§V19), and N extra stops would trade one gap for another. */}
+            <button
+              type="button"
+              tabIndex={-1}
+              className={styles.tabClose}
+              aria-label={`Close ${tab.title}`}
+              title={`Close ${tab.title}`}
+              onClick={() => onCloseTab(tab.key)}
+            >
+              ×
+            </button>
+          </div>
         ))}
         <div className={styles.stripTrailing}>
           {/* T835: the ADD door. Only on an OCCUPIED strip — an empty leaf already asks

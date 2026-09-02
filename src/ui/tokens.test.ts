@@ -275,6 +275,68 @@ describe("T708 — adjacent surfaces are separated by a perceptible amount", () 
   });
 });
 
+/**
+ * T853 — the pane's CHROME BAND is a different value from the body it labels.
+ *
+ * The owner asked for "a tiny little bit of a different shade", and the three rounds
+ * before this one all overshot upward. So both bounds are gated, not just the presence of
+ * a difference: a band that collapses back onto the body is the bug being fixed, and a
+ * band that climbs toward --bg-raise is the failure the owner has already rejected three
+ * times. The floor is deliberately BELOW T708's 4 L* surface step — those are structural
+ * rungs meant to read across a whole pane, this is a 24px strip already separated by a
+ * hairline, and "tiny" is the requirement rather than a compromise.
+ */
+describe("T853 — the pane header band differs from the pane body, slightly", () => {
+  const MIN_BAND_STEP = 1; // it must be a different value at all
+  const MAX_BAND_STEP = 3; // and it must stay under the structural step (4)
+
+  /** Follows `--x: var(--y)` aliases to the hex a token finally resolves to. */
+  function resolve(name: string): string {
+    for (let hops = 0; hops < 4; hops += 1) {
+      const match = new RegExp(`${name}:\\s*([^;]+);`).exec(tokensCss);
+      if (match === null) throw new Error(`${name} is not declared in tokens.css`);
+      const value = match[1]!.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(value)) return value;
+      const alias = /^var\((--[\w-]+)\)$/.exec(value);
+      if (alias === null) throw new Error(`${name} is neither a hex nor a plain var() alias: ${value}`);
+      name = alias[1]!;
+    }
+    throw new Error(`${name} aliases in a cycle`);
+  }
+
+  it("is an ALIAS onto the ladder, never a colour invented for the band", () => {
+    // The whole point of the token: round four re-points one alias instead of eyeballing
+    // a fourth hex. A literal here would also mean a new rung nothing else measures.
+    expect(/--bg-header:\s*var\(--[\w-]+\);/.test(tokensCss)).toBe(true);
+    // Onto a rung that EXISTS — not pinned to which one, because the next round is meant
+    // to re-point this alias and the bounds below are what must survive that.
+    const ladder = ["--bg-sunken", "--bg-void", "--bg-panel", "--bg-raise"].map(resolve);
+    expect(ladder).toContain(resolve("--bg-header"));
+  });
+
+  it("differs from the pane body by a small, bounded amount in BOTH directions", () => {
+    const step = Math.abs(lightness(resolve("--bg-panel")) - lightness(resolve("--bg-header")));
+    expect(step).toBeGreaterThanOrEqual(MIN_BAND_STEP);
+    expect(step).toBeLessThanOrEqual(MAX_BAND_STEP);
+    // DOWNWARD, and that is the decision being recorded: every previous round of this
+    // band was rejected for being too bright, and the rungs above --bg-panel are 5.4 and
+    // 6.9 L* away — nothing up there is "a tiny little bit".
+    expect(lightness(resolve("--bg-header"))).toBeLessThan(lightness(resolve("--bg-panel")));
+  });
+
+  it("is what the pane header and the leaf's tab strip actually paint with", () => {
+    // Wiring guard: a token nothing reads is a comment. Both surfaces the owner named
+    // must reach it, and neither may fall back to the body fill it is meant to differ from.
+    for (const file of ["app/pane.module.css", "app/pane-leaf.module.css"]) {
+      const css = readFileSync(join(SRC, ...file.split("/")), "utf8");
+      expect(css, `${file} does not paint with --bg-header`).toContain("background: var(--bg-header)");
+    }
+    // And the seam still reads ABOVE the band, so T708's lit-divider rule is not quietly
+    // inverted by lowering the surface next to it.
+    expect(lightness(resolve("--divider-line"))).toBeGreaterThan(lightness(resolve("--bg-header")));
+  });
+});
+
 describe("V26 — port family colors are semantic and complete", () => {
   it("gives every PortType.kind its own token", () => {
     const values = Object.values(PORT_FAMILY_VAR);

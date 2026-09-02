@@ -15,6 +15,9 @@
   flex: 0 0 auto;
   height: var(--pane-header-h);
   padding: 0 var(--space-4);
+  /* T853: one rung below the body it labels, so the header is a band and not just a
+     hairline. See --bg-header for the numbers and for which way the step goes. */
+  background: var(--bg-header);
   border-bottom: var(--border-hairline);
   color: var(--text-dim);
   font-family: var(--font-ui);
