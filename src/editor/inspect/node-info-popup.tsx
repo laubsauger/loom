@@ -300,10 +300,8 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
         ) : null}
         {info.timingAvailable ? null : (
           <p className={styles.note}>
-            Per-pass GPU spans need the optional <code>timestamp-query</code>
-            feature. Loom requests it whenever the adapter offers it, so this is the
-            adapter not offering it rather than a request Loom skipped; the device
-            diagnostic names which. No timing is estimated in its place.
+            No per-pass timing — this adapter does not offer{" "}
+            <code>timestamp-query</code>.
           </p>
         )}
       </section>
