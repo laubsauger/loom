@@ -1,0 +1,450 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioLevel",
+        "description": "The audio analyser, auto-levelled — every band normalised to 0..1 whatever the track's level.",
+        "graph": {
+          "edges": {
+            "e-beat-floor": {
+              "id": "e-beat-floor",
+              "source": {
+                "nodeId": "beat",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "floor",
+                "portId": "in"
+              }
+            },
+            "e-beat-num": {
+              "id": "e-beat-num",
+              "source": {
+                "nodeId": "beat",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "num",
+                "portId": "a"
+              }
+            },
+            "e-beat-peak": {
+              "id": "e-beat-peak",
+              "source": {
+                "nodeId": "beat",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "peak",
+                "portId": "in"
+              }
+            },
+            "e-den-norm": {
+              "id": "e-den-norm",
+              "source": {
+                "nodeId": "den",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "norm",
+                "portId": "b"
+              }
+            },
+            "e-floor-den": {
+              "id": "e-floor-den",
+              "source": {
+                "nodeId": "floor",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "den",
+                "portId": "b"
+              }
+            },
+            "e-floor-num": {
+              "id": "e-floor-num",
+              "source": {
+                "nodeId": "floor",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "num",
+                "portId": "b"
+              }
+            },
+            "e-norm-clamp": {
+              "id": "e-norm-clamp",
+              "source": {
+                "nodeId": "norm",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "clamp",
+                "portId": "in"
+              }
+            },
+            "e-num-norm": {
+              "id": "e-num-norm",
+              "source": {
+                "nodeId": "num",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "norm",
+                "portId": "a"
+              }
+            },
+            "e-peak-den": {
+              "id": "e-peak-den",
+              "source": {
+                "nodeId": "peak",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "den",
+                "portId": "a"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "clamp",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "beat": {
+              "definitionVersion": 1,
+              "id": "beat",
+              "parameters": {
+                "amount": 1,
+                "bpm": 112
+              },
+              "position": {
+                "x": -720,
+                "y": 240
+              },
+              "type": "audioPattern"
+            },
+            "clamp": {
+              "definitionVersion": 1,
+              "id": "clamp",
+              "parameters": {
+                "maximum": 1,
+                "minimum": 0
+              },
+              "position": {
+                "x": 240,
+                "y": 280
+              },
+              "type": "valueLimit"
+            },
+            "den": {
+              "definitionVersion": 1,
+              "id": "den",
+              "parameters": {
+                "operation": "subtract"
+              },
+              "position": {
+                "x": -240,
+                "y": 360
+              },
+              "type": "valueMath"
+            },
+            "floor": {
+              "definitionVersion": 1,
+              "id": "floor",
+              "parameters": {
+                "lag": 0.5,
+                "releaseRatio": 0.002
+              },
+              "position": {
+                "x": -480,
+                "y": 360
+              },
+              "type": "valueLag"
+            },
+            "norm": {
+              "definitionVersion": 1,
+              "id": "norm",
+              "parameters": {
+                "operation": "divide"
+              },
+              "position": {
+                "x": 0,
+                "y": 280
+              },
+              "type": "valueMath"
+            },
+            "num": {
+              "definitionVersion": 1,
+              "id": "num",
+              "parameters": {
+                "operation": "subtract"
+              },
+              "position": {
+                "x": -240,
+                "y": 200
+              },
+              "type": "valueMath"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 480,
+                "y": 280
+              },
+              "type": "componentOutValue"
+            },
+            "peak": {
+              "definitionVersion": 1,
+              "id": "peak",
+              "parameters": {
+                "lag": 0.005,
+                "releaseRatio": 100
+              },
+              "position": {
+                "x": -480,
+                "y": 120
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 0
+        },
+        "inputs": [],
+        "name": "AudioLevel",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "out",
+            "nodeId": "out_out",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 112,
+              "label": "BPM",
+              "max": 300,
+              "min": 20,
+              "range": "floor",
+              "type": "number"
+            },
+            "key": "bpm",
+            "targets": [
+              {
+                "key": "bpm",
+                "nodeId": "beat"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "Master gain on the source. The auto-level adapts, so this changes feel, not range.",
+              "label": "Amount",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "amount",
+            "targets": [
+              {
+                "key": "amount",
+                "nodeId": "beat"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 100,
+              "description": "How slowly the peak-follower forgets a loud hit (its release ratio). 100 is a 500 ms tail; lower makes the normaliser chase level faster and sag harder between hits. T823 widened the travel to reach it.",
+              "label": "Responsiveness",
+              "max": 100,
+              "min": 1,
+              "step": 0.5,
+              "type": "number"
+            },
+            "key": "responsiveness",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "peak"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-swatch-glow": {
+        "id": "e-swatch-glow",
+        "source": {
+          "nodeId": "swatch",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "input"
+        }
+      },
+      "ed_audioLevel2": {
+        "id": "ed_audioLevel2",
+        "source": {
+          "nodeId": "nd_audioLevel1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "probe",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "driven": {
+                "channel": "probe:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "driven"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 240,
+          "y": -120
+        },
+        "type": "level"
+      },
+      "nd_audioLevel1": {
+        "definitionVersion": 1,
+        "id": "nd_audioLevel1",
+        "parameters": {},
+        "position": {
+          "x": -274,
+          "y": 263
+        },
+        "type": "component:audioLevel@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "parameters": {},
+        "position": {
+          "x": 480,
+          "y": -120
+        },
+        "type": "output"
+      },
+      "probe": {
+        "definitionVersion": 1,
+        "id": "probe",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": 480,
+          "y": 280
+        },
+        "type": "valueLimit"
+      },
+      "swatch": {
+        "definitionVersion": 1,
+        "id": "swatch",
+        "parameters": {
+          "color1": [
+            0.05,
+            0.07,
+            0.12,
+            1
+          ],
+          "color2": [
+            0.85,
+            0.8,
+            0.62,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            6,
+            4
+          ]
+        },
+        "position": {
+          "x": -240,
+          "y": -120
+        },
+        "type": "checker"
+      }
+    },
+    "revision": 2
+  },
+  "name": "AudioLevel",
+  "projectId": "component-audioLevel",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 360,
+      "width": 640
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

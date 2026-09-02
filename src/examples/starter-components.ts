@@ -195,10 +195,113 @@ const mediaGradeHost: ProjectDocument = {
 };
 
 /**
- * The five specs.
+ * AudioLevel's host (T822/T821): the common audio analysis, wrapped.
+ *
+ * The owner's ask and §T821's ruling met in the same place — the affine auto-level chain
+ * that E27 and E43 each rebuilt by hand belongs behind ONE boundary, reused. The seven
+ * nodes are §T821's MEASURED chain, re-run at HEAD: a peak-follower (5 ms attack, 500 ms
+ * release = valueLag ratio 100) and its mirror floor-follower (500 ms rise, 1 ms fall =
+ * ratio 0.002), then `(raw − floor) / (peak − floor)` clamped to 0..1. It takes three
+ * different source levels — amount 1, 0.5, 0.25 — all to 0.000..1.000, so a parameter
+ * tuned against its output keeps its range whatever the track's level (the whole point of
+ * an analyser). Every band the source publishes is normalised at once, per channel.
+ *
+ * It is a SOURCE component — the audioPattern is inside, so an adopter drops one node, not a
+ * chain. `probe` stays outside: the cut `clamp → probe` value edge is what synthesizes the
+ * component's value OUTPUT boundary (T822), and probe driving `glow.brightness` by its own
+ * channel is the runnable demonstration — the normalised low band as a pulsing level.
+ *
+ * ratio 100 is why §T823 widened Release Ratio's drag travel to 100: `responsiveness` is a
+ * PUBLISHED knob, and a published knob the user cannot drag to its useful setting is a
+ * defect.
+ */
+const AUDIO_LEVEL_SETTINGS: ProjectSettings = {
+  outputResolution: { width: 640, height: 360 },
+  workingFormat: "rgba16float",
+  randomSeed: 7,
+  previewLongEdge: 192,
+  previewFps: 30,
+  limits: LIMITS,
+};
+
+/** The retained-static + driven slot a parameter takes when a channel drives it (§V107). */
+const drivenBy = (channel: string, retained: number) => ({
+  mode: "driven" as const,
+  bindings: {
+    static: { kind: "static" as const, value: retained },
+    driven: { kind: "driven" as const, channel },
+  },
+});
+
+export const audioLevelHost: ProjectDocument = {
+  schemaVersion: SCHEMA_VERSION,
+  projectId: "component-audio-level",
+  name: "AudioLevel",
+  settings: AUDIO_LEVEL_SETTINGS,
+  assets: [],
+  createdAt: STARTER_COMPONENT_TIMESTAMP,
+  updatedAt: STARTER_COMPONENT_TIMESTAMP,
+  graph: {
+    revision: 1,
+    nodes: {
+      // The analyser (inside): source + the six-node auto-level chain.
+      beat: { id: "beat", type: "audioPattern", definitionVersion: 1, position: { x: -720, y: 240 }, parameters: { bpm: 112, amount: 1 } },
+      peak: { id: "peak", type: "valueLag", definitionVersion: 1, position: { x: -480, y: 120 }, parameters: { lag: 0.005, releaseRatio: 100 } },
+      floor: { id: "floor", type: "valueLag", definitionVersion: 1, position: { x: -480, y: 360 }, parameters: { lag: 0.5, releaseRatio: 0.002 } },
+      num: { id: "num", type: "valueMath", definitionVersion: 1, position: { x: -240, y: 200 }, parameters: { operation: "subtract" } },
+      den: { id: "den", type: "valueMath", definitionVersion: 1, position: { x: -240, y: 360 }, parameters: { operation: "subtract" } },
+      norm: { id: "norm", type: "valueMath", definitionVersion: 1, position: { x: 0, y: 280 }, parameters: { operation: "divide" } },
+      clamp: { id: "clamp", type: "valueLimit", definitionVersion: 1, position: { x: 240, y: 280 }, parameters: { minimum: 0, maximum: 1 } },
+      // Outside: the probe that reads the normalised value and drives the demo.
+      probe: { id: "probe", type: "valueLimit", definitionVersion: 1, position: { x: 480, y: 280 }, parameters: { minimum: 0, maximum: 1 } },
+      // The demonstration picture: a plate whose brightness rides the normalised low band.
+      swatch: {
+        id: "swatch",
+        type: "checker",
+        definitionVersion: 1,
+        position: { x: -240, y: -120 },
+        parameters: { size: [6, 4], offset: [0, 0], color1: [0.05, 0.07, 0.12, 1], color2: [0.85, 0.8, 0.62, 1] },
+      },
+      glow: {
+        id: "glow",
+        type: "level",
+        definitionVersion: 1,
+        position: { x: 240, y: -120 },
+        parameters: {
+          blacklevel: 0,
+          whitelevel: 1,
+          gamma1: 1,
+          contrast: 1,
+          brightness: drivenBy("probe:low", 1),
+          opacity: 1,
+        },
+      },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 480, y: -120 }, parameters: {} },
+    },
+    edges: {
+      "e-beat-peak": { id: "e-beat-peak", source: { nodeId: "beat", portId: "out" }, target: { nodeId: "peak", portId: "in" } },
+      "e-beat-floor": { id: "e-beat-floor", source: { nodeId: "beat", portId: "out" }, target: { nodeId: "floor", portId: "in" } },
+      "e-beat-num": { id: "e-beat-num", source: { nodeId: "beat", portId: "out" }, target: { nodeId: "num", portId: "a" } },
+      "e-floor-num": { id: "e-floor-num", source: { nodeId: "floor", portId: "out" }, target: { nodeId: "num", portId: "b" } },
+      "e-peak-den": { id: "e-peak-den", source: { nodeId: "peak", portId: "out" }, target: { nodeId: "den", portId: "a" } },
+      "e-floor-den": { id: "e-floor-den", source: { nodeId: "floor", portId: "out" }, target: { nodeId: "den", portId: "b" } },
+      "e-num-norm": { id: "e-num-norm", source: { nodeId: "num", portId: "out" }, target: { nodeId: "norm", portId: "a" } },
+      "e-den-norm": { id: "e-den-norm", source: { nodeId: "den", portId: "out" }, target: { nodeId: "norm", portId: "b" } },
+      "e-norm-clamp": { id: "e-norm-clamp", source: { nodeId: "norm", portId: "out" }, target: { nodeId: "clamp", portId: "in" } },
+      // The boundary-defining edge: source inside, target outside → one componentOutValue.
+      "e-clamp-probe": { id: "e-clamp-probe", source: { nodeId: "clamp", portId: "out" }, target: { nodeId: "probe", portId: "in" } },
+      "e-swatch-glow": { id: "e-swatch-glow", source: { nodeId: "swatch", portId: "out" }, target: { nodeId: "glow", portId: "input" } },
+      "e-glow-out": { id: "e-glow-out", source: { nodeId: "glow", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  },
+};
+
+/**
+ * The specs.
  *
  * Ordered the way the library reads them: the two most-reached-for first, then the two
- * that are chains rather than effects, then the grade.
+ * that are chains rather than effects, the grade, then the audio analyser.
  */
 export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
   {
@@ -451,6 +554,50 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           unit: "degrees",
         },
         targets: [{ nodeId: "tone", key: "hueoffset" }],
+      },
+    ],
+  },
+  {
+    componentId: "audioLevel",
+    name: "AudioLevel",
+    description: "The audio analyser, auto-levelled — every band normalised to 0..1 whatever the track's level.",
+    host: audioLevelHost,
+    // The source comes WITH it: this is the reusable ANALYSER, so an adopter drops one node
+    // and reads its normalised channels, not a seven-node chain rebuilt by hand (T821). The
+    // probe stays outside — the cut clamp→probe value edge synthesizes the value output.
+    selection: ["beat", "peak", "floor", "num", "den", "norm", "clamp"],
+    publish: [
+      {
+        key: "bpm",
+        definition: { type: "number", label: "BPM", default: 112, min: 20, max: 300, range: "floor" },
+        targets: [{ nodeId: "beat", key: "bpm" }],
+      },
+      {
+        key: "amount",
+        definition: {
+          type: "number",
+          label: "Amount",
+          default: 1,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "Master gain on the source. The auto-level adapts, so this changes feel, not range.",
+        },
+        targets: [{ nodeId: "beat", key: "amount" }],
+      },
+      {
+        key: "responsiveness",
+        definition: {
+          type: "number",
+          label: "Responsiveness",
+          default: 100,
+          min: 1,
+          max: 100,
+          step: 0.5,
+          description:
+            "How slowly the peak-follower forgets a loud hit (its release ratio). 100 is a 500 ms tail; lower makes the normaliser chase level faster and sag harder between hits. T823 widened the travel to reach it.",
+        },
+        targets: [{ nodeId: "peak", key: "releaseRatio" }],
       },
     ],
   },

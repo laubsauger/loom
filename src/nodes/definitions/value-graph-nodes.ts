@@ -284,7 +284,12 @@ const RELEASE_RATIO_PARAMETER: NumberParameter = {
     "Multiplies the smoothing time while a channel is FALLING. 1 smooths both directions alike, which is what this node has always done. Above 1 the fall is slower than the rise — fast attack, slow release, the envelope shape. Below 1 snaps down and eases up. Unitless on purpose: it means the same thing on Lag and on Filter.",
   default: 1,
   min: 0,
-  max: 10,
+  // T823: the drag travel reaches 100, not 10. A peak-follower (5 ms attack, 500 ms
+  // release) is ratio 100, and the depth is not cosmetic — the transient sag it removes is
+  // 15.8% at 100 against 26.8% at 10 (T814's own measurement). `range: "floor"` always let
+  // a typed or driven value go higher, but a component that PUBLISHES this parameter for the
+  // user to drag needs the useful setting inside the travel, not past its end.
+  max: 100,
   step: 0.01,
   range: "floor",
 };
