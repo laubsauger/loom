@@ -192,7 +192,14 @@ const handTauOf = (px: number): number => REACH * (0.5 - px);
 /** The entry point's coordinate ALONG the face, from the face's own midpoint. */
 const tauOf = (point: readonly [number, number]): number =>
   (point[0] - NR[0] * RI) * TANGENT[0] + (point[1] - NR[1] * RI) * TANGENT[1];
-const bandN = (t: number, dispersion: number): number => N_RED + dispersion * t;
+/** T913: the kernel's Cauchy curve, mirrored exactly — n(λ)=A+B/λ², λ 0.7µm → 0.4µm,
+ * B derived so `dispersion` stays the total spread across the band. */
+const bandN = (t: number, dispersion: number): number => {
+  const lam = 0.7 + (0.4 - 0.7) * t;
+  const invRed = 1 / (0.7 * 0.7);
+  const k = 1 / (0.4 * 0.4) - invRed;
+  return N_RED + (dispersion / k) * (1 / (lam * lam) - invRed);
+};
 const bandIndex = (t: number): number => 4 + Math.round(t * (CAPACITY - 5));
 /** Inside the cross-section: every face plane satisfied, with a hair of slack. */
 const insideGlass = (point: readonly [number, number]): boolean =>

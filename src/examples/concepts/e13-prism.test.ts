@@ -328,7 +328,7 @@ describe("E13 Prism", () => {
    */
   it("takes each band's colour and its refractive index from the same t", () => {
     const kernel = kernelOf("optics");
-    expect(kernel).toContain("let n = N_RED + ctx.value2 * t;");
+    expect(kernel).toContain("let n = cauchyN(t, ctx.value2);");
     expect(kernel).toContain("fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0))");
 
     // `fieldAt` compiles only when something is wired to the kernel's field input, so the
@@ -363,7 +363,8 @@ describe("E13 Prism", () => {
   it("carries the glass's dispersive power as a live uniform the kernel reads", () => {
     const dispatch = plan.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
     const uniforms = (dispatch as { uniforms?: Record<string, number> }).uniforms ?? {};
-    expect(uniforms["value2"]).toBeCloseTo(0.085, 6);
+    // T913: dense flint's real spread — the split-or-converge is Snell's, not a knob.
+    expect(uniforms["value2"]).toBeCloseTo(0.03, 6);
     expect(kernelOf("optics")).toContain("ctx.value2");
     // Real crown glass is about a sixth of this, and the exaggeration is stated in the md.
     expect(uniforms["value2"]).toBeGreaterThan(0);

@@ -296,7 +296,11 @@ describe("E13 Prism — the picture", () => {
       const wideSpan = fanRun(wide, COLUMN, FAN_THRESHOLD).span;
       const narrowSpan = fanRun(narrow, COLUMN, FAN_THRESHOLD).span;
       // Both aims must actually put a fan on that column — a span of nothing is not narrow.
-      expect(narrowSpan).toBeGreaterThan(20);
+      // T913 re-measured at the PHYSICAL Δn (0.085 → 0.03, dense flint): 33px against 18px,
+      // ratio 1.83 — now within a hair of the DERIVED angular ratio 1.82, where the old
+      // exaggerated spread read 2.35 (§V751: 108/46 then, 33/18 now). The physics gate got
+      // SHARPER by getting real.
+      expect(narrowSpan).toBeGreaterThan(12);
       expect(wideSpan / narrowSpan).toBeGreaterThan(1.5);
     },
     240_000,

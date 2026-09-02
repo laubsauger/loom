@@ -62,10 +62,13 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  *
  * THE DISPERSION IS THE EXAMPLE, and it is solved rather than drawn. `optics1` runs
  * Snell's law twice per band, vectorially, in the prism's own cross-section: refract in
- * at the right face, cross to the left face plane, refract out. n runs 1.500 (red) to
- * 1.585 (violet) — real crown glass disperses about a sixth of that, and the
- * exaggeration is `value2`, a number this file owns rather than a constant hidden in the
- * kernel. Sixty-one bands take their colour from `spectrum1` through the kernel's own
+ * at the right face, cross to the left face plane, refract out. n follows CAUCHY
+ * (T913, n = A + B/λ², λ 0.7µm → 0.4µm), violet-heavy the way real glass is, and runs
+ * 1.500 (red) to 1.530 (violet) — `value2` is the total spread, 0.030, DENSE FLINT's
+ * real number (crown is 0.018; the old 0.085 was 3–5× exaggerated, which is why the fan
+ * looked split at every angle and the impact angle stopped reading as the cause). The
+ * split-or-converge behaviour is Snell's own: at near-normal incidence every wavelength
+ * refracts alike and the beam stays a line; obliquely they part. No branch decides it. Sixty-one bands take their colour from `spectrum1` through the kernel's own
  * `field` input (`fieldAt(vec3f(t·2−1, 0, 0))` samples the ramp at u = t, v = 0.5), so
  * hue and refractive index are the SAME parameter and the ramp is the authored spectrum.
  *
@@ -80,11 +83,12 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * on the entry face, and RISES as the internal ray approaches the critical angle at the
  * EXIT face. Computed over the swing: 5.98° of fan at θ1 = 62°, 10.91° at θ1 = 37°.
  * Measured on the picture at the same two aims — the vertical span of the fan at screen
- * column 240 — 46px and 108px, a ratio of 2.35. The exit face is where dispersion is
- * made; the entry face only decides how obliquely the ray arrives there.
+ * column 240 — 18px and 33px at T913's physical Δn, ratio 1.83, within a hair of the
+ * derived 1.82 (the exaggerated 0.085 read 108/46 = 2.35 — §V751). The exit face is where
+ * dispersion is made; the entry face only decides how obliquely the ray arrives there.
  *
  * THE SWING stops at 37° and not lower, and the reason USED to be in the same arithmetic:
- * at n = 1.585 the critical angle is 39.1°, θ3 reaches it at θ1 ≈ 33.7°, and below that
+ * at n = 1.530 (T913's violet) the critical angle is 40.8°, θ3 reaches it at low θ1, and below that
  * the violet end TOTALLY INTERNALLY REFLECTS — which the old optics expressed by returning
  * a zero vector, so a band quietly left the spectrum. T718 removed that reason when it made
  * TIR a drawn PATH (reflect at the exit face, cross to the base, Snell out there), and
@@ -344,9 +348,9 @@ export const prismDocument = document(
         attributes: PRISM_OPTICS_ATTRIBUTES,
         kernel: prismTraceKernel((PRISM_RC / 2).toFixed(3)),
         // The glass's DISPERSIVE POWER, and the one number the whole effect rests on:
-        // n runs 1.500 (red) to 1.585 (violet). Set it to 0 and the fan collapses to a
+        // n runs 1.500 (red) to 1.530 (violet), Cauchy (T913). Set it to 0 and the fan collapses to a
         // single ray, which is what the gate asserts.
-        value2: 0.085,
+        value2: 0.03,
       }, {
         label: "optics1",
         // T857: three slots, and NONE of them is added to another. `value1` is the

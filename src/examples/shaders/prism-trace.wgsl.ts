@@ -106,6 +106,27 @@ const ROOT3: f32 = 1.7320508;
    isn't, instead of stopping at a face it never met. */
 const MISS_LEN: f32 = 2.60;
 
+/* CAUCHY DISPERSION (T913): n(λ) = A + B/λ², the real curve, replacing linear-in-t.
+   λ runs 0.7µm (red, t = 0) → 0.4µm (violet, t = 1). B is derived from the SPREAD the
+   document asks for (value2 stays "total Δn across the band", so every measurement keeps
+   its meaning) — and the curve is violet-heavy, which is the end of the spectrum the eye
+   reads first and exactly what linear-in-t flattened. */
+const LAMBDA_RED: f32 = 0.7;
+const LAMBDA_VIOLET: f32 = 0.4;
+fn cauchyN(t: f32, spread: f32) -> f32 {
+  let lam = mix(LAMBDA_RED, LAMBDA_VIOLET, t);
+  let invRed = 1.0 / (LAMBDA_RED * LAMBDA_RED);
+  let k = 1.0 / (LAMBDA_VIOLET * LAMBDA_VIOLET) - invRed;
+  return N_RED + (spread / k) * (1.0 / (lam * lam) - invRed);
+}
+
+/* Schlick with the band's OWN normal-incidence reflectance — R0 = ((n−1)/(n+1))². */
+fn schlick(cosI: f32, n: f32) -> f32 {
+  let r0root = (n - 1.0) / (n + 1.0);
+  let r0 = r0root * r0root;
+  return r0 + (1.0 - r0) * pow(1.0 - cosI, 5.0);
+}
+
 /* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike
    the previous optics, TIR here selects the reflected path instead of deleting it. */
 fn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {
@@ -134,6 +155,10 @@ struct Traced {
   firstHit: vec2f,
   /* 1.0 when the ray left through the BASE after TIR at the exit face. */
   tir: f32,
+  /* |cos| of the INTERNAL incidence at the face the ray actually left through — what the
+     exit face's Fresnel share is computed from (T913). 1 when degenerate, so a collapsed
+     ray costs no brightness by accident. */
+  exitCos: f32,
 };
 
 /* The whole path of ONE wavelength: entry Snell, internal segment to the nearest
@@ -143,6 +168,7 @@ struct Traced {
 fn tracePrism(pe: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {
   var out: Traced;
   out.tir = 0.0;
+  out.exitCos = 1.0;
   let d2 = refract2(dIn, NR, 1.0 / n);
   /* Entry at grazing beyond range: keep the geometry degenerate-safe. */
   if (dot(d2, d2) < 1.0e-9) {
@@ -163,6 +189,7 @@ fn tracePrism(pe: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {
   if (dot(d3, d3) > 1.0e-9) {
     out.exitPoint = p1;
     out.exitDirection = d3;
+    out.exitCos = abs(dot(d2, n1));
     return out;
   }
   /* TOTAL INTERNAL REFLECTION: the face is a mirror; the ray crosses to the other
@@ -176,6 +203,7 @@ fn tracePrism(pe: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {
   let d4 = refract2(dr, -n2, n);
   /* Twice-trapped: draw nothing rather than something invented. */
   out.exitDirection = select(d4, vec2f(0.0), dot(d4, d4) < 1.0e-9);
+  out.exitCos = abs(dot(dr, n2));
   return out;
 }
 `;
@@ -223,7 +251,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let onFace = abs(tau) < RI * ROOT3;
 
   /* The CENTRAL wavelength's path — the visible interior, shared by slots 2 and 3. */
-  let nMid = N_RED + ctx.value2 * 0.5;
+  let nMid = cauchyN(0.5, ctx.value2);
   let mid = tracePrism(pe, dIn, nMid, RI);
 
   if (ctx.index == 0u) {
@@ -279,14 +307,21 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      the BASE after TIR — so the fan opens at the face and a band near the critical
      angle visibly walks off the end of it. */
   let t = f32(ctx.index - 4u) / f32(ctx.count - 5u);
-  let n = N_RED + ctx.value2 * t;
+  let n = cauchyN(t, ctx.value2);
   let band = tracePrism(pe, dIn, n, RI);
   /* A ray that missed the glass disperses nothing: the whole fan collapses to zero
      length at the entry point, and the shaft above is the only thing drawn. */
   let root = select(pe, band.exitPoint, onFace);
   q.position = vec3f(root, PLANE);
   q.tip = vec3f(select(root, band.exitPoint + band.exitDirection * FAN_LEN, onFace), PLANE);
-  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);
+  /* FRESNEL AT BOTH FACES (T913): the band's brightness is what the entry face let
+     through times what its OWN exit face let through — so a band nearing the critical
+     angle dims toward zero BEFORE it TIRs (the transmitted share goes to the reflected
+     leg), and at grazing entry the whole fan dims while the ghost brightens. Same Snell,
+     same Schlick, no branch deciding anything. */
+  let tEntry = 1.0 - schlick(abs(dot(dIn, NR)), n);
+  let tExit = 1.0 - schlick(band.exitCos, n);
+  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb * tEntry * tExit, 1.0);
   q.role = 1.0;
   return q;
 }`;
