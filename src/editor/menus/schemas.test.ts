@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHarness } from "@domain/commands/test-support.ts";
-import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
+import { AUTHORABLE_PARAMETER_MODES, PARAMETER_MODES } from "@domain/parameters/slots.ts";
 import type { ParameterMode } from "@domain/types/parameters.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 import type { MenuEntry, MenuItem, MenuSchema } from "@domain/types/menus.ts";
@@ -182,8 +182,16 @@ describe("the Mode submenu is the mode UNION (B45/T372, §V316)", () => {
     // `PARAMETER_MODES` derives from a `Record<ParameterMode, true>`, so a sixth binding
     // kind breaks THAT at compile time — and this test the moment the menu stops
     // following. The first version of this submenu enumerated four of five modes and
-    // nothing noticed `map` was gone.
-    expect(offered).toEqual([...PARAMETER_MODES]);
+    // nothing noticed `map` was gone. The set is the AUTHORABLE one (§T897): the menu
+    // offered the raw union for a while and so kept serving a retired mode, which is the
+    // mirror of the original bug — deriving from the union, but the wrong union.
+    expect(offered).toEqual([...AUTHORABLE_PARAMETER_MODES]);
+    // §T897: `driven` is retired as an AUTHORING choice but stays in `ParameterMode`
+    // forever so the load-time upgrade can parse documents that still hold it. Asserted
+    // by name and separately, because the equality above would keep passing if the
+    // authorable set itself silently regained it.
+    expect(offered).not.toContain("driven");
+    expect(PARAMETER_MODES).toContain("driven");
     for (const item of modeParent?.submenu ?? []) {
       expect(item.command).toBe("parameter.setMode");
       expect(item.label).toBe(MODE_LABELS[(item.input as { mode: ParameterMode }).mode]);

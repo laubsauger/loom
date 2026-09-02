@@ -1,7 +1,7 @@
 import type { CommandName, PlannedCommandName } from "@domain/types/commands.ts";
 import { PLANNED_COMMANDS } from "@domain/types/commands.ts";
 import type { MenuItem, MenuSchema, MenuTarget } from "@domain/types/menus.ts";
-import { PARAMETER_MODES } from "@domain/parameters/slots.ts";
+import { AUTHORABLE_PARAMETER_MODES } from "@domain/parameters/slots.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 // The command constant, NOT a literal — importing it is what keeps the menu and the
@@ -208,11 +208,16 @@ export const PARAMETER_MENU: MenuSchema = {
       // parameter's menu — not only on the ones whose panel someone thought to open.
       // DERIVED from the mode union, never hand-listed (B45, §V316): the first version
       // enumerated four members of a five-mode category and `map` was silently absent.
-      // A mode that cannot complete from a menu (map, bind, driven need a payload) is
+      // AUTHORABLE, not every parsable mode: §T897 retired `driven` (a channel read is
+      // an expression term, `op('name').chan.low`) but it stays in `ParameterMode` forever
+      // so the load-time upgrade can parse documents that hold it. Its own docblock already
+      // says authoring surfaces offer only the authorable set — the mode BUTTONS obeyed
+      // that and this menu did not, which is how a retired mode kept its own menu item.
+      // A mode that cannot complete from a menu (map, bind need a payload) is
       // still offered and refuses BY NAME through `parameter.setMode` — a missing item
       // teaches nothing, a named refusal says what the mode needs (§V288).
       label: "Mode",
-      submenu: PARAMETER_MODES.map((mode) => ({
+      submenu: AUTHORABLE_PARAMETER_MODES.map((mode) => ({
         command: "parameter.setMode" as const,
         input: { mode },
         label: MODE_LABELS[mode],
