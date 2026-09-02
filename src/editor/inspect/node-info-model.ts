@@ -8,7 +8,12 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { estimateResourceBytes } from "@runtime/backend/plan.ts";
 import type { ResourceDescriptor } from "@runtime/backend/plan.ts";
 import { aggregateComponentTiming } from "@runtime/telemetry/index.ts";
-import type { ComponentTiming, NodeTelemetry, TelemetrySource } from "@runtime/telemetry/index.ts";
+import type {
+  ComponentTiming,
+  NodeTelemetry,
+  TelemetrySource,
+  TimingUnavailableReason,
+} from "@runtime/telemetry/index.ts";
 import { emptyBucket, emptyNodeTelemetry } from "@runtime/telemetry/index.ts";
 import type { AgentActivity, NodeRunStatus, NodeRuntimeSnapshot } from "@editor/graph-canvas/index.ts";
 import { IDLE_RUNTIME } from "@editor/graph-canvas/index.ts";
@@ -110,6 +115,12 @@ export interface NodeInfo {
   readonly agent: AgentActivity | null;
   /** False when no device timestamp query exists: every gpuMs above reads null (§V86). */
   readonly timingAvailable: boolean;
+  /**
+   * WHICH measured fact makes the line above false, or null when it is true (B172,
+   * §V469). The popup renders this rather than a fixed sentence — it used to say the
+   * adapter had not offered `timestamp-query` on a machine whose adapter offered it.
+   */
+  readonly timingUnavailableReason: TimingUnavailableReason | null;
 
   /**
    * §V329's classification for this node's TYPE (T645), shown rather than merely branched
@@ -319,6 +330,10 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
 
   const snapshot = telemetry?.snapshot() ?? null;
   const timingAvailable = snapshot?.timingAvailable ?? false;
+  // No snapshot at all = no hub reachable from here, which is exactly "not-attached".
+  // It is the honest reading and it never guesses at a device nobody asked.
+  const timingUnavailableReason: TimingUnavailableReason | null =
+    snapshot?.timingUnavailableReason ?? (timingAvailable ? null : "not-attached");
 
   const nodeTelemetry: NodeTelemetry =
     telemetry?.nodeTelemetry(nodeId) ??
@@ -372,6 +387,7 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     pruned: compiled !== null && compiled.pruned.includes(nodeId),
     agent: runtime.agent,
     timingAvailable,
+    timingUnavailableReason,
     reproducibility: NODE_REPRODUCIBILITY[type] ?? "pure",
     resultAgeFrames: runtime.resultAgeFrames,
     inferenceBackend: runtime.inferenceBackend,

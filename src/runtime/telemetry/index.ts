@@ -28,6 +28,7 @@ export type {
   TelemetrySourcePath,
   TimingAvailability,
   TimingBucket,
+  TimingUnavailableReason,
 } from "./types.ts";
 
 export { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";

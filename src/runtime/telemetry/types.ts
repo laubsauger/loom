@@ -33,14 +33,41 @@ export type PassSpanResults = Readonly<Record<string, number>>;
  */
 export interface PassTimingSource {
   readonly timestampQuery: boolean;
+  /**
+   * B172 / §V469: did the device request NAME `timestamp-query`? Carried alongside the
+   * grant because "absent" has two causes and only one of them is the device's. Omitted
+   * = unknown, which reads as "not asked" rather than inventing a claim.
+   */
+  readonly timestampQueryRequested?: boolean | undefined;
   onPassTimings(listener: (spans: PassSpanResults) => void): () => void;
 }
 
 /** A device with no timestamp-query support. Emits nothing, ever (§V86). */
 export const NO_PASS_TIMING: PassTimingSource = Object.freeze({
   timestampQuery: false,
+  timestampQueryRequested: false,
   onPassTimings: () => () => {},
 });
+
+/**
+ * WHY there is no per-pass GPU timing — one fact per value, all three MEASURED (B172,
+ * §V469).
+ *
+ * The panel used to say "this adapter does not offer timestamp-query" for every absence.
+ * On the owner's Mac the adapter offered it, the device granted it, `capabilities
+ * .timestampQuery` was `true` — and the panel still said the adapter withheld it, because
+ * the real fault was that nothing in the app ever called `attachTimingSource`. A message
+ * that can be wrong about the machine is worse than no message, so each value below names
+ * exactly the fact that is false and claims nothing beyond it. In particular NONE of them
+ * asserts what the adapter offered: the host filters the ask against the adapter's list,
+ * but a failed raised request also drops it (`gpu-host.ts`'s fallback), so "not requested"
+ * is the only thing that absence of the ask proves.
+ *
+ * - `not-attached` — no GPU timing source reached the hub. OURS, never the device's.
+ * - `not-requested` — the device request did not name the feature.
+ * - `not-granted`   — the request named it and the device did not grant it.
+ */
+export type TimingUnavailableReason = "not-attached" | "not-requested" | "not-granted";
 
 /** CPU-side span results: pass id -> milliseconds. Same keying as the GPU source. */
 export type CpuSpanResults = Readonly<Record<string, number>>;
@@ -158,6 +185,12 @@ export interface PassTimingRow {
 export interface TelemetrySnapshot {
   /** False when the device has no timestamp query. Every gpuMs is then null (§V86). */
   readonly timingAvailable: boolean;
+  /**
+   * Which measured fact makes `timingAvailable` false, or null when it is true (B172,
+   * §V469). The UI renders THIS rather than a fixed sentence, so no surface can blame the
+   * adapter for an omission of ours.
+   */
+  readonly timingUnavailableReason: TimingUnavailableReason | null;
   readonly plan: TelemetryPlan | null;
   readonly build: TelemetryBuildStats | null;
   /** Frames the driver actually rendered since the hub was created. */

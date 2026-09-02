@@ -4,6 +4,7 @@ import type { PreviewLens, PreviewLensKind } from "@runtime/previews/index.ts";
 import type { TimingBucket } from "@runtime/telemetry/index.ts";
 import { MAX_EXPOSURE_STOPS } from "@editor/viewer/index.ts";
 import { formatAspect, formatBytes, formatMs } from "./format.ts";
+import { TimingUnavailableNote } from "./timing-note.tsx";
 import type { NodeInfo } from "./node-info-model.ts";
 import { formatLabel, spaceLabel } from "./node-info-model.ts";
 import styles from "./inspect.module.css";
@@ -298,12 +299,8 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
             the timeline.
           </p>
         ) : null}
-        {info.timingAvailable ? null : (
-          <p className={styles.note}>
-            No per-pass timing — this adapter does not offer{" "}
-            <code>timestamp-query</code>.
-          </p>
-        )}
+        {/* B172/§V469: the reason is MEASURED, not assumed — see `timing-note.tsx`. */}
+        <TimingUnavailableNote reason={info.timingUnavailableReason} />
       </section>
 
       <section className={styles.section} aria-label="Output">

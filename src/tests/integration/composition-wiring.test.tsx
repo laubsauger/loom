@@ -103,6 +103,18 @@ const CAPABILITIES: BackendCapabilities = {
 };
 
 /**
+ * The same device WITH the feature the owner's Mac actually grants (B172). Both halves of
+ * the pair are set, because the panel's copy is derived from the pair and not from either
+ * alone (§V469).
+ */
+const TIMED_CAPABILITIES: BackendCapabilities = {
+  ...CAPABILITIES,
+  features: ["timestamp-query"],
+  timestampQuery: true,
+  timestampQueryRequested: true,
+};
+
+/**
  * A backend the composed fixtures can hand to the app (T292): construction-complete —
  * every method exists so PORTS wire — while pixel methods refuse honestly (this
  * fixture has no GPU; availability is about WIRING, not about rendering).
@@ -305,14 +317,15 @@ describe("the performance panel renders from the hub (T41)", () => {
     expect(panel.textContent).toContain("passes");
   });
 
-  it("§V86 — every timing field reads 'unavailable' while no timing source is attached", async () => {
+  it("§V86 — a device with no timestamp-query reads 'unavailable', never a number", async () => {
     const runtime = newRuntime();
     await seedRenderable(runtime);
     await mountApp({ status: READY, runtime });
 
     const snapshot = runtime.telemetry.snapshot();
-    // Nothing has attached a `PassTimingSource`: there is no frame loop in the app yet,
-    // so no pass has ever been submitted and no span could exist (T163).
+    // The composition DOES attach a source now (B172) — this fixture's device simply has
+    // no `timestamp-query`, which is §V12's negative half: optional never becomes
+    // required, and the absence reads as a word rather than as a zero.
     expect(snapshot.timingAvailable).toBe(false);
     expect(snapshot.frame.gpuMs).toBeNull();
     expect(snapshot.frame.availability).toBe("unavailable");
@@ -329,6 +342,84 @@ describe("the performance panel renders from the hub (T41)", () => {
       expect(panel.textContent).toContain("unavailable");
     });
     expect(panel.textContent).not.toContain("0.000 ms");
+  });
+
+  /**
+   * B172, THE SECOND HALF (§V12, §V469, §V272, T163) — THE BACKEND'S GPU TIMER REACHES
+   * THE PANEL.
+   *
+   * The bug: `attachTimingSource` had NO product call site. B172 had already fixed the
+   * device REQUEST, so on the owner's Mac `capabilities.timestampQuery` was true, the
+   * backend created the timer and attached a span to every encoded pass — and the panel
+   * read `GPU TIME  unavailable` four lines below `timestamp query  yes`, because the hub
+   * still held its `NO_PASS_TIMING` default. `hub.test.ts` and `cost.test.ts` were green
+   * throughout: they attach their own fake source, and A TEST THAT ATTACHES ITS OWN
+   * SOURCE CANNOT DETECT THAT THE PRODUCT ATTACHES NONE.
+   *
+   * So this test attaches NOTHING. It hands the composed `App` a backend, emits spans the
+   * way vgpu's `Timer.onResults` does — through the listener the app itself registered —
+   * and asserts the millisecond reaches the rendered panel. Delete the `attachTimingSource`
+   * call from `app.tsx` and this goes red; no fake in this file can keep it green.
+   *
+   * `composition-seams.test.ts` gates the same seam statically, so a NEW unfed seam fails
+   * without anyone writing a test. This one gates the value end to end.
+   */
+  it("routes the backend's GPU spans into the panel — nothing here attaches a source (B172)", async () => {
+    const listeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
+    const backend: LoomBackend = {
+      ...fixtureBackend(),
+      initialize: () => Promise.resolve(TIMED_CAPABILITIES),
+      onGpuTimings: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    await mountApp({
+      status: { kind: "ready", capabilities: TIMED_CAPABILITIES, baseline: true, backend },
+      runtime,
+    });
+
+    await waitFor(() => {
+      expect(runtime.telemetry.snapshot().plan).not.toBeNull();
+    });
+    // The app registered its listener on the BACKEND. If it did not, the seam is dead and
+    // there is nothing to emit into — which is precisely the state that shipped.
+    expect(
+      listeners.size,
+      "nothing in the composed app subscribed to backend.onGpuTimings (B172)",
+    ).toBeGreaterThan(0);
+    // And the ASK/GRANT pair reached the hub, so the copy can name a fact (§V469).
+    expect(runtime.telemetry.snapshot().timingAvailable).toBe(true);
+    expect(runtime.telemetry.snapshot().timingUnavailableReason).toBeNull();
+
+    const passes = runtime.telemetry.snapshot().plan?.passes ?? [];
+    const first = passes[0];
+    if (first === undefined) throw new Error("expected at least one pass in the plan");
+
+    await act(async () => {
+      for (const listener of listeners) listener({ [first.id]: 4.25 });
+    });
+
+    // The exact number, on the exact pass, summed into the frame — not "some timing".
+    await waitFor(() => {
+      const snapshot = runtime.telemetry.snapshot();
+      expect(snapshot.frame.gpuMs).toBeCloseTo(4.25, 6);
+      expect(snapshot.passes.find((row) => row.passId === first.id)?.gpuMs).toBeCloseTo(4.25, 6);
+    });
+
+    const panel = await screen.findByTestId("performance-panel");
+    await waitFor(() => {
+      expect(panel.textContent).toContain("4.250 ms");
+    });
+    // And the sentence that blamed the adapter for our omission is gone with it — read off
+    // the GPU BLOCK, which is where §T1012 moved it, beside the `timestamp query` row it
+    // qualifies. Asserting on the panel alone would now pass vacuously.
+    const gpuBlock = screen.getByLabelText("GPU status").textContent ?? "";
+    expect(gpuBlock).toContain("timestamp query");
+    expect(gpuBlock).not.toContain("does not offer");
+    expect(gpuBlock).not.toContain("No per-pass timing");
   });
 });
 

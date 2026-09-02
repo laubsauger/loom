@@ -57,6 +57,7 @@ export {
   registerProjectSettingsCommand,
 } from "./settings-command.ts";
 export type { ProjectSettingsHandlers, ProjectSettingsHolder } from "./settings-command.ts";
+export { TimingUnavailableNote } from "./timing-note.tsx";
 export { PerformancePanel, PerformanceView } from "./performance-panel.tsx";
 export type { PerformancePanelProps, PerformanceViewProps } from "./performance-panel.tsx";
 

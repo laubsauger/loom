@@ -269,6 +269,7 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
 describe("the performance tab (T41)", () => {
   const snapshot = (over: Partial<TelemetrySnapshot> = {}): TelemetrySnapshot => ({
     timingAvailable: true,
+    timingUnavailableReason: null,
     plan: {
       categories: new Map([["blur", "filter"]]),
       readback: EMPTY_READBACK_BUDGET,

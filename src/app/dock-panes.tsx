@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { SHADER_SOURCE_PARAMETER } from "@domain/commands/index.ts";
 import type { AdapterIdentity } from "@domain/types/backend.ts";
@@ -6,8 +6,9 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { AgentPresencePanel, McpConnectionPanel, useAgentPresence } from "@editor/agent/index.ts";
-import { PerformancePanel } from "@editor/inspect/index.ts";
+import { PerformancePanel, TimingUnavailableNote } from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
+import type { TimingUnavailableReason } from "@runtime/telemetry/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { codeParametersOf } from "@domain/parameters/index.ts";
@@ -348,9 +349,20 @@ export function PerformancePane({
   onCookPolicyChange?: ((policy: CookPolicyValue) => void) | undefined;
 }) {
   const { telemetry } = useAppRuntime();
+  /*
+   * B172: the reason lives in the hub and the row it qualifies lives in the card, so the
+   * pane reads the one value and hands it over. Selected rather than snapshotted whole —
+   * it is a string or null, so this re-renders only when the STATE changes, not on every
+   * <= 10 Hz tick (§V16).
+   */
+  const timingUnavailableReason = useSyncExternalStore(
+    useCallback((listener: () => void) => telemetry.subscribe(listener), [telemetry]),
+    useCallback(() => telemetry.snapshot().timingUnavailableReason, [telemetry]),
+    useCallback(() => telemetry.snapshot().timingUnavailableReason, [telemetry]),
+  );
   return (
     <div className={styles.viewer}>
-      <GpuStatusCard status={status} />
+      <GpuStatusCard status={status} timingUnavailableReason={timingUnavailableReason} />
       <PerformancePanel
         telemetry={telemetry}
         {...(cookPolicy === undefined ? {} : { cookPolicy })}
@@ -373,7 +385,14 @@ function describeAdapter(adapter: AdapterIdentity): string {
   return adapter.description;
 }
 
-function GpuStatusCard({ status }: { status: GpuStatus }) {
+function GpuStatusCard({
+  status,
+  timingUnavailableReason = null,
+}: {
+  status: GpuStatus;
+  /** B172: why per-pass GPU timing is absent, or null when it is not (§V469). */
+  timingUnavailableReason?: TimingUnavailableReason | null;
+}) {
   if (status.kind === "probing") {
     return (
       <section className={styles.block} aria-label="GPU status">
@@ -426,11 +445,20 @@ function GpuStatusCard({ status }: { status: GpuStatus }) {
           <dt>timestamp query</dt>
           <dd>{capabilities.timestampQuery ? "yes" : "no"}</dd>
         </div>
-        <div className={styles.fact}>
+        {/* §T1012: the one list-valued fact, on its own full-width row so it wraps. */}
+        <div className={`${styles.fact} ${styles.factWide}`}>
           <dt>formats</dt>
           <dd>{capabilities.formats.join(", ")}</dd>
         </div>
       </dl>
+      {/*
+        B172/§T1012 — the timing STATE belongs beside the capability it qualifies. It used
+        to sit in the frame section four lines below `timestamp query  yes` and say the
+        adapter had not offered the feature, which is how the owner spotted that the panel
+        was contradicting itself on one screen. Here the two are adjacent, and the sentence
+        is derived from what the hub measured (§V469).
+      */}
+      <TimingUnavailableNote reason={timingUnavailableReason} />
       {baseline ? null : (
         <p className={styles.alert} role="status">
           This device is below the Tier B baseline (rgba16float, compute, storage

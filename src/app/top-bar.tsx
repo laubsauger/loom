@@ -3,6 +3,7 @@ import type { CapabilityTier } from "@domain/types/backend.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { cx } from "@ui/cx.ts";
+import { formatFps, formatMs } from "./format-metrics.ts";
 import styles from "./top-bar.module.css";
 
 export interface TopBarProps {
@@ -32,6 +33,15 @@ export interface TopBarProps {
   /** Metrics arrive from the telemetry pipe, never from the document store (V16). */
   fps?: number | null;
   gpuMs?: number | null;
+  /**
+   * The GPU-ms VALUE, as a slot (B172, §V16). `gpuMs` is a plain prop and no caller ever
+   * supplied one, so the header's `gpu` readout rendered an em dash for the life of the
+   * app — the first latency number a user looks at, permanently absent. It cannot become
+   * a prop of this component either: the number changes at the telemetry hub's <= 10 Hz
+   * tick and `app.tsx` must not re-render at that rate, which is the same reason
+   * `timeline` is a slot. A component that subscribes to the hub itself goes here.
+   */
+  gpuMetric?: ReactNode;
   tier?: CapabilityTier | null;
   /**
    * Frame / time / fps (T265). A slot rather than props: the readout samples the frame
@@ -59,14 +69,6 @@ export interface TopBarProps {
 
 const EM_DASH = "—";
 
-function formatFps(fps: number | null | undefined): string {
-  return typeof fps === "number" && Number.isFinite(fps) ? fps.toFixed(1) : EM_DASH;
-}
-
-function formatMs(ms: number | null | undefined): string {
-  return typeof ms === "number" && Number.isFinite(ms) ? `${ms.toFixed(2)} ms` : EM_DASH;
-}
-
 /**
  * Top bar: transport, fps, GPU ms, capability tier (§I.ui).
  * Every control is a real button with an accessible name and a tooltip, so the
@@ -90,6 +92,7 @@ export function TopBar({
   audioTrackFrames = 0,
   fps = null,
   gpuMs = null,
+  gpuMetric,
   tier = null,
   timeline,
   trailing,
@@ -210,7 +213,7 @@ export function TopBar({
         <div className={styles.metric}>
           <span className={styles.metricLabel}>gpu</span>
           <span className={styles.metricValue} aria-label="GPU time per frame">
-            {formatMs(gpuMs)}
+            {gpuMetric ?? formatMs(gpuMs)}
           </span>
         </div>
         <Tooltip label="Detected WebGPU capability tier. Baseline is B.">

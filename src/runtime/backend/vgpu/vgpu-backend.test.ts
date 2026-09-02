@@ -131,8 +131,9 @@ describe("vgpu backend — initialization and capabilities", () => {
    *
    * So this asserts the bare production call, both ways round: adapter offers it → the
    * device has it and nothing complains; adapter does not → it is absent, the app still
-   * initializes and renders (§V12), and the diagnostic blames the ADAPTER rather than the
-   * request, because here the request was genuinely made (§V469).
+   * initializes and renders (§V12), and the diagnostic names the fact it can actually
+   * measure — that the request did not ask — without claiming anything about what the
+   * adapter offered (§V469).
    */
   it("ASKS for timestamp-query on the bare production call when the adapter offers it (B172)", async () => {
     const { backend, diagnostics } = await harness({ features: ["timestamp-query"] });
@@ -153,11 +154,19 @@ describe("vgpu backend — initialization and capabilities", () => {
     expect(backend.capabilities?.features).not.toContain("timestamp-query");
     const note = diagnostics.find((d) => d.code === BackendDiagnosticCode.timestampUnavailable);
     expect(note?.severity).toBe("info");
-    // §V469: the message says WHICH of the two facts this is. "Not requested" and "not
-    // supported" are different, and the old copy asserted the second while meaning the
-    // first — it read "timestamp-query is unavailable" over a request that never asked.
-    expect(note?.message).toContain("not requested");
-    expect(note?.message).toContain("adapter");
+    /*
+     * §V469: the message says WHICH MEASURED fact this is, and NOTHING ELSE.
+     *
+     * "Not requested" and "not granted" are different facts and the message must pick
+     * one. It must also stop there: the copy this replaced went on to explain that the
+     * adapter had not offered the feature, which is a claim about the machine that this
+     * code cannot make — the host also drops the optional ask when the raised request
+     * fails, and the owner read exactly that sentence on a Mac whose adapter offered
+     * `timestamp-query` and whose device had granted it. So the absence of the word
+     * "adapter" is asserted, not incidental.
+     */
+    expect(note?.message).toContain("did not ask for timestamp-query");
+    expect(note?.message).not.toContain("adapter");
     expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
 
     const plan = await backend.compile(fixturePlan());

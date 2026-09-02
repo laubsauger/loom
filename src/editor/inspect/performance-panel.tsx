@@ -20,6 +20,11 @@ import styles from "./inspect.module.css";
  * quietly substitute CPU encode time, which on a real workload differs by more than an
  * order of magnitude and would send someone optimising a pass that costs nothing.
  *
+ * WHY the absence happened is NOT stated here (B172/§T1012). It used to be, four lines
+ * under the `timestamp query` row of the block above and contradicting it. It now lives
+ * beside that row, in `GpuStatusCard`, rendered from `timing-note.tsx` — one sentence, one
+ * place, derived from the fact it describes.
+ *
  * READBACK (T278, §V185) sits beside the frame cost because it is a frame cost: N Analyze
  * nodes are N GPU→CPU round trips every frame, and someone who drops twenty of them has to
  * SEE why it got slow rather than guess. Two numbers are on the surface — how many, how
@@ -132,7 +137,7 @@ function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
       ) : !measuring ? (
         // §V91: name the STATE, and only the state. A table of sixty "unavailable" cells is
         // not information, it is the same word sixty times — and WHY there is no timing is
-        // already said once, in the frame section, where it belongs.
+        // already said once, in the gpu block above, beside the capability it qualifies.
         <p className={styles.note}>No timing on this device</p>
       ) : (
         <>
@@ -340,12 +345,6 @@ export function PerformanceView({
             value={snapshot.lastFrameIndex === null ? "—" : String(snapshot.lastFrameIndex)}
           />
         </div>
-        {snapshot.timingAvailable ? null : (
-          <p className={styles.note}>
-            No per-pass timing — this adapter does not offer{" "}
-            <code>timestamp-query</code>.
-          </p>
-        )}
       </section>
 
       {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (

@@ -105,18 +105,34 @@
   text-transform: lowercase;
 }
 
+/*
+ * §T1012 — the capability block, dense.
+ *
+ * One row per fact meant the value sat flush right against a pane that can be 1800px
+ * wide, so every row was a label, a horizon of nothing, and a two-character value. The
+ * columns are laid out by WIDTH rather than by a breakpoint because this lives in a
+ * resizable dock: `auto-fit` gives as many columns as fit and collapses to one when the
+ * pane is narrow, with no media query to keep in sync with the splitter.
+ */
 .facts {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-6);
   margin: 0;
 }
 
+/*
+ * Each fact hugs its own label and value instead of stretching the value to the far edge
+ * of the pane, and the row wraps: as many facts fit as the dock is wide, down to one per
+ * line when it is narrow. No breakpoint, because the pane is resized by a splitter and a
+ * media query would be measuring the WINDOW rather than the pane.
+ */
 .fact {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
+  justify-content: flex-start;
+  gap: var(--space-3);
 }
 
 .fact dt {
@@ -128,8 +144,24 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
-  text-align: right;
+  text-align: left;
   overflow-wrap: anywhere;
+}
+
+/*
+ * A fact whose VALUE is a list, not a token (`formats`). It takes the whole row and
+ * stacks under its own label so the list wraps and stays readable — truncating it would
+ * turn the one row somebody actually reads into a mystery.
+ */
+.factWide {
+  flex-basis: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.factWide dd {
+  text-align: left;
 }
 
 .list {

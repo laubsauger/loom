@@ -348,7 +348,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     return session;
   }
 
-  function reportCapabilities(report: BackendCapabilities): void {
+  function reportCapabilities(report: BackendCapabilities, droppedAsk?: string): void {
     if (!meetsBaseline(report)) {
       hub.report(
         backendDiagnostic(
@@ -361,17 +361,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       );
     }
     if (!report.timestampQuery) {
-      // §V12: optional, so it degrades to "no per-pass GPU timings", never to a hard failure.
-      // B172/§V469: and the message names the REAL cause. "Not requested" and "not
-      // supported" are different facts and only the second is the device's — the old copy
-      // said the device reported no feature while the truth was that nobody had asked.
+      /*
+       * §V12: optional, so it degrades to "no per-pass GPU timings", never to a hard
+       * failure. §V469: and the message states only MEASURED facts — did we ask, was it
+       * granted — because the previous copy asserted "this adapter did not offer it" and
+       * was read on a Mac whose adapter offered it. The ask can also be dropped by the
+       * host's fallback ladder, and when it was, `optionalFeatureError` says so by name
+       * instead of leaving the absence to be blamed on the device.
+       */
+      const asked = report.timestampQueryRequested === true;
       hub.report(
         backendDiagnostic(
           "info",
           BackendDiagnosticCode.timestampUnavailable,
-          report.timestampQueryRequested === true
-            ? "The device did not grant timestamp-query although the request asked for it; per-pass GPU timings are disabled."
-            : "timestamp-query was not requested — this adapter did not offer it, or its feature list could not be read. Per-pass GPU timings are disabled.",
+          (asked
+            ? "The device request asked for timestamp-query and the device did not grant it; per-pass GPU timings are disabled."
+            : "The device request did not ask for timestamp-query; per-pass GPU timings are disabled.") +
+            (droppedAsk === undefined
+              ? ""
+              : ` The raised device request failed and its optional features were dropped: ${droppedAsk}`),
         ),
       );
     }
@@ -495,7 +503,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       session = next;
       deviceGeneration += 1;
       capabilities = describeCapabilities(next.gpu, next.requestedFeatures);
-      reportCapabilities(capabilities);
+      reportCapabilities(capabilities, next.optionalFeatureError);
       watchDeviceLoss(next);
       attachErrorNet(next);
       attachTimer();
@@ -1465,7 +1473,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         session = created;
         deviceGeneration += 1;
         capabilities = describeCapabilities(created.gpu, created.requestedFeatures);
-        reportCapabilities(capabilities);
+        reportCapabilities(capabilities, created.optionalFeatureError);
         // §V199: compat mode is NOT a target. The point/geometry render path is
         // vertex-pulling from SoA storage, which compat's zero vertex-stage storage
         // buffers cannot express — so the refusal is LOUD at init, never a silent

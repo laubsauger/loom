@@ -535,7 +535,6 @@ export function App({
    * which fact is false instead of guessing at the machine (§V469, `timing-note.tsx`).
    */
   useEffect(() => {
-    console.log(`[B172-probe] t=${Date.now()} statusKind=${status.kind} backend=${backend !== undefined} caps=${capabilities !== null} ts=${String(capabilities?.timestampQuery)}`);
     if (backend === undefined || capabilities === null) return;
     return runtime.telemetry.attachTimingSource({
       timestampQuery: capabilities.timestampQuery,

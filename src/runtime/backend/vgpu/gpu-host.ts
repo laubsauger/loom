@@ -29,6 +29,17 @@ export interface GpuSession {
    * ask alongside the grant and the diagnostic can name the real one (§V469).
    */
   readonly requestedFeatures?: ReadonlyArray<string>;
+  /**
+   * B172/§V469 — WHY the optional half of the ask was dropped, when it was.
+   *
+   * The fallback ladder below used to `catch {}`. A device request that failed for an
+   * unrelated reason silently became a request with no optional features, and every
+   * surface downstream then reported the FEATURE as absent with no way to know the ask
+   * had been thrown away — the error that explained it was discarded at the point it was
+   * caught. Present only when the raised request actually failed; the backend turns it
+   * into a diagnostic so the answer is on screen rather than in nobody's console.
+   */
+  readonly optionalFeatureError?: string;
   dispose(): void;
 }
 
@@ -169,10 +180,15 @@ export function browserGpuHost(): GpuHost {
       // request if that ask is refused.
       let gpu: Awaited<ReturnType<typeof init>>;
       let requestedFeatures: ReadonlyArray<string>;
+      // B172: the error is KEPT, not swallowed. Dropping the optional ask is a decision
+      // with a visible consequence (no per-pass GPU timings), so the reason travels with
+      // the session and the backend reports it.
+      let optionalFeatureError: string | undefined;
       try {
         gpu = await withLimits(featured(negotiated));
         requestedFeatures = negotiated;
-      } catch {
+      } catch (error) {
+        optionalFeatureError = error instanceof Error ? error.message : String(error);
         gpu = await withLimits(featured(required));
         requestedFeatures = required;
       }
@@ -190,6 +206,7 @@ export function browserGpuHost(): GpuHost {
         gpu,
         deviceLost,
         requestedFeatures,
+        ...(optionalFeatureError === undefined ? {} : { optionalFeatureError }),
         dispose() {
           gpu.dispose();
         },

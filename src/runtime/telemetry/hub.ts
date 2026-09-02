@@ -13,6 +13,7 @@ import type {
   TelemetrySourcePath,
   TimingAvailability,
   TimingBucket,
+  TimingUnavailableReason,
 } from "./types.ts";
 import { NO_CPU_TIMING, NO_PASS_TIMING, emptyNodeTelemetry } from "./types.ts";
 import { aggregateComponentTiming, aggregateNodeTiming } from "./aggregate.ts";
@@ -252,6 +253,20 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
     return timingSource.timestampQuery ? "measured" : "unavailable";
   }
 
+  /**
+   * B172/§V469 — WHICH measured fact is false, never a guess about the machine.
+   *
+   * `not-attached` is first because it is the one that was true on the owner's Mac while
+   * the panel said the adapter had withheld the feature: the device HAD granted it and
+   * nothing had ever called `attachTimingSource`. An un-attached hub knows nothing about
+   * any device and must not speak for one.
+   */
+  function unavailableReason(): TimingUnavailableReason | null {
+    if (timingSource.timestampQuery) return null;
+    if (timingSource === NO_PASS_TIMING) return "not-attached";
+    return timingSource.timestampQueryRequested === true ? "not-granted" : "not-requested";
+  }
+
   function indexPlan(next: TelemetryPlan | null): void {
     const active = new Set<NodeId>();
     for (const pass of next?.passes ?? []) {
@@ -388,6 +403,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       nodes,
       categories: categoryRollups(nodes),
       timingAvailable: timingSource.timestampQuery,
+      timingUnavailableReason: unavailableReason(),
       plan,
       build,
       framesRendered,
