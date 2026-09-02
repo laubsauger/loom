@@ -423,7 +423,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= side || gid.y >= side) { return; }
   let dims = vec2i(textureDimensions(sourceTexture, 0));
   let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / params.side;
-  let texel = clamp(vec2i(uv * vec2f(dims)), vec2i(0), dims - vec2i(1));
+  /* T974 — LETTERBOX, not squeeze. A monocular estimator is trained on natural
+     perspective; a non-uniformly squeezed frame degrades its output silently and
+     plausibly, and §T958's single published fov becomes geometrically wrong (fx != fy).
+     The source occupies the largest CENTERED aspect-true region of the model square;
+     outside it the edge replicates (the model sees continuation, and depthToRgba never
+     reads those rows back). occOf() in depth-runner.ts is this formula's float64 twin —
+     the two must move together or the result texture shifts against the picture. */
+  let dimsF = vec2f(dims);
+  let aspect = dimsF.x / max(dimsF.y, 1.0);
+  let occ = select(vec2f(aspect, 1.0), vec2f(1.0, 1.0 / aspect), aspect >= 1.0);
+  let sourceUv = (uv - vec2f(0.5)) / occ + vec2f(0.5);
+  let texel = clamp(vec2i(sourceUv * dimsF), vec2i(0), dims - vec2i(1));
   modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
 }`;
 

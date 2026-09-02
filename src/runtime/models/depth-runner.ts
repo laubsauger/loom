@@ -47,6 +47,16 @@ export function packModelInput(texels: Float32Array, side: number): Float32Array
  * to 0. Zero would read as "everything is at the far plane" and would make Displace shove
  * the whole image; 0.5 is the no-displacement value, so a flat input stays flat.
  */
+/**
+ * T974 — the letterbox's occupied fraction of the model square, per axis: a wide source
+ * fills x and a 1/aspect band of y; a tall one the transpose. The WGSL preprocess
+ * computes the identical expression; the two are pinned together by the aspect gate.
+ */
+export function occOf(width: number, height: number): readonly [number, number] {
+  const aspect = width / Math.max(height, 1);
+  return aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
+}
+
 export function depthToRgba(
   depth: Float32Array,
   side: number,
@@ -60,23 +70,37 @@ export function depthToRgba(
      declared format), so nothing between the model and the GPU rounds anything. */
   const floats = new Float32Array(width * height);
   {
+    /* T974: the preprocess LETTERBOXED the source into the model square (see
+       DEPTH_PREPROCESS_WGSL — occOf is its float64 twin); this reads back ONLY the
+       occupied band, so the result registers with the picture and the bars' replicated
+       depth never leaks in. The normalisation range is measured over the band too — a
+       bar artefact must not stretch the scene's own contrast. */
+    const [occX, occY] = occOf(width, height);
+    const modelAt = (x: number, y: number): number => {
+      const u = ((x + 0.5) / width - 0.5) * occX + 0.5;
+      const v = ((y + 0.5) / height - 0.5) * occY + 0.5;
+      const sx = Math.min(side - 1, Math.max(0, Math.floor(u * side)));
+      const sy = Math.min(side - 1, Math.max(0, Math.floor(v * side)));
+      return depth[sy * side + sx] ?? Number.NaN;
+    };
     let low = Number.POSITIVE_INFINITY;
     let high = Number.NEGATIVE_INFINITY;
-    for (const value of depth) {
-      if (!Number.isFinite(value)) continue;
-      if (value < low) low = value;
-      if (value > high) high = value;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const value = modelAt(x, y);
+        if (!Number.isFinite(value)) continue;
+        if (value < low) low = value;
+        if (value > high) high = value;
+      }
     }
     const span = high - low;
     const flat = !Number.isFinite(span) || span <= 0;
     for (let y = 0; y < height; y += 1) {
-      const sy = Math.min(side - 1, Math.floor((y * side) / height));
       for (let x = 0; x < width; x += 1) {
-        const sx = Math.min(side - 1, Math.floor((x * side) / width));
-        const raw = depth[sy * side + sx];
+        const raw = modelAt(x, y);
         /* A NaN texel clamps to the near plane rather than poisoning the float texture —
            the byte path got this accidentally (Uint8Array coerces NaN to 0). */
-        const value = raw !== undefined && Number.isFinite(raw) ? raw : low;
+        const value = Number.isFinite(raw) ? raw : low;
         floats[y * width + x] = flat ? 0.5 : (value - low) / span;
       }
     }
