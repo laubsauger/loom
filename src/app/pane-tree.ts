@@ -1,4 +1,5 @@
 import type { DockZone, PaneId, ShellLayout } from "./layout-storage.ts";
+import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
 
 /**
  * The pane TREE (T404, V340): identity split from role.
@@ -345,8 +346,22 @@ export function moveTab(
  */
 export type ShellEdge = "left" | "right" | "bottom";
 
-/** New area's share of the shell, per edge — a dock, not a half. */
-const EDGE_SHARE: Readonly<Record<ShellEdge, number>> = { left: 22, right: 22, bottom: 28 };
+/**
+ * A new area's share of the shell, per edge — a dock, not a half.
+ *
+ * T936: read off `SKELETON_TREE` rather than written here. These used to be 22/22/28
+ * against the skeleton's own 23/26/28, which is two answers to "how wide is a left dock"
+ * already diverging — and T936 adds a third door (restoring a baseline region from the
+ * layout menu) that has to agree with both.
+ *
+ * A function, not a constant, and the reason is module init order: `baselinePlacement`
+ * reads a table declared further down this file, so evaluating it at import time is a
+ * temporal dead zone. Called at gesture time it is a table lookup on a frozen tree.
+ */
+function edgeShare(edge: ShellEdge): number {
+  const placement = baselinePlacement(edge);
+  return placement.side === "first" ? placement.ratio : 100 - placement.ratio;
+}
 
 /**
  * Which edges are HELD by a dedicated area. The rule, chosen to be explainable in one
@@ -409,7 +424,7 @@ export function spawnEdge(
   const leafId = `leaf-graph-${layout.nextKey}`;
   const splitId = `split-${layout.nextKey + 1}`;
   const fresh: LeafNode = { kind: "leaf", id: leafId, tabs: [], active: null };
-  const share = EDGE_SHARE[edge];
+  const share = edgeShare(edge);
   const root: SplitNode =
     edge === "bottom"
       ? { kind: "split", id: splitId, direction: "column", ratio: 100 - share, first: layout.root, second: fresh }
@@ -722,6 +737,201 @@ export const DEFAULT_PANE_TREE: PaneTreeLayout = {
   floating: [],
   nextKey: 11,
 };
+
+// ---- T936: the baseline docks, always listable, absent ones recreatable ------------
+
+/**
+ * The five-zone migration skeleton — the shape every layout stored before T404 comes up
+ * as, and, since T927 gave the default a bottom region the flat model cannot spell, the
+ * only place `split-main` and its stock ratios still exist.
+ *
+ * T936 makes it load-bearing rather than merely historical: it is the SINGLE source for
+ * where a baseline dock goes and how big it is. Three doors now ask that question — the
+ * T494 edge spawn, the T494 edge drop, and the layout menu's restore — and constants
+ * written out at any of them would be a fourth answer waiting to drift from the other
+ * three (they already had: `EDGE_SHARE` said 22 where the skeleton says 23).
+ */
+export const SKELETON_TREE: PaneTreeLayout = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+
+/**
+ * The docks the layout menu must ALWAYS list (T936), whatever the current tree holds.
+ *
+ * Ordered OUTERMOST FIRST, which is the skeleton's own nesting: the right sidebar is a
+ * top-level column (T426), the bottom bar sits inside the work area beside it, and the
+ * left dock sits inside the region above the bottom bar. That order is what makes a
+ * restored dock land in the canonical place rather than merely somewhere on the right
+ * side of the screen.
+ */
+export type BaselineRegion = "right" | "bottom" | "left";
+
+export const BASELINE_REGIONS: readonly BaselineRegion[] = ["right", "bottom", "left"];
+
+/**
+ * Per region: the node ids that mean "this region is PRESENT", and the id a RESTORED one
+ * takes.
+ *
+ * Two present-spellings for the sidebar, and that is not sloppiness: since T426 the right
+ * dock is a COLUMN SPLIT of two zones (viewer over inspector), while a region recreated
+ * from nothing is a single empty leaf — the same region, one node instead of three. Both
+ * have to count, or restoring the sidebar would leave the menu still calling it absent.
+ * The FIRST spelling is the one a collapse targets, so hiding the sidebar hides both
+ * halves rather than only the top one.
+ */
+const REGION_NODES: Readonly<
+  Record<BaselineRegion, { readonly present: readonly PaneKey[]; readonly leaf: PaneKey }>
+> = {
+  right: { present: ["split-right", "leaf-right"], leaf: "leaf-right" },
+  bottom: { present: ["leaf-bottom"], leaf: "leaf-bottom" },
+  left: { present: ["leaf-left"], leaf: "leaf-left" },
+};
+
+/** Every node id that can spell a baseline region — what the shell makes collapsible. */
+export const BASELINE_REGION_NODE_IDS: readonly PaneKey[] = ["split-right", "leaf-right", "leaf-bottom", "leaf-left"];
+
+export const BASELINE_REGION_LABELS: Readonly<Record<BaselineRegion, string>> = {
+  right: "Right dock",
+  bottom: "Bottom dock",
+  left: "Left dock",
+};
+
+function findNode(node: LayoutNode, id: PaneKey): LayoutNode | undefined {
+  if (node.id === id) return node;
+  if (node.kind === "leaf") return undefined;
+  return findNode(node.first, id) ?? findNode(node.second, id);
+}
+
+/**
+ * Which node currently holds a baseline region, or null when nothing does — the third
+ * state the layout menu needs (T936), and the id its collapse toggle targets.
+ */
+export function baselineRegionNode(layout: PaneTreeLayout, region: BaselineRegion): PaneKey | null {
+  for (const id of REGION_NODES[region].present) {
+    if (findNode(layout.root, id) !== undefined) return id;
+  }
+  return null;
+}
+
+/**
+ * Where a region sits, read off the SKELETON: the direction of the split that creates it,
+ * that split's FIRST-CHILD share, and which side of it the region is on.
+ *
+ * Read, not written. `split-main` is 23/77 with the left dock first; `split-rows` is
+ * 72/28 with the bottom second; `split-columns` is 74/26 with the sidebar second. Change
+ * the flat default and every door moves together.
+ */
+export function baselinePlacement(region: BaselineRegion): {
+  readonly direction: "row" | "column";
+  readonly ratio: number;
+  readonly side: "first" | "second";
+} {
+  const target = REGION_NODES[region].present[0]!;
+  const walk = (node: LayoutNode): ReturnType<typeof baselinePlacement> | null => {
+    if (node.kind === "leaf") return null;
+    if (node.first.id === target) return { direction: node.direction, ratio: node.ratio, side: "first" };
+    if (node.second.id === target) return { direction: node.direction, ratio: node.ratio, side: "second" };
+    return walk(node.first) ?? walk(node.second);
+  };
+  const found = walk(SKELETON_TREE.root);
+  if (found === null) throw new Error(`the skeleton has no ${region} region`);
+  return found;
+}
+
+/**
+ * The subtree a restored region wraps.
+ *
+ * Walks the skeleton's nesting OUTSIDE-IN, stepping past every region further out than
+ * this one that is actually present: the sidebar is outside the bottom bar, which is
+ * outside the left dock. So restoring the left dock lands it beside the graph — inside
+ * the work area, above the bottom bar, left of the sidebar — rather than beside whatever
+ * subtree happens to sit first in the tree.
+ *
+ * "Present" is tested against the SUBTREE, not against a node id at that exact position,
+ * which is what makes it survive a rearranged shell: T932's bottom region is
+ * `split-bottom` holding two columns, and `leaf-bottom` is one of its children rather
+ * than the child of `split-rows` the skeleton names. A region the shell does not have is
+ * simply not stepped past, so restoring the bottom bar into a sidebar-less shell wraps
+ * the whole tree instead of half of it.
+ */
+export function baselineAnchor(layout: PaneTreeLayout, region: BaselineRegion): PaneKey {
+  let anchor: LayoutNode = layout.root;
+  for (const outer of BASELINE_REGIONS) {
+    if (outer === region) break;
+    const placement = baselinePlacement(outer);
+    if (anchor.kind !== "split" || anchor.direction !== placement.direction) continue;
+    const occupied = placement.side === "first" ? anchor.first : anchor.second;
+    const sibling = placement.side === "first" ? anchor.second : anchor.first;
+    if (baselineRegionNode({ ...layout, root: occupied }, outer) === null) continue;
+    anchor = sibling;
+  }
+  return anchor.id;
+}
+
+/**
+ * Wraps the subtree `nodeId` in a NEW split, with a fresh EMPTY leaf on `side`.
+ *
+ * ⚑ The primitive the tree API was missing, and T936 is what found it. `splitLeaf` wraps
+ * a LEAF and `spawnEdge` wraps the ROOT; the canonical bottom bar is neither — once a
+ * sidebar exists it wraps the work area, an interior split. Restoring it was expressible
+ * only as "reset the whole layout", which is the bug T936 exists to fix.
+ *
+ * EMPTY on purpose (T853's picker): a restored dock must not reopen a pane the user
+ * deliberately moved out of it. Guessing a default tab would make "bring the left dock
+ * back" and "put the node library back" the same button, and they are not.
+ */
+export function insertBeside(
+  layout: PaneTreeLayout,
+  nodeId: PaneKey,
+  options: {
+    readonly direction: "row" | "column";
+    readonly ratio: number;
+    readonly side: "first" | "second";
+    /** The fresh leaf's id. Canonical for a baseline region, so the menu finds it again. */
+    readonly leafId: PaneKey;
+  },
+): PaneTreeLayout {
+  if (findNode(layout.root, nodeId) === undefined) return layout;
+  if (findNode(layout.root, options.leafId) !== undefined) return layout; // ids are identities
+  const fresh: LeafNode = { kind: "leaf", id: options.leafId, tabs: [], active: null };
+  const splitId = `split-${layout.nextKey}`;
+  const ratio = Math.max(5, Math.min(95, options.ratio));
+  const wrap = (node: LayoutNode): LayoutNode => {
+    if (node.id === nodeId) {
+      return {
+        kind: "split",
+        id: splitId,
+        direction: options.direction,
+        ratio,
+        first: options.side === "first" ? fresh : node,
+        second: options.side === "first" ? node : fresh,
+      } satisfies SplitNode;
+    }
+    if (node.kind === "leaf") return node;
+    return { ...node, first: wrap(node.first), second: wrap(node.second) };
+  };
+  return { ...layout, root: wrap(layout.root), nextKey: layout.nextKey + 1 };
+}
+
+/**
+ * T936 — bring an ABSENT baseline dock back, at its canonical position and stock ratio,
+ * INSERTING it into the arrangement the user already has.
+ *
+ * Not a reset. Every other leaf, ratio and tab order comes through untouched; the only
+ * change is one new split wrapping the anchor. A restore that discarded the rest would
+ * be the bug it exists to fix — §T931 made a dock destroyable by dragging its last tab
+ * out, and "reset the whole layout" was the only way back.
+ */
+export function restoreBaselineRegion(layout: PaneTreeLayout, region: BaselineRegion): PaneTreeLayout {
+  if (baselineRegionNode(layout, region) !== null) return layout; // already there
+  const placement = baselinePlacement(region);
+  return insertBeside(layout, baselineAnchor(layout, region), {
+    direction: placement.direction,
+    // The skeleton's ratio is already the SPLIT's first-child share, and `insertBeside`
+    // builds the split the same way round — so it carries over with no inversion.
+    ratio: placement.ratio,
+    side: placement.side,
+    leafId: REGION_NODES[region].leaf,
+  });
+}
 
 /**
  * T486 (V423): bring a CLOSED role back. The layout menu enumerates the POSSIBILITY

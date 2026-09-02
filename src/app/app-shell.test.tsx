@@ -9,7 +9,7 @@ import { TopBar } from "./top-bar.tsx";
 import type { PaneWindow } from "./pane-window.tsx";
 import { DEFAULT_SHELL_LAYOUT, LAYOUT_STORAGE_KEY, readLayout } from "./layout-storage.ts";
 import { PANE_TREE_STORAGE_KEY, readPaneTreeStore } from "./pane-tree-storage.ts";
-import { findLeaf, leavesOf } from "./pane-tree.ts";
+import { allTabs, findLeaf, leavesOf } from "./pane-tree.ts";
 import type { LayoutStorage, ShellLayout } from "./layout-storage.ts";
 
 beforeAll(installDomStubs);
@@ -1339,24 +1339,166 @@ describe("T494 — an absent edge area spawns back", () => {
     expect(screen.getByText("viewer slot")).toBeDefined();
   });
 
-  it("close the bottom area, spawn it empty from the menu, assign it a role", async () => {
+  it("close the bottom area, bring it back empty from the menu, assign it a role", async () => {
+    /*
+     * T494's own menu row ("bottom area (none) → spawn") is gone and T936 took over its
+     * job — the three shell edges ARE the three baseline docks, so the two rows were
+     * about to say the same thing twice. The BEHAVIOUR this gate was written for is
+     * unchanged and still asserted: an absent area comes back EMPTY, showing the picker,
+     * and stops being offered once it exists.
+     */
     const user = userEvent.setup();
     const storage = createMemoryStorage();
     render(<AppShell storage={storage} />);
 
     await closeBottomRegion(user);
 
-    // The edge is now offerable — and ONLY that edge.
     await user.click(screen.getByRole("button", { name: "Layout" }));
-    expect(screen.queryByRole("button", { name: "New left pane" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "New right pane" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "New bottom pane" }));
+    // Absent is a STATE of an always-present row now, not a row that comes and goes.
+    expect(screen.getByRole("button", { name: "Restore Bottom dock" }).textContent).toBe("absent");
+    await user.click(screen.getByRole("button", { name: "Restore Bottom dock" }));
 
-    // A fresh EMPTY leaf spans the bottom: the role picker renders (T406's empty state),
-    // and the edge stops being offered.
+    // A fresh EMPTY leaf spans the bottom: the role picker renders (T406's empty state).
     expect(screen.getByText("What should this pane show?")).toBeDefined();
-    await user.click(screen.getByRole("button", { name: "Layout" }));
-    expect(screen.queryByRole("button", { name: "New bottom pane" })).toBeNull();
+
+    /*
+     * Reopened IDEMPOTENTLY. The version of this gate before T936 clicked "Layout" here
+     * unconditionally and then asserted the spawn row was gone — but clicking the
+     * trigger while the menu is open CLOSES it, so it was asserting that a button is
+     * absent from a menu nobody can see, which is true of every button. The row is now
+     * checked with the menu actually open.
+     */
+    if (screen.queryByRole("button", { name: "Save as\u2026" }) === null) {
+      await user.click(screen.getByRole("button", { name: "Layout" }));
+    }
+    expect(screen.queryByRole("button", { name: "Restore Bottom dock" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Bottom dock" }).textContent).toBe("shown");
+  });
+});
+
+/**
+ * T936 — the layout menu carries the baseline docks ALWAYS, with their status.
+ *
+ * The owner: "it still only lets us show 3 panes that currently exist instead of always
+ * allowing us to bring back or hide any." The cause was two mechanisms with two
+ * different meanings of "absent" — the toggle list showed docks the tree HAS, T494's
+ * spawn list showed EDGES that are free — and the left dock fell between them: T927
+ * removed `leaf-left` from the tree, and the graph touching the left edge makes that
+ * edge read as held. Neither list could name it.
+ *
+ * T931 turned that from untidy into urgent: dragging a leaf's last tab out collapses it,
+ * so a dock can be destroyed and the only way back was a full reset.
+ */
+describe("T936 — every baseline dock is listed, whatever the tree holds", () => {
+  async function openLayoutMenu(user: ReturnType<typeof userEvent.setup>) {
+    if (screen.queryByRole("button", { name: "Save as\u2026" }) === null) {
+      await user.click(screen.getByRole("button", { name: "Layout" }));
+    }
+  }
+
+  it("lists all three on the stock shell — including the left dock it does not have", () => {
+    render(<AppShell storage={createMemoryStorage()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Layout" }));
+
+    // Two present, one absent, and the absent one is the whole point: before T936 it
+    // appeared in NEITHER list, which is exactly what the owner was looking at.
+    expect(screen.getByRole("button", { name: "Right dock" }).textContent).toBe("shown");
+    expect(screen.getByRole("button", { name: "Bottom dock" }).textContent).toBe("shown");
+    expect(screen.getByRole("button", { name: "Restore Left dock" }).textContent).toBe("absent");
+  });
+
+  it("restores the left dock BESIDE the graph, empty, with the picker (T853)", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} graphCanvas={<div>canvas slot</div>} />);
+
+    await openLayoutMenu(user);
+    await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
+
+    const dock = document.querySelector('[data-pane-leaf="leaf-left"]');
+    expect(dock, "the left dock was not recreated").not.toBeNull();
+    // EMPTY: restoring a DOCK must not reopen a PANE the user moved out of it.
+    expect(screen.getByTestId("leaf-picker-leaf-left")).toBeDefined();
+    expect(dock?.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    // Inside the work area, beside the graph — not wrapped around the whole shell.
+    const work = document.querySelector('[data-panel-id="panel-split-columns-a"]');
+    expect(work?.contains(dock as Node)).toBe(true);
+  });
+
+  it("INSERTS: the panes the user arranged are all still where they were", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(
+      <AppShell
+        storage={storage}
+        shaderEditor={<div>editor slot</div>}
+        viewer={<div>viewer slot</div>}
+        nodeLibrary={<div>library slot</div>}
+      />,
+    );
+    // Arrange something first, so "restore" has something it could destroy.
+    await movePaneVia(user, "shader editor", "Centre dock");
+    const before = readPaneTreeStore(storage).current;
+
+    await openLayoutMenu(user);
+    await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
+
+    // A reset would have put the shader editor back in the bottom dock and dropped the
+    // library column — that is the bug this row exists to fix, not to commit.
+    expect(zoneElement("center").contains(screen.getByText("editor slot"))).toBe(true);
+    expect(zoneElement("libraries").contains(screen.getByText("library slot"))).toBe(true);
+    expect(zoneElement("right").contains(screen.getByText("viewer slot"))).toBe(true);
+    const after = readPaneTreeStore(storage).current;
+    expect(allTabs(after).map((tab) => tab.key).sort()).toEqual(
+      allTabs(before).map((tab) => tab.key).sort(),
+    );
+  });
+
+  it("closes T931's one-way door: destroy a dock by dragging, get it back from the menu", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} viewer={<div>viewer slot</div>} />);
+
+    // The exact sequence: drag the sidebar's tabs away until its leaves collapse.
+    for (const name of ["viewer", "inspector"]) {
+      let carried = "";
+      const transfer = {
+        setData: (_type: string, value: string) => {
+          carried = value;
+        },
+        getData: () => carried,
+        effectAllowed: "",
+        dropEffect: "",
+      };
+      fireEvent.dragStart(screen.getByRole("tab", { name }), { dataTransfer: transfer });
+      fireEvent.drop(
+        document.querySelector('[data-pane-leaf="leaf-bottom"] [data-drop-slot="0"]') as HTMLElement,
+        { dataTransfer: transfer },
+      );
+    }
+    expect(document.querySelector('[data-pane-leaf="leaf-right"]')).toBeNull();
+    expect(document.querySelector('[data-pane-leaf="leaf-rightBottom"]')).toBeNull();
+
+    await openLayoutMenu(user);
+    await user.click(screen.getByRole("button", { name: "Restore Right dock" }));
+
+    expect(document.querySelector('[data-pane-leaf="leaf-right"]')).not.toBeNull();
+    // …and the panes they dragged away stayed where they put them.
+    expect(zoneElement("bottom").contains(screen.getByText("viewer slot"))).toBe(true);
+  });
+
+  it("a restored dock is COLLAPSIBLE at once — not on the next reload", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+
+    await openLayoutMenu(user);
+    await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
+    await openLayoutMenu(user);
+
+    // The row has flipped from the restore action to the ordinary shown/hidden toggle:
+    // §V399 says every shell panel is collapsible, and a freshly inserted one is a shell
+    // panel. Its id has to be in COLLAPSIBLE_IDS for the panel to accept a handle at all.
+    const toggle = screen.getByRole("button", { name: "Left dock" });
+    expect(toggle.textContent).toBe("shown");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
   });
 });
 

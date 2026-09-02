@@ -30,16 +30,20 @@ import {
   leavesOf,
   moveTab,
   moveTabToEdge,
-  spawnEdge,
   spawnableEdges,
   selectTab,
   revealRole,
   setSplitRatio,
   splitLeaf,
-  treeFromShellLayout,
+  SKELETON_TREE,
   DEFAULT_PANE_TREE,
+  BASELINE_REGIONS,
+  BASELINE_REGION_LABELS,
+  BASELINE_REGION_NODE_IDS,
+  baselineRegionNode,
+  restoreBaselineRegion,
 } from "./pane-tree.ts";
-import type { ShellEdge, LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
+import type { BaselineRegion, ShellEdge, LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
 import {
   allNamedPaneTrees,
   applyNamedPaneTree,
@@ -52,17 +56,12 @@ import {
   writePaneTreeStore,
 } from "./pane-tree-storage.ts";
 import type { NamedPaneTree, PaneTreeStore } from "./pane-tree-storage.ts";
-import { DEFAULT_LAYOUT_ID, DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
+import { DEFAULT_LAYOUT_ID } from "./layout-storage.ts";
 import styles from "./app-shell.module.css";
 
 const HIT_AREA = { coarse: 12, fine: 6 } as const;
 
-/**
- * The five-zone migration skeleton — the shape every layout stored before T404 comes up
- * as, and the only place `split-main` and its stock ratios still exist now that the
- * default (T927) has no left dock. Used for naming and for divider reset fallbacks.
- */
-const SKELETON_TREE = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+
 
 /**
  * The canonical leaves keep their human names; anything the user split is named by what
@@ -82,18 +81,27 @@ const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
   "leaf-libraries": "Library dock",
 };
 
-/** Panel ids the layout menu can collapse, when the current tree still has them. */
-const TOGGLE_TARGETS: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
-  { id: "leaf-left", label: "Left dock" },
-  { id: "split-right", label: "Right dock" },
-  { id: "leaf-bottom", label: "Bottom dock" },
-  // T927 (§V399: every shell panel is collapsible): the libraries' own column. It is
-  // what the left dock's toggle used to be for — get them out of the way in one gesture
-  // — and without it the new arrangement would be the first one to ship a panel with no
-  // way to close it. T932 made that column a single LEAF, so the toggle targets the leaf.
+/**
+ * Panels beyond the BASELINE DOCKS that the layout menu can collapse, when the current
+ * tree has them (§V399: every shell panel is collapsible).
+ *
+ * T927's library column is the only one. It is what the left dock's toggle used to be
+ * for — get the libraries out of the way in one gesture — and without it the T932
+ * arrangement would be the first to ship a panel with no way to close it. T932 made that
+ * column a single LEAF, so the toggle targets the leaf.
+ *
+ * The three baseline docks are NOT here: T936 lists them unconditionally, because a row
+ * that appears only while its dock exists cannot bring a destroyed dock back.
+ */
+const EXTRA_TOGGLE_TARGETS: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
   { id: "leaf-libraries", label: "Library column" },
 ];
-const COLLAPSIBLE_IDS = new Set(TOGGLE_TARGETS.map((target) => target.id));
+const COLLAPSIBLE_IDS = new Set<string>([
+  ...EXTRA_TOGGLE_TARGETS.map((target) => target.id),
+  // Every spelling a baseline region can take, so a RESTORED dock is collapsible the
+  // moment it exists rather than on the next reload.
+  ...BASELINE_REGION_NODE_IDS,
+]);
 
 /** The canonical splits keep the divider names the flat shell taught (§V19). */
 const SPLIT_HANDLE_NAMES: Readonly<Record<string, string>> = {
@@ -327,12 +335,17 @@ export function AppShell({
     (role: PaneRole) => applyLayout((layout) => restoreRole(layout, role)),
     [applyLayout],
   );
-  // T494, door one: spawn an absent edge area empty — the role picker says what it shows.
-  const onSpawnEdge = useCallback(
-    (edge: ShellEdge) => applyLayout((layout) => spawnEdge(layout, edge).layout),
-    [applyLayout],
-  );
-  // T494, door two: the same operation, entered by dragging a tab to the shell's edge.
+  /*
+   * T494's door ONE — a menu row that spawned an absent edge area empty — is gone, and
+   * T936 is why: the three shell edges ARE the three baseline docks, so its row and the
+   * always-present "Left dock — absent → restore" row were about to say the same thing
+   * twice. The baseline row wins on both counts: it appears even when the edge reads as
+   * HELD (the case that hid the left dock from every list), and it inserts at the
+   * canonical position instead of wrapping the root.
+   *
+   * Door TWO stays exactly as it was. Dragging a tab to a screen edge is a different
+   * gesture — geometric, and about where your pointer is, not which dock you mean.
+   */
   const onDropEdge = useCallback(
     (key: PaneKey, edge: ShellEdge) => {
       setDragging(null);
@@ -352,6 +365,19 @@ export function AppShell({
       setMenuStore(next);
     },
     [persist],
+  );
+
+  /**
+   * T936: bring an ABSENT baseline dock back, INSERTED into the arrangement the user
+   * has rather than resetting it. The generation bump is the same one a restore needs —
+   * the new split's stock ratio must win over whatever the panel group remembers.
+   */
+  const onRestoreRegion = useCallback(
+    (region: BaselineRegion) => {
+      applyLayout((layout) => restoreBaselineRegion(layout, region));
+      setGeneration((current) => current + 1);
+    },
+    [applyLayout],
   );
 
   const mutateNamed = useCallback(
@@ -589,9 +615,17 @@ export function AppShell({
                 floating={tree.floating}
                 absentRoles={PANE_IDS.filter((role) => !tabs.some((tab) => tab.role === role))}
                 onRestoreRole={onRestoreRole}
-                spawnEdges={spawnableEdges(tree)}
-                onSpawnEdge={onSpawnEdge}
-                presentToggles={TOGGLE_TARGETS.filter((target) =>
+                baselines={BASELINE_REGIONS.map((region) => {
+                  const node = baselineRegionNode(tree, region);
+                  return {
+                    region,
+                    label: BASELINE_REGION_LABELS[region],
+                    node,
+                    state: node === null ? "absent" : collapsed[node] === true ? "hidden" : "shown",
+                  } as const;
+                })}
+                onRestoreRegion={onRestoreRegion}
+                presentToggles={EXTRA_TOGGLE_TARGETS.filter((target) =>
                   target.id.startsWith("leaf-")
                     ? findLeaf(tree, target.id) !== undefined
                     : hasSplit(tree.root, target.id),
@@ -659,9 +693,18 @@ interface LayoutMenuProps {
   /** T486 (V423): the roles with NO pane anywhere — the possibility space, not the tree. */
   absentRoles: readonly PaneId[];
   onRestoreRole: (role: PaneRole) => void;
-  /** T494: shell edges with no dedicated area — offered for spawning, absent ones only (V423). */
-  spawnEdges: readonly ShellEdge[];
-  onSpawnEdge: (edge: ShellEdge) => void;
+  /**
+   * T936: the baseline docks, ALWAYS all three, each with its own state. `node` is the
+   * id a collapse targets and null means the dock is not in the tree at all.
+   */
+  baselines: ReadonlyArray<{
+    readonly region: BaselineRegion;
+    readonly label: string;
+    readonly node: string | null;
+    readonly state: "shown" | "hidden" | "absent";
+  }>;
+  onRestoreRegion: (region: BaselineRegion) => void;
+  /** Collapsible panels that are NOT baseline docks — offered only while they exist. */
   presentToggles: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   onToggle: (id: string) => void;
   onDock: (key: PaneKey) => void;
@@ -684,8 +727,8 @@ function LayoutMenu({
   floating,
   absentRoles,
   onRestoreRole,
-  spawnEdges,
-  onSpawnEdge,
+  baselines,
+  onRestoreRegion,
   presentToggles,
   onToggle,
   onDock,
@@ -809,6 +852,23 @@ function LayoutMenu({
           )}
 
           <PopoverHeader>panes</PopoverHeader>
+          {/* T936, the owner: "they should always be listed there with the respective
+              status." All three baseline docks, unconditionally — a row that appears
+              only while its dock exists cannot bring back a dock T931 let you destroy.
+              Absent is the third state and its button INSERTS the dock at its canonical
+              position, keeping everything else the user arranged. */}
+          {baselines.map((row) => (
+            <div key={row.region} className={styles.layoutRow}>
+              <span>{row.label}</span>
+              <Button
+                aria-label={row.node === null ? `Restore ${row.label}` : row.label}
+                {...(row.node === null ? {} : { "aria-pressed": row.state === "shown" })}
+                onClick={() => (row.node === null ? onRestoreRegion(row.region) : onToggle(row.node))}
+              >
+                {row.state}
+              </Button>
+            </div>
+          ))}
           {presentToggles.map((target) => (
             <div key={target.id} className={styles.layoutRow}>
               <span>{target.label}</span>
@@ -840,16 +900,14 @@ function LayoutMenu({
               </Button>
             </div>
           ))}
-          {/* T494 (V423 both ways): absent EDGES are offered as fresh empty areas —
-              only while absent, so the menu never grows with what already exists. */}
-          {spawnEdges.map((edge) => (
-            <div key={edge} className={styles.layoutRow}>
-              <span>{edge} area (none)</span>
-              <Button aria-label={`New ${edge} pane`} onClick={() => onSpawnEdge(edge)}>
-                spawn
-              </Button>
-            </div>
-          ))}
+          {/* T494's menu row lived here and T936 SUBSUMED it: the three shell edges are
+              the three baseline docks, so "bottom area (none) → spawn" and "Bottom dock
+              → absent" were about to be two rows meaning one thing. The baseline row is
+              strictly the more available of the two — it shows even when the edge reads
+              as HELD, which is the case that hid the left dock from both lists — and it
+              lands the dock at its canonical position rather than wrapped around the
+              root. T494's DRAG door is untouched; dragging to a screen edge is a
+              different gesture and is geometric by nature. */}
           <p className={styles.layoutHint}>Drag a tab onto another area, or use its move menu.</p>
           <p className={styles.layoutHint}>
             Drag a divider to resize, double-click it to reset. A focused divider resizes with the

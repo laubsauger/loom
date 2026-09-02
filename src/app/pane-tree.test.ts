@@ -17,6 +17,9 @@ import {
   homeLeafFor,
   leavesOf,
   moveTab,
+  baselinePlacement,
+  baselineRegionNode,
+  restoreBaselineRegion,
   repairPaneTree,
   restoreRole,
   revealRole,
@@ -26,7 +29,7 @@ import {
   splitLeaf,
   treeFromShellLayout,
 } from "./pane-tree.ts";
-import type { PaneTreeLayout } from "./pane-tree.ts";
+import type { LayoutNode, PaneKey, PaneTreeLayout } from "./pane-tree.ts";
 import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
 
 /**
@@ -474,6 +477,198 @@ describe("the split/close algebra", () => {
     expect(findLeaf(selected, "leaf-bottom")?.active).toBe(problems.key);
     const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
     expect(findLeaf(selectTab(tree, "leaf-bottom", viewer.key), "leaf-bottom")?.active).toBe(bottom.active);
+  });
+});
+
+/**
+ * T936 — the baseline docks are always listable, and an ABSENT one is recreatable.
+ *
+ * The owner: "it still only lets us show 3 panes that currently exist instead of always
+ * allowing us to bring back or hide any." The gap was structural and had two halves:
+ * `leaf-left` is not in the default tree (T927 removed it) AND the left EDGE reads as
+ * HELD, because the graph touches it — so the region appeared in neither the toggle list
+ * nor T494's spawn list. Two mechanisms, two different meanings of "absent", and a dock
+ * that fell between them.
+ *
+ * T931 is what made it urgent rather than untidy: dragging a leaf's last tab out now
+ * collapses that leaf, so a dock can be DESTROYED and the only way back was a full
+ * layout reset — which throws away everything else the user arranged.
+ */
+describe("the baseline docks: always listed, absent ones restorable (T936)", () => {
+  const rectOf = (layout: PaneTreeLayout, id: PaneKey) => {
+    let found: { x: number; y: number; w: number; h: number } | null = null;
+    const walk = (node: LayoutNode, x: number, y: number, w: number, h: number): void => {
+      if (node.id === id) found = { x, y, w, h };
+      if (node.kind === "leaf") return;
+      const share = node.ratio / 100;
+      if (node.direction === "row") {
+        walk(node.first, x, y, w * share, h);
+        walk(node.second, x + w * share, y, w * (1 - share), h);
+      } else {
+        walk(node.first, x, y, w, h * share);
+        walk(node.second, x, y + h * share, w, h * (1 - share));
+      }
+    };
+    walk(layout.root, 0, 0, 1, 1);
+    return found as { x: number; y: number; w: number; h: number } | null;
+  };
+
+  it("reports the third state: the default has a right and a bottom, and NO left", () => {
+    // The exact shape the owner is looking at, and the reason the menu showed three rows.
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "right")).toBe("split-right");
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "bottom")).toBe("leaf-bottom");
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "left")).toBeNull();
+    // …and the other mechanism could not have offered it either: the graph touches the
+    // left edge, so T494 reads that edge as HELD. Absent from BOTH lists is the bug.
+    expect(spawnableEdges(DEFAULT_PANE_TREE)).toEqual([]);
+  });
+
+  it("restores the left dock BESIDE THE GRAPH — inside the work area, above the bottom", () => {
+    const restored = restoreBaselineRegion(DEFAULT_PANE_TREE, "left");
+    expect(baselineRegionNode(restored, "left")).toBe("leaf-left");
+
+    /*
+     * Position asserted by MEASUREMENT, because "it is somewhere in the tree" is exactly
+     * the bug a naive insertion produces: wrapping the root would put the left dock
+     * beside the sidebar and full height, and splitting the first leaf found would drop
+     * it inside the bottom bar.
+     */
+    const dock = rectOf(restored, "leaf-left")!;
+    const graph = rectOf(restored, "leaf-center")!;
+    const sidebar = rectOf(restored, "split-right")!;
+    const bottom = rectOf(restored, "split-bottom")!;
+    expect(dock.x).toBeCloseTo(0, 5); // hard against the left edge
+    expect(dock.y).toBeCloseTo(graph.y, 5); // level with the graph, not above it
+    expect(dock.h).toBeCloseTo(graph.h, 5); // as tall as the graph…
+    expect(dock.y + dock.h).toBeLessThan(bottom.y + 1e-6); // …and stopping at the bottom bar
+    expect(dock.x + dock.w).toBeLessThan(sidebar.x + 1e-6); // nowhere near the sidebar
+    // The stock share of the work area, taken from the skeleton and not written out here.
+    expect(dock.w / (graph.w + dock.w)).toBeCloseTo(baselinePlacement("left").ratio / 100, 5);
+  });
+
+  it("INSERTS — every other leaf, ratio and tab order is byte-identical", () => {
+    /*
+     * The constraint that makes this a fix rather than a second bug: a restore that
+     * discards the arrangement is the thing it exists to save the user from. Asserted by
+     * serialising the whole tree with the new subtree lifted out, so a ratio nudged
+     * anywhere or a tab order shuffled anywhere fails this — not just the leaves the
+     * insertion happens to touch.
+     */
+    let custom: PaneTreeLayout = DEFAULT_PANE_TREE;
+    custom = setSplitRatio(custom, "split-columns", 61);
+    custom = setSplitRatio(custom, "split-bottom", 33);
+    const libraries = findLeaf(custom, "leaf-libraries")!;
+    custom = moveTab(custom, libraries.tabs[1]!.key, "leaf-bottom", 0);
+    custom = addTab(custom, "leaf-rightBottom", "problems");
+
+    const restored = restoreBaselineRegion(custom, "left");
+
+    /** The tree with the freshly inserted split spliced back out. */
+    const withoutInsertion = (node: LayoutNode): LayoutNode => {
+      if (node.kind === "leaf") return node;
+      if (node.first.id === "leaf-left") return withoutInsertion(node.second);
+      if (node.second.id === "leaf-left") return withoutInsertion(node.first);
+      return { ...node, first: withoutInsertion(node.first), second: withoutInsertion(node.second) };
+    };
+    expect(JSON.stringify(withoutInsertion(restored.root))).toBe(JSON.stringify(custom.root));
+    expect(restored.floating).toEqual(custom.floating);
+  });
+
+  it("gives the restored dock an EMPTY leaf — the picker, never a guessed tab (T853)", () => {
+    const restored = restoreBaselineRegion(DEFAULT_PANE_TREE, "left");
+    const dock = findLeaf(restored, "leaf-left")!;
+    // Guessing would make "bring the left dock back" and "put the node library back" the
+    // same button, and reopen a pane the user deliberately moved out of it.
+    expect(dock.tabs).toEqual([]);
+    expect(dock.active).toBeNull();
+    // Nothing was taken from anywhere else to fill it.
+    expect(allTabs(restored).map((tab) => tab.key).sort()).toEqual(
+      allTabs(DEFAULT_PANE_TREE).map((tab) => tab.key).sort(),
+    );
+  });
+
+  it("restores the sidebar FULL HEIGHT — the T426 property, not a corner", () => {
+    const noSidebar = closeLeaf(closeLeaf(DEFAULT_PANE_TREE, "leaf-right"), "leaf-rightBottom");
+    expect(baselineRegionNode(noSidebar, "right")).toBeNull();
+
+    const restored = restoreBaselineRegion(noSidebar, "right");
+    const sidebar = rectOf(restored, "leaf-right")!;
+    // The whole height of the shell: a sidebar wrapped around the centre leaf instead of
+    // the root is exactly the pre-T426 shell T426 was written to end.
+    expect(sidebar.y).toBeCloseTo(0, 5);
+    expect(sidebar.h).toBeCloseTo(1, 5);
+    expect(sidebar.x + sidebar.w).toBeCloseTo(1, 5);
+  });
+
+  it("restores the bottom bar SHORT OF the sidebar, which wrapping the root would not", () => {
+    const noBottom = closeLeaf(closeLeaf(DEFAULT_PANE_TREE, "leaf-bottom"), "leaf-libraries");
+    expect(baselineRegionNode(noBottom, "bottom")).toBeNull();
+
+    const restored = restoreBaselineRegion(noBottom, "bottom");
+    const bar = rectOf(restored, "leaf-bottom")!;
+    const sidebar = rectOf(restored, "split-right")!;
+    expect(bar.y + bar.h).toBeCloseTo(1, 5); // on the floor
+    expect(bar.x).toBeCloseTo(0, 5);
+    // …and it stops where the sidebar starts. `spawnEdge` wraps the ROOT, which would
+    // run the bar underneath the full-height sidebar and undo T426.
+    expect(bar.x + bar.w).toBeCloseTo(sidebar.x, 5);
+    expect(bar.x + bar.w).toBeLessThan(1 - 1e-6);
+  });
+
+  it("wraps the WHOLE tree when the region further out is missing too", () => {
+    // No sidebar to stop short of: the bottom bar runs the full width, correctly.
+    const solo: PaneTreeLayout = {
+      root: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      floating: [],
+      nextKey: 2,
+    };
+    const restored = restoreBaselineRegion(solo, "bottom");
+    const bar = rectOf(restored, "leaf-bottom")!;
+    expect(bar.x).toBeCloseTo(0, 5);
+    expect(bar.w).toBeCloseTo(1, 5);
+  });
+
+  it("is a no-op for a region that is already there — the menu offers hide, not restore", () => {
+    expect(restoreBaselineRegion(DEFAULT_PANE_TREE, "bottom")).toBe(DEFAULT_PANE_TREE);
+    expect(restoreBaselineRegion(DEFAULT_PANE_TREE, "right")).toBe(DEFAULT_PANE_TREE);
+  });
+
+  it("T931's destroyed dock comes back — the one-way door this row closes", () => {
+    /*
+     * The exact sequence the owner can hit: drag the sidebar's two tabs away one at a
+     * time, and the second drag collapses the leaf out of the tree. Before T936 the only
+     * route back was a full reset.
+     */
+    let tree: PaneTreeLayout = DEFAULT_PANE_TREE;
+    tree = moveTab(tree, allTabs(tree).find((tab) => tab.role === "viewer")!.key, "leaf-bottom");
+    tree = moveTab(tree, allTabs(tree).find((tab) => tab.role === "inspector")!.key, "leaf-bottom");
+    expect(baselineRegionNode(tree, "right")).toBeNull();
+
+    const restored = restoreBaselineRegion(tree, "right");
+    expect(baselineRegionNode(restored, "right")).toBe("leaf-right");
+    // …and the panes the user dragged away stayed where they put them.
+    expect(findLeaf(restored, "leaf-bottom")?.tabs.map((tab) => tab.role)).toContain("viewer");
+    expect(findLeaf(restored, "leaf-bottom")?.tabs.map((tab) => tab.role)).toContain("inspector");
+  });
+
+  it("EDGE_SHARE and the skeleton are ONE answer — T494's spawn agrees with T936's restore", () => {
+    /*
+     * They did not: `EDGE_SHARE` said the left dock was 22% of the shell where the
+     * skeleton says 23%, and T936 would have been a third number. Pinned by comparing
+     * the two doors' output rather than the constants, so a future edit to either is
+     * caught by the one that did not move.
+     */
+    const solo: PaneTreeLayout = {
+      root: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      floating: [],
+      nextKey: 2,
+    };
+    const spawned = spawnEdge(solo, "left").layout;
+    const restored = restoreBaselineRegion(solo, "left");
+    expect(rectOf(spawned, spawned.root.kind === "split" ? spawned.root.first.id : "")!.w).toBeCloseTo(
+      rectOf(restored, "leaf-left")!.w,
+      5,
+    );
   });
 });
 
