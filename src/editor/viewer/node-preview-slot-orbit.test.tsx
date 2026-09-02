@@ -107,8 +107,10 @@ describe("the preview inspection mode (T656)", () => {
     const { orbits, slot } = mount(true);
     expect(orbits.mode(NODE)).toBe("home");
     // The toggle is NOT here any more and must not come back: anything rendered inside
-    // this box is painted over by the composited tile. `preview-inspect-chrome.test.tsx`
-    // holds that invariant; this is the local half, so a well-meaning re-add fails twice.
+    // this box is painted over by the composited tile. T892 put the control back on the
+    // picture through a PANE-level layer that never enters this stacking context
+    // (`preview-inspect-overlay.test.tsx` holds the containment invariant); this is the
+    // local half, so a well-meaning re-add into the slot fails twice.
     expect(screen.queryByTestId(`preview-inspect-${NODE}`)).toBeNull();
     expect(slot.getAttribute("data-inspect")).toBe("home");
   });

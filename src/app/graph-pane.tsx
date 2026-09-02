@@ -18,7 +18,14 @@ import { useKeymapPane } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
-import { NodePreviewSlot, createPreviewOrbitStore, createPreviewSlotBounds, lensMarker, usePreviewViews } from "@editor/viewer/index.ts";
+import {
+  NodePreviewSlot,
+  PreviewInspectOverlays,
+  createPreviewOrbitStore,
+  createPreviewSlotBounds,
+  lensMarker,
+  usePreviewViews,
+} from "@editor/viewer/index.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
@@ -296,14 +303,12 @@ function GraphPaneInner({
   );
 
   /**
-   * T675 — the inspection control's source for the node HEADER.
-   *
-   * The toggle used to be drawn on the tile and was invisible there: the shared preview
-   * surface composites over every pixel of a node's preview slot (`canvas-context.ts`
-   * carries the stacking analysis). Returning the store rather than a rendered control
-   * keeps `NodeView` free of any preview import, and returning `null` is how a node with
-   * nothing to inspect says so — a suspended preview publishes no orbit, so it offers no
-   * camera (T669, answered: no ghost control that cannot work).
+   * T892 — WHICH TILES ARE OFFERED A CAMERA, for the overlay layer at the bottom of this
+   * component. The same gate the node header used to consult, moved rather than rewritten:
+   * a node with nothing to inspect returns `null` and is drawn no control at all — a
+   * suspended preview publishes no orbit, so its camera is ABSENT, never a disabled ghost
+   * (T669). A texture or value preview never reaches either branch, so the overlay cannot
+   * appear on a 2D picture.
    */
   const previewInspect = useCallback(
     (nodeId: NodeId) => {
@@ -635,6 +640,19 @@ function GraphPaneInner({
         keeps it out of every gesture the canvas below handles.
       */}
       <canvas ref={previewCanvasRef} className={styles.previewSurface} aria-hidden="true" />
+      {/*
+        T892 — the camera toggle, drawn ON the tile it drives, at its bottom-right corner.
+
+        A SIBLING of the surface above and one z-step higher, which is the only place this
+        control can be: the owner asked three times for it to be on the picture, and every
+        earlier attempt put it inside the node, where the composited tile paints over it.
+        Everything inside a node is sealed in `.react-flow__viewport`'s stacking context at
+        z-index 2, so it cannot cross; this layer never enters that context at all.
+
+        AFTER the menu host in the DOM so the buttons come last in tab order — the node
+        they belong to is reached first — and `pointer-events: none` on the layer so a
+        full-pane div cannot swallow a single canvas gesture.
+      */}
       <GraphMenuHost bus={bus} selection={selection}>
         <GraphCanvas
           bus={bus}
@@ -642,7 +660,6 @@ function GraphPaneInner({
           invocation={invocation}
           runtime={nodeRuntime}
           renderPreview={renderPreview}
-          previewInspect={previewInspect}
           previewLens={previewLens}
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
@@ -652,6 +669,7 @@ function GraphPaneInner({
           }
         />
       </GraphMenuHost>
+      <PreviewInspectOverlays bounds={previewBounds} inspect={previewInspect} />
       <PortDragBridge onChange={onPortDragChange} />
     </div>
   );

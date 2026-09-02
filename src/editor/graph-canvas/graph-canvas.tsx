@@ -54,7 +54,6 @@ import type {
   GraphCanvasContextValue,
   GraphDispatch,
   NodeToggleCommand,
-  PreviewInspectSource,
   PreviewLensSource,
 } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
@@ -94,9 +93,8 @@ export interface GraphCanvasProps {
   runtime?: NodeRuntimeSource;
   renderPreview?: (nodeId: NodeId) => ReactNode;
   renderControls?: (nodeId: NodeId) => ReactNode;
-  /** T675: the preview inspection control's source — see `canvas-context.ts` for why the
-      control is in the node HEADER and not on the tile it drives. */
-  previewInspect?: (nodeId: NodeId) => PreviewInspectSource | null;
+  /* T892: no `previewInspect` — the camera toggle is not node chrome at all any more.
+     The graph pane draws it over the tiles; see `preview-inspect-overlay.tsx`. */
   /** T685: the preview lens marker's source — §V70a's warning, out from under the tile. */
   previewLens?: (nodeId: NodeId) => PreviewLensSource | null;
   /** Patch outcomes, so a rejected gesture can surface instead of failing silently. */
@@ -125,7 +123,6 @@ export function GraphCanvas({
   runtime,
   renderPreview,
   renderControls,
-  previewInspect,
   previewLens,
   onPatchResult,
   onSelectionChange,
@@ -648,7 +645,6 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
-      previewInspect,
       previewLens,
       showProblems,
       diveIn,
@@ -667,7 +663,6 @@ export function GraphCanvas({
       renameNode,
       renderPreview,
       renderControls,
-      previewInspect,
       previewLens,
       showProblems,
       diveIn,

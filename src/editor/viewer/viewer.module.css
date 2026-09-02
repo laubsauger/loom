@@ -50,20 +50,88 @@
 }
 
 /*
- * T675 — the inspection toggle's rules USED TO BE HERE, and deleting them is the fix.
+ * T675/T892 — the inspection toggle is ON THE TILE AGAIN, and it is NOT styled by any rule
+ * that applies inside `.inspectHost`. That distinction is the whole of T675's finding.
  *
- * Nothing styled in this file can be seen over a LIVE tile. `.previewSurface`
+ * Nothing painted inside a node can be seen over a LIVE tile. `.previewSurface`
  * (`app/panes.module.css`) is a full-pane canvas at `--z-canvas-overlay` (30); everything
  * in a node is sealed inside `.react-flow__viewport`'s stacking context at z-index 2, so
  * the composited tile paints over the whole slot and no local z-index can cross those
  * contexts. The toggle sat here at `z-index: 1`, opacity 0.35, revealed on hover — three
- * numbers arguing about the loudness of something that was not on screen. It now lives in
- * the node header (`nodes/node-view.tsx`, `previewInspect`), where nothing composites.
+ * numbers arguing about the loudness of something that was not on screen.
  *
- * `.lensMarker` had the SAME defect and moved in the same pass (T685): it is §V70a's
- * warning that a preview is filtered, and drawn here it was occluded exactly when the
- * preview was live — the one case it exists to warn about.
+ * T892's answer is a SIBLING of the compositing surface rather than a descendant of the
+ * viewport: `.previewChrome` below is a pane-level layer at `--z-canvas-chrome` (31), and
+ * `preview-inspect-overlay.tsx` places one button per tile at the tile's own screen rect.
+ * The owner's reason was the node TITLE — `C` was the fourth button in a `P B M C` row on
+ * a 178px header and the name was truncating to two characters to pay for it.
+ *
+ * `.lensMarker` had the SAME defect and moved to the header in the same pass as T675
+ * (T685): it is §V70a's warning that a preview is filtered, and drawn inside the slot it
+ * was occluded exactly when the preview was live. It is still in the header; the layer
+ * below is where it would go if that is ever revisited.
  */
+
+/*
+ * The pane-level chrome layer (T892). A sibling of `.previewSurface` inside the graph
+ * pane, one z-step above it, so what it draws lands on the picture rather than under it.
+ *
+ * `pointer-events: none` on the LAYER and `auto` on each button: the layer covers the
+ * whole pane, so anything else would swallow every canvas gesture in the app.
+ */
+.previewChrome {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-chrome);
+  pointer-events: none;
+  /* Clipped to the pane, like the surface it sits over: a node scrolled past the pane's
+     edge still has a placement, and without this its button would be drawn on whatever
+     pane is next door. The compositing canvas gets this for free by being a canvas. */
+  overflow: hidden;
+}
+
+/*
+ * One button, at the bottom-right corner of one tile.
+ *
+ * `left`/`top` carry the tile's bottom-right corner in pane pixels; the transform pulls
+ * the button back inside by its own size plus an inset, and scales the whole thing by the
+ * canvas zoom so it stays chrome ON a node rather than chrome over the canvas. The order
+ * matters: `scale` then `translate` means the inset is expressed in the button's own
+ * units and therefore scales with it.
+ *
+ * Permanently visible, not hover-revealed: this control has been lost twice by being
+ * quiet (T664, T675), and §T854's `×` had to pair hiding with `pointer-events: none` to
+ * avoid an invisible live hit target. A dark scrim and a hairline keep it legible over an
+ * arbitrary picture without shouting.
+ */
+.inspectToggle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: var(--hairline) solid var(--line-hot);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  cursor: default;
+  pointer-events: auto;
+  transform: scale(var(--chrome-zoom, 1)) translate(calc(-100% - 3px), calc(-100% - 3px));
+  transform-origin: 0 0;
+}
+
+.inspectToggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+
+.inspectToggle[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--bg-active) 82%, transparent);
+  border-color: var(--signal);
+  color: var(--signal);
+}
 
 /*
  * T685 — the lens marker's rules are gone from here for §V633's reason, the same one that

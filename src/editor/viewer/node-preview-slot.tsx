@@ -362,9 +362,12 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
         clicks still landed, so every test that found the button by test-id and clicked it
         passed (§V461: a DOM query cannot see occlusion).
 
-        So the control lives in the node's HEADER now, beside P/B/M, where nothing is ever
-        composited — `previewInspect` in `canvas-context.ts`. What stays here is the part
-        that must be on the picture: the gestures, and the cursor that says they are live.
+        T892 put it back on the corner of the picture, where the owner asked for it three
+        times — but NOT in this box. It is drawn by `preview-inspect-overlay.tsx`, a
+        PANE-level layer that is a sibling of the compositing surface and therefore never
+        enters the viewport's stacking context at all. What stays here is the part that
+        must be on the picture and can be: the gestures, and the cursor that says they are
+        live. A control re-added here would be occluded exactly as it was before.
       */}
       {preview === null ? (
         /**

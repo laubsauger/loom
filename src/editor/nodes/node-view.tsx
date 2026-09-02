@@ -34,7 +34,6 @@ import type { PortDefinition } from "@domain/types/ports.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
 import type {
   NodeToggleCommand,
-  PreviewInspectSource,
   PreviewLensSource,
 } from "@editor/graph-canvas/canvas-context.ts";
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
@@ -78,7 +77,6 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     renameNode,
     renderPreview,
     renderControls,
-    previewInspect,
     previewLens,
     showProblems,
     diveIn,
@@ -204,13 +202,6 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    */
   const producesPreviewable = previewablePort(definition?.outputs ?? []) !== undefined;
   const hasPreview = producesPreviewable || producesValue || presentsTexture;
-  /**
-   * T675: non-null only where the compiler published an orbit for this node's preview —
-   * pointset and geometry syntheses and the scene stocks, never a texture output and
-   * never a CAMERA payload, whose tile draws through the payload's own matrix (§T639(a)).
-   * The composition root answers; this file does not infer 3D-ness from a node type.
-   */
-  const inspect = hasPreview ? (previewInspect?.(id) ?? null) : null;
   /** T685: §V70a's "this picture is not the node's output" warning, same seam shape. */
   const lens = hasPreview ? (previewLens?.(id) ?? null) : null;
   const agent = snapshot.agent;
@@ -411,21 +402,22 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             onToggle={() => toggle("node.toggleRender")}
           />
           {/*
-            T675 — the preview's inspection camera, LAST in the row on purpose.
+            T892 — THE CAMERA TOGGLE (`C`) IS NOT IN THIS ROW, and its absence is the fix.
 
-            It is here rather than at the tile's corner because the shared preview surface
-            composites over everything inside a node (see `canvas-context.ts` — z-index 30
-            against the viewport's 2, in stacking contexts no local number can bridge), so
-            a control drawn on the tile is invisible exactly when the tile is live, which
-            is exactly when there is something to inspect. The header is chrome nothing is
-            ever composited over.
+            T675 put it here because the shared preview surface composites over everything
+            inside a node, so a control drawn on the tile could not be seen. That is still
+            true of anything rendered inside this component — but the conclusion it forced
+            was wrong for the owner, who asked three times for the control to be ON the
+            picture: `C` was a FOURTH button in this row on a 178px node, and a node called
+            `hatch` was rendering as `ha…` to pay for it. The title's width was the whole
+            request.
 
-            LAST because it is the one toggle that comes and goes: it is offered only where
-            the compiler published an orbit, and a suspended preview publishes none (T669).
-            At the end of the row its arrival and departure move nothing else, so P, B and M
-            stay where the hand expects them.
+            It lives at the bottom-right corner of the tile now, drawn by a PANE-LEVEL
+            layer that is a sibling of the compositing surface rather than a descendant of
+            React Flow's viewport (`editor/viewer/preview-inspect-overlay.tsx`). The row
+            here is P, B and M — three stable per-node flags, no conditional member — so
+            the header's width no longer depends on whether a node has a camera.
           */}
-          {inspect === null ? null : <PreviewInspectToggle nodeId={id} source={inspect} />}
         </header>
 
         {agent === null ? null : (
@@ -657,8 +649,6 @@ interface NodeToggleProps {
   short: string;
   pressed: boolean;
   onToggle: () => void;
-  /** Only where a test has to find ONE of these among the row (T675's inspect toggle). */
-  testId?: string;
 }
 
 /**
@@ -668,7 +658,7 @@ interface NodeToggleProps {
  * stopping the pointer press from reaching the node wrapper's drag listener at all.
  * The click itself is left to bubble, so pressing a toggle still selects its node.
  */
-function NodeToggle({ label, title, short, pressed, onToggle, testId }: NodeToggleProps) {
+function NodeToggle({ label, title, short, pressed, onToggle }: NodeToggleProps) {
   const swallowPress = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
   }, []);
@@ -677,7 +667,6 @@ function NodeToggle({ label, title, short, pressed, onToggle, testId }: NodeTogg
     <button
       type="button"
       className={cx(styles.toggle, "nodrag", "nopan")}
-      {...(testId === undefined ? {} : { "data-testid": testId })}
       aria-label={label}
       aria-pressed={pressed}
       title={title ?? label}
@@ -691,51 +680,17 @@ function NodeToggle({ label, title, short, pressed, onToggle, testId }: NodeTogg
 }
 
 /**
- * T656/T664/T675 — the preview inspection toggle: HOME ↔ ADJUSTABLE.
+ * T892 — `PreviewInspectToggle` USED TO BE HERE. It is `editor/viewer/
+ * preview-inspect-overlay.tsx` now, drawn on the corner of the tile it drives.
  *
- * Three earlier decisions survive the move out of the tile, and one is dropped.
+ * What it took to move it is worth one sentence, because "put the button on the picture"
+ * looks like a JSX edit and is not: the control has to be rendered in a layer that is a
+ * SIBLING of the shared preview surface, since everything a node renders is sealed inside
+ * `.react-flow__viewport`'s stacking context and is painted over by the composited tile.
  *
- * SURVIVES — it is the affordance AND the indicator, with no second badge beside it
- * (T613's answer). SURVIVES — one box in both states, so pressing it cannot reflow the
- * control: that was T664's finding, and using the header's own `NodeToggle` gets it for
- * free rather than re-deriving a square from the type scale. SURVIVES — state by TONE,
- * which `aria-pressed` already drives here (`--bg-active` + `--signal`) on the same
- * pressed/unpressed reading as P, B and M.
- *
- * DROPPED — the orbit-ring GLYPH. It was a 10px SVG chosen because a word changed width;
- * a one-letter mono label in a 14px box does not, and `C` reads in the row's own language
- * instead of introducing a second one. The letter is what P/B/M taught the user to look
- * for, and this control's whole bug was that nobody could find it.
- *
- * §V527: no bus, no command, no revision — the source is the pane's inspection store and
- * an inspection camera is view state. `useSyncExternalStore` on this node's own slice, so
- * adjusting one preview re-renders one toggle.
+ * T664's requirements moved with it — one box in both states, state by tone, the affordance
+ * and the indicator in one control — and so did T669's: absent, never a disabled ghost.
  */
-function PreviewInspectToggle({ nodeId, source }: { nodeId: NodeId; source: PreviewInspectSource }) {
-  const read = useCallback(() => source.mode(nodeId), [source, nodeId]);
-  const mode = useSyncExternalStore(
-    useCallback((listener: () => void) => source.subscribe(nodeId, listener), [source, nodeId]),
-    read,
-    read,
-  );
-  return (
-    <NodeToggle
-      label="Adjust this preview's camera"
-      // Labels, not prose (§V90/§V91). The MODIFIER is named because it is the path that
-      // needs no chrome at all, and a user who never finds this button should still be
-      // able to learn it from the one place they will hover.
-      title={
-        mode === "adjustable"
-          ? "Adjusting — press, or h over the tile, to return home"
-          : "Adjust camera (or alt on tile): drag orbits, shift pans"
-      }
-      short="C"
-      testId={`preview-inspect-${nodeId}`}
-      pressed={mode === "adjustable"}
-      onToggle={() => source.setMode(nodeId, mode === "adjustable" ? "home" : "adjustable")}
-    />
-  );
-}
 
 /**
  * T685 — the preview LENS marker, in the header rather than on the picture.

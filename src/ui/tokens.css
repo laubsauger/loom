@@ -289,6 +289,12 @@
   --text-disabled: #656c7c; /* T708: raised with the ladder, holding its 3.0:1 on panel */
   --selection-bg: #24405c;
   --z-canvas-overlay: 30;
+  /* T892 — DOM chrome that must be legible OVER a composited preview tile. One step
+     above the shared preview surface and in the same stacking context (both are
+     children of the graph pane), which is the only place a control drawn on a tile can
+     live: everything inside a node is sealed in `.react-flow__viewport`'s context at
+     z-index 2 and cannot cross. Still below popovers, tooltips and toasts. */
+  --z-canvas-chrome: 31;
   --z-toast: 90;
 }
 

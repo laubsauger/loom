@@ -24,6 +24,17 @@ export { createPreviewOrbitStore } from "./preview-orbit-store.ts";
 export type { PreviewOrbitStore } from "./preview-orbit-store.ts";
 
 /**
+ * T892 — the camera toggle, drawn on the bottom-right corner of the tile it drives.
+ *
+ * A PANE-level layer rather than node chrome, and that is not a stylistic choice: the
+ * shared preview surface composites over every pixel inside a node's preview slot, so a
+ * control drawn there is invisible exactly when it is useful. The reasoning is written
+ * out in `preview-inspect-overlay.tsx`.
+ */
+export { PreviewInspectOverlays } from "./preview-inspect-overlay.tsx";
+export type { PreviewInspectOverlaysProps } from "./preview-inspect-overlay.tsx";
+
+/**
  * The preview LENS (T336) — channel isolation, exposure and the tonemap, on the preview path
  * only (§V255, §V70a). The store is transient session state, never document state; the reason
  * is written down in `preview-view-store.ts` and it is a deliberate call, not an omission.

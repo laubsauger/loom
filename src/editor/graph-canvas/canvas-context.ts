@@ -87,32 +87,28 @@ export interface GraphCanvasContextValue {
    */
   renderControls?: ((nodeId: NodeId) => ReactNode) | undefined;
   /**
-   * T675 — the preview INSPECTION control, and the reason it is not in the preview slot.
+   * T892 — THERE IS NO `previewInspect` SEAM ANY MORE, and its removal is the point.
    *
-   * The toggle used to live at the tile's own corner, which is where TouchDesigner draws
-   * the equivalent and where T664 put it. It was invisible there, and not for the reason
-   * T664 assumed: the shared preview surface (`panes.module.css .previewSurface`) is a
-   * full-pane canvas at `--z-canvas-overlay` (30), while everything inside a node is
-   * trapped in `.react-flow__viewport`'s stacking context at z-index 2. So the composited
-   * tile PAINTS OVER any chrome inside the slot, and no z-index reachable from in here can
-   * beat it. Worse, `pointer-events: none` on that surface means the button still took
-   * clicks — invisible but live, which is why every DOM-level test passed through it
-   * (§V461: a DOM query cannot see occlusion) and why the owner reported "it maybe hidden
-   * behind the preview or something".
+   * The camera toggle used to be handed down here so the node HEADER could draw it, which
+   * T675 chose because the shared preview surface (`panes.module.css .previewSurface`) is
+   * a full-pane canvas at `--z-canvas-overlay` (30) while everything inside a node is
+   * trapped in `.react-flow__viewport`'s stacking context at z-index 2 — the composited
+   * tile paints over any chrome inside the slot, and no z-index reachable from in here can
+   * beat it.
    *
-   * The structural conclusion is the seam: CHROME THAT MUST BE LEGIBLE OVER A LIVE TILE
-   * CANNOT LIVE INSIDE THE TILE'S RECT. So the control moves to the node's own header row,
-   * beside P/B/M, where nothing is ever composited — and it gets the header's toggle
-   * shape for free, which is T664's "square, same box in both states" requirement
-   * satisfied by using the box the node already has.
+   * That stacking fact is unchanged and still governs everything this file hands to a
+   * node. What changed is the conclusion: the owner asked three times for the control to
+   * be ON the picture, and the reason is the node TITLE — a conditional fourth button in
+   * the `P B M` row made the header's width depend on whether a node had a camera, and
+   * squeezed the name to `ha…`. So the control is no longer node chrome at all. It is
+   * drawn by a PANE-level layer that is a sibling of the compositing surface
+   * (`editor/viewer/preview-inspect-overlay.tsx`), which is the only place a control on a
+   * live tile can live.
    *
-   * A SOURCE, not a rendered node: the mode has to re-render the toggle when a gesture on
-   * the tile changes it, and the store is the only thing that can say so. It is typed
-   * structurally rather than importing `PreviewOrbitStore` — `@editor/viewer` imports this
-   * package, so naming its type here would close a cycle. Returning `null` means this node
-   * has nothing to inspect (§V527's store never enters the document, whichever it is).
+   * The rule this file still enforces, for whoever adds the next piece of preview chrome:
+   * CHROME THAT MUST BE LEGIBLE OVER A LIVE TILE CANNOT BE RENDERED BY A NODE. Either the
+   * node header (`previewLens` below) or that pane-level layer — never the slot.
    */
-  previewInspect?: ((nodeId: NodeId) => PreviewInspectSource | null) | undefined;
   /**
    * T685 — the preview LENS marker, moved out of the tile for §V633's reason.
    *
@@ -124,9 +120,10 @@ export interface GraphCanvasContextValue {
    * bug: a control you cannot find is a nuisance, a warning you cannot see is a wrong
    * answer nobody is told about.
    *
-   * A source rather than a rendered node, for the same reason `previewInspect` is one:
-   * the marker has to change when the lens does, and `@editor/viewer` imports this
-   * package, so its type cannot be named here.
+   * A SOURCE, not a rendered node: the marker has to change when the lens does, and the
+   * store is the only thing that can say so. Typed structurally rather than by importing
+   * the lens store — `@editor/viewer` imports this package, so naming its type here would
+   * close a cycle.
    */
   previewLens?: ((nodeId: NodeId) => PreviewLensSource | null) | undefined;
 }
@@ -135,13 +132,6 @@ export interface GraphCanvasContextValue {
 export interface PreviewLensSource {
   /** Null while the picture is unaltered — the quiet case stays quiet (§V90). */
   marker(nodeId: NodeId): string | null;
-  subscribe(nodeId: NodeId, listener: () => void): () => void;
-}
-
-/** T675: the slice of the pane's inspection store the node header needs. */
-export interface PreviewInspectSource {
-  mode(nodeId: NodeId): "home" | "adjustable";
-  setMode(nodeId: NodeId, mode: "home" | "adjustable"): void;
   subscribe(nodeId: NodeId, listener: () => void): () => void;
 }
 
