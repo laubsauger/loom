@@ -69,10 +69,20 @@ const REMOVAL_GRACE_MS = 1000;
  * ## Where the number lands, and where it does not
  *
  * A quiet window only collapses churn arriving faster than itself. E34's pan changes the
- * set every ~385 ms on average, so 200 ms takes the measured count **13 -> 10** and 400 ms
- * takes it to **4**, at the same 0.01 on-screen-previews-with-no-picture per frame in every
- * case — the hysteresis costs no pixels at any window. 200 ms is the shipped number;
- * `--settle=` on `scratchpad/t919/preview-profile.ts` sweeps it.
+ * set every ~385 ms on average, so a 200 ms window takes the measured count only
+ * **13 -> 10**, while **400 ms takes it to 4** — and the no-picture metric reads the SAME
+ * 0.01 on-screen previews per frame (worst frame 3) at 0, 200 AND 400, so the window is
+ * free in the only currency that could have argued against it. 400 ms is the shipped
+ * number for that reason; `--settle=` on `scratchpad/t919/preview-profile.ts` sweeps it,
+ * and any future move should be argued from that harness rather than from taste.
+ *
+ * ## What it costs a DELETED node, stated so the next reader sees the trade
+ *
+ * A node removed from the graph leaves the requested set at once, ages out of
+ * `REMOVAL_GRACE_MS`, and then waits out this window before the compile that drops its
+ * sink — so the span in which a compile can still name it (`sink-unknown`, T620's bug)
+ * goes **1000 ms -> 1400 ms**. Same class as the grace itself, not a new one: bounded by a
+ * clock, never by a count of `set()` calls, and the compile it delays only releases.
  *
  * ## Why the FIRST set is exempt
  *
@@ -84,7 +94,7 @@ const REMOVAL_GRACE_MS = 1000;
  * resolved on the next call would hold a pending change forever — including the removal a
  * deleted node needs in order to stop poisoning every compile.
  */
-const SETTLE_MS = 200;
+const SETTLE_MS = 400;
 
 export function createPreviewSinkStore(
   now: () => number = () => performance.now(),

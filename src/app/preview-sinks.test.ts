@@ -25,12 +25,14 @@ describe("T620 — sink removal grace is wall-clock", () => {
     // The hidden-page cadence: the NEXT call is a whole recompile later.
     clock = 1500;
     store.set([]);
-    // T924(3): the ref is past its grace, so it is on its way out — but a change is
+    // T924(3): the ref is past its grace, so it is on its way out — but a DEPARTURE is
     // published once the SET has stopped moving, so it lands one quiet window later. The
     // invariant T620 exists for is untouched: the wait is bounded by a CLOCK, not by a
-    // number of `set()` calls, and 1500 + 200 gets there whether rAF ran once or never.
+    // number of `set()` calls, and 1500 + SETTLE_MS gets there whether rAF ran once or
+    // never. This is the whole of the 1000 -> 1400 ms `sink-unknown` span the store
+    // documents — four tenths of a second longer, still finite, still on a clock.
     expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1"]);
-    clock = 1700;
+    clock = 1900;
     store.set([]);
     expect(store.get()).toEqual([]);
   });
@@ -50,10 +52,11 @@ describe("T620 — sink removal grace is wall-clock", () => {
     expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1"]);
     clock = 1900;
     store.set([]);
+    // 1900 - 900 is exactly the grace, and the grace is exclusive: still a sink.
     expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1"]);
     clock = 2000;
     store.set([]);
-    clock = 2200; // the quiet window, as above
+    clock = 2400; // …and then the quiet window, as above
     store.set([]);
     expect(store.get()).toEqual([]);
   });
@@ -79,7 +82,7 @@ describe("T620 — sink removal grace is wall-clock", () => {
  *   node --import ./src/mcp/alias-hooks.ts scratchpad/t919/preview-profile.ts \
  *     --example=E34-Lidar --gesture=pan --frames=300 --settle=0     # 13, what shipped
  *   ...                                                --settle=200 # 10
- *   ...                                                --settle=400 # 4
+ *   ...                                                --settle=400 # 4, the shipped window
  * and at every one of those windows the harness reports the SAME 0.01 on-screen previews
  * per frame with no picture — the hysteresis costs no pixels, which is the constraint.
  */
@@ -91,11 +94,20 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
     }));
   }
 
+  const FRAME_MS = 1000 / 60;
+
   /**
    * A camera that brings twelve nodes on screen one at a time, moves past them one at a
-   * time, and then stops — the shape of T919's own timeline.
+   * time, and then stops — the shape of T919's own timeline, sampled the way the real store
+   * is sampled.
+   *
+   * `dripMs` is the interval between one node crossing the viewport edge and the next, and
+   * it is the parameter the whole ruling turns on: E34-Lidar's pan drips at ~385 ms. The
+   * store is called EVERY FRAME in between, because it is — the preview tick calls `set()`
+   * once per rAF whether or not anything moved, and a quiet window that only ever saw the
+   * moments of change could never elapse at all.
    */
-  function pan(settleMs: number | undefined, stepMs: number) {
+  function pan(settleMs: number | undefined, dripMs: number) {
     let clock = 0;
     const store =
       settleMs === undefined
@@ -104,23 +116,30 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
     let recompiles = 0;
     store.subscribe(() => (recompiles += 1));
 
-    store.set(refsFor(6, 0));
+    let asked = refsFor(6, 0);
+    store.set(asked);
     const open = recompiles;
+    const holdFor = (ms: number) => {
+      for (let tick = 0; tick < Math.round(ms / FRAME_MS); tick += 1) {
+        clock += FRAME_MS;
+        store.set(asked);
+      }
+    };
+
     for (let step = 1; step <= 12; step += 1) {
-      clock += stepMs;
-      store.set(refsFor(6 + step, 0));
+      asked = refsFor(6 + step, 0);
+      store.set(asked);
+      holdFor(dripMs);
     }
     const arrived = recompiles;
     for (let step = 1; step <= 12; step += 1) {
-      clock += stepMs;
-      store.set(refsFor(18 - step, step));
+      asked = refsFor(18 - step, step);
+      store.set(asked);
+      holdFor(dripMs);
     }
-    // The gesture ends and the view is held still, at the store's own rAF cadence, long
-    // enough for the last removal grace to expire and the window to close behind it.
-    for (let tick = 0; tick < 240; tick += 1) {
-      clock += 1000 / 60;
-      store.set(refsFor(6, 12));
-    }
+    // The gesture ends and the view is held still, long enough for the last removal grace
+    // to expire and the window to close behind it.
+    holdFor(3000);
     return {
       open,
       arrivals: arrived - open,
@@ -129,10 +148,22 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
     };
   }
 
-  it("collapses the departure drip into one recompile and leaves arrivals alone", () => {
+  /**
+   * THE RULING, AT THE DRIP RATE IT WAS RULED ON.
+   *
+   * 300 ms is E34-Lidar's own spacing to the nearest bracket (~385 ms measured), and it is
+   * where 200 ms and 400 ms part company: a quiet window collapses only churn arriving
+   * FASTER THAN ITSELF, so 200 ms leaves all twelve departures standing and 400 ms folds
+   * them into one. That is the miniature of the harness result the window was chosen from
+   * (13 -> 10 at 200 ms, 13 -> 4 at 400 ms, at an identical 0.01 on-screen previews per
+   * frame with no picture), and it is why lowering `SETTLE_MS` back to 200 must go red here
+   * rather than quietly costing eleven recompiles a gesture.
+   */
+  it("collapses a departure drip at E34's rate, which 200 ms does not, and leaves arrivals alone", () => {
     // `settleMs: 0` IS the pre-T924 behaviour: a zero quiet window publishes on the spot.
-    const before = pan(0, 100);
-    const after = pan(200, 100);
+    const before = pan(0, 300);
+    const tooNarrow = pan(200, 300);
+    const after = pan(400, 300);
 
     // Opening the document is one compile either way.
     expect(before.open).toBe(1);
@@ -141,46 +172,47 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
     // ARRIVALS ARE UNTOUCHED, and that is the constraint, not a side effect: twelve nodes
     // came on screen and twelve compiles materialized them, at the same frame as before.
     expect(before.arrivals).toBe(12);
+    expect(tooNarrow.arrivals).toBe(12);
     expect(after.arrivals).toBe(12);
 
     // DEPARTURES are where the drip was. One per node before; one for the whole gesture now.
     expect(before.departures).toBe(12);
     expect(after.departures).toBe(1);
+    // And the window the brief first named buys NOTHING at this rate — the measurement, not
+    // the preference, is what picked 400.
+    expect(tooNarrow.departures).toBe(12);
 
     // It converges on the SAME set: hysteresis delays the answer, never changes it.
     expect(after.sinks).toEqual(before.sinks);
 
     // The SHIPPED default does it too. Without this the gate would pass against a store
-    // whose own constant had been set back to zero, which is exactly the regression it is
-    // here to catch.
-    expect(pan(undefined, 100).departures).toBe(after.departures);
+    // whose own constant had been set back to 200 or to zero, which is exactly the
+    // regression it is here to catch.
+    expect(pan(undefined, 300).departures).toBe(after.departures);
   });
 
   /**
-   * THE LIMIT OF THE SHIPPED NUMBER, STATED RATHER THAN LEFT TO BE REDISCOVERED.
+   * THE LIMIT OF ANY WINDOW, STATED RATHER THAN LEFT TO BE REDISCOVERED.
    *
-   * A quiet window only collapses churn arriving FASTER THAN ITSELF. E34-Lidar's 5 s pan
-   * changes the set every ~385 ms on average — 41 previewable nodes spread across a very
-   * wide graph — so 200 ms takes the measured count 13 -> 10, not 13 -> 1. Widening it moves
-   * the number a great deal (400 ms -> 4) at no measured cost in pixels; `--settle=` on the
-   * harness sweeps it.
+   * Widening the window is not free forever and it is not a fix for everything: a drip
+   * SLOWER than the window is still one recompile per node, and the answer there is not a
+   * bigger number — it is that a gesture that leisurely is not the one anybody reported.
    */
   it("does not collapse a drip slower than the window", () => {
-    const before = pan(0, 300);
-    const after = pan(200, 300);
-    expect(after.departures).toBeGreaterThan(1);
-    expect(after.departures).toBeLessThan(before.departures);
+    const before = pan(0, 600);
+    const after = pan(400, 600);
+    expect(after.departures).toBe(before.departures);
   });
 
   /**
    * The price, asserted rather than assumed: a lone DEPARTURE on a graph nobody is moving
-   * costs one quiet window. 200 ms sits under what reads as lag, and no picture is waiting
+   * costs one quiet window. 400 ms sits under what reads as lag, and no picture is waiting
    * on it — the ref being dropped is one nothing can see any more.
    */
   it("lands a departure one quiet window later, on the timer if nothing calls back", () => {
     vi.useFakeTimers();
     try {
-      const store = createPreviewSinkStore(() => Date.now(), 200);
+      const store = createPreviewSinkStore(() => Date.now(), 400);
       store.set([
         { nodeId: "n1", portId: "out" },
         { nodeId: "n2", portId: "out" },
@@ -194,7 +226,7 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
 
       // T620's lesson, carried forward: rAF stops in a hidden window, so the window must
       // close on a TIMER too — not only on the next `set()` that may never come.
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(400);
       expect(recompiles).toBe(1);
       expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1"]);
     } finally {
@@ -204,7 +236,7 @@ describe("T924 — a departing sink waits for the gesture to end; an arriving on
 
   it("never publishes a set the scheduler has already taken back", () => {
     let clock = 0;
-    const store = createPreviewSinkStore(() => clock, 200);
+    const store = createPreviewSinkStore(() => clock, 400);
     store.set([{ nodeId: "n1", portId: "out" }]);
     let recompiles = 0;
     store.subscribe(() => (recompiles += 1));
