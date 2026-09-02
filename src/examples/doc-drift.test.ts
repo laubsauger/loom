@@ -346,3 +346,293 @@ describe("T516 — fenced clock claims match the shipped code", () => {
     });
   }
 });
+
+/**
+ * T894/§V808 — THE `┄` DRIVER ANNOTATION RESOLVES AGAINST THE DOCUMENT'S BINDINGS.
+ *
+ * This is the gate §T890 could not reach, and §T890's docblock says so plainly: it caught
+ * a reference to a name that is not there, and `shiftb1(transform) ┄ tearb1` names a name
+ * that IS there — `tearb`'s label. The defect was that it was the WRONG EXISTING NODE,
+ * because `shiftb1` binds `tearn1:high`. Existence cannot see that; only the bindings can.
+ *
+ * §T894 was first scoped as "regularise the notation, THEN gate it" and re-scoped after
+ * measurement, because the migration was not a prerequisite: the hard part (slash-
+ * compressed pairs, `·`-chains) survives regularisation unchanged, while 46 of the 63
+ * annotations sit in lines carrying box-drawing, where any length change shifts every
+ * column after it and the diagram still PARSES while no longer visually connecting.
+ * Gating five spellings costs one file; migrating them costs 63 lines in 24 files.
+ *
+ * ## Completeness is the assertion that makes a multi-spelling parser honest
+ *
+ * The objection to this gate was that "a half-parser goes green on the spellings it
+ * cannot read". So the parser must classify EVERY `┄` line into exactly one form, and an
+ * unclassified line FAILS. A sixth spelling reddens until someone teaches the parser or
+ * rewrites the line; it can never be silently skipped. Measured: 63 annotations, 24 of 39
+ * files, all inside fences, and the five forms classify 63/63 with none left over.
+ *
+ *   A   ┄ source: "name" ┄        4   the feedback reference
+ *   B   x ┄drives┄► y.p           8
+ *   C   f(node, param ┄ driver)  17
+ *   D   x ┄► y.p                 17   left side may be a `·`-chain
+ *   E   x ┄ y                    17   BARE, and see below
+ *
+ * ## Two strengths, because the notation earns only one of them
+ *
+ * Forms B, C and D carry an explicit direction (an arrow, or the node outside the paren),
+ * so they get the STRONG check: the named driver must actually drive the named target.
+ *
+ * Form E gets a WEAKER one, and the reason is measured rather than assumed. The bare `┄`
+ * is DIRECTIONALLY AMBIGUOUS — the corpus holds three readings of it:
+ *
+ *   shiftb1(transform) ┄ tearn1        E40: right is the DRIVER
+ *   bore1(valueLimit)  ┄ value1        E30: right is the driven PARAM, left is the driver
+ *   sway1, rise1 (lfo) ┄ eye1(camera)  E30: right is the driven NODE, left is the drivers
+ *
+ * and it abbreviates parameter names besides (`size ┄ tip1` for `drawtip1.sizePixels`,
+ * `gamma ┄ deep1` for `depth1.gamma1` — both correct, neither spellable as a pair check;
+ * that was tried and produced three false positives). So form E asserts only that AT
+ * LEAST ONE SIDE IS A REAL DRIVER in that document. That is weak, and it is still exactly
+ * enough for §T885: `tearb1` drives nothing in E40, so the stale annotation fails.
+ *
+ * ## THE COVERAGE FLOOR, AND WHY IT IS NOT DECORATION
+ *
+ * The first draft of this gate went GREEN on the very defect it exists for. Its form-E
+ * regex required a word character before the `┄`, and the corpus writes `shiftb1(transform)
+ * ┄ tearb1` — a `)` — so it extracted NOTHING from that line and passed. A classification
+ * count would not have caught it: the line classified fine and was then checked zero
+ * times. So the ANNOTATIONS ACTUALLY CHECKED are counted and floored. §V808 one level
+ * down: the gate proved a line was read, not that anything in it was tested.
+ *
+ * ## Blind spots, stated so the next reader inherits the limit
+ *
+ * Form E does not verify WHICH parameter is driven, nor which node — a driver that drives
+ * the wrong target still passes as long as it drives something. Parameter names are not
+ * gated at all, because the notation abbreviates them. Edge DIRECTION and topology remain
+ * unchecked here as in T522 and T890. And the `·`-chain asserts only that its LAST element
+ * drives; the intermediate nodes are read as prose. That last rule found the two defects
+ * below, so it is load-bearing rather than incidental.
+ */
+describe("T894 — the ┄ driver annotation matches the document's bindings", () => {
+  const pairs = readdirSync(EXAMPLES_DIR)
+    .filter((name) => name.endsWith(".md") && name.startsWith("E"))
+    .map((name) => ({ md: name, loom: name.replace(/\.md$/, ".loom.json") }))
+    .filter((pair) => existsSync(join(EXAMPLES_DIR, pair.loom)));
+
+  const LABEL_SHAPE = /^[a-z][a-zA-Z]*\d+$/;
+
+  /** The five spellings, first match wins. Order matters: A and B are more specific. */
+  const FORMS: ReadonlyArray<readonly [string, RegExp]> = [
+    ["A", /source:\s*"/],
+    ["B", /┄+drives┄+►/],
+    ["C", /\([^)]*┄[^)]*\)/],
+    ["D", /┄+►/],
+    ["E", /┄/],
+  ];
+
+  interface Binding {
+    readonly node: string;
+    readonly parameter: string;
+    readonly driver: string;
+  }
+
+  function readDocument(loomText: string): {
+    names: ReadonlySet<string>;
+    bindings: readonly Binding[];
+    feedbackSources: ReadonlySet<string>;
+  } {
+    const parsed = JSON.parse(loomText) as { graph?: Graph; document?: { graph?: Graph } };
+    const graph = parsed.graph ?? parsed.document?.graph ?? {};
+    const names = new Set<string>();
+    const bindings: Binding[] = [];
+    const feedbackSources = new Set<string>();
+    for (const [id, node] of Object.entries(graph.nodes ?? {})) {
+      const label = typeof node.label === "string" && node.label !== "" ? node.label : id;
+      names.add(id);
+      names.add(label);
+      for (const [parameter, value] of Object.entries(node.parameters ?? {})) {
+        const channel = (
+          value as { bindings?: { driven?: { channel?: string } } } | undefined
+        )?.bindings?.driven?.channel;
+        if (typeof channel === "string") {
+          bindings.push({ node: label, parameter, driver: channel.split(":")[0] ?? "" });
+        }
+      }
+      // A `feedback` node's `source` names another node. A `customWgsl` node's `source` is
+      // a whole shader, so length is what separates them — a label is never this long.
+      const source = node.parameters?.["source"];
+      if (typeof source === "string" && source.length > 0 && source.length < 64) {
+        feedbackSources.add(source);
+      }
+    }
+    return { names, bindings, feedbackSources };
+  }
+
+  /** `pathx1/y1` → `pathx1`, `pathy1`: the second half inherits the first's prefix. */
+  function expandPair(token: string, names: ReadonlySet<string>): string[] {
+    if (!token.includes("/")) return [token];
+    const [head = "", tail = ""] = token.split("/", 2);
+    if (names.has(tail)) return [head, tail];
+    for (let cut = head.length; cut > 0; cut -= 1) {
+      const joined = head.slice(0, cut) + tail;
+      if (names.has(joined)) return [head, joined];
+    }
+    return [head, tail];
+  }
+
+  const labelled = (text: string): string[] =>
+    (text.match(/[a-zA-Z_][\w.]*/g) ?? []).filter((token) =>
+      LABEL_SHAPE.test(token.split(".")[0] ?? ""),
+    );
+
+  function fencedLines(markdown: string): string[] {
+    const out: string[] = [];
+    let open = false;
+    for (const line of markdown.split("\n")) {
+      if (line.startsWith("```")) {
+        open = !open;
+        continue;
+      }
+      if (open && line.includes("┄")) out.push(line);
+    }
+    return out;
+  }
+
+  interface Audit {
+    readonly problems: readonly string[];
+    readonly classified: number;
+    readonly checked: number;
+    readonly unclassified: readonly string[];
+  }
+
+  function audit(markdown: string, loomText: string): Audit {
+    const { names, bindings, feedbackSources } = readDocument(loomText);
+    const drivers = new Set(bindings.map((binding) => binding.driver));
+    const problems: string[] = [];
+    const unclassified: string[] = [];
+    let classified = 0;
+    let checked = 0;
+
+    for (const line of fencedLines(markdown)) {
+      const form = FORMS.find(([, pattern]) => pattern.test(line))?.[0];
+      if (form === undefined) {
+        unclassified.push(line.trim());
+        continue;
+      }
+      classified += 1;
+
+      if (form === "A") {
+        for (const [, quoted] of line.matchAll(/source:\s*"([^"]+)"/g)) {
+          if (quoted === undefined) continue;
+          checked += 1;
+          if (!feedbackSources.has(quoted)) {
+            problems.push(`[A] source "${quoted}" is no node's source`);
+          }
+        }
+        continue;
+      }
+
+      if (form === "B" || form === "D") {
+        for (const [, left = "", target = ""] of line.matchAll(
+          /([^│┄]*?)┄+(?:drives)?┄*►\s*([\w.]+)/g,
+        )) {
+          // The `·`-chain asserts its LAST element drives.
+          const chain = labelled(left.split("·").pop() ?? "");
+          const driver = chain[chain.length - 1];
+          if (driver === undefined) continue;
+          checked += 1;
+          const [targetNode = "", targetParameter = ""] = [
+            target.slice(0, target.indexOf(".")) || target,
+            target.slice(target.indexOf(".") + 1),
+          ];
+          const ok = bindings.some(
+            (binding) =>
+              binding.driver === driver &&
+              (binding.node === targetNode ||
+                binding.node === target ||
+                `${binding.node}.${binding.parameter}` === target ||
+                binding.parameter === targetParameter),
+          );
+          if (!ok) problems.push(`[${form}] "${driver}" does not drive "${target}"`);
+        }
+        continue;
+      }
+
+      if (form === "C") {
+        for (const [, node = "", inner = ""] of line.matchAll(
+          /([a-z][\w]*\d)\(([^)]*┄[^)]*)\)/g,
+        )) {
+          for (const part of inner.split("┄").slice(1)) {
+            const first = (part.match(/[a-zA-Z_][\w/-]*/) ?? [])[0];
+            if (first === undefined) continue;
+            for (const driver of expandPair(first, names)) {
+              if (!LABEL_SHAPE.test(driver)) continue;
+              checked += 1;
+              const ok = bindings.some(
+                (binding) => binding.node === node && binding.driver === driver,
+              );
+              if (!ok) problems.push(`[C] "${driver}" does not drive ${node}`);
+            }
+          }
+        }
+        continue;
+      }
+
+      // Form E: direction is ambiguous, so take the label-shaped tokens on BOTH sides of
+      // each `┄` and require one of them to be a real driver.
+      const segments = line.split("┄");
+      for (let index = 1; index < segments.length; index += 1) {
+        const before = labelled(segments[index - 1] ?? "").slice(-1);
+        const after = (segments[index] ?? "").match(/[a-zA-Z_][\w/.-]*/)?.[0];
+        const candidates = [
+          ...before,
+          ...(after === undefined ? [] : expandPair(after, names)),
+        ]
+          .map((token) => token.split(".")[0] ?? "")
+          .filter((token) => LABEL_SHAPE.test(token));
+        if (candidates.length === 0) continue;
+        checked += 1;
+        if (!candidates.some((token) => drivers.has(token))) {
+          problems.push(`[E] neither side of "${candidates.join(" ┄ ")}" is a driver`);
+        }
+      }
+    }
+    return { problems, classified, checked, unclassified };
+  }
+
+  const audits = pairs.map((pair) => ({
+    pair,
+    result: audit(
+      readFileSync(join(EXAMPLES_DIR, pair.md), "utf8"),
+      readFileSync(join(EXAMPLES_DIR, pair.loom), "utf8"),
+    ),
+  }));
+
+  it("classifies EVERY ┄ annotation — an unreadable spelling is a failure, not a skip", () => {
+    const strays = audits.flatMap(({ pair, result }) =>
+      result.unclassified.map((line) => `${pair.md}: ${line}`),
+    );
+    expect(
+      strays,
+      `a ┄ spelling this parser cannot read — teach it the form or rewrite the line, but do not let it pass unchecked (T894, §V808):\n${strays.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("reads the annotations it claims to, and enough of them to matter", () => {
+    // The floor is the lesson: the first draft classified every line and CHECKED NOTHING
+    // on the one that mattered, because its regex wanted a word char where the corpus has
+    // a `)`. Classification is not coverage, so coverage is counted separately.
+    const classified = audits.reduce((sum, { result }) => sum + result.classified, 0);
+    const checked = audits.reduce((sum, { result }) => sum + result.checked, 0);
+    // Measured today: 63 classified, 70 checked (a line may carry two annotations).
+    // Breaking form E alone drops `checked` to 49, which is what these floors catch.
+    expect(classified).toBeGreaterThan(55);
+    expect(checked).toBeGreaterThan(60);
+  });
+
+  it.each(audits.map(({ pair, result }) => [pair.md, result] as const))(
+    "%s annotates drivers the document actually binds",
+    (_name, result) => {
+      expect(result.problems, result.problems.join("\n")).toEqual([]);
+    },
+  );
+});

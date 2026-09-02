@@ -36,9 +36,9 @@ bed1(noise, dark smoke) ─┐
 orb1(circle ┄ pathx1/pathy1) ─┴─► stand1(add) ─┐ order 0
 clip1(movieFileIn) ─────────────────────────────┴─► pick1(switch)
 
-pick1 ─► splice1(customWgsl: the glitch) ─► fold1(mirror ┄ spin1) ─┬─► slam1(crop) ─► punch1.in2
-beat1(audioPattern 122bpm) ┄ gsub1(−rest)·gd1(×5.5) ┄► splice1.amount │
-       ┄ esub1(−rest)·ed1(×1.7) ┄► punch1.opacity                     └─► echo1(transform ×1.18) ─► punch1.in1
+pick1 ─► splice1(customWgsl: the glitch) ─► fold1(mirror ┄ spin1) ──────────┬─► slam1(crop) ─► punch1.in2
+beat1(audioPattern 122bpm) ┄ gsub1(−rest)·gd1(×5.5)·genv1 ┄► splice1.amount │
+       ┄ esub1(−rest)·ed1(×1.7)·lenv1 ┄► punch1.opacity                     └─► echo1(transform ×1.18) ─► punch1.in1
        ┄ slag1·sl1(×0.24) ┄► slam1.bottom
 punch1(composite, over) ─► out1
 ```
