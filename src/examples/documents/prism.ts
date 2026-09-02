@@ -212,7 +212,8 @@ const TAU: f32 = 6.28318530717958647692;
 const RC: f32 = ${PRISM_RC};
 /** Corner radius. Small — the corners are where the normal sweeps FASTEST. */
 const RHO: f32 = 0.046;
-const HALF: f32 = 0.55;
+/* T928: deeper — the owner asked for more depth; z runs to ±0.72 now. */
+const HALF: f32 = 0.72;
 /** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */
 const ER: f32 = 0.120;
 const EZ: f32 = 0.120;
@@ -260,7 +261,21 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let u = f32(ctx.dim.i) / f32(ctx.dim.cols);
   let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
   let pr = profile(a);
-  q.position = vec3f(contour(u) * pr.x, pr.y);
+  var pos = vec3f(contour(u) * pr.x, pr.y);
+  /* T928 — THE BODY TILTS WITH THE CURSOR (§T914 promised it; the reference reads as a
+     solid BECAUSE it swivels). Yaw about Y from the pointer's x, a nod about X from its
+     y — small on purpose: the traced beam lives in the z = 0 cross-section, and at these
+     angles the swept caps stay a depth cue rather than a geometry the trace would have
+     to follow. The cross-section the beam crosses keeps its silhouette. */
+  /* Rest (0,0) sits at a GENTLE turn, not the band's edge — the never-moved card
+     keeps its read while the swivel is still there to find. */
+  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10;
+  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05;
+  let cy = cos(yaw); let sy = sin(yaw);
+  pos = vec3f(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
+  let cx = cos(nod); let sx = sin(nod);
+  pos = vec3f(pos.x, pos.y * cx - pos.z * sx, pos.y * sx + pos.z * cx);
+  q.position = pos;
   return q;
 }`;
 
@@ -317,11 +332,14 @@ export const prismDocument = document(
            — measured: the warm band renders at exactly its authored value plus bloom), so
            what you type here is the screen grey you get. Authored for a backdrop that
            reads as a lit wall behind the glass, not a void. */
+        /* T928: muted — the owner: "a bit more muted". The warm band drops 0.52 -> 0.30
+           and cools toward neutral; the cool band settles with it. Still a wall, no
+           longer a sunset. */
         stops: [
-          { position: 0.00, color: [0.05, 0.06, 0.10, 1] },
-          { position: 0.42, color: [0.26, 0.29, 0.40, 1] },
-          { position: 0.62, color: [0.52, 0.46, 0.40, 1] },
-          { position: 0.80, color: [0.18, 0.17, 0.17, 1] },
+          { position: 0.00, color: [0.04, 0.05, 0.08, 1] },
+          { position: 0.42, color: [0.16, 0.18, 0.24, 1] },
+          { position: 0.62, color: [0.30, 0.28, 0.26, 1] },
+          { position: 0.80, color: [0.12, 0.12, 0.12, 1] },
           { position: 1.00, color: [0.03, 0.03, 0.05, 1] },
         ],
       }, { label: "wallramp1", definitionVersion: 2, resolution: { mode: "fixed", width: 64, height: 256 } }),
@@ -342,7 +360,15 @@ export const prismDocument = document(
         capacity: PRISM_COLS * PRISM_ROWS,
         attributes: JSON.stringify([{ name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] }]),
         kernel: PRISM_FORM_KERNEL,
-      }, { label: "form1" }),
+      }, {
+        label: "form1",
+        // T928: the same pointer that aims the beam swivels the body — one hand, two
+        // reads of it, both through follow1's positional lag (T915b: nothing decays).
+        parameters: {
+          value1: drivenSlot("follow1:x", 0),
+          value2: drivenSlot("follow1:y", 0),
+        },
+      }),
       // The environment term compiles for PHONG only, and nothing warns you otherwise: a
       // lambert or unlit prism has no Fresnel and therefore no rim at all. Diffuse is
       // 0.0009 linear — the body is meant to be black — and the whole read is `specular`
@@ -359,7 +385,7 @@ export const prismDocument = document(
         // §T913's dense flint); the body's screen-space fringing follows the SAME number, so
         // the material cannot paint a second, stronger rainbow over the traced one — the
         // 0.06 here was the lead suspect for "the ray is rainbow before it reaches the glass".
-        ior: 1.5, roughness: 0.04, thickness: 0.8, absorption: [0.06, 0.05, 0.02, 1], dispersion: 0.03,
+        ior: 1.5, roughness: 0.04, thickness: 1.1, absorption: [0.06, 0.05, 0.02, 1], dispersion: 0.03,
       }, { label: "glass1" }),
       node("solid", "geometry", [-1240, -420], { mode: "surface", material: "glass1", tint: [1, 1, 1, 1] }, { label: "solid1" }),
 
@@ -458,8 +484,12 @@ export const prismDocument = document(
         // 26 degrees is a long lens on purpose: this is a poster, and a wide one would
         // bend the spectrum's straight rays. The eye sits barely off the prism's own
         // axis, which is what keeps the lateral faces to a sliver instead of a slab.
-        eye: [0.45, -0.36, 6.6], lookAt: [-0.05, -0.53, 0], fov: 26, near: 0.1, far: 40, ortho: false,
-      }, { label: "eye1", parameters: { "eye.x": 0.45 } }),
+        // T928/T930: centered — MEASURED, not nudged: at eye y -0.12 the body's screen
+        // bbox centre sat 128px high (frame 960x540 centre, bbox x-centre 959.5 exact);
+        // 128px is 0.36 world at z = 0 under this lens, so the pair shifts up by exactly
+        // that. Horizontal was already exact, so x stays 0.
+        eye: [0, 0.24, 6.6], lookAt: [0, 0.18, 0], fov: 26, near: 0.1, far: 40, ortho: false,
+      }, { label: "eye1" }),
       node("shot", "render", [-920, -420], {
         scenes: "wall1 solid1 fan1 shaft1", camera: "eye1", lights: "key1",
         // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the

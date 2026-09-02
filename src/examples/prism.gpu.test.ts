@@ -165,7 +165,8 @@ function fanRun(frame: Frame, x: number, threshold: number): { lo: number; hi: n
   return { lo, hi, span: hi - lo + 1 };
 }
 
-const COLUMN = 240;
+/* T929: the lamp rests left, the fan exits right — measured bbox x 1035..1919. */
+const COLUMN = 1400;
 const FAN_THRESHOLD = 10;
 
 /* T918: the environment draws as the BACKDROP in the shipped picture. The optics claims
@@ -177,6 +178,15 @@ const soloBackdropOff = (graph: GraphDocument): void => {
 };
 
 /** The prism alone, no beams, no bloom — the mask every geometry claim is measured on. */
+/* T928: the body TILTS with the pointer (form1 reads follow1 through value1/value2).
+   Geometry gates measure the NEUTRAL tilt — 0.227 on both slots is yaw = nod = 0 by the
+   kernel's own rest offsets — so where-things-land claims stay claims about the optics,
+   not about where the swivel happened to be. The tilt has its own gate below. */
+const lockTilt = (graph: GraphDocument): void => {
+  param(graph, "form", "value1", 0.227);
+  param(graph, "form", "value2", 0.227);
+};
+
 const soloPrism = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "solid1");
   muteBloom(graph);
@@ -305,13 +315,21 @@ describe("E13 Prism — the picture", () => {
   it(
     "spreads the spectrum WIDER at the shallower aim — the fan is Snell's law, not a drawing",
     async () => {
+      /* T929 aims: (px 0, py 0.05) is θ1 = 35.8°, close to the critical regime (wide);
+         (0, 0.7) is θ1 = 45.8°, the far end of the lamp's θ band on this face (narrow).
+         The lamp's reachable incidence range on ONE face is ~35°–46° — narrower than the
+         old abstract slider's 37°–62° — so the analytic ratio here is 1.46 (was 1.82).
+         Measured on screen: 1.20 exactly (projection compresses the angular ratio); the
+         floor sits below it with the red-verified 1.00 of a muted aim underneath (§V751). */
       const wide = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.4);
+        param(graph, "optics", "value1", 0.05);
+        param(graph, "optics", "value3", 0);
       });
       const narrow = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.72);
+        param(graph, "optics", "value1", 0.7);
+        param(graph, "optics", "value3", 0);
       });
 
       const wideSpan = fanRun(wide, COLUMN, FAN_THRESHOLD).span;
@@ -322,7 +340,7 @@ describe("E13 Prism — the picture", () => {
       // exaggerated spread read 2.35 (§V751: 108/46 then, 33/18 now). The physics gate got
       // SHARPER by getting real.
       expect(narrowSpan).toBeGreaterThan(12);
-      expect(wideSpan / narrowSpan).toBeGreaterThan(1.5);
+      expect(wideSpan / narrowSpan).toBeGreaterThan(1.12);
     },
     240_000,
   );
@@ -343,11 +361,13 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const dispersing = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.4);
+        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value3", 0);
       });
       const flat = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.4);
+        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value3", 0);
         param(graph, "optics", "value2", 0);
       });
       const spread = fanRun(dispersing, COLUMN, FAN_THRESHOLD).span;
@@ -376,7 +396,8 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const fan = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.4);
+        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value3", 0);
       });
       const run = fanRun(fan, COLUMN, FAN_THRESHOLD);
       const band = Math.max(2, Math.round(run.span * 0.15));
@@ -426,14 +447,21 @@ describe("E13 Prism — the picture", () => {
       // The aim is PINNED for all three renders: the shaft's entry point does not move
       // with it, but the fan's does, and a claim about where things land must not depend
       // on where an LFO happened to be at frame 0.
-      const prism = await shoot(soloPrism);
+      const prism = await shoot((graph) => {
+        soloPrism(graph);
+        lockTilt(graph);
+      });
       const shaft = await shoot((graph) => {
         soloShaft(graph);
-        param(graph, "optics", "value1", 0.4);
+        lockTilt(graph);
+        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value3", 0);
       });
       const fan = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.4);
+        lockTilt(graph);
+        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value3", 0);
       });
 
       const glass = maskAbove(prism, 1);
@@ -481,17 +509,16 @@ describe("E13 Prism — the picture", () => {
        * millimetre ever having to render. Measured at this commit: (510, 265), inside the
        * mask; at circumradius 0.45 it falls outside.
        */
-      const a = fanRun(fan, 200, FAN_THRESHOLD);
-      const b = fanRun(fan, 420, FAN_THRESHOLD);
-      const slope = (b.span - a.span) / (420 - 200);
-      // The glass is to the RIGHT of both columns, so the fan NARROWS with increasing x:
-      // a non-negative slope means the rays are parallel or diverging the wrong way, and
-      // the extrapolation below would be meaningless rather than merely wrong.
-      expect(slope).toBeLessThan(0);
-      const apexX = 420 - b.span / slope;
+      const a = fanRun(fan, 1200, FAN_THRESHOLD);
+      const b = fanRun(fan, 1700, FAN_THRESHOLD);
+      const slope = (b.span - a.span) / (1700 - 1200);
+      // T929: the glass is to the LEFT of both columns now — the fan WIDENS with x. A
+      // non-positive slope would make the extrapolation below meaningless.
+      expect(slope).toBeGreaterThan(0);
+      const apexX = 1200 - a.span / slope;
       const midA = (a.lo + a.hi) / 2;
       const midB = (b.lo + b.hi) / 2;
-      const apexY = midB + ((midB - midA) / (420 - 200)) * (apexX - 420);
+      const apexY = midA + ((midB - midA) / (1700 - 1200)) * (apexX - 1200);
       const x = Math.round(apexX);
       const y = Math.round(apexY);
       expect(x).toBeGreaterThanOrEqual(0);
@@ -501,6 +528,38 @@ describe("E13 Prism — the picture", () => {
       expect(dilate(glass, prism.w, prism.h, 8)[y * prism.w + x]).toBe(1);
     },
     300_000,
+  );
+
+  /**
+   * THE SWIVEL IS REAL ON SCREEN (T928): the body's silhouette at one tilt extreme is a
+   * genuinely different set of pixels from the other — not a lighting flicker. The
+   * differential is on solo renders of the prism alone with everything else muted, so
+   * nothing but form1's rotation can move the mask.
+   */
+  it(
+    "tilts the body's silhouette with the tilt slots (T928)",
+    async () => {
+      const left = await shoot((graph) => {
+        soloPrism(graph);
+        param(graph, "form", "value1", 0);
+      });
+      const right = await shoot((graph) => {
+        soloPrism(graph);
+        param(graph, "form", "value1", 1);
+      });
+      const a = maskAbove(left, 4);
+      const b = maskAbove(right, 4);
+      let differs = 0;
+      let present = 0;
+      for (let i = 0; i < a.length; i += 1) {
+        if (a[i] === 1 || b[i] === 1) present += 1;
+        if (a[i] !== b[i]) differs += 1;
+      }
+      // Both are a prism-sized body, and a real fraction of the union moved.
+      expect(present).toBeGreaterThan(5000);
+      expect(differs / present).toBeGreaterThan(0.08);
+    },
+    240_000,
   );
 
   /**
@@ -553,14 +612,17 @@ describe("E13 Prism — the picture", () => {
         const run = fanRun({ w: image.width, h: image.height, d: image.data }, COLUMN, FAN_THRESHOLD);
         return { mid: (run.lo + run.hi) / 2, span: run.span };
       };
-      /* Both runs park somewhere a fan reads at COLUMN: y 0.56 is θ1 ≈ 49.7° (mid-band,
-         no TIR); the x positions put the entry at τ 0.25 against τ 0. */
-      const parked = () => ({ x: 0.207, y: 0.56, buttons: 0 });
+      /* T929: both runs keep the lamp at px 0 (level-left) where the fan reads at
+         COLUMN; the sweep slides the strike down the face (py 0.3 -> 0.6). */
+      const parked = () => ({ x: 0, y: 0.3, buttons: 0 });
       /* A second of travel: an ordinary aiming move. It STOPS at frame 60 and stays. */
-      const sweep = (index: number) => ({ x: 0.207 + 0.185 * Math.min(1, index / 60), y: 0.56, buttons: 0 });
+      const sweep = (index: number) => ({ x: 0, y: 0.3 + 0.3 * Math.min(1, index / 60), buttons: 0 });
 
-      const stillMoving = await run(70, sweep);
-      const parkedShort = await run(70, parked);
+      /* 130 frames: the move ends at 60 and the 0.18s lag settles over the next 70 —
+         comparing a just-stopped frame against a long-idle one would measure the lag's
+         own tail (10px at frame 70), not a hand-back. */
+      const stillMoving = await run(130, sweep);
+      const parkedShort = await run(130, parked);
       // The pointer has the aim: the entry walked up the face and the fan's whole run
       // moved with it — two renders differing ONLY in the cursor.
       expect(Math.abs(stillMoving.mid - parkedShort.mid)).toBeGreaterThan(40);
@@ -583,10 +645,8 @@ describe("E13 Prism — the picture", () => {
    * or even miss the glass triangle") and the one the additive aim could not express at
    * all, because the entry point was pinned ON the face by construction.
    *
-   * T915b's walk runs to τ = 1.07 along a face whose half-length is 0.658, so the top of
-   * the x travel puts the entry past the apex. (The walk's floor is the shipped entry —
-   * ON the face by construction — so the base-side miss no longer exists to gate.)
-   * The claim is not merely
+   * T929: the top of the Y travel carries the beam clear off the body — the lamp still
+   * shines, the glass just isn't in the way. The claim is not merely
    * "the fan went away" — a black frame would satisfy that — so it is three-sided: the fan
    * is GONE, the shaft is still crossing the frame and is LONGER than a hit's (it carries
    * on instead of stopping at the face), and the glass still reads at full strength, which
@@ -598,10 +658,11 @@ describe("E13 Prism — the picture", () => {
       const { document } = e13();
       const lit = async (
         solo: (graph: GraphDocument) => void,
-        toX: number,
+        toY: number,
       ): Promise<{ count: number; frame: Frame }> => {
         const graph = structuredClone(document.graph) as GraphDocument;
         solo(graph);
+        lockTilt(graph);
         const result = await renderHeadless({
           host: nodeGpuHost(),
           graph,
@@ -610,8 +671,8 @@ describe("E13 Prism — the picture", () => {
           capture: [69],
           animate: true,
           outputNodeId: "out",
-          // y 0.56 holds θ1 ≈ 49.7° while x does the walking.
-          pointer: (index) => ({ x: 0.207 + (toX - 0.207) * Math.min(1, index / 60), y: 0.56, buttons: 0 }),
+          // px 0 holds the lamp level-left while y slides the aim off the glass.
+          pointer: (index) => ({ x: 0, y: 0.3 + (toY - 0.3) * Math.min(1, index / 60), buttons: 0 }),
         });
         const frame = result.frames[0];
         if (frame === undefined) throw new Error("no frame captured");
@@ -631,9 +692,9 @@ describe("E13 Prism — the picture", () => {
         return { count: mask.reduce((a, b) => a + b, 0), frame: shot };
       };
 
-      // x 0.207 puts the entry at the face's own midpoint (τ 0): squarely on the glass.
-      // x 0.98 walks it to τ 1.04, past the apex.
-      const fanOn = await lit(soloFan, 0.207);
+      // y 0.3 strikes the left face near its middle; y 0.98 carries the beam past the
+      // base-left vertex — a real miss on the marched body.
+      const fanOn = await lit(soloFan, 0.3);
       const fanApex = await lit(soloFan, 0.98);
       expect(fanOn.count).toBeGreaterThan(5000);
       // Zero-length beams draw zero AREA (T680), so the fan is not dim — it is absent.
@@ -644,7 +705,7 @@ describe("E13 Prism — the picture", () => {
       // the exact inversion of the T718 claim above, on the same instrument: a hit puts
       // more than 300 shaft-group pixels inside an 8px erosion of the glass (the drawn
       // internal segment), and a miss must put NONE inside even a 3px erosion.
-      const glassOn = await lit(soloPrism, 0.207);
+      const glassOn = await lit(soloPrism, 0.3);
       const glassApex = await lit(soloPrism, 0.98);
       const shaftApex = await lit(soloShaft, 0.98);
       const overlap = (a: Uint8Array, b: Uint8Array): number => {

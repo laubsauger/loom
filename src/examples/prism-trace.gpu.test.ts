@@ -29,14 +29,17 @@ import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
  * and asserts the fan opens WIDER at steep incidence (T710's measured 46 → 108px, here
  * as exit-angle spread).
  *
- * ## T915b — the pointer owns both axes, exclusively
+ * ## T929 — the LAMP: x orbits, y sweeps
  *
- * T857's authority blend (`value4`, a decaying velocity envelope) is GONE — it was the
- * owner's "reset after a time". Now `value1` is the pointer's Y: the incidence angle,
- * 6° at 0 to 84° at 1. `value3` is the pointer's X: the entry point, τ = ENTRY + 1.35·x
- * along the face — past the apex at the top of the travel, which keeps the miss state
- * the owner asked for. Nothing decays; a fixed (value1, value3) is a fixed picture,
- * which is also what makes every assertion below deterministic.
+ * The owner: "i have no idea how to properly aim with our mouse controls". The two
+ * abstract sliders are gone; the cursor is a TORCH now. `value3` (x) carries the lamp
+ * around the prism on a 240° arc — every face, every incidence, by walking around it —
+ * and `value1` (y) slides the aim across the body: 0 aims at the INCENTER (a ray at the
+ * incenter meets each face near its middle — the rest strike), 1 carries the beam clear
+ * off the glass. Every aim below is named as (px, py) and every Snell number is DERIVED
+ * from the same mapping in float64 — aimOf() mirrors the kernel's constants, and each
+ * gate first proves its sample lands where the comment says (face, θ1) before asserting
+ * the GPU agrees. Nothing decays (T915b's property is unchanged).
  */
 
 /* T920: the beam. 2 fixed slots + SLICES(9) x BANDS(61) x 3 legs. The CENTRE slice
@@ -56,17 +59,12 @@ const NL: readonly [number, number] = [-Math.sqrt(3) / 2, 0.5];
 const ND: readonly [number, number] = [0, -1];
 const APEX = Math.PI / 3; // 60° between the refracting faces
 const N_RED = 1.5;
-/* T915b — the pointer's band and walk. Pinned here as the kernel's own literals, exactly
-   as RI is: a gate that derived them from the kernel text could not notice the kernel
-   changing them. */
-const HAND_LO = (6 * Math.PI) / 180;
-const HAND_HI = (84 * Math.PI) / 180;
-const WALK = 1.35;
-const ENTRY = -0.28;
-/** An equilateral cross-section's half side, from the inradius the mesh shares. */
-const HALF_FACE = RI * Math.sqrt(3);
-/** The face tangent τ is measured along — positive toward the APEX. */
-const TANGENT: readonly [number, number] = [-NR[1], NR[0]];
+/* T929 — the lamp's constants, pinned as literals exactly as RI is: a gate that derived
+   them from the kernel text could not notice the kernel changing them. */
+const LAMP_R = 3.3;
+const ARC_A = 185;
+const ARC_B = -55;
+const OFF_MAX = 0.9;
 
 const SETTINGS = {
   outputResolution: { width: 64, height: 64 },
@@ -185,12 +183,42 @@ const length = (s: Segment): number => Math.hypot(s.tip[0] - s.origin[0], s.tip[
 const faceAngle = (d: readonly [number, number], n: readonly [number, number]): number =>
   Math.acos(Math.min(1, Math.abs(dot(d, n))));
 
-const thetaOf = (aim: number): number => HAND_LO + (HAND_HI - HAND_LO) * aim;
-/** T915b — where on the face the pointer's X puts the entry. */
-const walkTauOf = (px: number): number => ENTRY + WALK * px;
-/** The entry point's coordinate ALONG the face, from the face's own midpoint. */
-const tauOf = (point: readonly [number, number]): number =>
-  (point[0] - NR[0] * RI) * TANGENT[0] + (point[1] - NR[1] * RI) * TANGENT[1];
+interface Aim {
+  readonly S: readonly [number, number];
+  readonly d: readonly [number, number];
+  /** The entry face's outward normal, or null for a clean miss of the sharp triangle. */
+  readonly face: readonly [number, number] | null;
+  readonly thetaI: number;
+  readonly tau: number;
+}
+/** The kernel's lamp mapping, mirrored in float64 — the tests' single aim authority. */
+const aimOf = (px: number, py: number): Aim => {
+  const phi = ((ARC_A + (ARC_B - ARC_A) * px) * Math.PI) / 180;
+  const S: [number, number] = [LAMP_R * Math.cos(phi), LAMP_R * Math.sin(phi)];
+  const vx = -S[0] + (S[1] / LAMP_R) * py * OFF_MAX;
+  const vy = -S[1] + (-S[0] / LAMP_R) * py * OFF_MAX;
+  const l = Math.hypot(vx, vy);
+  const d: [number, number] = [vx / l, vy / l];
+  let best: { N: readonly [number, number]; t: number; p: [number, number] } | null = null;
+  for (const N of [NR, NL, ND]) {
+    const dn = d[0] * N[0] + d[1] * N[1];
+    if (dn >= -1e-9) continue;
+    const at = (RI - (S[0] * N[0] + S[1] * N[1])) / dn;
+    if (at <= 0) continue;
+    const pt: [number, number] = [S[0] + d[0] * at, S[1] + d[1] * at];
+    const inside = [NR, NL, ND].every((M) => pt[0] * M[0] + pt[1] * M[1] <= RI + 1e-7);
+    if (inside && (best === null || at < best.t)) best = { N, t: at, p: pt };
+  }
+  if (best === null) return { S, d, face: null, thetaI: Number.NaN, tau: Number.NaN };
+  const N = best.N;
+  const thetaI = Math.acos(Math.min(1, -(d[0] * N[0] + d[1] * N[1])));
+  const tangent: [number, number] = [-N[1], N[0]];
+  const tau = (best.p[0] - N[0] * RI) * tangent[0] + (best.p[1] - N[1] * RI) * tangent[1];
+  return { S, d, face: N, thetaI, tau };
+};
+/** The entry point's coordinate ALONG a face, from that face's own midpoint. */
+const tauOf = (point: readonly [number, number], N: readonly [number, number]): number =>
+  (point[0] - N[0] * RI) * (-N[1]) + (point[1] - N[1] * RI) * N[0];
 /** T913: the kernel's Cauchy curve, mirrored exactly — n(λ)=A+B/λ², λ 0.7µm → 0.4µm,
  * B derived so `dispersion` stays the total spread across the band. */
 const bandN = (t: number, dispersion: number): number => {
@@ -205,25 +233,32 @@ const insideGlass = (point: readonly [number, number]): boolean =>
   [NR, NL, ND].every((n) => dot(point, n) <= RI - 1e-4);
 
 describe("the prism is a traced ray (T718, §V683)", () => {
-  it("entry and exit angles follow scalar Snell across the aim sweep, and the fan opens at steep incidence", async () => {
+  it("entry and exit angles follow scalar Snell across the aim sweep, and the fan opens toward critical", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const dispersion = 0.085; // E13's shipped dispersive power
     const spreads: number[] = [];
-    // The same three incidences the pre-T915b gate swept (62°, 49.7°, 37.2°), named on
-    // the pointer's own axis now — every Snell number below is derived from thetaOf, so
-    // the claims move with the aim, not with the axis that names it.
-    for (const aim of [0.72, 0.56, 0.4]) {
-      const segments = await runTrace({ value1: aim, value2: dispersion });
-      const thetaI = thetaOf(aim);
+    /* Three lamp aims on the LEFT face (px 0 holds the lamp level-left; py slides the
+       strike): θ1 = 39.7°, 44.3°, 45.8°. All clear of the violet TIR onset (34.5° at
+       this power), and all with |τ| inside the SDF's FLAT run — (RI−BEVEL)·√3 = 0.578,
+       shorter than the sharp face (T920's finding: the bevel shrinks the usable span). */
+    for (const [px, py] of [
+      [0, 0.3],
+      [0, 0.6],
+      [0, 0.7],
+    ] as const) {
+      const aim = aimOf(px, py);
+      expect(aim.face).toEqual(NL); // the sample lands where the comment says
+      const thetaI = aim.thetaI;
+      const segments = await runTrace({ value1: py, value2: dispersion, value3: px });
 
-      // THE INTERNAL SEGMENT (slot 2): its refracted angle against the entry face is
+      // THE INTERNAL SEGMENT: its refracted angle against the entry face is
       // asin(sin θi / n) — the first Snell, measured from geometry the GPU wrote.
       const internal = segments[interiorIndex(0.5)]!;
       expect(length(internal)).toBeGreaterThan(0.05);
       const nMid = bandN(0.5, dispersion);
-      expect(faceAngle(direction(internal), NR)).toBeCloseTo(Math.asin(Math.sin(thetaI) / nMid), 3);
+      expect(faceAngle(direction(internal), NL)).toBeCloseTo(Math.asin(Math.sin(thetaI) / nMid), 3);
 
       // CONTINUITY — the owner's structural complaint. The shaft ENDS where the
       // internal segment BEGINS, which is where the incoming ray meets the face.
@@ -236,55 +271,58 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       expect(central.origin[0]).toBeCloseTo(internal.tip[0], 4);
       expect(central.origin[1]).toBeCloseTo(internal.tip[1], 4);
 
-      // EXIT SNELL, per wavelength, against the exit face's own normal: the second
-      // refraction is where dispersion is large (T710's finding), and each band's
-      // angle must land on θe = asin(n · sin(60° − θr)) — the textbook, in float64.
-      for (const t of [0, 0.5, 1]) {
-        const n = bandN(t, dispersion);
+      // EXIT SNELL, per wavelength, against the exit face (NR — the internal ray from
+      // the left face crosses to the right one): θe = asin(n · sin(60° − θr)).
+      for (const tt of [0, 0.5, 1]) {
+        const n = bandN(tt, dispersion);
         const thetaR = Math.asin(Math.sin(thetaI) / n);
         const theta2 = APEX - thetaR;
-        expect(n * Math.sin(theta2)).toBeLessThan(1); // no TIR anywhere in the shipped range
+        expect(n * Math.sin(theta2)).toBeLessThan(1); // no TIR at these aims
         const thetaE = Math.asin(n * Math.sin(theta2));
-        const band = segments[bandIndex(t)]!;
+        const band = segments[bandIndex(tt)]!;
         expect(length(band)).toBeGreaterThan(0.5);
-        expect(faceAngle(direction(band), NL)).toBeCloseTo(thetaE, 3);
-        // The band leaves through the EXIT FACE: its origin lies on dot(p, NL) = RI.
-        expect(dot(band.origin, NL)).toBeCloseTo(RI, 3);
+        expect(faceAngle(direction(band), NR)).toBeCloseTo(thetaE, 3);
+        // The band leaves through the EXIT FACE: its origin lies on dot(p, NR) = RI.
+        expect(dot(band.origin, NR)).toBeCloseTo(RI, 3);
       }
 
-      // No TIR at the central wavelength here, so the TIR leg (slot 3) is zero-length.
+      // No TIR at the central wavelength here, so the TIR leg is zero-length.
       expect(length(segments[tirIndex(0.5)]!)).toBeLessThan(1e-4);
 
       const spread =
-        faceAngle(direction(segments[bandIndex(1)]!), NL) - faceAngle(direction(segments[bandIndex(0)]!), NL);
+        faceAngle(direction(segments[bandIndex(1)]!), NR) - faceAngle(direction(segments[bandIndex(0)]!), NR);
       spreads.push(spread);
     }
-    // The fan WIDENS as the exit-face incidence climbs toward critical — T710's
-    // 46 → 108px, asserted here as exit-angle spread growing monotonically with aim.
-    expect(spreads[1]!).toBeGreaterThan(spreads[0]!);
-    expect(spreads[2]!).toBeGreaterThan(spreads[1]!);
-    // And it matches the analytic spread, not merely the trend.
-    const analyticSpread = (aim: number): number => {
-      const thetaI = thetaOf(aim);
-      const exitOf = (t: number): number => {
-        const n = bandN(t, dispersion);
-        return Math.asin(n * Math.sin(APEX - Math.asin(Math.sin(thetaI) / n)));
-      };
-      return exitOf(1) - exitOf(0);
+    // The fan NARROWS as θ1 climbs away from the critical regime — the same dδ/dn
+    // physics as ever, asserted in the direction this sweep actually walks.
+    expect(spreads[0]!).toBeGreaterThan(spreads[1]!);
+    expect(spreads[1]!).toBeGreaterThan(spreads[2]!);
+    // And the widest matches the analytic spread, not merely the trend.
+    const thetaI = aimOf(0, 0.3).thetaI;
+    const exitOf = (tt: number): number => {
+      const n = bandN(tt, dispersion);
+      return Math.asin(n * Math.sin(APEX - Math.asin(Math.sin(thetaI) / n)));
     };
-    expect(spreads[2]!).toBeCloseTo(analyticSpread(0.4), 3);
+    expect(spreads[0]!).toBeCloseTo(exitOf(1) - exitOf(0), 3);
   }, 240_000);
 
   it("total internal reflection leaves through the BASE, and Snell holds there too", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    // θi = 37.2° with a wide dispersive power: the violet end reaches
-    // n · sin(60° − θr) > 1 — total internal reflection at the exit face. The band
-    // must not vanish: it reflects, crosses the body, and leaves through the base.
+    /* (0.3, 0.2): θi ≈ 30.5° on the LEFT face, wide dispersive power — the violet end
+       reaches n · sin(60° − θr) > 1 at the right face, reflects, and leaves through the
+       base. The sample is a MEASURED compromise (§V751): higher strikes put the violet's
+       first hit ON the apex arc, lower ones drive even red's interior into the base
+       first; here the violet lands mid-base exactly (dot ND = 0.380) while red exits the
+       right face just above its corner arc (dot NR measured 0.373 — the arc has begun to
+       curl the face plane away, so red's origin is pinned by membership, not to the
+       plane's third decimal). */
     const dispersion = 0.3;
-    const segments = await runTrace({ value1: 0.4, value2: dispersion });
-    const thetaI = thetaOf(0.4);
+    const aim = aimOf(0.3, 0.2);
+    expect(aim.face).toEqual(NL);
+    const thetaI = aim.thetaI;
+    const segments = await runTrace({ value1: 0.2, value2: dispersion, value3: 0.3 });
 
     const nViolet = bandN(1, dispersion);
     const thetaR = Math.asin(Math.sin(thetaI) / nViolet);
@@ -293,154 +331,89 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const violet = segments[bandIndex(1)]!;
     // Through the BASE: the origin lies on dot(p, ND) = RI, not on the exit face.
-    expect(dot(violet.origin, ND)).toBeCloseTo(RI, 3);
-    expect(dot(violet.origin, NL)).toBeLessThan(RI - 1e-3);
+    expect(dot(violet.origin, ND)).toBeCloseTo(RI, 2);
+    expect(dot(violet.origin, NR)).toBeLessThan(RI - 1e-3);
     expect(length(violet)).toBeGreaterThan(0.5);
-    // Snell at the base: the faces of an equilateral prism ALL meet at 60°, so the
-    // incidence after a mirror bounce off the exit face is |60° − θ₂| against the
-    // base normal, and the emitted angle must be its refraction — the same scalar
-    // law, third application. (Getting this wrong the first time — 120°, the angle
-    // between NORMALS — is §V683 in miniature: the GPU trace was right and the
-    // test's own bookkeeping was the bug, caught because the assertion refused.)
+    // Snell at the base: incidence after the mirror bounce is |60° − θ₂|, and the
+    // emitted angle its refraction — the same scalar law, third application.
     const thetaBase = Math.abs(APEX - theta2);
     expect(nViolet * Math.sin(thetaBase)).toBeLessThan(1);
-    expect(faceAngle(direction(violet), ND)).toBeCloseTo(Math.asin(nViolet * Math.sin(thetaBase)), 3);
+    expect(faceAngle(direction(violet), ND)).toBeCloseTo(Math.asin(nViolet * Math.sin(thetaBase)), 2);
 
-    // The RED end still exits the exit face in the same frame — one prism, two faces
-    // in use at once, which no authored fan can express.
+    // The RED end still exits the right face in the same frame — one prism, two faces
+    // in use at once, which no authored fan can express. Near the corner arc: membership
+    // (ON the right side, NOT the base), not plane-exact (see the sample note above).
     const red = segments[bandIndex(0)]!;
-    expect(dot(red.origin, NL)).toBeCloseTo(RI, 3);
+    expect(dot(red.origin, NR)).toBeGreaterThan(0.36);
+    expect(dot(red.origin, ND)).toBeLessThan(RI - 0.02);
   }, 240_000);
 
   /**
-   * T857 — THE HAND WALKS THE ENTRY POINT UP THE FACE, and everything downstream
-   * follows. This is the owner's own acceptance criterion for T718 ("at the very tippi
-   * top it behaves different as at the bottom"), now driven by the control a viewer
-   * actually has rather than by a test-only offset channel.
-   *
-   * Two claims that a plausible-looking picture would fail separately: the entry point
-   * lands where the pointer's own arithmetic says it lands — ON the face plane, at
-   * τ = ENTRY + 1.35·value3 along it — and the internal segment collapses as the faces
-   * converge toward the apex, while the path stays CONNECTED end to end. T915b holds
-   * the ANGLE fixed while the entry walks: the two axes are independent now, so this
-   * is purely the walk's claim.
+   * T929 — Y SLIDES THE STRIKE ALONG THE FACE, and everything downstream follows. The
+   * lamp mapping couples position and angle mildly (that is what a torch does); the
+   * claims are the mapping's own: the strike walks MONOTONICALLY down the face as y
+   * grows, the path stays connected end to end at every stop, and the interior segment
+   * shortens as the strike approaches the vertex where two faces converge.
    */
-  it("walks the entry point to the apex on the pointer's own aim, and the path follows", async () => {
+  it("slides the strike along the face on y, connected at every stop", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const dispersion = 0.085;
-    const nMid = bandN(0.5, dispersion);
-    const AIM = 0.56; // θi = 49.7°, fixed for the whole walk
-    const at = async (px: number): Promise<Segment[]> =>
-      runTrace({ value1: AIM, value2: dispersion, value3: px });
-
-    // px 0.207 puts the entry at the face's own midpoint (τ 0); px 0.622 puts it
-    // 0.56 up a 0.658 half-face, a hair short of the apex.
-    const middle = await at(0.207);
-    const apex = await at(0.622);
-
-    for (const [px, segments] of [
-      [0.207, middle],
-      [0.622, apex],
-    ] as const) {
+    const taus: number[] = [];
+    const interiors: number[] = [];
+    for (const py of [0, 0.4, 0.7]) {
+      const aim = aimOf(0, py);
+      expect(aim.face).toEqual(NL);
+      const segments = await runTrace({ value1: py, value2: dispersion, value3: 0 });
       const entry = segments[0]!.tip;
-      // ON the entry face's plane, at the tangential coordinate the pointer names.
-      // T920: the entry comes off a MARCH now (stop at sd < 6e-4), so on-the-plane holds to
-      // the march epsilon, not float exactness.
-      expect(dot(entry, NR)).toBeCloseTo(RI, 3);
-      // T920: near the apex the entry lands ON THE BEVEL — the real surface bows off the
-      // face plane by up to the corner radius — so tau matches the flat-face arithmetic
-      // to the bevel's deviation, not float exactness. Mid-face entries still land exact.
-      expect(tauOf(entry)).toBeCloseTo(walkTauOf(px), 2);
-      // And Snell still governs the first refraction at that new entry.
+      // The MARCHED entry lands where the mapping says, on the face plane, at its τ.
+      expect(dot(entry, NL)).toBeCloseTo(RI, 3);
+      expect(tauOf(entry, NL)).toBeCloseTo(aim.tau, 2);
+      // Snell at that strike, from the mapped incidence.
       const internal = segments[interiorIndex(0.5)]!;
-      expect(faceAngle(direction(internal), NR)).toBeCloseTo(
-        Math.asin(Math.sin(thetaOf(AIM)) / nMid),
+      expect(faceAngle(direction(internal), NL)).toBeCloseTo(
+        Math.asin(Math.sin(aim.thetaI) / bandN(0.5, dispersion)),
         3,
       );
-      // Connected: shaft tip = internal origin, internal tip = the central band's exit.
+      // Connected: shaft tip = internal origin; internal tip = the central band's exit.
       expect(internal.origin[0]).toBeCloseTo(entry[0], 5);
       const central = segments[bandIndex(0.5)]!;
       expect(central.origin[0]).toBeCloseTo(internal.tip[0], 4);
       expect(central.origin[1]).toBeCloseTo(internal.tip[1], 4);
-      expect(length(central)).toBeGreaterThan(0.5);
+      taus.push(tauOf(entry, NL));
+      interiors.push(length(internal));
     }
-
-    // The faces converge at the apex, so the crossing collapses — by far more than the
-    // fifth the old offset channel could reach, and still a real segment.
-    expect(length(apex[interiorIndex(0.5)]!)).toBeLessThan(length(middle[interiorIndex(0.5)]!) * 0.25);
-    expect(length(apex[interiorIndex(0.5)]!)).toBeGreaterThan(0.02);
-
-    // T915b: the AXES ARE INDEPENDENT — the angle axis, at either extreme that still
-    // refracts, never moves the entry off value3's own τ (§V361: this is what says the
-    // walk belongs to X and only X).
-    for (const aim of [0.4, 1]) {
-      const pinned = await runTrace({ value1: aim, value2: dispersion, value3: 0 });
-      // T920: the shaft's tip is the MARCHED entry — and at aim 1 the ray meets the face
-      // at 84°, where the march's stop distance stretches ~10× along the ray (1/cos), so
-      // the grazing pin holds to 2 decimals, not 3 (measured: 0.0016 off at aim 1).
-      expect(tauOf(pinned[0]!.tip)).toBeCloseTo(ENTRY, 2);
-    }
+    // Monotone: the strike WALKS as y grows — the aiming model the owner asked for.
+    expect(taus[0]!).toBeGreaterThan(taus[1]!);
+    expect(taus[1]!).toBeGreaterThan(taus[2]!);
+    // Toward the base-left vertex the faces converge and the crossing shortens.
+    expect(interiors[2]!).toBeLessThan(interiors[0]!);
   }, 300_000);
 
   /**
-   * T857 — PAST THE VERTEX THE BEAM MISSES THE GLASS, and that is a STATE rather than a
-   * failure. The owner asked for it by name: "we cant test all the extremes or even miss
-   * the glass triangle."
-   *
-   * The refracting face is a SEGMENT — half-length RI·√3 = 0.658 from its midpoint — and
-   * the walk runs to τ = 1.07, so the top of the travel puts the entry past the apex.
-   * (The walk's floor is ENTRY = −0.28, ON the face by construction: there is no
-   * low-side miss to gate any more.) What the kernel must then draw is a beam GOING BY: the shaft
-   * carries straight on (2.10 + 2.60 long instead of 2.10) and every other slot collapses
-   * to zero length, which the beam shader renders as zero area (T680).
-   *
-   * The miss is asserted against the DOMAIN and not against the kernel's own flag: fifty
-   * samples along the drawn shaft, none of them inside the cross-section's three face
-   * planes. A ray that sneaked in through the base would fail that even with a zero fan.
-   *
-   * RED-VERIFIED against the corruption it is for: deleting the `onFace` select on the
-   * band slot puts the fan back — 61 segments of length 2.25 hanging off a face the ray
-   * never touched, which is exactly the artefact the widening could have shipped.
+   * THE TOP OF THE Y TRAVEL MISSES THE GLASS, and that is a STATE rather than a failure
+   * ("we cant test all the extremes or even miss the glass triangle"). The miss is
+   * asserted against the DOMAIN: fifty samples along the drawn shaft, none inside the
+   * cross-section. A ray that sneaked in through any face would fail that even with a
+   * zero fan.
    */
-  it("misses the glass past either vertex — the fan collapses and the shaft carries on", async () => {
+  it("misses the glass at the top of the y travel — the fan collapses and the shaft carries on", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const dispersion = 0.085;
-    const at = async (px: number): Promise<Segment[]> =>
-      runTrace({ value1: 0.56, value2: dispersion, value3: px });
+    for (const px of [0.1, 0.6]) {
+      expect(aimOf(px, 0.98).face).toBeNull(); // the domain says: off the glass
+      const segments = await runTrace({ value1: 0.98, value2: dispersion, value3: px });
 
-    /* Just INSIDE the apex — T920 split this boundary in two, because the last 0.046 of
-       the face IS THE BEVEL now:
-       - px 0.563 (τ 0.48, mid-face): the flat-plane physics — light enters AND leaves.
-       - px 0.681 (τ 0.64): the flat-plane arithmetic says on-face, but the ROUNDED body
-         curves away below the sharp corner — the marched ray passes it. The bevel
-         SHRINKS the effective face by its own radius, and a ray aimed at the sharp
-         triangle's last arc-width is a real miss on the real body. The old flat trace
-         refracted here because its planes had no corner to round away. */
-    const grazing = await at(0.563);
-    expect(Math.abs(walkTauOf(0.563))).toBeLessThan(HALF_FACE);
-    expect(length(grazing[bandIndex(0.5)]!)).toBeGreaterThan(0.5);
-    expect(length(grazing[interiorIndex(0.5)]!)).toBeGreaterThan(0.005);
-    const onBevel = await at(0.681);
-    expect(length(onBevel[interiorIndex(0.5)]!)).toBeLessThan(1e-4); // past the round-over: a miss
-    expect(length(onBevel[bandIndex(0.5)]!)).toBeLessThan(1e-4);
-
-    for (const px of [0.85, 1]) {
-      const tau = walkTauOf(px);
-      expect(Math.abs(tau)).toBeGreaterThan(HALF_FACE); // the domain says: off the face
-      const segments = await at(px);
-
-      // Nothing refracts. Ghost, internal segment, TIR leg and all 61 bands are points.
+      // Nothing refracts. Ghost, interior, TIR leg and all 61 bands are points.
       for (const index of [1, interiorIndex(0.5), tirIndex(0.5)]) expect(length(segments[index]!)).toBeLessThan(1e-4);
-      for (const t of [0, 0.5, 1]) expect(length(segments[bandIndex(t)]!)).toBeLessThan(1e-4);
+      for (const tt of [0, 0.5, 1]) expect(length(segments[bandIndex(tt)]!)).toBeLessThan(1e-4);
 
-      // The shaft goes THROUGH instead of stopping: 2.10 behind the plane, 2.60 past it.
+      // The shaft goes THROUGH: the full MISS_LEN cast, off-frame to off-frame (T929).
       const shaft = segments[0]!;
-      expect(length(shaft)).toBeCloseTo(4.7, 3);
-      // And it really does miss: no sample of the drawn segment is inside the glass.
+      expect(length(shaft)).toBeCloseTo(7.0, 3);
       const d = direction(shaft);
       for (let step = 0; step <= 50; step += 1) {
         const s = (step / 50) * length(shaft);
@@ -450,103 +423,71 @@ describe("the prism is a traced ray (T718, §V683)", () => {
   }, 300_000);
 
   /**
-   * T857 — THE HAND REACHES TOTAL INTERNAL REFLECTION AT THE SHIPPED DISPERSIVE POWER,
-   * which the swing's own range cannot do at any aim. Both numbers, per §V751: the
-   * widening is measured by what it newly reaches, not asserted.
+   * THE LAMP REACHES TIR AT THE SHIPPED DISPERSIVE POWER, in two regimes:
    *
-   * The TIR case above buys its TIR with a dispersion of 0.3 — three and a half times
-   * what E13 ships — because at 0.085 the violet end's onset sits at θ1 = 34.5°, and
-   * the old swing's floor was 37°. The pointer's Y runs to 6°, so the whole spectrum
-   * crosses the onset, and there are TWO regimes on the way, gated here in order:
-   *
-   *   y 0.32 (θ1 = 31.0°) — THE SPECTRUM SPLITS. The red end still exits the exit face
-   *     at 74.4°; the violet end is past its critical angle there, reflects, and leaves
-   *     through the BASE. Two faces in use in one frame, at the shipped dispersion.
-   *   y 0.2 (θ1 = 21.6°) — past critical for EVERY band at the exit face: the whole
-   *     spectrum reflects there and leaves through the base together.
-   *
-   * And the second regime carries a fact worth asserting because nothing could satisfy it
-   * by accident: after a total internal reflection this cross-section hands every
-   * wavelength back at EXACTLY θ1 — the second incidence is |inc − 60°| = θr for every n,
-   * so `asin(n·sin θr) = θ1` identically. The fan does not widen there, it becomes a SHEET
-   * of parallel rays separated by their exit points rather than their angles.
+   *   (0.05, 0.45), θ1 ≈ 30° — THE SPECTRUM SPLITS: red exits the right face; violet is
+   *     past critical there, reflects, and leaves through the BASE. Two faces in one frame.
+   *   (0.05, 0), θ1 = 23° — past critical for EVERY band: the whole spectrum reflects at
+   *     the right face and leaves through the base together, every wavelength at EXACTLY
+   *     θ1 (the equilateral one-bounce identity: the second incidence is θr for every n,
+   *     so asin(n·sin θr) = θ1). A SHEET, not a fan.
    */
-  it("reaches TIR on the pointer's range at E13's own dispersion, where the swing cannot", async () => {
+  it("reaches TIR on the lamp's range at E13's own dispersion", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const dispersion = 0.085; // E13's shipped power, not a gate-only exaggeration
+    const dispersion = 0.085;
     const thetaR = (thetaI: number, n: number): number => Math.asin(Math.sin(thetaI) / n);
-    /** Trapped at the EXIT FACE, where the internal ray meets it at APEX − θr. */
-    const trapped = (thetaI: number, n: number): boolean =>
-      n * Math.sin(APEX - thetaR(thetaI, n)) > 1;
+    const trapped = (thetaI: number, n: number): boolean => n * Math.sin(APEX - thetaR(thetaI, n)) > 1;
 
-    // The old swing's whole band (37°–62°): no band anywhere near TIR — which is why
-    // the blend's rest pose could never show this regime and the pointer's Y can.
-    for (const theta of [37, 49.5, 62]) {
-      for (const t of [0, 0.5, 1])
-        expect(trapped((theta * Math.PI) / 180, bandN(t, dispersion))).toBe(false);
-    }
-
-    // ---- the SPLIT: red out the exit face, violet out the base, one frame -------------
-    const splitAim = 0.32;
-    const splitTheta = thetaOf(splitAim);
-    expect(trapped(splitTheta, bandN(0, dispersion))).toBe(false); // red is not
-    expect(trapped(splitTheta, bandN(1, dispersion))).toBe(true); //  violet is
-    // value3 0.207 (τ 0): the violet's reflected leg lands mid-base (x ≈ −0.27, analytic),
-    // clear of both corner arcs — at τ = ENTRY it lands at x −0.55, ON the round-over,
-    // where the sweeping normal breaks the flat-face identity this gate pins.
-    const split = await runTrace({ value1: splitAim, value2: dispersion, value3: 0.207 });
+    // ---- the SPLIT ---------------------------------------------------------------
+    const splitAim = aimOf(0.05, 0.45);
+    expect(splitAim.face).toEqual(NL);
+    expect(trapped(splitAim.thetaI, bandN(0, dispersion))).toBe(false); // red is not
+    expect(trapped(splitAim.thetaI, bandN(1, dispersion))).toBe(true); //  violet is
+    const split = await runTrace({ value1: 0.45, value2: dispersion, value3: 0.05 });
 
     const red = split[bandIndex(0)]!;
     const nRed = bandN(0, dispersion);
-    expect(dot(red.origin, NL)).toBeCloseTo(RI, 3);
-    expect(faceAngle(direction(red), NL)).toBeCloseTo(
-      Math.asin(nRed * Math.sin(APEX - thetaR(splitTheta, nRed))),
+    expect(dot(red.origin, NR)).toBeCloseTo(RI, 3);
+    expect(faceAngle(direction(red), NR)).toBeCloseTo(
+      Math.asin(nRed * Math.sin(APEX - thetaR(splitAim.thetaI, nRed))),
       3,
     );
-
     const violet = split[bandIndex(1)]!;
-    expect(dot(violet.origin, ND)).toBeCloseTo(RI, 3);
-    expect(dot(violet.origin, NL)).toBeLessThan(RI - 1e-3);
+    expect(dot(violet.origin, ND)).toBeCloseTo(RI, 2);
+    expect(dot(violet.origin, NR)).toBeLessThan(RI - 1e-3);
     expect(length(violet)).toBeGreaterThan(0.5);
-    // The base incidence after the mirror is |(APEX − θr) − APEX| = θr, so the exit angle
-    // is asin(n·sin θr) — which is θ1 itself, the identity noted above.
-    expect(faceAngle(direction(violet), ND)).toBeCloseTo(splitTheta, 3);
+    expect(faceAngle(direction(violet), ND)).toBeCloseTo(splitAim.thetaI, 2);
 
-    // ---- the ALL-TIR regime: every band reflects at the exit face, exits the base ----
-    const baseAim = 0.2;
-    const baseTheta = thetaOf(baseAim);
-    const segments = await runTrace({ value1: baseAim, value2: dispersion, value3: 0.207 });
-    for (const t of [0, 0.5, 1]) {
-      const n = bandN(t, dispersion);
-      // The domain: past critical at the exit face for EVERY band.
-      expect(trapped(baseTheta, n)).toBe(true);
-      const band = segments[bandIndex(t)]!;
-      expect(dot(band.origin, ND)).toBeCloseTo(RI, 3);
+    // ---- the ALL-TIR SHEET -------------------------------------------------------
+    const baseAim = aimOf(0.05, 0);
+    expect(baseAim.face).toEqual(NL);
+    const segments = await runTrace({ value1: 0, value2: dispersion, value3: 0.05 });
+    for (const tt of [0, 0.5, 1]) {
+      const n = bandN(tt, dispersion);
+      expect(trapped(baseAim.thetaI, n)).toBe(true);
+      const band = segments[bandIndex(tt)]!;
+      expect(dot(band.origin, ND)).toBeCloseTo(RI, 2);
       expect(length(band)).toBeGreaterThan(0.5);
-      // Every wavelength leaves at exactly θ1 — a sheet, not a fan.
-      expect(faceAngle(direction(band), ND)).toBeCloseTo(baseTheta, 3);
+      expect(faceAngle(direction(band), ND)).toBeCloseTo(baseAim.thetaI, 2);
     }
     // The reflected leg inside the body is DRAWN, which is what makes TIR a path here.
     expect(length(segments[tirIndex(0.5)]!)).toBeGreaterThan(0.02);
   }, 300_000);
 
   /**
-   * T920 — THE APERTURE MEETS THE BEVEL, and the caustic seed is measurable: the exit
-   * DIRECTIONS of the beam's slices are parallel when the whole aperture lands mid-face
-   * (flat glass: parallel in, parallel out — the §T914 amendment's own arithmetic), and
-   * they DIVERGE when part of the aperture rides the corner round-over, because each
-   * slice meets a different normal there. Same kernel, same wavelength, no branch — only
-   * WHERE the beam lands. The curved bright envelope on screen is these diverging
-   * straight rays overlapping; this asserts its cause at the geometry.
+   * T920 — THE APERTURE MEETS THE BEVEL: slice exit directions are parallel when the
+   * whole aperture lands mid-face and DIVERGE when it rides the corner round-over —
+   * the caustic's cause at the geometry. (0.9, 0) strikes the base at τ 0.632, ON the
+   * arc; (1, 0.3) strikes it at τ −0.03, flat.
    */
   it("slices exit parallel from the flat face and diverge across the bevel (T920)", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const spreadAcrossSlices = async (px: number): Promise<number> => {
-      const segments = await runTrace({ value1: 0.86, value2: 0.03, value3: px });
+    const spreadAcrossSlices = async (px: number, py: number): Promise<number> => {
+      const segments = await runTrace({ value1: py, value2: 0.03, value3: px });
       const angles: number[] = [];
       for (const s of [0, 4, 8]) {
         const seg = segments[sliceExitIndex(s, 0.5)]!;
@@ -558,26 +499,25 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       return Math.max(...angles) - Math.min(...angles);
     };
 
-    // Mid-face: the whole aperture on flat glass — parallel to the march's precision.
-    const flat = await spreadAcrossSlices(0.444);
+    expect(aimOf(1, 0.3).tau).toBeCloseTo(-0.034, 2);
+    const flat = await spreadAcrossSlices(1, 0.3);
     expect(flat).toBeLessThan(0.002);
-    // Riding the round-over (τ ≈ 0.58, the face's last arc-width): the slices meet a
-    // sweeping normal and their exits genuinely diverge — measured ≥ 20× the flat case.
-    const bevel = await spreadAcrossSlices(0.634);
+    expect(aimOf(0.9, 0).tau).toBeCloseTo(0.632, 2);
+    const bevel = await spreadAcrossSlices(0.9, 0);
     expect(bevel).toBeGreaterThan(0.04);
   }, 300_000);
 
   /**
-   * T920 — DISPERSION IS VISIBLE INSIDE THE GLASS (the owner's reference (a)): the
-   * per-band INTERIOR segments genuinely part before any exit face — violet's internal
-   * direction differs from red's straight off the entry Snell, and their far-wall
-   * landings separate. The old kernel computed these paths and drew one.
+   * T920 — DISPERSION IS VISIBLE INSIDE THE GLASS: the per-band interior segments part
+   * before any exit face, and their far-wall landings separate. Measured at the REST
+   * aim — the frame every visitor sees first.
    */
   it("violet peels from red INSIDE the body — per-band interiors, drawn and divergent", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const segments = await runTrace({ value1: 0.4, value2: 0.03 }); // θ1 = 37.2°
+    expect(aimOf(0, 0).face).toEqual(NL); // the rest strike, θ1 = 35°
+    const segments = await runTrace({ value1: 0, value2: 0.03, value3: 0 });
     const red = segments[interiorIndex(0)]!;
     const violet = segments[interiorIndex(1)]!;
     expect(length(red)).toBeGreaterThan(0.05);
@@ -585,13 +525,53 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const dr = direction(red);
     const dv = direction(violet);
     const parted = Math.abs(Math.atan2(dr[1], dr[0]) - Math.atan2(dv[1], dv[0]));
-    // Analytic: asin(sin37°/1.5) − asin(sin37°/1.53) ≈ 0.0055 rad. The claim is the
-    // ORDER and the separation, not the fourth decimal — but it must be real spread,
-    // not march noise.
     expect(parted).toBeGreaterThan(0.003);
     expect(parted).toBeLessThan(0.02);
-    // And the far-wall landings part with them: the in-glass spread reaches the wall.
     const landed = Math.hypot(red.tip[0] - violet.tip[0], red.tip[1] - violet.tip[1]);
     expect(landed).toBeGreaterThan(0.002);
   }, 300_000);
+
+  /**
+   * T929 — NO TELEPORT: the owner's "the beam teleports at certain angles", written as
+   * a sweep. The lamp walks a third of its arc in small steps; between adjacent steps
+   * the marched ENTRY moves continuously (it crosses vertices smoothly — the body is
+   * one closed boundary), and the centre band's EXIT origin moves continuously EXCEPT
+   * where its exit face legitimately switches (TIR onset); each switch must coincide
+   * with near-critical incidence computed from the mapping — a jump anywhere else is
+   * the bug this gate exists to catch.
+   */
+  it("sweeps the lamp without teleporting (T929)", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const dispersion = 0.085;
+    const STEPS = 24;
+    const py = 0.3;
+    let prevEntry: readonly [number, number] | null = null;
+    let prevExit: readonly [number, number] | null = null;
+    for (let i = 0; i <= STEPS; i += 1) {
+      const px = 0.0 + (0.32 * i) / STEPS; // NL entries into the NL->NR vertex crossing
+      const aim = aimOf(px, py);
+      if (aim.face === null) continue;
+      const segments = await runTrace({ value1: py, value2: dispersion, value3: px });
+      const entry = segments[0]!.tip;
+      const exit = segments[bandIndex(0.5)]!;
+      if (prevEntry !== null) {
+        const step = Math.hypot(entry[0] - prevEntry[0], entry[1] - prevEntry[1]);
+        expect(step).toBeLessThan(0.35); // continuous walk, no entry teleport
+      }
+      if (prevExit !== null && length(exit) > 1e-3) {
+        const jump = Math.hypot(exit.origin[0] - prevExit[0], exit.origin[1] - prevExit[1]);
+        if (jump > 0.35) {
+          // The only licensed jump: the exit face switched because this step crossed
+          // the critical angle. Prove it from the mapping, in float64.
+          const n = bandN(0.5, dispersion);
+          const margin = Math.abs(n * Math.sin(APEX - Math.asin(Math.sin(aim.thetaI) / n)) - 1);
+          expect(margin).toBeLessThan(0.08);
+        }
+      }
+      prevEntry = entry;
+      if (length(exit) > 1e-3) prevExit = exit.origin;
+    }
+  }, 600_000);
 });

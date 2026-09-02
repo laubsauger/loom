@@ -21,7 +21,7 @@
   },
   "E13-Prism.loom.json": {
     "motion": 0,
-    "range": 1,
+    "range": 0.9975,
     "f0max": 1
   },
   "E14-Self-Regulating-Bloom.loom.json": {

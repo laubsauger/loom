@@ -73,9 +73,10 @@ const ND: vec2f = vec2f(0.0, -1.0);
    inverts that reasoning: swallowing is the point. */
 const PLANE: f32 = 0.10;
 const ENTRY: f32 = -0.28;
+/* T929: every open end runs OFF-FRAME (frustum half-extents 2.71 x 1.52 at z = 0). */
 const SHAFT_LEN: f32 = 2.10;
-const GHOST_LEN: f32 = 0.90;
-const FAN_LEN: f32 = 2.25;
+const GHOST_LEN: f32 = 6.0;
+const FAN_LEN: f32 = 6.5;
 const N_RED: f32 = 1.50;
 /* The SWING's band, unchanged since T710: two aims, 25 degrees apart, comfortably
    inside the glass and comfortably clear of the violet end's critical angle. */
@@ -89,8 +90,17 @@ const THETA_HI: f32 = 62.0;
    a compensation for an absent capability is an artifact once the capability exists).
    The hand crosses the violet end's onset at 34.5° and the red end's at 27.9°, so
    between them the spectrum SPLITS across two faces, which no aim could reach before. */
-const HAND_HI: f32 = 84.0;
-const HAND_LO: f32 = 6.0;
+/* T929 — THE LAMP. The cursor's x carries the light around the prism on a 240-degree
+   arc (all faces, all incidences reachable by walking around, like holding the torch);
+   its y slides the aim ACROSS the body — 0 aims at the INCENTER, which meets every face
+   at its exact middle (the rest strike the owner asked for, by construction), and the
+   far end carries the beam clear off the glass: the miss is the top of the y travel. */
+const LAMP_R: f32 = 3.3;
+/* Rest (0,0) is phi 185: the lamp level-left, a hair below the axis, striking the left
+   face's centre at ~35 degrees — the classic left-in, spectrum-out-right card. */
+const ARC_A: f32 = 185.0;
+const ARC_B: f32 = -55.0;
+const OFF_MAX: f32 = 0.9;
 /* Speed² → authority. A cursor crossing a TWENTIETH of the frame in a second reads
    0.0025 here and clamps to 1: any deliberate move owns the aim outright, and a cursor
    that has never moved reads exactly 0. */
@@ -98,13 +108,11 @@ const HAND_GAIN: f32 = 400.0;
 /* How far along the face the pointer walks the entry point, tip to tail. The face's
    half-length is RI·√3 = 0.658, so ±0.8 runs PAST both vertices — which is the state
    the owner asked for: the beam misses the glass. */
-/* T915b: how far x walks the entry up the face. ENTRY + WALK runs past the apex, so the
-   top of the sweep is a real miss, as the owner asked for. */
-const WALK: f32 = 1.35;
+
 const ROOT3: f32 = 1.7320508;
 /* A missed beam has to still be a beam: it carries straight on past where the glass
    isn't, instead of stopping at a face it never met. */
-const MISS_LEN: f32 = 2.60;
+const MISS_LEN: f32 = 7.0;
 
 /* T920 — THE BEAM'S SAMPLING. SLICES rays across the drawn shaft's full width (2 x its
    0.006 half-width), BANDS wavelengths, three legs each (interior, TIR continuation,
@@ -306,28 +314,27 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      white V of the reference's near-perpendicular shot. */
   let px = clamp(ctx.value3, 0.0, 1.0);
   let py = clamp(ctx.value1, 0.0, 1.0);
-  let theta = mix(HAND_LO, HAND_HI, py) * PI / 180.0;
-  let inward = -NR;
-  let cs = cos(-theta);
-  let sn = sin(-theta);
-  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);
-  let tau = ENTRY + px * WALK;
-  let pe = NR * RI + vec2f(-NR.y, NR.x) * tau;
-  let onFace = abs(tau) < RI * ROOT3;
+  let phi = mix(ARC_A, ARC_B, px) * PI / 180.0;
+  let S = vec2f(cos(phi), sin(phi)) * LAMP_R;
+  let ahead = normalize(-S);
+  let aside = vec2f(-ahead.y, ahead.x);
+  let dIn = normalize(-S + aside * (py * OFF_MAX));
   /* T920: the trace marches from OUTSIDE the body along the beam, so the entry point —
-     and its NORMAL — come from the boundary itself, bevel included. */
-  let castFrom = pe - dIn * 0.9;
+     and its NORMAL — come from the boundary itself, bevel included. The march is the
+     only authority on hitting: there is no face arithmetic left to disagree with it. */
+  let castFrom = S;
   let perp = vec2f(-dIn.y, dIn.x);
 
   /* The CENTRAL wavelength's path — the shaft's landing and the ghost's seat. */
   let nMid = cauchyN(0.5, ctx.value2);
   let mid = tracePrism(castFrom, dIn, nMid, RI);
-  let hit = onFace && mid.ok > 0.5;
+  let hit = mid.ok > 0.5;
 
   if (ctx.index == 0u) {
-    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);
-    /* A HIT stops at the marched entry; a MISS carries straight on past the glass. */
-    q.tip = vec3f(select(pe + dIn * MISS_LEN, mid.entry, hit), PLANE);
+    /* The shaft rides the whole cast: from the lamp (off-frame by LAMP_R's own size) to
+       the marched entry; a MISS carries straight through and leaves the far side. */
+    q.position = vec3f(S, PLANE);
+    q.tip = vec3f(select(S + dIn * MISS_LEN, mid.entry, hit), PLANE);
     q.tint = vec4f(1.0, 1.0, 1.0, 1.0);
     q.role = 0.0;
     return q;
@@ -338,8 +345,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
     let ne = bodyNormal(mid.entry);
     let r = reflect2(dIn, ne);
     let fr = schlick(mid.entryCos, nMid);
-    q.position = vec3f(select(pe, mid.entry, hit), PLANE);
-    q.tip = vec3f(select(pe, mid.entry + r * GHOST_LEN, hit), PLANE);
+    q.position = vec3f(select(S, mid.entry, hit), PLANE);
+    q.tip = vec3f(select(S, mid.entry + r * GHOST_LEN, hit), PLANE);
     q.tint = vec4f(vec3f(fr), 1.0);
     q.role = 0.0;
     return q;
@@ -361,10 +368,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let off = (f32(s) / f32(SLICES - 1u) - 0.5) * APERTURE;
   let n = cauchyN(t, ctx.value2);
   let band = tracePrism(castFrom + perp * off, dIn, n, RI);
-  let live = onFace && band.ok > 0.5;
+  let live = band.ok > 0.5;
   let colour = fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb;
   let frIn = schlick(band.entryCos, n);
-  let seat = select(pe, band.entry, live);
+  let seat = select(S, band.entry, live);
 
   if (leg == 0u) {
     /* Interior 1: the in-glass spread, drawn per band per slice — dim, additive. */
@@ -390,7 +397,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      both faces (T913), energy split across the slices. */
   let frOut = schlick(band.exitCos, n);
   let gone = live && dot(band.exitDirection, band.exitDirection) > 1.0e-9;
-  let root = select(pe, band.exitPoint, live);
+  let root = select(S, band.exitPoint, live);
   q.position = vec3f(root, PLANE);
   q.tip = vec3f(select(root, band.exitPoint + band.exitDirection * FAN_LEN, gone), PLANE);
   q.tint = vec4f(colour * ((1.0 - frIn) * (1.0 - frOut) * EXIT_GAIN / f32(SLICES)), 1.0);

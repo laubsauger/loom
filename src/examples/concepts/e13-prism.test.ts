@@ -165,7 +165,7 @@ describe("E13 Prism", () => {
         pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
     ) as DrawPassDescriptor;
     const uniforms = uniformsOf(surface);
-    expect(uniforms["glassA"]).toEqual([1.5, 0.04, 0.8, 0.03]);
+    expect(uniforms["glassA"]).toEqual([1.5, 0.04, 1.1, 0.03]); // T928: deeper body
     expect((uniforms["glassB"] as readonly number[])[3]).toBeCloseTo(3.2, 6);
     expect(uniforms["light0Meta"]).toBeUndefined();
     expect(uniforms["ambientColor"]).toBeUndefined();
@@ -278,6 +278,29 @@ describe("E13 Prism", () => {
     expect(oneFrame).toBeGreaterThan(0);
     expect(oneFrame).toBeLessThan(0.5);
     expect(slotOf(shape.hold(dragged, 90).plan, "value3")).toBeCloseTo(1, 3);
+  });
+
+  /**
+   * THE BODY TILTS WITH THE SAME POINTER THAT AIMS THE BEAM (T928 — §T914 assessed this
+   * as "zero gap" and it then went unbuilt; this gate is what keeps that from happening
+   * silently again). form1's value1/value2 ride follow1 exactly as the optics' do: one
+   * hand, two reads, both positional, both decay-free (T915b's property holds here by
+   * construction — same lag, same axes).
+   */
+  it("swivels the body with the pointer, through the same lag as the aim (T928)", () => {
+    const slotOf = (source: CompiledGraph, node: string, slot: string): number => {
+      const dispatch = source.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === node);
+      return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})[slot] as number;
+    };
+    const run = valueGraphRun(document);
+    run.step({ x: 0, y: 0, buttons: 0 });
+    const settled = run.hold({ x: 0.8, y: 0.25, buttons: 0 }, 240).plan;
+    // The body's slots arrive AT the pointer, exactly as the aim's do …
+    expect(slotOf(settled, "form", "value1")).toBeCloseTo(0.8, 3);
+    expect(slotOf(settled, "form", "value2")).toBeCloseTo(0.25, 3);
+    // … and they are the SAME resolved numbers, not a second chain that could drift.
+    expect(slotOf(settled, "form", "value1")).toBeCloseTo(slotOf(settled, "optics", "value3"), 6);
+    expect(slotOf(settled, "form", "value2")).toBeCloseTo(slotOf(settled, "optics", "value1"), 6);
   });
 
   /**
