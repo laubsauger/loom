@@ -1,4 +1,5 @@
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
+import type { UniformValues } from "../backend/plan.ts";
 import { previewUniforms } from "./debug-effects.ts";
 import { DEFAULT_PREVIEW_ORBIT, orbitUniforms } from "./orbit.ts";
 import { buildPreviewProgram, previewPassId } from "./program.ts";
@@ -135,6 +136,20 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       lastPushed.clear();
     }
 
+    /*
+     * B176: the SYNTHESIZED passes' own uniform values, as the PROGRAM states them.
+     *
+     * Read off the built program rather than off `request.synthesis.passes`, because the
+     * two are not the same numbers: `buildPreviewProgram` restates `pointSize` against the
+     * granted tile (T952), and pushing the request's nominal value would undo that on the
+     * first uniform-only edit. One source, so a rewrite added there travels by construction.
+     */
+    const programUniforms = new Map<string, UniformValues>();
+    for (const pass of program.passes) {
+      const values = "uniforms" in pass ? pass.uniforms : undefined;
+      if (values !== undefined) programUniforms.set(pass.id, values);
+    }
+
     const refresh: string[] = [];
     const composite: PreviewCompositeTile[] = [];
     const uniforms: PreviewUniformUpdate[] = [];
@@ -154,22 +169,48 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
         uniforms.push({ passId, values });
       }
       /*
-       * T561: the inspection orbit rides the same push seam, onto the SYNTHESIS passes
-       * the compiler marked (`orbit.passIds`) — the splat and stock-scene cameras are
-       * uniform VALUES by construction (§V5, §V330), so a drag re-renders a tile and
-       * rebuilds nothing. Identity deltas reproduce the baked framing, so a reset (or a
-       * never-touched preview) pushes the same numbers the descriptor carries.
+       * B176 + T561 — THE SYNTHESIS PASSES' VALUES, ON THE SAME PUSH SEAM AS THE LENS.
+       *
+       * §V521 gives a synthesized preview its OWN passes with their OWN uniforms, which the
+       * main plan does not carry — so `backend.updateUniforms`, which resolves against the
+       * main program, cannot reach them. And `program.signature` excludes uniform values by
+       * construction (§V5), so a uniform-only edit rebuilds nothing and reinstalls nothing.
+       * Both halves are correct and together they left NO PATH AT ALL: a colour edit updated
+       * the render output and the tile went on drawing the previous compile's numbers, until
+       * some later STRUCTURAL edit happened to reinstall the program and silently repair it.
+       * That is why the owner met it only when they changed a colour twice in a row.
+       *
+       * Keyed on the pass carrying uniforms, never on a list of kinds: camera, light,
+       * geometry, material, projector and pointset are covered because they are synthesized,
+       * not because they are enumerated — a seventh kind is covered the day it compiles.
+       *
+       * T561's inspection orbit is folded in here rather than pushed separately, and the
+       * ORDER is the reason: the orbit OVERRIDES the descriptor's baked `viewProjection`, so
+       * a separate later push would be reverted by this one on the very next edit — and its
+       * own dedup would then skip re-pushing, because the orbit itself had not moved. One
+       * merged block per pass, one dedup key, precedence by construction.
        */
       const orbitBasis = entry.request.synthesis?.orbit;
-      if (orbitBasis !== undefined) {
-        const orbitValues = orbitUniforms(orbitBasis, entry.request.orbit ?? DEFAULT_PREVIEW_ORBIT);
-        const orbitSerialized = JSON.stringify(orbitValues);
+      const orbitValues =
+        orbitBasis === undefined
+          ? undefined
+          : orbitUniforms(orbitBasis, entry.request.orbit ?? DEFAULT_PREVIEW_ORBIT);
+      const synthesisValues = new Map<string, UniformValues>();
+      for (const synthPass of entry.request.synthesis?.passes ?? []) {
+        const values = programUniforms.get(synthPass.id);
+        if (values !== undefined) synthesisValues.set(synthPass.id, values);
+      }
+      if (orbitValues !== undefined && orbitBasis !== undefined) {
         for (const orbitPassId of orbitBasis.passIds) {
-          if (lastPushed.get(orbitPassId) === orbitSerialized) continue;
-          lastPushed.set(orbitPassId, orbitSerialized);
-          uniforms.push({ passId: orbitPassId, values: orbitValues });
-          changed = true;
+          synthesisValues.set(orbitPassId, { ...synthesisValues.get(orbitPassId), ...orbitValues });
         }
+      }
+      for (const [synthPassId, synthValues] of synthesisValues) {
+        const synthSerialized = JSON.stringify(synthValues);
+        if (lastPushed.get(synthPassId) === synthSerialized) continue;
+        lastPushed.set(synthPassId, synthSerialized);
+        uniforms.push({ passId: synthPassId, values: synthValues });
+        changed = true;
       }
       if (entry.due || changed) {
         // T563: a synthesized preview re-renders its source target first — the splat or
