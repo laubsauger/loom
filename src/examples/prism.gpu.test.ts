@@ -468,10 +468,11 @@ describe("E13 Prism — the picture", () => {
       /* T758 loosened this from exactly 0: the beams live INSIDE the glass body's z
          now, so the fan's ROOT — the exit point, which is ON the face by the trace's
          own connectivity gates — projects a few pixels into the 8px erosion under the
-         perspective camera. Measured at the swap: 3 pixels. The claim keeps its
-         discriminating power by two orders of magnitude: the red-verified real burial
-         (circumradius 0.76 → 0.95) measured 209. */
-      expect(overlap(fanMask, deep)).toBeLessThan(30);
+         perspective camera. Measured at the swap: 3 pixels; T920's 9 marched slices
+         rooting on the ROUNDED face measure 48 (§V751 — more roots, same face-adjacent
+         rooting). The red-verified real burial (circumradius 0.76 → 0.95) measured 209,
+         so the floor keeps a 2x margin below the failure it discriminates. */
+      expect(overlap(fanMask, deep)).toBeLessThan(100);
 
       /**
        * And the fan's rays CONVERGE on the glass rather than merely missing it. The span

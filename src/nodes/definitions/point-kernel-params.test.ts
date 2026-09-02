@@ -361,8 +361,9 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
 const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   "E9-Ember.loom.json": "f0a7e8f0752c7653",
   // T915 (static aim: value1 0.5 → 1) and T918 (the wall kernel) both changed E13's
-  // resolved kernel state deliberately; re-pinned at those commits.
-  "E13-Prism.loom.json": "958d50adbfad0f65",
+  // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
+  // marched BEAM (SDF bevel boundary, 9x61x3 slots); re-pinned at each.
+  "E13-Prism.loom.json": "cd889bfe285df4e4",
   "E16-Murmuration.loom.json": "74f35048da9b841e",
   "E20-Gooeyball.loom.json": "7d059f6ab538949e",
   "E25-Stage.loom.json": "8ef074cc584fae53",

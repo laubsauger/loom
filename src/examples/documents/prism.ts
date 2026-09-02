@@ -396,7 +396,8 @@ export const prismDocument = document(
         ],
       }, { label: "spectrum1", definitionVersion: 2, resolution: { mode: "fixed", width: 256, height: 8 } }),
       node("optics", "pointKernel", [-1560, 100], {
-        capacity: PRISM_BANDS + 4,
+        /* T920: the beam — 2 fixed slots + SLICES(9) x BANDS(61) x 3 legs. */
+        capacity: 2 + 9 * PRISM_BANDS * 3,
         attributes: PRISM_OPTICS_ATTRIBUTES,
         kernel: prismTraceKernel((PRISM_RC / 2).toFixed(3)),
         // The glass's DISPERSIVE POWER, and the one number the whole effect rests on:

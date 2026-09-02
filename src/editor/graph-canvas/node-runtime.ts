@@ -135,6 +135,48 @@ export interface NodeRuntimeStoreOptions {
   now?: () => number;
 }
 
+/**
+ * T924/T919 — `preview` is compared BY VALUE, and that is what makes the coalescer
+ * coalesce.
+ *
+ * The producer (`use-node-previews.ts`) walks the scheduler's result each rAF tick and
+ * publishes one freshly-allocated `NodePreviewRuntime` per candidate node — active,
+ * suspended, idle and off alike. That is the right shape for the producer: it has no
+ * cache to compare against and §V28's suspension is a GPU policy, not a publishing one.
+ * But `===` on a value that is rebuilt every tick never holds, so `publish` saw a change
+ * 60 times a second, `isStructural` (below) correctly declined to flush it immediately,
+ * and `scheduleFlush` then repainted every node on the 100 ms tick FOREVER with a value
+ * that had not changed since the document opened.
+ *
+ * MEASURED against this store with 44 nodes over 3 s (`scratchpad/t919/runtime-store-churn.ts`):
+ * 1320 listener calls = 10.0 re-renders per node per second, idle, versus 44 = 0.3/s once
+ * the identical value stops counting as a change. Each of those renders also re-measured
+ * every handle on the node (`node-view.tsx`'s `useHandleBoundsInSync`), so the whole graph
+ * was doing ~1,900 forced-layout reads a second on E34-Lidar to publish nothing.
+ *
+ * §V16 is STRENGTHENED, not bent: the invariant caps the refresh rate at 10 Hz and keeps
+ * per-frame state out of the document store. It never asked for a fresh allocation, and a
+ * dedupe by identity that can never hit is a coalescer that does not coalesce. The rate
+ * cap and the pulled-not-pushed shape are untouched.
+ */
+function samePreview(a: NodePreviewRuntime | null, b: NodePreviewRuntime | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (a.output.nodeId !== b.output.nodeId || a.output.portId !== b.output.portId) return false;
+  if (a.state.kind !== b.state.kind) return false;
+  if (
+    a.state.kind === "suspended" &&
+    b.state.kind === "suspended" &&
+    a.state.reason !== b.state.reason
+  ) {
+    return false;
+  }
+  const af = a.facts;
+  const bf = b.facts;
+  if (af === undefined || bf === undefined) return af === bf;
+  return af.width === bf.width && af.height === bf.height && af.format === bf.format;
+}
+
 function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
   return (
     a.status === b.status &&
@@ -144,7 +186,7 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&
     a.agent === b.agent &&
-    a.preview === b.preview
+    samePreview(a.preview, b.preview)
   );
 }
 
@@ -223,7 +265,15 @@ export function createNodeRuntimeStore(options: NodeRuntimeStoreOptions = {}): N
 
     publish(nodeId: NodeId, patch: Partial<NodeRuntimeSnapshot>): void {
       const base = pending.get(nodeId) ?? current.get(nodeId) ?? IDLE_RUNTIME;
-      const next: NodeRuntimeSnapshot = { ...base, ...patch };
+      const merged: NodeRuntimeSnapshot = { ...base, ...patch };
+      // Hold the OLD `preview` object when the new one says the same thing, so consumers
+      // that memoise on it (the preview slot, the node info popup) see a stable reference
+      // even on a tick where a number beside it did move. `samePreview` is the compare;
+      // this is what makes the stability survive a mixed patch.
+      const next: NodeRuntimeSnapshot =
+        merged.preview !== base.preview && samePreview(base.preview, merged.preview)
+          ? { ...merged, preview: base.preview }
+          : merged;
       if (sameSnapshot(base, next)) return;
       pending.set(nodeId, next);
       const visible = current.get(nodeId) ?? IDLE_RUNTIME;

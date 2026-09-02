@@ -44,7 +44,17 @@ import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
  * off the face, so "the beam misses" had no gate because it had no expression.
  */
 
-const CAPACITY = 65; // shaft + ghost + internal + TIR leg + 61 bands
+/* T920: the beam. 2 fixed slots + SLICES(9) x BANDS(61) x 3 legs. The CENTRE slice
+ * (s = 4) is the exact ray every pre-T920 assertion measured — flat mid-face hits meet
+ * the flat part of the SDF, so the scalar-Snell claims hold to the march tolerance. */
+const SLICES = 9;
+const BANDS = 61;
+const CAPACITY = 2 + SLICES * BANDS * 3;
+const CENTRE_BASE = 2 + 4 * BANDS * 3;
+const interiorIndex = (t: number): number => CENTRE_BASE + Math.round(t * (BANDS - 1)) * 3;
+/** Any slice's exit slot, for the aperture claims. */
+const sliceExitIndex = (s: number, t: number): number => 2 + s * BANDS * 3 + Math.round(t * (BANDS - 1)) * 3 + 2;
+const tirIndex = (t: number): number => interiorIndex(t) + 1;
 const RI = 0.38; // E13's PRISM_RC / 2, pinned as the same literal E13 interpolates
 const NR: readonly [number, number] = [Math.sqrt(3) / 2, 0.5];
 const NL: readonly [number, number] = [-Math.sqrt(3) / 2, 0.5];
@@ -200,7 +210,7 @@ const bandN = (t: number, dispersion: number): number => {
   const k = 1 / (0.4 * 0.4) - invRed;
   return N_RED + (dispersion / k) * (1 / (lam * lam) - invRed);
 };
-const bandIndex = (t: number): number => 4 + Math.round(t * (CAPACITY - 5));
+const bandIndex = (t: number): number => interiorIndex(t) + 2;
 /** Inside the cross-section: every face plane satisfied, with a hair of slack. */
 const insideGlass = (point: readonly [number, number]): boolean =>
   [NR, NL, ND].every((n) => dot(point, n) <= RI - 1e-4);
@@ -218,7 +228,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
       // THE INTERNAL SEGMENT (slot 2): its refracted angle against the entry face is
       // asin(sin θi / n) — the first Snell, measured from geometry the GPU wrote.
-      const internal = segments[2]!;
+      const internal = segments[interiorIndex(0.5)]!;
       expect(length(internal)).toBeGreaterThan(0.05);
       const nMid = bandN(0.5, dispersion);
       expect(faceAngle(direction(internal), NR)).toBeCloseTo(Math.asin(Math.sin(thetaI) / nMid), 3);
@@ -251,7 +261,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       }
 
       // No TIR at the central wavelength here, so the TIR leg (slot 3) is zero-length.
-      expect(length(segments[3]!)).toBeLessThan(1e-4);
+      expect(length(segments[tirIndex(0.5)]!)).toBeLessThan(1e-4);
 
       const spread =
         faceAngle(direction(segments[bandIndex(1)]!), NL) - faceAngle(direction(segments[bandIndex(0)]!), NL);
@@ -345,10 +355,15 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     ] as const) {
       const entry = segments[0]!.tip;
       // ON the entry face's plane, at the tangential coordinate the pointer names.
-      expect(dot(entry, NR)).toBeCloseTo(RI, 4);
-      expect(tauOf(entry)).toBeCloseTo(handTauOf(px), 3);
+      // T920: the entry comes off a MARCH now (stop at sd < 6e-4), so on-the-plane holds to
+      // the march epsilon, not float exactness.
+      expect(dot(entry, NR)).toBeCloseTo(RI, 3);
+      // T920: near the apex the entry lands ON THE BEVEL — the real surface bows off the
+      // face plane by up to the corner radius — so tau matches the flat-face arithmetic
+      // to the bevel's deviation, not float exactness. Mid-face entries still land exact.
+      expect(tauOf(entry)).toBeCloseTo(handTauOf(px), 2);
       // And Snell still governs the first refraction at that new entry.
-      const internal = segments[2]!;
+      const internal = segments[interiorIndex(0.5)]!;
       expect(faceAngle(direction(internal), NR)).toBeCloseTo(
         Math.asin(Math.sin(handThetaOf(px)) / nMid),
         3,
@@ -363,15 +378,16 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     // The faces converge at the apex, so the crossing collapses — by far more than the
     // fifth the old offset channel could reach, and still a real segment.
-    expect(length(apex[2]!)).toBeLessThan(length(middle[2]!) * 0.25);
-    expect(length(apex[2]!)).toBeGreaterThan(0.02);
+    expect(length(apex[interiorIndex(0.5)]!)).toBeLessThan(length(middle[interiorIndex(0.5)]!) * 0.25);
+    expect(length(apex[interiorIndex(0.5)]!)).toBeGreaterThan(0.02);
 
     // The swing, at ANY aim, never leaves E13's shipped entry — this is the half that
     // says the walk belongs to the pointer and not to the LFO (§V361: cut the edge and
     // this is what differs).
     for (const aim of [0, 1]) {
       const swing = await runTrace({ value1: aim, value2: dispersion, value3: 0.15, value4: 0 });
-      expect(tauOf(swing[0]!.tip)).toBeCloseTo(ENTRY, 4);
+      // T920: the shaft's tip is the MARCHED entry now — on the plane to the march epsilon.
+      expect(tauOf(swing[0]!.tip)).toBeCloseTo(ENTRY, 3);
     }
   }, 300_000);
 
@@ -402,12 +418,21 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const at = async (px: number): Promise<Segment[]> =>
       runTrace({ value1: 0.5, value2: dispersion, value3: px, value4: 1 });
 
-    // Just INSIDE the apex vertex: everything is alive, so the two cases below are a
-    // boundary and not a blanket.
-    const grazing = await at(0.1);
-    expect(Math.abs(handTauOf(0.1))).toBeLessThan(HALF_FACE);
+    /* Just INSIDE the apex — T920 split this boundary in two, because the last 0.046 of
+       the face IS THE BEVEL now:
+       - px 0.2 (τ 0.48, mid-face): the flat-plane physics — light enters AND leaves.
+       - px 0.1 (τ 0.64): the flat-plane arithmetic says on-face, but the ROUNDED body
+         curves away below the sharp corner — the marched ray passes it. The bevel
+         SHRINKS the effective face by its own radius, and a ray aimed at the sharp
+         triangle's last arc-width is a real miss on the real body. The old flat trace
+         refracted here because its planes had no corner to round away. */
+    const grazing = await at(0.2);
+    expect(Math.abs(handTauOf(0.2))).toBeLessThan(HALF_FACE);
     expect(length(grazing[bandIndex(0.5)]!)).toBeGreaterThan(0.5);
-    expect(length(grazing[2]!)).toBeGreaterThan(0.005);
+    expect(length(grazing[interiorIndex(0.5)]!)).toBeGreaterThan(0.005);
+    const onBevel = await at(0.1);
+    expect(length(onBevel[interiorIndex(0.5)]!)).toBeLessThan(1e-4); // past the round-over: a miss
+    expect(length(onBevel[bandIndex(0.5)]!)).toBeLessThan(1e-4);
 
     for (const px of [0.05, 0.95]) {
       const tau = handTauOf(px);
@@ -415,7 +440,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       const segments = await at(px);
 
       // Nothing refracts. Ghost, internal segment, TIR leg and all 61 bands are points.
-      for (const index of [1, 2, 3]) expect(length(segments[index]!)).toBeLessThan(1e-4);
+      for (const index of [1, interiorIndex(0.5), tirIndex(0.5)]) expect(length(segments[index]!)).toBeLessThan(1e-4);
       for (const t of [0, 0.5, 1]) expect(length(segments[bandIndex(t)]!)).toBeLessThan(1e-4);
 
       // The shaft goes THROUGH instead of stopping: 2.10 behind the plane, 2.60 past it.
@@ -507,6 +532,69 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       expect(faceAngle(direction(band), NL)).toBeCloseTo(baseTheta, 3);
     }
     // The reflected leg inside the body is DRAWN, which is what makes TIR a path here.
-    expect(length(segments[3]!)).toBeGreaterThan(0.02);
+    expect(length(segments[tirIndex(0.5)]!)).toBeGreaterThan(0.02);
+  }, 300_000);
+
+  /**
+   * T920 — THE APERTURE MEETS THE BEVEL, and the caustic seed is measurable: the exit
+   * DIRECTIONS of the beam's slices are parallel when the whole aperture lands mid-face
+   * (flat glass: parallel in, parallel out — the §T914 amendment's own arithmetic), and
+   * they DIVERGE when part of the aperture rides the corner round-over, because each
+   * slice meets a different normal there. Same kernel, same wavelength, no branch — only
+   * WHERE the beam lands. The curved bright envelope on screen is these diverging
+   * straight rays overlapping; this asserts its cause at the geometry.
+   */
+  it("slices exit parallel from the flat face and diverge across the bevel (T920)", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const spreadAcrossSlices = async (px: number): Promise<number> => {
+      const segments = await runTrace({ value1: 0.5, value2: 0.03, value3: px, value4: 1 });
+      const angles: number[] = [];
+      for (const s of [0, 4, 8]) {
+        const seg = segments[sliceExitIndex(s, 0.5)]!;
+        if (length(seg) < 1e-3) continue; // a trapped/missed slice carries no direction
+        const d = direction(seg);
+        angles.push(Math.atan2(d[1], d[0]));
+      }
+      expect(angles.length).toBeGreaterThanOrEqual(2);
+      return Math.max(...angles) - Math.min(...angles);
+    };
+
+    // Mid-face: the whole aperture on flat glass — parallel to the march's precision.
+    const flat = await spreadAcrossSlices(0.3);
+    expect(flat).toBeLessThan(0.002);
+    // Riding the round-over (τ ≈ 0.58, the face's last arc-width): the slices meet a
+    // sweeping normal and their exits genuinely diverge — measured ≥ 20× the flat case.
+    const bevel = await spreadAcrossSlices(0.14);
+    expect(bevel).toBeGreaterThan(0.04);
+  }, 300_000);
+
+  /**
+   * T920 — DISPERSION IS VISIBLE INSIDE THE GLASS (the owner's reference (a)): the
+   * per-band INTERIOR segments genuinely part before any exit face — violet's internal
+   * direction differs from red's straight off the entry Snell, and their far-wall
+   * landings separate. The old kernel computed these paths and drew one.
+   */
+  it("violet peels from red INSIDE the body — per-band interiors, drawn and divergent", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const segments = await runTrace({ value1: 1, value2: 0.03, value4: 0 });
+    const red = segments[interiorIndex(0)]!;
+    const violet = segments[interiorIndex(1)]!;
+    expect(length(red)).toBeGreaterThan(0.05);
+    expect(length(violet)).toBeGreaterThan(0.05);
+    const dr = direction(red);
+    const dv = direction(violet);
+    const parted = Math.abs(Math.atan2(dr[1], dr[0]) - Math.atan2(dv[1], dv[0]));
+    // Analytic: asin(sin37°/1.5) − asin(sin37°/1.53) ≈ 0.0055 rad. The claim is the
+    // ORDER and the separation, not the fourth decimal — but it must be real spread,
+    // not march noise.
+    expect(parted).toBeGreaterThan(0.003);
+    expect(parted).toBeLessThan(0.02);
+    // And the far-wall landings part with them: the in-glass spread reaches the wall.
+    const landed = Math.hypot(red.tip[0] - violet.tip[0], red.tip[1] - violet.tip[1]);
+    expect(landed).toBeGreaterThan(0.002);
   }, 300_000);
 });

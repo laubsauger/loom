@@ -756,17 +756,20 @@ function PreviewLensMark({ nodeId, source }: { nodeId: NodeId; source: PreviewLe
  *
  * Naming the things that move a handle is how this bug comes back: the list is open, and
  * the next entry is added by someone editing the JSX with no idea this file exists. So
- * the effect runs after EVERY render of this node and asks the browser the same question
- * React Flow's own measurement asks — where is each handle, relative to the node. If the
- * answer changed, the cache is stale, whatever caused it.
+ * nothing here names a trigger. It asks the browser the same question React Flow's own
+ * measurement asks — where is each handle, relative to the node — and if the answer
+ * changed, the cache is stale, whatever caused it. What WAKES the question is derived from
+ * the DOM as well (see the observers at the bottom of this hook, T924): it used to be
+ * "after every render of this component", which named nothing but also re-measured on 10 Hz
+ * repaints in which nothing had moved, and still missed anything that moved without
+ * rendering this component.
  *
  * ## Why it is guarded rather than unconditional
  *
- * `updateNodeInternals` walks the node lookup and notifies the store on every call, and
- * this component re-renders on the runtime channel at up to 10 Hz (§V16). Calling it
- * unconditionally would put an O(nodes) pass behind every GPU-timing tick on every node
- * on the canvas — trading a geometry bug for a performance one. The signature below is a
- * handful of integers read from a layout React has just committed.
+ * `updateNodeInternals` walks the node lookup and notifies the store on every call, so
+ * calling it on every wake would put an O(nodes) pass behind every observer callback on
+ * every node on the canvas — trading a geometry bug for a performance one. The signature
+ * below is a handful of integers read from a committed layout.
  *
  * Offsets are relative to the node and divided by the live scale, so neither panning nor
  * zooming the canvas — which move and scale every rect on screen without moving one
@@ -803,30 +806,84 @@ function useHandleBoundsInSync(id: string, portsRef: RefObject<HTMLElement | nul
     if (!first) updateNodeInternals(id);
   }, [id, portsRef, updateNodeInternals]);
 
-  useLayoutEffect(sync);
+  /*
+   * ONE MEASUREMENT IN THE LAYOUT PHASE, ON MOUNT, AND THEN NEVER AGAIN ON A RENDER (T924).
+   *
+   * This used to be `useLayoutEffect(sync)` with NO dependency array, so it re-measured
+   * the node and every one of its handles after every render of this component. T919
+   * measured what that cost on E34-Lidar (44 nodes, 102 handles): 1,900 forced-layout
+   * reads a second, against 150 on a small example — and almost all of them were paid for
+   * the 10 Hz preview repaint that T924(1) has now removed, i.e. for renders in which
+   * nothing on the node had moved at all.
+   *
+   * Only the FIRST measurement needs the layout phase: it seeds `measured` from the layout
+   * React has just committed, matching what React Flow measured on mount, and it publishes
+   * nothing (see the guard above). Everything after it is covered by the observers below.
+   */
+  useLayoutEffect(sync, [sync]);
 
   /*
-   * The second watcher, and it is not belt-and-braces — the two see different things.
+   * WHAT THIS EFFECT DEPENDS ON IS THE DOM, NOT THE RENDER — SO IT WATCHES THE DOM (T924).
    *
-   * The effect above runs when THIS component renders, and `NodeView` is memoised on
-   * purpose (§V16): a child that holds its own subscription can re-render alone. That is
-   * exactly what `VariadicPortRows` does, so the gesture that adds a port row — the T695
-   * one, and the one most likely to move a handle — never reaches the parent at all.
-   * Measured: without this observer the second wire into a variadic input lands on the
-   * FIRST socket, because React Flow resolves the drop against bounds that still describe
-   * a port with one socket in it.
+   * T924 asked for a dependency array on the layout effect above. The honest answer to
+   * "what does it depend on" is: the geometry of everything laid out above and inside the
+   * ports block. That is NOT a list of this component's props and state, and writing one
+   * would have been the mistake this file's own docblock warned about two sections up —
+   * plus two live blind spots that only exist because the 10 Hz repaint was papering over
+   * them:
    *
-   * A `ResizeObserver` on the ports block sees any child's row arriving or leaving; the
-   * render-time effect sees the block MOVING inside a node whose box is fixed, which no
-   * resize observer anywhere can see. Neither covers the other.
+   *   - the preview slot's height follows `--preview-aspect`, a CSS variable the GRAPH PANE
+   *     publishes from the document's output resolution. It changes with NO render of this
+   *     component, and it moves the ports block.
+   *   - `renderPreview` / `renderControls` fill slots above the ports with subtrees this
+   *     component does not own and does not re-render with (§V16 — they hold their own
+   *     subscriptions, which is the whole point).
+   *
+   * So the trigger set is derived from the DOM instead of enumerated:
+   *
+   *   - a `ResizeObserver` on the node's own box AND on every one of its direct children.
+   *     Any element above the ports changing height moves the ports; any element that can
+   *     do that IS one of those children, whoever rendered it. A CSS transform does not
+   *     resize a border box, so panning and zooming the canvas still cost nothing.
+   *   - a `MutationObserver` for STRUCTURE: `childList` on the node box re-establishes the
+   *     child set when a row (the agent line, the diagnostic message) arrives or leaves,
+   *     and `childList` with `subtree` on the ports catches rows being added, removed or
+   *     REORDERED inside a block whose total size did not change — the one movement no
+   *     resize observer anywhere can see. It is `childList` only, so the GPU-time text
+   *     ticking in the header does not wake it.
+   *
+   * This keeps T694's coverage (a handle moving inside a box that never resizes) and T695's
+   * (a variadic row arriving without the parent rendering), and adds the two blind spots
+   * above, while costing zero layout reads on a render where nothing moved.
    */
   useEffect(() => {
     const ports = portsRef.current;
-    if (ports === null || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(sync);
-    observer.observe(ports);
+    const box = ports?.parentElement ?? null;
+    if (ports === null || box === null) return;
+    if (typeof ResizeObserver === "undefined") return;
+
+    const boxes = new ResizeObserver(sync);
+    const observeBoxes = (): void => {
+      boxes.disconnect();
+      boxes.observe(box);
+      for (const child of box.children) boxes.observe(child);
+    };
+    observeBoxes();
+
+    if (typeof MutationObserver === "undefined") {
+      return () => {
+        boxes.disconnect();
+      };
+    }
+    const structure = new MutationObserver(() => {
+      observeBoxes();
+      sync();
+    });
+    structure.observe(box, { childList: true });
+    structure.observe(ports, { childList: true, subtree: true });
     return () => {
-      observer.disconnect();
+      boxes.disconnect();
+      structure.disconnect();
     };
   }, [portsRef, sync]);
 }

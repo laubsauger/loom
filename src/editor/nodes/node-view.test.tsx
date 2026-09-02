@@ -704,3 +704,101 @@ describe("T639(d)/T640 — an instance's type label says what the node IS", () =
     expect(label?.textContent).not.toBe("animated");
   });
 });
+
+/**
+ * T924(2) / T919 — A RE-RENDER THAT MOVED NOTHING MUST NOT ASK THE BROWSER WHERE ANYTHING IS.
+ *
+ * `useHandleBoundsInSync` used to be a `useLayoutEffect` with no dependency array, running
+ * after EVERY render of this component and reading `getBoundingClientRect()` on the node and
+ * on every one of its handles — inside React Flow's transformed subtree, immediately after
+ * React had mutated the DOM. T919 measured the bill on E34-Lidar (44 nodes, 102 handles):
+ * 1,900 forced-layout reads a second, against 150 on the cheap example, and essentially all
+ * of them were paid for the 10 Hz preview repaint that T924(1) removed.
+ *
+ * This asserts the property that measurement named — layout reads per re-render — rather
+ * than the shape of the fix, because the shape may change again and the number is the point.
+ * `gpuMs` is the cleanest case there is: it is a per-frame READOUT on a fixed-height header
+ * row (§V16), so it re-renders the node and cannot move a socket by construction.
+ *
+ * It mounts the node inside a `.react-flow__node` wrapper, which `mountNode` above does not:
+ * the hook looks its node element up with `closest()`, so without the wrapper it returns
+ * before measuring anything and this gate would pass on a corpse.
+ *
+ * The other half is the e2e gate that already exists (`src/tests/e2e/handle-alignment.spec.ts`),
+ * which measures real drift in a real browser and is what keeps this from being satisfiable
+ * by simply never measuring.
+ */
+describe("T924 — a metric-only re-render costs no forced layout", () => {
+  function mountInFlowNode(type: string) {
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("n"),
+      initialGraph: graphWith(type),
+    });
+    const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
+    const { value, runtime } = fixtureContext({ store: bus.store, registry: bus.registry });
+    const view = render(
+      <CanvasFixture value={value}>
+        <div className="react-flow__node" data-id="n1">
+          <NodeView {...nodeProps("n1")} />
+        </div>
+      </CanvasFixture>,
+    );
+    return { ...view, runtime, nodeId: "n1" };
+  }
+
+  function countLayoutReads() {
+    const original = Element.prototype.getBoundingClientRect;
+    let reads = 0;
+    const spy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        if (
+          this.classList.contains("react-flow__handle") ||
+          this.classList.contains("react-flow__node")
+        ) {
+          reads += 1;
+        }
+        return original.call(this);
+      });
+    return {
+      get count() {
+        return reads;
+      },
+      reset() {
+        reads = 0;
+      },
+      restore() {
+        spy.mockRestore();
+      },
+    };
+  }
+
+  it("re-measures on mount and not again when only a runtime number moved", async () => {
+    const reads = countLayoutReads();
+    try {
+      const { runtime, nodeId, container } = mountInFlowNode("test.composite");
+      // Let the observers deliver their first callback (the jsdom stub fires on a macrotask).
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+      // It DID measure — otherwise this gate would pass by the hook being dead.
+      expect(container.querySelectorAll(".react-flow__handle").length).toBeGreaterThan(0);
+      expect(reads.count).toBeGreaterThan(0);
+
+      reads.reset();
+      await publish(runtime, nodeId, { gpuMs: 1.25 });
+      // The render really happened: the header is showing the new number.
+      expect(container.textContent).toContain("1.25 ms");
+      expect(reads.count).toBe(0);
+
+      // And it stays zero across a run of them, which is what "per second" means.
+      for (const gpuMs of [1.5, 1.75, 2, 2.25, 2.5]) {
+        await publish(runtime, nodeId, { gpuMs });
+      }
+      expect(container.textContent).toContain("2.50 ms");
+      expect(reads.count).toBe(0);
+    } finally {
+      reads.restore();
+    }
+  });
+});
