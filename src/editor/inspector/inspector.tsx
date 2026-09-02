@@ -536,10 +536,14 @@ export function Inspector({
       <div className={styles.inspector} data-node-id={node.id} data-keymap-context="inspector">
         {header}
         {unknownNotice}
-        {parameterSections}
+        {/* The device sections come FIRST: they are the controls, and the parameter
+            groups below them hold the RESULT — a midiIn's `mapping` is the JSON the learn
+            table writes, and reading the output above the thing that produces it is
+            backwards. */}
         {audioSection}
         {webcamSection}
         {midiSection}
+        {parameterSections}
         {commonSection}
       </div>
     );
@@ -555,10 +559,11 @@ export function Inspector({
           <TabsTrigger value="common">Common</TabsTrigger>
         </TabsList>
         <TabsContent className={cx(styles.page, styles.page)} value="parameters">
-          {parameterSections}
+          {/* Controls above the result they write — see the node variant above. */}
           {audioSection}
           {webcamSection}
           {midiSection}
+          {parameterSections}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
           {commonSection}

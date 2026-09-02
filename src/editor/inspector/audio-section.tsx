@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
+import { ControlRow } from "@ui/controls/control-row.tsx";
+import { EnumField } from "@ui/controls/enum-field.tsx";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import styles from "./inspector.module.css";
 
@@ -83,29 +85,32 @@ export function AudioSection({ nodeId, nodeType, device, status, editor }: Audio
         <span>Audio capture</span>
         <span className={styles.sectionRule} aria-hidden />
       </div>
-      <div role="status" data-audio-status={status.kind}>
+      <div className={styles.statusLine} role="status" data-audio-status={status.kind}>
         {STATUS_TEXT[status.kind]}
         {status.message === undefined ? "" : ` — ${status.message}`}
       </div>
       {nodeType === "audioIn" ? (
-        <label>
-          Device
-          <select
-            value={device}
-            aria-label="Microphone device"
-            onChange={(event) => editor.setParameter(nodeId, "device", event.currentTarget.value, "commit")}
-          >
-            <option value="">System default</option>
-            {devices.map((entry, index) => (
-              <option key={entry.deviceId || index} value={entry.deviceId}>
-                {entry.label === "" ? `Microphone ${index + 1}` : entry.label}
-              </option>
-            ))}
-          </select>
+        <>
+          {/* The kit's picker, not a bare `<select>`: a raw one renders as the OS's grey
+              chrome in the middle of a themed panel (§V17/§V19). */}
+          <ControlRow label="Device">
+            <EnumField
+              label="Microphone device"
+              value={device}
+              options={[
+                { value: "", label: "System default" },
+                ...devices.map((entry, index) => ({
+                  value: entry.deviceId,
+                  label: entry.label === "" ? `Microphone ${String(index + 1)}` : entry.label,
+                })),
+              ]}
+              onChange={(next) => editor.setParameter(nodeId, "device", next, "commit")}
+            />
+          </ControlRow>
           {unlabelled ? (
-            <span className={styles.emptyPage}>Grant microphone access to see device names.</span>
+            <span className={styles.statusHint}>Grant microphone access to see device names.</span>
           ) : null}
-        </label>
+        </>
       ) : null}
     </section>
   );

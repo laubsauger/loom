@@ -1,41 +1,125 @@
 /* T942 tier 1 — the learn table's own layout. A NEW file rather than lines added to
    `inspector.module.css`: the shared sheet is a hot surface across sessions, and a
    node-specific table has no business in it (`audio-section` and `webcam-section` needed
-   nothing of their own, which is why neither has one). */
+   nothing of their own, which is why neither has one).
+
+   Every control the table draws is the shared kit (`Button`, `ControlRow`, `EnumField`,
+   `TextField`); what is left here is ARRANGEMENT — the card a binding sits in, and the
+   two range fields the kit deliberately does not supply (see `.number`).
+   Colours are tokens only (§V17). */
 
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-3);
 }
 
+/*
+  A binding is a CARD, not two loose lines. The name, the arm and the removal are one
+  header; what the row is bound to and how it maps sit under it in a fixed three-column
+  grid, so Low, High and Mode line up down the whole table instead of reflowing per row.
+*/
 .row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-raise);
+}
+
+.rowHead {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 6px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
+  gap: var(--space-2);
 }
 
 .rowDetail {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-.rowDetail input[type="number"] {
-  width: 5.5em;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: var(--space-2) var(--space-3);
 }
 
 .source {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
 }
 
-.learning {
-  opacity: 1;
-  font-weight: 600;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/*
+  The range ends are a PLAIN styled input, and that is a decision rather than an oversight.
+
+  `NumberField` is the kit's numeric control and it carries the magnitude ladder — which
+  re-quantises the value it is showing, so a limit set at 0.001 collapses to 0 the next
+  time the field is touched (§T989, open, filed as data loss). A MIDI range is exactly the
+  value that bug destroys: it is unbounded, it has no manifest step to derive a grid from,
+  and fine limits are the normal case. So this borrows the kit's LOOK — same height, same
+  well, same hairline, same mono face — and keeps a raw `value`/`onChange` that stores what
+  was typed. Swap it for `NumberField` once T989 lands.
+
+  The native spinner is dropped: it is the OS's chrome, it is the widest thing in the row,
+  and ↑/↓ still nudge without it.
+*/
+.number {
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: var(--border-hairline);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.number:hover {
+  border-color: var(--line-hot);
+}
+
+.number::-webkit-outer-spin-button,
+.number::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+/* ---- status (§V359) --------------------------------------------------
+   Only the STACK is here; the two lines inside it wear `inspector.module.css`'s
+   `.statusLine`/`.statusHint`, which the mic and camera sections use as well. */
+
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.footer {
+  display: flex;
+  padding-top: var(--space-2);
 }
 
 .problem {

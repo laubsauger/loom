@@ -4,6 +4,11 @@ import type { MidiBinding, MidiSource } from "@domain/midi/midi-mapping.ts";
 import { describeMidiSource, parseMidiMapping, serialiseMidiMapping } from "@domain/midi/midi-mapping.ts";
 import type { MidiAccessState, MidiInputPort } from "@domain/midi/midi-status.ts";
 import { midiStatusLine } from "@domain/midi/midi-status.ts";
+import { Button } from "@ui/primitives/button.tsx";
+import { ControlRow } from "@ui/controls/control-row.tsx";
+import { EnumField } from "@ui/controls/enum-field.tsx";
+import { TextField } from "@ui/controls/text-field.tsx";
+import type { EnumOption } from "@ui/controls/enum-field.tsx";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import styles from "./inspector.module.css";
 import rows from "./midi-section.module.css";
@@ -44,7 +49,20 @@ import rows from "./midi-section.module.css";
  * none — hiding it would make "not supported here" and "nobody built this" the same pixels.
  * The reason and the action come from `midiStatusLine`, where they are under the §V90
  * length cap and under a test; nothing about the state is decided in this file.
+ *
+ * ## It wears the kit (§V17, §V19)
+ *
+ * Every control here is the shared one — `Button`, `ControlRow`, `EnumField`, `TextField` —
+ * because a section built from bare `<button>`/`<select>` renders as the OS's grey chrome
+ * in the middle of a themed panel, which is what it did until this was fixed. The two
+ * range fields are the one exception and it is deliberate: see `.number` below.
  */
+
+/** Absolute or toggle — a two-value enum, so the kit's picker rather than a raw select. */
+const MODE_OPTIONS: readonly EnumOption[] = [
+  { value: "absolute", label: "Absolute" },
+  { value: "toggle", label: "Toggle" },
+];
 
 export interface MidiSectionSurface {
   readonly state: MidiAccessState;
@@ -139,31 +157,32 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
         <span className={styles.sectionRule} aria-hidden />
       </div>
 
-      <div role="status" data-midi-status={midi.state.kind}>
-        {status.headline}
+      <div className={rows.status}>
+        <div className={styles.statusLine} role="status" data-midi-status={midi.state.kind}>
+          {status.headline}
+        </div>
+        {status.hint === null ? null : <span className={styles.statusHint}>{status.hint}</span>}
+        {status.canRequest ? (
+          <Button variant="outline" onClick={midi.request}>
+            Enable MIDI
+          </Button>
+        ) : null}
       </div>
-      {status.hint === null ? null : <span className={styles.emptyPage}>{status.hint}</span>}
-      {status.canRequest ? (
-        <button type="button" onClick={midi.request}>
-          Enable MIDI
-        </button>
-      ) : null}
 
-      <label>
-        Device
-        <select
+      <ControlRow label="Device">
+        <EnumField
+          label="MIDI input"
           value={device}
-          aria-label="MIDI input"
-          onChange={(event) => editor.setParameter(nodeId, "device", event.currentTarget.value, "commit")}
-        >
-          <option value="">Any input</option>
-          {midi.ports.map((port, index) => (
-            <option key={port.id} value={port.id}>
-              {port.name === "" ? `Input ${String(index + 1)}` : port.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: "", label: "Any input" },
+            ...midi.ports.map((port, index) => ({
+              value: port.id,
+              label: port.name === "" ? `Input ${String(index + 1)}` : port.name,
+            })),
+          ]}
+          onChange={(next) => editor.setParameter(nodeId, "device", next, "commit")}
+        />
+      </ControlRow>
 
       {parsed.error === null ? null : (
         <p className={rows.problem} role="alert">
@@ -177,32 +196,40 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
         ) : null}
         {parsed.bindings.map((binding) => (
           <div className={rows.row} key={binding.channel}>
-            <input
-              type="text"
-              value={binding.channel}
-              aria-label={`Channel name for ${binding.channel}`}
-              onChange={(event) => {
-                const renamed = event.currentTarget.value;
-                commit(
-                  latest.current.map((entry) =>
-                    entry.channel === binding.channel ? { ...entry, channel: renamed } : entry,
-                  ),
-                );
-              }}
-            />
-            <button
-              type="button"
-              disabled={!canLearn}
-              className={learning === binding.channel ? rows.learning : undefined}
-              onClick={() => learn(binding.channel)}
-            >
-              {learning === binding.channel ? "Move a control" : "Learn"}
-            </button>
+            <div className={rows.rowHead}>
+              <TextField
+                label={`Channel name for ${binding.channel}`}
+                value={binding.channel}
+                onChange={(renamed) => {
+                  commit(
+                    latest.current.map((entry) =>
+                      entry.channel === binding.channel ? { ...entry, channel: renamed } : entry,
+                    ),
+                  );
+                }}
+              />
+              <Button
+                variant="outline"
+                disabled={!canLearn}
+                aria-pressed={learning === binding.channel}
+                onClick={() => learn(binding.channel)}
+              >
+                {learning === binding.channel ? "Move a control" : "Learn"}
+              </Button>
+              <Button
+                onClick={() =>
+                  commit(latest.current.filter((entry) => entry.channel !== binding.channel))
+                }
+              >
+                Remove
+              </Button>
+            </div>
             <div className={rows.rowDetail}>
               <span className={rows.source}>{describeMidiSource(binding.source)}</span>
-              <label>
-                Low
+              <label className={rows.field}>
+                <span className={rows.fieldLabel}>Low</span>
                 <input
+                  className={rows.number}
                   type="number"
                   step="0.001"
                   value={binding.range[0]}
@@ -219,9 +246,10 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
                   }}
                 />
               </label>
-              <label>
-                High
+              <label className={rows.field}>
+                <span className={rows.fieldLabel}>High</span>
                 <input
+                  className={rows.number}
                   type="number"
                   step="0.001"
                   value={binding.range[1]}
@@ -238,49 +266,41 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
                   }}
                 />
               </label>
-              <label>
-                Mode
-                <select
+              <div className={rows.field}>
+                <span className={rows.fieldLabel}>Mode</span>
+                <EnumField
+                  label={`Mode for ${binding.channel}`}
                   value={binding.mode}
-                  aria-label={`Mode for ${binding.channel}`}
-                  onChange={(event) => {
-                    const mode = event.currentTarget.value === "toggle" ? "toggle" : "absolute";
+                  options={MODE_OPTIONS}
+                  onChange={(next) => {
+                    const mode = next === "toggle" ? "toggle" : "absolute";
                     commit(
                       latest.current.map((entry) =>
                         entry.channel === binding.channel ? { ...entry, mode } : entry,
                       ),
                     );
                   }}
-                >
-                  <option value="absolute">Absolute</option>
-                  <option value="toggle">Toggle</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  commit(latest.current.filter((entry) => entry.channel !== binding.channel))
-                }
-              >
-                Remove
-              </button>
+                />
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          const channel = nextChannelName(latest.current);
-          commit([
-            ...latest.current,
-            { channel, source: null, range: [0, 1] as const, mode: "absolute" as const },
-          ]);
-        }}
-      >
-        Add control
-      </button>
+      <div className={rows.footer}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            const channel = nextChannelName(latest.current);
+            commit([
+              ...latest.current,
+              { channel, source: null, range: [0, 1] as const, mode: "absolute" as const },
+            ]);
+          }}
+        >
+          Add control
+        </Button>
+      </div>
     </section>
   );
 }

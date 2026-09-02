@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
+import { ControlRow } from "@ui/controls/control-row.tsx";
+import { EnumField } from "@ui/controls/enum-field.tsx";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import styles from "./inspector.module.css";
 
@@ -71,24 +73,25 @@ export function WebcamSection({ nodeId, device, editor }: WebcamSectionProps) {
         <span>Camera</span>
         <span className={styles.sectionRule} aria-hidden />
       </div>
-      <label>
-        Device
-        <select
+      {/* The kit's picker, the mic section's twin: a bare `<select>` renders as the OS's
+          grey chrome in the middle of a themed panel (§V17/§V19). */}
+      <ControlRow label="Device">
+        <EnumField
+          label="Camera device"
           value={device}
-          aria-label="Camera device"
-          onChange={(event) => editor.setParameter(nodeId, "device", event.currentTarget.value, "commit")}
-        >
-          <option value="">System default</option>
-          {devices.map((entry, index) => (
-            <option key={entry.deviceId || index} value={entry.deviceId}>
-              {entry.label === "" ? `Camera ${index + 1}` : entry.label}
-            </option>
-          ))}
-        </select>
-        {unlabelled ? (
-          <span className={styles.emptyPage}>Grant camera access to see device names.</span>
-        ) : null}
-      </label>
+          options={[
+            { value: "", label: "System default" },
+            ...devices.map((entry, index) => ({
+              value: entry.deviceId,
+              label: entry.label === "" ? `Camera ${String(index + 1)}` : entry.label,
+            })),
+          ]}
+          onChange={(next) => editor.setParameter(nodeId, "device", next, "commit")}
+        />
+      </ControlRow>
+      {unlabelled ? (
+        <span className={styles.statusHint}>Grant camera access to see device names.</span>
+      ) : null}
     </section>
   );
 }
