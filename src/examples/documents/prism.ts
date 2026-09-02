@@ -17,11 +17,10 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  *   shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1(add).in2
  *   shot1 ─────────────────────────────────────────────► glow1(add).in1 ─► out1
  *
- *   swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1   the AIM, auto
+ *   optics1.value1 = 1 (static)                                       the AIM, at rest (T915)
  *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3              the AIM, by hand
  *   follow1 ─► stir1(valueSlope) ─► urge1(valueMath) ─► hold1(valueLag)
  *                                          ┄drives┄► optics1.value4   WHICH ONE (T857)
- *   drift1(lfo, sine) ┄drives┄► eye1.eye.x
  *   fan1.tint ← the `tint` attribute (map mode, T478)
  *
  * THE OWNER'S REFERENCE, and the one technical fact that makes it buildable: A PRISM
@@ -92,11 +91,12 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * the violet end TOTALLY INTERNALLY REFLECTS — which the old optics expressed by returning
  * a zero vector, so a band quietly left the spectrum. T718 removed that reason when it made
  * TIR a drawn PATH (reflect at the exit face, cross to the base, Snell out there), and
- * §V750 says a compensation outlives its cause unless somebody goes and looks. So T857
- * looked: the swing keeps its 37°–62° band because two comfortable aims are what a
- * hold-and-slam shutter WANTS, and the POINTER now runs 84° down to 6°, straight through
- * the onset — the violet end turns at 34.5° and the red end at 27.9°, so between them the
- * spectrum leaves through TWO FACES AT ONCE. That picture was unreachable before.
+ * §V750 says a compensation outlives its cause unless somebody goes and looks. T857
+ * widened the POINTER to 84° down to 6°, straight through the TIR onset — the violet end
+ * turns before the red end, so between them the spectrum leaves through TWO FACES AT
+ * ONCE, a picture only the hand can reach (T915 made the rest state static; and note
+ * §T913's physical Δn narrowed that straddle band — real glass makes the two-face split
+ * rarer than the old exaggerated spread did, a fidelity/legibility trade the aim owns).
  *
  * ONE SOURCE, TWO READINGS (§V471.1). `optics1` writes 65 points — the shaft, the ghost,
  * the drawn internal segment and its TIR continuation (T718),
@@ -122,11 +122,11 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * the T718 swap) while the FAN keeps its no-burial claim at fewer than 30 px against a
  * red-verified real burial of 209 (§V751).
  *
- * TWO HANDS ON THE AIM, AND THEY DO NOT ADD (T857). `swing1(lfo, square) →
- * ease1(valueLag) → value1` is the canonical chain and the square is deliberate: a square
- * through a one-pole smoother IS an ease, so delete `ease1` and the beam snaps between two
- * angles like a shutter instead of swinging. `mouse1 → follow1(valueLag) → value3` is the
- * pointer. What changed is how the two MEET.
+ * ONE HAND ON THE AIM, OVER A CHOSEN REST (T857, T915). The auto swing is GONE — the
+ * owner: "it should be static aside from user interaction" — so `value1` is a static
+ * default (1: the band's steep end, the widest measured fan, chosen deliberately because
+ * the rest state IS the shipped image now, §V471). `mouse1 → follow1(valueLag) → value3`
+ * is the pointer. How the hand and the rest MEET is unchanged from T857:
  *
  * They used to be summed in the kernel — `clamp(value1 + 0.55·value3, 0, 1)` — and the
  * owner's report reads straight off that line: *the mouse controls get overridden by the
@@ -141,7 +141,7 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * fed by `follow1 → stir1(valueSlope) → urge1(×itself) → hold1(valueLag)` — the cursor's
  * speed, squared to make it unsigned, through an envelope that rises in 0.02s and falls
  * over 0.6s. A cursor moving faster than a twentieth of the frame per second owns the aim
- * outright; a couple of seconds after it stops, the swing has it back. And a cursor that
+ * outright; a couple of seconds after it stops, the rest aim has it back. And a cursor that
  * has NEVER moved reads exactly 0 through all three stages, so every gate and every fresh
  * session still sees the LFO's picture, bit for bit, exactly as the additive build promised.
  *
@@ -157,10 +157,10 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * owner asked for, and the picture stays coherent because the glass is lit by the
  * environment and never by the beam.
  *
- * `drift1` sways the camera 0.22 either side of 0.45 over 22 seconds, and that is not
- * decoration: `envFresnel` reads `dot(N, viewDir)`, so moving the eye moves WHICH thread
- * of the round-over is at grazing. The rim travels. A static camera over this material is
- * the one thing that would make an edge-lit prism look painted.
+ * The camera holds still at eye.x 0.45 (T915 removed its drift with the swing — static
+ * aside from interaction). The cost is stated rather than hidden: `envFresnel` reads
+ * `dot(N, viewDir)`, so a moving eye is what made the rim travel; at rest the rim sits
+ * where the pose puts it, and the motion budget belongs entirely to the pointer.
  *
  * WHAT IS NOT HERE. There is no caustic on the base. The reference has one; we have no
  * refraction, so a caustic would be light we invented and placed, and §V617 means a beam
@@ -287,12 +287,10 @@ export const prismDocument = document(
   }),
   graph(
     [
-      // ---- the aim: two chains, added in the kernel -------------------------------
-      // A SQUARE, deliberately: a square through a one-pole smoother IS an ease, so
-      // `ease1` is visible rather than theoretical — delete it and the beam snaps
-      // between two angles like a shutter instead of swinging.
-      node("swing", "lfo", [-1880, 640], { shape: "square", frequency: 0.18, amplitude: 0.5, offset: 0.5, phase: 0 }, { label: "swing1" }),
-      node("ease", "valueLag", [-1560, 640], { lag: 0.6 }, { label: "ease1" }),
+      // ---- the aim: the pointer over a STATIC default (T915) -----------------------
+      // The swing LFO is GONE — the owner: "it should be static aside from user
+      // interaction". The default aim is value1's static payload below; the pointer takes
+      // the aim while it moves (T857) and the lag chain hands it back to the static.
       node("mouse", "mouse", [-1880, 840], {}, { label: "mouse1" }),
       node("follow", "valueLag", [-1560, 840], { lag: 0.18 }, { label: "follow1" }),
       // T857 — THE POINTER'S AUTHORITY, in three stages that each do one job. `stir1` is
@@ -305,10 +303,6 @@ export const prismDocument = document(
       node("stir", "valueSlope", [-1240, 840], {}, { label: "stir1" }),
       node("urge", "valueMath", [-920, 840], { operation: "multiply", operand: 1 }, { label: "urge1" }),
       node("hold", "valueLag", [-600, 840], { lag: 0.02, releaseRatio: 30 }, { label: "hold1" }),
-      // `envFresnel` reads dot(N, viewDir), so moving the eye moves WHICH thread of the
-      // round-over is at grazing: the rim TRAVELS. A static camera is the one thing that
-      // would make an edge-lit prism look painted.
-      node("drift", "lfo", [-1880, 1040], { shape: "sine", frequency: 0.045, amplitude: 0.22, offset: 0.45, phase: 0 }, { label: "drift1" }),
 
       // ---- the glass -------------------------------------------------------------
       node("bar", "pointTube", [-1880, -420], { count: PRISM_COLS * PRISM_ROWS, cols: PRISM_COLS, rows: PRISM_ROWS }, { label: "bar1" }),
@@ -363,7 +357,11 @@ export const prismDocument = document(
         // swing's aim on its own narrow scale, `value3` the pointer's on the wide one,
         // and `value4` decides which of the two the kernel is looking at.
         parameters: {
-          value1: drivenSlot("ease1", 0.5),
+          /* T915: the STATIC default aim — the rest state IS the shipped image now, so it is
+             chosen, not inherited from where the swing's midpoint fell (§V471). 1 is the
+             band's steep end (θ1 = 37°), the aim the picture gate measures the WIDEST fan
+             at — the frame that shows §T913's dispersion rather than a white line. */
+          value1: 1,
           value3: drivenSlot("follow1:x", 0),
           value4: drivenSlot("hold1:x", 0),
         },
@@ -416,7 +414,7 @@ export const prismDocument = document(
         // bend the spectrum's straight rays. The eye sits barely off the prism's own
         // axis, which is what keeps the lateral faces to a sliver instead of a slab.
         eye: [0.45, -0.36, 6.6], lookAt: [-0.05, -0.53, 0], fov: 26, near: 0.1, far: 40, ortho: false,
-      }, { label: "eye1", parameters: { "eye.x": drivenSlot("drift1", 0.45) } }),
+      }, { label: "eye1", parameters: { "eye.x": 0.45 } }),
       node("shot", "render", [-920, -420], {
         scenes: "solid1 fan1 shaft1", camera: "eye1", lights: "key1",
         // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the
@@ -438,7 +436,6 @@ export const prismDocument = document(
       node("out", "output", [680, -420], {}, { label: "out1" }),
     ],
     [
-      edge("e-swing-ease", ["swing", "out"], ["ease", "in"]),
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
       edge("e-follow-stir", ["follow", "out"], ["stir", "in"]),
       // One source into BOTH operands: `urge1` multiplies the speed by itself.

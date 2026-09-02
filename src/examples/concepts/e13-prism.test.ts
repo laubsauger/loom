@@ -206,29 +206,21 @@ describe("E13 Prism", () => {
    * this discriminates three failures at once: no chain (one value forever), no Lag (two
    * values), and a Lag that holds instead of integrating (it never reaches either end).
    */
-  it("eases the aim between the square wave's two levels instead of snapping", () => {
+  it("holds the aim STATIC with no pointer — the rest state is the shipped image (T915)", () => {
+    // The owner: "static aside from user interaction". The swing LFO is gone, so with a
+    // parked cursor value1 must read its chosen default on EVERY frame — one aim, not a
+    // sweep. 1 is deliberate: the band's steep end, where the measured fan is widest, so
+    // the frame a gallery visitor sees is the dispersion and not a white line (§V471).
     const run = valueGraphRun(document);
     const parked: Pointer = { x: 0, y: 0, buttons: 0 };
     const aims = new Set<number>();
-    let low = 1;
-    let high = 0;
-    // 0.18 Hz: a bit over five seconds a cycle, so 400 frames crosses several edges.
-    for (let index = 0; index < 400; index += 1) {
+    for (let index = 0; index < 120; index += 1) {
       const { plan: live } = run.step(parked);
       const dispatch = live.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
       const value = ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})["value1"] as number;
       aims.add(Number(value.toFixed(6)));
-      low = Math.min(low, value);
-      high = Math.max(high, value);
     }
-    expect(aims.size).toBeGreaterThan(50);
-    // Both ends are actually reached, so the swing really is the full 62°..37°.
-    expect(low).toBeLessThan(0.05);
-    expect(high).toBeGreaterThan(0.95);
-    // And nothing outside — the kernel clamps, but a slot that needed clamping would mean
-    // the LFO's amplitude and offset had drifted off the parameter's own range.
-    expect(low).toBeGreaterThanOrEqual(-1e-6);
-    expect(high).toBeLessThanOrEqual(1 + 1e-6);
+    expect([...aims]).toEqual([1]);
   });
 
   /**

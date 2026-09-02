@@ -209,6 +209,15 @@ interface Exemption {
  * and a stale one.
  */
 const DECLARED: Readonly<Record<string, Exemption>> = {
+  "E13-Prism.loom.json": {
+    liveness:
+      "T915: the owner asked for a STATIC prism — 'it should be static aside from user " +
+      "interaction' — so the swing LFO and the camera drift are gone and every motion " +
+      "source left is the pointer. Headless has no pointer, so the beam rests at the " +
+      "chosen default aim and motion is exactly zero. That is the example working: the " +
+      "physics answers the hand, not a clock.",
+    evidence: "Move the pointer and the aim follows; park it and the beam settles back",
+  },
   "E12-Fluid.loom.json": {
     liveness:
       "A fluid at rest IS at rest. Every force in this file comes from the pointer — the " +

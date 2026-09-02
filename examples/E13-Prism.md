@@ -3,8 +3,8 @@
 A triangular block of glass in deep black, drawn entirely by the light caught on its edges.
 A white beam enters low from the right and a spectrum fans out to the left.
 
-The fan opens and closes as the beam swings, because the fan is Snell's law and not a
-drawing.
+The fan opens and closes as the beam's aim changes, because the fan is Snell's law and
+not a drawing.
 
 The optics are a TRACED RAY (T718): the shaft meets the entry face, a visible internal
 segment crosses the body at the refracted angle — which is neither the incoming nor the
@@ -15,9 +15,14 @@ since T758: it is transmissive, so the traced interior segment is seen *through*
 face, and its Schlick fresnel against the environment carries the same thin bright rim
 along every silhouette that the phong `envFresnel` used to — same physics, different name.
 
-The aim has two hands on it (T857). A square LFO swings it between two angles; a moving
-cursor **takes** it, across a much wider range, and gives it back a couple of seconds after
-you stop — including far enough to walk the beam off the end of the glass entirely.
+The prism is **static aside from your interaction** (T915, the owner's ask). The default
+aim is a deliberately chosen rest pose — the steep end of the band, where the dispersion
+shows widest. A moving cursor **takes** the aim (T857), across a much wider range than the
+resting band, and hands it back a couple of seconds after you stop — including far enough
+to walk the beam off the end of the glass entirely. With no pointer the picture holds its
+rest frame exactly, which is why the headless liveness gate carries a declared
+pointer-driven exemption: the motion is yours.
+Move the pointer and the aim follows; park it and the beam settles back.
 
 ## Graph
 
@@ -37,11 +42,10 @@ key1(light), eye1(camera) ──── by name ───────────
 shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1.in2
 shot1 ────────────────────────────────────────────► glow1(add) ─► out1(output)
 
-swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1     the aim, auto
+optics1.value1 = 1 (static)                                         the aim, at rest (T915)
 mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3                the aim, by hand
 follow1 ─► stir1(valueSlope) ─► urge1(valueMath) ─► hold1(valueLag)
                               ┄drives┄► optics1.value4              which one (T857)
-drift1(lfo, sine) ┄drives┄► eye1.eye.x
 fan1.tint ← the `tint` attribute                                    the map mode
 ```
 
@@ -181,11 +185,10 @@ the same incidence the refraction uses gives the share the entry face sends back
 37°, rising to 8.3% at 62° — and that share *is* its tint, so the reflected streak
 brightens as the fan narrows, out of one number rather than a second knob.
 
-### Two hands on the aim, and they do not add (T857)
+### One hand on the aim, over a chosen rest (T857, T915)
 
-`swing1(lfo, square) → ease1(valueLag) → value1` is the canonical chain, and the square is
-deliberate: a square through a one-pole smoother **is** an ease. Delete `ease1` and the
-beam snaps between two angles like a shutter instead of swinging.
+The auto swing is gone (T915): `value1` is a static default — the steep end of the band,
+where the fan shows widest — and the only thing that moves the aim is you.
 
 `mouse1 → follow1(valueLag) → value3` is the pointer. What changed in T857 is how the two
 *meet*. They used to be summed in the kernel — `clamp(value1 + 0.55·value3, 0, 1)` — and
@@ -237,10 +240,10 @@ full missed frame rather than a solo render the beam never entered. The shaft ke
 pixels past the apex and 3,183 past the base, none of them inside a 3px erosion of the
 body: the exact inversion of the T718 claim above, on the same instrument.
 
-`drift1` sways the camera 0.22 either side of 0.45 over 22 seconds, and it is not
-decoration. `envFresnel` reads `dot(N, viewDir)`, so moving the eye moves *which* thread of
-the round-over is at grazing. The rim travels. A static camera over this material is the
-one thing that would make an edge-lit prism look painted.
+The camera holds still at 0.45 (T915 removed its drift with the swing — static aside from
+interaction). The cost is named rather than hidden: `envFresnel` reads `dot(N, viewDir)`,
+so a moving eye is what made the rim travel; at rest the rim sits where the pose puts it,
+and the motion budget belongs entirely to the pointer.
 
 ## What breaks here first
 
