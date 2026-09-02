@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 describe("E25 Stage", () => {
   const { document, plan } = example("E25-Stage.loom.json");
 
@@ -29,9 +37,9 @@ describe("E25 Stage", () => {
   it("drives both cameras and a light — the whole stage animates as uniforms (§V5)", () => {
     const drivenChannel = (nodeId: string, key: string): string | undefined => {
       const stored = (document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
-        bindings?: { driven?: { channel?: string } };
+        bindings?: { expression?: { source?: string } };
       };
-      return stored?.bindings?.driven?.channel;
+      return channelOf(stored?.bindings?.expression?.source);
     };
     expect(drivenChannel("camA", "eye.x")).toBe("orbax1");
     expect(drivenChannel("camB", "eye.x")).toBe("orbbx1");

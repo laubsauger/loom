@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { effectFor, example } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 describe("E24 Audio Reaction-Diffusion", () => {
   const { document, plan } = example("E24-Audio-Reaction-Diffusion.loom.json");
 
@@ -12,9 +20,9 @@ describe("E24 Audio Reaction-Diffusion", () => {
    */
   it("drives substeps from the bass, through a hard fence, into a live loop region", () => {
     const state = document.graph.nodes["state"] as GraphNode;
-    const slot = state.parameters["substeps"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
-    expect(slot.mode).toBe("driven");
-    expect(slot.bindings?.driven?.channel).toBe("steps1:low");
+    const slot = state.parameters["substeps"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+    expect(slot.mode).toBe("expression");
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("steps1:low");
     const begin = plan.passes.find((pass) => pass.kind === "loop" && pass.edge === "begin") as {
       count?: number;
     };
@@ -32,9 +40,9 @@ describe("E24 Audio Reaction-Diffusion", () => {
    */
   it("range-maps audio into the chemistry with bounds the pattern survives", () => {
     const shape = document.graph.nodes["shape"] as GraphNode;
-    const slot = shape.parameters["whitelevel"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
-    expect(slot.mode).toBe("driven");
-    expect(slot.bindings?.driven?.channel).toBe("wlevel1:lowMid");
+    const slot = shape.parameters["whitelevel"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+    expect(slot.mode).toBe("expression");
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("wlevel1:lowMid");
     const fence = document.graph.nodes["wcap"] as GraphNode;
     // T562 moved the fence WITH the window it guards: `shape1`'s Level was refitted to the
     // warped field's measured spread (0.451..0.543 rather than 0.235..0.72), so the old
@@ -159,9 +167,9 @@ describe("E24 Audio Reaction-Diffusion", () => {
     expect(gate.type).toBe("threshold");
     const slot = gate.parameters["threshold"] as {
       mode?: string;
-      bindings?: { driven?: { channel?: string }; static?: { value?: number } };
+      bindings?: { expression?: { source?: string }; static?: { value?: number } };
     };
-    expect(slot.bindings?.driven?.channel).toBe("seedcut1:onsetCount");
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("seedcut1:onsetCount");
     expect(slot.bindings?.static?.value).toBe(2); // shut, and shut is exactly zero mask
     // trig1 -> seedamt -> seedcut -> the gate: every hop is arithmetic, none is stateful.
     const path = ["seedamt", "seedcut"].map((id) => (document.graph.nodes[id] as GraphNode).type);
@@ -184,9 +192,13 @@ describe("E24 Audio Reaction-Diffusion", () => {
     expect(snap.parameters["lag"]).toBeLessThan(0.06);
     expect((document.graph.nodes["env"] as GraphNode).parameters["lag"]).toBeGreaterThan(0.1);
     const driven = (nodeId: string, key: string): string | undefined =>
-      ((document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
-        bindings?: { driven?: { channel?: string } };
-      }).bindings?.driven?.channel;
+      channelOf(
+        (
+          (document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
+            bindings?: { expression?: { source?: string } };
+          }
+        )?.bindings?.expression?.source,
+      );
     expect(driven("warpA", "weight.x")).toBe("lenswa1:low");
     expect(driven("warpB", "weight.x")).toBe("lenswb1:lowMid");
     expect(driven("warpC", "weight.x")).toBe("lenswc1:high");

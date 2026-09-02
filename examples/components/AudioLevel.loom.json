@@ -240,6 +240,7 @@
               "max": 300,
               "min": 20,
               "range": "floor",
+              "step": 1,
               "type": "number"
             },
             "key": "bpm",

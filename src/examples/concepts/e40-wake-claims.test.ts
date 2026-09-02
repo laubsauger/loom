@@ -85,7 +85,7 @@ describe("E40 Wake claims", () => {
     expect(offenders).toEqual([]);
     // And the loop's decay is persistence itself, which cannot go negative by construction.
     const persistence = nodes["loop"]?.parameters["persistence"] as ParameterSlot | undefined;
-    expect(persistence?.mode).toBe("driven");
+    expect(persistence?.mode).toBe("expression");
   });
 
   /**
@@ -102,7 +102,7 @@ describe("E40 Wake claims", () => {
     const orb = nodes["orb"]?.parameters ?? {};
     for (const key of ["center.x", "center.y"]) {
       const slot = orb[key] as ParameterSlot | undefined;
-      expect(slot?.mode, `orb1.${key} must be driven`).toBe("driven");
+      expect(slot?.mode, `orb1.${key} must be driven`).toBe("expression");
     }
     expect(nodes["bed"]?.parameters["speed"] as number).toBeLessThan(
       (nodes["pathx"]?.parameters["frequency"] as number) ?? 0,

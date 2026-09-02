@@ -216,6 +216,14 @@ function scan(): ClockRead[] {
 const DECLARED: Readonly<
   Record<string, { readonly kind: "timeline-anchored" | "names-the-contrast"; readonly reads: number; readonly reason: string }>
 > = {
+  "src/examples/thumbnail.ts": {
+    kind: "names-the-contrast",
+    reads: 1,
+    reason:
+      "T847's card renderer reads `frame.frameIndex` only to FIND the captured frame in the " +
+      "result list (`frameIndex === CARD_FRAME`) — an array lookup key, not a clock anything " +
+      "animates from. The render itself runs on the harness's own transport.",
+  },
   "src/nodes/definitions/values.ts": {
     kind: "timeline-anchored",
     reads: 1,

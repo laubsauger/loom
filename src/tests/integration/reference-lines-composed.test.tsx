@@ -70,7 +70,9 @@ describe("E10's driven parameter draws its reference line in the real app (T248)
     const document = loadExample("E10-Instanced-Torus.loom.json");
     // The premise, asserted separately so a failure below is unambiguously the VIEW.
     expect([...parameterDependencies(document.graph).values()].flat()).toEqual([
-      { from: "draw", parameterKey: "rotate.y", kind: "driven", address: "lfo1", to: "lfo" },
+      // §T897: the driver is an expression op-ref now (`op('lfo1').chan.value`), and the
+      // reference line draws from the same dependency walk — only the kind changed.
+      { from: "draw", parameterKey: "rotate.y", kind: "reference", address: "lfo1", to: "lfo" },
     ]);
   });
 

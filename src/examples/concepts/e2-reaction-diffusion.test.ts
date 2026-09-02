@@ -206,7 +206,7 @@ describe("E2 Reaction-Diffusion", () => {
     // care. Asserted on the slot, because a driven parameter that resolves to its retained
     // static in every host is a parameter that looks driven and is not (§V107/§V108).
     const slot = document.graph.nodes["tint"]?.parameters["offset"];
-    expect(slot).toMatchObject({ mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1" } } });
+    expect(slot).toMatchObject({ mode: "expression", bindings: { expression: { kind: "expression", source: "op('lfo1').chan.value" } } });
     expect(document.graph.nodes["cycle"]?.label).toBe("lfo1");
   });
 

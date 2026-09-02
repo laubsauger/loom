@@ -450,11 +450,20 @@ describe("T894 — the ┄ driver annotation matches the document's bindings", (
       names.add(id);
       names.add(label);
       for (const [parameter, value] of Object.entries(node.parameters ?? {})) {
-        const channel = (
-          value as { bindings?: { driven?: { channel?: string } } } | undefined
-        )?.bindings?.driven?.channel;
+        const slot = value as
+          | { bindings?: { driven?: { channel?: string }; expression?: { source?: string } } }
+          | undefined;
+        const channel = slot?.bindings?.driven?.channel;
         if (typeof channel === "string") {
           bindings.push({ node: label, parameter, driver: channel.split(":")[0] ?? "" });
+        }
+        // §T897: a driver is an op() reference in an expression now — `op('lfo1').chan.value`
+        // (the migrated driven form) or `op('x').par.y`. Same annotation, new spelling.
+        const expressionSource = slot?.bindings?.expression?.source;
+        if (typeof expressionSource === "string") {
+          for (const match of expressionSource.matchAll(/op\(\s*'([^']+)'\s*\)/g)) {
+            bindings.push({ node: label, parameter, driver: match[1] ?? "" });
+          }
         }
       }
       // A `feedback` node's `source` names another node. A `customWgsl` node's `source` is

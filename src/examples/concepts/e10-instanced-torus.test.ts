@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 describe("E10 Instanced Torus", () => {
   const { document, plan } = example("E10-Instanced-Torus.loom.json");
 
@@ -33,8 +41,8 @@ describe("E10 Instanced Torus", () => {
    */
   it("drives rotate.y through a component slot", () => {
     const draw = document.graph.nodes["draw"] as GraphNode;
-    const slot = draw.parameters["rotate.y"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
-    expect(slot.mode).toBe("driven");
-    expect(slot.bindings?.driven?.channel).toBe("lfo1");
+    const slot = draw.parameters["rotate.y"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+    expect(slot.mode).toBe("expression");
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("lfo1");
   });
 });

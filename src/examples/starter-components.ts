@@ -54,7 +54,7 @@ import {
 export const STARTER_COMPONENT_TIMESTAMP = EXAMPLE_TIMESTAMP;
 
 const AUTHORING_CONTEXT: InvocationContext = {
-  actor: { kind: "system", id: "shaderloom-starter-set", label: "Shaderloom" },
+  actor: { kind: "system", id: "loom-starter-set", label: "Loom" },
   projectId: "starter-components",
   capabilities: [],
 };
@@ -570,7 +570,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     publish: [
       {
         key: "bpm",
-        definition: { type: "number", label: "BPM", default: 112, min: 20, max: 300, range: "floor" },
+        definition: { type: "number", label: "BPM", default: 112, min: 20, max: 300, step: 1, range: "floor" },
         targets: [{ nodeId: "beat", key: "bpm" }],
       },
       {

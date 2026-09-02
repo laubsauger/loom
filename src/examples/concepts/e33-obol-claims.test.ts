@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 /**
  * E33 Obol (T625/T624, T673, T716, T724) — a yin-yang medallion BECOMING goo and back, in
  * an ambient studio, and the first example to switch on the render's ambient occlusion.
@@ -121,8 +129,10 @@ describe("E33 Obol claims", () => {
     // ONE CLOCK for both systems, so the wave that lifts a tile is the wave that grows the
     // skin under it. A second channel here is two events that happen to look like one.
     const channel = (id: string, slot: string) =>
-      ((document.graph.nodes[id] as GraphNode).parameters[slot] as { bindings?: { driven?: { channel?: string } } })
-        ?.bindings?.driven?.channel;
+      channelOf(
+        ((document.graph.nodes[id] as GraphNode).parameters[slot] as { bindings?: { expression?: { source?: string } } })
+          ?.bindings?.expression?.source,
+      );
     expect(channel("segs", "value1")).toBe("tide1");
     expect(channel("morph", "value1")).toBe("tide1");
     expect(channel("segs", "value2")).toBe("sheen1");

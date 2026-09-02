@@ -90,6 +90,9 @@ export async function renderThumbnail(
   if (errors.length > 0) {
     throw new Error(`thumbnail render reported: ${errors.map((d) => d.message).join("; ")}`);
   }
+  // `frameIndex` here is an ARRAY KEY into the captured frames, not a clock read — nothing
+  // animates from it, so the absolute clock (absTime) is not the right tool at this site
+  // (§V436): the render's own transport drives the motion; this line only picks the capture.
   const frame = result.frames.find((entry) => entry.frameIndex === CARD_FRAME);
   if (frame === undefined) throw new Error(`no captured frame at ${CARD_FRAME}`);
   const space = result.plan.outputs.find((output) => output.nodeId === outputNodeId)?.space ?? "linear";

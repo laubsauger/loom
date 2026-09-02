@@ -3,6 +3,14 @@ import type { GraphNode } from "../../domain/types/graph.ts";
 import { CHANNEL_OPTIONS } from "../../nodes/definitions/parameter-readers.ts";
 import { CENTRE, effectFor, example, outputFor, valueGraphRun } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 describe("E26 Interference", () => {
   const { document, plan } = example("E26-Interference.loom.json");
 
@@ -67,8 +75,10 @@ describe("E26 Interference", () => {
     expect(warp.parameters["r"]).toBe(0);
     expect(warp.parameters["s"]).toEqual([1.16, 1.16]);
     const channel = (key: string): string | undefined =>
-      (warp.parameters[key] as { bindings?: { driven?: { channel?: string } } })?.bindings?.driven
-        ?.channel;
+      channelOf(
+        (warp.parameters[key] as { bindings?: { expression?: { source?: string } } })?.bindings
+          ?.expression?.source,
+      );
     expect(channel("t.x")).toBe("driftx1");
     expect(channel("t.y")).toBe("drifty1");
   });

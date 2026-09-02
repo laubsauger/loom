@@ -117,7 +117,8 @@ describe("T204 — the mode panel changes the document (§V107, §V108)", () => 
     const harness = await setup();
     await harness.expand("Rotate");
     const group = screen.getByRole("group", { name: "Rotate mode" });
-    for (const name of [/^Constant/, /^Expression/, /^Bind/, /^Driven/]) {
+    // §T897: no Driven button — a channel read is an expression term (op('name').chan.low).
+    for (const name of [/^Constant/, /^Expression/, /^Bind/]) {
       expect(modeButton(group, name)).toBeDefined();
     }
   });

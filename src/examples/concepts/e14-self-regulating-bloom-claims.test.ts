@@ -42,8 +42,8 @@ describe("E14 Self-Regulating Bloom claims", () => {
     expect(into("engage").sort()).toEqual(["clampg", "rest"]);
     expect(nodes["rest"]?.parameters["value"]).toBe(nodes["lift"]?.parameters["operand"]);
     const brightness = nodes["gain"]?.parameters["brightness"] as ParameterSlot;
-    expect(brightness.mode).toBe("driven");
-    expect(brightness.bindings["driven"]).toEqual({ kind: "driven", channel: "gain1" });
+    expect(brightness.mode).toBe("expression");
+    expect(brightness.bindings["expression"]).toEqual({ kind: "expression", source: "op('gain1').chan.value" });
   });
 
   /**
@@ -57,8 +57,8 @@ describe("E14 Self-Regulating Bloom claims", () => {
     expect(nodes["swirlclamp"]?.label).toBe("swirl1");
     expect(Number(nodes["swirlclamp"]?.parameters["minimum"])).toBeGreaterThan(0);
     const phase = nodes["palette"]?.parameters["phase"] as ParameterSlot;
-    expect(phase.mode).toBe("driven");
-    expect(phase.bindings["driven"]).toEqual({ kind: "driven", channel: "swirl1" });
+    expect(phase.mode).toBe("expression");
+    expect(phase.bindings["expression"]).toEqual({ kind: "expression", source: "op('swirl1').chan.value" });
     // The retained value sits inside the clamp's window too: a host without the
     // channel must not render the wrapped picture either (§V107).
     const retained = (phase.bindings["static"] as { value?: unknown }).value;

@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
+/** §T897: drivers are chan-expressions now; read the channel address back out of one. */
+function channelOf(source: string | undefined): string | undefined {
+  const m = /op\('([^']+)'\)\.chan\.([A-Za-z0-9_]+)/.exec(source ?? "");
+  if (m === null) return undefined;
+  return m[2] === "value" ? m[1] : `${m[1]}:${m[2]}`;
+}
+
+
 describe("E20 Gooeyball", () => {
   const { document, plan } = example("E20-Gooeyball.loom.json");
 
@@ -67,9 +75,9 @@ describe("E20 Gooeyball", () => {
     // TWO lights reached the shader, one of them the orbiting fill.
     expect(draw.shader).toContain("light1Meta");
     const fill = document.graph.nodes["fill"] as GraphNode;
-    const slot = fill.parameters["position.x"] as { mode?: string; bindings?: { driven?: { channel?: string } } };
-    expect(slot.mode).toBe("driven");
-    expect(slot.bindings?.driven?.channel).toBe("orbitx1");
+    const slot = fill.parameters["position.x"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+    expect(slot.mode).toBe("expression");
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("orbitx1");
   });
 
   /** B14's lesson, pinned again: animated goo needs a 4D noise with speed set. */
