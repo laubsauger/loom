@@ -343,6 +343,13 @@ describe("T497 — the shipped surface reads the absolute clock, or says why it 
     expect(visited.has("src/nodes/shaders/noise.wgsl.ts")).toBe(true);
     expect(visited.has("src/nodes/shaders/custom-wgsl-default.wgsl.ts")).toBe(true);
     expect(visited.has("src/examples/documents.ts")).toBe(true);
+    // T802: the example sources are one file per example under `documents/` now, and the
+    // expression clocks the scan polices live in THOSE, not the barrel — so the walker
+    // must recurse into the directory. E13-Prism carries `abstime` expression slots, so
+    // `prism.ts` is the representative the scan has to reach; a walker that stopped at the
+    // barrel would find no example clock reads at all and pass blind.
+    expect(visited.has("src/examples/documents/prism.ts")).toBe(true);
+    expect(visited.has("src/examples/documents/builders.ts")).toBe(true);
     expect(visited.has("examples/E13-Prism.loom.json")).toBe(true);
     // T582: the GENERATED surface — the walker must reach the file whose frameIndex
     // inference defeated the lap property while every authored surface scanned clean.
