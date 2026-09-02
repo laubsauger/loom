@@ -329,12 +329,16 @@ export const prismDocument = document(
       // ---- the wall (T918) --------------------------------------------------------
       node("wallramp", "ramp", [-2200, -420], {
         type: "vertical", interp: "smooth", phase: 0, period: 1,
+        /* T919 (§V56 traced): these are DISPLAY numbers (ramp stops decode once, correctly
+           — measured: the warm band renders at exactly its authored value plus bloom), so
+           what you type here is the screen grey you get. Authored for a backdrop that
+           reads as a lit wall behind the glass, not a void. */
         stops: [
-          { position: 0.00, color: [0.030, 0.036, 0.062, 1] },
-          { position: 0.42, color: [0.16, 0.18, 0.26, 1] },
-          { position: 0.62, color: [0.34, 0.30, 0.26, 1] },
-          { position: 0.80, color: [0.11, 0.10, 0.10, 1] },
-          { position: 1.00, color: [0.012, 0.012, 0.020, 1] },
+          { position: 0.00, color: [0.05, 0.06, 0.10, 1] },
+          { position: 0.42, color: [0.26, 0.29, 0.40, 1] },
+          { position: 0.62, color: [0.52, 0.46, 0.40, 1] },
+          { position: 0.80, color: [0.18, 0.17, 0.17, 1] },
+          { position: 1.00, color: [0.03, 0.03, 0.05, 1] },
         ],
       }, { label: "wallramp1", definitionVersion: 2, resolution: { mode: "fixed", width: 64, height: 256 } }),
       node("wallgrid", "pointGrid", [-2200, -200], { count: WALL_COLS * WALL_ROWS, cols: WALL_COLS, rows: WALL_ROWS }, { label: "wallgrid1" }),
