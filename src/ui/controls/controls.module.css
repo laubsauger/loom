@@ -829,8 +829,70 @@
 }
 
 /*
+  T912 — the ladder's visible entry point.
+
+  The field's LEFT edge is the only permanently empty part of the box: the value is
+  right-aligned and the unit suffix sits right of it. So the swatch goes there, as an
+  overlay on `.numberHost` rather than a flex child of `.number`, which means it can never
+  shift the value one pixel as it appears and disappears.
+
+  Hidden until the row is hovered or the swatch itself takes keyboard focus (§V19 — a
+  hover-only affordance would be unreachable without a pointer), and held visible while
+  the ladder is open so the thing that opened the popout does not vanish under it.
+  `pointer-events` follows opacity: while invisible the left edge of the field is still
+  drag surface, exactly as it was before this existed.
+
+  The focus ring comes from base.css's global `:focus-visible`.
+*/
+.ladderSwatch {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  /* §V99: the mark is 8px, the target is the field's full 20px height and 16px wide. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) linear;
+}
+
+.numberHost:hover .ladderSwatch,
+.ladderSwatch:focus-visible,
+.ladderSwatch[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ladderSwatch:hover,
+.ladderSwatch[data-open="true"] {
+  color: var(--signal);
+}
+
+.ladderSwatchMark {
+  width: 8px;
+  height: 8px;
+  fill: currentcolor;
+}
+
+/*
   Anchored under the field it belongs to and floated above the rows below, so the reach
   the user is choosing sits next to the number it will move.
+
+  T912 — SIZED TO ITS CONTENT, never to the field. `min-width: 100%` forced this box to at
+  least the field's width, and a bordered panel exactly as wide as the input it hangs under
+  reads as that input's `<select>` — which is the one thing six magnitudes are not. Six
+  short strings need ~54px; the field is several times that, so `max-content` puts the
+  popout comfortably under the field's width. `max-width` keeps a future long rung from
+  spilling out of the row rather than restoring a minimum.
 */
 .ladder {
   position: absolute;
@@ -839,7 +901,8 @@
   left: 0;
   display: flex;
   flex-direction: column;
-  min-width: 100%;
+  width: max-content;
+  max-width: 100%;
   padding: var(--space-1);
   border: var(--hairline) solid var(--line-hot);
   border-radius: var(--radius);

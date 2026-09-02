@@ -53,6 +53,15 @@ import styles from "./controls.module.css";
  * ±1 decade from wherever the ladder was left. The manifest `step` chooses the rung the
  * field starts on; it is a default, not a cap. Every value emitted still lands exactly
  * on the chosen rung's grid (§V134) — reach must not cost exactness.
+ *
+ * ### The way in (T912)
+ *
+ * Those three paths all existed and only one of them was visible, which is to say none:
+ * the hold is invisible by construction and the chord is invisible until you already know
+ * it. `LadderSwatch` is the fourth thing that opens the SAME `ladderOpen` state — a mark
+ * at the field's left edge, revealed on hover and on keyboard focus. There is one piece
+ * of state and now three ways to reach it; the hold stays because it is the drag
+ * surface's own gesture and it is muscle memory.
  */
 
 /** How long a press has to sit still before it means "show me the magnitudes". */
@@ -157,6 +166,49 @@ function DecadeLadder({ label, current, onPick, onDismiss }: LadderProps) {
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * T912 — the deliberate way into the ladder, and the reason it is a SIBLING of the drag
+ * surface rather than a child of it.
+ *
+ * The row is 20 px tall and the two-column grid it sits in has no third slot (§V90 — a
+ * third child wraps onto its own line), so this cannot be a button beside the field. It
+ * is an overlay on the field's LEFT edge, which is the only part of the box that is
+ * permanently empty: the value is right-aligned and the unit suffix is right of that, so
+ * nothing here crowds the label, the value or the unit.
+ *
+ * Rendered outside `.number` on purpose. The drag surface's `onPointerDown` opens a drag
+ * and arms the hold, and its `onDoubleClick` resets the parameter to the manifest
+ * default — a button INSIDE it would have to remember to stop both, forever, and one
+ * missed handler means clicking the swatch destroys the user's value. As a sibling that
+ * is structurally impossible. `nodrag` is then not belt-and-braces but load-bearing:
+ * being outside `.number` means it is outside the class that opts the field out of React
+ * Flow's node drag, so it carries its own (§V20, §T228). `stopPropagation` is the braces.
+ *
+ * The mark is a three-step stair, not a `▾`: a caret promises a dropdown, and reading the
+ * popout as a full-width `<select>` is half of what T912 is about.
+ */
+function LadderSwatch({ label, open, onOpen }: { label: string; open: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className={cx(styles.ladderSwatch, "nodrag")}
+      data-open={open}
+      aria-label={`${label} drag magnitude`}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={onOpen}
+    >
+      {/* §V99: the mark is 8px; the button around it is the field's full height. */}
+      <svg className={styles.ladderSwatchMark} viewBox="0 0 8 8" aria-hidden focusable="false">
+        <rect x="0" y="6" width="8" height="2" />
+        <rect x="0" y="3" width="5" height="2" />
+        <rect x="0" y="0" width="2" height="2" />
+      </svg>
+    </button>
   );
 }
 
@@ -592,6 +644,15 @@ export function NumberField({
         </span>
       )}
     </div>
+    {disabled ? null : (
+      <LadderSwatch
+        label={label}
+        open={ladderOpen}
+        onOpen={() => {
+          setLadderOpen(true);
+        }}
+      />
+    )}
     {ladderOpen ? (
       <DecadeLadder
         label={label}

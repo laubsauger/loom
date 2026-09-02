@@ -358,7 +358,12 @@ describe("manifest-driven dispatch covers every ParameterDefinition variant", ()
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText(accessibleName, { exact: false })).toBeDefined();
+    // EXACT, not substring. The table above already spells each control's whole
+    // accessible name, so `{ exact: false }` bought nothing and cost precision: T912's
+    // magnitude swatch is named "<label> drag magnitude", so a substring query for
+    // "Radius" matched the field AND its affordance and the row failed as ambiguous.
+    // A row that renders a control plus an affordance is not a dispatch failure.
+    expect(screen.getByLabelText(accessibleName)).toBeDefined();
   });
 
   it("falls back to the manifest default when the stored value does not fit", () => {
