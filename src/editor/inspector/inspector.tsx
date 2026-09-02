@@ -270,13 +270,38 @@ export function Inspector({
    * the sides swapped — and B8 is on record as having cost a day precisely because both
    * halves looked correct in isolation.
    */
-  const readOptions = {
-    nodes: createNodeReferenceReader({
-      graph,
-      schemaOf: (target) => effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
-    }),
-    ...(channels === undefined ? {} : { channels }),
+  /**
+   * B46/T901 — the reader's `base` is NOT optional decoration, and omitting it was the bug.
+   *
+   * `op('pulse1').chan.value` is read INSIDE the reader (`node-references.ts`), off
+   * `options.base.channels`, and a referenced parameter that is itself an expression
+   * resolves off `options.base.frame`. Neither of those is `ResolveParametersOptions` — the
+   * reader is a closure built before the resolve, so the `channels` and `frame` handed to
+   * `resolveParameters` never reach it. Built with no `base`, this panel answered every
+   * `.chan` read with "this context has no channel resolver", fell back to §V108's retained
+   * static, and froze the field on it — at every frame, on every node type — while the plan
+   * (which builds its reader WITH a base, `validate.ts`) animated correctly.
+   *
+   * That is B8's shape for the third time (T593 was the second): one read path, two ways of
+   * calling it, and the panel disagreeing with the picture. So the frame is a PARAMETER of
+   * this builder rather than a field spread on afterwards — the one thing that means "at
+   * which moment" cannot now be set on the resolve and forgotten on the reader.
+   */
+  const readOptionsAt = (frame?: FrameEvaluationInput) => {
+    const base = {
+      ...(channels === undefined ? {} : { channels }),
+      ...(frame === undefined ? {} : { frame }),
+    };
+    return {
+      nodes: createNodeReferenceReader({
+        graph,
+        schemaOf: (target) => effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
+        base,
+      }),
+      ...base,
+    };
   };
+  const readOptions = readOptionsAt();
 
   /**
    * B46 — the RETAINED read, deliberately with NO `frame`.
@@ -308,10 +333,7 @@ export function Inspector({
    * the per-frame compile already relate to each other. A second resolver here is the bug
    * B8 recorded, and this is deliberately not one.
    */
-  const live = liveFrame === null ? null : resolveParameters(node, definition, {
-    ...readOptions,
-    frame: liveFrame,
-  });
+  const live = liveFrame === null ? null : resolveParameters(node, definition, readOptionsAt(liveFrame));
   const groups = groupParameters(resolved.entries);
 
   const inputs: readonly InputResolution[] =
