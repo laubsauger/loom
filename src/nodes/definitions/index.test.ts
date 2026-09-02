@@ -186,6 +186,8 @@ describe("core catalogue (T70, T40)", () => {
       "pointTopology",
       "pointProximity",
       "pointRange",
+      // T947: the vector-display path planner — the laser and the scope share it.
+      "laserPath",
       "pointKernelAdvanced",
       "slitScan",
     ]);

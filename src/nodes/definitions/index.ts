@@ -32,6 +32,7 @@ import { renderSurfaceNode } from "./render-surface.ts";
 import { pointTopologyNode } from "./point-topology.ts";
 import { pointProximityNode } from "./point-proximity.ts";
 import { pointRangeNode } from "./point-range.ts";
+import { laserPathNode } from "./laser-path.ts";
 import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
 import { slitScanNode } from "./slit-scan.ts";
 import { midiInNode } from "./midi.ts";
@@ -69,6 +70,7 @@ export { renderSurfaceNode } from "./render-surface.ts";
 export { pointTopologyNode } from "./point-topology.ts";
 export { pointProximityNode } from "./point-proximity.ts";
 export { pointRangeNode } from "./point-range.ts";
+export { laserPathNode } from "./laser-path.ts";
 export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
 export { slitScanNode } from "./slit-scan.ts";
 export { midiInNode } from "./midi.ts";
@@ -219,6 +221,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   pointTopologyNode,
   pointProximityNode,
   pointRangeNode,
+  laserPathNode,
   pointKernelAdvancedNode,
   slitScanNode,
 ];
