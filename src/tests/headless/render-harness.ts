@@ -5,6 +5,7 @@ import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/typ
 import type { TransportSource } from "../../domain/types/frame.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
+import { projectFps } from "../../domain/types/graph.ts";
 import type { NodeDefinition, TextureFormat } from "../../domain/types/node-definition.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -464,7 +465,9 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
   const frameCount = request.frames ?? 1;
   const capture = [...(request.capture ?? [frameCount - 1])].sort((a, b) => a - b);
   const outputNodeId = request.outputNodeId ?? OUTPUT_NODE_ID;
-  const fps = request.fps ?? 60;
+  // T933: the DOCUMENT's rate when the request does not override it. A bare `?? 60`
+  // here rendered a 30 fps document at 60 and called the result a parity baseline.
+  const fps = request.fps ?? projectFps(settings);
 
   const backend = createVgpuBackend({ host: request.host });
   const diagnostics: RuntimeDiagnostic[] = [];
@@ -789,7 +792,9 @@ export async function renderPlanHeadless(request: PlanRenderRequest): Promise<{
     await backend.initialize({});
     const compiled = await backend.compile(request.plan);
     const transport = offlineTransport({
-      fps: request.fps ?? 60,
+      // T933: a plan render has no document to ask, so this is the default APPLIED
+      // ONCE rather than another literal 60.
+      fps: projectFps(request.fps === undefined ? {} : { fps: request.fps }),
       seed: request.seed ?? 7,
       mode: "fixed-step",
     });

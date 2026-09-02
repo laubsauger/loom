@@ -1,4 +1,5 @@
 import type { FrameEvaluationInput, TransportSource } from "../types/frame.ts";
+import { DEFAULT_PROJECT_FPS, projectFps } from "../types/graph.ts";
 
 export interface LiveClockOptions {
   seed?: number;
@@ -44,7 +45,13 @@ export interface LiveClockOptions {
   presenting?: () => boolean;
 }
 
-export const DEFAULT_TIMELINE_FPS = 60;
+/**
+ * The document's default, not a second copy of it (T933). `DEFAULT_PROJECT_FPS`'s own
+ * docblock says it is "shared with the transport so the clock and the document cannot
+ * disagree about the default" — it was a separate `= 60` here, so the sharing was a
+ * claim rather than a fact, and nothing would have caught the two drifting apart.
+ */
+export const DEFAULT_TIMELINE_FPS = DEFAULT_PROJECT_FPS;
 
 /**
  * Live transport: two clocks, one selected (§I.frame, T63, T271).
@@ -94,12 +101,10 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
   // change while running, and re-creating the transport to pick it up would reset
   // `timeSeconds` to zero — a settings edit is not a seek.
   const readFps = typeof options.fps === "function" ? options.fps : () => options.fps as number;
-  const fpsNow = (): number => {
-    const value = readFps();
-    return typeof value === "number" && Number.isFinite(value) && value > 0
-      ? value
-      : DEFAULT_TIMELINE_FPS;
-  };
+  // T933: through `projectFps`, which is where "what rate is this project" is answered
+  // for the settings pane and the scheduler too. This used to be a hand-rolled copy of
+  // the same predicate against a hand-rolled copy of the same default.
+  const fpsNow = (): number => projectFps({ fps: readFps() });
   const useTimeline = (options.clock ?? "timeline") === "timeline";
   const presenting = options.presenting ?? (() => false);
 

@@ -5,7 +5,7 @@ import type {
   FrameInputs,
 } from "../../domain/types/backend.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
-import type { BackendStatus, LoomBackend } from "../backend/backend-types.ts";
+import type { BackendStatus, FrameLoopSettings, LoomBackend } from "../backend/backend-types.ts";
 import { createFrameDriver } from "./frame-driver.ts";
 import { offlineTransport } from "./offline-transport.ts";
 import { createPointerSource } from "./pointer.ts";
@@ -17,10 +17,13 @@ import { createPointerSource } from "./pointer.ts";
  */
 function recordingBackend(): LoomBackend & {
   readonly calls: FrameInputs[];
+  /** Every settings object `loop()` was started with, in order (T933). */
+  readonly loopSettings: Array<FrameLoopSettings>;
   tick(): void;
   readonly looping: boolean;
 } {
   const calls: FrameInputs[] = [];
+  const loopSettings: FrameLoopSettings[] = [];
   let onTick: (() => void) | undefined;
 
   const status: BackendStatus = {
@@ -38,6 +41,7 @@ function recordingBackend(): LoomBackend & {
 
   return {
     calls,
+    loopSettings,
     status,
     get looping() {
       return onTick !== undefined;
@@ -55,7 +59,8 @@ function recordingBackend(): LoomBackend & {
       Promise.resolve({ width: 0, height: 0, format: "rgba8unorm" as const, rowStride: 0, bytes: new Uint8Array() }),
     onDiagnostic: () => () => {},
     dispose() {},
-    loop(next) {
+    loop(next, settings = {}) {
+      loopSettings.push(settings);
       onTick = next;
       return {
         stop() {
@@ -200,6 +205,47 @@ describe("frame driver", () => {
 
     expect(driver.framesRendered).toBe(2);
     expect(onFrame).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * T933/§V172. The app cannot rebuild the driver to change the project rate — that
+   * would reset the transport, and a settings edit is not a seek — so it restarts the
+   * LOOP instead. That restart carried whatever fps the driver was BUILT with for as
+   * long as the option was a captured number, which made the whole mechanism a no-op:
+   * the timeline stepped at the new rate while frames kept arriving at the old one.
+   */
+  it("reads the fps option at every start(), so a rate change survives a restart", () => {
+    const backend = recordingBackend();
+    let rate = 60;
+    const driver = createFrameDriver({
+      backend,
+      transport: offlineTransport({ fps: 60 }),
+      pointer: createPointerSource(),
+      resolution: () => [8, 8],
+      fps: () => rate,
+    });
+
+    driver.start();
+    driver.stop();
+    rate = 24;
+    driver.start();
+    driver.stop();
+
+    expect(backend.loopSettings.map((settings) => settings.fps)).toEqual([60, 24]);
+  });
+
+  it("omitting fps hands the backend no cap to read, which now means the default", () => {
+    // Not "unpaced" (T933): the backend applies `projectFps` to what it is given, so an
+    // omission here and an omission in the document reach the same answer.
+    const backend = recordingBackend();
+    const driver = createFrameDriver({
+      backend,
+      transport: offlineTransport({ fps: 60 }),
+      pointer: createPointerSource(),
+      resolution: () => [8, 8],
+    });
+    driver.start();
+    expect(backend.loopSettings).toEqual([{}]);
   });
 });
 

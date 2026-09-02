@@ -421,7 +421,11 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         const { width, height } = resolutionRef.current;
         return [width, height] as const;
       },
-      fps: fpsRef.current,
+      // T933: the REF, not its value. The driver outlives an fps edit (rebuilding it
+      // would reset the transport), so the restart effect below is what carries a rate
+      // change to the scheduler — and it carried the rate the driver was BUILT with for
+      // as long as this read was `fpsRef.current`.
+      fps: () => fpsRef.current,
       // A ref, not state: this runs on every rendered frame (§V16).
       // ORDER IS THE CONTRACT (T340). Channels advance first so `animate` resolves this
       // frame's parameters against this frame's numbers (§V179), and the push lands

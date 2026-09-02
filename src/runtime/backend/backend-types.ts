@@ -9,7 +9,18 @@ export interface FrameLoopControl {
 }
 
 export interface FrameLoopSettings {
-  /** Cap the scheduler. Omit to run at display rate (raf) or 60 (timer). */
+  /**
+   * The scheduler's rate. Read through `projectFps()` (T933), so OMITTING it means the
+   * project default — never "unpaced".
+   *
+   * It used to mean unpaced on the rAF path, which put an absent `fps` at display rate
+   * while every other reader of the same absent field saw 60. No shipped document sets
+   * `fps`, so that disagreement was the normal case rather than an edge one. An unpaced
+   * loop is not currently wanted anywhere (the offline and headless paths drive frames
+   * with `FrameDriver.step()` and never open a scheduler at all); if one is ever needed
+   * it gets an explicit name here, because an absence cannot say which of two things it
+   * meant.
+   */
   readonly fps?: number;
   /**
    * How ticks are driven (T109). "raf" (default) uses the display clock and only runs

@@ -29,7 +29,16 @@ export interface FrameDriverOptions {
   readonly audio?: () => AudioFeatures | null;
   /** Output resolution in pixels; read per frame so a resize needs no driver restart. */
   readonly resolution: () => readonly [number, number];
-  readonly fps?: number;
+  /**
+   * The scheduler's rate, handed to `backend.loop()`. A function is read at every
+   * `start()` (T933/§V172): the app restarts the loop when the project rate changes,
+   * and a plain number captured when the driver was BUILT makes that restart a no-op —
+   * the timeline would step at the new rate while frames kept arriving at the old one,
+   * which is "one fps, driving both" broken in the least visible way.
+   *
+   * Omitting it means the project default, not "unpaced" — see `FrameLoopSettings.fps`.
+   */
+  readonly fps?: number | (() => number);
   /**
    * Runs BEFORE the plan is encoded, with this frame's inputs (T340, §V157, §V159).
    *
@@ -103,11 +112,12 @@ export function createFrameDriver(options: FrameDriverOptions): FrameDriver {
     },
     start() {
       if (control) return;
+      const fps = typeof options.fps === "function" ? options.fps() : options.fps;
       control = backend.loop(
         () => {
           tick();
         },
-        options.fps === undefined ? {} : { fps: options.fps },
+        fps === undefined ? {} : { fps },
       );
     },
     stop() {

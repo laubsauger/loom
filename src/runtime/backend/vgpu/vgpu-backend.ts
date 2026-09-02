@@ -1,6 +1,10 @@
 import { effect, frame, frameLoop, sampler, surface, timer } from "vgpu";
 import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer, TimerSpan } from "vgpu";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
+// T933: the ONE place the project rate's default is applied. The scheduler is the third
+// reader of `fps` after the settings pane and the clock, and it used to be the one that
+// read the raw field.
+import { projectFps } from "../../../domain/types/graph.ts";
 import type {
   BackendCapabilities,
   BackendInitOptions,
@@ -420,7 +424,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // No rAF: frames driven off an interval through the same frame path a rAF tick
       // takes. This is the worker / Node realtime loop (§V49) — frame(gpu, …) is the
       // whole mechanism, the scheduler is just who calls it.
-      const fps = registration.settings.fps ?? 60;
+      const fps = projectFps(registration.settings);
       const interval = setInterval(() => {
         if (halted || disposed || registration.stopped) return;
         const active = session?.gpu;
@@ -444,18 +448,19 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     // tolerance) and advances the due time by the exact interval, so the long-run
     // rate is the target by construction; a large gap (hidden tab) resyncs instead
     // of bursting to catch up.
-    const targetFps = registration.settings.fps;
-    if (targetFps === undefined || targetFps <= 0) {
-      registration.handle = frameLoop(gpu, (f) => runFrame(f, registration.onFrame));
-      return;
-    }
+    //
+    // T933: the rate comes from `projectFps`, NEVER from the raw field. An ABSENT fps
+    // used to take an unpaced branch here — so the domain read 60 (projectFps's default,
+    // which the clock and the settings pane both take) while the loop ran at display
+    // rate, and the two disagreed in exactly the case every shipped document is in:
+    // no `fps` key at all. There is now no unpaced branch to fall into by omission; a
+    // loop that genuinely wants every tick has to ask for that rate by name.
     const gate = createPacedGate();
     registration.handle = frameLoop(gpu, (f) => {
       // Interval read PER TICK off the registration, so a live settings.fps change
       // takes effect without a loop restart — the clock reads its rate the same way
       // (T271), and the two must not disagree.
-      const fps = registration.settings.fps ?? targetFps;
-      if (!gate.due(performance.now(), 1000 / (fps > 0 ? fps : targetFps))) return;
+      if (!gate.due(performance.now(), 1000 / projectFps(registration.settings))) return;
       runFrame(f, registration.onFrame);
     });
   }
