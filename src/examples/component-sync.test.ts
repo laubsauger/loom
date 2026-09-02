@@ -73,7 +73,7 @@ describe("the shipped starter components are what the save path writes (§V94)",
     }
   });
 
-  it("names the eight the spec asks for", () => {
+  it("names the nine the spec asks for", () => {
     expect(STARTER_COMPONENT_SPECS.map((spec) => spec.name).sort()).toEqual([
       "AudioLevel",
       "Bloom",
@@ -83,6 +83,7 @@ describe("the shipped starter components are what the save path writes (§V94)",
       "FeedbackEcho",
       "Kaleidoscope",
       "MediaGrade",
+      "TimeGrid",
     ]);
   });
 

@@ -20,6 +20,7 @@ import {
   kaleidoscopeDocument,
 } from "./documents.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
+import { TIME_GRID_MAP_WGSL } from "./shaders/time-grid.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
 import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
 
@@ -538,6 +539,216 @@ const depthCutHost: ProjectDocument = {
 };
 
 /**
+ * TimeGrid's host: a moving subject, the wall, an Output.
+ *
+ * ## The whole component is stock nodes, and that is the finding
+ *
+ * `tile` repeats the picture into a grid; `slitScan` reads a different moment PER PIXEL
+ * out of its own ring, steered by a displacement map. Feed that map a value that is FLAT
+ * WITHIN A CELL and the two compose into a video wall where every tile plays a different
+ * moment of the same stream. Nothing else was needed — no node was written for this.
+ *
+ * ORDER IS LOAD-BEARING: `tile` FIRST. The ring then records the already-tiled frame, so
+ * each cell region has its own layers to pick from. Scan first and the grid repeats one
+ * warped picture — every cell identical, which is the failure that looks like it works.
+ *
+ * ## THE COST, where it is chosen (§V228)
+ *
+ * SlitScan's ring is `width x height x bytesPerPixel x (frames + 1)`, and it inherits its
+ * size from its input — which, unpinned, is whatever the parent feeds in. At 1080p a
+ * 61-frame ring is 1.9 GiB, so `grid` carries a FIXED 512x288 override and every node
+ * after it inherits that:
+ *
+ *     512 x 288 x 8 B x 62 layers = 69.75 MiB, and 61 frames = 1.02 s at 60 fps.
+ *
+ * The span is what sets the depth, not the cell count: a ring holds a contiguous run of
+ * frames, so covering one second costs one second of frames however few cells read them.
+ * What the cell count decides is how many of those 61 moments are USED — 61 is enough for
+ * every cell of an 8x8 wall to hold a moment of its own.
+ *
+ * 512x288 is also honest about what a cell can show: at the shipped 3x3 a cell is
+ * 170x96 and is stretched to a third of the frame, so history kept at full resolution
+ * would be paying 14x the memory for detail the wall cannot display.
+ *
+ * ## Why 61 and not 60
+ *
+ * SlitScan spends `frames - 1` steps on a displacement of 1.0. 61 frames means 60 steps,
+ * one per rendered frame at 60 fps — which is what makes SWEEP's Rate 1.0 an exact
+ * FREEZE (a cell looks one frame further back every frame, so it holds still) instead of
+ * a slow drift. At 30 fps the freeze rate is 0.5; the knob's description says so.
+ */
+const TIME_GRID_SETTINGS: ProjectSettings = {
+  outputResolution: { width: 1280, height: 720 },
+  workingFormat: "rgba16float",
+  randomSeed: 7,
+  previewLongEdge: 192,
+  previewFps: 30,
+  limits: LIMITS,
+};
+
+/** The internal working size, and the one number the memory line above is computed from. */
+const TIME_GRID_INTERNAL = { mode: "fixed", width: 512, height: 288 } as const;
+
+export const timeGridHost: ProjectDocument = {
+  schemaVersion: SCHEMA_VERSION,
+  projectId: "component-time-grid",
+  name: "TimeGrid",
+  settings: TIME_GRID_SETTINGS,
+  assets: [],
+  createdAt: STARTER_COMPONENT_TIMESTAMP,
+  updatedAt: STARTER_COMPONENT_TIMESTAMP,
+  graph: {
+    revision: 1,
+    nodes: {
+      // ---- outside the boundary: a stand-in stream --------------------------------
+      /* The component takes a TEXTURE, so a webcam, a movie file or a synthetic
+         generator all feed it identically — which is the reason the source is not
+         inside. This one is a disc on two incommensurate LFOs: something with IDENTITY,
+         because a wall of delayed noise is a wall of noise (§V427). */
+      swingx: {
+        id: "swingx",
+        type: "lfo",
+        definitionVersion: 1,
+        position: { x: -1420, y: -300 },
+        parameters: { shape: "sine", frequency: 0.37, amplitude: 0.34, offset: 0.5, phase: 0 },
+        label: "swingx1",
+      },
+      swingy: {
+        id: "swingy",
+        type: "lfo",
+        definitionVersion: 1,
+        position: { x: -1420, y: -60 },
+        parameters: { shape: "sine", frequency: 0.23, amplitude: 0.3, offset: 0.5, phase: 0.25 },
+        label: "swingy1",
+      },
+      feed: {
+        id: "feed",
+        type: "circle",
+        definitionVersion: 1,
+        position: { x: -1140, y: -180 },
+        parameters: {
+          mode: "fill",
+          center: [0.5, 0.5],
+          radius: [0.16, 0.16],
+          softness: 0.08,
+          fillcolor: [1, 0.78, 0.4, 1],
+          bgcolor: [0.04, 0.05, 0.11, 1],
+          aspectcorrect: true,
+          "center.x": drivenBy("swingx1", 0.5),
+          "center.y": drivenBy("swingy1", 0.5),
+        },
+        label: "feed1",
+      },
+      // ---- inside the boundary ----------------------------------------------------
+      /* The grid, and the resolution pin the ring's whole cost depends on. `repeat` is
+         ONE vec2 and the published Grid knob drives it whole: a component publishes onto a
+         node's schema keys, and `repeat.y` is not one of them (§V113 components exist for
+         slots, not for publish targets). Its two fields are Columns and Rows. */
+      grid: {
+        id: "grid",
+        type: "tile",
+        definitionVersion: 1,
+        position: { x: -860, y: -180 },
+        parameters: {
+          repeat: [3, 3],
+          offset: [0, 0],
+          mirrorx: false,
+          mirrory: false,
+        },
+        resolution: TIME_GRID_INTERNAL,
+        label: "grid1",
+      },
+      /* The delay map. Its controls ARE its shader's `struct Params` (T880/§V805), which
+         is what lets Rows, Columns, Mode, Rate and Seed be published without a node
+         being written for them. Every one is a per-frame UNIFORM, so changing the wall
+         mid-show rebuilds nothing. */
+      map: {
+        id: "map",
+        type: "customWgsl",
+        definitionVersion: 1,
+        position: { x: -860, y: 120 },
+        parameters: {
+          [SHADER_SOURCE_PARAMETER]: TIME_GRID_MAP_WGSL,
+          grid: [3, 3],
+          mode: 1,
+          rate: 1,
+          seed: 7,
+        },
+        label: "map1",
+      },
+      scan: {
+        id: "scan",
+        type: "slitScan",
+        definitionVersion: 1,
+        position: { x: -580, y: -180 },
+        parameters: { frames: 61, depth: 1 },
+        label: "scan1",
+      },
+      /* The colourizer: desaturate, multiply by one colour — a DUOTONE, which is what
+         actually ties nine independently-lit moments together — then dissolve it back
+         over the untinted wall. `mix` at 0 is `mix(a, b, 0)`, exactly the wall, so Blend
+         has a true no-op end (§V147). */
+      grey: {
+        id: "grey",
+        type: "hsv",
+        definitionVersion: 1,
+        position: { x: -300, y: 40 },
+        parameters: { hueoffset: 0, saturation: 0, value: 1 },
+        label: "grey1",
+      },
+      paint: {
+        id: "paint",
+        type: "solid",
+        definitionVersion: 1,
+        position: { x: -300, y: 300 },
+        parameters: { color: [1, 0.68, 0.36, 1] },
+        resolution: TIME_GRID_INTERNAL,
+        label: "paint1",
+      },
+      tint: {
+        id: "tint",
+        type: "multiply",
+        definitionVersion: 1,
+        position: { x: -20, y: 160 },
+        parameters: { opacity: 1 },
+        label: "tint1",
+      },
+      mix: {
+        id: "mix",
+        type: "cross",
+        definitionVersion: 1,
+        position: { x: 260, y: -60 },
+        parameters: { cross: 0.35 },
+        label: "mix1",
+      },
+      // ---- outside again ------------------------------------------------------------
+      out: {
+        id: "out",
+        type: "output",
+        definitionVersion: 1,
+        position: { x: 540, y: -60 },
+        parameters: {},
+        label: "out1",
+      },
+    },
+    edges: {
+      "e-feed-grid": { id: "e-feed-grid", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "grid", portId: "input" } },
+      // ONE tiling, TWO consumers (§V6): the map only wants the size, the ring wants the pixels.
+      "e-grid-map": { id: "e-grid-map", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "map", portId: "input" } },
+      "e-grid-scan": { id: "e-grid-scan", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "scan", portId: "input" } },
+      "e-map-scan": { id: "e-map-scan", source: { nodeId: "map", portId: "out" }, target: { nodeId: "scan", portId: "map" } },
+      "e-scan-grey": { id: "e-scan-grey", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "grey", portId: "input" } },
+      "e-grey-tint": { id: "e-grey-tint", source: { nodeId: "grey", portId: "out" }, target: { nodeId: "tint", portId: "in1" } },
+      "e-paint-tint": { id: "e-paint-tint", source: { nodeId: "paint", portId: "out" }, target: { nodeId: "tint", portId: "in2" } },
+      "e-scan-mix": { id: "e-scan-mix", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
+      "e-tint-mix": { id: "e-tint-mix", source: { nodeId: "tint", portId: "out" }, target: { nodeId: "mix", portId: "in2" } },
+      "e-mix-out": { id: "e-mix-out", source: { nodeId: "mix", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  },
+};
+
+/**
  * The specs.
  *
  * Ordered the way the library reads them: the two most-reached-for first, then the two
@@ -988,7 +1199,120 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
     ],
   },
-
+  {
+    componentId: "timeGrid",
+    name: "TimeGrid",
+    description:
+      "A video wall of the same stream at different moments: Tile makes the grid, SlitScan gives each cell its own delay, and one duotone ties them together. 69.75 MiB of history at 512x288 x 61 frames.",
+    host: timeGridHost,
+    /* The SOURCE stays outside. A webcam, a movie file and a synthetic generator are all
+       just a texture at this boundary, which is the whole reason this is a component and
+       not a document (T956's lesson, DepthPoints' precedent). */
+    selection: ["grid", "map", "scan", "grey", "paint", "tint", "mix"],
+    publish: [
+      /*
+       * THE PERFORMANCE PAGE. Eight knobs, and the ones that decide the LAYOUT are
+       * plain uniforms on purpose: Rows and Columns drive `tile.repeat` and the map's
+       * cell count together, so the wall re-partitions on a uniform write and the ring
+       * keeps its layers. That is the "change the grid mid-show" property, and it is the
+       * one a future edit is most likely to break by reaching for a compileTime knob.
+       */
+      {
+        key: "grid",
+        definition: {
+          type: "vector",
+          size: 2,
+          label: "Grid",
+          default: [3, 3],
+          min: 1,
+          max: 8,
+          range: "floor",
+          description: "Columns x Rows. Uniform-only: it re-partitions the wall without touching the history ring, so it is safe to turn mid-show. Beyond 61 cells they start sharing moments — that is all the ring holds.",
+        },
+        targets: [
+          { nodeId: "grid", key: "repeat" },
+          { nodeId: "map", key: "grid" },
+        ],
+      },
+      {
+        key: "spread",
+        definition: {
+          type: "number",
+          label: "Spread",
+          default: 1,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "How much of the held second the wall spans. 1 = the full 1.02 s ring, 0 = every cell on the live frame.",
+        },
+        targets: [{ nodeId: "scan", key: "depth" }],
+      },
+      {
+        key: "mode",
+        definition: {
+          type: "number",
+          label: "Mode",
+          default: 1,
+          min: 0,
+          max: 4,
+          step: 1,
+          description: "0 Uniform (one moment everywhere), 1 Ordered (cascade in reading order), 2 Random (seeded, held), 3 Sweep (delays travel — Rate 1.0 freezes each cell until it snaps), 4 Shots (four angles, re-cut on Rate).",
+        },
+        targets: [{ nodeId: "map", key: "mode" }],
+      },
+      {
+        key: "rate",
+        definition: {
+          type: "number",
+          label: "Rate",
+          default: 1,
+          min: 0,
+          max: 4,
+          range: "bounded",
+          unit: "hz",
+          description: "Sweep and Shots only. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second.",
+        },
+        targets: [{ nodeId: "map", key: "rate" }],
+      },
+      {
+        key: "seed",
+        definition: {
+          type: "number",
+          label: "Seed",
+          default: 7,
+          min: 0,
+          max: 999,
+          step: 1,
+          description: "Deals the cells for Random and Shots. Integer hash, no clock (§V44) — the same seed is the same wall on every device and every replay.",
+        },
+        targets: [{ nodeId: "map", key: "seed" }],
+      },
+      {
+        key: "colour",
+        definition: {
+          type: "color",
+          label: "Colour",
+          default: [1, 0.68, 0.36, 1],
+          space: "display",
+          description: "The duotone the wall is graded into before Blend dissolves it back in.",
+        },
+        targets: [{ nodeId: "paint", key: "color" }],
+      },
+      {
+        key: "blend",
+        definition: {
+          type: "number",
+          label: "Blend",
+          default: 0.35,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "Master dissolve for the colourizer. 0 is the untinted wall exactly, 1 is full duotone.",
+        },
+        targets: [{ nodeId: "mix", key: "cross" }],
+      },
+    ],
+  },
 ];
 
 /** Everything a failed authoring step needs to say, without a half-built component. */

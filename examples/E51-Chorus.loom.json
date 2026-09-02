@@ -1,0 +1,865 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "timeGrid",
+        "description": "A video wall of the same stream at different moments: Tile makes the grid, SlitScan gives each cell its own delay, and one duotone ties them together. 69.75 MiB of history at 512x288 x 61 frames.",
+        "graph": {
+          "edges": {
+            "e-grey-tint": {
+              "id": "e-grey-tint",
+              "source": {
+                "nodeId": "grey",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tint",
+                "portId": "in1"
+              }
+            },
+            "e-grid-map": {
+              "id": "e-grid-map",
+              "source": {
+                "nodeId": "grid",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "map",
+                "portId": "input"
+              }
+            },
+            "e-grid-scan": {
+              "id": "e-grid-scan",
+              "source": {
+                "nodeId": "grid",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "scan",
+                "portId": "input"
+              }
+            },
+            "e-map-scan": {
+              "id": "e-map-scan",
+              "source": {
+                "nodeId": "map",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "scan",
+                "portId": "map"
+              }
+            },
+            "e-paint-tint": {
+              "id": "e-paint-tint",
+              "source": {
+                "nodeId": "paint",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tint",
+                "portId": "in2"
+              }
+            },
+            "e-scan-grey": {
+              "id": "e-scan-grey",
+              "source": {
+                "nodeId": "scan",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "grey",
+                "portId": "input"
+              }
+            },
+            "e-scan-mix": {
+              "id": "e-scan-mix",
+              "source": {
+                "nodeId": "scan",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "mix",
+                "portId": "in1"
+              }
+            },
+            "e-tint-mix": {
+              "id": "e-tint-mix",
+              "source": {
+                "nodeId": "tint",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "mix",
+                "portId": "in2"
+              }
+            },
+            "in_input_feed_1": {
+              "id": "in_input_feed_1",
+              "source": {
+                "nodeId": "in_input",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "grid",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "mix",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "grey": {
+              "definitionVersion": 1,
+              "id": "grey",
+              "label": "grey1",
+              "parameters": {
+                "hueoffset": 0,
+                "saturation": 0,
+                "value": 1
+              },
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "hsv"
+            },
+            "grid": {
+              "definitionVersion": 1,
+              "id": "grid",
+              "label": "grid1",
+              "parameters": {
+                "mirrorx": false,
+                "mirrory": false,
+                "offset": [
+                  0,
+                  0
+                ],
+                "repeat": [
+                  3,
+                  3
+                ]
+              },
+              "position": {
+                "x": 258,
+                "y": -74
+              },
+              "resolution": {
+                "height": 288,
+                "mode": "fixed",
+                "width": 512
+              },
+              "type": "tile"
+            },
+            "in_input": {
+              "definitionVersion": 1,
+              "id": "in_input",
+              "label": "input",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -168
+              },
+              "type": "componentIn"
+            },
+            "map": {
+              "definitionVersion": 1,
+              "id": "map",
+              "label": "map1",
+              "parameters": {
+                "grid": [
+                  3,
+                  3
+                ],
+                "mode": 1,
+                "rate": 1,
+                "seed": 7,
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  mode: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* How many distinct moments SHOTS cuts between. Four reads as \"several camera angles\";\n   more and the cut stops being a cut and becomes the RANDOM mode with extra steps. */\nconst SHOT_ANGLES: f32 = 4.0;\n\n/*\n * Integer avalanche (Bret Mulvey's / \"lowbias32\" family), and INTEGER on purpose:\n * a float hash built on fract(sin(x)) is a different number on every driver, and §V44's\n * sibling promise — a seeded look replays identically — would be a per-machine accident.\n * u32 shifts and multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  /* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count\n     the same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly\n     a cell there and no delay ever straddles a seam. */\n  let cols = max(1.0, floor(params.grid.x + 0.5));\n  let rows = max(1.0, floor(params.grid.y + 0.5));\n  let cell = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  let index = cell.y * cols + cell.x;\n  let count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  let last = max(1.0, count - 1.0);\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  let mode = i32(params.mode + 0.5);\n\n  var delay = 0.0;\n  if (mode == 1) {\n    /* ORDERED — the cascade. Reading order, oldest at the bottom right. */\n    delay = index / last;\n  } else if (mode == 2) {\n    /* RANDOM — every cell its own moment, held. Seeded, so it is a LOOK, not noise. */\n    delay = hashU(u32(index) * 1973u + seed * 9277u);\n  } else if (mode == 3) {\n    /*\n     * SWEEP — the owner's \"freeze that wanders through\".\n     *\n     * Each cell's delay RAMPS, so it looks one frame further back every frame: at\n     * Rate 1.0 (with Spread 1) that is exactly one ring-frame per rendered frame, and\n     * the cell holds STILL while the world moves on. The phase offset per cell means\n     * they wrap at different times, so the wall refreshes as a rolling wave rather than\n     * all at once. Below 1.0 the held frame plays in slow motion; above it, backwards.\n     */\n    delay = fract(index / count + frameU.absTime * params.rate);\n  } else if (mode == 4) {\n    /*\n     * SHOTS — several angles of one scene, cut on a clock.\n     *\n     * Cells are dealt to SHOT_ANGLES groups by the seeded hash and every group holds one\n     * rung of the delay ladder; the ladder rotates one rung per tick, so the whole wall\n     * re-cuts at once and then holds. Distinct from RANDOM, which never re-cuts, and from\n     * SWEEP, which never holds a whole group together.\n     */\n    let angle = floor(hashU(u32(index) * 6151u + seed * 1543u) * SHOT_ANGLES);\n    let turn = floor(frameU.absTime * max(0.0, params.rate));\n    delay = ((angle + turn) % SHOT_ANGLES) / (SHOT_ANGLES - 1.0);\n  }\n  /* mode 0 — UNIFORM — falls through at 0.0: every cell reads the newest frame, so the\n     wall is the plain tiling and the scan is a no-op you can see (§V147's shape). */\n\n  return vec4f(delay, delay, delay, 1.0);\n}"
+              },
+              "position": {
+                "x": 516,
+                "y": -74
+              },
+              "type": "customWgsl"
+            },
+            "mix": {
+              "definitionVersion": 1,
+              "id": "mix",
+              "label": "mix1",
+              "parameters": {
+                "cross": 0.35
+              },
+              "position": {
+                "x": 1548,
+                "y": -82
+              },
+              "type": "cross"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 1806,
+                "y": -74
+              },
+              "type": "componentOut"
+            },
+            "paint": {
+              "definitionVersion": 1,
+              "id": "paint",
+              "label": "paint1",
+              "parameters": {
+                "color": [
+                  1,
+                  0.68,
+                  0.36,
+                  1
+                ]
+              },
+              "position": {
+                "x": 0,
+                "y": 20
+              },
+              "resolution": {
+                "height": 288,
+                "mode": "fixed",
+                "width": 512
+              },
+              "type": "solid"
+            },
+            "scan": {
+              "definitionVersion": 1,
+              "id": "scan",
+              "label": "scan1",
+              "parameters": {
+                "depth": 1,
+                "frames": 61
+              },
+              "position": {
+                "x": 774,
+                "y": -82
+              },
+              "type": "slitScan"
+            },
+            "tint": {
+              "definitionVersion": 1,
+              "id": "tint",
+              "label": "tint1",
+              "parameters": {
+                "opacity": 1
+              },
+              "position": {
+                "x": 1290,
+                "y": -90
+              },
+              "type": "multiply"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "input",
+            "label": "input",
+            "nodeId": "in_input",
+            "portId": "in"
+          }
+        ],
+        "name": "TimeGrid",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "out",
+            "nodeId": "out_out",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": [
+                3,
+                3
+              ],
+              "description": "Columns x Rows. Uniform-only: it re-partitions the wall without touching the history ring, so it is safe to turn mid-show. Beyond 61 cells they start sharing moments — that is all the ring holds.",
+              "label": "Grid",
+              "max": 8,
+              "min": 1,
+              "range": "floor",
+              "size": 2,
+              "type": "vector"
+            },
+            "key": "grid",
+            "targets": [
+              {
+                "key": "repeat",
+                "nodeId": "grid"
+              },
+              {
+                "key": "grid",
+                "nodeId": "map"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "How much of the held second the wall spans. 1 = the full 1.02 s ring, 0 = every cell on the live frame.",
+              "label": "Spread",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "spread",
+            "targets": [
+              {
+                "key": "depth",
+                "nodeId": "scan"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "0 Uniform (one moment everywhere), 1 Ordered (cascade in reading order), 2 Random (seeded, held), 3 Sweep (delays travel — Rate 1.0 freezes each cell until it snaps), 4 Shots (four angles, re-cut on Rate).",
+              "label": "Mode",
+              "max": 4,
+              "min": 0,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "mode",
+            "targets": [
+              {
+                "key": "mode",
+                "nodeId": "map"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "Sweep and Shots only. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second.",
+              "label": "Rate",
+              "max": 4,
+              "min": 0,
+              "range": "bounded",
+              "type": "number",
+              "unit": "hz"
+            },
+            "key": "rate",
+            "targets": [
+              {
+                "key": "rate",
+                "nodeId": "map"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 7,
+              "description": "Deals the cells for Random and Shots. Integer hash, no clock (§V44) — the same seed is the same wall on every device and every replay.",
+              "label": "Seed",
+              "max": 999,
+              "min": 0,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "seed",
+            "targets": [
+              {
+                "key": "seed",
+                "nodeId": "map"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": [
+                1,
+                0.68,
+                0.36,
+                1
+              ],
+              "description": "The duotone the wall is graded into before Blend dissolves it back in.",
+              "label": "Colour",
+              "space": "display",
+              "type": "color"
+            },
+            "key": "colour",
+            "targets": [
+              {
+                "key": "color",
+                "nodeId": "paint"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.35,
+              "description": "Master dissolve for the colourizer. 0 is the untinted wall exactly, 1 is full duotone.",
+              "label": "Blend",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "blend",
+            "targets": [
+              {
+                "key": "cross",
+                "nodeId": "mix"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bed-stand": {
+        "id": "e-bed-stand",
+        "order": 0,
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in1"
+        }
+      },
+      "e-cam-pick": {
+        "id": "e-cam-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "cam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-clip-pick": {
+        "id": "e-clip-pick",
+        "order": 2,
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-mate-stand": {
+        "id": "e-mate-stand",
+        "order": 2,
+        "source": {
+          "nodeId": "mate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in2"
+        }
+      },
+      "e-orb-stand": {
+        "id": "e-orb-stand",
+        "order": 1,
+        "source": {
+          "nodeId": "orb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stand",
+          "portId": "in2"
+        }
+      },
+      "e-pick-wall": {
+        "id": "e-pick-wall",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wall",
+          "portId": "input"
+        }
+      },
+      "e-stand-pick": {
+        "id": "e-stand-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "stand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-wall-out": {
+        "id": "e-wall-out",
+        "source": {
+          "nodeId": "wall",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 1.9,
+          "aspectcorrect": true,
+          "exp": 2.1,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": -0.5,
+          "period": 0.19,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 11,
+          "speed": 0.05,
+          "spread": 2,
+          "t4d": 0.41,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1700,
+          "y": 120
+        },
+        "type": "noise"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {},
+        "position": {
+          "x": -1700,
+          "y": 400
+        },
+        "type": "webcam"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "file": "",
+          "playMode": "freeRun",
+          "speed": 1
+        },
+        "position": {
+          "x": -1700,
+          "y": 640
+        },
+        "type": "movieFileIn"
+      },
+      "mate": {
+        "definitionVersion": 1,
+        "id": "mate",
+        "label": "mate1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('matex1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "center.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('matey1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            0.42,
+            0.78,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.09,
+            0.09
+          ],
+          "softness": 0.18
+        },
+        "position": {
+          "x": -1700,
+          "y": -160
+        },
+        "type": "circle"
+      },
+      "matex": {
+        "definitionVersion": 1,
+        "id": "matex",
+        "label": "matex1",
+        "parameters": {
+          "amplitude": 0.34,
+          "frequency": 0.11,
+          "offset": 0.5,
+          "phase": 0.6,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1980,
+          "y": 860
+        },
+        "type": "lfo"
+      },
+      "matey": {
+        "definitionVersion": 1,
+        "id": "matey",
+        "label": "matey1",
+        "parameters": {
+          "amplitude": 0.24,
+          "frequency": 0.29,
+          "offset": 0.5,
+          "phase": 0.1,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1980,
+          "y": 1100
+        },
+        "type": "lfo"
+      },
+      "orb": {
+        "definitionVersion": 1,
+        "id": "orb",
+        "label": "orb1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathx1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "center.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathy1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            1,
+            0.9,
+            0.66,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.15,
+            0.15
+          ],
+          "softness": 0.22
+        },
+        "position": {
+          "x": -1700,
+          "y": -420
+        },
+        "type": "circle"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": -560,
+          "y": 60
+        },
+        "type": "output"
+      },
+      "pathx": {
+        "definitionVersion": 1,
+        "id": "pathx",
+        "label": "pathx1",
+        "parameters": {
+          "amplitude": 0.32,
+          "frequency": 0.19,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1980,
+          "y": 380
+        },
+        "type": "lfo"
+      },
+      "pathy": {
+        "definitionVersion": 1,
+        "id": "pathy",
+        "label": "pathy1",
+        "parameters": {
+          "amplitude": 0.28,
+          "frequency": 0.13,
+          "offset": 0.5,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1980,
+          "y": 620
+        },
+        "type": "lfo"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1140,
+          "y": 160
+        },
+        "type": "switch"
+      },
+      "stand": {
+        "definitionVersion": 1,
+        "id": "stand",
+        "label": "stand1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1420,
+          "y": -20
+        },
+        "type": "add"
+      },
+      "wall": {
+        "definitionVersion": 1,
+        "id": "wall",
+        "label": "wall1",
+        "parameters": {
+          "blend": 0.42,
+          "colour": [
+            1,
+            0.68,
+            0.36,
+            1
+          ],
+          "grid": [
+            3,
+            3
+          ],
+          "mode": 1,
+          "rate": 1,
+          "seed": 7,
+          "spread": 1
+        },
+        "position": {
+          "x": -860,
+          "y": 60
+        },
+        "type": "component:timeGrid@1"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E51 Chorus",
+  "projectId": "example-e51-chorus",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 11,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

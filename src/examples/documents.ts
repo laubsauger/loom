@@ -43,6 +43,7 @@ export { lissajousDocument } from "./documents/lissajous.ts";
 export { galvoDocument } from "./documents/galvo.ts";
 export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
+export { chorusDocument } from "./documents/chorus.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
 import { animatedNoiseFieldDocument } from "./documents/animated-noise-field.ts";
@@ -86,6 +87,7 @@ import { lissajousDocument } from "./documents/lissajous.ts";
 import { galvoDocument } from "./documents/galvo.ts";
 import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
+import { chorusDocument } from "./documents/chorus.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -131,5 +133,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   lanternDocument,
   lissajousDocument,
   galvoDocument,
+  chorusDocument,
 ];
 
