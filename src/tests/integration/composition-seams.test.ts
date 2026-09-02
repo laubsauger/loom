@@ -101,6 +101,16 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "pretending to have hardware.",
   },
   {
+    name: "createLaserService",
+    reason:
+      "T950: the helper-side armed lifecycle with the dead-man (G2), gated against the DAC " +
+      "emulator on a fake clock. Its product caller is the device-role laser message family in " +
+      "serve.ts, which needs the arming and E-stop SESSION SURFACE first (G7: an always-visible " +
+      "E-stop that does not depend on the render loop) — a UX decision the owner rules on, not " +
+      "an implementer default. Until then no product path can reach a laser: the pump " +
+      "constructs no transport and says so per node.",
+  },
+  {
     name: "createHeadlessMcpServer",
     reason:
       "Constructed by serveStdio() in the SAME module — the stdio MCP server's own process entry point (T294), which this scan does not treat as an app root. serve.gpu.test.ts drives it end to end with real pixels.",
