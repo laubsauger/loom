@@ -90,7 +90,7 @@ THE OUTWARD DRIVING FORCE — a second loop, and a beat is the only thing that f
         └─► show1(add) ◄────────────────────┘
 
 show1 ─► warpa1 ─► warpb1 ─► warpc1 ◄─ crest1 (the ring field IS the finest lens)
-                                 └─► tapr1 ─► fringerg1 ─► fringe1 ─► glow1 ─► hue1 ─► out1
+                                 └─► tapr1 ─► fringerg1 ─► fringe1 ─► glow1 ─► hue1 ─► out
                                  └─► tapg1 ──────┘             ▲                  ▲
                                  └─► tapb1 ─────────────────────┘   drift1(lfo 0.033Hz)┘
 ```
