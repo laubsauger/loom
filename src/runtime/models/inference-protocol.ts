@@ -19,7 +19,7 @@
  */
 
 /** The model kinds the worker knows how to pack and encode for. */
-export type InferenceNodeType = "depth" | "pose";
+export type InferenceNodeType = "depth" | "pose" | "matte";
 
 /**
  * WHICH SESSION, and it is NOT the model id (§T965's backend picker).

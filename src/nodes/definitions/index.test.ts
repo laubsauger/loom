@@ -131,6 +131,7 @@ describe("core catalogue (T70, T40)", () => {
       "analyze",
       "depth",
       "pose",
+      "matte",
       "movieFileIn",
       "webcam",
       "text",

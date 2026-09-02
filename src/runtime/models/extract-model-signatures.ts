@@ -16,7 +16,7 @@
  * A hand-typed signature fixture would have carried exactly the same wrong assumption. So
  * the fixture is EXTRACTED, and this is what extracts it.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const FILES: ReadonlyArray<readonly [string, string]> = [
@@ -24,6 +24,8 @@ const FILES: ReadonlyArray<readonly [string, string]> = [
   ["depth-anything-v2-small-q4f16", "depth-q4f16.onnx"],
   ["movenet-lightning", "pose.onnx"],
   ["movenet-lightning-int8", "pose-int8.onnx"],
+  ["modnet-photographic", "matte.onnx"],
+  ["modnet-photographic-quantized", "matte-quantized.onnx"],
 ];
 
 const dir = process.argv[2];
@@ -34,6 +36,12 @@ ort.env.logLevel = "error";
 
 const rows: string[] = [];
 for (const [id, file] of FILES) {
+  /* T957: extract what the directory HAS — a partial run pastes a partial table, and the
+     absent rows say so loudly instead of failing the whole extraction. */
+  if (!existsSync(join(dir, file))) {
+    console.log(`skip ${id}: ${file} not in ${dir}`);
+    continue;
+  }
   const session = await ort.InferenceSession.create(readFileSync(join(dir, file)), {
     executionProviders: ["wasm"],
   });

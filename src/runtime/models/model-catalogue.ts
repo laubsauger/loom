@@ -101,7 +101,37 @@ export const POSE_LIVE: ModelDescriptor = {
 
 export const POSE_MODELS: readonly ModelDescriptor[] = [POSE_ACCURATE, POSE_LIVE];
 
-export const ALL_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...POSE_MODELS];
+/**
+ * T957 — MODNet person matting (the orchestrator's ruling: Apache-2.0, true soft-alpha
+ * MATTING, same onnx-community conversion family as the depth model above; RVM was
+ * blocked twice — GPL-3.0 weights, and the seam is single-tensor, §T981).
+ * Revision verified 2026-09-03 against the HF model API; bytes from content-length at
+ * that revision.
+ */
+const MATTE_REPO = "Xenova/modnet";
+const MATTE_REVISION = "fa2fa546052fba4c08921230a26cc69a333fca12";
+const matteWeights = (file: string): string =>
+  `https://huggingface.co/${MATTE_REPO}/resolve/${MATTE_REVISION}/onnx/${file}`;
+
+export const MATTE_ACCURATE: ModelDescriptor = {
+  id: "modnet-photographic",
+  label: "MODNet (25 MB)",
+  url: matteWeights("model.onnx"),
+  bytes: 25_888_640,
+  license: "Apache-2.0",
+};
+
+export const MATTE_FAST: ModelDescriptor = {
+  id: "modnet-photographic-quantized",
+  label: "MODNet quantized (6.6 MB)",
+  url: matteWeights("model_quantized.onnx"),
+  bytes: 6_632_188,
+  license: "Apache-2.0",
+};
+
+export const MATTE_MODELS: readonly ModelDescriptor[] = [MATTE_ACCURATE, MATTE_FAST];
+
+export const ALL_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...POSE_MODELS, ...MATTE_MODELS];
 
 export function modelById(id: string): ModelDescriptor | undefined {
   return ALL_MODELS.find((model) => model.id === id);

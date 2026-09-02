@@ -52,6 +52,16 @@ export const MODEL_SIGNATURES: readonly ModelSignature[] = [
     input: { name: "pixel_values", type: "uint8", shape: ["batch_size", "192", "192", "4"] },
     output: { name: "keypoints", type: "float32" },
   },
+  {
+    modelId: "modnet-photographic",
+    input: { name: "input", type: "float32", shape: ["batch_size", "3", "height", "width"] },
+    output: { name: "output", type: "float32" },
+  },
+  {
+    modelId: "modnet-photographic-quantized",
+    input: { name: "input", type: "float32", shape: ["batch_size", "3", "height", "width"] },
+    output: { name: "output", type: "float32" },
+  },
 ];
 
 export function signatureFor(modelId: string): ModelSignature | undefined {

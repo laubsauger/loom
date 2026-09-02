@@ -1,5 +1,6 @@
 import { depthToRgba, packModelInput } from "./depth-runner.ts";
 import { POSE_INPUT_SIDE, keypointsToTexture, packPoseInput } from "./pose-runner.ts";
+import { matteToFloats, packMatteInput, smoothMatte } from "./matte-runner.ts";
 import { describeRuntimeLoadFailure } from "./runtime-load-failure.ts";
 import type { InferenceNodeType, InferenceRequest, InferenceResponse } from "./inference-protocol.ts";
 
@@ -75,10 +76,21 @@ const PACKING: Readonly<Record<InferenceNodeType, Packing>> = {
     dims: (side) => [1, side, side, 4],
     encode: (output) => keypointsToTexture(output),
   },
+  matte: {
+    // float32 NCHW, (x-0.5)/0.5 — MODNet's own reference inference, not the card (§B148).
+    tensorType: "float32",
+    pack: (texels, side) => packMatteInput(texels, side),
+    dims: (side) => [1, 3, side, side],
+    encode: (output, width, height, side) => matteToFloats(output, side, width, height),
+  },
 };
 
 export function createWorkerCore(options: WorkerCoreOptions) {
   const sessions = new Map<string, Promise<LoadedSession>>();
+  /* T957 — the matte's temporal EMA, per session: worker-local state in the SAME slot
+     §T981's recurrent design would use (building this proves the slot). Cleared with
+     the session. */
+  const previousMatte = new Map<string, Float32Array>();
   const now = options.now ?? (() => (typeof performance === "undefined" ? 0 : performance.now()));
 
   /**
@@ -162,7 +174,16 @@ export function createWorkerCore(options: WorkerCoreOptions) {
         const data = outputName === undefined ? undefined : outputs[outputName]?.data;
         if (data === undefined) throw new Error("the model returned no output");
 
-        const bytes = packing.encode(data, request.width, request.height, side);
+        let bytes = packing.encode(data, request.width, request.height, side);
+        if (request.nodeType === "matte") {
+          /* Per-frame matting flickers at the edges; the EMA trades a few frames of
+             edge lag for temporal stability (stated on the node's parameter, §T957).
+             Runs on the FLOAT view, before any consumer sees the frame. */
+          const view = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+          const smoothed = smoothMatte(previousMatte.get(request.sessionKey), view, 0.55);
+          previousMatte.set(request.sessionKey, Float32Array.from(smoothed));
+          bytes = new Uint8Array(smoothed.buffer, smoothed.byteOffset, smoothed.byteLength);
+        }
         // Transferred, not cloned: a 1080p depth map is 8.3 MB per frame. Copied out of
         // its view first so the transferred buffer is exactly the result and nothing else.
         const buffer = new ArrayBuffer(bytes.byteLength);

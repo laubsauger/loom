@@ -19,6 +19,7 @@ import { analyzeNode } from "./analyze.ts";
 import { depthNode } from "./depth.ts";
 import { pointsFromTextureNode } from "./points-from-texture.ts";
 import { poseNode } from "./pose.ts";
+import { matteNode } from "./matte.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
@@ -159,6 +160,7 @@ export {
 export type { DepthNodeSettings } from "./depth.ts";
 export { pointsFromTextureNode } from "./points-from-texture.ts";
 export { poseNode, POSE_INPUT_KEY, POSE_RESULT_KEY } from "./pose.ts";
+export { matteNode, MATTE_INPUT_KEY, MATTE_RESULT_KEY } from "./matte.ts";
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
@@ -194,6 +196,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   analyzeNode,
   depthNode,
   poseNode,
+  matteNode,
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
   audioInNode,
