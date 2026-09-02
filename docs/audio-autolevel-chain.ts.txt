@@ -1,0 +1,130 @@
+/**
+ * T821 — IS THE ANALYSER EXPRESSIBLE FROM SHIPPED NODES TODAY?
+ * The fork (node vs component) turns on this. A component can only wire what the nodes
+ * already do, so I measure each candidate piece rather than assuming it.
+ *
+ * Signal under test: `audioPattern`'s `low`, the same drive E27 uses.
+ */
+import { createValueGraphSession } from "../../src/domain/channels/value-graph.ts";
+import { createNodeRegistry } from "../../src/nodes/registry/registry.ts";
+import { allNodeDefinitions } from "../../src/nodes/definitions/index.ts";
+import type { GraphDocument, GraphNode } from "../../src/domain/types/graph.ts";
+
+const registry = createNodeRegistry(allNodeDefinitions).view();
+const node = (id: string, type: string, parameters: Record<string, unknown> = {}): GraphNode =>
+  ({ id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters, label: id } as never);
+const graphOf = (nodes: GraphNode[], edges: Array<[string, string, string, string]>): GraphDocument => {
+  const edgeRecord: Record<string, unknown> = {};
+  edges.forEach(([sn, sp, tn, tp], i) => {
+    edgeRecord[`e${String(i)}`] = { id: `e${String(i)}`, source: { nodeId: sn, portId: sp }, target: { nodeId: tn, portId: tp } };
+  });
+  return { revision: 1, nodes: Object.fromEntries(nodes.map((n) => [n.id, n])), edges: edgeRecord, groups: {} } as never;
+};
+
+function run(graph: GraphDocument, frames: number, read: string[]): Record<string, number[]> {
+  const session = createValueGraphSession(registry);
+  const out: Record<string, number[]> = Object.fromEntries(read.map((r) => [r, []]));
+  for (let i = 0; i < frames; i += 1) {
+    const r = session.evaluate(graph, { timeSeconds: i / 60, deltaSeconds: 1 / 60, frameIndex: i, mode: "offline", randomSeed: 1 }, {});
+    for (const name of read) out[name]!.push(r.byName.get(name)?.["low"] ?? NaN);
+  }
+  return out;
+}
+
+const BEAT = { bpm: 112, amount: 1 };
+const stat = (xs: number[]): string => {
+  const t = xs.slice(200);
+  return `${Math.min(...t).toFixed(4)}..${Math.max(...t).toFixed(4)}`;
+};
+
+console.log("=== 1. PEAK-HOLD from valueLag (instant attack, slow release) ===");
+{
+  const g = graphOf(
+    [node("beat", "audioPattern", BEAT), node("peak", "valueLag", { lag: 0.005, releaseRatio: 100 })],
+    [["beat", "out", "peak", "in"]],
+  );
+  const r = run(g, 400, ["beat", "peak"]);
+  console.log("  raw  low", stat(r["beat"]!));
+  console.log("  peak-hold", stat(r["peak"]!), " (lag 0.005 x100 => 5ms attack, 500ms release)");
+  console.log("  peak trace f290..f310:", r["peak"]!.slice(290, 311).map((v) => v.toFixed(3)).join(" "));
+}
+
+console.log("\n=== 2. FLOOR-HOLD from valueLag (slow rise, instant fall: ratio < 1) ===");
+{
+  const g = graphOf(
+    [node("beat", "audioPattern", BEAT), node("floor", "valueLag", { lag: 0.5, releaseRatio: 0.002 })],
+    [["beat", "out", "floor", "in"]],
+  );
+  const r = run(g, 400, ["beat", "floor"]);
+  console.log("  floor-hold", stat(r["floor"]!), " (lag 0.5 x0.002 => 500ms rise, 1ms fall)");
+}
+
+console.log("\n=== 3. AUTO-LEVEL (T767): (x - floor) / (peak - floor), all shipped nodes ===");
+{
+  const g = graphOf(
+    [
+      node("beat", "audioPattern", BEAT),
+      node("peak", "valueLag", { lag: 0.005, releaseRatio: 100 }),
+      node("floor", "valueLag", { lag: 0.5, releaseRatio: 0.002 }),
+      node("num", "valueMath", { operation: "subtract" }),
+      node("den", "valueMath", { operation: "subtract" }),
+      node("norm", "valueMath", { operation: "divide" }),
+      node("clamp", "valueLimit", { minimum: 0, maximum: 1 }),
+    ],
+    [
+      ["beat", "out", "peak", "in"], ["beat", "out", "floor", "in"],
+      ["beat", "out", "num", "a"], ["floor", "out", "num", "b"],
+      ["peak", "out", "den", "a"], ["floor", "out", "den", "b"],
+      ["num", "out", "norm", "a"], ["den", "out", "norm", "b"],
+      ["norm", "out", "clamp", "in"],
+    ],
+  );
+  const r = run(g, 400, ["beat", "clamp"]);
+  console.log("  raw        ", stat(r["beat"]!));
+  console.log("  auto-levelled", stat(r["clamp"]!), " <- wants to reach ~0..1 regardless of source level");
+  console.log("  trace f290..f310:", r["clamp"]!.slice(290, 311).map((v) => v.toFixed(3)).join(" "));
+}
+
+console.log("\n=== 3b. THE SAME GRAPH ON A QUIET SOURCE (amount 0.25) — does it adapt? ===");
+{
+  const mk = (amount: number): GraphDocument => graphOf(
+    [
+      node("beat", "audioPattern", { bpm: 112, amount }),
+      node("peak", "valueLag", { lag: 0.005, releaseRatio: 100 }),
+      node("floor", "valueLag", { lag: 0.5, releaseRatio: 0.002 }),
+      node("num", "valueMath", { operation: "subtract" }),
+      node("den", "valueMath", { operation: "subtract" }),
+      node("norm", "valueMath", { operation: "divide" }),
+      node("clamp", "valueLimit", { minimum: 0, maximum: 1 }),
+    ],
+    [
+      ["beat", "out", "peak", "in"], ["beat", "out", "floor", "in"],
+      ["beat", "out", "num", "a"], ["floor", "out", "num", "b"],
+      ["peak", "out", "den", "a"], ["floor", "out", "den", "b"],
+      ["num", "out", "norm", "a"], ["den", "out", "norm", "b"],
+      ["norm", "out", "clamp", "in"],
+    ],
+  );
+  for (const amount of [1, 0.5, 0.25]) {
+    const r = run(mk(amount), 400, ["beat", "clamp"]);
+    console.log(`  amount ${String(amount).padEnd(5)} raw ${stat(r["beat"]!).padEnd(18)} normalised ${stat(r["clamp"]!)}`);
+  }
+}
+
+console.log("\n=== 4. ONSET as a TRIGGER: valueFilter(highpass) -> valueTrigger ===");
+{
+  const g = graphOf(
+    [
+      node("beat", "audioPattern", BEAT),
+      node("flux", "valueFilter", { cutoff: 4, mode: "highpass" }),
+      node("onset", "valueTrigger", { threshold: 0.05 }),
+    ],
+    [["beat", "out", "flux", "in"], ["flux", "out", "onset", "in"]],
+  );
+  const r = run(g, 400, ["flux", "onset"]);
+  const fired = r["onset"]!.map((v, i) => (v === 1 ? i : -1)).filter((i) => i >= 0);
+  console.log("  novelty (high-pass)", stat(r["flux"]!));
+  console.log("  onsets fired at frames:", fired.slice(0, 16).join(" "), fired.length > 16 ? `... (${String(fired.length)} total)` : "");
+  const gaps = fired.slice(1).map((f, i) => f - fired[i]!);
+  console.log("  gaps between onsets:", [...new Set(gaps)].sort((a, b) => a - b).join(","), " (a beat is 32.14 frames at 112bpm)");
+}
