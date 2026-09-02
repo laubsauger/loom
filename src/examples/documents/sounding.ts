@@ -105,10 +105,10 @@ export const soundingDocument = document(
       // bridge samples the source at each point (pointsFromTexture writes only position —
       // colour is textureToAttribute's job by composition) and hands `draw1` a per-point
       // colour, so the cloud IS the video standing up in depth — E27's lesson, its own path.
-      node("tint", "textureToAttribute", [-1170, -60], { count: 6912 }, { label: "tint1" }),
+      node("tint", "textureToAttribute", [-1120, -60], { count: 6912 }, { label: "tint1" }),
 
       // ---- the look: a dense box cloud, lit, seen from off-axis so relief reads -----
-      node("draw", "renderInstances", [-1020, -60], {
+      node("draw", "renderInstances", [-920, -60], {
         /*
          * 6912 = cols x rows exactly, and `scale` is HALF the lattice spacing (2.6/96 =
          * 0.027) on purpose: at the spacing itself the boxes touch and the cloud fuses
@@ -140,7 +140,7 @@ export const soundingDocument = document(
       // clears to OPAQUE black, so an `over` would simply hide the plate. Additive suits
       // it anyway — the scan reads as light standing off its own image. Both states are
       // then a picture: flat, the grid lies on the plate; with depth, it lifts (§V471).
-      node("plate", "add", [-720, -60], { opacity: 1 }, { label: "plate1" }),
+      node("plate", "add", [-620, -60], { opacity: 1 }, { label: "plate1" }),
       node("dim", "level", [-1320, 300], {
         /*
          * LINEAR, and the number looks wrong until you remember that (§V587/§V56). The
@@ -150,7 +150,7 @@ export const soundingDocument = document(
          */
         blacklevel: 0, whitelevel: 1, gamma1: 1, contrast: 1, brightness: 0.035, invert: 0, opacity: 1,
       }, { label: "dim1" }),
-      node("out", "output", [-420, -60], {}, { label: "out1" }),
+      node("out", "output", [-320, -60], {}, { label: "out1" }),
     ],
     [
       edge("e-bed-stand", ["bed", "out"], ["stand", "in1"]),
