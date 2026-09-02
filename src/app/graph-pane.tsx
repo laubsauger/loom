@@ -20,12 +20,17 @@ import { ContextMenuHost } from "@editor/menus/index.ts";
 import type { NodeDragPayload } from "@editor/library/index.ts";
 import {
   NodePreviewSlot,
+  PreviewGizmoOverlays,
   PreviewInspectOverlays,
   createPreviewOrbitStore,
   createPreviewSlotBounds,
+  createVec3GizmoStore,
+  gizmoHandlesFor,
   lensMarker,
   usePreviewViews,
 } from "@editor/viewer/index.ts";
+import type { PreviewGizmoTile } from "@editor/viewer/index.ts";
+import { effectiveParameterSchema, resolveParameters } from "@domain/parameters/resolve.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
@@ -319,6 +324,64 @@ function GraphPaneInner({
       return null;
     },
     [cameraGizmoNodes, cameraGizmos, orbitableNodes, previewOrbits, readCameraPose],
+  );
+
+  /**
+   * T935 — WHICH TILES OFFER DRAGGABLE HANDLES, and what each one draws.
+   *
+   * The gate is the compiler's ORBIT BASIS, which is the same declaration `orbitableNodes`
+   * above consults and never a node-type list: a published basis means this tile draws a
+   * SCENE IN WORLD SPACE through a camera we can reproduce exactly, which is the only
+   * condition under which a world point has a place on the picture. That one fact also
+   * separates the catalogue — `light.direction` and `light.position` are world vectors on
+   * a 3D tile, while `convolve.row0` and `noise.t` are `vector`/3 parameters on nodes whose
+   * preview is a TEXTURE and therefore reach this map never.
+   *
+   * Resolved ONCE PER COMPILE, not per frame: the handle set changes with the document,
+   * and the overlay's frame loop only needs the ORBIT to be fresh (that is the input no
+   * store notifies about, §T714's reason). `resolveParameters` gives the effective value
+   * — so a driven handle is drawn where its DRIVER put it — together with the active mode
+   * and the §V113 per-component modes the refusal is built from.
+   */
+  const gizmoTiles = useMemo(() => {
+    const tiles = new Map<NodeId, Omit<PreviewGizmoTile, "orbit">>();
+    for (const output of compiledOutputs) {
+      const basis = output.synthesis?.orbit;
+      if (basis === undefined) continue;
+      const nodeId = output.nodeId as NodeId;
+      const node = graph.nodes[nodeId];
+      if (node === undefined) continue;
+      const definition = registry.get(node.type);
+      if (definition === undefined) continue;
+      const resolved = resolveParameters(node, definition);
+      const handles = gizmoHandlesFor({
+        schema: effectiveParameterSchema(definition, node.parameters),
+        resolved: resolved.entries,
+        values: resolved.values,
+      });
+      if (handles.length === 0) continue;
+      tiles.set(nodeId, { basis, source: output.size, handles });
+    }
+    return tiles;
+  }, [compiledOutputs, graph, registry]);
+
+  const gizmoStore = useMemo(
+    () => createVec3GizmoStore({ editor: parameterEditor }),
+    [parameterEditor],
+  );
+  /**
+   * The orbit is read HERE rather than baked into the map above, because it is the one
+   * input that changes without notifying anybody: `PreviewOrbitStore.apply` moves the
+   * camera every pointer event and the preview tick samples it, so the overlay polls it on
+   * an animation frame and re-renders only on the frames a handle actually moved.
+   */
+  const gizmoTile = useCallback(
+    (nodeId: NodeId): PreviewGizmoTile | null => {
+      const tile = gizmoTiles.get(nodeId);
+      if (tile === undefined) return null;
+      return { ...tile, orbit: previewOrbits.get(nodeId) };
+    },
+    [gizmoTiles, previewOrbits],
   );
 
   /**
@@ -670,6 +733,12 @@ function GraphPaneInner({
         />
       </GraphMenuHost>
       <PreviewInspectOverlays bounds={previewBounds} inspect={previewInspect} />
+      <PreviewGizmoOverlays
+        bounds={previewBounds}
+        tile={gizmoTile}
+        store={gizmoStore}
+        active={gizmoTiles.size > 0}
+      />
       <PortDragBridge onChange={onPortDragChange} />
     </div>
   );

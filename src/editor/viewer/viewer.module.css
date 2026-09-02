@@ -139,3 +139,50 @@
  * It is `.lensMark` in `nodes/node-view.module.css` now, in the node header.
  */
 
+
+/*
+ * T935 — one draggable handle, centred on the world point it stands for.
+ *
+ * `left`/`top` carry the PROJECTED point in pane pixels; the transform centres the dot on
+ * it and scales the whole thing by the canvas zoom, so it stays chrome ON a node exactly
+ * as the inspect toggle beside it does. `translate(-50%, -50%)` comes AFTER `scale` for
+ * the same reason it does there: the offset is then expressed in the handle's own units.
+ *
+ * A ring rather than a filled disc: the picture underneath is the thing being aimed, and a
+ * solid marker hides the pixel it claims to mark. `cursor: grab` and the shadow are the
+ * only things that say "this moves" — the handle carries no glyph, because a letter at
+ * 12px over an arbitrary render is unreadable and the label lives on the tooltip.
+ *
+ * REFUSED, not disabled (§T935(b), §T896's lesson): a `disabled` button shows no tooltip,
+ * and the reason a driven handle is drawn at all is so the user can find out what owns it.
+ * `data-locked` restyles it to a dashed, dimmed ring — visibly present, visibly not yours.
+ */
+.gizmoHandle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--signal);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-sunken) 40%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bg-sunken) 70%, transparent);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  transform: scale(var(--chrome-zoom, 1)) translate(-50%, -50%);
+  transform-origin: 0 0;
+}
+
+.gizmoHandle:hover {
+  background: color-mix(in srgb, var(--signal) 35%, transparent);
+}
+
+.gizmoHandle:active {
+  cursor: grabbing;
+}
+
+.gizmoHandle[data-locked="true"] {
+  border-style: dashed;
+  border-color: var(--text-dim);
+  cursor: not-allowed;
+}

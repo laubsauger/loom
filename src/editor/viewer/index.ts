@@ -35,6 +35,25 @@ export { PreviewInspectOverlays } from "./preview-inspect-overlay.tsx";
 export type { PreviewInspectOverlaysProps } from "./preview-inspect-overlay.tsx";
 
 /**
+ * T935 — the DRAGGABLE POINT, generalising T692's camera gizmo from *the camera* to *a
+ * point in space*. A handle is a world-space `vec3` parameter drawn where the tile's own
+ * camera puts it; dragging it writes that parameter through the bus, so a gizmo edit is
+ * indistinguishable from a typed one (§V29/§V30). The refusal, the depth constraint and
+ * the reason the graph pane hosts it are written out in the three modules.
+ */
+export { PreviewGizmoOverlays } from "./preview-gizmo-overlay.tsx";
+export type { PreviewGizmoOverlaysProps, PreviewGizmoTile } from "./preview-gizmo-overlay.tsx";
+export { GIZMO_LOCKED_REASON, createVec3GizmoStore, gizmoHandlesFor } from "./vec3-gizmo-store.ts";
+export type {
+  GizmoHandle,
+  GizmoParameterFacts,
+  Vec3GizmoEditor,
+  Vec3GizmoStore,
+} from "./vec3-gizmo-store.ts";
+export { handleScreenPoint, pointerToPlane, tileCamera } from "./gizmo-projection.ts";
+export type { HandlePoint, PictureRect, TileCamera } from "./gizmo-projection.ts";
+
+/**
  * The preview LENS (T336) — channel isolation, exposure and the tonemap, on the preview path
  * only (§V255, §V70a). The store is transient session state, never document state; the reason
  * is written down in `preview-view-store.ts` and it is a deliberate call, not an omission.
