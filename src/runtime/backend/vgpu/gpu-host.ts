@@ -71,7 +71,7 @@ export function browserGpuHost(): GpuHost {
     label: "browser",
     async create(options) {
       const base = {
-        label: "shaderloom",
+        label: "loom",
         ...(options.powerPreference === undefined
           ? {}
           : { powerPreference: options.powerPreference }),

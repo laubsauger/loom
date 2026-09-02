@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
@@ -60,7 +60,7 @@ export interface FullscreenHolder {
   app: FullscreenSurface | null;
 }
 
-export function fullscreenHolderFor(bus: ShaderloomBus): FullscreenHolder {
+export function fullscreenHolderFor(bus: LoomBus): FullscreenHolder {
   // `sharedForBus`, not `commandHolder`: this holder has TWO slots (T551 added `app`
   // beside the viewer's `current`), so the `{ current }` wrapper does not describe it.
   return sharedForBus<FullscreenHolder>(bus, "view.toggleFullscreen", () => ({
@@ -90,7 +90,7 @@ const UNSUPPORTED = {
  * Idempotent across mounts (`hasCommand`), because React mounts more than once —
  * StrictMode, remounts, tests.
  */
-export function registerFullscreenCommand(bus: ShaderloomBus): FullscreenHolder {
+export function registerFullscreenCommand(bus: LoomBus): FullscreenHolder {
   const holder = fullscreenHolderFor(bus);
   if (bus.hasCommand("view.toggleFullscreen")) return holder;
 
@@ -156,7 +156,7 @@ export function registerFullscreenCommand(bus: ShaderloomBus): FullscreenHolder 
  * button that does nothing, and a command with no surface is the §V220 shape.
  */
 export function useFullscreenSurface(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   surface: FullscreenSurface,
   target: FullscreenTarget = "viewer",
 ): void {

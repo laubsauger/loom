@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -58,7 +58,7 @@ export interface ViewerHolder {
   current: ViewerHandlers | null;
 }
 
-export function viewerHolderFor(bus: ShaderloomBus): ViewerHolder {
+export function viewerHolderFor(bus: LoomBus): ViewerHolder {
   return commandHolder<ViewerHandlers>(bus, "node.openViewer");
 }
 
@@ -68,7 +68,7 @@ const NO_OUTPUT = { nodeId: null, portId: null };
  * Registration is idempotent and dispatches through the holder: the bus has no
  * unregister, and React mounts more than once (StrictMode, remounts, tests).
  */
-export function registerViewerCommands(bus: ShaderloomBus): ViewerHolder {
+export function registerViewerCommands(bus: LoomBus): ViewerHolder {
   const holder = viewerHolderFor(bus);
   if (bus.hasCommand("node.openViewer")) return holder;
 

@@ -18,7 +18,7 @@ import type { McpToolSource } from "./server.ts";
  * ## What changes for the owner
  *
  * Nothing in their config. Claude Desktop spawns the same `node … serve.ts --grant-export`
- * it already spawns; that process now ALSO listens on loopback, and a Shaderloom tab can
+ * it already spawns; that process now ALSO listens on loopback, and a Loom tab can
  * attach to it from a button. A `tools/call` arriving on stdio then runs against the LIVE
  * store behind the canvas they are watching, instead of against the headless twin.
  *
@@ -155,7 +155,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         bridgeFailure(
           "bridge",
           "bridge/detached",
-          `The Shaderloom tab detached before this call finished (${reason}). ${headlessNote(pairingCode)}`,
+          `The Loom tab detached before this call finished (${reason}). ${headlessNote(pairingCode)}`,
         ),
       );
     }
@@ -171,11 +171,11 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       boundPort = port;
       notice({
         severity: "info",
-        message: `Bridge listening on ${BRIDGE_HOST}:${port}. Pairing code ${pairingCode}. Open Shaderloom, find Connections in the agent panel, and enter it to drive the tab you are looking at.`,
+        message: `Bridge listening on ${BRIDGE_HOST}:${port}. Pairing code ${pairingCode}. Open Loom, find Connections in the agent panel, and enter it to drive the tab you are looking at.`,
       });
     },
     onListenError: (error) => {
-      // NOT fatal, and not silent: the stdio server is still a working headless Shaderloom.
+      // NOT fatal, and not silent: the stdio server is still a working headless Loom.
       // The bridge is the part that is gone, and the reason is the one thing that makes
       // "why does Connect not work" answerable (§V288).
       listenError = error.message;
@@ -188,14 +188,14 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       if (!isPermittedOrigin(socket.origin)) {
         refuse(
           socket,
-          `this bridge accepts connections from a Shaderloom page served from localhost only, and that socket announced origin ${socket.origin ?? "none"}.`,
+          `this bridge accepts connections from a Loom page served from localhost only, and that socket announced origin ${socket.origin ?? "none"}.`,
         );
         return;
       }
       if (page !== null) {
         refuse(
           socket,
-          "a Shaderloom tab is already attached to this bridge. Disconnect it first — one tab at a time, so an agent's edits always land somewhere identifiable.",
+          "a Loom tab is already attached to this bridge. Disconnect it first — one tab at a time, so an agent's edits always land somewhere identifiable.",
         );
         return;
       }
@@ -230,7 +230,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           // The page's own name is DATA — carried into a field somebody renders as text,
           // never interpolated into anything a model is asked to act on (§V37).
           const client = message["client"];
-          pageClient = typeof client === "string" ? client.slice(0, 120) : "a Shaderloom tab";
+          pageClient = typeof client === "string" ? client.slice(0, 120) : "a Loom tab";
           page = socket;
           // Ask for its roster BEFORE announcing the attach: `tools/list` must describe what
           // will actually execute, and until the answer lands the headless list is still the
@@ -248,10 +248,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
             const first = pageTools === null;
             pageTools = tools as readonly BridgeToolListing[];
             if (first) {
-              send(socket, { type: "attached", serverInfo: "shaderloom-bridge" });
+              send(socket, { type: "attached", serverInfo: "loom-bridge" });
               notice({
                 severity: "info",
-                message: `Bridge attached to ${pageClient ?? "a Shaderloom tab"}; tool calls now run against the live document.`,
+                message: `Bridge attached to ${pageClient ?? "a Loom tab"}; tool calls now run against the live document.`,
               });
             }
             options.onToolsChanged?.();
@@ -282,7 +282,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
               bridgeFailure(
                 "bridge",
                 "bridge/page-error",
-                `The Shaderloom tab could not run that tool: ${typeof said === "string" ? said : "no reason given"}`,
+                `The Loom tab could not run that tool: ${typeof said === "string" ? said : "no reason given"}`,
               ),
             );
             return;
@@ -310,8 +310,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       bridge: attached
         ? {
             attached: true,
-            target: pageClient ?? "the attached Shaderloom tab",
-            note: "Executed against the LIVE document in the attached Shaderloom tab; the user can see this change.",
+            target: pageClient ?? "the attached Loom tab",
+            note: "Executed against the LIVE document in the attached Loom tab; the user can see this change.",
           }
         : { attached: false, pairingCode, note: headlessNote(pairingCode) },
     };
@@ -323,7 +323,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       if (live === null) {
         return headless.listTools().map((tool) => ({
           ...tool,
-          description: `${tool.description} [headless: no Shaderloom tab is attached to this bridge, so this edits a document the user cannot see]`,
+          description: `${tool.description} [headless: no Loom tab is attached to this bridge, so this edits a document the user cannot see]`,
         }));
       }
       return live;
@@ -341,7 +341,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
             bridgeFailure(
               name,
               "bridge/timeout",
-              `The attached Shaderloom tab did not answer within ${Math.round(callTimeoutMs / 1000)}s. It may be busy or gone; the bridge is still attached.`,
+              `The attached Loom tab did not answer within ${Math.round(callTimeoutMs / 1000)}s. It may be busy or gone; the bridge is still attached.`,
             ),
           );
         }, callTimeoutMs);
@@ -360,14 +360,14 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     instructions() {
       if (listenError !== null) {
         return (
-          `Shaderloom MCP server. The loopback bridge could NOT start (${listenError}), so every tool below ` +
-          "runs against a headless in-memory document the user cannot see. Tell the user: another Shaderloom " +
+          `Loom MCP server. The loopback bridge could NOT start (${listenError}), so every tool below ` +
+          "runs against a headless in-memory document the user cannot see. Tell the user: another Loom " +
           "bridge is probably already running."
         );
       }
       return (
-        `Shaderloom MCP server, with a loopback bridge on ${BRIDGE_HOST}:${boundPort ?? options.port ?? BRIDGE_PORT}. ` +
-        "By default these tools edit a HEADLESS document the user cannot see. To drive the Shaderloom tab they " +
+        `Loom MCP server, with a loopback bridge on ${BRIDGE_HOST}:${boundPort ?? options.port ?? BRIDGE_PORT}. ` +
+        "By default these tools edit a HEADLESS document the user cannot see. To drive the Loom tab they " +
         `are actually looking at, tell them to open the agent panel's Connections section and enter the pairing code ${pairingCode}. ` +
         "Every tool result carries a `bridge` field saying which document it touched; if it says attached:false, say so " +
         "rather than reporting a change the user cannot find."
@@ -389,7 +389,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           port: boundPort,
           attached: true,
           client: pageClient,
-          detail: `Attached to ${pageClient ?? "a Shaderloom tab"}; tool calls run against the live document.`,
+          detail: `Attached to ${pageClient ?? "a Loom tab"}; tool calls run against the live document.`,
         };
       }
       return {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDomainBus } from "../../domain/commands/index.ts";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import type { HistorySummary } from "../../domain/commands/graph-commands.ts";
 import { createSequentialIdFactory } from "../../domain/graph/ids.ts";
 import { createGraphStore } from "../../domain/graph/store.ts";
@@ -50,7 +50,7 @@ function invocation(actor: Actor): InvocationContext {
 }
 
 interface Fixture {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly store: GraphStore;
 }
 
@@ -72,7 +72,7 @@ function patch(
 }
 
 function applyPatch(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   actor: Actor,
   input: GraphPatch,
   options: { dryRun?: boolean } = {},
@@ -87,12 +87,12 @@ function auditOf(store: GraphStore): readonly AuditEntry[] {
   return store.view.getAudit();
 }
 
-function historyOf(bus: ShaderloomBus, actor: Actor): Promise<HistorySummary> {
+function historyOf(bus: LoomBus, actor: Actor): Promise<HistorySummary> {
   return bus.query("graph.history", {}, invocation(actor));
 }
 
 /** Two nodes and no edges. Enough to have disjoint entities to aim patches at. */
-async function seedTwoNodes(bus: ShaderloomBus, store: GraphStore): Promise<[string, string]> {
+async function seedTwoNodes(bus: LoomBus, store: GraphStore): Promise<[string, string]> {
   const result = await applyPatch(
     bus,
     HUMAN,

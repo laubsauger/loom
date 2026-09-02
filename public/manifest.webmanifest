@@ -1,6 +1,6 @@
 {
-  "name": "Shaderloom",
-  "short_name": "Shaderloom",
+  "name": "Loom",
+  "short_name": "Loom",
   "description": "Browser-native WebGPU node compositor: typed graphs, live previews, WGSL effects.",
   "start_url": "/",
   "display": "standalone",

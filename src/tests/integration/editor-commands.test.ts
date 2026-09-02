@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alice, contextFor, createHarness, patch } from "../../domain/commands/test-support.ts";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import type { GraphPatchOperation } from "../../domain/types/patch.ts";
 
 /**
@@ -14,7 +14,7 @@ import type { GraphPatchOperation } from "../../domain/types/patch.ts";
 
 const invocation = contextFor(alice);
 
-async function seed(bus: ShaderloomBus, operations: GraphPatchOperation[]) {
+async function seed(bus: LoomBus, operations: GraphPatchOperation[]) {
   const result = await bus.execute(
     "graph.applyPatch",
     patch(bus.store.getRevision(), operations, "seed"),
@@ -41,8 +41,8 @@ async function harnessWithPair() {
   return { bus, solid, blur };
 }
 
-const nodeCount = (bus: ShaderloomBus) => Object.keys(bus.store.getGraph().nodes).length;
-const edgeCount = (bus: ShaderloomBus) => Object.keys(bus.store.getGraph().edges).length;
+const nodeCount = (bus: LoomBus) => Object.keys(bus.store.getGraph().nodes).length;
+const edgeCount = (bus: LoomBus) => Object.keys(bus.store.getGraph().edges).length;
 
 describe("graph.removeNodes", () => {
   it("deletes the node and its incident edges (§V40)", async () => {

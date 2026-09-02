@@ -93,6 +93,7 @@ export interface RegisterWebMcpOptions {
  * before choosing: `document.modelContext` IS identity-stable here, so the weak set
  * was sound against StrictMode alone — the marker also survives the dual-module case.
  */
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 const REGISTERED_MARKER = Symbol.for("shaderloom.webmcp.registered");
 
 function alreadyRegistered(host: unknown): boolean {

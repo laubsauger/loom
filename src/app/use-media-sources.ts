@@ -9,7 +9,7 @@ import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
 import {
@@ -285,7 +285,7 @@ export interface MediaWiring {
 
 export function useMediaSources(
   runtime: AppRuntime,
-  backend: ShaderloomBackend | null,
+  backend: LoomBackend | null,
   graph: GraphDocument,
   /** Resolved output sizes (T312). Null before the first successful compile. */
   resolved: ResolvedSizeSource | null,

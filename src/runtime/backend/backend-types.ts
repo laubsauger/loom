@@ -138,7 +138,7 @@ export interface BackendStatus {
  * `RenderBackend` plus the pieces the runtime needs that the frozen contract does not name:
  * a scheduler seam, the uniform-only update path, and observable status.
  */
-export interface ShaderloomBackend extends RenderBackend {
+export interface LoomBackend extends RenderBackend {
   readonly status: BackendStatus;
 
   /**

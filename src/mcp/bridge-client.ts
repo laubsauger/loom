@@ -14,7 +14,7 @@ import { toolListings } from "./published-tools.ts";
  *
  * ## The shape, and why it is this way round
  *
- * `serve.ts` is a headless Shaderloom with its own store; an agent talking to it builds a
+ * `serve.ts` is a headless Loom with its own store; an agent talking to it builds a
  * graph the owner never sees. So the same process now listens on loopback and THIS module
  * dials it, on a click. From then on a `tools/call` that arrived over the MCP client's stdio
  * pipe is forwarded here and executed against the LIVE store — nodes appear on the canvas
@@ -138,7 +138,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   const { surface, registry } = options;
   const openSocket = options.socketFactory ?? browserSocket;
   const url = bridgeUrl(options.port ?? BRIDGE_PORT);
-  const clientName = options.client ?? "a Shaderloom tab";
+  const clientName = options.client ?? "a Loom tab";
 
   let socket: BridgeSocket | null = null;
   /** Set while the user has asked to be attached. Guards late socket events. */
@@ -251,7 +251,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       const code = normalisePairingCode(pairingCode);
       if (code === "") {
         // Refused before a byte leaves the page: nothing opened, nothing published (§V288).
-        publish("error", "No pairing code entered. The Shaderloom MCP server prints one at startup; the agent connected to it can read it out.");
+        publish("error", "No pairing code entered. The Loom MCP server prints one at startup; the agent connected to it can read it out.");
         return;
       }
       wanted = true;
@@ -288,13 +288,13 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           "error",
           attached
             ? "The bridge closed the connection. The MCP server may have stopped; tool calls are running headless again."
-            : `Could not attach to a bridge at ${url}. Is the Shaderloom MCP server running?`,
+            : `Could not attach to a bridge at ${url}. Is the Loom MCP server running?`,
         );
         attached = false;
       };
       live.onerror = () => {
         if (socket !== live) return;
-        publish("error", `The bridge connection failed. Check that the Shaderloom MCP server is running on ${url}.`);
+        publish("error", `The bridge connection failed. Check that the Loom MCP server is running on ${url}.`);
       };
     },
 

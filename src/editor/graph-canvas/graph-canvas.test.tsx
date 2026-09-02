@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { alice, contextFor, createHarness, patch } from "@domain/commands/test-support.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { GraphCanvas } from "./graph-canvas.tsx";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
 import { installFlowStubs, setReducedMotion } from "./testing.tsx";
@@ -17,7 +17,7 @@ afterEach(cleanup);
 
 const invocation = contextFor(alice);
 
-async function apply(bus: ShaderloomBus, operations: Parameters<typeof patch>[1], label?: string) {
+async function apply(bus: LoomBus, operations: Parameters<typeof patch>[1], label?: string) {
   await act(async () => {
     await bus.execute(
       "graph.applyPatch",

@@ -107,7 +107,7 @@ export interface McpTransportRegistry {
  */
 export const TRANSPORT_LABEL: Readonly<Record<McpTransportKind, string>> = {
   webmcp: "In-page (WebMCP)",
-  bridge: "Shaderloom bridge (stdio MCP server)",
+  bridge: "Loom bridge (stdio MCP server)",
 };
 
 /** Row order in the panel, and the set §V338 insists always has a row. */
@@ -190,7 +190,7 @@ export function createMcpTransportRegistry(options: { now?: () => number } = {})
  *     alternative, it is a second path to keep working.
  *  2. **T458 measured what it does.** It binds the WILDCARD address (`lsof`: `TCP *:4797`),
  *     not loopback; it does not isolate channels, so any second page on the same relay can
- *     invoke Shaderloom's document-mutating tools by `<channel>-<name>`; and its session
+ *     invoke Loom's document-mutating tools by `<channel>-<name>`; and its session
  *     token travels in the socket URL, which is the specific mistake `bridge-protocol.ts`
  *     is built not to repeat.
  *

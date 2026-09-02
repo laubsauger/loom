@@ -140,7 +140,7 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
 
   useEffect(() => {
     const opener = open ?? openBrowserPaneWindow;
-    const name = `shaderloom-${paneId}`;
+    const name = `loom-${paneId}`;
     /*
      * T774 — the sequence has to be traceable from BEFORE the first thing that can fail.
      * With this line, "no console output at all" stops meaning four different things and
@@ -155,7 +155,7 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
       ),
       null,
     );
-    const child = opener({ name, title: `${title} — Shaderloom` });
+    const child = opener({ name, title: `${title} — Loom` });
     if (child === null) {
       // A blocked popup must not leave the pane in limbo with nowhere to render — and
       // must not look like a button that does nothing either.
@@ -302,10 +302,10 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
 
     emit("adopted");
 
-    const holder = view as (Window & { shaderloomPaneTrace?: () => ChildMountReading }) | null;
+    const holder = view as (Window & { loomPaneTrace?: () => ChildMountReading }) | null;
     const trace = () => emit("alive");
-    if (holder !== null) holder.shaderloomPaneTrace = trace;
-    (window as Window & { shaderloomPaneTrace?: () => ChildMountReading }).shaderloomPaneTrace =
+    if (holder !== null) holder.loomPaneTrace = trace;
+    (window as Window & { loomPaneTrace?: () => ChildMountReading }).loomPaneTrace =
       trace;
 
     let frameId: number | null = null;
@@ -332,9 +332,9 @@ export function FloatingPane({ paneId, title, onClose, onBlocked, open }: Floati
       window.clearInterval(timer);
       if (deadline !== null) window.clearTimeout(deadline);
       if (frameId !== null) view?.cancelAnimationFrame?.(frameId);
-      if (holder?.shaderloomPaneTrace === trace) delete holder.shaderloomPaneTrace;
-      const parent = window as Window & { shaderloomPaneTrace?: () => ChildMountReading };
-      if (parent.shaderloomPaneTrace === trace) delete parent.shaderloomPaneTrace;
+      if (holder?.loomPaneTrace === trace) delete holder.loomPaneTrace;
+      const parent = window as Window & { loomPaneTrace?: () => ChildMountReading };
+      if (parent.loomPaneTrace === trace) delete parent.loomPaneTrace;
     };
   }, [paneId, registry, root]);
 

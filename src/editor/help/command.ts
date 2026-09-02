@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -46,11 +46,11 @@ export interface HelpHolder {
   current: HelpHandlers | null;
 }
 
-export function helpHolderFor(bus: ShaderloomBus): HelpHolder {
+export function helpHolderFor(bus: LoomBus): HelpHolder {
   return commandHolder<HelpHandlers>(bus, OPEN_HELP_COMMAND);
 }
 
-export function registerHelpCommand(bus: ShaderloomBus): HelpHolder {
+export function registerHelpCommand(bus: LoomBus): HelpHolder {
   const holder = helpHolderFor(bus);
   if (bus.hasCommand(OPEN_HELP_COMMAND)) return holder;
 

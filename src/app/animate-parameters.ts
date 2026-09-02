@@ -1,7 +1,7 @@
 import { isUniformOnlyChange } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UniformValue, UniformValues } from "@runtime/backend/plan.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * Pushing animated parameter VALUES, every frame, without recompiling (T259, §V163, §V5).
@@ -38,7 +38,7 @@ export interface UniformAnimator {
    * variation of `base` — which is a bug in the caller's gating, never something to
    * recover from by recompiling.
    */
-  push(backend: ShaderloomBackend, base: CompiledGraph, next: CompiledGraph): number | null;
+  push(backend: LoomBackend, base: CompiledGraph, next: CompiledGraph): number | null;
   /** Forget what was pushed. Call when the structural plan is replaced. */
   reset(): void;
 }

@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
@@ -96,7 +96,7 @@ export interface ProjectHolder {
   current: ProjectHandlers | null;
 }
 
-export function projectHolderFor(bus: ShaderloomBus): ProjectHolder {
+export function projectHolderFor(bus: LoomBus): ProjectHolder {
   return commandHolder<ProjectHandlers>(bus, SAVE_PROJECT_COMMAND);
 }
 
@@ -106,7 +106,7 @@ const NO_SURFACE: RuntimeDiagnostic = {
   message: "No project surface is mounted, so there is nowhere to read or write a file.",
 };
 
-export function registerProjectCommands(bus: ShaderloomBus): ProjectHolder {
+export function registerProjectCommands(bus: LoomBus): ProjectHolder {
   const holder = projectHolderFor(bus);
 
   if (!bus.hasCommand(SAVE_PROJECT_COMMAND)) {

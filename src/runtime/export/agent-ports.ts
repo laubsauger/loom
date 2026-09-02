@@ -1,6 +1,6 @@
 import type { AgentPorts, PointsExport, PreviewExport } from "../../agent/index.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
-import type { ShaderloomBackend } from "../backend/index.ts";
+import type { LoomBackend } from "../backend/index.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 import type { PixelProbe } from "../previews/index.ts";
 import type { ExportInterface } from "./types.ts";
@@ -31,7 +31,7 @@ import { pointSetInfoFor } from "../../nodes/definitions/index.ts";
  * `AgentPorts` is unaffected.
  */
 export function createAgentPorts(inputs: {
-  backend: ShaderloomBackend;
+  backend: LoomBackend;
   compiled: () => CompiledGraph | null;
   playing: () => boolean;
   graph: () => GraphDocument;

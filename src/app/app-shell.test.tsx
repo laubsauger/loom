@@ -471,7 +471,7 @@ describe("V97 — floating a pane into its own window", () => {
     expect(requested.length, "StrictMode did not double-mount the float").toBeGreaterThan(1);
     // The window is named by the tab's minted KEY (T393): unique per pane instance.
     const child = byName.get(requested[0] ?? "");
-    expect(requested[0]).toMatch(/^shaderloom-shader-/);
+    expect(requested[0]).toMatch(/^loom-shader-/);
     expect(child, "no window was opened for the floated pane").toBeDefined();
     expect(child?.closed, "cleanup A closed the window mount B is using").toBe(false);
     // And the pane really is living in it — a window that is merely open is not enough.

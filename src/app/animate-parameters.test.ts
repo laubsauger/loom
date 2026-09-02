@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createUniformAnimator } from "./animate-parameters.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UniformValues } from "@runtime/backend/plan.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * The per-frame push, on its own (T259, §V163, §V5).
@@ -40,7 +40,7 @@ function recordingBackend() {
     updateUniforms(update: { passId: string; values: UniformValues }) {
       writes.push({ passId: update.passId, values: update.values });
     },
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, writes };
 }
 

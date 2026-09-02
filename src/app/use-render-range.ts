@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
@@ -53,7 +53,7 @@ export interface RenderRangeSession {
 }
 
 export interface UseRenderRangeInputs {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly exports: ExportInterface | undefined;
   readonly compiled: CompiledGraph | null;
   readonly graph: GraphDocument;

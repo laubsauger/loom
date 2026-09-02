@@ -49,12 +49,12 @@ describe("MCP client config (T399)", () => {
 
   it("spawns node directly rather than through pnpm, because pnpm writes to stdout", () => {
     // MEASURED: `pnpm run` prints its banner on STDOUT, which is the JSON-RPC channel —
-    // a client reading that stream sees `> shaderloom@0.0.0 mcp:serve` before the first
+    // a client reading that stream sees `> loom@0.0.0 mcp:serve` before the first
     // message. The script is for a human at a terminal; the snippet is for a client.
     const config = JSON.parse(mcpClientConfigSnippet()) as {
       mcpServers: Record<string, { command: string; args: string[] }>;
     };
-    const server = config.mcpServers["shaderloom"];
+    const server = config.mcpServers["loom"];
     expect(server?.command).toBe("node");
     expect(server?.args.join(" ")).not.toContain("pnpm");
   });

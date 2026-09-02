@@ -25,7 +25,7 @@ export const PROJECT_FILE_EXTENSION = ".loom.json";
 export const PROJECT_FILE_MIME = "application/json";
 /** The `types` entry for a File System Access `showSaveFilePicker` call. */
 export const PROJECT_FILE_PICKER_TYPE = {
-  description: "Shaderloom project",
+  description: "Loom project",
   accept: { [PROJECT_FILE_MIME]: [PROJECT_FILE_EXTENSION] },
 } as const;
 

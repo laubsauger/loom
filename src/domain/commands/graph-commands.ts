@@ -3,7 +3,7 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument } from "../types/graph.ts";
 import type { GraphPatch, GraphPatchResult } from "../types/patch.ts";
 import type { Revision } from "../types/ids.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
 
 /**
@@ -75,7 +75,7 @@ export interface RevertTransactionOutput {
 }
 
 /** Registers `graph.applyPatch`, `graph.undo`, `graph.redo` and the graph queries. */
-export function registerGraphCommands(bus: ShaderloomBus): void {
+export function registerGraphCommands(bus: LoomBus): void {
   bus.registerCommand({
     name: "graph.applyPatch",
     description: "Atomically apply a list of graph operations (§V32).",

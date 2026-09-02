@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, CompiledExecutionPlan } from "@domain/types/backend.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "./app.tsx";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -69,11 +69,11 @@ function fixture() {
     readBuffer: () => Promise.reject(new Error("no GPU")),
     registerMediaSource: () => () => {},
     setCookPolicy: (policy: string) => policies.push(policy),
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, policies };
 }
 
-async function mount(runtime: AppRuntime, backend: ShaderloomBackend) {
+async function mount(runtime: AppRuntime, backend: LoomBackend) {
   const status: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend };
   await act(async () => {
     render(<App runtime={runtime} storage={createMemoryStorage()} gpuProbe={() => Promise.resolve(status)} />);

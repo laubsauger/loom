@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { ComponentPath } from "@domain/types/components.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -33,7 +33,7 @@ import styles from "./component-bar.module.css";
 
 export interface ComponentBarProps {
   /** The ROOT bus: a component is always saved out of the graph the user is looking at. */
-  bus: ShaderloomBus;
+  bus: LoomBus;
   context: InvocationContext;
   breadcrumbs: readonly Breadcrumb[];
   insideComponent: boolean;

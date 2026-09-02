@@ -1,4 +1,4 @@
-# Shaderloom showreel — 45s cut
+# Loom showreel — 45s cut
 
 Target: Twitter/X, autoplay, **silent-first** (captions carry it), 1080×1080 or 1920×1080.
 Music: one track, hard downbeat at 0:00. Every cut lands on a beat.

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { CompiledGraph } from "../compiler/types.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * `runtime.resetFeedback`, REGISTERED (T292's enumeration found it missing — the
@@ -30,9 +30,9 @@ declare module "@domain/types/commands.ts" {
  * SAME command from the same body (§V39) — the hook below wraps it with refs.
  */
 export function registerResetFeedbackCommand(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   sources: {
-    backend: () => ShaderloomBackend | undefined;
+    backend: () => LoomBackend | undefined;
     compiled: () => CompiledGraph | null;
   },
 ): void {
@@ -98,8 +98,8 @@ export function registerResetFeedbackCommand(
 }
 
 export function useRuntimeCommands(inputs: {
-  bus: ShaderloomBus;
-  backend: ShaderloomBackend | undefined;
+  bus: LoomBus;
+  backend: LoomBackend | undefined;
   compiled: CompiledGraph | null;
 }): void {
   const backendRef = useRef(inputs.backend);

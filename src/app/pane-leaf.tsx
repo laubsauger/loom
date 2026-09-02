@@ -172,7 +172,7 @@ export function PaneLeafView({
               draggable
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/x-shaderloom-pane", tab.key);
+                event.dataTransfer.setData("text/x-loom-pane", tab.key);
                 onDragTab(tab.key);
               }}
               onDragEnd={() => onDragTab(null)}
@@ -280,7 +280,7 @@ export function PaneLeafView({
             }}
             onDrop={(event) => {
               event.preventDefault();
-              const key = event.dataTransfer.getData("text/x-shaderloom-pane");
+              const key = event.dataTransfer.getData("text/x-loom-pane");
               if (key !== "") onDropTab(key, leafId);
             }}
           >

@@ -5,7 +5,7 @@ import type {
   FrameInputs,
 } from "../../domain/types/backend.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
-import type { BackendStatus, ShaderloomBackend } from "../backend/backend-types.ts";
+import type { BackendStatus, LoomBackend } from "../backend/backend-types.ts";
 import { createFrameDriver } from "./frame-driver.ts";
 import { offlineTransport } from "./offline-transport.ts";
 import { createPointerSource } from "./pointer.ts";
@@ -15,7 +15,7 @@ import { createPointerSource } from "./pointer.ts";
  * backend rather than a GPU. What matters here is that time comes from the transport and
  * from nowhere else (§V44, §V49), and that a frame is only ever rendered for a plan.
  */
-function recordingBackend(): ShaderloomBackend & {
+function recordingBackend(): LoomBackend & {
   readonly calls: FrameInputs[];
   tick(): void;
   readonly looping: boolean;

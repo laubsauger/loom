@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties, DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import { ReactFlowProvider, useConnection, useReactFlow } from "@xyflow/react";
 import type { CommandResult } from "@domain/types/commands.ts";
-import type { ShaderloomBus } from "@domain/commands/index.ts";
+import type { LoomBus } from "@domain/commands/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
@@ -30,7 +30,7 @@ import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
 import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { usePerDocument } from "./use-per-document.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
@@ -85,7 +85,7 @@ export interface GraphPaneProps {
    * a caller that only wants the canvas — a test, an embedding — keeps working with no
    * previews rather than being forced to wire a backend it does not have.
    */
-  previewBackend?: ShaderloomBackend | null;
+  previewBackend?: LoomBackend | null;
   graph?: GraphDocument;
   compiledOutputs?: ReadonlyArray<ResolvedOutput>;
   previewFps?: number;
@@ -688,7 +688,7 @@ function GraphMenuHost({
   selection,
   children,
 }: {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   selection: readonly NodeId[];
   children: ReactNode;
 }) {

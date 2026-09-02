@@ -99,7 +99,7 @@ export function nodeGpuHost(): GpuHost {
     label: "dawn",
     async create(options): Promise<GpuSession> {
       const gpu = await initWithLimitLadder({
-        label: "shaderloom-headless",
+        label: "loom-headless",
         ...(options.powerPreference === undefined
           ? {}
           : { powerPreference: options.powerPreference }),

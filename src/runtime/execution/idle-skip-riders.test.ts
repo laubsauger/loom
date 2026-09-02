@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../compiler/index.ts";
 import type { BackendCapabilities, FrameInputs } from "../../domain/types/backend.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
-import type { ShaderloomBackend } from "../backend/index.ts";
+import type { LoomBackend } from "../backend/index.ts";
 import { createVgpuBackend } from "../backend/index.ts";
 import { mockGpuHost } from "../backend/vgpu/mock-gpu-host.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -107,7 +107,7 @@ describe("§V155 — a skipped frame still advances its riders", () => {
         renders += 1;
       },
       loop: () => ({ stop() {} }),
-    } as unknown as ShaderloomBackend;
+    } as unknown as LoomBackend;
 
     const driver = createFrameDriver({
       backend,

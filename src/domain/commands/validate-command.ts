@@ -6,7 +6,7 @@ import {
 } from "../../compiler/index.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { NodeId } from "../types/ids.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 
 /**
  * `project.validate` (T174, §V39).
@@ -69,7 +69,7 @@ export interface ValidationReport {
   diagnostics: RuntimeDiagnostic[];
 }
 
-export function registerValidateCommand(bus: ShaderloomBus): void {
+export function registerValidateCommand(bus: LoomBus): void {
   bus.registerCommand({
     name: "project.validate",
     description: "Validate the graph without compiling it: definitions, wiring and cycles.",

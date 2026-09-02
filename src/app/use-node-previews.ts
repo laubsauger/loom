@@ -15,7 +15,7 @@ import {
   slotScreenRect,
 } from "@runtime/previews/index.ts";
 import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 // T532: ONE list of previewable port kinds, shared with the slot, the compiler and the
 // layout model — see `previewable.ts` on why four private copies is how B65 happened.
@@ -65,7 +65,7 @@ export interface NodePreviewInputs {
    * exactly what is watched. Optional: absent means nobody is gating on previews.
    */
   readonly previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void };
-  readonly backend: ShaderloomBackend | null | undefined;
+  readonly backend: LoomBackend | null | undefined;
   readonly canvasRef: RefObject<HTMLCanvasElement | null>;
   readonly bounds: PreviewSlotBoundsStore;
   /**

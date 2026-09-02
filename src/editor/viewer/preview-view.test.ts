@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { DEFAULT_PREVIEW_LENS, DEFAULT_PREVIEW_VIEW } from "@runtime/previews/index.ts";
 import {
   MAX_EXPOSURE_STOPS,
@@ -26,7 +26,7 @@ import { createPreviewViewStore, previewViewStoreFor } from "./preview-view-stor
  *    present blit, and there is no code path from a command to it.
  */
 
-async function seedNode(bus: ShaderloomBus): Promise<string> {
+async function seedNode(bus: LoomBus): Promise<string> {
   const result = await bus.execute(
     "graph.applyPatch",
     {

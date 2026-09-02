@@ -9,6 +9,7 @@ import type { SnapshotMeta, SnapshotRecord, SnapshotStore } from "./autosave.ts"
  * as a diagnostic rather than crashing (§Rule 8 — fail loud, not silently).
  */
 
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 const DB_NAME = "shaderloom.autosave";
 const STORE = "snapshots";
 

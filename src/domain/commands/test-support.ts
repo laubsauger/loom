@@ -5,12 +5,12 @@ import { createSequentialIdFactory } from "../graph/ids.ts";
 import { createTestRegistry } from "../../nodes/registry/test-nodes.ts";
 import type { CapabilityGrantStore } from "./grants.ts";
 import { createDomainBus } from "./index.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 
 /** Shared fixtures for the domain tests. Deterministic ids and timestamps. */
 
 export interface Harness {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   store: GraphStore;
 }
 

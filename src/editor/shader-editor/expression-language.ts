@@ -25,7 +25,7 @@ const FREE_RUNNING = new Set<string>(FREE_RUNNING_CLOCK_NAMES);
 const WRAPPING = new Set<string>(WRAPPING_CLOCK_NAMES);
 
 export const expressionStreamParser = {
-  name: "shaderloom-expression",
+  name: "loom-expression",
   token(stream: StringStream): string | null {
     if (stream.eatSpace()) return null;
     const ch = stream.next();

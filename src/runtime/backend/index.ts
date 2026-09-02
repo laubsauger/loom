@@ -17,7 +17,7 @@ export type {
   PresentationReport,
   PreviewHostHandle,
   ShaderCompileResult,
-  ShaderloomBackend,
+  LoomBackend,
   UniformUpdate,
 } from "./backend-types.ts";
 

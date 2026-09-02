@@ -7,7 +7,7 @@ import { createGraphStore } from "@domain/graph/store.ts";
 import { createSequentialIdFactory } from "@domain/graph/ids.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./app-runtime.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
 
@@ -37,7 +37,7 @@ interface Seen {
   uniformWrites: number;
 }
 
-function countingBackend(): { backend: ShaderloomBackend; seen: Seen } {
+function countingBackend(): { backend: LoomBackend; seen: Seen } {
   const seen: Seen = { compiles: [], uniformWrites: 0 };
   const backend = {
     status: {
@@ -75,7 +75,7 @@ function countingBackend(): { backend: ShaderloomBackend; seen: Seen } {
     // T326: part of the backend contract; a fixture without it is incomplete.
     setCookPolicy() {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, seen };
 }
 

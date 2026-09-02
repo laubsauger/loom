@@ -6,7 +6,7 @@ import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -45,7 +45,7 @@ const CAPABILITIES: BackendCapabilities = {
 
 const SOURCE_SIZE = 23;
 
-function capturingBackend(): { backend: ShaderloomBackend; plans: CompiledGraph[] } {
+function capturingBackend(): { backend: LoomBackend; plans: CompiledGraph[] } {
   const plans: CompiledGraph[] = [];
   const backend = {
     status: {
@@ -81,7 +81,7 @@ function capturingBackend(): { backend: ShaderloomBackend; plans: CompiledGraph[
     // T326: part of the backend contract; a fixture without it is incomplete.
     setCookPolicy: () => {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, plans };
 }
 

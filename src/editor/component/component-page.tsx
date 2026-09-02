@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { GraphComponentDefinition, PublishedParameter } from "@domain/types/components.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -48,7 +48,7 @@ import styles from "./component.module.css";
 
 export interface ComponentPageProps {
   /** The SESSION bus — the one whose `host` is this component. */
-  bus: ShaderloomBus;
+  bus: LoomBus;
   context: InvocationContext;
   definition: GraphComponentDefinition;
   components: ComponentRegistryView;
@@ -375,7 +375,7 @@ function PublishRows({
   onMessage,
   nodes,
 }: {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   context: InvocationContext;
   definition: GraphComponentDefinition;
   nodeId: NodeId;

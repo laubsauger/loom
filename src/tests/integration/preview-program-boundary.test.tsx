@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { PreviewProgram } from "@runtime/previews/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
@@ -201,7 +201,7 @@ function boundResourceIds(program: PreviewProgram): readonly string[] {
   );
 }
 
-function journallingBackend(): { backend: ShaderloomBackend; journal: Journal } {
+function journallingBackend(): { backend: LoomBackend; journal: Journal } {
   const journal: Journal = {
     calls: [],
     installed: new Map(),
@@ -260,7 +260,7 @@ function journallingBackend(): { backend: ShaderloomBackend; journal: Journal } 
     resetTemporalHistory: () => {},
     setCookPolicy() {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, journal };
 }
 

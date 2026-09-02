@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -31,7 +31,7 @@ import styles from "./component.module.css";
  */
 
 export interface ComponentInspectorProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor/project/capabilities for every command this pane sends (§V30). Memoise it. */
   context: InvocationContext;
   nodeId: NodeId;

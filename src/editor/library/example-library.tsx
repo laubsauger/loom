@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import {
@@ -56,7 +56,7 @@ import styles from "./library.module.css";
 const OPEN_COMMAND = "project.open";
 
 export interface ExampleLibraryProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor/project/capabilities for the open command (§V30). Memoise it. */
   context: InvocationContext;
   /** Unsaved work in the open document — the one thing that makes opening ask first. */

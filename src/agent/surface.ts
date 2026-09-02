@@ -1,6 +1,6 @@
 import type { z } from "zod";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { HistorySummary } from "@domain/commands/graph-commands.ts";
 import type { Actor, CapabilityClass, InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -59,7 +59,7 @@ import type {
  */
 
 export interface AgentSurfaceOptions {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Who is acting. §V30: there is no anonymous mutation. */
   actor: Actor;
   projectId: string;

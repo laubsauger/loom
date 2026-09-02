@@ -1,7 +1,7 @@
 import type { CompiledExecutionPlan, FrameInputs } from "../../domain/types/backend.ts";
 import type { AudioFeatures } from "../../domain/types/frame.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
-import type { FrameLoopControl, ShaderloomBackend } from "../backend/backend-types.ts";
+import type { FrameLoopControl, LoomBackend } from "../backend/backend-types.ts";
 import type { PointerSource } from "./pointer.ts";
 
 /**
@@ -18,7 +18,7 @@ import type { PointerSource } from "./pointer.ts";
  */
 
 export interface FrameDriverOptions {
-  readonly backend: ShaderloomBackend;
+  readonly backend: LoomBackend;
   readonly transport: TransportSource;
   readonly pointer: PointerSource;
   /**

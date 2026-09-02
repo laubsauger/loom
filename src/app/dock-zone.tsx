@@ -103,7 +103,7 @@ export function DockZoneView({
             draggable
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/x-shaderloom-pane", pane.id);
+              event.dataTransfer.setData("text/x-loom-pane", pane.id);
               onDragPane(pane.id);
             }}
             onDragEnd={() => onDragPane(null)}

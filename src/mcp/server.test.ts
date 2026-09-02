@@ -92,7 +92,7 @@ describe("MCP connection (T290)", () => {
 
     // The live half: every applied edit pushed a revision notification, unprompted.
     const revisions = sent
-      .filter((m) => m["method"] === "notifications/shaderloom/revision")
+      .filter((m) => m["method"] === "notifications/loom/revision")
       .map((m) => (m["params"] as { revision: number }).revision);
     expect(revisions.length).toBeGreaterThanOrEqual(2);
     expect(revisions.at(-1)).toBe(store.view.getRevision());

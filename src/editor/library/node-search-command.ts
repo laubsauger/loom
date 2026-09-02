@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -83,11 +83,11 @@ export interface NodeSearchHolder {
  * before the update, dead after it, empty console. `command-holder.ts` carries the
  * mechanism and §V483's precedent.
  */
-export function nodeSearchHolderFor(bus: ShaderloomBus): NodeSearchHolder {
+export function nodeSearchHolderFor(bus: LoomBus): NodeSearchHolder {
   return commandHolder<NodeSearchHandlers>(bus, OPEN_NODE_SEARCH_COMMAND);
 }
 
-export function registerNodeSearchCommand(bus: ShaderloomBus): NodeSearchHolder {
+export function registerNodeSearchCommand(bus: LoomBus): NodeSearchHolder {
   const holder = nodeSearchHolderFor(bus);
   if (bus.hasCommand(OPEN_NODE_SEARCH_COMMAND)) return holder;
 

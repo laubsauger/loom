@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cx } from "@ui/cx.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -62,7 +62,7 @@ export interface InspectorProjectSettings {
 }
 
 export interface InspectorProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor/project/capabilities for every command the pane sends (§V30). Memoise it. */
   context: InvocationContext;
   nodeId: NodeId | null;

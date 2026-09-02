@@ -17,7 +17,7 @@ import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 
 /**
- * The out-of-process MCP server (T290, T294): a HEADLESS Shaderloom on stdio — store,
+ * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
  * bus, full node catalogue, the agent tool surface, and, when Dawn is available, a
  * REAL GPU: the graph compiles on every revision, a frame renders, and
  * `render_preview` / `describe_output` / `read_points` return actual pixels and
@@ -34,7 +34,7 @@ import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
  * ## AND IT IS THE BRIDGE (T451)
  *
  * The headless twin was always the gap: an agent talking to this process builds a graph the
- * owner will never see. So this process ALSO listens on loopback, and a Shaderloom tab can
+ * owner will never see. So this process ALSO listens on loopback, and a Loom tab can
  * attach to it from a button in the agent panel with a pairing code this server prints.
  * While a tab is attached, `tools/list` and `tools/call` are answered by THAT tab's surface,
  * against the live document behind the visible canvas.
@@ -81,7 +81,7 @@ export interface HeadlessMcpServerOptions {
   /** T334: pixels/readbacks leave the process only when the INVOCATION said so. */
   grantExport?: boolean;
   /**
-   * Open the loopback bridge so a Shaderloom tab can attach and take over execution (T451).
+   * Open the loopback bridge so a Loom tab can attach and take over execution (T451).
    *
    * Default OFF, and ON in `serveStdio` — which is the only caller that owns a process. A
    * server constructed inside a test suite must not bind a port: several of them run at once
@@ -348,7 +348,7 @@ export function serveStdio(): void {
     // (T451). stdout is the JSON-RPC channel, so everything a HUMAN reads goes to stderr.
     bridge: {
       announce: (message) => {
-        process.stderr.write(`[shaderloom bridge] ${message}\n`);
+        process.stderr.write(`[loom bridge] ${message}\n`);
       },
     },
   });

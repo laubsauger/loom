@@ -53,7 +53,7 @@ async function until(predicate: () => boolean, what: string, budgetMs = 5_000): 
   }
 }
 
-/** A real Shaderloom document with a real bus and the real catalogue — the "page". */
+/** A real Loom document with a real bus and the real catalogue — the "page". */
 function pageHarness(extras: { ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {}) {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
@@ -185,7 +185,7 @@ describe("bridge, headless fallback (T451, §V338)", () => {
     const list = await harness.request("tools/list", {}, 2);
     const tools = list.result?.["tools"] as Array<Record<string, unknown>>;
     const addNode = tools.find((tool) => tool["name"] === "add_node");
-    expect(addNode?.["description"]).toContain("no Shaderloom tab is attached");
+    expect(addNode?.["description"]).toContain("no Loom tab is attached");
 
     const call = await harness.request(
       "tools/call",
@@ -261,7 +261,7 @@ describe("bridge, attached to a live page (T451, §V382)", () => {
     // The headless marker is GONE, because a headless marker on an attached bridge would be
     // the same lie in the other direction.
     expect(String(tools.find((tool) => tool["name"] === "add_node")?.["description"])).not.toContain(
-      "no Shaderloom tab is attached",
+      "no Loom tab is attached",
     );
   });
 

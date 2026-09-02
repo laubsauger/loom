@@ -10,7 +10,7 @@ import type { PortId } from "@domain/types/ids.ts";
  * and issues the patch; the library never mutates anything (§V29).
  */
 
-export const NODE_DRAG_MIME = "application/x-shaderloom-node";
+export const NODE_DRAG_MIME = "application/x-loom-node";
 
 export interface NodeDragPayload {
   type: string;

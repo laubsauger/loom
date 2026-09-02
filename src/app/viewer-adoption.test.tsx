@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PaneContent, PaneHostProvider, PaneOutlet, adoptPaneHost } from "./pane-portal.tsx";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { PresentableCanvas, PresentationHandle } from "@runtime/backend/backend-types.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * T739 suspect (a), as far as it can be answered without WebGPU.
@@ -29,12 +29,12 @@ import type { ShaderloomBackend } from "@runtime/backend/index.ts";
 
 const PANE = "viewer";
 
-function Viewer({ backend }: { backend: ShaderloomBackend }) {
+function Viewer({ backend }: { backend: LoomBackend }) {
   const { canvasRef, canvasKey } = useOutputPresentation(backend, "out");
   return <canvas key={canvasKey} ref={canvasRef} data-testid="viewer-canvas" />;
 }
 
-function Harness({ backend }: { backend: ShaderloomBackend }) {
+function Harness({ backend }: { backend: LoomBackend }) {
   return (
     <PaneHostProvider>
       <PaneContent paneId={PANE}>
@@ -66,7 +66,7 @@ function fakeBackend() {
         },
       };
     },
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, attaches };
 }
 
@@ -186,12 +186,12 @@ describe("floating a LIVE viewer — the order that broke it (T705, T739)", () =
     render(<Harness backend={backend} />);
     const child = childWindow();
     const frameWindow = (document.querySelector("iframe") as HTMLIFrameElement | null)
-      ?.contentWindow as (Window & { shaderloomViewerProbe?: () => unknown }) | null;
+      ?.contentWindow as (Window & { loomViewerProbe?: () => unknown }) | null;
     act(() => adoptPaneHost(child.root, currentCanvas().closest("[data-pane-host]") as HTMLElement));
 
     // The owner will have the POPUP's devtools open as often as the parent's, so the
     // function has to be callable from there too.
-    expect(typeof frameWindow?.shaderloomViewerProbe).toBe("function");
-    expect(frameWindow?.shaderloomViewerProbe?.()).toMatchObject({ placement: "floated" });
+    expect(typeof frameWindow?.loomViewerProbe).toBe("function");
+    expect(frameWindow?.loomViewerProbe?.()).toMatchObject({ placement: "floated" });
   });
 });

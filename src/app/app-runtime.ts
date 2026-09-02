@@ -1,5 +1,5 @@
 import { createDomainBus } from "@domain/commands/index.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { Actor, InvocationContext } from "@domain/types/commands.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "@domain/types/graph.ts";
 import type { GraphDocument, ProjectDocument, ProjectSettings } from "@domain/types/graph.ts";
@@ -35,7 +35,7 @@ import { registerProjectCommands } from "./project-commands.ts";
  */
 
 export interface AppRuntime {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly registry: NodeRegistryView;
   /** Component catalogue. Definitions live here, not in the GraphDocument. */
   readonly components: ReturnType<typeof createComponentSystem>["components"];
@@ -120,7 +120,9 @@ export interface AppRuntime {
  */
 export { DEFAULT_PROJECT_SETTINGS };
 
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 export const ACTOR_STORAGE_KEY = "shaderloom.actor.id.v1";
+// §V813: a storage ADDRESS, not a name — kept through the Loom rename (§T899) so no user state is orphaned.
 export const PROJECT_STORAGE_KEY = "shaderloom.project.id.v1";
 
 function randomId(prefix: string): string {

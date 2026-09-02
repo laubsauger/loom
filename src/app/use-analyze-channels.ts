@@ -4,7 +4,7 @@ import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { analyzeChannelEntries, createAnalyzeChannels } from "@runtime/execution/index.ts";
 import type { AnalyzeEntry } from "@runtime/execution/index.ts";
 import type { NodeMetricSink } from "@runtime/telemetry/index.ts";
@@ -102,7 +102,7 @@ function trackableEntries(
 }
 
 export function useAnalyzeChannels(
-  backend: ShaderloomBackend | null | undefined,
+  backend: LoomBackend | null | undefined,
   registry: NodeRegistryView,
   /**
    * The per-node telemetry channel §V329's staleness is published onto. Optional so a test

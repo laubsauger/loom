@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { attachStateSources, createDomainBus } from "@domain/commands/index.ts";
 import type { SelectionSnapshot } from "@domain/commands/state-queries.ts";
 import { createGraphStore, type GraphStore } from "@domain/graph/store.ts";
@@ -39,7 +39,7 @@ const agent: Actor = { kind: "agent", id: "claude", label: "Claude" };
 const human: Actor = { kind: "human", id: "flo" };
 
 interface Fixture {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   store: GraphStore;
   surface: AgentToolSurface;
   executed: string[];
@@ -77,7 +77,7 @@ function createFixture(
   // than reaching into the store (§V29).
   const executed: string[] = [];
   const queried: string[] = [];
-  const spied: ShaderloomBus = {
+  const spied: LoomBus = {
     ...bus,
     execute: ((name: string, input: unknown, context: InvocationContext) => {
       executed.push(name);
@@ -86,7 +86,7 @@ function createFixture(
         input,
         context,
       );
-    }) as ShaderloomBus["execute"],
+    }) as LoomBus["execute"],
     query: ((name: string, input: unknown, context: InvocationContext) => {
       queried.push(name);
       return (bus.query as unknown as (n: string, i: unknown, c: InvocationContext) => unknown)(
@@ -94,7 +94,7 @@ function createFixture(
         input,
         context,
       );
-    }) as ShaderloomBus["query"],
+    }) as LoomBus["query"],
   };
 
   const surface = createAgentToolSurface({
@@ -117,7 +117,7 @@ let saved = 0;
  * needs a file picker; what matters to this layer is that the tool dispatches a command
  * by that name and that the capability gate runs first.
  */
-function registerSaveCommand(bus: ShaderloomBus): void {
+function registerSaveCommand(bus: LoomBus): void {
   (bus.registerCommand as unknown as (registration: unknown) => void)({
     name: "project.save",
     handler: () => {

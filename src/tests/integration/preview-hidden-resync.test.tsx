@@ -5,7 +5,7 @@ import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { createPreviewSlotBounds } from "@editor/viewer/index.ts";
-import type { BackendStatus, ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { BackendStatus, LoomBackend } from "@runtime/backend/index.ts";
 import type { PreviewProgram } from "@runtime/previews/index.ts";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -42,7 +42,7 @@ const CAPABILITIES: BackendCapabilities = {
   timestampQuery: false,
 };
 
-function fakeBackend(onProgram: (program: PreviewProgram) => void): ShaderloomBackend {
+function fakeBackend(onProgram: (program: PreviewProgram) => void): LoomBackend {
   const status: BackendStatus = {
     initialized: true,
     disposed: false,
@@ -62,7 +62,7 @@ function fakeBackend(onProgram: (program: PreviewProgram) => void): ShaderloomBa
       presentPreviews: () => {},
       dispose: () => {},
     }),
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
 }
 
 function newRuntime(): AppRuntime {

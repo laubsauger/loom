@@ -6,7 +6,7 @@ import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { createPreviewSlotBounds } from "@editor/viewer/index.ts";
-import type { BackendStatus, ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { BackendStatus, LoomBackend } from "@runtime/backend/index.ts";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
 import { createPreviewSinkStore } from "../../app/preview-sinks.ts";
@@ -62,7 +62,7 @@ const CAPABILITIES: BackendCapabilities = {
   timestampQuery: false,
 };
 
-function fakeBackend(): ShaderloomBackend {
+function fakeBackend(): LoomBackend {
   const status: BackendStatus = {
     initialized: true,
     disposed: false,
@@ -82,7 +82,7 @@ function fakeBackend(): ShaderloomBackend {
       presentPreviews: () => {},
       dispose: () => {},
     }),
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
 }
 
 function newRuntime(): AppRuntime {

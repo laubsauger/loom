@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { liveClock } from "@domain/transport/live-clock.ts";
 import {
   DEFAULT_PREVIEW_VIEW,
@@ -42,7 +42,7 @@ const BACKGROUND_TILE_CAPACITY = 8;
 
 /** Refresh a background at preview cadence — it is ambience, not the picture. */
 export interface GraphBackgroundInputs {
-  readonly backend: ShaderloomBackend | null;
+  readonly backend: LoomBackend | null;
   readonly canvasRef: RefObject<HTMLCanvasElement | null>;
   readonly graph: GraphDocument;
   readonly compiledOutputs: ReadonlyArray<ResolvedOutput>;

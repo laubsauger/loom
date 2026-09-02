@@ -218,18 +218,18 @@ describe("drag payload", () => {
     expect(readNodeDragPayload(empty)).toBeNull();
 
     const junk = carrier();
-    junk.setData("application/x-shaderloom-node", "{not json");
+    junk.setData("application/x-loom-node", "{not json");
     expect(readNodeDragPayload(junk)).toBeNull();
 
     const wrongShape = carrier();
-    wrongShape.setData("application/x-shaderloom-node", JSON.stringify({ nope: 1 }));
+    wrongShape.setData("application/x-loom-node", JSON.stringify({ nope: 1 }));
     expect(readNodeDragPayload(wrongShape)).toBeNull();
   });
 
   it("drops a malformed connectTo rather than passing a bad wiring hint on", () => {
     const transfer = carrier();
     transfer.setData(
-      "application/x-shaderloom-node",
+      "application/x-loom-node",
       JSON.stringify({ type: "test.blur", connectTo: { portId: 7 } }),
     );
     expect(readNodeDragPayload(transfer)).toEqual({ type: "test.blur" });

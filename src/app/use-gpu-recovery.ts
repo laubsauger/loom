@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { MAX_RETAINED_DIAGNOSTICS, retainDiagnostic } from "./diagnostic-buffer.ts";
 
 /**
@@ -41,11 +41,11 @@ export interface GpuRecovery {
   retry(): void;
 }
 
-export function useGpuRecovery(backend: ShaderloomBackend | null | undefined): GpuRecovery {
+export function useGpuRecovery(backend: LoomBackend | null | undefined): GpuRecovery {
   const [halted, setHalted] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
-  const backendRef = useRef<ShaderloomBackend | null>(backend ?? null);
+  const backendRef = useRef<LoomBackend | null>(backend ?? null);
   backendRef.current = backend ?? null;
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import type { ResolvedKeymap } from "../keymap/resolve.ts";
 import type { KeyContext } from "../keymap/types.ts";
 
@@ -51,7 +51,7 @@ export function humanizeCommand(command: string): string {
 }
 
 export interface BuildPaletteEntriesOptions {
-  bus: Pick<ShaderloomBus, "listCommands" | "hasCommand">;
+  bus: Pick<LoomBus, "listCommands" | "hasCommand">;
   resolved: ResolvedKeymap;
 }
 

@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
@@ -57,11 +57,11 @@ export interface NodeInfoHolder {
   current: NodeInfoHandlers | null;
 }
 
-export function nodeInfoHolderFor(bus: ShaderloomBus): NodeInfoHolder {
+export function nodeInfoHolderFor(bus: LoomBus): NodeInfoHolder {
   return commandHolder<NodeInfoHandlers>(bus, SHOW_NODE_INFO_COMMAND);
 }
 
-export function registerNodeInfoCommand(bus: ShaderloomBus): NodeInfoHolder {
+export function registerNodeInfoCommand(bus: LoomBus): NodeInfoHolder {
   const holder = nodeInfoHolderFor(bus);
   if (bus.hasCommand(SHOW_NODE_INFO_COMMAND)) return holder;
 

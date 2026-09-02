@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { alice, contextFor } from "@domain/commands/test-support.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { listExampleProjects } from "./example-catalogue.ts";
 import { ExampleLibrary } from "./example-library.tsx";
@@ -46,7 +46,7 @@ const OTHER = {
 } as const;
 
 /** A bus that answers `project.open` — the composition root registers the real one. */
-function busWithOpen(): { bus: ShaderloomBus; opened: Array<{ text?: string; fileName?: string }> } {
+function busWithOpen(): { bus: LoomBus; opened: Array<{ text?: string; fileName?: string }> } {
   const harness = createComponentHarness("e", graphOf([]));
   const opened: Array<{ text?: string; fileName?: string }> = [];
   harness.bus.registerCommand({

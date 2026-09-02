@@ -3,7 +3,7 @@ import { PANE_ADOPTED_EVENT } from "./pane-portal.tsx";
 import { formatViewerReading, readViewer } from "./viewer-probe.ts";
 import type { ViewerReading } from "./viewer-probe.ts";
 import type { PresentationHandle } from "@runtime/backend/backend-types.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * A presentation surface, handed to the runtime (T87/T161, §V64, §V70).
@@ -51,7 +51,7 @@ export interface OutputPresentation {
 }
 
 export function useOutputPresentation(
-  backend: ShaderloomBackend | null,
+  backend: LoomBackend | null,
   outputId: string | null,
 ): OutputPresentation {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
@@ -187,17 +187,17 @@ export function useOutputPresentation(
     };
 
     const floated = canvas.ownerDocument !== document;
-    const holder = view as (Window & { shaderloomViewerProbe?: () => ViewerReading }) | null;
-    if (holder !== null) holder.shaderloomViewerProbe = probe;
+    const holder = view as (Window & { loomViewerProbe?: () => ViewerReading }) | null;
+    if (holder !== null) holder.loomViewerProbe = probe;
 
     if (!floated) {
       return () => {
-        if (holder?.shaderloomViewerProbe === probe) delete holder.shaderloomViewerProbe;
+        if (holder?.loomViewerProbe === probe) delete holder.loomViewerProbe;
       };
     }
 
     console.info(
-      "viewer: floated — reporting every 2s below; call shaderloomViewerProbe() in either window for a reading now",
+      "viewer: floated — reporting every 2s below; call loomViewerProbe() in either window for a reading now",
     );
     // The parent's timer on purpose: a child window that is throttled or mid-teardown
     // still gets reported on, and the interval dies with this effect either way.
@@ -205,7 +205,7 @@ export function useOutputPresentation(
     probe();
     return () => {
       window.clearInterval(timer);
-      if (holder?.shaderloomViewerProbe === probe) delete holder.shaderloomViewerProbe;
+      if (holder?.loomViewerProbe === probe) delete holder.loomViewerProbe;
     };
   }, [backend, canvasEl]);
 

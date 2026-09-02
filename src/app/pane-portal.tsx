@@ -230,4 +230,4 @@ export function adoptPaneHost(slot: HTMLElement, host: HTMLElement): void {
 }
 
 /** Fired on a pane's permanent host when adoption moved it to a DIFFERENT document. */
-export const PANE_ADOPTED_EVENT = "shaderloom:pane-adopted";
+export const PANE_ADOPTED_EVENT = "loom:pane-adopted";

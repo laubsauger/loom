@@ -50,6 +50,7 @@
  * the per-command split is inside, so a second copy of ANY command module still finds the
  * store a first copy created.
  */
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 const HOLDER_STORE = Symbol.for("shaderloom.commands.holders");
 
 /** What a surface writes itself into, and what the command handler reads at call time. */

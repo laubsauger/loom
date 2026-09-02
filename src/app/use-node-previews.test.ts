@@ -11,7 +11,7 @@ import { createPreviewInterestStore, createPreviewSlotBounds, createPreviewViewS
 import { DEFAULT_PREVIEW_VIEW, previewShader, previewUniforms } from "@runtime/previews/index.ts";
 import type { PreviewProgram } from "@runtime/previews/index.ts";
 import type { BackendStatus } from "@runtime/backend/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { previewCandidates, useNodePreviews } from "./use-node-previews.ts";
 
 /**
@@ -33,7 +33,7 @@ function graphWith(type: string): GraphDocument {
   };
 }
 
-function fakeBackend(): ShaderloomBackend {
+function fakeBackend(): LoomBackend {
   const status: BackendStatus = {
     initialized: true,
     disposed: false,
@@ -53,7 +53,7 @@ function fakeBackend(): ShaderloomBackend {
       presentPreviews: () => {},
       dispose: () => {},
     }),
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
 }
 
 beforeEach(() => {
@@ -170,7 +170,7 @@ describe("useNodePreviews (T185)", () => {
  * host is asked to install.
  */
 describe("useNodePreviews carries the preview lens (T336)", () => {
-  function capturingBackend(): { backend: ShaderloomBackend; programs: PreviewProgram[] } {
+  function capturingBackend(): { backend: LoomBackend; programs: PreviewProgram[] } {
     const programs: PreviewProgram[] = [];
     const base = fakeBackend();
     const backend = {
@@ -180,7 +180,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
         presentPreviews: () => {},
         dispose: () => {},
       }),
-    } as unknown as ShaderloomBackend;
+    } as unknown as LoomBackend;
     return { backend, programs };
   }
 
@@ -438,7 +438,7 @@ describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
         presentPreviews: () => {},
         dispose: () => {},
       }),
-    } as unknown as ShaderloomBackend;
+    } as unknown as LoomBackend;
     const sinkSets: ReadonlyArray<{ nodeId: string; portId: string }>[] = [];
 
     renderHook(() =>
@@ -541,7 +541,7 @@ describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
         },
         dispose: () => {},
       }),
-    } as unknown as ShaderloomBackend;
+    } as unknown as LoomBackend;
 
     // Two documents that share the node id `n1` — the whole point. Their content is
     // irrelevant here: what must not survive the boundary is the TILE.

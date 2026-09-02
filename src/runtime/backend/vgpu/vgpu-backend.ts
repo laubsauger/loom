@@ -21,7 +21,7 @@ import type {
   PreviewFrameCommand,
   PreviewHostHandle,
   PreviewProgram,
-  ShaderloomBackend,
+  LoomBackend,
 } from "../backend-types.ts";
 import {
   BackendDiagnosticCode,
@@ -95,8 +95,8 @@ const defaultRetryDelay = (attempt: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
 
 
-/** `ShaderloomBackend` plus a settle hook for shutdown and deterministic tests. */
-export interface VgpuBackend extends ShaderloomBackend {
+/** `LoomBackend` plus a settle hook for shutdown and deterministic tests. */
+export interface VgpuBackend extends LoomBackend {
   /** The report from the live device. Undefined before `initialize()`. */
   readonly capabilities: BackendCapabilities | undefined;
   /** Resolves once any in-flight device recovery has finished. */
@@ -350,7 +350,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         backendDiagnostic(
           "error",
           BackendDiagnosticCode.capabilityBelowBaseline,
-          `GPU reports capability tier ${report.tier}; Shaderloom requires tier B ` +
+          `GPU reports capability tier ${report.tier}; Loom requires tier B ` +
             "(rgba16float render targets, compute, storage buffers).",
           { suggestion: "Use a desktop Chrome/Edge 128+ with hardware WebGPU." },
         ),

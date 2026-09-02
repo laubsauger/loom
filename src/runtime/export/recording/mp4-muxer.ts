@@ -186,7 +186,7 @@ export function muxMp4(input: Mp4MuxInput): Uint8Array {
     u32(0),
     u32(0),
     u32(0),
-    ascii("Shaderloom\0"),
+    ascii("Loom\0"),
   );
   const mdhd = fullBox("mdhd", 0, 0, u32(0), u32(0), u32(timescale), u32(mediaDuration), u16(0x55c4), u16(0));
   const mdia = box("mdia", mdhd, hdlr, minf);

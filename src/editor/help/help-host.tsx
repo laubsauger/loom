@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import type { HelpSection } from "./command.ts";
@@ -16,7 +16,7 @@ import { HelpPanel } from "./help-panel.tsx";
  */
 
 export interface HelpHostProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** The installed catalogue — `registry.list()`. */
   nodes: readonly NodeDefinition[];
   /** The scope a parameter expression sees (§V71). */

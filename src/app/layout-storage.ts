@@ -200,9 +200,11 @@ export const DEFAULT_LAYOUT_STORE: LayoutStore = {
 };
 
 /** Bumped from v2: v2 stored ONE layout, and its right dock was a single zone. */
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 export const LAYOUT_STORAGE_KEY = "shaderloom.shell.layouts.v3";
 
 /** v2's key. Read once, migrated, and removed — see `migrateLegacyLayout`. */
+// §V813: a storage ADDRESS, not a name — kept through the Loom rename (§T899) so no user state is orphaned.
 export const LEGACY_LAYOUT_STORAGE_KEY = "shaderloom.shell.layout.v2";
 
 export const LAYOUT_STORE_VERSION = 3;

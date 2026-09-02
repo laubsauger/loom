@@ -97,7 +97,7 @@ export function TopBar({
   return (
     <div className={styles.bar}>
       <div className={styles.brand}>
-        <span className={styles.mark}>shaderloom</span>
+        <span className={styles.mark}>loom</span>
         <span className={styles.project}>{projectName}</span>
       </div>
 

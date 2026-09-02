@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 
 /**
  * The two MEDIA PULSES, registered (T493, §V125, §V123).
@@ -90,7 +90,7 @@ function run(
   return { count, missing };
 }
 
-export function useMediaCommands(bus: ShaderloomBus, registry: MediaControlRegistry): void {
+export function useMediaCommands(bus: LoomBus, registry: MediaControlRegistry): void {
   const registryRef = useRef(registry);
   registryRef.current = registry;
 

@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -60,7 +60,7 @@ export interface ViewHolder {
   current: ViewHandlers | null;
 }
 
-export function viewHolderFor(bus: ShaderloomBus): ViewHolder {
+export function viewHolderFor(bus: LoomBus): ViewHolder {
   return commandHolder<ViewHandlers>(bus, "view.frameAll");
 }
 
@@ -71,7 +71,7 @@ const NO_CANVAS = {
 };
 
 /** Idempotent: the bus has no unregister, and React mounts more than once. */
-export function registerViewCommands(bus: ShaderloomBus): ViewHolder {
+export function registerViewCommands(bus: LoomBus): ViewHolder {
   const holder = viewHolderFor(bus);
   if (bus.hasCommand("view.frameAll")) return holder;
 

@@ -1,5 +1,5 @@
 import { createVgpuBackend, meetsBaseline } from "@runtime/backend/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 
 /**
@@ -30,7 +30,7 @@ export type GpuStatus =
        * halt (§V23, T98), no `onDiagnostic`, no timing surface. Optional because a test
        * builds this object by hand and a stub device has no backend to name.
        */
-      readonly backend?: ShaderloomBackend | undefined;
+      readonly backend?: LoomBackend | undefined;
     }
   | { readonly kind: "unavailable"; readonly reason: string };
 
@@ -38,7 +38,7 @@ export const PROBING: GpuStatus = { kind: "probing" };
 
 export interface GpuProbeOptions {
   /** Injectable so a test can drive every branch without a GPU. */
-  createBackend?: () => ShaderloomBackend;
+  createBackend?: () => LoomBackend;
   /** Does this environment expose WebGPU at all? */
   hasWebGpu?: () => boolean;
   /** Give up after this long and report unavailable. */
@@ -70,7 +70,7 @@ export async function probeGpu(options: GpuProbeOptions = {}): Promise<GpuStatus
     return {
       kind: "unavailable",
       reason:
-        "This browser does not expose WebGPU. Shaderloom needs Chrome or Edge 128+ on desktop with hardware acceleration enabled.",
+        "This browser does not expose WebGPU. Loom needs Chrome or Edge 128+ on desktop with hardware acceleration enabled.",
     };
   }
 

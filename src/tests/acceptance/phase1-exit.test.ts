@@ -9,7 +9,7 @@ import type { GraphDocument } from "../../domain/types/graph.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import type { PassDescriptor } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
-import type { ShaderloomBackend } from "../../runtime/backend/index.ts";
+import type { LoomBackend } from "../../runtime/backend/index.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import type { GpuHost, GpuSession } from "../../runtime/backend/vgpu/gpu-host.ts";
 import { mockGpuHost } from "../../runtime/backend/vgpu/mock-gpu-host.ts";
@@ -127,7 +127,7 @@ function capturingDawnHost(): { host: GpuHost; device: () => GPUDevice | undefin
 }
 
 interface Harness {
-  readonly backend: ShaderloomBackend;
+  readonly backend: LoomBackend;
   readonly diagnostics: RuntimeDiagnostic[];
   readonly capabilities: BackendCapabilities;
 }

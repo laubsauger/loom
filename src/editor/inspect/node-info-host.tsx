@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { CompiledGraph } from "@compiler/index.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { TelemetrySource } from "@runtime/telemetry/index.ts";
@@ -48,7 +48,7 @@ import { NodeInfoPopup } from "./node-info-popup.tsx";
  */
 
 export interface NodeInfoHostProps {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly registry: NodeRegistryView;
   /** The plan currently running, or null before the first successful compile. */
   readonly compiled: CompiledGraph | null;
@@ -172,7 +172,7 @@ export function NodeInfoHost({
 
 interface NodeInfoPopoverProps {
   readonly state: OpenState;
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly registry: NodeRegistryView;
   readonly compiled: CompiledGraph | null;
   readonly telemetry: TelemetrySource | null;

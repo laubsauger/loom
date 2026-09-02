@@ -404,7 +404,7 @@ export function selectTab(layout: PaneTreeLayout, leafId: PaneKey, key: PaneKey)
   };
 }
 
-/** Pops a tab into its own window (§V97). Window name: `shaderloom-${key}` — unique by
+/** Pops a tab into its own window (§V97). Window name: `loom-${key}` — unique by
  *  construction, which is the T393 fix the singleton names could not give (two floating
  *  viewers used to be the SAME window). */
 export function floatTab(layout: PaneTreeLayout, key: PaneKey): PaneTreeLayout {

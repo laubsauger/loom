@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeFormatOverride, NodeResolutionOverride } from "@domain/types/graph.ts";
@@ -33,7 +33,7 @@ import type { EditPhase } from "@ui/controls/types.ts";
  */
 
 export interface ParameterEditorOptions {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor, project and capability grants for every command this editor sends (§V30). */
   context: InvocationContext;
   /** Frame scheduler; injected in tests to make coalescing deterministic. */

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { compileGraph } from "@compiler/index.ts";
 import { createDomainBus } from "@domain/commands/index.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "@domain/types/graph.ts";
@@ -74,7 +74,7 @@ const WIRING_CODES = new Set([
 const actor = { kind: "human", id: "tester" } as const;
 const context: InvocationContext = { actor, projectId: "project-1", capabilities: [] };
 
-let bus: ShaderloomBus;
+let bus: LoomBus;
 let registry: NodeRegistryView;
 
 beforeEach(() => {

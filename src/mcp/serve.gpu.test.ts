@@ -56,7 +56,7 @@ describe("headless MCP server on Dawn (T294)", () => {
     });
 
     // The revision notifications streamed while we built (quasi-realtime, T290).
-    expect(sent.some((message) => message["method"] === "notifications/shaderloom/revision")).toBe(true);
+    expect(sent.some((message) => message["method"] === "notifications/loom/revision")).toBe(true);
 
     const preview = await call("render_preview", { nodeId: solidId, maxSize: 64 });
     const image = preview?.content?.find((entry) => entry.type === "image");

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createHarness } from "./test-support.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 
 /**
  * §T719 — EVERY command module survives its own module being re-executed.
@@ -77,7 +77,7 @@ const MODULES: readonly HolderEntry[] = [
   { label: "graph.toggleReferenceLines", path: "src/editor/edges/reference-lines-command.ts", load: () => import("@editor/edges/reference-lines-command.ts"), accessor: "referenceLinesStoreFor" },
 ];
 
-type Accessor = (bus: ShaderloomBus) => object;
+type Accessor = (bus: LoomBus) => object;
 
 /**
  * Takes the minimal structural shape rather than `HolderEntry`, because the wave-2 store

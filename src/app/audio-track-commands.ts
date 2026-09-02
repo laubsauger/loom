@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -57,7 +57,7 @@ export interface AudioTrackHolder {
   current: AudioTrackHandlers | null;
 }
 
-export function audioTrackHolderFor(bus: ShaderloomBus): AudioTrackHolder {
+export function audioTrackHolderFor(bus: LoomBus): AudioTrackHolder {
   return commandHolder<AudioTrackHandlers>(bus, "audio.toggleTrackRecording");
 }
 
@@ -68,7 +68,7 @@ const NO_SESSION = {
 };
 
 /** Idempotent: the bus has no unregister, and React mounts more than once. */
-export function registerAudioTrackCommands(bus: ShaderloomBus): AudioTrackHolder {
+export function registerAudioTrackCommands(bus: LoomBus): AudioTrackHolder {
   const holder = audioTrackHolderFor(bus);
   if (bus.hasCommand("audio.toggleTrackRecording")) return holder;
 

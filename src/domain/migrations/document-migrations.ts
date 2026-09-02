@@ -247,7 +247,7 @@ export function migrateProjectDocument(
     diagnostics.push({
       severity: "warning",
       code: "project.schema.newer",
-      message: `This project was saved by a newer version of Shaderloom (schema ${fromVersion}, this build writes ${targetVersion}).`,
+      message: `This project was saved by a newer version of Loom (schema ${fromVersion}, this build writes ${targetVersion}).`,
       suggestion: "Anything this build does not understand is kept as-is and written back on save (§V68).",
     });
     return {

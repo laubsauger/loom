@@ -5,7 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, CompiledExecutionPlan } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { PixelWindow, PreviewOutputRef, ReadbackImage } from "@runtime/previews/index.ts";
 import { App } from "./app.tsx";
 import { createAppRuntime } from "./app-runtime.ts";
@@ -100,11 +100,11 @@ function fixture() {
     readBuffer: () => Promise.reject(new Error("no GPU")),
     registerMediaSource: () => () => {},
     setCookPolicy() {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, reads, presented };
 }
 
-async function mountViewer(runtime: AppRuntime, backend: ShaderloomBackend) {
+async function mountViewer(runtime: AppRuntime, backend: LoomBackend) {
   const status: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend };
   await act(async () => {
     render(<App runtime={runtime} storage={createMemoryStorage()} gpuProbe={() => Promise.resolve(status)} />);

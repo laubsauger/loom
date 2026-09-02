@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import { ProjectSettingsDialog } from "./project-settings.tsx";
 import { registerProjectSettingsCommand } from "./settings-command.ts";
@@ -14,7 +14,7 @@ import { registerProjectSettingsCommand } from "./settings-command.ts";
  */
 
 export interface ProjectSettingsHostProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** The live settings view off the store (§V177), not a snapshot. */
   settings: ProjectSettings;
   /** One field at a time — a partial patch through `project.setSettings` (§V29). */

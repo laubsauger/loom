@@ -72,7 +72,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // Named, not anonymous: the console line says WHICH surface, so a stack that lands in
     // shared code (a control, a store hook) is still attributable.
-    console.error(`Shaderloom: the ${this.props.name} pane failed to render.`, error, info.componentStack);
+    console.error(`Loom: the ${this.props.name} pane failed to render.`, error, info.componentStack);
     this.props.onError?.(error, info);
   }
 

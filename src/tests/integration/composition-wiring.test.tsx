@@ -11,7 +11,7 @@ import type { SnapshotMeta, SnapshotRecord, SnapshotStore } from "@domain/projec
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { ProjectDocument } from "@domain/types/graph.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { App } from "../../app/app.tsx";
 import type { OpenPaneWindow } from "../../app/pane-window.tsx";
@@ -107,7 +107,7 @@ const CAPABILITIES: BackendCapabilities = {
  * every method exists so PORTS wire — while pixel methods refuse honestly (this
  * fixture has no GPU; availability is about WIRING, not about rendering).
  */
-function fixtureBackend(): ShaderloomBackend {
+function fixtureBackend(): LoomBackend {
   const noGpu = () => Promise.reject(new Error("composition fixture has no GPU"));
   return {
     status: {
@@ -693,7 +693,7 @@ describe("values written by a newer build (§V68, §V69)", () => {
   it("loads the document and refuses to render a control over what it cannot read", async () => {
     const doc = restorableDocument("future-project");
     // A parameter in the §V69 envelope shape this build does not interpret yet. It is
-    // valid data written by a later Shaderloom, not a corrupt file.
+    // valid data written by a later Loom, not a corrupt file.
     const withFuture = {
       ...doc,
       graph: {
@@ -794,7 +794,7 @@ function haltedBackend() {
     // T326: part of the backend contract; a fixture without it is incomplete.
     setCookPolicy: () => {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, recover };
 }
 
@@ -1113,7 +1113,7 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
       expect(listing.tools.map((tool) => tool.name)).toContain("add_node");
 
       await act(async () => {
-        socket?.emit({ type: "attached", serverInfo: "shaderloom-bridge" });
+        socket?.emit({ type: "attached", serverInfo: "loom-bridge" });
       });
       expect(screen.getByTestId("mcp-state-bridge").textContent).toBe("Connected");
       expect(screen.getByTestId("mcp-consent").textContent).toBe("Attached agents can edit this document.");
@@ -1155,8 +1155,8 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
     const config = JSON.parse(snippet.textContent ?? "{}") as {
       mcpServers?: Record<string, { command?: string; args?: string[] }>;
     };
-    expect(config.mcpServers?.["shaderloom"]?.command).toBe("node");
-    expect(config.mcpServers?.["shaderloom"]?.args?.join(" ")).toContain("src/mcp/serve.ts");
+    expect(config.mcpServers?.["loom"]?.command).toBe("node");
+    expect(config.mcpServers?.["loom"]?.args?.join(" ")).toContain("src/mcp/serve.ts");
   });
 });
 

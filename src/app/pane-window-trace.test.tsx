@@ -244,7 +244,7 @@ describe("T774 — the float traces its own mount", () => {
     );
 
     child.replaceDocument(document.implementation.createHTMLDocument("about:blank"));
-    const trace = (window as Window & { shaderloomPaneTrace?: () => unknown }).shaderloomPaneTrace;
+    const trace = (window as Window & { loomPaneTrace?: () => unknown }).loomPaneTrace;
     expect(trace, "no on-demand trace was installed on the parent window").toBeDefined();
     await act(async () => {
       trace?.();

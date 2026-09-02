@@ -1,7 +1,7 @@
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { EdgeId, NodeId, Revision } from "../types/ids.ts";
 import type { ProjectDocument } from "../types/graph.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 import { sharedForBus } from "./command-holder.ts";
 
 /**
@@ -140,7 +140,7 @@ interface SourceHolder {
   sources: StateSources;
 }
 
-function holderFor(bus: ShaderloomBus): SourceHolder {
+function holderFor(bus: LoomBus): SourceHolder {
   /*
    * `sharedForBus`, not `commandHolder`: this holds `{ sources }` rather than a nullable
    * `current`, and it backs several QUERIES rather than one command — so the key is the
@@ -151,7 +151,7 @@ function holderFor(bus: ShaderloomBus): SourceHolder {
 }
 
 /** What a bus currently has a source for. Exposed for the composition root and tests. */
-export function stateSourcesFor(bus: ShaderloomBus): Readonly<StateSources> {
+export function stateSourcesFor(bus: LoomBus): Readonly<StateSources> {
   return holderFor(bus).sources;
 }
 
@@ -163,7 +163,7 @@ export function stateSourcesFor(bus: ShaderloomBus): Readonly<StateSources> {
  * because the bus has no unregister — the holder, not the registration, is what a
  * remount swaps.
  */
-export function attachStateSources(bus: ShaderloomBus, sources: StateSources): void {
+export function attachStateSources(bus: LoomBus, sources: StateSources): void {
   const holder = holderFor(bus);
   holder.sources = { ...holder.sources, ...sources };
 

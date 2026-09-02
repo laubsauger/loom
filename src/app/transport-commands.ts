@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import { SEEK_FRAME_LIMIT } from "@domain/types/graph.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
@@ -92,7 +92,7 @@ export interface TransportHolder {
   current: TransportHandlers | null;
 }
 
-export function transportHolderFor(bus: ShaderloomBus): TransportHolder {
+export function transportHolderFor(bus: LoomBus): TransportHolder {
   return commandHolder<TransportHandlers>(bus, "transport.togglePlay");
 }
 
@@ -113,7 +113,7 @@ const NO_LOOP_DIAGNOSTIC = {
     "The loop is created with the GPU device — a build with no WebGPU has no transport to run.",
 };
 
-export function registerTransportCommands(bus: ShaderloomBus): TransportHolder {
+export function registerTransportCommands(bus: LoomBus): TransportHolder {
   const holder = transportHolderFor(bus);
 
   if (!bus.hasCommand("transport.togglePlay")) {

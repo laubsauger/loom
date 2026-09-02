@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { FrameRange } from "@domain/types/graph.ts";
 import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
@@ -68,7 +68,7 @@ export interface RenderRangeHolder {
   current: RenderRangeHandlers | null;
 }
 
-export function renderRangeHolderFor(bus: ShaderloomBus): RenderRangeHolder {
+export function renderRangeHolderFor(bus: LoomBus): RenderRangeHolder {
   return commandHolder<RenderRangeHandlers>(bus, "export.renderRange");
 }
 
@@ -195,7 +195,7 @@ const NO_SESSION: RuntimeDiagnostic = {
 };
 
 /** Idempotent: the bus has no unregister, and React mounts more than once. */
-export function registerRenderRangeCommand(bus: ShaderloomBus): RenderRangeHolder {
+export function registerRenderRangeCommand(bus: LoomBus): RenderRangeHolder {
   const holder = renderRangeHolderFor(bus);
   if (bus.hasCommand("export.renderRange")) return holder;
 

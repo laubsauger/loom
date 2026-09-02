@@ -1,5 +1,5 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 
 /**
  * "Has this document changed since it was last written?" (T189, §V93).
@@ -22,7 +22,7 @@ export interface DocumentDirty {
   markSaved: () => void;
 }
 
-export function useDocumentDirty(bus: ShaderloomBus): DocumentDirty {
+export function useDocumentDirty(bus: LoomBus): DocumentDirty {
   const revision = useSyncExternalStore(
     bus.store.subscribe,
     bus.store.getRevision,

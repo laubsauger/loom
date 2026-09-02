@@ -1,5 +1,5 @@
 import type { CompiledGraph } from "@compiler/index.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
@@ -79,7 +79,7 @@ export interface CompileHolder {
   current: CompileHandlers | null;
 }
 
-export function compileHolderFor(bus: ShaderloomBus): CompileHolder {
+export function compileHolderFor(bus: LoomBus): CompileHolder {
   return commandHolder<CompileHandlers>(bus, "project.compile");
 }
 
@@ -125,7 +125,7 @@ export function reportFor(view: CompileResultView): CompileReport {
   };
 }
 
-export function registerCompileCommand(bus: ShaderloomBus): CompileHolder {
+export function registerCompileCommand(bus: LoomBus): CompileHolder {
   const holder = compileHolderFor(bus);
 
   if (!bus.hasCommand("project.compile")) {

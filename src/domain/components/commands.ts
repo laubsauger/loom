@@ -8,7 +8,7 @@ import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
 import type { ComponentId, NodeId, PortId, Revision } from "../types/ids.ts";
 import type { ParameterDefinition, ParameterValue } from "../types/parameters.ts";
 import type { GraphPatchResult } from "../types/patch.ts";
-import type { CommandContext, CommandOutcome, ShaderloomBus } from "../commands/bus.ts";
+import type { CommandContext, CommandOutcome, LoomBus } from "../commands/bus.ts";
 import { applyGraphPatch } from "../commands/apply-patch.ts";
 import { renumberedName, rewriteNodeNameReferences } from "../graph/names.ts";
 import { withBoundaryPorts } from "./boundary-ports.ts";
@@ -383,7 +383,7 @@ function danglingParentBindings(internal: GraphDocument): NodeId[] {
   return found;
 }
 
-export function registerComponentCommands(bus: ShaderloomBus, options: ComponentCommandOptions): void {
+export function registerComponentCommands(bus: LoomBus, options: ComponentCommandOptions): void {
   const components = options.components;
   const host = options.host ?? null;
 

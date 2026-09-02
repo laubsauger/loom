@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./app-runtime.ts";
 import { transportHolderFor } from "./transport-commands.ts";
@@ -59,7 +59,7 @@ interface Seen {
  * which" an assertion instead of a race.
  */
 function drivableBackend(): {
-  backend: ShaderloomBackend;
+  backend: LoomBackend;
   seen: Seen;
   tick: () => void;
 } {
@@ -106,7 +106,7 @@ function drivableBackend(): {
     },
     setCookPolicy() {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return {
     backend,
     seen,

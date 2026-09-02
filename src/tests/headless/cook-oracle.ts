@@ -12,7 +12,7 @@ import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { InvocationContext } from "../../domain/types/commands.ts";
-import type { CookPolicy, ShaderloomBackend } from "../../runtime/backend/backend-types.ts";
+import type { CookPolicy, LoomBackend } from "../../runtime/backend/backend-types.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
@@ -40,7 +40,7 @@ export interface ScriptedEdit {
   readonly label: string;
   /** Bus operations to apply, or a backend action (the feedback pulse). */
   readonly operations?: ReadonlyArray<GraphPatchOperation>;
-  readonly backend?: (backend: ShaderloomBackend, plan: CompiledGraph) => void;
+  readonly backend?: (backend: LoomBackend, plan: CompiledGraph) => void;
 }
 
 const ACTOR: InvocationContext = {

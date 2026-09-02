@@ -5,7 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, FrameInputs } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -62,7 +62,7 @@ interface Recorder {
  * and never draws, which is precisely the failure being tested. The plan id ties the two
  * halves together.
  */
-function recordingBackend(): { backend: ShaderloomBackend; recorder: Recorder } {
+function recordingBackend(): { backend: LoomBackend; recorder: Recorder } {
   let frameCallback: ((inputs?: FrameInputs) => void) | null = null;
   let compileCount = 0;
   const recorder: Recorder = {
@@ -115,7 +115,7 @@ function recordingBackend(): { backend: ShaderloomBackend; recorder: Recorder } 
     readOutput: async () => ({ bytes: new Uint8Array(), width: 0, height: 0, format: "rgba8unorm" }),
     readBuffer: async () => new Uint8Array(),
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, recorder };
 }
 
@@ -221,7 +221,7 @@ describe("§V172 — a graph edit renders without being nudged (T267)", () => {
         }
         return Reflect.get(target, key) as unknown;
       },
-    }) as ShaderloomBackend;
+    }) as LoomBackend;
     const status: GpuStatus = {
       kind: "ready",
       capabilities: CAPABILITIES,

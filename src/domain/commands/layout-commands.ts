@@ -5,7 +5,7 @@ import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId, Revision } from "../types/ids.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
-import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
+import type { CommandContext, CommandOutcome, LoomBus } from "./bus.ts";
 
 /**
  * `graph.layoutAll` / `graph.layout` — TouchDesigner's `l` and `L` (B84, T440, §V354,
@@ -125,7 +125,7 @@ function tidy(
 }
 
 /** Idempotent: the bus has no unregister, and tests build more than one bus per module. */
-export function registerLayoutCommands(bus: ShaderloomBus): void {
+export function registerLayoutCommands(bus: LoomBus): void {
   if (bus.hasCommand("graph.layoutAll")) return;
 
   bus.registerCommand({

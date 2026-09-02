@@ -77,9 +77,9 @@ export interface McpConnectionOptions {
 export interface McpConnection {
   /** Feed one parsed incoming message. Malformed input gets a JSON-RPC error, never a throw. */
   receive(message: unknown): Promise<void>;
-  /** Pushes `notifications/shaderloom/revision` — wire to the store's subscription. */
+  /** Pushes `notifications/loom/revision` — wire to the store's subscription. */
   notifyRevision(revision: number): void;
-  /** Pushes `notifications/shaderloom/diagnostics` — wire to the diagnostics stream. */
+  /** Pushes `notifications/loom/diagnostics` — wire to the diagnostics stream. */
   notifyDiagnostics(diagnostics: ReadonlyArray<Record<string, unknown>>): void;
   /**
    * T294: diffs the surface's tool list against what this connection last announced
@@ -132,7 +132,7 @@ export function toolResultContent(result: unknown): McpContent[] {
 
 export function createMcpConnection(options: McpConnectionOptions): McpConnection {
   const { surface, send } = options;
-  const serverInfo = options.serverInfo ?? { name: "shaderloom", version: "0.1.0" };
+  const serverInfo = options.serverInfo ?? { name: "loom", version: "0.1.0" };
 
   const respond = (id: JsonRpcRequest["id"], result: Record<string, unknown>): void => {
     send({ jsonrpc: "2.0", id: id ?? null, result });
@@ -218,12 +218,12 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
     },
 
     notifyRevision(revision) {
-      send({ jsonrpc: "2.0", method: "notifications/shaderloom/revision", params: { revision } });
+      send({ jsonrpc: "2.0", method: "notifications/loom/revision", params: { revision } });
     },
     notifyDiagnostics(diagnostics) {
       send({
         jsonrpc: "2.0",
-        method: "notifications/shaderloom/diagnostics",
+        method: "notifications/loom/diagnostics",
         params: { diagnostics },
       });
     },

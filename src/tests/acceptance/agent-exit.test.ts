@@ -8,7 +8,7 @@ import type { CompileReport } from "../../app/compile-command.ts";
 import { compileGraph } from "../../compiler/index.ts";
 import type { CompiledGraph } from "../../compiler/index.ts";
 import { attachStateSources, createDomainBus } from "../../domain/commands/index.ts";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import type { HistorySummary } from "../../domain/commands/graph-commands.ts";
 import { createSequentialIdFactory } from "../../domain/graph/ids.ts";
 import { createGraphStore } from "../../domain/graph/store.ts";
@@ -19,7 +19,7 @@ import type { GraphDocument } from "../../domain/types/graph.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
-import type { ShaderloomBackend } from "../../runtime/backend/index.ts";
+import type { LoomBackend } from "../../runtime/backend/index.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import {
@@ -78,7 +78,7 @@ function requireDawn(): void {
 }
 
 interface Fixture {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly store: GraphStore;
   readonly registry: NodeRegistryView;
   readonly surface: AgentToolSurface;
@@ -121,11 +121,11 @@ function threeNodePatch(baseRevision: number) {
   };
 }
 
-function history(bus: ShaderloomBus): Promise<HistorySummary> {
+function history(bus: LoomBus): Promise<HistorySummary> {
   return bus.query("graph.history", {}, { actor: AGENT, projectId: "acceptance", capabilities: [] });
 }
 
-function audit(bus: ShaderloomBus): Promise<AuditEntry[]> {
+function audit(bus: LoomBus): Promise<AuditEntry[]> {
   return bus.query("graph.audit", {}, { actor: AGENT, projectId: "acceptance", capabilities: [] });
 }
 
@@ -248,7 +248,7 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
    */
   it("compiles the graph it just built, through the bus", async () => {
     requireDawn();
-    const backend: ShaderloomBackend = createVgpuBackend({ host: nodeGpuHost() });
+    const backend: LoomBackend = createVgpuBackend({ host: nodeGpuHost() });
     try {
       const capabilities: BackendCapabilities = await backend.initialize({});
       const { bus, store, registry, surface } = fixture();
@@ -289,7 +289,7 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
 
   it("renders a preview of what it built, through the export interface (§V48)", async () => {
     requireDawn();
-    const backend: ShaderloomBackend = createVgpuBackend({ host: nodeGpuHost() });
+    const backend: LoomBackend = createVgpuBackend({ host: nodeGpuHost() });
     try {
       const capabilities: BackendCapabilities = await backend.initialize({});
 
@@ -381,7 +381,7 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
 
   it("reads GPU timings, and gets 'unavailable' rather than a fabricated zero (§V86)", async () => {
     requireDawn();
-    const backend: ShaderloomBackend = createVgpuBackend({ host: nodeGpuHost() });
+    const backend: LoomBackend = createVgpuBackend({ host: nodeGpuHost() });
     const hub = createTelemetryHub({ intervalMs: 0 });
     try {
       const capabilities = await backend.initialize({});

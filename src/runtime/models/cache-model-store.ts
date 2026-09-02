@@ -14,6 +14,7 @@ import type { ModelStore } from "./model-acquisition.ts";
  * never do is throw during composition.
  */
 
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 const CACHE_NAME = "shaderloom-models-v1";
 
 export function cacheModelStore(): ModelStore | null {
@@ -21,6 +22,7 @@ export function cacheModelStore(): ModelStore | null {
   if (caches === undefined) return null;
 
   const open = () => caches.open(CACHE_NAME);
+  // §V813: a storage ADDRESS, not a name — kept through the Loom rename (§T899) so no user state is orphaned.
   const keyOf = (id: string) => `https://models.shaderloom.invalid/${encodeURIComponent(id)}`;
 
   return {

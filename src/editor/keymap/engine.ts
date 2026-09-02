@@ -4,7 +4,7 @@ import type {
   CommandResult,
   InvocationContext,
 } from "../../domain/types/commands.ts";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import { activeContextsFor } from "./context.ts";
 import { isEditingStroke } from "./editing-keys.ts";
 import type { EventStroke, KeyEventLike } from "./keys.ts";
@@ -59,7 +59,7 @@ export type KeymapDispatch =
     };
 
 export interface KeymapEngineOptions {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   getResolved: () => ResolvedKeymap;
   getEnvironment?: () => KeymapEnvironment;
   getInvocationContext: () => InvocationContext;

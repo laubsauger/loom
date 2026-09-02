@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import {
   createFeatureTrackRecorder,
@@ -34,7 +34,7 @@ export const AUDIO_TRACK_MIME = "application/json";
 
 /** Its own extension, so a track is never mistaken for a project by a file picker. */
 export const AUDIO_TRACK_PICKER_TYPE = {
-  description: "Shaderloom audio feature track",
+  description: "Loom audio feature track",
   accept: { [AUDIO_TRACK_MIME]: [".loomtrack.json"] as readonly string[] },
 } as const;
 
@@ -46,7 +46,7 @@ export interface AudioTrackSession {
 }
 
 export interface UseAudioTrackOptions {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   /** The session's live feature read — `useAudioInput().read`. */
   readonly source: () => AudioFeatures | null;
   /** True while a capture is actually live. Arming without one is refused by the command. */

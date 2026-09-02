@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { MenuEntry, MenuItem, MenuTarget } from "@domain/types/menus.ts";
 import { isMenuSeparator } from "@domain/types/menus.ts";
@@ -152,7 +152,7 @@ function renderEntry(entry: MenuEntry, index: number): ReactNode {
 }
 
 export interface ContextMenuHostProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /**
    * Surface for a click that lands on nothing addressable — "canvas" for the graph
    * pane. Omitted, such a click opens no menu at all.

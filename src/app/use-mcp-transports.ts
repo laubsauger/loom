@@ -78,7 +78,7 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
     const bridge = createBridgeClient({
       surface: () => surfaceRef.current,
       registry,
-      client: globalThis.location?.host ?? "a Shaderloom tab",
+      client: globalThis.location?.host ?? "a Loom tab",
     });
     bridgeRef.current = bridge;
     return () => {

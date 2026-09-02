@@ -3,7 +3,7 @@
  *
  * ## What the bridge is
  *
- * `serve.ts` is a complete headless Shaderloom on stdio: its own store, its own GPU, its
+ * `serve.ts` is a complete headless Loom on stdio: its own store, its own GPU, its
  * own document. That is useful for tests and useless for the owner, because the graph an
  * agent builds there is one nobody can see. The bridge is the fix, and its shape is fixed
  * by a constraint: **the MCP client's config must not change.** The same process Claude
@@ -199,8 +199,8 @@ export const BRIDGE_ATTACH_TIMEOUT_MS = 5_000;
 /** What a headless tool result and the panel both say. One sentence, one place (§V39). */
 export function headlessNote(pairingCode: string): string {
   return (
-    "No Shaderloom tab is attached to this bridge, so this ran against a HEADLESS in-memory " +
-    "document the user cannot see. To drive the tab they are looking at: open Shaderloom, " +
+    "No Loom tab is attached to this bridge, so this ran against a HEADLESS in-memory " +
+    "document the user cannot see. To drive the tab they are looking at: open Loom, " +
     `go to the agent panel's Connections section, and enter the pairing code ${pairingCode}.`
   );
 }

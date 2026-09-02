@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import type {
   CommandInput,
   CommandName,
@@ -37,7 +37,7 @@ export interface KeymapContextValue {
   store: KeymapStore;
   resolved: ResolvedKeymap;
   engine: KeymapEngine;
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor identity every dispatch is stamped with (§V30). */
   invocationContext: InvocationContext;
   /** Chord in progress, "" when none. */
@@ -47,7 +47,7 @@ export interface KeymapContextValue {
 const KeymapReactContext = createContext<KeymapContextValue | null>(null);
 
 export interface KeymapProviderProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Supply one to share a store across trees (settings pane in a separate root). */
   store?: KeymapStore;
   storeOptions?: KeymapStoreOptions;

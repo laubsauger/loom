@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { NodeMetricSink } from "@runtime/telemetry/index.ts";
 import {
   DEPTH_INPUT_KEY,
@@ -209,7 +209,7 @@ export interface ModelInferenceBinding {
 }
 
 export function useModelInference(
-  backend: ShaderloomBackend | null | undefined,
+  backend: LoomBackend | null | undefined,
   sink?: NodeMetricSink | undefined,
 ): ModelInferenceBinding {
   const backendRef = useRef(backend);

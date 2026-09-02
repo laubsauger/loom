@@ -6,7 +6,7 @@ import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, CompiledExecutionPlan } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { ReadbackImage } from "@runtime/previews/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -152,7 +152,7 @@ const DOCUMENT_B = documentText("T726 B", [0, 0, 1, 1]);
 /** The intermediate a user pins. Present in BOTH documents, which is the whole point. */
 const PINNED = "extra:out";
 
-function stubBackend(): ShaderloomBackend {
+function stubBackend(): LoomBackend {
   return {
     status: {
       initialized: true,
@@ -194,7 +194,7 @@ function stubBackend(): ShaderloomBackend {
     recover: () => Promise.resolve(),
     setCookPolicy() {},
     dispose() {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
 }
 
 interface Session {

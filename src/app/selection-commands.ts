@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
@@ -30,11 +30,11 @@ export interface SelectionHolder {
   current: SelectionHandlers | null;
 }
 
-export function selectionHolderFor(bus: ShaderloomBus): SelectionHolder {
+export function selectionHolderFor(bus: LoomBus): SelectionHolder {
   return commandHolder<SelectionHandlers>(bus, "graph.selectAll");
 }
 
-export function registerSelectionCommands(bus: ShaderloomBus): SelectionHolder {
+export function registerSelectionCommands(bus: LoomBus): SelectionHolder {
   const holder = selectionHolderFor(bus);
 
   if (!bus.hasCommand("graph.selectAll")) {

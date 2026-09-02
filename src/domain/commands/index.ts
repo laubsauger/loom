@@ -1,6 +1,6 @@
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../graph/store.ts";
-import { createCommandBus, type ShaderloomBus } from "./bus.ts";
+import { createCommandBus, type LoomBus } from "./bus.ts";
 import { registerEditorCommands } from "./editor-commands.ts";
 import { registerLayoutCommands } from "./layout-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
@@ -28,7 +28,7 @@ export type {
   QueryContext,
   QueryHandler,
   QueryRegistration,
-  ShaderloomBus,
+  LoomBus,
 } from "./bus.ts";
 export { SHADER_SOURCE_PARAMETER, applyGraphPatch } from "./apply-patch.ts";
 export { registerEditorCommands } from "./editor-commands.ts";
@@ -97,7 +97,7 @@ export interface DomainBusOptions extends GraphStoreOptions {
  * composes at startup and what tests use. Other tracks call `registerCommand` on the
  * returned bus rather than building their own (§V29, §V39).
  */
-export function createDomainBus(options: DomainBusOptions = {}): { bus: ShaderloomBus; store: GraphStore } {
+export function createDomainBus(options: DomainBusOptions = {}): { bus: LoomBus; store: GraphStore } {
   const { registry, store: providedStore, grants, clipboard, ...storeOptions } = options;
   const store = providedStore ?? createGraphStore(storeOptions);
   const bus = createCommandBus({

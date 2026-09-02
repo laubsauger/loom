@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { alice, contextFor, createHarness } from "../../domain/commands/test-support.ts";
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import { createKeymapEngine } from "./engine.ts";
 import type { KeymapDispatch } from "./engine.ts";
 import type { KeyEventLike } from "./keys.ts";
@@ -24,7 +24,7 @@ function binding(overrides: Partial<KeyBinding> & Pick<KeyBinding, "id" | "keys"
 }
 
 interface Rig {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   executed: { name: string; input: unknown }[];
   press(event: KeyEventLike, context?: KeymapEnvironment["context"]): KeymapDispatch;
   setEnvironment(next: Partial<KeymapEnvironment>): void;

@@ -3,7 +3,7 @@ import type { NodeId, Revision } from "../types/ids.ts";
 import type { StoredParameter } from "../types/parameters.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
+import type { CommandContext, CommandOutcome, LoomBus } from "./bus.ts";
 import { nodeNames, renumberedName, rewriteNodeNameReferences } from "../graph/names.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
 
@@ -318,7 +318,7 @@ function toggleFlagOperations(nodes: readonly GraphNode[], flag: UiFlag): GraphP
 }
 
 function registerToggle(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   name:
     | "node.toggleBypass"
     | "node.toggleDisplay"
@@ -346,7 +346,7 @@ function registerToggle(
  * Registers the editing commands on `bus`. The clipboard is per-bus and lives here: it
  * is scratch state, never document state, so it is neither serialized nor undoable.
  */
-export function registerEditorCommands(bus: ShaderloomBus): void {
+export function registerEditorCommands(bus: LoomBus): void {
   let clipboard: Clipboard = { nodes: [], edges: [] };
   let pasteCount = 0;
 

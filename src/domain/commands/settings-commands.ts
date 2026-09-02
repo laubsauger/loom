@@ -3,7 +3,7 @@ import type { ProjectSettings } from "../types/graph.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { Revision } from "../types/ids.ts";
 import { classifySettingsChange } from "../project/settings-change.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 
 /**
  * `project.setSettings` (T272, §V177, §V178, §V29).
@@ -65,7 +65,7 @@ function invalid(message: string, suggestion?: string): RuntimeDiagnostic {
   };
 }
 
-export function registerSettingsCommands(bus: ShaderloomBus): void {
+export function registerSettingsCommands(bus: LoomBus): void {
   if (bus.hasCommand(SET_SETTINGS_COMMAND)) return;
 
   bus.registerCommand({

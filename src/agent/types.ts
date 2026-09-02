@@ -5,7 +5,7 @@ import type { Actor, CapabilityClass, InvocationContext } from "@domain/types/co
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { Revision } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 
 /**
  * The agent tool surface vocabulary (§I.tools, T54–T60).
@@ -224,7 +224,7 @@ export interface ToolRequirements {
 
 /** The bus surface a tool is allowed to touch. Read-only projections plus dispatch. */
 export interface ToolRuntime {
-  readonly bus: ShaderloomBus;
+  readonly bus: LoomBus;
   readonly ports: AgentPorts;
   /** True when the caller asked to validate only (§V36). */
   readonly dryRun: boolean;

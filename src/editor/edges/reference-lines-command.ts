@@ -1,6 +1,6 @@
 // v16-allow-command-bus: registers `ui.toggleReferenceLines`, which makes no patch and opens
 // no undo group — whether a line is DRAWN is not something the document knows about.
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { sharedForBus } from "@domain/commands/command-holder.ts";
 
 /**
@@ -86,7 +86,7 @@ export function createReferenceLinesStore(): ReferenceLinesStore {
  * One store per bus — the bus is the per-document identity, and two canvases showing the
  * same document (the floated graph pane, §V97) must agree about what they are drawing.
  */
-export function referenceLinesStoreFor(bus: ShaderloomBus): ReferenceLinesStore {
+export function referenceLinesStoreFor(bus: LoomBus): ReferenceLinesStore {
   /*
    * STATE HELD: one boolean — whether reference lines are drawn — and the listeners
    * watching it. The smallest state of the four, and the one where a lost subscriber is
@@ -103,7 +103,7 @@ export function referenceLinesStoreFor(bus: ShaderloomBus): ReferenceLinesStore 
  * Idempotent, like every other editor-side registration: the bus has no unregister, and
  * React mounts more than once (StrictMode, remounts, tests).
  */
-export function registerReferenceLinesCommand(bus: ShaderloomBus): ReferenceLinesStore {
+export function registerReferenceLinesCommand(bus: LoomBus): ReferenceLinesStore {
   const store = referenceLinesStoreFor(bus);
   if (bus.hasCommand(TOGGLE_REFERENCE_LINES_COMMAND)) return store;
 

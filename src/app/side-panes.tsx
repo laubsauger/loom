@@ -23,7 +23,7 @@ import { useKeymapPane } from "@editor/keymap/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
 import type { PortDragQuery } from "@editor/library/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { normalizedPointer } from "@runtime/execution/index.ts";
 import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
 import { usePixelReadout } from "@editor/viewer/index.ts";
@@ -277,7 +277,7 @@ function FutureParameters({
         <h3 className={styles.blockTitle}>set by a newer version</h3>
         <p className={styles.note}>
           {nodeId} carries {unknown.length === 1 ? "a parameter value" : "parameter values"} written
-          by a newer build of Shaderloom. {unknown.length === 1 ? "It is" : "They are"} kept exactly
+          by a newer build of Loom. {unknown.length === 1 ? "It is" : "They are"} kept exactly
           as saved and written back unchanged, so nothing is lost — but this build cannot
           show a control over {unknown.length === 1 ? "it" : "them"} without inventing a value.
         </p>
@@ -313,7 +313,7 @@ export interface ViewerPaneProps {
   /** Needed only to tell a declared Output node from a preview sink — see below. */
   graph: GraphDocument;
   /** The live backend, when there is one. The runtime is handed the surface (§V64). */
-  backend?: ShaderloomBackend | null;
+  backend?: LoomBackend | null;
   /**
    * THE pointer source (T324, §V182, §V236). The viewer is the one publisher.
    *

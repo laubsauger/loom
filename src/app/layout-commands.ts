@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -63,7 +63,7 @@ export interface LayoutCommandHolder {
   current: LayoutHandlers | null;
 }
 
-export function layoutCommandHolderFor(bus: ShaderloomBus): LayoutCommandHolder {
+export function layoutCommandHolderFor(bus: LoomBus): LayoutCommandHolder {
   return commandHolder<LayoutHandlers>(bus, OPEN_LAYOUTS_COMMAND);
 }
 
@@ -73,7 +73,7 @@ const NO_SHELL = {
   message: "No app shell is mounted, so there is no layout to change.",
 };
 
-export function registerLayoutCommands(bus: ShaderloomBus): LayoutCommandHolder {
+export function registerLayoutCommands(bus: LoomBus): LayoutCommandHolder {
   const holder = layoutCommandHolderFor(bus);
   if (bus.hasCommand(OPEN_LAYOUTS_COMMAND)) return holder;
 

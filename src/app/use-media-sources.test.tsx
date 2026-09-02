@@ -2,7 +2,7 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { GraphDocument } from "@domain/types/graph.ts";
-import type { MediaSource, ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { MediaSource, LoomBackend } from "@runtime/backend/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -77,7 +77,7 @@ function fakeBackend() {
         unregistered.push(sourceId);
       };
     },
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, registered, unregistered };
 }
 
@@ -111,7 +111,7 @@ function Harness({
   onWiring,
 }: {
   runtime: AppRuntime;
-  backend: ShaderloomBackend | null;
+  backend: LoomBackend | null;
   graph: GraphDocument;
   environment: MediaEnvironment;
   /** Resolved output sizes (T312). Omitted where the test is only about video wiring. */

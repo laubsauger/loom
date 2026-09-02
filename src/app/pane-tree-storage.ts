@@ -44,9 +44,11 @@ import type { PaneTreeLayout } from "./pane-tree.ts";
  * inside the record would do the same job, at the cost of a field in `PaneTreeStore`
  * that means nothing to anything but the reader; the chain already speaks versions.
  */
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 export const PANE_TREE_STORAGE_KEY = "shaderloom.shell.layouts.v5";
 
 /** v4's key. Read once, repaired, and removed — see `readPaneTreeStore`. */
+// §V813: a storage ADDRESS, not a name — kept through the Loom rename (§T899) so no user state is orphaned.
 export const LEGACY_PANE_TREE_STORAGE_KEY = "shaderloom.shell.layouts.v4";
 
 export interface NamedPaneTree {

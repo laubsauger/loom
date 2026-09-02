@@ -268,7 +268,7 @@ interface StoredQuery {
   description: string | undefined;
 }
 
-export interface ShaderloomBus extends AppCommandBus {
+export interface LoomBus extends AppCommandBus {
   /**
    * THE authority on capability grants (T90, §V38). The confirm flow writes here; the
    * bus checks here; adapters cannot reach it through a tool call.
@@ -352,7 +352,7 @@ function missingCapabilities(
   return required.filter((capability) => !grants.has(actor, capability));
 }
 
-export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus {
+export function createCommandBus(options: CommandBusOptions = {}): LoomBus {
   const store = options.store ?? createGraphStore();
   const registry = options.registry ?? createNodeRegistry().view();
   const grants = options.grants ?? createCapabilityGrantStore();
@@ -363,7 +363,7 @@ export function createCommandBus(options: CommandBusOptions = {}): ShaderloomBus
   /** T615: likewise — null is "no app", and a handler falls back to the document. */
   let readFlattened: (() => GraphDocument | undefined) | null = null;
 
-  const bus: ShaderloomBus = {
+  const bus: LoomBus = {
     store: store.view,
     registry,
     grants,

@@ -45,7 +45,7 @@ function newRuntime(): AppRuntime {
 const PROJECT: Omit<WritableTextFile, "fileName"> = {
   text: "{}",
   mime: "application/json",
-  pickerTypes: [{ description: "Shaderloom project", accept: { "application/json": [".loom.json"] } }],
+  pickerTypes: [{ description: "Loom project", accept: { "application/json": [".loom.json"] } }],
 };
 
 describe("the suggestion reaches BOTH save paths (T43/T139)", () => {

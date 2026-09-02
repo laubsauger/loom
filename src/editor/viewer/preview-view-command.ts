@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 // v16-allow-command-bus: registers `preview.setView`/`preview.resetView`, which make no patch
 // and open no undo group — the lens is session state, not document state.
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { PREVIEW_LENSES } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewLensKind } from "@runtime/previews/index.ts";
@@ -67,7 +67,7 @@ export interface PreviewViewTargetHolder {
   current: NodeId | null;
 }
 
-export function previewViewTargetFor(bus: ShaderloomBus): PreviewViewTargetHolder {
+export function previewViewTargetFor(bus: LoomBus): PreviewViewTargetHolder {
   return commandHolder<NodeId>(bus, `${SET_PREVIEW_VIEW_COMMAND}#target`);
 }
 
@@ -85,7 +85,7 @@ function clampStops(value: number): number {
  * more than once — and safe to call from any surface that needs them, since the store and the
  * target holder are resolved from the bus rather than captured here.
  */
-export function registerPreviewViewCommands(bus: ShaderloomBus): PreviewViewStore {
+export function registerPreviewViewCommands(bus: LoomBus): PreviewViewStore {
   const store = previewViewStoreFor(bus);
   if (bus.hasCommand(SET_PREVIEW_VIEW_COMMAND)) return store;
   const target = previewViewTargetFor(bus);
@@ -197,7 +197,7 @@ export function registerPreviewViewCommands(bus: ShaderloomBus): PreviewViewStor
  * lens command with no preview anywhere would be a control that does nothing (§V90).
  */
 export function usePreviewViews(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   selection: readonly NodeId[],
 ): PreviewViewStore {
   const store = useMemo(() => registerPreviewViewCommands(bus), [bus]);

@@ -1,6 +1,6 @@
 // v16-allow-command-bus: the bus is the per-document identity this store is keyed by; it is
 // never executed against here and nothing in this file writes the document.
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { DEFAULT_PREVIEW_LENS, isDefaultLens, viewForLens } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewView } from "@runtime/previews/index.ts";
@@ -107,7 +107,7 @@ export function createPreviewViewStore(): PreviewViewStore {
  * threading a prop through the composition root. The bus is the per-document runtime identity
  * that all three already hold.
  */
-export function previewViewStoreFor(bus: ShaderloomBus): PreviewViewStore {
+export function previewViewStoreFor(bus: LoomBus): PreviewViewStore {
   /*
    * STATE HELD: the per-node lens map (only non-default entries — a default lens is
    * stored as absence), plus one listener bucket PER NODE. The buckets are why identity

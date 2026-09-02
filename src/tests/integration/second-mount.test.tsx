@@ -13,7 +13,7 @@ import type { GpuStatus } from "../../app/gpu-status.ts";
  * T531 (§V467) — A SECOND MOUNT ON ONE BUS MUST NOT TAKE THE APP DOWN.
  *
  * `registerCommand` THROWS on a duplicate name. Three modules had reached for a
- * PER-COMPONENT-INSTANCE guard — `useRef(new Set<ShaderloomBus>())` — which knows only
+ * PER-COMPONENT-INSTANCE guard — `useRef(new Set<LoomBus>())` — which knows only
  * what THIS instance did, so a second App on the same bus sails straight past it and the
  * throw kills the mount. `useRuntimeCommands` was the live one (B108 named the webmcp
  * site; T493 sidestepped this one by using `bus.hasCommand` for its own `media.*`

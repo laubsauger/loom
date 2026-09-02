@@ -5,7 +5,7 @@ import type { ParameterValue } from "../types/parameters.ts";
 import { createGraphStore, type GraphStore } from "../graph/store.ts";
 import { createSequentialIdFactory } from "../graph/ids.ts";
 import { createDomainBus } from "../commands/index.ts";
-import type { ShaderloomBus } from "../commands/bus.ts";
+import type { LoomBus } from "../commands/bus.ts";
 import { createTestRegistry } from "../../nodes/registry/test-nodes.ts";
 import { componentNodeType } from "./component-type.ts";
 import { registerComponentCommands } from "./commands.ts";
@@ -16,7 +16,7 @@ import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 
 export interface ComponentHarness {
   store: GraphStore;
-  bus: ShaderloomBus;
+  bus: LoomBus;
   components: ComponentRegistry;
   nodes: NodeRegistryView;
 }

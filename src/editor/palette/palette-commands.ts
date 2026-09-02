@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "../../domain/commands/bus.ts";
+import type { LoomBus } from "../../domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -30,12 +30,12 @@ export interface PaletteHolder {
   current: PaletteHandlers | null;
 }
 
-export function paletteHolderFor(bus: ShaderloomBus): PaletteHolder {
+export function paletteHolderFor(bus: LoomBus): PaletteHolder {
   return commandHolder<PaletteHandlers>(bus, "ui.openCommandPalette");
 }
 
 /** Registers `ui.openCommandPalette` / `ui.closeCommandPalette` once per bus. */
-export function registerPaletteCommands(bus: ShaderloomBus): PaletteHolder {
+export function registerPaletteCommands(bus: LoomBus): PaletteHolder {
   const holder = paletteHolderFor(bus);
 
   if (!bus.hasCommand("ui.openCommandPalette")) {

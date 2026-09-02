@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { ComponentPath } from "@domain/types/components.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -111,7 +111,7 @@ export function createComponentNavigationStore(): {
   };
 }
 
-export function navigationHolderFor(bus: ShaderloomBus): { current: ComponentNavigation | null } {
+export function navigationHolderFor(bus: LoomBus): { current: ComponentNavigation | null } {
   /*
    * A HOLDER, not a store — and saying so is the point of converting it by hand.
    *
@@ -136,7 +136,7 @@ const NO_CANVAS = warning(
 );
 
 /** Idempotent, like `registerViewCommands`: the bus has no unregister and React remounts. */
-export function registerComponentNavigationCommands(bus: ShaderloomBus): {
+export function registerComponentNavigationCommands(bus: LoomBus): {
   current: ComponentNavigation | null;
 } {
   const holder = navigationHolderFor(bus);
@@ -290,14 +290,14 @@ export interface CreateComponentHolder {
   current: ((nodeIds: readonly NodeId[]) => void) | null;
 }
 
-export function componentCreationHolderFor(bus: ShaderloomBus): CreateComponentHolder {
+export function componentCreationHolderFor(bus: LoomBus): CreateComponentHolder {
   // The second holder in this file, and a DIFFERENT key: two shared objects on one bus
   // that must not collide (§V707 — the collision is asserted on the objects, not the keys).
   return commandHolder<(nodeIds: readonly NodeId[]) => void>(bus, "ui.createComponent");
 }
 
 /** Idempotent, like the view and navigation registrars. */
-export function registerCreateComponentCommand(bus: ShaderloomBus): CreateComponentHolder {
+export function registerCreateComponentCommand(bus: LoomBus): CreateComponentHolder {
   const holder = componentCreationHolderFor(bus);
   if (bus.hasCommand("ui.createComponent")) return holder;
 

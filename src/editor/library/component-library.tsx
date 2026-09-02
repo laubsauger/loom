@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { ComponentSummary, InstanceUpgradeSummary } from "@domain/components/commands.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import { instanceDisplayNames } from "@domain/components/instance.ts";
@@ -34,7 +34,7 @@ import styles from "./library.module.css";
  */
 
 export interface ComponentLibraryProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor/project/capabilities for every command this pane sends (§V30). Memoise it. */
   context: InvocationContext;
   /**

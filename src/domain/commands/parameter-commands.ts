@@ -24,7 +24,7 @@ import {
 } from "../parameters/slots.ts";
 import { defaultParameterValue, validateParameterValue } from "../parameters/validate.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
-import type { CommandContext, CommandOutcome, ShaderloomBus } from "./bus.ts";
+import type { CommandContext, CommandOutcome, LoomBus } from "./bus.ts";
 
 /**
  * `parameter.pulse` — firing a momentary trigger (T214, §V123, §V124, §V125).
@@ -263,7 +263,7 @@ export interface ParameterCommandOptions {
 }
 
 export function registerParameterCommands(
-  bus: ShaderloomBus,
+  bus: LoomBus,
   options: ParameterCommandOptions = {},
 ): void {
   /** Per-bus, like the node clipboard. Never global: two buses are two documents. */

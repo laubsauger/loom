@@ -594,7 +594,7 @@ export function AppShell({
                     }}
                     onDrop={(event) => {
                       event.preventDefault();
-                      const key = event.dataTransfer.getData("text/x-shaderloom-pane") || dragging;
+                      const key = event.dataTransfer.getData("text/x-loom-pane") || dragging;
                       if (key) onDropEdge(key, edge);
                     }}
                   >

@@ -10,7 +10,7 @@ import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { createSequentialIdFactory } from "../graph/ids.ts";
 import { createGraphStore } from "../graph/store.ts";
 import { createDomainBus } from "./index.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 import { alice, contextFor, createHarness, patch, type Harness } from "./test-support.ts";
 
 /**
@@ -69,7 +69,7 @@ function createPulseHarness(): Harness {
   return { bus, store };
 }
 
-async function addNode(bus: ShaderloomBus, type: string): Promise<string> {
+async function addNode(bus: LoomBus, type: string): Promise<string> {
   const result = await bus.execute(
     "graph.applyPatch",
     patch(bus.store.getRevision(), [
@@ -264,7 +264,7 @@ function createMenuHarness(copied: string[] = []): Harness {
   return { bus, store };
 }
 
-async function named(bus: ShaderloomBus, name: string): Promise<string> {
+async function named(bus: LoomBus, name: string): Promise<string> {
   const nodeId = await addNode(bus, "test.menu");
   await bus.execute(
     "graph.applyPatch",

@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { sharedForBus } from "@domain/commands/command-holder.ts";
 
@@ -93,7 +93,7 @@ export function createRenameSessionStore(): RenameSessionStore {
  * same document (the floated graph pane, §V97) agree about which title is being edited
  * instead of opening two editors on one node.
  */
-export function renameSessionStoreFor(bus: ShaderloomBus): RenameSessionStore {
+export function renameSessionStoreFor(bus: LoomBus): RenameSessionStore {
   /*
    * STATE HELD: which node's title is currently being edited (`NodeId | null`), and the
    * set of listeners watching it. Naming it matters (§T719 wave 2): "does the state
@@ -108,7 +108,7 @@ export function renameSessionStoreFor(bus: ShaderloomBus): RenameSessionStore {
  * Idempotent, like every other editor-side registration: the bus has no unregister, and
  * React mounts more than once (StrictMode, remounts, tests).
  */
-export function registerRenameSessionCommand(bus: ShaderloomBus): RenameSessionStore {
+export function registerRenameSessionCommand(bus: LoomBus): RenameSessionStore {
   const store = renameSessionStoreFor(bus);
   if (bus.hasCommand(BEGIN_RENAME_COMMAND)) return store;
 

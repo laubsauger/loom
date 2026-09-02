@@ -1,4 +1,4 @@
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 
 /**
@@ -46,11 +46,11 @@ export interface ProjectSettingsHolder {
   current: ProjectSettingsHandlers | null;
 }
 
-export function projectSettingsHolderFor(bus: ShaderloomBus): ProjectSettingsHolder {
+export function projectSettingsHolderFor(bus: LoomBus): ProjectSettingsHolder {
   return commandHolder<ProjectSettingsHandlers>(bus, OPEN_SETTINGS_COMMAND);
 }
 
-export function registerProjectSettingsCommand(bus: ShaderloomBus): ProjectSettingsHolder {
+export function registerProjectSettingsCommand(bus: LoomBus): ProjectSettingsHolder {
   const holder = projectSettingsHolderFor(bus);
   if (bus.hasCommand(OPEN_SETTINGS_COMMAND)) return holder;
 

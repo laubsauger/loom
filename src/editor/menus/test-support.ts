@@ -1,5 +1,5 @@
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { MenuContext } from "./guards.ts";
 
@@ -9,7 +9,7 @@ import type { MenuContext } from "./guards.ts";
  */
 
 export interface MenuFixture {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   solid: NodeId;
   blur: NodeId;
   edgeId: string;

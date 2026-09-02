@@ -11,7 +11,7 @@ import { definitionSource, testDefinition, testDocument } from "./test-support.t
  * T91 / §V68 / §V69 — forward compatibility.
  *
  * Written the way it is actually used: the fixture below is a file a LATER build of
- * Shaderloom produced. It is not a hypothetical — the `ParameterValue` envelope
+ * Loom produced. It is not a hypothetical — the `ParameterValue` envelope
  * (`{kind:"static", value}`) and its reserved bound kinds are locked and land next, and
  * `src/domain/types/schemas.ts` is a closed union today. If this suite passes, a user on
  * this build can open tomorrow's file, edit something unrelated, save it, and hand it back

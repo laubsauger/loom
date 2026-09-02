@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTestRegistry } from "../../nodes/registry/test-nodes.ts";
 import { layoutGraph } from "../graph/layout.ts";
 import type { GraphPatchOperation } from "../types/patch.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 import { alice, contextFor, createHarness, patch } from "./test-support.ts";
 
 /**
@@ -20,7 +20,7 @@ import { alice, contextFor, createHarness, patch } from "./test-support.ts";
 const invocation = contextFor(alice);
 const registry = createTestRegistry().view();
 
-async function seed(bus: ShaderloomBus, operations: GraphPatchOperation[]) {
+async function seed(bus: LoomBus, operations: GraphPatchOperation[]) {
   const result = await bus.execute("graph.applyPatch", patch(bus.store.getRevision(), operations, "seed"), invocation);
   expect(result.status).toBe("applied");
   return result;

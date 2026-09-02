@@ -4,7 +4,7 @@ import type { AgentPorts } from "@agent/index.ts";
 import type { PixelProbe } from "@runtime/previews/index.ts";
 import type { ExportInterface } from "@runtime/export/index.ts";
 import type { CompiledGraph } from "../compiler/types.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { createAgentPorts } from "@runtime/export/agent-ports.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 
@@ -18,7 +18,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
  * injected here, at a composition root — the one place §V44 permits a wall clock.
  */
 export function useAgentPorts(inputs: {
-  backend: ShaderloomBackend | undefined;
+  backend: LoomBackend | undefined;
   compiled: CompiledGraph | null;
   playing: boolean;
   graph: () => GraphDocument;

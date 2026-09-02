@@ -3,7 +3,7 @@ import type { ComponentId } from "../types/ids.ts";
 import type { IdFactory } from "../graph/ids.ts";
 import type { GraphStore } from "../graph/store.ts";
 import { createGraphStore } from "../graph/store.ts";
-import type { ShaderloomBus } from "../commands/bus.ts";
+import type { LoomBus } from "../commands/bus.ts";
 import { createDomainBus } from "../commands/index.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { pruneComponentDefinition } from "./definition.ts";
@@ -32,7 +32,7 @@ import type { ComponentRegistry } from "./registry.ts";
 export interface ComponentSession {
   componentId: ComponentId;
   version: number;
-  bus: ShaderloomBus;
+  bus: LoomBus;
   store: GraphStore;
   /** Stops syncing. The definition keeps whatever was last committed. */
   dispose: () => void;

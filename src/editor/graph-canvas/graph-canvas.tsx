@@ -29,7 +29,7 @@ import type { CommandResult, InvocationContext } from "@domain/types/commands.ts
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
 import { registerRenameSessionCommand } from "@editor/nodes/rename-session.ts";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
@@ -82,7 +82,7 @@ const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
 const PAN_MOUSE_BUTTONS = [1] as const;
 
 export interface GraphCanvasProps {
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** Actor identity for every mutation this canvas makes (§V30). */
   invocation: InvocationContext;
   /**

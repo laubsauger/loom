@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ReactNode } from "react";
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { PassDescriptor, ResourceDescriptor } from "@runtime/backend/plan.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import { EMPTY_READBACK_BUDGET } from "@runtime/telemetry/index.ts";
@@ -518,7 +518,7 @@ describe("opening the popup", () => {
     children,
     fallbackNodeId,
   }: {
-    bus: ShaderloomBus;
+    bus: LoomBus;
     children: ReactNode;
     fallbackNodeId?: string;
   }) {
@@ -546,7 +546,7 @@ describe("opening the popup", () => {
     );
   }
 
-  async function seed(bus: ShaderloomBus): Promise<string> {
+  async function seed(bus: LoomBus): Promise<string> {
     const result = await bus.execute(
       "graph.applyPatch",
       {

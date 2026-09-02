@@ -2,7 +2,7 @@ import type { NodeFormatOverride, NodeResolutionOverride } from "../types/graph.
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { NodeId, Revision } from "../types/ids.ts";
 import type { GraphPatchResult } from "../types/patch.ts";
-import type { ShaderloomBus } from "./bus.ts";
+import type { LoomBus } from "./bus.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
 
 /**
@@ -39,7 +39,7 @@ const rejection = (
   createdIds: {},
 });
 
-export function registerNodeOutputCommands(bus: ShaderloomBus): void {
+export function registerNodeOutputCommands(bus: LoomBus): void {
   bus.registerCommand({
     name: "node.setResolution",
     description: "Set or clear a node's output resolution override (§V50).",

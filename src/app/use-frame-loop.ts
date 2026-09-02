@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { liveClock } from "@domain/transport/live-clock.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { projectFps, projectRange } from "@domain/types/graph.ts";
 import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
@@ -10,7 +10,7 @@ import type { FrameInputs } from "@domain/types/backend.ts";
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { createUniformAnimator } from "./animate-parameters.ts";
 import { MAX_RETAINED_DIAGNOSTICS, retainDiagnostic } from "./diagnostic-buffer.ts";
 import { registerTransportCommands, transportHolderFor } from "./transport-commands.ts";
@@ -89,8 +89,8 @@ export type AnimateFrame = (frame: FrameEvaluationInput) => CompiledGraph | null
  * Named fields make the swap impossible instead of unlikely.
  */
 export interface FrameLoopOptions {
-  readonly bus: ShaderloomBus;
-  readonly backend: ShaderloomBackend | null | undefined;
+  readonly bus: LoomBus;
+  readonly backend: LoomBackend | null | undefined;
   readonly compiled: CompiledGraph | null;
   readonly settings: ProjectSettings;
   /** Re-resolves the graph at a frame. Null when nothing animates (T259, §V163). */

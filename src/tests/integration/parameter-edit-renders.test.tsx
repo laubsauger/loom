@@ -6,7 +6,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -75,7 +75,7 @@ const CAPABILITIES: BackendCapabilities = {
 };
 
 /** Compile count only — this gate is about RENDERS, and §T308 already gates the plan. */
-function stubBackend(): { backend: ShaderloomBackend; compiles: () => number } {
+function stubBackend(): { backend: LoomBackend; compiles: () => number } {
   let compiles = 0;
   const backend = {
     status: {
@@ -110,7 +110,7 @@ function stubBackend(): { backend: ShaderloomBackend; compiles: () => number } {
     resetTemporalHistory: () => {},
     setCookPolicy() {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return { backend, compiles: () => compiles };
 }
 

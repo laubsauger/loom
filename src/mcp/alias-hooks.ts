@@ -6,7 +6,7 @@ import { registerHooks } from "node:module";
  *
  * ## Why this file exists
  *
- * `src/mcp/serve.ts` is a complete headless Shaderloom on stdio and has worked since
+ * `src/mcp/serve.ts` is a complete headless Loom on stdio and has worked since
  * T290 — under Vitest, which resolves `@domain/...` from `vitest.config.ts`. Bare
  * `node src/mcp/serve.ts` dies on the first aliased import inside the agent surface,
  * so the one path that already talks to Claude Desktop today had no invocation and

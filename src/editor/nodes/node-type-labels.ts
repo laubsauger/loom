@@ -30,6 +30,7 @@
  * missing is a feature nobody turns on.
  */
 
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 export const NODE_TYPE_LABELS_STORAGE_KEY = "shaderloom.graph.nodeTypeLabels.v1";
 
 export const NODE_TYPE_LABELS_DEFAULT = true;

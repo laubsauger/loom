@@ -5,7 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -136,7 +136,7 @@ interface Journal {
 }
 
 function journallingBackend(): {
-  backend: ShaderloomBackend;
+  backend: LoomBackend;
   journal: Journal;
   /** T792: push a diagnostic the way the real backend would (unknown-resource bursts). */
   emitDiagnostic(diagnostic: { severity: string; code: string; message: string }): void;
@@ -186,7 +186,7 @@ function journallingBackend(): {
     },
     setCookPolicy() {},
     dispose: () => {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return {
     backend,
     journal,

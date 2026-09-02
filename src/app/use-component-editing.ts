@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ShaderloomBus } from "@domain/commands/bus.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { ComponentPath, GraphComponentDefinition } from "@domain/types/components.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -55,7 +55,7 @@ export interface ComponentEditing {
   /** The graph the canvas edits: the root document, or a component's internals. */
   graph: GraphDocument;
   /** The bus the canvas and inspector mutate through — session bus when inside. */
-  bus: ShaderloomBus;
+  bus: LoomBus;
   /** A runtime whose `bus` is the one above, for the panes that read it from context. */
   runtime: AppRuntime;
   /** The component being edited, or null at the root. */

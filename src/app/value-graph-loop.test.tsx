@@ -6,7 +6,7 @@ import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities, CompiledExecutionPlan } from "@domain/types/backend.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "./app.tsx";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -65,7 +65,7 @@ async function seed(runtime: AppRuntime, operations: GraphPatchOperation[]) {
 }
 
 function fixtureBackend(): {
-  backend: ShaderloomBackend;
+  backend: LoomBackend;
   tick: () => void;
   /** The last plan the app handed the backend — what it actually compiled. */
   lastPlan: () => CompiledGraph | null;
@@ -114,7 +114,7 @@ function fixtureBackend(): {
     readBuffer: () => Promise.reject(new Error("no GPU")),
     registerMediaSource: () => () => {},
     setCookPolicy() {},
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return {
     backend,
     tick: () => {

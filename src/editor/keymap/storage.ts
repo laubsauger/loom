@@ -9,6 +9,7 @@ import { isValidKeys, normalizeKeys } from "./keys.ts";
  * blocked store degrades to "no overrides", never to a broken session.
  */
 
+// §V813: the `shaderloom` prefix is a STORAGE ADDRESS, not a name — renaming it orphans every user's saved state for zero visible benefit. The product renamed to Loom (§T899); this key deliberately did not.
 export const KEYMAP_STORAGE_KEY = "shaderloom.keymap.overrides.v1";
 
 export type KeymapOverrides = Record<string, string | null>;

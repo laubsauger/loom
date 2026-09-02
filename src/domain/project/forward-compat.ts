@@ -113,7 +113,7 @@ export interface UnknownParameter {
  * Parameter values this build cannot interpret, in document order.
  *
  * Reported, not removed. The point of the list is that the resolver (§V61) and the
- * inspector can show "set by a newer version of Shaderloom" instead of rendering a
+ * inspector can show "set by a newer version of Loom" instead of rendering a
  * control over a value they would misread.
  */
 export function classifyUnknownParameters(graph: GraphDocument): UnknownParameter[] {

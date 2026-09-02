@@ -10,7 +10,7 @@ import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
-import type { ShaderloomBackend } from "@runtime/backend/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -100,7 +100,7 @@ function guardedBackend(average: number) {
       // The reduction layout the Analyze kernel writes: [average, min, max, 1].
       return Promise.resolve(Float32Array.from([average, average, average, 1]).buffer);
     },
-  } as unknown as ShaderloomBackend;
+  } as unknown as LoomBackend;
   return {
     backend,
     /** Runs `body` with a frame open, exactly as `runFrame` does — restored in a finally. */
@@ -461,7 +461,7 @@ describe("T305 — a frame in the COMPOSED app produces a readback", () => {
       },
       registerMediaSource: () => () => {},
       setCookPolicy() {},
-    } as unknown as ShaderloomBackend;
+    } as unknown as LoomBackend;
 
     const status: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend };
     await act(async () => {

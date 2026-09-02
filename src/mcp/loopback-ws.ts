@@ -112,7 +112,7 @@ export function createLoopbackWebSocketServer(
     // A human who opens the port in a browser gets a sentence, not a hang. This is not a
     // web server and never serves the app.
     response.writeHead(426, { "content-type": "text/plain" });
-    response.end("Shaderloom bridge: WebSocket only.\n");
+    response.end("Loom bridge: WebSocket only.\n");
   });
 
   server.on("upgrade", (request: IncomingMessage, socket: Socket) => {

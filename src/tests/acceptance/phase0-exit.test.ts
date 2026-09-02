@@ -16,7 +16,7 @@ import type { PassDescriptor } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
-import type { ShaderloomBackend } from "../../runtime/backend/index.ts";
+import type { LoomBackend } from "../../runtime/backend/index.ts";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import { TOLERANCE_CROSS_GPU, decodeComponents } from "../headless/pixel-compare.ts";
 
@@ -202,9 +202,9 @@ function outputResourceId(plan: CompiledGraph): string {
 }
 
 interface Harness {
-  readonly backend: ShaderloomBackend;
+  readonly backend: LoomBackend;
   readonly diagnostics: RuntimeDiagnostic[];
-  readonly capabilities: Awaited<ReturnType<ShaderloomBackend["initialize"]>>;
+  readonly capabilities: Awaited<ReturnType<LoomBackend["initialize"]>>;
 }
 
 async function harness(): Promise<Harness> {
@@ -450,7 +450,7 @@ describe("T23 Phase 0 exit — invalid WGSL keeps the last valid output and show
       const broken = compile(spikeGraph({ amount: 1, source: BROKEN_SOURCE }), capabilities);
       expect(broken.ok, "the graph compiler does not parse WGSL and must not claim to").toBe(true);
 
-      let installed: Awaited<ReturnType<ShaderloomBackend["compile"]>> | undefined;
+      let installed: Awaited<ReturnType<LoomBackend["compile"]>> | undefined;
       let rejection: unknown;
       try {
         installed = await backend.compile(broken);
