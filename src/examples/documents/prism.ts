@@ -17,8 +17,10 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  *   shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1(add).in2
  *   shot1 ─────────────────────────────────────────────► glow1(add).in1 ─► out1
  *
- *   swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1   the AIM
- *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3              the AIM, +pointer
+ *   swing1(lfo, square) ─► ease1(valueLag) ┄drives┄► optics1.value1   the AIM, auto
+ *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3              the AIM, by hand
+ *   follow1 ─► stir1(valueSlope) ─► urge1(valueMath) ─► hold1(valueLag)
+ *                                          ┄drives┄► optics1.value4   WHICH ONE (T857)
  *   drift1(lfo, sine) ┄drives┄► eye1.eye.x
  *   fan1.tint ← the `tint` attribute (map mode, T478)
  *
@@ -81,12 +83,16 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * column 240 — 46px and 108px, a ratio of 2.35. The exit face is where dispersion is
  * made; the entry face only decides how obliquely the ray arrives there.
  *
- * θ1 stops at 37° and not lower for a reason that is in the same arithmetic: at n = 1.585
- * the critical angle is 39.1°, and θ3 reaches it at θ1 ≈ 33.7°. Below that the violet end
- * TOTALLY INTERNALLY REFLECTS. `refract2` returns a zero vector there and the beam
- * collapses to zero length — which the beam shader already draws as zero AREA — so the
- * failure is a band quietly leaving the spectrum rather than a wrong picture. 37° keeps
- * 3.3° of margin at the violet end.
+ * THE SWING stops at 37° and not lower, and the reason USED to be in the same arithmetic:
+ * at n = 1.585 the critical angle is 39.1°, θ3 reaches it at θ1 ≈ 33.7°, and below that
+ * the violet end TOTALLY INTERNALLY REFLECTS — which the old optics expressed by returning
+ * a zero vector, so a band quietly left the spectrum. T718 removed that reason when it made
+ * TIR a drawn PATH (reflect at the exit face, cross to the base, Snell out there), and
+ * §V750 says a compensation outlives its cause unless somebody goes and looks. So T857
+ * looked: the swing keeps its 37°–62° band because two comfortable aims are what a
+ * hold-and-slam shutter WANTS, and the POINTER now runs 84° down to 6°, straight through
+ * the onset — the violet end turns at 34.5° and the red end at 27.9°, so between them the
+ * spectrum leaves through TWO FACES AT ONCE. That picture was unreachable before.
  *
  * ONE SOURCE, TWO READINGS (§V471.1). `optics1` writes 65 points — the shaft, the ghost,
  * the drawn internal segment and its TIR continuation (T718),
@@ -101,24 +107,51 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * rising to 8.3% at 62°, and that share IS its tint — so the reflected streak brightens
  * as the fan narrows, from one number, with no second knob.
  *
- * THE BEAMS ARE DRAWN IN A PLANE 0.05 IN FRONT OF THE FRONT FACE, and that is the one
- * cheat in the file, stated. The optics are solved in the cross-section, which does not
- * use the extrusion axis at all; drawing the segments at z = 0.60 instead of inside the
- * body is a shift along exactly that unused axis, and it is what stops the prism's own
- * solid from swallowing the ends of the shaft and the fan. Gated: the shaft's tip lands
- * 1px from the prism's mask and NO beam pixel reaches an 8px erosion of it, so "the beam
- * arrives where the glass is" is a measurement, not a hope.
+ * THE BEAMS ARE DRAWN INSIDE THE BODY'S OWN DEPTH (z = 0.10, T758), which is the exact
+ * inverse of the reasoning this paragraph carried before. The optics are solved in the
+ * cross-section, which does not use the extrusion axis at all, so where along that axis
+ * the segments are drawn is free — and while the body was OPAQUE the segments had to sit
+ * in front of it so the solid could not swallow their ends. With a transmissive body,
+ * swallowing IS the point (§V750): the interior thread is seen THROUGH the front face,
+ * absorption-warmed. Gated in both directions: the shaft-group draw must hold a real
+ * population inside an 8px erosion of the mask (the internal segment, 743 px measured at
+ * the T718 swap) while the FAN keeps its no-burial claim at fewer than 30 px against a
+ * red-verified real burial of 209 (§V751).
  *
- * TWO WAYS TO MOVE THE AIM, and they are added in the KERNEL rather than merged on a
- * wire. `swing1(lfo, square) → ease1(valueLag) → value1` is the canonical chain and the
- * square is deliberate: a square through a one-pole smoother IS an ease, so delete
- * `ease1` and the beam snaps between two angles like a shutter instead of swinging.
- * `mouse1 → follow1(valueLag) → value3` is the pointer, and the kernel computes
- * `clamp(value1 + 0.55·value3, 0, 1)` — a value graph merges channel BAGS, and an LFO's
- * channel and a pointer's `x` do not have a name in common, so the addition belongs where
- * both numbers already are. The pointer only ever ADDS: a pointer that has never moved
- * reads 0, so every gate and every fresh session sees the LFO's picture exactly, and
- * dragging right lays the beam down and opens the spectrum.
+ * TWO HANDS ON THE AIM, AND THEY DO NOT ADD (T857). `swing1(lfo, square) →
+ * ease1(valueLag) → value1` is the canonical chain and the square is deliberate: a square
+ * through a one-pole smoother IS an ease, so delete `ease1` and the beam snaps between two
+ * angles like a shutter instead of swinging. `mouse1 → follow1(valueLag) → value3` is the
+ * pointer. What changed is how the two MEET.
+ *
+ * They used to be summed in the kernel — `clamp(value1 + 0.55·value3, 0, 1)` — and the
+ * owner's report reads straight off that line: *the mouse controls get overridden by the
+ * auto movement, the range of motion is too limited, and we can't miss the glass triangle*.
+ * Both halves are the one wiring. A SQUARE lfo visits two aims and SLAMS between them, so
+ * the pointer was a small delta riding on a jump and never had the aim at all; and a sum of
+ * two 0..1 terms is bounded, so no cursor position could reach an extreme, let alone aim
+ * the beam past the glass.
+ *
+ * So the kernel MIXES them, weighted by whether a hand is on the pointer at all:
+ * `mix(swingAngle, handAngle, hand)`, with `hand = clamp(400·value4, 0, 1)` and `value4`
+ * fed by `follow1 → stir1(valueSlope) → urge1(×itself) → hold1(valueLag)` — the cursor's
+ * speed, squared to make it unsigned, through an envelope that rises in 0.02s and falls
+ * over 0.6s. A cursor moving faster than a twentieth of the frame per second owns the aim
+ * outright; a couple of seconds after it stops, the swing has it back. And a cursor that
+ * has NEVER moved reads exactly 0 through all three stages, so every gate and every fresh
+ * session still sees the LFO's picture, bit for bit, exactly as the additive build promised.
+ *
+ * THE SWING IS NOT TOUCHED, and that is §T842's lesson rather than caution: the square,
+ * the slam, and the two angles it visits are this example's character, so the fix is in how
+ * the two terms COMBINE and not in what the auto term is. The widening lives entirely on
+ * the pointer's own scale — 84° to 6°, against the swing's 62° to 37° — and the same one
+ * knob walks the ENTRY POINT along the face from below the base vertex to past the apex,
+ * because a beam you aim does not pivot about a fixed spot on the glass, and pinning the
+ * entry point is exactly what made the old aim unable to miss. Past either vertex the ray
+ * travels away from the body: the fan collapses to zero length and the shaft carries
+ * straight on past the glass. MISSING IS A STATE, not a failure — it is the diagnostic the
+ * owner asked for, and the picture stays coherent because the glass is lit by the
+ * environment and never by the beam.
  *
  * `drift1` sways the camera 0.22 either side of 0.45 over 22 seconds, and that is not
  * decoration: `envFresnel` reads `dot(N, viewDir)`, so moving the eye moves WHICH thread
@@ -252,6 +285,16 @@ export const prismDocument = document(
       node("ease", "valueLag", [-1560, 640], { lag: 0.6 }, { label: "ease1" }),
       node("mouse", "mouse", [-1880, 840], {}, { label: "mouse1" }),
       node("follow", "valueLag", [-1560, 840], { lag: 0.18 }, { label: "follow1" }),
+      // T857 — THE POINTER'S AUTHORITY, in three stages that each do one job. `stir1` is
+      // how fast the cursor is moving (per second, signed); `urge1` squares it against
+      // itself, which is the only absolute value the CHOP set has and is also the right
+      // curve — a flick outweighs a drift; `hold1` is the envelope, 0.02s to rise and
+      // 0.6s to fall, so the hand keeps the aim for a second or two after it stops and
+      // then gives it back. A cursor that has never moved reads EXACTLY zero through all
+      // three, which is what keeps every other gate in the suite on the swing's picture.
+      node("stir", "valueSlope", [-1240, 840], {}, { label: "stir1" }),
+      node("urge", "valueMath", [-920, 840], { operation: "multiply", operand: 1 }, { label: "urge1" }),
+      node("hold", "valueLag", [-600, 840], { lag: 0.02, releaseRatio: 30 }, { label: "hold1" }),
       // `envFresnel` reads dot(N, viewDir), so moving the eye moves WHICH thread of the
       // round-over is at grazing: the rim TRAVELS. A static camera is the one thing that
       // would make an edge-lit prism look painted.
@@ -306,7 +349,14 @@ export const prismDocument = document(
         value2: 0.085,
       }, {
         label: "optics1",
-        parameters: { value1: drivenSlot("ease1", 0.5), value3: drivenSlot("follow1:x", 0) },
+        // T857: three slots, and NONE of them is added to another. `value1` is the
+        // swing's aim on its own narrow scale, `value3` the pointer's on the wide one,
+        // and `value4` decides which of the two the kernel is looking at.
+        parameters: {
+          value1: drivenSlot("ease1", 0.5),
+          value3: drivenSlot("follow1:x", 0),
+          value4: drivenSlot("hold1:x", 0),
+        },
       }),
       // UNLIT, and white: a beam is scattered light in the air, not a surface, and it
       // takes no part in shadowing either (§V617). The colour is the attribute's.
@@ -380,6 +430,11 @@ export const prismDocument = document(
     [
       edge("e-swing-ease", ["swing", "out"], ["ease", "in"]),
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
+      edge("e-follow-stir", ["follow", "out"], ["stir", "in"]),
+      // One source into BOTH operands: `urge1` multiplies the speed by itself.
+      edge("e-stir-urge-a", ["stir", "out"], ["urge", "a"]),
+      edge("e-stir-urge-b", ["stir", "out"], ["urge", "b"]),
+      edge("e-urge-hold", ["urge", "out"], ["hold", "in"]),
 
       edge("e-bar-form", ["bar", "out"], ["form", "in"]),
       edge("e-form-solid", ["form", "out"], ["solid", "points"]),

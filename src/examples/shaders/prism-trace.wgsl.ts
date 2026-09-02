@@ -23,14 +23,33 @@
  * wavelength exits, exit angle, fan width. The only authored numbers are the prism
  * itself and the sweep range.
  *
- * ## The channels
+ * ## The channels (T857 re-cut value3 and value4 — they no longer ADD)
  *
- *   value1 — the aim (0..1): entry angle sweeps THETA_HI → THETA_LO degrees.
+ *   value1 — the SWING's aim (0..1): entry angle sweeps THETA_HI → THETA_LO degrees.
+ *            Unchanged since T710, and the numbers on every claim that pins it still
+ *            mean what they meant: 0 is 62°, 1 is 37°.
  *   value2 — dispersive power: n runs N_RED → N_RED + value2 across the band.
- *   value3 — the pointer's additive aim share (E13's idiom; 0 until a pointer moves).
- *   value4 — entry-point offset along the face tangent (0 keeps E13's low entry; the
- *            gate drives it toward the apex, where the faces converge and the internal
- *            segment shortens — the apex-region case in the acceptance criterion).
+ *   value3 — the POINTER's aim, on its own WIDER scale: 0 is HAND_HI, 1 is HAND_LO, and
+ *            the same number walks the entry point along the face — past both ends of it.
+ *   value4 — the pointer's AUTHORITY, before the gain: E13 feeds it the cursor's
+ *            speed SQUARED, and `HAND_GAIN · value4` clamped to 0..1 is the blend
+ *            weight. 0 (a cursor that has never moved) is the swing's own picture,
+ *            exactly; 1 is the pointer's, outright. Nothing here is a sum.
+ *
+ * ## The aim, and why it is a BLEND rather than an addition (T857)
+ *
+ * It used to be `clamp(value1 + 0.55·value3, 0, 1)`, and the owner's complaint reads
+ * straight off that line: a SQUARE lfo drives value1, so the auto term visits two aims
+ * and SLAMS between them, and the pointer was a small delta riding on that jump — the
+ * hand never had the aim, it only nudged one. And a sum of two 0..1 terms is bounded, so
+ * no cursor position could reach the extremes, let alone aim the beam off the glass.
+ *
+ * So the two terms are mixed by the pointer's own activity instead. The swing is not
+ * touched — the square, the slam and the two angles it visits are the example's
+ * character (§T842: judge each term against ITS OWN intent) — it simply yields while a
+ * hand is on the pointer and takes the aim back a couple of seconds after the hand
+ * stops. The widening lives entirely in the POINTER's scale, which is where the
+ * complaint was.
  *
  * ## The slots (capacity = bands + 4)
  *
@@ -60,9 +79,32 @@ const SHAFT_LEN: f32 = 2.10;
 const GHOST_LEN: f32 = 0.90;
 const FAN_LEN: f32 = 2.25;
 const N_RED: f32 = 1.50;
+/* The SWING's band, unchanged since T710: two aims, 25 degrees apart, comfortably
+   inside the glass and comfortably clear of the violet end's critical angle. */
 const THETA_LO: f32 = 37.0;
 const THETA_HI: f32 = 62.0;
-const AIM_POINTER: f32 = 0.55;
+/* T857 — THE POINTER'S OWN BAND, and it is wide on purpose. 84° is grazing on the
+   entry face; 6° is near normal, deep inside the regime where the internal ray meets
+   the exit face past its critical angle and leaves through the BASE instead. That used
+   to be a reason to stop at 37 degrees - refract2 returned zero and the band vanished - and
+   T718 removed the reason when it made TIR a drawn PATH rather than a deletion (§V750:
+   a compensation for an absent capability is an artifact once the capability exists).
+   The hand crosses the violet end's onset at 34.5° and the red end's at 27.9°, so
+   between them the spectrum SPLITS across two faces, which no aim could reach before. */
+const HAND_HI: f32 = 84.0;
+const HAND_LO: f32 = 6.0;
+/* Speed² → authority. A cursor crossing a TWENTIETH of the frame in a second reads
+   0.0025 here and clamps to 1: any deliberate move owns the aim outright, and a cursor
+   that has never moved reads exactly 0. */
+const HAND_GAIN: f32 = 400.0;
+/* How far along the face the pointer walks the entry point, tip to tail. The face's
+   half-length is RI·√3 = 0.658, so ±0.8 runs PAST both vertices — which is the state
+   the owner asked for: the beam misses the glass. */
+const REACH: f32 = 1.6;
+const ROOT3: f32 = 1.7320508;
+/* A missed beam has to still be a beam: it carries straight on past where the glass
+   isn't, instead of stopping at a face it never met. */
+const MISS_LEN: f32 = 2.60;
 
 /* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike
    the previous optics, TIR here selects the reflected path instead of deleting it. */
@@ -149,16 +191,36 @@ const RI: f32 = ${ri};
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* E13's aim idiom: LFO plus pointer share, added where both numbers already are. */
-  let aim = clamp(ctx.value1 + AIM_POINTER * ctx.value3, 0.0, 1.0);
-  let theta = mix(THETA_HI, THETA_LO, aim) * PI / 180.0;
+  /* T857 — E13's aim idiom, and it is a BLEND: the pointer TAKES the aim while it is
+     moving and hands it back when it stops. 'hand' is the pointer's own activity, and
+     it is exactly 0 for a cursor that has never moved. */
+  let hand = clamp(ctx.value4 * HAND_GAIN, 0.0, 1.0);
+  let px = clamp(ctx.value3, 0.0, 1.0);
+  /* TWO SCALES ON ONE ANGLE. The swing keeps its own narrow band (value1: 0 → 62°,
+     1 → 37°) so every measurement that pins it still means what it meant; the pointer
+     reads the WIDE one and passes through both of the swing's aims on the way. */
+  let theta = mix(mix(THETA_HI, THETA_LO, clamp(ctx.value1, 0.0, 1.0)),
+                  mix(HAND_HI, HAND_LO, px), hand) * PI / 180.0;
   let inward = -NR;
   let cs = cos(-theta);
   let sn = sin(-theta);
   let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);
-  /* value4 slides the entry point along the face tangent — toward the apex when
-     positive. 0 is E13's shipped entry, low on the face. */
-  let pe = NR * RI + vec2f(-NR.y, NR.x) * (ENTRY + ctx.value4);
+  /* WHERE ON THE FACE, from the same one knob. A real aimed beam does not pivot about
+     a fixed spot on the glass, and pinning the entry point is precisely what made the
+     old aim unable to miss: 'tau' is the entry's position along the face tangent, and
+     the pointer sweeps it from below the base vertex to past the apex. The swing never
+     moves it — at hand = 0 this is ENTRY exactly, E13's shipped low entry.
+     The pairing is not arbitrary: the apex end of the sweep carries the GRAZING angle
+     and the base end the near-normal one, so a ray that overshoots either vertex is
+     travelling AWAY from the body and the miss is a real miss rather than a ray that
+     sneaks in through another face. */
+  let tau = mix(ENTRY, REACH * (0.5 - px), hand);
+  let pe = NR * RI + vec2f(-NR.y, NR.x) * tau;
+  /* THE REFRACTING FACE IS A SEGMENT, NOT A PLANE, and this is the line that lets the
+     beam miss. An equilateral cross-section's half side is its inradius times √3, so
+     the bound is the SAME RI the mesh and the optics already share (T710's identity)
+     rather than a fourth number to keep in step. */
+  let onFace = abs(tau) < RI * ROOT3;
 
   /* The CENTRAL wavelength's path — the visible interior, shared by slots 2 and 3. */
   let nMid = N_RED + ctx.value2 * 0.5;
@@ -166,19 +228,23 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   if (ctx.index == 0u) {
     q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);
-    q.tip = vec3f(pe, PLANE);
+    /* A HIT stops at the face and hands over to the internal segment; a MISS carries
+       straight on past the glass, so the picture shows a beam going by rather than a
+       beam that stopped in mid-air at nothing. */
+    q.tip = vec3f(select(pe + dIn * MISS_LEN, pe, onFace), PLANE);
     q.tint = vec4f(1.0, 1.0, 1.0, 1.0);
     q.role = 0.0;
     return q;
   }
   if (ctx.index == 1u) {
     /* The GHOST: the share the face sent back, by Schlick on the same incidence the
-       refraction uses. */
+       refraction uses. Nothing reflects off a face the ray never reached, so a miss
+       collapses this to zero length (zero area, T680). */
     let r = reflect2(dIn, NR);
     let c = abs(dot(dIn, NR));
     let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);
     q.position = vec3f(pe, PLANE);
-    q.tip = vec3f(pe + r * GHOST_LEN, PLANE);
+    q.tip = vec3f(select(pe, pe + r * GHOST_LEN, onFace), PLANE);
     q.tint = vec4f(vec3f(fr), 1.0);
     q.role = 0.0;
     return q;
@@ -190,18 +256,19 @@ fn process(p: Point, ctx: PointCtx) -> Point {
     let c = abs(dot(dIn, NR));
     let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);
     q.position = vec3f(pe, PLANE);
-    q.tip = vec3f(mid.firstHit, PLANE);
+    q.tip = vec3f(select(pe, mid.firstHit, onFace), PLANE);
     q.tint = vec4f(vec3f((1.0 - fr) * 0.62), 1.0);
     q.role = 0.0;
     return q;
   }
   if (ctx.index == 3u) {
     /* The TIR continuation: firstHit -> base. Zero-length (zero area, T680) whenever
-       the central ray exits at the first face. */
+       the central ray exits at the first face — or never entered at all. */
     let c = abs(dot(dIn, NR));
     let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);
-    q.position = vec3f(mid.firstHit, PLANE);
-    q.tip = vec3f(select(mid.firstHit, mid.exitPoint, mid.tir > 0.5), PLANE);
+    let seat = select(pe, mid.firstHit, onFace);
+    q.position = vec3f(seat, PLANE);
+    q.tip = vec3f(select(seat, select(mid.firstHit, mid.exitPoint, mid.tir > 0.5), onFace), PLANE);
     q.tint = vec4f(vec3f((1.0 - fr) * 0.55), 1.0);
     q.role = 0.0;
     return q;
@@ -214,8 +281,11 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let t = f32(ctx.index - 4u) / f32(ctx.count - 5u);
   let n = N_RED + ctx.value2 * t;
   let band = tracePrism(pe, dIn, n, RI);
-  q.position = vec3f(band.exitPoint, PLANE);
-  q.tip = vec3f(band.exitPoint + band.exitDirection * FAN_LEN, PLANE);
+  /* A ray that missed the glass disperses nothing: the whole fan collapses to zero
+     length at the entry point, and the shaft above is the only thing drawn. */
+  let root = select(pe, band.exitPoint, onFace);
+  q.position = vec3f(root, PLANE);
+  q.tip = vec3f(select(root, band.exitPoint + band.exitDirection * FAN_LEN, onFace), PLANE);
   q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);
   q.role = 1.0;
   return q;

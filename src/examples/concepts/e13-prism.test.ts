@@ -232,37 +232,86 @@ describe("E13 Prism", () => {
   });
 
   /**
-   * THE POINTER ONLY EVER ADDS, and that is what makes it safe to ship on a parameter the
-   * picture depends on.
+   * THE POINTER TAKES THE AIM WHILE IT MOVES AND HANDS IT BACK, AND IT NEVER ADDS (T857).
    *
-   * `mouse1 → follow1 → value3` is summed with the LFO INSIDE the kernel, because a value
-   * graph merges channel BAGS and an LFO's channel shares no name with a pointer's `x`.
-   * The consequence worth gating is the default: a pointer that has never moved reads 0,
-   * so `value3` is exactly 0 and every gate in the suite sees the LFO's picture and not a
-   * pointer-biased one. §V108's retained value, made true of an input that has none.
+   * The old wiring summed `value3` into the swing's aim inside the kernel, and the owner's
+   * report — *the mouse gets overridden by the auto movement* — is what a small delta on
+   * top of a SQUARE lfo's slam feels like. The kernel MIXES them now, weighted by
+   * `clamp(400·value4, 0, 1)`, and `value4` comes from the cursor's own motion:
+   * `follow1 → stir1(valueSlope) → urge1(× itself) → hold1(valueLag)`.
    *
-   * Then the Lag's SHAPE, which is the same discrimination the old E13 made about its
-   * lens: one frame after the pointer jumps, `value3` has moved and has moved only part of
-   * the way; ninety frames later it has arrived.
+   * Three claims live at this level, and the picture half of each is in
+   * `prism.gpu.test.ts`:
+   *
+   *   1. A CURSOR THAT HAS NEVER MOVED IS EXACTLY ZERO AUTHORITY — not nearly zero. That
+   *      is what keeps every other gate in the suite, and every fresh session, on the
+   *      LFO's own picture (§V108's retained value, made true of an input that has none).
+   *   2. THE SWING IS NOT MODULATED. `value1` at a given frame is the same number whatever
+   *      the pointer is doing — the fix is in how the two terms COMBINE, never in what the
+   *      auto term is (§T842). A build that had gone back to arithmetic on the LFO's own
+   *      chain would fail this and nothing else.
+   *   3. THE ENVELOPE IS AN ENVELOPE: full authority within a couple of frames of a real
+   *      move, and back under the threshold a few seconds after it stops.
+   *
+   * `value3` keeps its own Lag SHAPE assertion — one frame after the pointer jumps it has
+   * moved and moved only part of the way; ninety frames later it has arrived.
    */
-  it("adds nothing until the pointer moves, then eases in", () => {
-    const value3Of = (source: CompiledGraph): number => {
+  it("gives the pointer the aim only while it moves, and never adds to the swing", () => {
+    const slotOf = (source: CompiledGraph, slot: string): number => {
       const dispatch = source.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
-      return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})["value3"] as number;
+      return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})[slot] as number;
     };
-    // The shipped, unresolved plan: no pointer anywhere, and the slot's retained value.
-    expect(value3Of(plan)).toBe(0);
+    /** The kernel's own gain: at or above this, `clamp(400·value4, 0, 1)` is 1. */
+    const FULL = 1 / 400;
 
-    const run = valueGraphRun(document);
+    // The shipped, unresolved plan: no pointer anywhere, and the slots' retained values.
+    expect(slotOf(plan, "value3")).toBe(0);
+    expect(slotOf(plan, "value4")).toBe(0);
+
     const parked: Pointer = { x: 0, y: 0, buttons: 0 };
-    expect(value3Of(run.hold(parked, 60).plan)).toBeCloseTo(0, 6);
+    const idle = valueGraphRun(document);
+    // A minute of frames with nothing moving: still exactly nothing.
+    expect(slotOf(idle.hold(parked, 60).plan, "value4")).toBe(0);
+    expect(slotOf(idle.hold(parked, 60).plan, "value3")).toBeCloseTo(0, 6);
 
+    // A real move: a third of the frame over twenty frames, which is 1 unit/second and an
+    // ordinary aiming gesture. The authority saturates almost at once.
+    const hand = valueGraphRun(document);
+    let last = hand.step(parked);
+    for (let index = 1; index <= 20; index += 1) last = hand.step({ x: index / 60, y: 0.5, buttons: 0 });
+    expect(slotOf(last.plan, "value4")).toBeGreaterThan(FULL);
+
+    /* Then the cursor stops dead, and the aim comes back on the envelope's own clock:
+       the held value decays with a 0.6s time constant from the square of the speed, so a
+       1 unit/second gesture holds for 0.6·ln(400/1) ≈ 3.6s and a gentler one for less.
+       That the hold time scales with how hard you moved is the feel, not an accident.
+       Measured here: still 0.0046 (above the 0.0025 threshold) at 3.1s, and released by
+       five. The fall is a fall rather than a cliff — it is still full a moment after the
+       cursor stops. */
+    const held: Pointer = { x: 20 / 60, y: 0.5, buttons: 0 };
+    expect(slotOf(hand.hold(held, 6).plan, "value4")).toBeGreaterThan(FULL);
+    expect(slotOf(hand.hold(held, 180).plan, "value4")).toBeGreaterThan(FULL);
+    expect(slotOf(hand.hold(held, 120).plan, "value4")).toBeLessThan(FULL);
+
+    // THE SWING IS UNTOUCHED. Two sessions, the same frame indices, one with a cursor
+    // sweeping across the frame and one with none: `value1` must agree exactly (§V361 —
+    // cut the pointer entirely and THIS is the number that does not differ).
+    const withHand = valueGraphRun(document);
+    const without = valueGraphRun(document);
+    for (let index = 0; index < 120; index += 1) {
+      const a = slotOf(withHand.step({ x: (index % 60) / 60, y: 0.5, buttons: 0 }).plan, "value1");
+      const b = slotOf(without.step(parked).plan, "value1");
+      expect(a).toBe(b);
+    }
+
+    // And `value3` is still a Lag: partway there in one frame, arrived after ninety.
+    const shape = valueGraphRun(document);
+    shape.hold(parked, 60);
     const dragged: Pointer = { x: 1, y: 0.5, buttons: 0 };
-    const oneFrame = value3Of(run.step(dragged).plan);
+    const oneFrame = slotOf(shape.step(dragged).plan, "value3");
     expect(oneFrame).toBeGreaterThan(0);
-    // A missing Lag lands on the pointer this frame.
     expect(oneFrame).toBeLessThan(0.5);
-    expect(value3Of(run.hold(dragged, 90).plan)).toBeCloseTo(1, 3);
+    expect(slotOf(shape.hold(dragged, 90).plan, "value3")).toBeCloseTo(1, 3);
   });
 
   /**

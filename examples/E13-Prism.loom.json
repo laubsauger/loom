@@ -48,6 +48,17 @@
           "portId": "input"
         }
       },
+      "e-follow-stir": {
+        "id": "e-follow-stir",
+        "source": {
+          "nodeId": "follow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "stir",
+          "portId": "in"
+        }
+      },
       "e-form-solid": {
         "id": "e-form-solid",
         "source": {
@@ -159,6 +170,28 @@
           "portId": "field"
         }
       },
+      "e-stir-urge-a": {
+        "id": "e-stir-urge-a",
+        "source": {
+          "nodeId": "stir",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "urge",
+          "portId": "a"
+        }
+      },
+      "e-stir-urge-b": {
+        "id": "e-stir-urge-b",
+        "source": {
+          "nodeId": "stir",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "urge",
+          "portId": "b"
+        }
+      },
       "e-studio-shot": {
         "id": "e-studio-shot",
         "source": {
@@ -178,6 +211,17 @@
         },
         "target": {
           "nodeId": "ease",
+          "portId": "in"
+        }
+      },
+      "e-urge-hold": {
+        "id": "e-urge-hold",
+        "source": {
+          "nodeId": "urge",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hold",
           "portId": "in"
         }
       }
@@ -467,6 +511,20 @@
         },
         "type": "blur"
       },
+      "hold": {
+        "definitionVersion": 1,
+        "id": "hold",
+        "label": "hold1",
+        "parameters": {
+          "lag": 0.02,
+          "releaseRatio": 30
+        },
+        "position": {
+          "x": -600,
+          "y": 840
+        },
+        "type": "valueLag"
+      },
       "key": {
         "definitionVersion": 1,
         "id": "key",
@@ -511,7 +569,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tip\",\"type\":\"vec3f\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"role\",\"type\":\"f32\",\"default\":[1]}]",
           "capacity": 65,
-          "kernel": "const PI: f32 = 3.14159265358979323846;\n/* The three faces of the cross-section, as outward normals sharing one inradius. */\nconst NR: vec2f = vec2f(0.86602540, 0.5);\nconst NL: vec2f = vec2f(-0.86602540, 0.5);\nconst ND: vec2f = vec2f(0.0, -1.0);\n/* T758: the beams live INSIDE the body now (the cross-section's z spans ±0.55), so\n   the transmissive front face draws OVER the interior segment and the thread is seen\n   THROUGH the glass — absorption-tinted, edge-refracted. Before materialGlass this sat\n   at 0.60, in front, so the opaque solid could not swallow the beams; a glass body\n   inverts that reasoning: swallowing is the point. */\nconst PLANE: f32 = 0.10;\nconst ENTRY: f32 = -0.28;\nconst SHAFT_LEN: f32 = 2.10;\nconst GHOST_LEN: f32 = 0.90;\nconst FAN_LEN: f32 = 2.25;\nconst N_RED: f32 = 1.50;\nconst THETA_LO: f32 = 37.0;\nconst THETA_HI: f32 = 62.0;\nconst AIM_POINTER: f32 = 0.55;\n\n/* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike\n   the previous optics, TIR here selects the reflected path instead of deleting it. */\nfn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {\n  let d = dot(n, i);\n  let k = 1.0 - eta * eta * (1.0 - d * d);\n  if (k < 0.0) { return vec2f(0.0); }\n  return i * eta - n * (eta * d + sqrt(k));\n}\n\nfn reflect2(i: vec2f, n: vec2f) -> vec2f {\n  return i - n * (2.0 * dot(i, n));\n}\n\n/* Ray vs the face plane dot(p, n) = RI, from inside: the positive travel distance. */\nfn faceHit(origin: vec2f, direction: vec2f, n: vec2f, ri: f32) -> f32 {\n  let den = dot(direction, n);\n  if (den < 1.0e-5) { return 1.0e6; }\n  return (ri - dot(origin, n)) / den;\n}\n\nstruct Traced {\n  /* Where the ray leaves the glass, and along what direction. */\n  exitPoint: vec2f,\n  exitDirection: vec2f,\n  /* The internal path: entry -> firstHit, and (TIR only) firstHit -> exitPoint. */\n  firstHit: vec2f,\n  /* 1.0 when the ray left through the BASE after TIR at the exit face. */\n  tir: f32,\n};\n\n/* The whole path of ONE wavelength: entry Snell, internal segment to the nearest\n   face, exit Snell — and on TIR, the reflected leg to the base and the exit there.\n   A second TIR (possible only at extreme settings) collapses the exit ray to zero\n   length rather than inventing a direction. */\nfn tracePrism(pe: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {\n  var out: Traced;\n  out.tir = 0.0;\n  let d2 = refract2(dIn, NR, 1.0 / n);\n  /* Entry at grazing beyond range: keep the geometry degenerate-safe. */\n  if (dot(d2, d2) < 1.0e-9) {\n    out.exitPoint = pe;\n    out.exitDirection = vec2f(0.0);\n    out.firstHit = pe;\n    return out;\n  }\n  /* The internal ray can only leave through the exit face or the base. */\n  let sL = faceHit(pe, d2, NL, ri);\n  let sD = faceHit(pe, d2, ND, ri);\n  let exitLeft = sL <= sD;\n  let s1 = min(sL, sD);\n  let n1 = select(ND, NL, exitLeft);\n  let p1 = pe + d2 * s1;\n  out.firstHit = p1;\n  let d3 = refract2(d2, -n1, n);\n  if (dot(d3, d3) > 1.0e-9) {\n    out.exitPoint = p1;\n    out.exitDirection = d3;\n    return out;\n  }\n  /* TOTAL INTERNAL REFLECTION: the face is a mirror; the ray crosses to the other\n     of the two remaining faces and refracts THERE. */\n  out.tir = 1.0;\n  let dr = reflect2(d2, n1);\n  let n2 = select(NL, ND, exitLeft);\n  let s2 = faceHit(p1, dr, n2, ri);\n  let p2 = p1 + dr * s2;\n  out.exitPoint = p2;\n  let d4 = refract2(dr, -n2, n);\n  /* Twice-trapped: draw nothing rather than something invented. */\n  out.exitDirection = select(d4, vec2f(0.0), dot(d4, d4) < 1.0e-9);\n  return out;\n}\n\nconst RI: f32 = 0.380;\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* E13's aim idiom: LFO plus pointer share, added where both numbers already are. */\n  let aim = clamp(ctx.value1 + AIM_POINTER * ctx.value3, 0.0, 1.0);\n  let theta = mix(THETA_HI, THETA_LO, aim) * PI / 180.0;\n  let inward = -NR;\n  let cs = cos(-theta);\n  let sn = sin(-theta);\n  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);\n  /* value4 slides the entry point along the face tangent — toward the apex when\n     positive. 0 is E13's shipped entry, low on the face. */\n  let pe = NR * RI + vec2f(-NR.y, NR.x) * (ENTRY + ctx.value4);\n\n  /* The CENTRAL wavelength's path — the visible interior, shared by slots 2 and 3. */\n  let nMid = N_RED + ctx.value2 * 0.5;\n  let mid = tracePrism(pe, dIn, nMid, RI);\n\n  if (ctx.index == 0u) {\n    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);\n    q.tip = vec3f(pe, PLANE);\n    q.tint = vec4f(1.0, 1.0, 1.0, 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 1u) {\n    /* The GHOST: the share the face sent back, by Schlick on the same incidence the\n       refraction uses. */\n    let r = reflect2(dIn, NR);\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(pe, PLANE);\n    q.tip = vec3f(pe + r * GHOST_LEN, PLANE);\n    q.tint = vec4f(vec3f(fr), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 2u) {\n    /* THE INTERNAL SEGMENT — the piece the previous optics computed and never drew.\n       Its brightness is the share the entry face let THROUGH (1 − the ghost's\n       Schlick), dimmed a step so the film of glass reads over it. */\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(pe, PLANE);\n    q.tip = vec3f(mid.firstHit, PLANE);\n    q.tint = vec4f(vec3f((1.0 - fr) * 0.62), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 3u) {\n    /* The TIR continuation: firstHit -> base. Zero-length (zero area, T680) whenever\n       the central ray exits at the first face. */\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(mid.firstHit, PLANE);\n    q.tip = vec3f(select(mid.firstHit, mid.exitPoint, mid.tir > 0.5), PLANE);\n    q.tint = vec4f(vec3f((1.0 - fr) * 0.55), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n\n  /* One exit ray per wavelength: t is BOTH the refractive index and the hue. Each\n     band's fan segment starts at ITS OWN exit point — on the exit face normally, on\n     the BASE after TIR — so the fan opens at the face and a band near the critical\n     angle visibly walks off the end of it. */\n  let t = f32(ctx.index - 4u) / f32(ctx.count - 5u);\n  let n = N_RED + ctx.value2 * t;\n  let band = tracePrism(pe, dIn, n, RI);\n  q.position = vec3f(band.exitPoint, PLANE);\n  q.tip = vec3f(band.exitPoint + band.exitDirection * FAN_LEN, PLANE);\n  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);\n  q.role = 1.0;\n  return q;\n}",
+          "kernel": "const PI: f32 = 3.14159265358979323846;\n/* The three faces of the cross-section, as outward normals sharing one inradius. */\nconst NR: vec2f = vec2f(0.86602540, 0.5);\nconst NL: vec2f = vec2f(-0.86602540, 0.5);\nconst ND: vec2f = vec2f(0.0, -1.0);\n/* T758: the beams live INSIDE the body now (the cross-section's z spans ±0.55), so\n   the transmissive front face draws OVER the interior segment and the thread is seen\n   THROUGH the glass — absorption-tinted, edge-refracted. Before materialGlass this sat\n   at 0.60, in front, so the opaque solid could not swallow the beams; a glass body\n   inverts that reasoning: swallowing is the point. */\nconst PLANE: f32 = 0.10;\nconst ENTRY: f32 = -0.28;\nconst SHAFT_LEN: f32 = 2.10;\nconst GHOST_LEN: f32 = 0.90;\nconst FAN_LEN: f32 = 2.25;\nconst N_RED: f32 = 1.50;\n/* The SWING's band, unchanged since T710: two aims, 25 degrees apart, comfortably\n   inside the glass and comfortably clear of the violet end's critical angle. */\nconst THETA_LO: f32 = 37.0;\nconst THETA_HI: f32 = 62.0;\n/* T857 — THE POINTER'S OWN BAND, and it is wide on purpose. 84° is grazing on the\n   entry face; 6° is near normal, deep inside the regime where the internal ray meets\n   the exit face past its critical angle and leaves through the BASE instead. That used\n   to be a reason to stop at 37 degrees - refract2 returned zero and the band vanished - and\n   T718 removed the reason when it made TIR a drawn PATH rather than a deletion (§V750:\n   a compensation for an absent capability is an artifact once the capability exists).\n   The hand crosses the violet end's onset at 34.5° and the red end's at 27.9°, so\n   between them the spectrum SPLITS across two faces, which no aim could reach before. */\nconst HAND_HI: f32 = 84.0;\nconst HAND_LO: f32 = 6.0;\n/* Speed² → authority. A cursor crossing a TWENTIETH of the frame in a second reads\n   0.0025 here and clamps to 1: any deliberate move owns the aim outright, and a cursor\n   that has never moved reads exactly 0. */\nconst HAND_GAIN: f32 = 400.0;\n/* How far along the face the pointer walks the entry point, tip to tail. The face's\n   half-length is RI·√3 = 0.658, so ±0.8 runs PAST both vertices — which is the state\n   the owner asked for: the beam misses the glass. */\nconst REACH: f32 = 1.6;\nconst ROOT3: f32 = 1.7320508;\n/* A missed beam has to still be a beam: it carries straight on past where the glass\n   isn't, instead of stopping at a face it never met. */\nconst MISS_LEN: f32 = 2.60;\n\n/* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike\n   the previous optics, TIR here selects the reflected path instead of deleting it. */\nfn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {\n  let d = dot(n, i);\n  let k = 1.0 - eta * eta * (1.0 - d * d);\n  if (k < 0.0) { return vec2f(0.0); }\n  return i * eta - n * (eta * d + sqrt(k));\n}\n\nfn reflect2(i: vec2f, n: vec2f) -> vec2f {\n  return i - n * (2.0 * dot(i, n));\n}\n\n/* Ray vs the face plane dot(p, n) = RI, from inside: the positive travel distance. */\nfn faceHit(origin: vec2f, direction: vec2f, n: vec2f, ri: f32) -> f32 {\n  let den = dot(direction, n);\n  if (den < 1.0e-5) { return 1.0e6; }\n  return (ri - dot(origin, n)) / den;\n}\n\nstruct Traced {\n  /* Where the ray leaves the glass, and along what direction. */\n  exitPoint: vec2f,\n  exitDirection: vec2f,\n  /* The internal path: entry -> firstHit, and (TIR only) firstHit -> exitPoint. */\n  firstHit: vec2f,\n  /* 1.0 when the ray left through the BASE after TIR at the exit face. */\n  tir: f32,\n};\n\n/* The whole path of ONE wavelength: entry Snell, internal segment to the nearest\n   face, exit Snell — and on TIR, the reflected leg to the base and the exit there.\n   A second TIR (possible only at extreme settings) collapses the exit ray to zero\n   length rather than inventing a direction. */\nfn tracePrism(pe: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {\n  var out: Traced;\n  out.tir = 0.0;\n  let d2 = refract2(dIn, NR, 1.0 / n);\n  /* Entry at grazing beyond range: keep the geometry degenerate-safe. */\n  if (dot(d2, d2) < 1.0e-9) {\n    out.exitPoint = pe;\n    out.exitDirection = vec2f(0.0);\n    out.firstHit = pe;\n    return out;\n  }\n  /* The internal ray can only leave through the exit face or the base. */\n  let sL = faceHit(pe, d2, NL, ri);\n  let sD = faceHit(pe, d2, ND, ri);\n  let exitLeft = sL <= sD;\n  let s1 = min(sL, sD);\n  let n1 = select(ND, NL, exitLeft);\n  let p1 = pe + d2 * s1;\n  out.firstHit = p1;\n  let d3 = refract2(d2, -n1, n);\n  if (dot(d3, d3) > 1.0e-9) {\n    out.exitPoint = p1;\n    out.exitDirection = d3;\n    return out;\n  }\n  /* TOTAL INTERNAL REFLECTION: the face is a mirror; the ray crosses to the other\n     of the two remaining faces and refracts THERE. */\n  out.tir = 1.0;\n  let dr = reflect2(d2, n1);\n  let n2 = select(NL, ND, exitLeft);\n  let s2 = faceHit(p1, dr, n2, ri);\n  let p2 = p1 + dr * s2;\n  out.exitPoint = p2;\n  let d4 = refract2(dr, -n2, n);\n  /* Twice-trapped: draw nothing rather than something invented. */\n  out.exitDirection = select(d4, vec2f(0.0), dot(d4, d4) < 1.0e-9);\n  return out;\n}\n\nconst RI: f32 = 0.380;\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* T857 — E13's aim idiom, and it is a BLEND: the pointer TAKES the aim while it is\n     moving and hands it back when it stops. 'hand' is the pointer's own activity, and\n     it is exactly 0 for a cursor that has never moved. */\n  let hand = clamp(ctx.value4 * HAND_GAIN, 0.0, 1.0);\n  let px = clamp(ctx.value3, 0.0, 1.0);\n  /* TWO SCALES ON ONE ANGLE. The swing keeps its own narrow band (value1: 0 → 62°,\n     1 → 37°) so every measurement that pins it still means what it meant; the pointer\n     reads the WIDE one and passes through both of the swing's aims on the way. */\n  let theta = mix(mix(THETA_HI, THETA_LO, clamp(ctx.value1, 0.0, 1.0)),\n                  mix(HAND_HI, HAND_LO, px), hand) * PI / 180.0;\n  let inward = -NR;\n  let cs = cos(-theta);\n  let sn = sin(-theta);\n  let dIn = vec2f(inward.x * cs - inward.y * sn, inward.x * sn + inward.y * cs);\n  /* WHERE ON THE FACE, from the same one knob. A real aimed beam does not pivot about\n     a fixed spot on the glass, and pinning the entry point is precisely what made the\n     old aim unable to miss: 'tau' is the entry's position along the face tangent, and\n     the pointer sweeps it from below the base vertex to past the apex. The swing never\n     moves it — at hand = 0 this is ENTRY exactly, E13's shipped low entry.\n     The pairing is not arbitrary: the apex end of the sweep carries the GRAZING angle\n     and the base end the near-normal one, so a ray that overshoots either vertex is\n     travelling AWAY from the body and the miss is a real miss rather than a ray that\n     sneaks in through another face. */\n  let tau = mix(ENTRY, REACH * (0.5 - px), hand);\n  let pe = NR * RI + vec2f(-NR.y, NR.x) * tau;\n  /* THE REFRACTING FACE IS A SEGMENT, NOT A PLANE, and this is the line that lets the\n     beam miss. An equilateral cross-section's half side is its inradius times √3, so\n     the bound is the SAME RI the mesh and the optics already share (T710's identity)\n     rather than a fourth number to keep in step. */\n  let onFace = abs(tau) < RI * ROOT3;\n\n  /* The CENTRAL wavelength's path — the visible interior, shared by slots 2 and 3. */\n  let nMid = N_RED + ctx.value2 * 0.5;\n  let mid = tracePrism(pe, dIn, nMid, RI);\n\n  if (ctx.index == 0u) {\n    q.position = vec3f(pe - dIn * SHAFT_LEN, PLANE);\n    /* A HIT stops at the face and hands over to the internal segment; a MISS carries\n       straight on past the glass, so the picture shows a beam going by rather than a\n       beam that stopped in mid-air at nothing. */\n    q.tip = vec3f(select(pe + dIn * MISS_LEN, pe, onFace), PLANE);\n    q.tint = vec4f(1.0, 1.0, 1.0, 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 1u) {\n    /* The GHOST: the share the face sent back, by Schlick on the same incidence the\n       refraction uses. Nothing reflects off a face the ray never reached, so a miss\n       collapses this to zero length (zero area, T680). */\n    let r = reflect2(dIn, NR);\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(pe, PLANE);\n    q.tip = vec3f(select(pe, pe + r * GHOST_LEN, onFace), PLANE);\n    q.tint = vec4f(vec3f(fr), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 2u) {\n    /* THE INTERNAL SEGMENT — the piece the previous optics computed and never drew.\n       Its brightness is the share the entry face let THROUGH (1 − the ghost's\n       Schlick), dimmed a step so the film of glass reads over it. */\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    q.position = vec3f(pe, PLANE);\n    q.tip = vec3f(select(pe, mid.firstHit, onFace), PLANE);\n    q.tint = vec4f(vec3f((1.0 - fr) * 0.62), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n  if (ctx.index == 3u) {\n    /* The TIR continuation: firstHit -> base. Zero-length (zero area, T680) whenever\n       the central ray exits at the first face — or never entered at all. */\n    let c = abs(dot(dIn, NR));\n    let fr = 0.043 + 0.957 * pow(1.0 - c, 5.0);\n    let seat = select(pe, mid.firstHit, onFace);\n    q.position = vec3f(seat, PLANE);\n    q.tip = vec3f(select(seat, select(mid.firstHit, mid.exitPoint, mid.tir > 0.5), onFace), PLANE);\n    q.tint = vec4f(vec3f((1.0 - fr) * 0.55), 1.0);\n    q.role = 0.0;\n    return q;\n  }\n\n  /* One exit ray per wavelength: t is BOTH the refractive index and the hue. Each\n     band's fan segment starts at ITS OWN exit point — on the exit face normally, on\n     the BASE after TIR — so the fan opens at the face and a band near the critical\n     angle visibly walks off the end of it. */\n  let t = f32(ctx.index - 4u) / f32(ctx.count - 5u);\n  let n = N_RED + ctx.value2 * t;\n  let band = tracePrism(pe, dIn, n, RI);\n  /* A ray that missed the glass disperses nothing: the whole fan collapses to zero\n     length at the entry point, and the shaft above is the only thing drawn. */\n  let root = select(pe, band.exitPoint, onFace);\n  q.position = vec3f(root, PLANE);\n  q.tip = vec3f(select(root, band.exitPoint + band.exitDirection * FAN_LEN, onFace), PLANE);\n  q.tint = vec4f(fieldAt(vec3f(t * 2.0 - 1.0, 0.0, 0.0)).rgb, 1.0);\n  q.role = 1.0;\n  return q;\n}",
           "value1": {
             "bindings": {
               "driven": {
@@ -530,6 +588,19 @@
             "bindings": {
               "driven": {
                 "channel": "follow1:x",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "value4": {
+            "bindings": {
+              "driven": {
+                "channel": "hold1:x",
                 "kind": "driven"
               },
               "static": {
@@ -779,6 +850,17 @@
         },
         "type": "ramp"
       },
+      "stir": {
+        "definitionVersion": 1,
+        "id": "stir",
+        "label": "stir1",
+        "parameters": {},
+        "position": {
+          "x": -1240,
+          "y": 840
+        },
+        "type": "valueSlope"
+      },
       "studio": {
         "definitionVersion": 1,
         "id": "studio",
@@ -811,6 +893,20 @@
           "y": 640
         },
         "type": "lfo"
+      },
+      "urge": {
+        "definitionVersion": 1,
+        "id": "urge",
+        "label": "urge1",
+        "parameters": {
+          "operand": 1,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -920,
+          "y": 840
+        },
+        "type": "valueMath"
       }
     },
     "revision": 1
