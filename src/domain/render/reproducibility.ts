@@ -245,6 +245,14 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // laser-path Dawn gates pin to exact values. The scan is deterministic by data order
   // (no atomics), and every count is a pure function of positions and params.
   laserPath: "pure",
+  // T950. PURE, and the argument is the whole point of the twin ledgers (§V841): this
+  // node has NO output and compiles to NO passes, so a render reproduces bit-for-bit
+  // with or without it — the strongest "pure" there is. That answer says NOTHING about
+  // the beam: whether a laser fires is NODE_SIDE_EFFECTS' question ("emits", argued
+  // there), gated by emissionRefusal in the registered pump (§T1005). A reader who sees
+  // only this row and concludes "safe to run headless" is EXACTLY right about pixels
+  // and would be wrong about light — which is why the other row exists.
+  laserOut: "pure",
   // Scene: a 3D pass is as deterministic as a 2D one.
   camera: "pure",
   // T704: a projector is geometry + a texture reference — a pure function of the

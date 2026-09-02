@@ -65,7 +65,12 @@ describe("T1005 — the pump ledger, held to the side-effect ledger", () => {
   });
 
   it("pins today's pump set by name — one arriving is a decision, one vanishing is red", () => {
-    expect(Object.entries(EMISSION_PUMPS).sort()).toEqual([["oscOut", "src/app/use-osc-bridge.ts"]]);
+    expect(Object.entries(EMISSION_PUMPS).sort()).toEqual([
+      // T950: registered in the same commit that declared laserOut "emits" — the gate
+      // forcing exactly what it was built to force, before any transport exists.
+      ["laserOut", "src/app/use-laser-bridge.ts"],
+      ["oscOut", "src/app/use-osc-bridge.ts"],
+    ]);
   });
 
   it("every pump file exists and its CODE calls emissionRefusal", () => {

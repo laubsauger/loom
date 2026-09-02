@@ -188,6 +188,8 @@ describe("core catalogue (T70, T40)", () => {
       "pointRange",
       // T947: the vector-display path planner — the laser and the scope share it.
       "laserPath",
+      // T950: the transport sink — sideEffect "emits", the catalogue's second.
+      "laserOut",
       "pointKernelAdvanced",
       "slitScan",
     ]);

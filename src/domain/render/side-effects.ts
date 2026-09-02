@@ -120,6 +120,19 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
    * `emissionRefusal` per node per frame.
    */
   oscOut: "emits",
+  /*
+   * T950. `laserOut`'s PURPOSE is to reach a DAC that emits light — the node this axis
+   * was created for (§T949's row names it). It is `pure` under NODE_REPRODUCIBILITY and
+   * that is CORRECT (no output, no passes; the picture is identical with or without
+   * it), which is precisely why that axis could never carry this answer. The pump is
+   * `src/app/use-laser-bridge.ts` (registered in EMISSION_PUMPS, §T1005's gates), it
+   * consults `emissionRefusal` per node, and in this build it constructs NO TRANSPORT
+   * AT ALL — the Ether Dream helper driver has not landed, so today the mechanism on
+   * every path is the absence of any sender, and the protocol that will carry it is
+   * already emulator-gated (`src/mcp/ether-dream.ts`) with G3/G4/G9 enforced at the
+   * only functions that produce point bytes.
+   */
+  laserOut: "emits",
 
   /*
    * NONE — everything else, grouped as `NODE_REPRODUCIBILITY` groups it so the two tables

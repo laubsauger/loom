@@ -45,6 +45,7 @@ import { TimelineReadout } from "./timeline-readout.tsx";
 import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { TimelineScrubber } from "./timeline-scrubber.tsx";
 import { TopBar } from "./top-bar.tsx";
+import { GpuMsReadout } from "./gpu-readout.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
 import { useMcpTransports } from "./use-mcp-transports.ts";
 import { useAgentPorts } from "./agent-ports.ts";
@@ -69,6 +70,7 @@ import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMidiInput } from "./use-midi-input.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
+import { useLaserBridge } from "./use-laser-bridge.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
@@ -308,6 +310,15 @@ export function App({
   const osc = useOscBridge();
 
   /**
+   * T950 — the laser pump, §T1005's second registered emission site. In this build it
+   * constructs no transport at all (the mechanism, not a policy — see the hook), so
+   * what it contributes is the honest per-node status in the problems pane: the
+   * refusal sentence when a take blocks emission, "simulation only, no driver yet"
+   * when live.
+   */
+  const laser = useLaserBridge();
+
+  /**
    * The value graph's external channels are a MERGE of FOUR now (§T976), and the order
    * still does not matter because no two namespaces can collide:
    *
@@ -507,6 +518,32 @@ export function App({
     runtime.telemetry.setReadbacksPerformed(backend?.status.readbacks ?? null);
   }, [backend, recovery.diagnostics, runtime]);
 
+  /**
+   * B172 (§V12, §V469, T163) — THE BACKEND'S GPU TIMER → THE HUB. The line that was
+   * missing for the entire life of the feature.
+   *
+   * B172 fixed the device REQUEST: `gpu-host.ts` negotiates `timestamp-query`, the device
+   * grants it, `capabilities.timestampQuery` reads true, `vgpu-backend` creates the timer
+   * and attaches a span to every encoded pass. All of that worked on the owner's Mac and
+   * none of it was visible, because `attachTimingSource` had NO product call site: its
+   * only callers were `hub.test.ts` and `cost.test.ts`, which attach a working fake and
+   * assert spans flow — a green suite proving a path nothing in the app ever walked. The
+   * hub kept its `NO_PASS_TIMING` default, `timingAvailable` was false on a device that
+   * had the feature, and the panel said the adapter had withheld it (§V272, again).
+   *
+   * The source carries the ASK as well as the GRANT so the "unavailable" copy can name
+   * which fact is false instead of guessing at the machine (§V469, `timing-note.tsx`).
+   */
+  useEffect(() => {
+    console.log(`[B172-probe] t=${Date.now()} statusKind=${status.kind} backend=${backend !== undefined} caps=${capabilities !== null} ts=${String(capabilities?.timestampQuery)}`);
+    if (backend === undefined || capabilities === null) return;
+    return runtime.telemetry.attachTimingSource({
+      timestampQuery: capabilities.timestampQuery,
+      timestampQueryRequested: capabilities.timestampQueryRequested === true,
+      onPassTimings: (listener) => backend.onGpuTimings(listener),
+    });
+  }, [backend, capabilities, runtime]);
+
   // The frame loop (T184): the only caller of `backend.loop()` in the app. Without it
   // the compiler, the backend and the renderer each pass their own suite while zero
   // frames are ever submitted — see `use-frame-loop.ts`.
@@ -627,6 +664,13 @@ export function App({
          * this reads `"live-session"` — a state flag would have leaked the first frame,
          * and one frame is a real firing for the hardware this axis exists to protect.
          */
+        renderRangeHolderFor(runtime.bus).current?.busy() === true ? "blocked" : "live-session",
+      );
+      // T950 — the laser pump's assessment, same policy source and the same reasoning
+      // as osc.sync above: a take is not a live session, checked per frame.
+      laser.sync(
+        runtime.flattened.current().graph,
+        runtime.registry,
         renderRangeHolderFor(runtime.bus).current?.busy() === true ? "blocked" : "live-session",
       );
     },
@@ -897,6 +941,8 @@ export function App({
       // device's interface lives in its NODE, so its degraded reason belongs on the
       // surface every other node-scoped problem already uses (§V365, §V338).
       ...osc.diagnostics,
+      // T950 — the laser pump's honest state, on the same one-list rule as OSC's.
+      ...laser.diagnostics,
       ...rejection,
       ...autosave.diagnostics,
       ...project.diagnostics,
@@ -918,6 +964,7 @@ export function App({
     valueGraph.diagnostics,
     media.diagnostics,
     osc.diagnostics,
+    laser.diagnostics,
     project.diagnostics,
     recovery.diagnostics,
     rejection,
@@ -1072,6 +1119,9 @@ export function App({
             <TopBar
               projectName={project.fileName ?? runtime.project.name}
               tier={status.kind === "ready" ? status.capabilities.tier : null}
+              // B172: the header's GPU number, subscribed to the hub on its own <= 10 Hz
+              // tick (§V16). Nothing had ever passed `gpuMs`, so this read "—" forever.
+              gpuMetric={<GpuMsReadout telemetry={runtime.telemetry} />}
               playing={frameLoop.playing}
               onPlayPause={onPlayPause}
               onStep={onStepFrame}

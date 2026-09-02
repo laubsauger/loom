@@ -83,6 +83,24 @@ const ENTRY_POINTS = [
  */
 const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
   {
+    name: "createEtherDreamClient",
+    reason:
+      "T950, deliberately sequenced: the transport's pure state machine, emulator-gated in " +
+      "ether-dream.test.ts. Its product caller is the bridge helper's laser driver, which must " +
+      "not exist before the helper-side dead-man timer does (G2: the failsafe lives on the far " +
+      "side of the thing that can fail) — so wiring this early would be wiring the hazard. The " +
+      "laser pump (use-laser-bridge.ts, EMISSION_PUMPS-registered) constructs no transport in " +
+      "this build and says so; the driver commit replaces both statements together.",
+  },
+  {
+    name: "createEtherDreamEmulator",
+    reason:
+      "T950: the DAC's own state machines as a test counterparty — a client gated against a " +
+      "device that argues back. Its second life is the helper's loopback dev-DAC when the driver " +
+      "lands; until then a product path constructing an emulated laser would be a product path " +
+      "pretending to have hardware.",
+  },
+  {
     name: "createHeadlessMcpServer",
     reason:
       "Constructed by serveStdio() in the SAME module — the stdio MCP server's own process entry point (T294), which this scan does not treat as an app root. serve.gpu.test.ts drives it end to end with real pixels.",
@@ -1168,5 +1186,130 @@ describe("§T976 — inference publishes into the composition root's channel mer
     // The pulse names `runtime.resetInference`, which only this hook registers. Without
     // the bus the parameter page grows a button that lies (§V123).
     expect(appSource).toContain("useModelInference(backend, runtime.nodeRuntime, runtime.bus)");
+  });
+});
+
+/**
+ * SEAMS THAT ARE FED RATHER THAN CONSTRUCTED (B172, §V205, §V272).
+ *
+ * ## Why the enumeration above could not see this one
+ *
+ * The §V205 walk derives its subjects from exported `create*` / `open*` FACTORIES, which
+ * is this codebase's convention for "a service you construct". `createTelemetryHub` is
+ * constructed — `app-runtime.ts` calls it — so the hub passed that gate every day while
+ * `attachTimingSource`, the method whose whole purpose is to hand the hub the backend's
+ * GPU timer, had no product call site at all. Its only callers were `hub.test.ts` and
+ * `cost.test.ts`, which attach a working fake and assert spans flow: a green suite
+ * proving a path nothing in the app ever walked, which is the most expensive form §V272
+ * takes because the tests read as evidence.
+ *
+ * The visible cost: `capabilities.timestampQuery` read TRUE on the owner's Mac, the
+ * backend created the timer and attached a span to every encoded pass, and the
+ * performance panel said `GPU TIME  unavailable` four lines under `timestamp query  yes`.
+ * B172 had already fixed the device REQUEST for exactly this feature; the ATTACHMENT was
+ * the same bug one layer later.
+ *
+ * ## The rule, derived and not enumerated
+ *
+ * `attach*` is the convention for the other half of the shape: not a thing you build, a
+ * thing you FEED. So every `attach*` method declared on an exported interface must be
+ * CALLED from a module a product entry point transitively imports.
+ *
+ * A call, never a mention: the identifier `attachTimingSource` also appears in `hub.ts` as
+ * a declaration and an implementation, and counting those would mark this seam wired on
+ * the very day it was not. Only `<expr>.attachX(...)` counts.
+ */
+function attachMethodsOnExportedInterfaces(): Map<string, string> {
+  const methods = new Map<string, string>();
+  for (const path of sources) {
+    if (isTestFile(path)) continue;
+    for (const statement of sourceFile(path).statements) {
+      if (!ts.isInterfaceDeclaration(statement)) continue;
+      const exported =
+        statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+      if (!exported) continue;
+      for (const member of statement.members) {
+        if (!ts.isMethodSignature(member) || !ts.isIdentifier(member.name)) continue;
+        if (/^attach[A-Z]/.test(member.name.text)) methods.set(member.name.text, path);
+      }
+    }
+  }
+  return methods;
+}
+
+/** Names invoked as `<expr>.name(...)` in this module. A mention is not a call. */
+function attachCallsIn(path: string): Set<string> {
+  const called = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.name)
+    ) {
+      called.add(node.expression.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile(path));
+  return called;
+}
+
+/**
+ * Fed seams no product entry point feeds, each with the reason. Same two-way contract as
+ * `NOT_CONSTRUCTED`: an entry that stops being true fails as loudly as a missing one.
+ */
+const NOT_ATTACHED: ReadonlyArray<{ name: string; reason: string }> = [
+  {
+    name: "attachCpuTimingSource",
+    reason:
+      "T256's CPU half has no PRODUCER yet: nothing in the tree implements `CpuTimingSource`, so there is no source to attach and every `cpu` bucket honestly reads “unavailable” (§V86). This entry is the record that the GPU half's B172 twin is still open on the CPU side — the moment someone measures per-pass encode time, wiring it here is the last step, and this line must go.",
+  },
+];
+
+const attachMethods = attachMethodsOnExportedInterfaces();
+const attachCallsByFile = new Map<string, Set<string>>(
+  sources.map((path) => [path, attachCallsIn(path)] as const),
+);
+const unattached = [...attachMethods.entries()]
+  .filter(([name]) =>
+    ![...attachCallsByFile.entries()].some(
+      ([path, calls]) => !isTestFile(path) && reachable.has(path) && calls.has(name),
+    ),
+  )
+  .map(([name, declaredIn]) => ({ name, file: relative(ROOT, declaredIn) }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+const excusedAttach = new Map(NOT_ATTACHED.map((entry) => [entry.name, entry.reason]));
+
+describe("§V205/§V272 — every seam the app is supposed to FEED, enumerated (B172)", () => {
+  it("finds real attach seams, or it is measuring nothing", () => {
+    expect(attachMethods.size).toBeGreaterThan(1);
+    // The seam this section exists for. If `attachTimingSource` ever stops being called
+    // from the product, that is B172 returning and it is not an allowlist decision.
+    expect(attachMethods.has("attachTimingSource")).toBe(true);
+    expect(excusedAttach.has("attachTimingSource")).toBe(false);
+  });
+
+  it("feeds every attach seam from a product entry point, or says in writing why not", () => {
+    const surprises = unattached.filter((seam) => !excusedAttach.has(seam.name));
+    if (surprises.length > 0) {
+      const listed = surprises.map((seam) => `  ${seam.name}  (${seam.file})`).join("\n");
+      throw new Error(
+        `${surprises.length} seam(s) are declared to be fed and nothing in a product entry point feeds them ` +
+          `(§V205/§V272). B172 shipped twice this way: a hub that is constructed but never handed its source ` +
+          `reports "unavailable" forever while its own tests, which attach a fake, stay green. Call it from the ` +
+          `composition root, or add it to NOT_ATTACHED with the reason:\n${listed}`,
+      );
+    }
+    expect(surprises).toEqual([]);
+  });
+
+  it("has no stale excuse — an attach seam that got wired must leave the list", () => {
+    const stillUnwired = new Set(unattached.map((seam) => seam.name));
+    const stale = [...excusedAttach.keys()].filter(
+      (name) => attachMethods.has(name) && !stillUnwired.has(name),
+    );
+    const vanished = [...excusedAttach.keys()].filter((name) => !attachMethods.has(name));
+    expect({ stale, vanished }).toEqual({ stale: [], vanished: [] });
   });
 });

@@ -57,7 +57,7 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
     expect(definitionSources().length).toBeGreaterThan(30);
   });
 
-  it("names the world-acting nodes, and there is exactly one today", () => {
+  it("names the world-acting nodes, and there are exactly two today", () => {
     const acting = Object.entries(NODE_SIDE_EFFECTS)
       .filter(([, value]) => value !== "none")
       .map(([type, value]) => `${type}:${value}`)
@@ -66,6 +66,10 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
     // arriving is a decision somebody made on purpose, and one going missing is a red
     // test rather than a quiet loss of coverage.
     expect(acting).toEqual([
+      // T950. The laser transport sink — the node this axis was CREATED for (§T949's own
+      // row names it). Its pump exists and is §T1005-registered; in this build the pump
+      // constructs no transport at all, and the ledger row carries the full argument.
+      "laserOut:emits",
       // T942 tier 3. UDP at a host and port the document names — a lighting desk as often
       // as a synth. `pure` in NODE_REPRODUCIBILITY, and correctly so; see the ledger.
       "oscOut:emits",

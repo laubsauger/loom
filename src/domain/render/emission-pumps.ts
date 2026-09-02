@@ -52,6 +52,15 @@ export const EMISSION_PUMPS: Readonly<Record<string, string>> = {
    * socket here.
    */
   oscOut: "src/app/use-osc-bridge.ts",
+  /*
+   * T950. The laser pump — registered BEFORE any transport exists, which is the gate
+   * working as designed: declaring `laserOut: "emits"` forced this row and the refusal
+   * call into existence in the same commit. In this build the pump constructs no sender
+   * of any kind (the §V840 mechanism on every path at once); when the Ether Dream
+   * helper driver lands, the send goes through the helper behind its dead-man timer,
+   * and THIS file is where the reviewer finds the seam.
+   */
+  laserOut: "src/app/use-laser-bridge.ts",
 };
 
 /**
