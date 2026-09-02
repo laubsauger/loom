@@ -64,22 +64,26 @@ describe("T620 — sink removal grace is wall-clock", () => {
  *
  * T919 drove E34-Lidar through a scripted 5 s pan on Dawn and counted **13 sink-set
  * changes**, each one a `compileGraph` + `backend.compile` AND (because `useGraphCompile`
- * is called from the App root) a full App re-render. Each was a single node crossing the
- * viewport edge: an addition published the instant it appeared, or a removal published the
- * instant its own grace expired — a steady drip a second behind the camera.
+ * is called from the App root) a full App re-render. Reading the timeline it printed, they
+ * split in two: a handful early, as nodes crossed into the viewport, and then a steady drip
+ * for the rest of the gesture as each one aged out of `REMOVAL_GRACE_MS` a second behind the
+ * camera. The drip is the majority and it is pure release — nothing is waiting on it.
  *
- * This replays that shape against the store directly: one node enters or leaves every
- * ~250 ms while the camera moves, then the gesture stops. It asserts RECOMPILES, not the
- * mechanism, because the mechanism is a tuning parameter and the recompile count is what
- * the user feels.
+ * So the two directions are treated as what they are. An ARRIVAL is published immediately:
+ * a ref that is not yet a sink has no materialized output, so anything that delays it delays
+ * a PICTURE, and T501's first-paint reservation depends on landing on the next frame. A
+ * DEPARTURE waits for the set to stop moving: the ref already has its output, its tile and
+ * its picture (§V455), and the compile that drops it only releases (T143 carry).
  *
- * Reproduce the real thing (the numbers this is derived from):
+ * Reproduce the real thing (the numbers below are derived from it):
  *   node --import ./src/mcp/alias-hooks.ts scratchpad/t919/preview-profile.ts \
  *     --example=E34-Lidar --gesture=pan --frames=300 --settle=0     # 13, what shipped
  *   ...                                                --settle=200 # 10
- *   ...                                                --settle=400 # 3
+ *   ...                                                --settle=400 # 4
+ * and at every one of those windows the harness reports the SAME 0.01 on-screen previews
+ * per frame with no picture — the hysteresis costs no pixels, which is the constraint.
  */
-describe("T924 — the sink set is published when it settles, not while it churns", () => {
+describe("T924 — a departing sink waits for the gesture to end; an arriving one never does", () => {
   function refsFor(count: number, offset: number) {
     return Array.from({ length: count }, (_unused, index) => ({
       nodeId: `n${String(index + offset)}`,
@@ -87,7 +91,10 @@ describe("T924 — the sink set is published when it settles, not while it churn
     }));
   }
 
-  /** A camera moving a node's worth of graph every `stepMs`, then stopping. */
+  /**
+   * A camera that brings twelve nodes on screen one at a time, moves past them one at a
+   * time, and then stops — the shape of T919's own timeline.
+   */
   function pan(settleMs: number | undefined, stepMs: number) {
     let clock = 0;
     const store =
@@ -98,88 +105,98 @@ describe("T924 — the sink set is published when it settles, not while it churn
     store.subscribe(() => (recompiles += 1));
 
     store.set(refsFor(6, 0));
-    const afterOpen = recompiles;
+    const open = recompiles;
     for (let step = 1; step <= 12; step += 1) {
       clock += stepMs;
-      store.set(refsFor(6, step));
+      store.set(refsFor(6 + step, 0));
     }
-    // The gesture ends and the view is held still, at the store's own rAF cadence.
-    for (let tick = 0; tick < 90; tick += 1) {
+    const arrived = recompiles;
+    for (let step = 1; step <= 12; step += 1) {
+      clock += stepMs;
+      store.set(refsFor(18 - step, step));
+    }
+    // The gesture ends and the view is held still, at the store's own rAF cadence, long
+    // enough for the last removal grace to expire and the window to close behind it.
+    for (let tick = 0; tick < 240; tick += 1) {
       clock += 1000 / 60;
       store.set(refsFor(6, 12));
     }
-    return { duringOpen: afterOpen, total: recompiles, sinks: store.get() };
+    return {
+      open,
+      arrivals: arrived - open,
+      departures: recompiles - arrived,
+      sinks: store.get(),
+    };
   }
 
-  it("collapses a pan whose churn is faster than the window into ONE recompile", () => {
+  it("collapses the departure drip into one recompile and leaves arrivals alone", () => {
     // `settleMs: 0` IS the pre-T924 behaviour: a zero quiet window publishes on the spot.
     const before = pan(0, 100);
     const after = pan(200, 100);
 
-    // Opening the document is one compile either way — nothing is churning yet, and making
-    // the canvas wait for its first picture would buy nothing.
-    expect(before.duringOpen).toBe(1);
-    expect(after.duringOpen).toBe(1);
+    // Opening the document is one compile either way.
+    expect(before.open).toBe(1);
+    expect(after.open).toBe(1);
 
-    // One recompile per node crossing the edge, plus one more as each ages out of its
-    // removal grace a second behind the camera. This is the shape T919 measured.
-    expect(before.total).toBeGreaterThanOrEqual(12);
-    // One for the open, one when the gesture settles, and nothing at all in between.
-    expect(after.total).toBe(2);
+    // ARRIVALS ARE UNTOUCHED, and that is the constraint, not a side effect: twelve nodes
+    // came on screen and twelve compiles materialized them, at the same frame as before.
+    expect(before.arrivals).toBe(12);
+    expect(after.arrivals).toBe(12);
 
-    // And it converges on the SAME set: hysteresis delays the answer, never changes it.
+    // DEPARTURES are where the drip was. One per node before; one for the whole gesture now.
+    expect(before.departures).toBe(12);
+    expect(after.departures).toBe(1);
+
+    // It converges on the SAME set: hysteresis delays the answer, never changes it.
     expect(after.sinks).toEqual(before.sinks);
 
     // The SHIPPED default does it too. Without this the gate would pass against a store
     // whose own constant had been set back to zero, which is exactly the regression it is
     // here to catch.
-    expect(pan(undefined, 100).total).toBe(after.total);
+    expect(pan(undefined, 100).departures).toBe(after.departures);
   });
 
   /**
    * THE LIMIT OF THE SHIPPED NUMBER, STATED RATHER THAN LEFT TO BE REDISCOVERED.
    *
-   * A quiet window only collapses churn ARRIVING FASTER THAN ITSELF. E34-Lidar's 5 s pan
+   * A quiet window only collapses churn arriving FASTER THAN ITSELF. E34-Lidar's 5 s pan
    * changes the set every ~385 ms on average — 41 previewable nodes spread across a very
-   * wide graph — so a 200 ms window merges only the close pairs and the measured count goes
-   * 13 -> 10, not 13 -> 1. Widening it moves the number a great deal (400 ms -> 3,
-   * 1000 ms -> 2) at the cost of that much delay before an entering node's picture appears.
-   * The harness sweeps it: `--settle=` on `scratchpad/t919/preview-profile.ts`.
+   * wide graph — so 200 ms takes the measured count 13 -> 10, not 13 -> 1. Widening it moves
+   * the number a great deal (400 ms -> 4) at no measured cost in pixels; `--settle=` on the
+   * harness sweeps it.
    */
-  it("does not collapse churn arriving more slowly than the window", () => {
-    const before = pan(0, 250);
-    const after = pan(200, 250);
-    expect(before.total).toBeGreaterThan(after.total);
-    expect(after.total).toBeGreaterThan(2);
-    expect(after.sinks).toEqual(before.sinks);
+  it("does not collapse a drip slower than the window", () => {
+    const before = pan(0, 300);
+    const after = pan(200, 300);
+    expect(after.departures).toBeGreaterThan(1);
+    expect(after.departures).toBeLessThan(before.departures);
   });
 
   /**
-   * The price, asserted rather than assumed: EVERY change after the first costs one quiet
-   * window, including a lone edit on a graph nobody is moving. 200 ms is chosen to sit
-   * under what reads as lag, and the compile a document edit triggers on its own is
-   * unaffected — this delays only when the new node becomes a preview SINK.
+   * The price, asserted rather than assumed: a lone DEPARTURE on a graph nobody is moving
+   * costs one quiet window. 200 ms sits under what reads as lag, and no picture is waiting
+   * on it — the ref being dropped is one nothing can see any more.
    */
-  it("lands one quiet window after a lone change, and lands it on the timer if nothing calls back", async () => {
+  it("lands a departure one quiet window later, on the timer if nothing calls back", () => {
     vi.useFakeTimers();
     try {
       const store = createPreviewSinkStore(() => Date.now(), 200);
-      let recompiles = 0;
-      store.set([{ nodeId: "n1", portId: "out" }]);
-      store.subscribe(() => (recompiles += 1));
-
-      vi.advanceTimersByTime(60_000);
       store.set([
         { nodeId: "n1", portId: "out" },
         { nodeId: "n2", portId: "out" },
       ]);
+      let recompiles = 0;
+      store.subscribe(() => (recompiles += 1));
+
+      vi.advanceTimersByTime(60_000);
+      store.set([{ nodeId: "n1", portId: "out" }]);
       expect(recompiles).toBe(0);
 
       // T620's lesson, carried forward: rAF stops in a hidden window, so the window must
       // close on a TIMER too — not only on the next `set()` that may never come.
       vi.advanceTimersByTime(200);
       expect(recompiles).toBe(1);
-      expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1", "n2"]);
+      expect(store.get().map((sink) => sink.nodeId)).toEqual(["n1"]);
     } finally {
       vi.useRealTimers();
     }

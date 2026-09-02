@@ -43,45 +43,46 @@ export interface PreviewSinkStore {
 const REMOVAL_GRACE_MS = 1000;
 
 /**
- * How long the set must STOP MOVING before a change is published (T924(3), T919).
+ * How long the set must STOP MOVING before a DEPARTURE is published (T924(3), T919).
  *
- * The grace above is per-ref and one-sided; this one is about the SET, and it is what the
- * measurement asked for. T919 profiled a 5 s pan across E34-Lidar and counted **13
- * recompiles**, median 3.3 ms of `compileGraph` + `backend.compile` each, every one of them
- * also re-rendering the whole App because `useGraphCompile` is called from its root. The
- * cause is that one node crossing the viewport edge changes the set by one entry and each
- * such change is published on the spot — additions the instant they appear, removals the
- * instant their own grace expires, which during a sweep is a steady drip a second behind
- * the camera.
+ * The grace above is per-ref; this one is about the SET. T919 profiled a 5 s pan across
+ * E34-Lidar and counted **13 recompiles**, median 3.3 ms of `compileGraph` +
+ * `backend.compile` each, every one of them also re-rendering the whole App because
+ * `useGraphCompile` is called from its root. Its timeline splits them in two: a handful
+ * early, as nodes crossed into the viewport, and then a steady drip for the rest of the
+ * gesture as each aged out of `REMOVAL_GRACE_MS` a second behind the camera. The drip is
+ * the majority, and nothing is waiting on it.
  *
- * So the set is published when it SETTLES rather than while it is churning: any difference
- * from what is applied re-arms a quiet window, and the change lands when nothing has moved
- * for `SETTLE_MS`. A pan therefore costs one recompile at the end of the gesture instead of
- * one per node crossing an edge, and a graph nobody is moving is unaffected — the window
- * has already elapsed by the time anything changes.
+ * ## The two directions are not the same thing, so they are not treated the same
  *
- * ## Why the FIRST set is exempt, and it is not an optimisation
+ * An ARRIVAL is published immediately. A ref that is not yet a sink has no materialized
+ * output, so nothing can draw it; delaying the sink would be delaying the PICTURE, which is
+ * the one thing this may not do. (Measured, not assumed: holding arrivals back reddened
+ * T501's first-paint gate — the four previews the tile budget has no room for on the first
+ * tick paint one frame later, and a quiet window put them a fifth of a second out.)
  *
- * Opening a document goes from no sinks at all to every visible one, and there is nothing
- * to be gained by making the whole canvas wait 200 ms to show its first picture — nothing
- * is churning, and one compile is the floor either way. Only a set that is CHANGING can be
- * settled, so the empty->first transition applies immediately.
+ * A DEPARTURE waits for the set to stop moving. The ref already has its output, its tile
+ * and its picture (§V455), and the compile that drops it only releases (T143 carry) — so a
+ * pan's removal drip collapses into one recompile when the gesture ends, and a node swept
+ * off screen and back never leaves the set at all.
  *
- * ## What this costs, stated rather than hidden
+ * ## Where the number lands, and where it does not
  *
- * A node entering the viewport mid-pan becomes a sink when the gesture stops instead of
- * within a frame or two, so its slot reads "no signal" for the rest of the pan. That is a
- * real cost and it is the reason `SETTLE_MS` is small: the picture arrives ~200 ms after
- * the user stops moving, which is the moment they can actually look at it. Nothing STALE is
- * ever shown — a ref that is already applied keeps its sink, its tile (§V455) and therefore
- * its picture right through the gesture, in both directions, so the case this could have
- * broken (pan a node off screen and back) is precisely the case that never re-enters the
- * quiet window at all.
+ * A quiet window only collapses churn arriving faster than itself. E34's pan changes the
+ * set every ~385 ms on average, so 200 ms takes the measured count **13 -> 10** and 400 ms
+ * takes it to **4**, at the same 0.01 on-screen-previews-with-no-picture per frame in every
+ * case — the hysteresis costs no pixels at any window. 200 ms is the shipped number;
+ * `--settle=` on `scratchpad/t919/preview-profile.ts` sweeps it.
+ *
+ * ## Why the FIRST set is exempt
+ *
+ * Opening a document goes from no sinks at all to every visible one. Only a set that is
+ * CHANGING can be settled, and there is nothing to wait out, so it applies immediately.
  *
  * MEASURED IN TIME and driven by a TIMER as well as by `set()` (T620, as above): rAF stops
  * in a hidden window and the store is then called once per recompile, so a settle that only
- * resolved on the next call would hold a pending change forever — including a removal that
- * a deleted node needs in order to stop poisoning every compile.
+ * resolved on the next call would hold a pending change forever — including the removal a
+ * deleted node needs in order to stop poisoning every compile.
  */
 const SETTLE_MS = 200;
 
@@ -96,8 +97,9 @@ export function createPreviewSinkStore(
   settleMs: number = SETTLE_MS,
 ): PreviewSinkStore {
   let sinks: ReadonlyArray<ActiveSink> = [];
-  /** The published set. */
+  /** The published set: its joined key, and its members for the arrival test below. */
   let key = "";
+  const published = new Set<string>();
   /** The set the scheduler last asked for, and when it last changed. */
   let pendingKey = "";
   let pendingAt = 0;
@@ -116,6 +118,8 @@ export function createPreviewSinkStore(
     cancel();
     if (pendingKey === key) return;
     key = pendingKey;
+    published.clear();
+    for (const sink of pending) published.add(`${sink.nodeId}:${sink.portId}`);
     sinks = pending;
     for (const listener of [...listeners]) listener();
   }
@@ -151,11 +155,23 @@ export function createPreviewSinkStore(
         cancel();
         return;
       }
-      // Opening a document: there is no churn to wait out and no picture to protect.
-      // Otherwise, the window is read off the store's OWN clock as well as off the timer,
-      // so a caller driving it faster or slower than wall time (an offline render, a test,
-      // a profiling harness) settles on the clock it was given rather than on `setTimeout`.
-      if (key === "" || at - pendingAt >= settleMs) {
+      // AN ARRIVAL IS URGENT; A DEPARTURE IS A RELEASE. A ref that is not yet a sink has
+      // no materialized output, so nothing can draw it — holding that back is holding back
+      // a PICTURE, which is the one thing this hysteresis may not do. A ref on its way OUT
+      // already has its output, its tile and its picture (§V455), and the compile that drops
+      // it only releases (T143 carry), so it is free to wait for the gesture to end.
+      let arriving = false;
+      for (const seenKey of lastSeen.keys()) {
+        if (!published.has(seenKey)) {
+          arriving = true;
+          break;
+        }
+      }
+      // Opening a document, an arrival, or a set that has already been still for the quiet
+      // window. The window is read off the store's OWN clock as well as off the timer, so a
+      // caller driving it faster or slower than wall time (an offline render, a test, a
+      // profiling harness) settles on the clock it was given rather than on `setTimeout`.
+      if (key === "" || arriving || at - pendingAt >= settleMs) {
         publish();
         return;
       }
