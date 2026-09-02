@@ -27,6 +27,7 @@ import {
 import { sourceReferenceForInput } from "../graph/source-references.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
+import { effectiveParameterSchema } from "../parameters/resolve.ts";
 import { referenceCyclesThrough } from "../graph/reference-cycles.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
 import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
@@ -397,7 +398,10 @@ function executeOperation(
       }
 
       const provided = operation.parameters ?? {};
-      const invalid = validateParameters(definition.parameters, provided, nodeId);
+      // T880: reflect from the params being provided (a customWgsl created with a shader gets
+      // that shader's controls), so creating a node with a reflected value does not abort.
+      const creationSchema = effectiveParameterSchema(definition, provided);
+      const invalid = validateParameters(creationSchema, provided, nodeId);
       if (invalid.length > 0) {
         run.diagnostics.push(...invalid);
         throw new PatchAbort();
@@ -423,7 +427,7 @@ function executeOperation(
         type: definition.type,
         definitionVersion: definition.version,
         position: { x: operation.position.x, y: operation.position.y },
-        parameters: { ...defaultParameters(definition.parameters), ...provided },
+        parameters: { ...defaultParameters(creationSchema), ...provided },
         // §V129: the label is the NAME — unique per graph, auto-numbered at creation
         // (`noise1`, `noise2`), which is what makes `op('name')` references resolvable.
         label: requested ?? uniqueNodeName(draft, nameBaseFor(definition.type)),
@@ -664,7 +668,11 @@ function executeOperation(
         );
         return;
       }
-      const invalid = validateParameters(definition.parameters, operation.parameters, node.id);
+      // T880: validate a value edit against the node's EFFECTIVE schema — a customWgsl's
+      // reflected controls (orbitSpeed, lightColor) are real parameters, so an edit to one
+      // must not be refused as "unknown" and the patch aborted (the owner's fixed sliders).
+      const schema = effectiveParameterSchema(definition, node.parameters);
+      const invalid = validateParameters(schema, operation.parameters, node.id);
       if (invalid.length > 0) {
         run.diagnostics.push(...invalid);
         throw new PatchAbort();
@@ -675,7 +683,7 @@ function executeOperation(
       // §V110: a bind cycle is refused at the moment it is written — checked on the
       // MERGED result, because the loop may close through a parameter this patch never
       // touched. The draft is discarded whole, so the document can never hold one.
-      const cycles = bindCycleDiagnostics(node, definition.parameters);
+      const cycles = bindCycleDiagnostics(node, schema);
       if (cycles.length > 0) {
         run.diagnostics.push(...cycles);
         throw new PatchAbort();

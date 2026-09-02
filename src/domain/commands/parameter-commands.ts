@@ -14,7 +14,7 @@ import type {
 import { nodeByName, nodeName } from "../graph/names.ts";
 import { pulseCommandInput } from "../parameters/pulse.ts";
 import { parameterReference, parseParameterReference } from "../parameters/reference.ts";
-import { resolveParameter } from "../parameters/resolve.ts";
+import { resolveParameter, effectiveParameterSchema } from "../parameters/resolve.ts";
 import {
   componentKey,
   componentNamesFor,
@@ -209,7 +209,10 @@ interface Located {
 function locate(context: CommandContext, input: ParameterRef): Located | RuntimeDiagnostic {
   const node = context.graph.nodes[input.nodeId];
   if (node === undefined) return refuse("parameter.node", `No node "${input.nodeId}".`);
-  const definition = context.registry.get(node.type)?.parameters[input.parameterKey];
+  // T880: a customWgsl's controls are reflected from its own shader, so validate the WRITE
+  // against the node's EFFECTIVE schema — otherwise a reflected param (orbitSpeed, lightColor)
+  // is "unknown" and every edit to it is refused, which is what the owner hit.
+  const definition = effectiveParameterSchema(context.registry.get(node.type), node.parameters)[input.parameterKey];
   if (definition === undefined) {
     return refuse(
       "parameter.unknown",
@@ -293,7 +296,7 @@ export function registerParameterCommands(
           diagnostics: [refuse("parameter.pulse.node", `No node "${input.nodeId}".`)],
         };
       }
-      const definition = context.registry.get(node.type)?.parameters[input.parameterKey];
+      const definition = effectiveParameterSchema(context.registry.get(node.type), node.parameters)[input.parameterKey];
       if (definition === undefined || definition.type !== "pulse") {
         return {
           status: "rejected",
@@ -357,7 +360,7 @@ export function registerParameterCommands(
       const found = locate(context, input);
       if (isDiagnostic(found)) return { status: "rejected", output: { text: null }, diagnostics: [found] };
       const resolved = resolveParameter(found.node, input.parameterKey, found.definition, {
-        schema: context.registry.get(found.node.type)?.parameters ?? {},
+        schema: effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters),
       });
       const text = valueText(resolved.value);
       // The EFFECTIVE value, not the stored one: copying from a parameter running an
