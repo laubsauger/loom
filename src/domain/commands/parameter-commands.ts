@@ -113,7 +113,7 @@ export interface ParameterSetModeInput extends ParameterRef {
 }
 
 /**
- * WHICH MEMBER of the copied payload a paste lands (conditional paste).
+ * WHICH MEMBER of the copied payload a paste lands (T1004).
  *
  * The owner's rule, and it is TouchDesigner's and Houdini's: **copy captures everything,
  * paste decides**. Deciding at copy time asks the user to predict what they will want two
@@ -164,7 +164,7 @@ declare module "../types/commands.ts" {
 }
 
 /**
- * What a copy put on the bus-local parameter clipboard (T246, conditional paste).
+ * What a copy put on the bus-local parameter clipboard (T246, T1004).
  *
  * Bus-local, exactly like the node clipboard in `editor-commands.ts`: it needs no
  * permission, it survives a headless run, and it is what makes Paste testable end to end.
@@ -325,7 +325,7 @@ const isDiagnostic = (value: Located | RuntimeDiagnostic): value is RuntimeDiagn
   "severity" in value;
 
 /**
- * Reads a parameter WHOLE — value, reference, active binding — in one place (conditional paste).
+ * Reads a parameter WHOLE — value, reference, active binding — in one place (T1004).
  *
  * One function behind all three copy commands, so "what does copying a parameter capture"
  * cannot answer differently depending on which row was clicked. The commands differ only
@@ -492,7 +492,7 @@ export function registerParameterCommands(
   });
 
   /**
-   * Fills the bus clipboard and mirrors ONE string outward (T246, conditional paste, §V148).
+   * Fills the bus clipboard and mirrors ONE string outward (T246, T1004, §V148).
    *
    * `mirror` picks which member leaves the app. That, and nothing else, is what separates
    * the three copy commands: the capture is identical, so a "Copy value" followed by a

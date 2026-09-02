@@ -525,7 +525,7 @@ describe("paste a value (T246)", () => {
 });
 
 /* ====================================================================================
- * Copy captures everything; PASTE decides (conditional paste — §V108, §V148, §V288)
+ * Copy captures everything; PASTE decides (T1004 — §V108, §V148, §V288)
  *
  * The owner's design point, and TouchDesigner's: deciding at COPY time asks the user to
  * predict what they will want when they get to the other node, and they cannot. So one
@@ -595,7 +595,7 @@ async function withRetainedExpression(
   );
 }
 
-describe("one copy, three pastes (conditional paste)", () => {
+describe("one copy, three pastes (T1004)", () => {
   it("lands the VALUE SNAPSHOT — the number, not the expression that made it", async () => {
     const harness = createMenuHarness();
     const source = await named(harness.bus, "blur1");
@@ -787,7 +787,7 @@ describe("one copy, three pastes (conditional paste)", () => {
   });
 });
 
-describe("a paste that cannot complete refuses BY NAME (§V288, conditional paste)", () => {
+describe("a paste that cannot complete refuses BY NAME (§V288, T1004)", () => {
   it("says the copied parameter is a constant rather than hiding Paste binding", async () => {
     const harness = createMenuHarness();
     const source = await named(harness.bus, "blur1");
@@ -920,7 +920,7 @@ describe("a paste that cannot complete refuses BY NAME (§V288, conditional past
   });
 });
 
-describe("a payload that crossed the system clipboard as TEXT (§V148, conditional paste)", () => {
+describe("a payload that crossed the system clipboard as TEXT (§V148, T1004)", () => {
   it("reads a reference back through the same command", async () => {
     const harness = createMenuHarness();
     const source = await named(harness.bus, "blur1");
