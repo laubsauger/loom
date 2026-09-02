@@ -126,6 +126,17 @@
           "portId": "points"
         }
       },
+      "e-place-skin": {
+        "id": "e-place-skin",
+        "source": {
+          "nodeId": "wallplace",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wallskin",
+          "portId": "points"
+        }
+      },
       "e-shot-cut": {
         "id": "e-shot-cut",
         "source": {
@@ -146,6 +157,17 @@
         "target": {
           "nodeId": "glow",
           "portId": "in1"
+        }
+      },
+      "e-skin-wall": {
+        "id": "e-skin-wall",
+        "source": {
+          "nodeId": "wallskin",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wall",
+          "portId": "points"
         }
       },
       "e-sky-studio": {
@@ -212,6 +234,28 @@
         "target": {
           "nodeId": "hold",
           "portId": "in"
+        }
+      },
+      "e-wallgrid-place": {
+        "id": "e-wallgrid-place",
+        "source": {
+          "nodeId": "wallgrid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wallplace",
+          "portId": "in"
+        }
+      },
+      "e-wallramp-skin": {
+        "id": "e-wallramp-skin",
+        "source": {
+          "nodeId": "wallramp",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wallskin",
+          "portId": "texture"
         }
       }
     },
@@ -421,7 +465,7 @@
             0.02,
             1
           ],
-          "dispersion": 0.06,
+          "dispersion": 0.03,
           "ior": 1.5,
           "roughness": 0.04,
           "thickness": 0.8
@@ -620,7 +664,7 @@
           "camera": "eye1",
           "environmentIntensity": 3.2,
           "lights": "key1",
-          "scenes": "solid1 fan1 shaft1",
+          "scenes": "wall1 solid1 fan1 shaft1",
           "showEnvironment": false
         },
         "position": {
@@ -825,6 +869,150 @@
           "y": 840
         },
         "type": "valueMath"
+      },
+      "wall": {
+        "definitionVersion": 1,
+        "id": "wall",
+        "label": "wall1",
+        "parameters": {
+          "material": "flare1",
+          "mode": "surface",
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "sample",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1240,
+          "y": -200
+        },
+        "type": "geometry"
+      },
+      "wallgrid": {
+        "definitionVersion": 1,
+        "id": "wallgrid",
+        "label": "wallgrid1",
+        "parameters": {
+          "cols": 48,
+          "count": 1296,
+          "rows": 27
+        },
+        "position": {
+          "x": -2200,
+          "y": -200
+        },
+        "type": "pointGrid"
+      },
+      "wallplace": {
+        "definitionVersion": 1,
+        "id": "wallplace",
+        "label": "wallplace1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 1296,
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* A plane behind the prism, wide enough for the 26-degree lens at z = -2.2. XY stays the\n     clip square the texture bridge reads back (§V801) — x runs past ±1 and the sample\n     CLAMPS, which a horizontally-constant gradient never shows. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  q.position = vec3f((u * 2.0 - 1.0) * 3.9, (v * 2.0 - 1.0) * 2.2, -2.2);\n  return q;\n}",
+          "seed": 3
+        },
+        "position": {
+          "x": -1880,
+          "y": -200
+        },
+        "type": "pointKernel"
+      },
+      "wallramp": {
+        "definitionVersion": 2,
+        "id": "wallramp",
+        "label": "wallramp1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.03,
+                0.036,
+                0.062,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.16,
+                0.18,
+                0.26,
+                1
+              ],
+              "position": 0.42
+            },
+            {
+              "color": [
+                0.34,
+                0.3,
+                0.26,
+                1
+              ],
+              "position": 0.62
+            },
+            {
+              "color": [
+                0.11,
+                0.1,
+                0.1,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                0.012,
+                0.012,
+                0.02,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -2200,
+          "y": -420
+        },
+        "resolution": {
+          "height": 256,
+          "mode": "fixed",
+          "width": 64
+        },
+        "type": "ramp"
+      },
+      "wallskin": {
+        "definitionVersion": 1,
+        "id": "wallskin",
+        "label": "wallskin1",
+        "parameters": {
+          "count": 1296
+        },
+        "position": {
+          "x": -1560,
+          "y": -200
+        },
+        "type": "textureToAttribute"
       }
     },
     "revision": 1

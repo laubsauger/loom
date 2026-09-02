@@ -66,7 +66,11 @@ describe("E13 Prism", () => {
     /* T758: the prism's own draw moved to the TRANSMISSION phase (materialGlass draws
        after the opaques it samples), so the scene phase carries exactly the two beam
        draws and the body is found at its glass id. */
-    const beams = sceneDraws(plan);
+    /* T918 added the WALL — an opaque backdrop draw in the same scene phase — so the beam
+       draws are the ones reading the optics kernel's buffers, filtered by source. */
+    const beams = sceneDraws(plan).filter((pass) =>
+      buffersOf(pass).get("positions") === "scratch:optics:position",
+    );
     expect(beams).toHaveLength(2);
     const surface = plan.passes.find(
       (pass): pass is DrawPassDescriptor =>
@@ -161,7 +165,7 @@ describe("E13 Prism", () => {
         pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
     ) as DrawPassDescriptor;
     const uniforms = uniformsOf(surface);
-    expect(uniforms["glassA"]).toEqual([1.5, 0.04, 0.8, 0.06]);
+    expect(uniforms["glassA"]).toEqual([1.5, 0.04, 0.8, 0.03]);
     expect((uniforms["glassB"] as readonly number[])[3]).toBeCloseTo(3.2, 6);
     expect(uniforms["light0Meta"]).toBeUndefined();
     expect(uniforms["ambientColor"]).toBeUndefined();

@@ -195,6 +195,28 @@ const PRISM_BANDS = 61;
  * from the axis, and with d = RC − 2ρ that is RC/2 for EVERY ρ — a sharp triangle's
  * inradius. That identity is why `optics1` can share this geometry from one constant.
  */
+/**
+ * T918 — THE WALL: an in-scene backdrop plane, the reference pipeline's own structure
+ * ("Backdrop render pass" before the glass draws). materialGlass is SCREEN-SPACE
+ * transmission — it refracts what the render already drew behind the surface — so a glass
+ * body against a void refracts nothing and reads as an outline however correct the
+ * material is. A dim structured wall IN the scene gives the transmission something to
+ * carry, gives the eye the body's silhouette as a dark shape against light, and leaves
+ * the environment equirect exactly what §V640 measured it as: the rim instrument.
+ */
+const WALL_COLS = 48;
+const WALL_ROWS = 27;
+const WALL_PLACE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* A plane behind the prism, wide enough for the 26-degree lens at z = -2.2. XY stays the
+     clip square the texture bridge reads back (§V801) — x runs past ±1 and the sample
+     CLAMPS, which a horizontally-constant gradient never shows. */
+  let u = f32(ctx.dim.i) / f32(ctx.dim.cols - 1u);
+  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
+  q.position = vec3f((u * 2.0 - 1.0) * 3.9, (v * 2.0 - 1.0) * 2.2, -2.2);
+  return q;
+}`;
+
 const PRISM_FORM_KERNEL = `const PI: f32 = 3.14159265358979323846;
 const TAU: f32 = 6.28318530717958647692;
 const RC: f32 = ${PRISM_RC};
@@ -304,6 +326,28 @@ export const prismDocument = document(
       node("urge", "valueMath", [-920, 840], { operation: "multiply", operand: 1 }, { label: "urge1" }),
       node("hold", "valueLag", [-600, 840], { lag: 0.02, releaseRatio: 30 }, { label: "hold1" }),
 
+      // ---- the wall (T918) --------------------------------------------------------
+      node("wallramp", "ramp", [-2200, -420], {
+        type: "vertical", interp: "smooth", phase: 0, period: 1,
+        stops: [
+          { position: 0.00, color: [0.030, 0.036, 0.062, 1] },
+          { position: 0.42, color: [0.16, 0.18, 0.26, 1] },
+          { position: 0.62, color: [0.34, 0.30, 0.26, 1] },
+          { position: 0.80, color: [0.11, 0.10, 0.10, 1] },
+          { position: 1.00, color: [0.012, 0.012, 0.020, 1] },
+        ],
+      }, { label: "wallramp1", definitionVersion: 2, resolution: { mode: "fixed", width: 64, height: 256 } }),
+      node("wallgrid", "pointGrid", [-2200, -200], { count: WALL_COLS * WALL_ROWS, cols: WALL_COLS, rows: WALL_ROWS }, { label: "wallgrid1" }),
+      node("wallplace", "pointKernel", [-1880, -200], {
+        capacity: WALL_COLS * WALL_ROWS, seed: 3,
+        attributes: JSON.stringify([{ name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] }]),
+        kernel: WALL_PLACE_KERNEL,
+      }, { label: "wallplace1" }),
+      node("wallskin", "textureToAttribute", [-1560, -200], { count: WALL_COLS * WALL_ROWS }, { label: "wallskin1" }),
+      node("wall", "geometry", [-1240, -200], {
+        mode: "surface", material: "flare1", tint: [1, 1, 1, 1],
+      }, { label: "wall1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } } }),
+
       // ---- the glass -------------------------------------------------------------
       node("bar", "pointTube", [-1880, -420], { count: PRISM_COLS * PRISM_ROWS, cols: PRISM_COLS, rows: PRISM_ROWS }, { label: "bar1" }),
       node("form", "pointKernel", [-1560, -420], {
@@ -323,7 +367,11 @@ export const prismDocument = document(
          physics under a different name: the glass model's Schlick fresnel against the
          wired environment peaks at grazing exactly as the phong envFresnel did. */
       node("glass", "materialGlass", [-1560, -640], {
-        ior: 1.5, roughness: 0.04, thickness: 0.8, absorption: [0.06, 0.05, 0.02, 1], dispersion: 0.06,
+        // T918: ONE dispersion model. The optics kernel owns the spectrum (value2 = 0.03,
+        // §T913's dense flint); the body's screen-space fringing follows the SAME number, so
+        // the material cannot paint a second, stronger rainbow over the traced one — the
+        // 0.06 here was the lead suspect for "the ray is rainbow before it reaches the glass".
+        ior: 1.5, roughness: 0.04, thickness: 0.8, absorption: [0.06, 0.05, 0.02, 1], dispersion: 0.03,
       }, { label: "glass1" }),
       node("solid", "geometry", [-1240, -420], { mode: "surface", material: "glass1", tint: [1, 1, 1, 1] }, { label: "solid1" }),
 
@@ -416,7 +464,7 @@ export const prismDocument = document(
         eye: [0.45, -0.36, 6.6], lookAt: [-0.05, -0.53, 0], fov: 26, near: 0.1, far: 40, ortho: false,
       }, { label: "eye1", parameters: { "eye.x": 0.45 } }),
       node("shot", "render", [-920, -420], {
-        scenes: "solid1 fan1 shaft1", camera: "eye1", lights: "key1",
+        scenes: "wall1 solid1 fan1 shaft1", camera: "eye1", lights: "key1",
         // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the
         // physical terms here are a 4% head-on Fresnel and a 0.0009 albedo, so any
         // ambient worth the name drowns them and the glass goes to grey slate.
@@ -436,6 +484,10 @@ export const prismDocument = document(
       node("out", "output", [680, -420], {}, { label: "out1" }),
     ],
     [
+      edge("e-wallgrid-place", ["wallgrid", "out"], ["wallplace", "in"]),
+      edge("e-place-skin", ["wallplace", "out"], ["wallskin", "points"]),
+      edge("e-wallramp-skin", ["wallramp", "out"], ["wallskin", "texture"]),
+      edge("e-skin-wall", ["wallskin", "out"], ["wall", "points"]),
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
       edge("e-follow-stir", ["follow", "out"], ["stir", "in"]),
       // One source into BOTH operands: `urge1` multiplies the speed by itself.

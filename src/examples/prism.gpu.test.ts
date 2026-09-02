@@ -168,18 +168,29 @@ function fanRun(frame: Frame, x: number, threshold: number): { lo: number; hi: n
 const COLUMN = 240;
 const FAN_THRESHOLD = 10;
 
+/* T918: the environment draws as the BACKDROP in the shipped picture. The optics claims
+ * below are about the BEAMS, so every solo helper also hides the backdrop — the same
+ * against-black measurement they were derived on — while the environment's own gate
+ * (further down) measures the backdrop deliberately. */
+const soloBackdropOff = (graph: GraphDocument): void => {
+  param(graph, "shot", "showEnvironment", false);
+};
+
 /** The prism alone, no beams, no bloom — the mask every geometry claim is measured on. */
 const soloPrism = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "solid1");
   muteBloom(graph);
+  soloBackdropOff(graph);
 };
 const soloFan = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "fan1");
   muteBloom(graph);
+  soloBackdropOff(graph);
 };
 const soloShaft = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "shaft1");
   muteBloom(graph);
+  soloBackdropOff(graph);
 };
 
 /* Dawn is REQUIRED, never skipped: a pixel claim that quietly does not run is §V461's
