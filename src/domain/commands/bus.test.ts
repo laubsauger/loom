@@ -95,6 +95,8 @@ describe("command bus — registration surface (§V39)", () => {
       // T353: the preview PIN, split off from the switch when `P` started meaning on/off.
       "node.togglePin",
       "node.toggleRender",
+      // Conditional paste: one copy that captures value + reference + binding; paste picks.
+      "parameter.copy",
       "parameter.copyReference",
       "parameter.copyValue",
       "parameter.paste",

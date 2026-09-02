@@ -1536,7 +1536,7 @@ describe("the parameter context menu is reachable (T246, §V78, §V193)", () => 
 
     // Every command the menu names is LIVE — the point of §V78 is that the menu is a
     // view of the command set, not a list of intentions.
-    for (const name of ["parameter.copyValue", "parameter.copyReference", "parameter.paste", "parameter.reset", "parameter.setMode"]) {
+    for (const name of ["parameter.copy", "parameter.copyValue", "parameter.copyReference", "parameter.paste", "parameter.reset", "parameter.setMode"]) {
       expect(runtime.bus.hasCommand(name), name).toBe(true);
     }
   });

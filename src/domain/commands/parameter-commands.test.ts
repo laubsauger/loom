@@ -524,6 +524,483 @@ describe("paste a value (T246)", () => {
   });
 });
 
+/* ====================================================================================
+ * Copy captures everything; PASTE decides (conditional paste — §V108, §V148, §V288)
+ *
+ * The owner's design point, and TouchDesigner's: deciding at COPY time asks the user to
+ * predict what they will want when they get to the other node, and they cannot. So one
+ * copy captures the value snapshot, the reference and the active binding, and the three
+ * paste rows each land a DIFFERENT member of that one payload.
+ *
+ * Every test below asserts WHICH MEMBER landed, never merely that a paste happened: an
+ * implementation that pasted the value where the reference belongs stores something, and
+ * a test asserting `status === "applied"` would sign it off.
+ * ================================================================================= */
+
+/** A parameter running `3 + 4` — worth 7, carrying an expression binding. */
+async function withExpressionOn(
+  harness: Harness,
+  nodeId: string,
+  key: string,
+  source: string,
+): Promise<void> {
+  await harness.bus.execute(
+    "graph.applyPatch",
+    patch(harness.bus.store.getRevision(), [
+      {
+        op: "setParameters",
+        nodeId,
+        parameters: {
+          [key]: {
+            mode: "expression",
+            bindings: {
+              expression: { kind: "expression", source },
+              static: { kind: "static", value: 2 },
+            },
+          },
+        },
+      },
+    ]),
+    context,
+  );
+}
+
+/**
+ * A target that already HOLDS something in a mode it is not running — the §V108 corner
+ * mark's promise, and the thing every paste below must leave standing.
+ */
+async function withRetainedExpression(
+  harness: Harness,
+  nodeId: string,
+  key: string,
+): Promise<void> {
+  await harness.bus.execute(
+    "graph.applyPatch",
+    patch(harness.bus.store.getRevision(), [
+      {
+        op: "setParameters",
+        nodeId,
+        parameters: {
+          [key]: {
+            mode: "static",
+            bindings: {
+              static: { kind: "static", value: 5 },
+              expression: { kind: "expression", source: "40 + 2" },
+            },
+          },
+        },
+      },
+    ]),
+    context,
+  );
+}
+
+describe("one copy, three pastes (conditional paste)", () => {
+  it("lands the VALUE SNAPSHOT — the number, not the expression that made it", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await withExpressionOn(harness, source, "radius", "3 + 4");
+    await withRetainedExpression(harness, target, "amount");
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    const pasted = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "value" },
+      context,
+    );
+    expect(pasted.status).toBe("applied");
+
+    // 7 — what the source was WORTH at copy time. Not "3 + 4", which is what a paste of
+    // the binding would have landed, and not `op('blur1').par.radius`, which is what a
+    // paste of the reference would have landed. Those are the two swaps this pins down.
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      mode: "static",
+      bindings: { static: { kind: "static", value: 7 } },
+    });
+    // §V108: the target's retained expression is STILL THERE. A paste that wiped it
+    // would make the corner mark a lie exactly where a user experiments most.
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      bindings: { expression: { kind: "expression", source: "40 + 2" } },
+    });
+    // And it is a SNAPSHOT: moving the source leaves the pasted number where it was.
+    await withExpressionOn(harness, source, "radius", "3 + 40");
+    const node = harness.bus.store.getGraph().nodes[target];
+    if (node === undefined) throw new Error("the node vanished");
+    expect(resolveParameterSchema(node, menuNode.parameters).get("amount")?.value).toBe(7);
+  });
+
+  it("lands the REFERENCE — a live pointer, not the number it was worth", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await withExpressionOn(harness, source, "radius", "3 + 4");
+    await withRetainedExpression(harness, target, "amount");
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "reference" },
+      context,
+    );
+
+    // `op('blur1').par.radius`, NOT `3 + 4` (the binding) and NOT `7` (the value).
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { kind: "expression", source: "op('blur1').par.radius" } },
+    });
+    // §V108: the target's own retained static rode through the mode change.
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      bindings: { static: { kind: "static", value: 5 } },
+    });
+
+    // The difference that makes it a reference: the target MOVES when the source does.
+    const read = (): unknown => {
+      const graph = harness.bus.store.getGraph();
+      const node = graph.nodes[target];
+      if (node === undefined) throw new Error("the node vanished");
+      return resolveParameterSchema(node, menuNode.parameters, {
+        nodes: createNodeReferenceReader({ graph, schemaOf: () => menuNode.parameters }),
+      }).get("amount")?.value;
+    };
+    expect(read()).toBe(7);
+    await withExpressionOn(harness, source, "radius", "3 + 40");
+    expect(read()).toBe(43);
+  });
+
+  it("lands the BINDING — the source's own expression, evaluated here", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await withExpressionOn(harness, source, "radius", "3 + 4");
+    await withRetainedExpression(harness, target, "amount");
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "binding" },
+      context,
+    );
+
+    // The SOURCE TEXT `3 + 4`, not the reference and not the number. This is the member
+    // that is a copy of the authoring rather than of the result.
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { kind: "expression", source: "3 + 4" } },
+    });
+    // §V108: only the mode being pasted is overwritten; the retained static survives.
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      bindings: { static: { kind: "static", value: 5 } },
+    });
+
+    // ...and it is a COPY of the authoring, so it does NOT track the source.
+    await withExpressionOn(harness, source, "radius", "3 + 40");
+    const node = harness.bus.store.getGraph().nodes[target];
+    if (node === undefined) throw new Error("the node vanished");
+    expect(resolveParameterSchema(node, menuNode.parameters).get("amount")?.value).toBe(7);
+  });
+
+  it("carries all three members whichever COPY row was clicked", async () => {
+    // The design point itself: "Copy value" then "Paste reference" works, because the
+    // decision belongs to paste. Only the SYSTEM clipboard string was chosen at copy.
+    const copied: string[] = [];
+    const harness = createMenuHarness(copied);
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await withExpressionOn(harness, source, "radius", "3 + 4");
+
+    await harness.bus.execute("parameter.copyValue", { nodeId: source, parameterKey: "radius" }, context);
+    // One string went out, and it is the VALUE — that choice is still made at copy time,
+    // because a system clipboard holds exactly one.
+    expect(copied).toEqual(["7"]);
+
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "binding" },
+      context,
+    );
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { kind: "expression", source: "3 + 4" } },
+    });
+  });
+
+  it("mirrors the REFERENCE outward, so the copied parameter can leave the app (§V148)", async () => {
+    const copied: string[] = [];
+    const harness = createMenuHarness(copied);
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute("parameter.copy", { nodeId, parameterKey: "radius" }, context);
+    expect(copied).toEqual(["op('blur1').par.radius"]);
+  });
+
+  it("still captures from an UNNAMED node, mirroring the value it cannot reference", async () => {
+    // `copyReference` refuses here (§V127) because the string is its whole product.
+    // `parameter.copy` captured a value and a binding regardless, so refusing would
+    // throw away two members over the absence of a third.
+    const copied: string[] = [];
+    const harness = createMenuHarness(copied);
+    const nodeId = await addNode(harness.bus, "test.menu");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setNodeLabel", nodeId, label: null },
+        { op: "setParameters", nodeId, parameters: { radius: 33 } },
+      ]),
+      context,
+    );
+
+    const copy = await harness.bus.execute("parameter.copy", { nodeId, parameterKey: "radius" }, context);
+    expect(copy.status).toBe("applied");
+    expect(copied).toEqual(["33"]);
+
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", as: "value" },
+      context,
+    );
+    expect(storedOf(harness, nodeId, "amount")).toBe(33);
+  });
+
+  it("keeps ONE answer for a same-node reference: the bind that resolves locally", async () => {
+    // `as: "reference"` and the legacy default run the same branch (§V109) — a sibling
+    // reference is stored as the bind that already resolves everywhere (§V61).
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { radius: 12 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute("parameter.copy", { nodeId, parameterKey: "radius" }, context);
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", as: "reference" },
+      context,
+    );
+    expect(storedOf(harness, nodeId, "amount")).toMatchObject({
+      mode: "bind",
+      bindings: { bind: { kind: "bind", ref: "radius" } },
+    });
+  });
+});
+
+describe("a paste that cannot complete refuses BY NAME (§V288, conditional paste)", () => {
+  it("says the copied parameter is a constant rather than hiding Paste binding", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId: source, parameters: { radius: 11 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "binding" },
+      context,
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.noBinding");
+    // The refusal SAYS WHAT IT NEEDED, which is the whole difference from a missing row.
+    expect(result.output.diagnostics[0]?.message).toContain("constant");
+    // ...and nothing was written: `amount` is still the manifest default.
+    expect(storedOf(harness, target, "amount")).toBe(1);
+  });
+
+  it("says an unnamed source cannot be referenced rather than hiding Paste reference", async () => {
+    const harness = createMenuHarness();
+    const source = await addNode(harness.bus, "test.menu");
+    const target = await named(harness.bus, "blur2");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [{ op: "setNodeLabel", nodeId: source, label: null }]),
+      context,
+    );
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "reference" },
+      context,
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.noReference");
+    expect(result.output.diagnostics[0]?.suggestion).toContain("Name the node");
+    expect(storedOf(harness, target, "amount")).toBe(1);
+  });
+
+  it("refuses a REFERENCE that would have to reshape a colour into a number", async () => {
+    // The type question the value path already answers, asked of the pointer paths: an
+    // expression resolves to ONE value of the target's shape, so `op('x').par.tint` on a
+    // number is a category error — and it would otherwise surface much later, as a
+    // diagnostic on a parameter the user does not remember touching.
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "tint" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "reference" },
+      context,
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.shape");
+    // Names BOTH sides and the fix (§V113's component reference).
+    expect(result.output.diagnostics[0]?.message).toContain("tint");
+    expect(result.output.diagnostics[0]?.suggestion).toContain("op('blur1').par.tint.r");
+    expect(storedOf(harness, target, "amount")).toBe(1);
+  });
+
+  it("refuses a BINDING of the wrong shape too, not only a reference", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        {
+          op: "setParameters",
+          nodeId: source,
+          parameters: {
+            tint: { mode: "bind", bindings: { bind: { kind: "bind", ref: "other" } } },
+          },
+        },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "tint" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "binding" },
+      context,
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.shape");
+  });
+
+  it("still refuses a VALUE the target's manifest cannot hold (unchanged, T246)", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    await harness.bus.execute("parameter.copy", { nodeId, parameterKey: "tint" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "radius", as: "value" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.type");
+  });
+
+  it("allows a same-shape paste across types, because an expression really does coerce", async () => {
+    // The guard is arity, not identity: `radius` → `amount` are both scalars and the
+    // paste lands. A guard that also swallowed this would be testing nothing legitimate.
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await harness.bus.execute("parameter.copy", { nodeId: source, parameterKey: "radius" }, context);
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "reference" },
+      context,
+    );
+    expect(result.status).toBe("applied");
+  });
+});
+
+describe("a payload that crossed the system clipboard as TEXT (§V148, conditional paste)", () => {
+  it("reads a reference back through the same command", async () => {
+    const harness = createMenuHarness();
+    const source = await named(harness.bus, "blur1");
+    const target = await named(harness.bus, "blur2");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId: source, parameters: { radius: 9 } },
+      ]),
+      context,
+    );
+
+    await harness.bus.execute(
+      "parameter.paste",
+      { nodeId: target, parameterKey: "amount", as: "reference", text: " op('blur1').par.radius " },
+      context,
+    );
+    expect(storedOf(harness, target, "amount")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { kind: "expression", source: "op('blur1').par.radius" } },
+    });
+  });
+
+  it("refuses malformed JSON cleanly instead of throwing", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", as: "value", text: "[1, 2," },
+      context,
+    );
+    // `JSON.parse` throws on this; the command must convert that into a refusal, because
+    // a paste of someone else's clipboard is the ordinary case, not an exceptional one.
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.clipboard.unreadable");
+  });
+
+  it("refuses a FOREIGN payload by type rather than storing it", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", as: "value", text: '{"kind":"something/else","v":1}' },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.type");
+    // Untouched: still the manifest default, not the JSON text.
+    expect(storedOf(harness, nodeId, "amount")).toBe(1);
+  });
+
+  it("says text carries no binding rather than pasting the string as one", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "amount", as: "binding", text: "op('blur1').par.radius" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.noBinding");
+  });
+
+  it("refuses to land a reference STRING as a literal value", async () => {
+    // The silent-success failure this module's header is about: `op('a').par.b` is also a
+    // perfectly good string, and a `Title` that says so references nothing.
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "blur1");
+    const result = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "title", as: "value", text: "op('blur1').par.radius" },
+      context,
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.output.diagnostics[0]?.code).toBe("parameter.paste.textIsReference");
+    // The literal `op('blur1').par.radius` did NOT land in the string parameter.
+    expect(storedOf(harness, nodeId, "title")).toBe("");
+  });
+});
+
 describe("reset restores value AND mode (§V149)", () => {
   async function withExpression(harness: Harness, nodeId: string): Promise<void> {
     await harness.bus.execute(

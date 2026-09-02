@@ -4,6 +4,7 @@ import type { GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type {
+  ParameterBinding,
   ParameterDefinition,
   ParameterMode,
   ParameterSlot,
@@ -111,6 +112,21 @@ export interface ParameterSetModeInput extends ParameterRef {
   mode: ParameterMode;
 }
 
+/**
+ * WHICH MEMBER of the copied payload a paste lands (conditional paste).
+ *
+ * The owner's rule, and it is TouchDesigner's and Houdini's: **copy captures everything,
+ * paste decides**. Deciding at copy time asks the user to predict what they will want two
+ * minutes from now, and they cannot — they copy a parameter, walk to another node, and
+ * only THERE discover whether they wanted the number, a live reference, or the expression
+ * itself. So one copy fills all three members and this input picks one at paste time.
+ *
+ * Absent means "whatever the copy put on the SYSTEM clipboard" — the legacy behaviour and
+ * the only honest default for a paste that arrived as text from outside the app, where a
+ * string is all there is.
+ */
+export type ParameterPasteMode = "value" | "reference" | "binding";
+
 export interface ParameterPasteInput extends ParameterRef {
   /**
    * Text to paste instead of the bus clipboard.
@@ -122,15 +138,23 @@ export interface ParameterPasteInput extends ParameterRef {
    * One paste path, whichever door the text came through.
    */
   text?: string;
+  /** Which member of the copied payload to land. Absent = what the copy mirrored out. */
+  as?: ParameterPasteMode;
 }
 
 declare module "../types/commands.ts" {
   interface CommandMap {
+    /**
+     * Copy the parameter WHOLE — value snapshot, reference, and its active binding — so
+     * paste can choose between them. Mirrors the reference outward when the node has a
+     * name, the value text when it does not.
+     */
+    "parameter.copy": { input: ParameterRef; output: ParameterCopyOutput };
     /** Copy the parameter's effective value as text. */
     "parameter.copyValue": { input: ParameterRef; output: ParameterCopyOutput };
     /** Copy a REFERENCE to the parameter — `op(\'noise1\').par.period` (§V148). */
     "parameter.copyReference": { input: ParameterRef; output: ParameterCopyOutput };
-    /** Paste whatever was copied onto this parameter. */
+    /** Paste one member of what was copied onto this parameter. */
     "parameter.paste": { input: ParameterPasteInput; output: GraphPatchResult };
     /** Restore the manifest default AND the Constant mode (§V149). */
     "parameter.reset": { input: ParameterRef; output: ParameterResetOutput };
@@ -140,16 +164,70 @@ declare module "../types/commands.ts" {
 }
 
 /**
- * What a copy put on the bus-local parameter clipboard.
+ * What a copy put on the bus-local parameter clipboard (T246, conditional paste).
  *
  * Bus-local, exactly like the node clipboard in `editor-commands.ts`: it needs no
  * permission, it survives a headless run, and it is what makes Paste testable end to end.
- * The editor mirrors `text` to the system clipboard on top of this, so a reference can
+ * The editor mirrors ONE string to the system clipboard on top of this, so a reference can
  * also be pasted by hand into an expression field — which is what §V148 is really about.
+ *
+ * ## Why every member is captured, always
+ *
+ * The system clipboard holds one string, so mirroring outward is a choice that HAS to be
+ * made at copy time — that is what still separates `copyValue` from `copyReference`. The
+ * bus-local payload has no such limit, so it carries all three members whichever copy
+ * command filled it, and `parameter.paste`'s `as` picks one. `kind` records only which
+ * string went OUT, and is therefore the right default when nobody said `as`.
+ *
+ * A payload built from pasted TEXT is the degenerate case: text is one string, so
+ * `binding` is null and `arity` is unknown. Both are stated rather than guessed — a paste
+ * that cannot check a shape must say it did not, not pretend it did.
  */
-type ParameterClipboard =
-  | { kind: "value"; text: string; value: ParameterValue }
-  | { kind: "reference"; text: string; nodeName: string; parameterKey: string };
+interface ParameterClipboard {
+  /** Which member the copy mirrored to the system clipboard. The default paste. */
+  kind: "value" | "reference";
+  /** What the parameter was WORTH when it was copied. Always captured. */
+  value: ParameterValue;
+  /** That value written down — what `copyValue` mirrors out. */
+  valueText: string;
+  /** `op('blur1').par.radius`, or null when the source node has no name (§V127). */
+  reference: string | null;
+  /** The source's name and key, so a reference paste can tell same-node from cross-node. */
+  nodeName: string | null;
+  parameterKey: string;
+  /**
+   * The source slot's ACTIVE binding, or null when the source is a plain constant — a
+   * constant has no binding to paste, and "paste binding" says so by name rather than
+   * quietly landing the number (§V288).
+   */
+  binding: ParameterBinding | null;
+  /** How many numbers the source carries (§V113). Null when the source is unknown text. */
+  arity: number | null;
+  /** The source's declared type, for a refusal that can name both sides. */
+  typeName: string | null;
+}
+
+/**
+ * How many numbers a parameter carries — the only shape question a reference or a binding
+ * paste can honestly answer ahead of time.
+ *
+ * An expression and a bind both resolve to ONE value of the target's shape, so a colour's
+ * reference dropped on a number is not a narrowing the resolver can perform: it is a
+ * category error that would surface later as a diagnostic on a parameter the user did not
+ * think they had broken. Comparing arity catches exactly that case and nothing else — the
+ * scalar-to-scalar pastes (number → boolean → enum) stay legal, because an expression
+ * genuinely does coerce across them (§V107).
+ */
+function parameterArity(definition: ParameterDefinition): number {
+  switch (definition.type) {
+    case "color":
+      return 4;
+    case "vector":
+      return definition.size;
+    default:
+      return 1;
+  }
+}
 
 /** How a copied value is written down. Arrays and stops go through JSON; scalars do not. */
 function valueText(value: ParameterValue): string {
@@ -188,17 +266,37 @@ function parseValueText(text: string): { ok: true; value: ParameterValue } | { o
  * a paste that looks like it worked and references nothing.
  */
 function clipboardFromText(text: string): ParameterClipboard | null {
-  const reference = parseParameterReference(text);
+  const trimmed = text.trim();
+  const reference = parseParameterReference(trimmed);
   if (reference !== null) {
     return {
       kind: "reference",
-      text: text.trim(),
+      // A reference names a value it has not read: the string is all the text carried,
+      // so the "value snapshot" is that string and a `paste as value` of it is refused
+      // by name below rather than landing `op('a').par.b` as a literal.
+      value: trimmed,
+      valueText: trimmed,
+      reference: trimmed,
       nodeName: reference.nodeName,
       parameterKey: reference.parameterKey,
+      binding: null,
+      arity: null,
+      typeName: null,
     };
   }
-  const value = parseValueText(text);
-  return value.ok ? { kind: "value", text: text.trim(), value: value.value } : null;
+  const value = parseValueText(trimmed);
+  if (!value.ok) return null;
+  return {
+    kind: "value",
+    value: value.value,
+    valueText: trimmed,
+    reference: null,
+    nodeName: null,
+    parameterKey: "",
+    binding: null,
+    arity: null,
+    typeName: null,
+  };
 }
 
 interface Located {
@@ -225,6 +323,46 @@ function locate(context: CommandContext, input: ParameterRef): Located | Runtime
 
 const isDiagnostic = (value: Located | RuntimeDiagnostic): value is RuntimeDiagnostic =>
   "severity" in value;
+
+/**
+ * Reads a parameter WHOLE — value, reference, active binding — in one place (conditional paste).
+ *
+ * One function behind all three copy commands, so "what does copying a parameter capture"
+ * cannot answer differently depending on which row was clicked. The commands differ only
+ * in which string they mirror to the system clipboard, because that is the only place a
+ * choice is genuinely forced (one string fits).
+ */
+function capture(
+  context: CommandContext,
+  key: string,
+  found: Located,
+  kind: "value" | "reference",
+): ParameterClipboard {
+  const resolved = resolveParameter(found.node, key, found.definition, {
+    schema: effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters),
+  });
+  const name = nodeName(found.node);
+  const stored = found.node.parameters[key];
+  const slot = isParameterSlot(stored) ? stored : null;
+  // The ACTIVE binding only. A retained-but-inactive expression is what the SOURCE chose
+  // not to be running; pasting it would hand the target a payload the source itself is
+  // not using, which is not what "copy this parameter" means to anybody.
+  const active = slot !== null && slot.mode !== "static" ? (slot.bindings[slot.mode] ?? null) : null;
+  return {
+    kind,
+    // The EFFECTIVE value, not the stored one: copying from a parameter running an
+    // expression should give you the number you can see, which is the only reason
+    // anyone copies a value off a driven parameter.
+    value: resolved.value,
+    valueText: valueText(resolved.value),
+    reference: name === undefined ? null : parameterReference(name, key),
+    nodeName: name ?? null,
+    parameterKey: key,
+    binding: active,
+    arity: parameterArity(found.definition),
+    typeName: found.definition.type,
+  };
+}
 
 const rejectedPatch = (revision: number, diagnostics: RuntimeDiagnostic[]): GraphPatchResult => ({
   status: "rejected",
@@ -353,41 +491,28 @@ export function registerParameterCommands(
     rejectionOutput: () => ({ fired: null }),
   });
 
-  bus.registerCommand({
-    name: "parameter.copyValue",
-    description: "Copy a parameter's effective value as text (T246).",
-    handler: (input, context) => {
+  /**
+   * Fills the bus clipboard and mirrors ONE string outward (T246, conditional paste, §V148).
+   *
+   * `mirror` picks which member leaves the app. That, and nothing else, is what separates
+   * the three copy commands: the capture is identical, so a "Copy value" followed by a
+   * "Paste reference" still works — which is the whole point of deferring the decision.
+   */
+  const copyHandler =
+    (kind: "value" | "reference", mirror: (payload: ParameterClipboard) => string | null) =>
+    (input: ParameterRef, context: CommandContext) => {
       const found = locate(context, input);
-      if (isDiagnostic(found)) return { status: "rejected", output: { text: null }, diagnostics: [found] };
-      const resolved = resolveParameter(found.node, input.parameterKey, found.definition, {
-        schema: effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters),
-      });
-      const text = valueText(resolved.value);
-      // The EFFECTIVE value, not the stored one: copying from a parameter running an
-      // expression should give you the number you can see, which is the only reason
-      // anyone copies a value off a driven parameter.
-      if (!context.dryRun) {
-        clipboard = { kind: "value", text, value: resolved.value };
-        options.writeClipboard?.(text);
+      if (isDiagnostic(found)) {
+        return { status: "rejected" as const, output: { text: null }, diagnostics: [found] };
       }
-      return { status: context.dryRun ? "validated" : "applied", output: { text } };
-    },
-    rejectionOutput: () => ({ text: null }),
-  });
-
-  bus.registerCommand({
-    name: "parameter.copyReference",
-    description: "Copy a reference that pastes into an expression (T246, §V148).",
-    handler: (input, context) => {
-      const found = locate(context, input);
-      if (isDiagnostic(found)) return { status: "rejected", output: { text: null }, diagnostics: [found] };
-      const name = nodeName(found.node);
-      if (name === undefined) {
+      const payload = capture(context, input.parameterKey, found, kind);
+      const text = mirror(payload);
+      if (text === null) {
         // §V127: `op('…')` resolves because a name is unique in its network. A node with
         // no name has nothing to reference, and inventing one here would produce a string
         // that stops working the moment the user names the node themselves.
         return {
-          status: "rejected",
+          status: "rejected" as const,
           output: { text: null },
           diagnostics: [
             refuse(
@@ -399,19 +524,44 @@ export function registerParameterCommands(
           ],
         };
       }
-      const text = parameterReference(name, input.parameterKey);
       if (!context.dryRun) {
-        clipboard = { kind: "reference", text, nodeName: name, parameterKey: input.parameterKey };
+        clipboard = payload;
         options.writeClipboard?.(text);
       }
-      return { status: context.dryRun ? "validated" : "applied", output: { text } };
-    },
+      return { status: context.dryRun ? ("validated" as const) : ("applied" as const), output: { text } };
+    };
+
+  bus.registerCommand({
+    name: "parameter.copy",
+    description:
+      "Copy a parameter WHOLE — value, reference and binding — so paste can choose.",
+    // The reference is what a user most often wants out in the world (§V148); a node with
+    // no name has none, and the value text is then the honest thing to mirror rather than
+    // a refusal — this command captured everything either way.
+    handler: copyHandler("reference", (payload) => payload.reference ?? payload.valueText),
+    rejectionOutput: () => ({ text: null }),
+  });
+
+  bus.registerCommand({
+    name: "parameter.copyValue",
+    description: "Copy a parameter's effective value as text (T246).",
+    handler: copyHandler("value", (payload) => payload.valueText),
+    rejectionOutput: () => ({ text: null }),
+  });
+
+  bus.registerCommand({
+    name: "parameter.copyReference",
+    description: "Copy a reference that pastes into an expression (T246, §V148).",
+    // Null mirror = refuse. Unlike `parameter.copy`, this command's ENTIRE purpose is the
+    // string, so an unnamed node has to be told rather than handed a number instead.
+    handler: copyHandler("reference", (payload) => payload.reference),
     rejectionOutput: () => ({ text: null }),
   });
 
   bus.registerCommand({
     name: "parameter.paste",
-    description: "Paste the copied value or reference onto this parameter (T246).",
+    description:
+      "Paste the copied value, reference or binding onto this parameter (T246).",
     handler: (input, context) => {
       const revision = context.store.getRevision();
       const found = locate(context, input);
@@ -432,7 +582,55 @@ export function registerParameterCommands(
         };
       }
 
-      if (source.kind === "value") {
+      const reject = (diagnostic: RuntimeDiagnostic) =>
+        ({ status: "rejected" as const, output: rejectedPatch(revision, [diagnostic]) });
+
+      /**
+       * §V288's rule, applied to the shapes a reference cannot bridge.
+       *
+       * A reference and a binding both resolve to ONE value of the TARGET's shape, so a
+       * colour dropped on a number is not something the resolver can narrow — it would
+       * surface later as a diagnostic on a parameter the user does not remember touching.
+       * Named here, at the gesture, with the fix in the message: §V113's component
+       * reference is the thing they actually wanted.
+       *
+       * Only checked when the source's shape is KNOWN. A payload that arrived as text
+       * carries no schema, and a guess dressed as a check is worse than no check.
+       */
+      const shapeRefusal = (what: string): RuntimeDiagnostic | null => {
+        const target = parameterArity(found.definition);
+        if (source.arity === null || source.arity === target) return null;
+        return refuse(
+          "parameter.paste.shape",
+          `"${input.parameterKey}" (${found.definition.type}) holds ${target} number${
+            target === 1 ? "" : "s"
+          } and the copied "${source.parameterKey}"${
+            source.typeName === null ? "" : ` (${source.typeName})`
+          } holds ${source.arity}; a ${what} cannot reshape it.`,
+          found.node.id,
+          source.reference !== null && target === 1
+            ? `Copy one component instead — ${source.reference}.r (§V113).`
+            : "Copy a parameter of the same shape, or paste its value onto each component.",
+        );
+      };
+
+      /** Absent `as` = whatever the copy mirrored outward, which is the legacy default. */
+      const mode: ParameterPasteMode = input.as ?? source.kind;
+
+      if (mode === "value") {
+        if (source.kind === "reference" && input.text !== undefined) {
+          // The silent-success trap this module's header is about, met from the other
+          // side: `op('a').par.b` is also a perfectly good string, and landing it as one
+          // is a paste that looks like it worked and references nothing.
+          return reject(
+            refuse(
+              "parameter.paste.textIsReference",
+              `The pasted text is a reference (${source.valueText}), not a value.`,
+              found.node.id,
+              "Paste reference lands it as one; a literal string has to be typed.",
+            ),
+          );
+        }
         const invalid = validateParameterValue(
           input.parameterKey,
           found.definition,
@@ -442,15 +640,68 @@ export function registerParameterCommands(
         if (invalid !== null) {
           // Refused, not coerced: pasting a colour onto a number should say so rather
           // than silently landing the first channel.
-          return { status: "rejected", output: rejectedPatch(revision, [invalid]) };
+          return reject(invalid);
         }
         const stored = found.node.parameters[input.parameterKey];
+        // §V108: the target's retained expression/bind/map SURVIVE a value paste. The
+        // corner mark promises they are still there, and a paste that wiped them would
+        // make the mark a lie in exactly the place a user experiments most.
         const next: StoredParameter = isParameterSlot(stored)
           ? { mode: "static", bindings: { ...stored.bindings, static: { kind: "static", value: source.value } } }
           : source.value;
-        return writeParameters(context, "Paste parameter", found.node.id, {
+        return writeParameters(context, "Paste value", found.node.id, {
           [input.parameterKey]: next,
         });
+      }
+
+      const stored = found.node.parameters[input.parameterKey];
+      const slot = isParameterSlot(stored)
+        ? stored
+        : slotFromValue(stored ?? defaultParameterValue(found.definition));
+
+      if (mode === "binding") {
+        if (source.binding === null) {
+          // Offered and refused BY NAME (§V288): a missing item teaches nothing, and
+          // "there is no binding on what you copied" is the whole answer.
+          return reject(
+            refuse(
+              "parameter.paste.noBinding",
+              input.text === undefined
+                ? `The copied "${source.parameterKey}" is a constant; it carries no binding.`
+                : "Pasted text carries no binding — only a value or a reference.",
+              found.node.id,
+              "Paste value lands the number it was worth; Paste reference points at it live.",
+            ),
+          );
+        }
+        const shape = shapeRefusal("binding");
+        if (shape !== null) return reject(shape);
+        const binding = source.binding;
+        // §V108 again: only the mode being pasted is overwritten. Every OTHER retained
+        // payload on the target rides through, so pasting an expression over a parameter
+        // whose constant you liked does not cost you the constant.
+        const next: ParameterSlot = {
+          mode: binding.kind,
+          bindings: { ...slot.bindings, [binding.kind]: binding },
+        };
+        return writeParameters(context, "Paste binding", found.node.id, {
+          [input.parameterKey]: next,
+        });
+      }
+
+      if (source.reference === null || source.nodeName === null) {
+        return reject(
+          refuse(
+            "parameter.paste.noReference",
+            input.text === undefined
+              ? `The copied parameter's node has no name, so nothing can reference it.`
+              : "The pasted text is a value, not a parameter reference.",
+            found.node.id,
+            input.text === undefined
+              ? "Name the node and copy again — a reference addresses the name (§V127, §V148)."
+              : "Paste value lands it as the value it is.",
+          ),
+        );
       }
 
       /**
@@ -461,36 +712,37 @@ export function registerParameterCommands(
        * through the same resolver (§V61), so the pasted reference produces the source
        * value on screen AND on the GPU.
        *
-       * A reference to another node becomes an EXPRESSION carrying `op('…').par.…`. That
-       * form parses, is stored, and is rewritten on rename (§V128) — but the evaluator
-       * does not read cross-node references yet, so the parameter falls back per §V108
-       * and reports why. That failure is LOUD, which is the property §V148 is protecting;
-       * what it is not yet is complete. See the note on `parseParameterReference`.
+       * A reference to another node becomes an EXPRESSION carrying `op('…').par.…`, which
+       * parses, is stored, is rewritten on rename (§V128), and reads the source's value
+       * back through the node reference reader (T316).
+       *
+       * Both are "re-dropping the reference into the expression" in the owner's sense —
+       * a live pointer, not a copy of a number. Which STORAGE mode carries it is decided
+       * by whether a local bind can express it, and there is ONE such decision so the
+       * explicit `as: "reference"` and the legacy default can never drift (§V109).
        */
       const sameNode = nodeByName(context.graph, source.nodeName) === found.node.id;
-      const stored = found.node.parameters[input.parameterKey];
-      const slot = isParameterSlot(stored)
-        ? stored
-        : slotFromValue(stored ?? defaultParameterValue(found.definition));
+      if (sameNode && source.parameterKey === input.parameterKey) {
+        return reject(
+          refuse(
+            "parameter.reference.self",
+            `"${input.parameterKey}" cannot reference itself.`,
+            found.node.id,
+          ),
+        );
+      }
+      const shape = shapeRefusal("reference");
+      if (shape !== null) return reject(shape);
+
       const next: ParameterSlot = sameNode
         ? { mode: "bind", bindings: { ...slot.bindings, bind: { kind: "bind", ref: source.parameterKey } } }
         : {
             mode: "expression",
-            bindings: { ...slot.bindings, expression: { kind: "expression", source: source.text } },
+            bindings: {
+              ...slot.bindings,
+              expression: { kind: "expression", source: source.reference },
+            },
           };
-
-      if (sameNode && source.parameterKey === input.parameterKey) {
-        return {
-          status: "rejected",
-          output: rejectedPatch(revision, [
-            refuse(
-              "parameter.reference.self",
-              `"${input.parameterKey}" cannot reference itself.`,
-              found.node.id,
-            ),
-          ]),
-        };
-      }
 
       return writeParameters(context, "Paste reference", found.node.id, {
         [input.parameterKey]: next,

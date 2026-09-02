@@ -187,19 +187,36 @@ export const EDGE_MENU: MenuSchema = {
  * agent use — so this is a view of the command set rather than a second implementation
  * of copy, paste, reset and mode switching. That is the whole reason `parameter.copyPath`
  * left `PLANNED_COMMANDS`: it was a promise, and `parameter.copyReference` is the thing.
- *
- * Paste carries no `when` guard on purpose. The only honest guard would ask the BUS what
- * is on its parameter clipboard, and `MenuContext` is a document snapshot with no bus in
- * it; inventing a fourth source of truth for a greyed-out item is worse than an item that
- * refuses with a reason when you use it.
  */
 export const PARAMETER_MENU: MenuSchema = {
   surface: "parameter",
   entries: [
+    // Conditional paste: ONE copy that captures the value snapshot, the reference and the active
+    // binding, so PASTE is where the choice is made. All three copy rows capture all
+    // three members; they differ only in which string leaves for the system clipboard,
+    // which is the one choice a single-string clipboard genuinely forces.
+    { command: "parameter.copy", label: "Copy parameter" },
     { command: "parameter.copyValue", label: "Copy value" },
     // §V148: a string that pastes back into an expression and resolves to this parameter.
     { command: "parameter.copyReference", label: "Copy reference" },
-    { command: "parameter.paste", label: "Paste" },
+    { separator: true },
+    /*
+     * Three named pastes rather than one "Paste" that guesses — the owner's ask.
+     *
+     * Deciding at copy time asks the user to predict what they will want when they get
+     * to the other node, and they cannot. Flat rather than a submenu because the whole
+     * complaint was that the choice was invisible; burying it one level down answers a
+     * different complaint.
+     *
+     * No `when` guard, for the same reason the Mode rows have none: a row that cannot
+     * complete is still offered and refuses BY NAME (§V288). "The copied parameter is a
+     * constant; it carries no binding" teaches; a row that quietly vanished does not.
+     * The honest guard would have to ask the BUS what is on its clipboard, and
+     * `MenuContext` is a document snapshot with no bus in it.
+     */
+    { command: "parameter.paste", input: { as: "value" }, label: "Paste value" },
+    { command: "parameter.paste", input: { as: "reference" }, label: "Paste reference" },
+    { command: "parameter.paste", input: { as: "binding" }, label: "Paste binding" },
     { separator: true },
     { command: "parameter.reset", label: "Reset to default", when: "isOverridden" },
     { separator: true },

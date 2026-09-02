@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { alice, contextFor } from "@domain/commands/test-support.ts";
 import type { MenuItem, MenuTarget } from "@domain/types/menus.ts";
+import { isMenuSeparator } from "@domain/types/menus.ts";
 import { resolveMenuInput } from "./input.ts";
+import { PARAMETER_MENU } from "./schemas.ts";
 import { menuFixture, type MenuFixture } from "./test-support.ts";
 
 /**
@@ -165,6 +167,27 @@ describe("parameters", () => {
       ok: true,
       input: { nodeId: fixture.blur, parameterKey: "radius" },
     });
+  });
+
+  /**
+   * The three paste rows differ ONLY by the `as` they carry, so a builder that dropped it
+   * would make all three land the same member and every unit suite would stay green. That is §B87's shape exactly, one level in: perfect-looking input for a
+   * dispatch that does the wrong thing.
+   */
+  it("carries each paste row's chosen member through to the command input", () => {
+    const target = { ...parameter, nodeId: fixture.blur };
+    const rows = PARAMETER_MENU.entries
+      .filter((entry): entry is MenuItem => !isMenuSeparator(entry))
+      .filter((entry) => entry.command === "parameter.paste");
+    // Three of them, or the schema changed under this test.
+    expect(rows).toHaveLength(3);
+
+    const resolved = rows.map((row) => resolveMenuInput(row, target, fixture.context()));
+    expect(resolved.map((one) => (one.ok ? one.input : one.reason))).toEqual([
+      { nodeId: fixture.blur, parameterKey: "radius", as: "value" },
+      { nodeId: fixture.blur, parameterKey: "radius", as: "reference" },
+      { nodeId: fixture.blur, parameterKey: "radius", as: "binding" },
+    ]);
   });
 
   it("merges the mode submenu's static input onto the parameter reference", () => {
