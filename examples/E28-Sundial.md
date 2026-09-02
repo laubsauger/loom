@@ -1,10 +1,11 @@
 # E28 — Sundial
 
-A stone floor at dusk. One warm key rakes in low from the west; a single amber
-octahedron circles slowly above the ground, and its shadow — long, hard-edged,
-raking — sweeps across the floor and climbs over three standing cubes like the
-hand of a clock. Overhead, a sky the frame never shows directly: you see it only
-as the cool sheen the stones' specular lobes lift off a dusk gradient.
+A stone floor at dusk. One warm key rakes in low from the west, and an amber octahedron's
+long hard-edged shadow sweeps across the floor and climbs over three standing cubes.
+
+The octahedron circles slowly above the ground and its shadow travels like the hand of a
+clock. Overhead, a sky the frame never shows directly: you see it only as the cool sheen
+the stones' specular lobes lift off a dusk gradient.
 
 The shot is the shadow. Everything else in the file exists to give it somewhere
 beautiful to travel.

@@ -1,8 +1,9 @@
 # E37 — Sirocco
 
 A hot wind, made visible by what it carries. Eighteen thousand motes drift in a
-three-dimensional curl-noise field, and each one is drawn as a **streak** — a tapered
-ribbon running backwards along its own velocity, so a fast mote draws a long one and a
+three-dimensional curl-noise field, each drawn as a **streak** along its own velocity.
+
+The streak is a tapered ribbon running backwards, so a fast mote draws a long one and a
 slow mote draws almost none. The cloud is read three ways at once off one simulation: a
 violet body, a gold fast layer, and a dusting of billboard heads. The single most common
 look in TouchDesigner's particle repertoire, built out of pieces that already existed.

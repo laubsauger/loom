@@ -1,9 +1,10 @@
 # E11 — Gradient Remap
 
-Recolour an image through a palette. A drifting noise field supplies structure, a six-stop
-cyclic Ramp supplies the colours, and a Lookup reads each pixel's **brightness as a
-position along the gradient** — so luminance becomes hue, and the whole palette walks past
-the field while you watch.
+Recolour an image through a palette. A Lookup reads each pixel's **brightness as a position
+along the gradient**, so luminance becomes hue.
+
+A drifting noise field supplies the structure and a six-stop cyclic Ramp supplies the
+colours, and the whole palette walks past the field while you watch.
 
 ## Graph
 

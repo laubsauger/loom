@@ -1,8 +1,10 @@
 # E8 — Slit Scan
 
-Per-pixel time. A disc travels a path; every **row** of the output shows it at a different
-moment, so its history is drawn as a ribbon whose shape *is* its path — the classic
-slit-scan smear, made of nothing but a ring and a gradient.
+Per-pixel time. A disc travels a path, and every **row** of the output shows it at a
+different moment, so its history is drawn as a ribbon.
+
+The ribbon's shape *is* the path — the classic slit-scan smear, made of nothing but a ring
+and a gradient.
 
 ## Graph
 

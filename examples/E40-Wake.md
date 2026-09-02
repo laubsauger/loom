@@ -1,8 +1,10 @@
 # E40 — Wake
 
-Something moves across a still field and leaves a burning trail behind it. The trail is not
-drawn — nothing in this graph knows where the subject is. It is **inferred**, by subtracting
-the picture from its own past, and then coloured by how long ago each pixel moved.
+Something moves across a still field and leaves a burning trail behind it. The trail is
+**inferred**, by subtracting the picture from its own past.
+
+It is not drawn — nothing in this graph knows where the subject is — and it is coloured by
+how long ago each pixel moved.
 
 This is the one file in the set whose subject is *change itself*, which means no single
 frame can tell you whether it works.

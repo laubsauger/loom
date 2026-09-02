@@ -1,9 +1,11 @@
 # E5 — Kaleidoscope
 
 A colour wheel turning slowly inside a pair of counter-rotating mirrors. Four sampling
-nodes plus two LFOs, no filters, no compositing — running at 2048×2048 on a 1280×720
-project. The example is about **edges**, about **resolution**, and about the fact that a
-kaleidoscope is nothing until something drifts through it.
+nodes plus two LFOs, no filters and no compositing.
+
+It runs at 2048×2048 on a 1280×720 project, so the example is about **edges**, about
+**resolution**, and about the fact that a kaleidoscope is nothing until something drifts
+through it.
 
 ## Graph
 

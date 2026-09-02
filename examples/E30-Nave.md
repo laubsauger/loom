@@ -1,10 +1,12 @@
 # E30 — Nave
 
-You are inside a cathedral of light and it is moving toward you. Sixty fluted ribs of
-glowing points recede to a vanishing point and slide past forever; on the kick the whole
-bore **opens** — the tunnel widens by half a radius and settles over the beat — and the
-ribs brighten with it. The frame drifts, because a locked-off camera inside a symmetric
-tunnel reads as a target rather than as a space.
+Sixty fluted ribs of glowing points recede to a vanishing point and slide past forever. On
+the kick the whole bore **opens** — the tunnel widens by half a radius and the ribs
+brighten with it.
+
+You are inside a cathedral of light and it is moving toward you. The widening settles over
+the beat, and the frame drifts, because a locked-off camera inside a symmetric tunnel reads
+as a target rather than as a space.
 
 It fills the corner nothing in the set filled: **E24 is audio and 2D, E25 is 3D and silent,
 this is the crossing.**

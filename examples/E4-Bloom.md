@@ -2,8 +2,10 @@
 
 Drifting embers: sparse white-hot cores, each wearing a halo that falls off through amber,
 red and violet into black. The standard bloom chain — isolate the highlights, blur them,
-add them back — built on an **8-bit project** so that the per-node format override has
-something to prove.
+add them back.
+
+It is built on an **8-bit project** so that the per-node format override has something to
+prove.
 
 ## Graph
 

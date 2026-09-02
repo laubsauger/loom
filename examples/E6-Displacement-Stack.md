@@ -1,8 +1,10 @@
 # E6 — Displacement Stack
 
-A checkerboard melting under a field that is built up over three nodes. The point is not
-the warp; it is that the field arrives at `displace.disp` as **the numbers the Noise node
-produced**, with nothing converted along the way.
+A checkerboard melting under a field built up over three nodes. The field arrives at
+`displace.disp` as **the numbers the Noise node produced**, with nothing converted along
+the way.
+
+The point is not the warp; it is that unconverted arrival.
 
 ## Graph
 

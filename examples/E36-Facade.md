@@ -1,15 +1,14 @@
 # E36 — Facade
 
-A building facade at night. Two projectors stand on front-of-house positions
-below the wall, throwing up at it: the left one carries a slowly scrolling warm
-gradient — the content — and the right one a white alignment grid, the chart
-every install throws first. Their images overlap across the middle of the wall
-and the overlap simply ADDS: grid lines glow through the gradient, brighter
-than either throw alone, exactly what two real machines do in a blend zone
-before anyone feathers them. Along the top of the wall runs a row of dentil
-blocks, and because the throws come from below, each block prints a shadow
-finger on the wall ABOVE itself — the beam cannot reach what the architecture
-hides.
+A building facade at night, lit by two projectors throwing up at it from below. Their
+images overlap across the middle of the wall and the overlap simply ADDS.
+
+The left projector carries a slowly scrolling warm gradient — the content — and the right
+one a white alignment grid, the chart every install throws first. In the overlap the grid
+lines glow through the gradient, brighter than either throw alone, exactly what two real
+machines do in a blend zone before anyone feathers them. Along the top of the wall runs a
+row of dentil blocks, and because the throws come from below, each block prints a shadow
+finger on the wall ABOVE itself — the beam cannot reach what the architecture hides.
 
 This is previz, not a music video: the frame exists to answer the two questions
 a site visit answers. Where do the images land and overlap, and what does the

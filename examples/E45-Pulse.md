@@ -1,14 +1,17 @@
 # E45 — Pulse
 
-A VJ set, not a picture. Two complete shots trade the frame on musical structure: a
-**constellation** — six hundred drifting points webbed to their nearest neighbours, the
-web tightening on the beat — and a **scanline** — a rain of rays marching across an
-unseen terrain once per bar, drawing the ground as a moving ridge of embers. A value held
-for four bars decides which is on screen; the cut lands on a phrase boundary, never on a
-timer, and it **cuts hard** — the held pick is reshaped toward the poles, so most phrases
-are one shot alone and a blend is the exception. Between boundaries everything **holds**.
-That hold-and-cut is the owner's own definition of evolution — "blend and swap between
-different shots in a single scene" — and it is a claim in the test suite, not a hope.
+Two complete shots trade the frame on musical structure: a **constellation** of six hundred
+webbed points, and a **scanline** raking an unseen terrain. The cut lands on a phrase
+boundary, never on a timer.
+
+A VJ set, not a picture. The constellation's points drift, webbed to their nearest
+neighbours, and the web tightens on the beat; the scanline is a rain of rays marching
+across the terrain once per bar, drawing the ground as a moving ridge of embers. A value
+held for four bars decides which is on screen, and it **cuts hard** — the held pick is
+reshaped toward the poles, so most phrases are one shot alone and a blend is the exception.
+Between boundaries everything **holds**. That hold-and-cut is the owner's own definition of
+evolution — "blend and swap between different shots in a single scene" — and it is a claim
+in the test suite, not a hope.
 
 ## Downtime is a state of the picture
 

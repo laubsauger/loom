@@ -1,11 +1,13 @@
 # E46 — Lantern
 
-A dark room lit by drifting lanterns, with static obstacles the light rakes across and
-casts soft shadows from. The owner asked for "SDF stuff for cool light glow effects", then
-refined it: objects the light interacts with, shadows, and lanterns that steer *around* the
-obstacles rather than clip through them. Every one of those comes off a single distance
-field — the sdf-tricks article's point is that glow and soft shadows are the same field read
-two ways, so nothing here is a post-process.
+A dark room lit by drifting lanterns that steer around static obstacles, raking light
+across them and casting soft shadows. Glow and shadow both come off one distance field.
+
+The owner asked for "SDF stuff for cool light glow effects", then refined it: objects the
+light interacts with, shadows, and lanterns that steer *around* the obstacles rather than
+clip through them. Every one of those comes off a single distance field — the sdf-tricks
+article's point is that glow and soft shadows are the same field read two ways, so nothing
+here is a post-process.
 
 ```
 bed1(noise, near-black) ─► lantern1(customWgsl: the SDF lit scene) ─► out1

@@ -1,11 +1,13 @@
 # E38 — Sigil
 
 Eighty-three thousand motes sit on a grid, and a picture decides which of them are the
-mark. A ring and a pip, drawn from two circles and a difference, are sampled once per
-grid cell; the motes that land inside the drawing are sprung to their own cells and hold
-the shape, and the ones that do not are never gathered at all — they are the blue haze
-drifting around it. A slow cycle lets go and takes hold again, so the mark comes apart
-into the population it was made of and reassembles out of the same motes.
+mark. It lets go and takes hold again, so the mark scatters and reassembles out of the
+same motes.
+
+A ring and a pip, drawn from two circles and a difference, are sampled once per grid cell;
+the motes that land inside the drawing are sprung to their own cells and hold the shape,
+and the ones that do not are never gathered at all — they are the blue haze drifting around
+it. The cycle is slow, and the mark comes apart into the population it was made of.
 
 ## Graph
 

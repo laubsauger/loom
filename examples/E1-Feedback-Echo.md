@@ -1,8 +1,10 @@
 # E1 — Feedback Echo
 
-A bright disc travels a slow figure that never quite repeats, and leaves a glowing ribbon
-of itself behind. The ribbon is not a buffer the renderer keeps for you; it is a **cycle in
-the graph**, and this example exists to show what makes such a cycle legal.
+A bright disc travels a slow figure and leaves a glowing ribbon of itself behind. The
+ribbon is a **cycle in the graph**, not a buffer the renderer keeps for you.
+
+The figure never quite repeats, and this example exists to show what makes such a cycle
+legal.
 
 ## Graph
 

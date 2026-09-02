@@ -1,8 +1,10 @@
 # E10 — Instanced Torus
 
-A torus of 1152 points wearing a lit box each, every box tumbling in place. Geometry
-with no mesh assets: the points are analytic, the boxes are generated from the vertex
-index, and the rotation is a driven parameter — nothing here recompiles while it moves.
+A torus of 1152 points wearing a lit box each, every box tumbling in place. Geometry with
+no mesh assets.
+
+The points are analytic, the boxes are generated from the vertex index, and the rotation
+is a driven parameter — nothing here recompiles while it moves.
 
 ## Graph
 

@@ -1,13 +1,14 @@
 # E14 — Self-Regulating Bloom
 
-A bloom that watches itself. An `analyze` node meters the average luminance of the
-finished frame — glow, palette, everything — and a `channelIn` brings that number back
-into the value graph, where a proportional controller trims the picture's brightness
-toward a setpoint. An LFO meanwhile breathes the noise field's amplitude up and down to
-give the controller something to fight. This is §V144's image → parameter → image loop,
-closed through processing for the first time (§V615): before `channelIn` existed the
-measured channel could drive a parameter directly, but nothing could subtract it from a
-target, scale it, or clamp it on the way.
+A bloom that watches itself. An `analyze` node meters the finished frame's average
+luminance, and a proportional controller trims the picture's brightness toward a setpoint.
+
+The meter reads the finished frame — glow, palette, everything — and a `channelIn` brings
+that number back into the value graph. An LFO meanwhile breathes the noise field's
+amplitude up and down to give the controller something to fight. This is §V144's
+image → parameter → image loop, closed through processing for the first time (§V615):
+before `channelIn` existed the measured channel could drive a parameter directly, but
+nothing could subtract it from a target, scale it, or clamp it on the way.
 
 ## Graph
 

@@ -1,10 +1,12 @@
 # E26 — Interference
 
-Fine concentric rings on a near-black violet ground, and a second copy of the same
-rings 16% larger drifting slowly across them. What you actually look at is neither:
-enormous glowing spiral rosettes and hyperbolic fans, dozens of times larger than any
-ring and moving far slower than anything in the graph, sweeping through the frame and
-recomposing themselves completely every few seconds.
+Fine concentric rings on a near-black violet ground, and a second copy 16% larger drifting
+slowly across them. What you actually look at is neither: enormous glowing spiral rosettes
+and hyperbolic fans.
+
+The second copy is the same rings. The rosettes are dozens of times larger than any ring
+and move far slower than anything in the graph, sweeping through the frame and recomposing
+themselves completely every few seconds.
 
 There is no shader in this file, no simulation, no state and no temporal boundary. Nine
 nodes and two oscillators running at 0.05 Hz.

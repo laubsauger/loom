@@ -1,10 +1,12 @@
 # E39 — Rosette
 
-A mandala built out of a video signal. Rings and petals wheel around a still centre, the
-petal count answers the kick, the depth breathes on the snare, and the whole figure turns
-once every twenty-seven seconds. Underneath it is not a kaleidoscope and not a tunnel: it
-is one image being read in polar coordinates, which is the oldest trick in live visuals and
-the one this catalogue could always do and had never shown.
+A mandala built out of a video signal: rings and petals wheeling around a still centre.
+Underneath it is one image being read in polar coordinates.
+
+The petal count answers the kick, the depth breathes on the snare, and the whole figure
+turns once every twenty-seven seconds. It is not a kaleidoscope and not a tunnel — the
+polar read is the oldest trick in live visuals, and the one this catalogue could always do
+and had never shown.
 
 **It opens playing its own performer, and your footage is one number away.**
 

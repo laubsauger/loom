@@ -1,13 +1,15 @@
 # E33 — Obol
 
-A yin-yang medallion — seventeen hundred little tiles laid on nothing at all — turns
-slowly on a dark studio sweep, lit by two softboxes it can see in itself. It holds. Then
-the dividing curve goes soft, the tiles lift off the face in a wave that leaves the seam
-and travels outward, and as they arc through the air a drop of black oil buds out
-underneath them and swells; each tile lands on its skin and settles just inside it. What
-is left is a three-lobed mass that pinches between its lobes and hangs. It holds there
-too. Then the whole thing runs backwards and the medallion reassembles, tile by tile. One
-sixteen-second breath, both directions, forever.
+A yin-yang medallion of seventeen hundred tiles turns on a dark studio sweep, breaks apart
+into a three-lobed drop of black oil, and reassembles. One sixteen-second breath, both
+directions.
+
+The tiles are laid on nothing at all, lit by two softboxes they can see in themselves. It
+holds. Then the dividing curve goes soft, the tiles lift off the face in a wave that leaves
+the seam and travels outward, and as they arc through the air a drop of black oil buds out
+underneath them and swells; each tile lands on its skin and settles just inside it. What is
+left is a three-lobed mass that pinches between its lobes and hangs. It holds there too.
+Then the whole thing runs backwards and the medallion reassembles, tile by tile, forever.
 
 **Nothing is behind the tiles at the emblem end, and the goo end is an organic blob. Those
 are two different asks and the file answers both.** Dropping the mass from the render

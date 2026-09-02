@@ -1,11 +1,12 @@
 # E32 — Pasture
 
-A field of pale spores in the dark, and five thousand animals walking it. Where they walk
-they leave spore; the spore **reacts** — it grows, branches, divides into new spots on its
-own — and the animals, which can smell the reaction, follow the living edge of what they
-planted. Then they eat it, the ground behind them goes bare, and the reaction grows it back
-from the sides while the herd moves on. What you are watching is not a field and not a
-swarm. It is one loop with the two halves of the catalogue on either side of it.
+A field of pale spores in the dark, and five thousand animals walking it. They leave spore
+where they walk, smell what they planted, follow its living edge, and eat it.
+
+The spore **reacts** — it grows, branches, divides into new spots on its own — and where
+the herd has fed the ground behind goes bare, and the reaction grows it back from the sides
+while they move on. What you are watching is not a field and not a swarm. It is one loop
+with the two halves of the catalogue on either side of it.
 
 **Every structure in this frame was deposited by an animal.** Turn the deposit off and the
 plate stays empty forever — measured below, and it is the whole reason this example exists.

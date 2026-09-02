@@ -1,8 +1,10 @@
 # E2 — Reaction-Diffusion
 
 Two chemicals, one feeding on the other, on a plate whose chemistry is not the same
-everywhere. Colonies grow into worms here and dividing spots there, the boundary between
-them drifts as the field animates, and the whole thing keeps evolving instead of settling.
+everywhere. Colonies grow into worms here and dividing spots there.
+
+The boundary between them drifts as the field animates, and the whole thing keeps evolving
+instead of settling.
 
 ## Graph
 

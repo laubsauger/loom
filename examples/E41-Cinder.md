@@ -1,11 +1,13 @@
 # E41 — Cinder
 
 A dark field, a warm light travelling through it — and the light **sheds**. Wherever the
-picture moves, embers are born off it: they take the colour of the frame beneath them,
-swell with the local motion, rise on a slow draught, and die out in under two seconds. Park
-the subject and the cloud starves; within one lifetime the stage is empty. **A moving
-subject sheds motes and a still one sheds none** — that sentence is the example, and it is
-asserted as numbers on frame pairs, because no still frame can testify about it.
+picture moves embers are born off it; park the subject and the cloud starves.
+
+The embers take the colour of the frame beneath them, swell with the local motion, rise on
+a slow draught, and die out in under two seconds, so within one lifetime the stage is
+empty. **A moving subject sheds motes and a still one sheds none** — that sentence is the
+example, and it is asserted as numbers on frame pairs, because no still frame can testify
+about it.
 
 This is the "particles from video" example: point `clip1` at real footage
 (`pick1.index = 1`) and the same scouts shed embers off whatever moves in it.

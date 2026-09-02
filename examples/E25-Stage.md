@@ -1,10 +1,11 @@
 # E25 — Stage
 
-The multi-stage render, in the owner's words: "a multi stage setup of a camera,
-geometry, reproduction, picked up by another camera then to screen and all this driven
-interestingly." Scene A is a performance; its render becomes a MATERIAL on a screen
-standing inside scene B; a second camera films the screen — a virtual screen inside a
-scene, the TD/Notch classic.
+Scene A is a performance; its render becomes a MATERIAL on a screen standing inside scene
+B, and a second camera films that screen. A virtual screen inside a scene.
+
+The multi-stage render, in the owner's words: "a multi stage setup of a camera, geometry,
+reproduction, picked up by another camera then to screen and all this driven
+interestingly." The TD/Notch classic.
 
 ## Graph
 

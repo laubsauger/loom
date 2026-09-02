@@ -1,11 +1,12 @@
 # E31 — Corona
 
 A luminous organism turning in the dark. Sixty-five thousand additive points on a sphere
-that the sound pulls between two entirely different characters: quiet, it **contracts** to a
-small dim knot of soft lobes breathing; loud, it **throws itself outward** and the same
-points snap into ridged **filaments**, the silhouette twists like taffy, orange crests light
-along the creases and a cyan frost picks out only the sharpest tips. Bloom, a seven-stop
-grade, trails, and a hue that takes twenty-nine seconds to go anywhere.
+that the sound pulls between a small dim knot when quiet and ridged **filaments** thrown
+outward when loud.
+
+Quiet, it **contracts** to soft lobes breathing; loud, the silhouette twists like taffy,
+orange crests light along the creases and a cyan frost picks out only the sharpest tips.
+Bloom, a seven-stop grade, trails, and a hue that takes twenty-nine seconds to go anywhere.
 
 **This is the owner's own working file, adopted as an example and as the definition of the
 bar.** If you are about to build an example, read this one first — not for the picture, for

@@ -1,12 +1,13 @@
 # E43 — Splice
 
-A picture on the beat. Horizontal bands of the frame jump sideways and hold — then the
-deal clock ticks and they jump somewhere else. Blocks tear vertically, the red and blue
-planes split along every tear, the whole frame is folded about a slowly drifting mirror
-axis, a letterbox bar slams up from the bottom on the onsets, and a scaled echo of the
-picture punches in over itself on the kick. Between hits, nothing wobbles: the glitch
-**holds**. That hold-and-slam is the difference between rhythm and noise, and it is a
-claim in the test suite, not a hope.
+A picture on the beat. Horizontal bands jump sideways and hold, blocks tear vertically,
+the colour planes split along every tear — and between hits nothing wobbles.
+
+Then the deal clock ticks and the bands jump somewhere else. The red and blue planes split
+along every tear, the whole frame is folded about a slowly drifting mirror axis, a
+letterbox bar slams up from the bottom on the onsets, and a scaled echo of the picture
+punches in over itself on the kick. The glitch **holds**, and that hold-and-slam is the
+difference between rhythm and noise — a claim in the test suite, not a hope.
 
 This is the custom shader **as the star**. Every other `customWgsl` in the catalogue is
 simulation plumbing — Gray-Scott chemistry, fluid velocity — buried inside a loop. This

@@ -1,12 +1,14 @@
 # E27 — Relief
 
-A moving picture stands up off the screen, and since T676 it means that literally. A
-hundred and five thousand glowing points stand in a sheet leaning back seventy degrees,
-each pushed toward you in proportion to the brightness under it, and a swaying camera
-watches it face-on: teal valleys, a magenta ridge line, a white crest, and a luminous dome
-that wanders across the frame. The bloom fuses thousands of separate points into one
-surface. Rutt–Etra — the analog video-synth look — with a live graph where the scan
-converter used to be.
+A hundred and five thousand glowing points stand in a leaning sheet, each pushed toward you
+in proportion to the brightness under it. Rutt–Etra: a moving picture standing up off the
+screen.
+
+The sheet leans back seventy degrees and a swaying camera watches it face-on: teal valleys,
+a magenta ridge line, a white crest, and a luminous dome that wanders across the frame. The
+bloom fuses thousands of separate points into one surface. The analog video-synth look,
+with a live graph where the scan converter used to be — and since T676 the picture stands
+up literally.
 
 **It opens playing its own performer, and your camera is one number away.** Since T797 it
 also **sets its own exposure** — the frame's measured top drives the gain, so a dark room

@@ -1,9 +1,10 @@
 # E20 — Gooeyball
 
-A closed ball that breathes: an animated 2D noise reaches inside a 3D surface and pushes
-it in and out, and the surface never tears. The owner's ask in their own words —
-"deformed from the inside without breaking the surface" — and the 2D→3D crossing made
-literal in five point nodes.
+A closed ball that breathes: an animated 2D noise pushes a 3D surface in and out, and the
+surface never tears. The 2D→3D crossing, made literal in five point nodes.
+
+The owner's ask in their own words: "deformed from the inside without breaking the
+surface".
 
 ## Graph
 

@@ -1,9 +1,10 @@
 # E9 — Ember
 
 A fire front. Sixteen vents along the floor of the frame breathe out of phase, and
-everything above them is an ember that **was born, is cooling, and will die**. The whole
-point lifecycle, running as weather: births and deaths happen thousands of times a second
-on the GPU and the count never touches the CPU.
+everything above them is an ember that **was born, is cooling, and will die**.
+
+The whole point lifecycle, running as weather: births and deaths happen thousands of times
+a second on the GPU and the count never touches the CPU.
 
 **Move the mouse through it.** The cursor is a gust — it shoves embers out of the draught
 and they fall back into it.

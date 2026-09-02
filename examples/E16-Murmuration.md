@@ -1,8 +1,10 @@
 # E16 — Murmuration
 
-Two thousand birds swirling around a sphere they never abandon, coloured by how fast
-they fly, parting around the cursor — and drawn through a chain of THREE point nodes.
-This is the SOP-chain showcase: points as a pipeline, not a source-to-sink hop.
+Two thousand birds flock around a sphere, coloured by how fast they fly and parting around
+the cursor. Three point nodes in a chain: flock, then part, then draw.
+
+The birds never abandon the sphere. Points move through the chain as a pipeline, not as a
+source-to-sink hop.
 
 ## Graph
 

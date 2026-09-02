@@ -1,5 +1,8 @@
 # E35 — Nova-Torus
 
+A starred, ribboned tube of points turning in the dark — a magenta body with gold flashes
+and cyan tips. The audio fattens the cable rather than scaling the ring.
+
 The owner's second file, shipped beside their first. E31-Corona is the bar this project
 measures "beautiful and showcasing" against, and this is its sibling — the owner's own
 phrase was "similar to Nova but different enough", and the sibling they mean is Corona.

@@ -1,10 +1,11 @@
 # E29 — Descent
 
-A neon square opens in the middle of a black frame, rushes outward past you, turning as it
-goes and sliding a quarter of the way round the hue wheel — and behind it the next one, and
-the next, receding to a point that never arrives. Cyan at the mouth, periwinkle a step back,
-magenta beyond that, white at the vanishing point. On every kick the fall lurches: the whole
-shaft surges toward you and settles over the beat.
+Neon squares rush outward past you and recede to a point that never arrives, each turning
+and sliding a quarter of the way round the hue wheel. On every kick the shaft surges.
+
+Cyan at the mouth, periwinkle a step back, magenta beyond that, white at the vanishing
+point. The fall lurches on the beat — the whole shaft surges toward you and settles over
+it.
 
 **It is a corridor made of one shape, one loop, and no clock at all.**
 

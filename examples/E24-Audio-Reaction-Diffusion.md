@@ -1,9 +1,11 @@
 # E24 — Audio Reaction-Diffusion
 
-E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. A dense
-colony of reaction-diffusion sits off the middle of an almost black frame, and every beat
-sends a family of rings outward through it: the rings travel, the colony's own echoes
-travel with them, and four fifths of the picture is the dark they cross.
+A dense colony of reaction-diffusion sits off the middle of an almost black frame, and
+every beat sends a family of rings outward through it.
+
+E2's chemistry, played like an instrument — and it PLAYS THE MOMENT IT OPENS. The rings
+travel, the colony's own echoes travel with them, and four fifths of the picture is the
+dark they cross.
 
 The music source is a deterministic beat pattern (`audioPattern`, 112 bpm), and it reaches
 the picture on THREE timescales at once: the bass makes the simulation grow FASTER and

@@ -1,9 +1,11 @@
 # E44 — Sounding
 
 A monocular depth model turns a flat picture into a distance map. `pointsFromTexture`
-reads that map on a 96×72 lattice and lifts every point by what it finds, and `tint1`
-colours each point from the source, so a video stands up as a point cloud you can look at
-from the side — the depth-camera look, from a source that never carried depth.
+lifts a lattice of points by what it reads there, so a video stands up as a point cloud.
+
+The map is read on a 96×72 lattice and `tint1` colours each point from the source, so you
+can look at the cloud from the side — the depth-camera look, from a source that never
+carried depth.
 
 Named for the nautical sense: throwing a line to find how deep the water is. E27 already
 carries the sculptural word *Relief*; this is the measurement rather than the carving.

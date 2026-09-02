@@ -1,12 +1,14 @@
 # E42 — Current
 
-A mosaic of small lit tiles, each a facet of the picture behind it. Where the picture
-holds still, the grid is perfectly calm — every tile flat, identical, identity. Where the
-subject travels, the tiles **turn**: they spin their edges into the local flow, lean their
-faces along it, and swell with the motion under them — and because they are lit by one
-raking key, the lean reads as **shading**: a swept region catches the light differently
-from a calm one, so you see the direction of motion as brightness before you see it as
-shape.
+A mosaic of small lit tiles, each a facet of the picture behind it. Where the subject
+travels the tiles **turn** into the local flow; where the picture holds still the grid is
+perfectly calm.
+
+Calm is every tile flat, identical, identity. Turning is spinning their edges into the
+flow, leaning their faces along it, and swelling with the motion under them — and because
+they are lit by one raking key, the lean reads as **shading**: a swept region catches the
+light differently from a calm one, so you see the direction of motion as brightness before
+you see it as shape.
 
 This is T723's first witness — the per-instance quaternion, landed with zero consumers —
 and T721's mapped scale rides beside it, on E41's exact source rig.

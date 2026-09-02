@@ -1,10 +1,12 @@
 # E34 — Lidar
 
-A night survey. A mast at the origin sweeps a ring of 240 rays over a dark terrain, and
-one ray in ten is *drawn*: a beam from the mast down to whatever it found, in the same
-glowing yellow as the return it ends on. Where a ray lands, a hot return beads onto the
-relief and pools light onto the ground under it; where it gets no return at all, nothing
-is drawn; and where it lands it also *bounces* — a second cast, reflected off the surface
+A night survey. A mast at the origin sweeps a ring of 240 rays over a dark terrain, beading
+a hot yellow return where one lands and a green one where it bounces.
+
+One ray in ten is *drawn*: a beam from the mast down to whatever it found, in the same
+glowing yellow as the return it ends on. Where a ray lands, the return beads onto the
+relief and pools light onto the ground under it; where it gets no return at all, nothing is
+drawn; and where it lands it also *bounces* — a second cast, reflected off the surface
 normal, drawn as a green leg out to the green echo it produced. The Ray POP, working for
 its living.
 
