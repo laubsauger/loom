@@ -338,16 +338,16 @@
           "blacklevel": 0,
           "brightness": {
             "bindings": {
-              "driven": {
-                "channel": "probe:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('probe').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "contrast": 1,
           "gamma1": 1,

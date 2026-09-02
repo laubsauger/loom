@@ -417,29 +417,29 @@
           ],
           "s.x": {
             "bindings": {
-              "driven": {
-                "channel": "zoom1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('zoom1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 1.019
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "s.y": {
             "bindings": {
-              "driven": {
-                "channel": "zoom1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('zoom1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 1.019
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "t": [
             0,
@@ -561,16 +561,16 @@
           "blacklevel": 0,
           "brightness": {
             "bindings": {
-              "driven": {
-                "channel": "lamp1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lamp1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "contrast": 1,
           "gamma1": 1,

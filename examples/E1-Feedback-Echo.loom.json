@@ -219,29 +219,29 @@
           ],
           "center.x": {
             "bindings": {
-              "driven": {
-                "channel": "pathx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "center.y": {
             "bindings": {
-              "driven": {
-                "channel": "pathy1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathy1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "fillcolor": [
             1,

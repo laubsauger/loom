@@ -226,29 +226,29 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "orbx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 4.2
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.z": {
             "bindings": {
-              "driven": {
-                "channel": "orbz1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbz1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "far": 24,
           "fov": 42,
@@ -419,16 +419,16 @@
         "parameters": {
           "hueoffset": {
             "bindings": {
-              "driven": {
-                "channel": "drift2",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drift2').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "saturation": 1.05,
           "value": 1

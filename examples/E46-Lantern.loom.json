@@ -51,16 +51,16 @@
         "parameters": {
           "amount": {
             "bindings": {
-              "driven": {
-                "channel": "pulse1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pulse1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.8
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "floorLevel": 1,
           "glowFalloff": 12,

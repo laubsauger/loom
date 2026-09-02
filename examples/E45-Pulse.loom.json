@@ -401,16 +401,16 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  q.position = vec3f(p.position.x, 1.75, (ctx.value1 * 2.0 - 1.0) * 1.5);\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "clock1:barPhase",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('clock1').chan.barPhase"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -445,29 +445,29 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "orbAx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbAx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.z": {
             "bindings": {
-              "driven": {
-                "channel": "orbAz1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbAz1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 2.9
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "lookAt": [
             0,
@@ -652,16 +652,16 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let landed = select(0.0, 1.0, slant < 3.99);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  q.position = p.hitPosition + vec3f(0.0, 0.02, 0.0);\n  /* T828 — the breakdown leaves EMBERS: value1 (enveloped high) scales the ridge to a\n     0.3 floor in the quiet bar, so downtime is a glow, not a blackout. */\n  let presence = 0.30 + 0.70 * clamp(ctx.value1 * 1.6, 0.0, 1.0);\n  let ret = vec4f(1.0, 0.42 + 0.50 * near, 0.20, 1.0) * (0.4 + 1.8 * near) * presence;\n  q.tint = mix(vec4f(0.0), ret, landed);\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "henv1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('henv1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -829,16 +829,16 @@
         "parameters": {
           "cross": {
             "bindings": {
-              "driven": {
-                "channel": "lag1:bar",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lag1').chan.bar"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -913,16 +913,16 @@
         "parameters": {
           "hueoffset": {
             "bindings": {
-              "driven": {
-                "channel": "pal1:bar",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pal1').chan.bar"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "saturation": 1.15,
           "value": 1
@@ -956,16 +956,16 @@
           "neighbors": 2,
           "radius": {
             "bindings": {
-              "driven": {
-                "channel": "rad1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('rad1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0.3
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1093,16 +1093,16 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  if (ctx.index % 6u != 0u) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  /* T828 — the rain STOPS in the breakdown: value1 (enveloped high) gates the beams\n     to zero-length in the quiet bar, the same §V788 park the sparse gate uses. */\n  if (ctx.value1 < 0.06) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  q.tint = vec4f(0.55, 0.75, 1.0, 1.0) * (0.30 + 0.85 * near) * clamp(ctx.value1 * 2.0, 0.0, 1.0);\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "henv1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('henv1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1182,16 +1182,16 @@
         "parameters": {
           "amount": {
             "bindings": {
-              "driven": {
-                "channel": "glim1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('glim1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* The slicing geometry. BANDS horizontal strips; every strip decides independently\n   whether it jumps this deal, so quiet passages tear a strip or two and loud ones\n   shred the frame — the density rides amount, not only the distance. */\nconst BANDS: f32 = 36.0;\nconst BLOCKS: vec2f = vec2f(9.0, 5.0);\nconst DEALS_PER_SECOND: f32 = 3.0;\n/* RGB split as a fraction of the band's own jump — the fringe belongs to the tear. */\nconst FRINGE: f32 = 0.35;\n\nfn hash2(a: f32, b: f32) -> f32 {\n  return fract(sin(a * 12.9898 + b * 78.233) * 43758.5453);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture, 0));\n  /* FREE-RUNNING deal clock (§V436): a timeline lap must not re-deal the glitch. */\n  let deal = floor(frameU.absTime * DEALS_PER_SECOND);\n\n  /* The band's jump: rolled per (band, deal), gated so only some bands tear, scaled\n     by amount. At amount = 0 the gate closes and the offset is EXACTLY zero. */\n  let band = floor(uv.y * BANDS);\n  let roll = hash2(band, deal);\n  let gate = select(0.0, 1.0, roll > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.85);\n  let jump = (hash2(band + 57.0, deal) - 0.5) * 0.34 * params.amount * gate;\n\n  /* The block tear: a coarser grid shifts VERTICALLY on its own roll — rarer, bigger. */\n  let block = floor(uv * BLOCKS);\n  let brollA = hash2(block.x * 31.0 + block.y, deal + 101.0);\n  let bgate = select(0.0, 1.0, brollA > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.35);\n  let lift = (hash2(block.x + block.y * 47.0, deal + 202.0) - 0.5) * 0.22 * params.amount * bgate;\n\n  let displaced = vec2f(uv.x + jump, uv.y + lift);\n\n  /* Integer-texel reads, wrapped, one per channel: the red and blue planes travel a\n     little further along the SAME tear, which is what a real capture card does when\n     the sync slips. textureLoad and not the sampler, so amount = 0 is byte-exact. */\n  let px = (fract(displaced) * dims - vec2f(0.5, 0.5));\n  let pxR = (fract(displaced + vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let pxB = (fract(displaced - vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let clampHi = dims - vec2f(1.0, 1.0);\n  let g = textureLoad(inputTexture, vec2i(clamp(round(px), vec2f(0.0), clampHi)), 0);\n  let r = textureLoad(inputTexture, vec2i(clamp(round(pxR), vec2f(0.0), clampHi)), 0);\n  let b = textureLoad(inputTexture, vec2i(clamp(round(pxB), vec2f(0.0), clampHi)), 0);\n  return vec4f(r.r, g.g, b.b, g.a);\n}"
         },
@@ -1241,29 +1241,29 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = f32(ctx.index);\n  let a = pointRand(ctx.index, 1u) * 6.2831853;\n  let b = acos(2.0 * pointRand(ctx.index, 2u) - 1.0);\n  let w = 0.35 + 0.65 * pointRand(ctx.index, 3u);\n  let breath = 1.0 + 0.24 * clamp(ctx.value1, 0.0, 1.5);\n  let r = (0.72 + 0.38 * pointRand(ctx.index, 4u)) * breath;\n  let theta = a + ctx.absTime * (0.10 + 0.05 * w);\n  let wob = 0.06 * sin(ctx.absTime * (0.35 + 0.4 * w) + i);\n  q.position = vec3f(\n    (r + wob) * sin(b) * cos(theta),\n    (r + wob) * cos(b) * 0.86,\n    (r + wob) * sin(b) * sin(theta),\n  );\n  /* T828 — DOWNTIME: value2 is the enveloped high band, and it gates EXISTENCE, not\n     just size. In the arrangement's breakdown bar the dots fall to a quarter of\n     themselves — the trace that remains — so quiet is a state of the picture, not\n     just of the numbers. */\n  let presence = 0.25 + 0.75 * clamp(ctx.value2 * 1.6, 0.0, 1.0);\n  let warmth = pointRand(ctx.index, 5u);\n  q.tint = vec4f(0.62 + 0.30 * warmth, 0.72, 1.0 - 0.25 * warmth, 1.0) * presence;\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "ld1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('ld1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "henv1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('henv1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

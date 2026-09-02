@@ -580,9 +580,29 @@ export function registerParameterCommands(
     description: "Switch a parameter's active mode, keeping every other payload (§V108).",
     handler: (input, context) => {
       const revision = context.store.getRevision();
+      // §T897: `driven` is retired as an AUTHORABLE mode — a channel read is an expression
+      // term now. The schema still parses driven slots (documents in the wild), but nothing
+      // may switch a parameter INTO the mode; refusing here keeps an agent or API caller
+      // from resurrecting it past the removed button.
+      if (input.mode === "driven") {
+        return {
+          status: "rejected",
+          output: rejectedPatch(revision, [
+            refuse(
+              "parameter.mode.retired",
+              `The "driven" mode is retired; read the channel from an expression instead — op('name').chan.value.`,
+              input.nodeId,
+            ),
+          ]),
+        };
+      }
       const found = locate(context, input);
       if (isDiagnostic(found)) return { status: "rejected", output: rejectedPatch(revision, [found]) };
-      const schema = context.registry.get(found.node.type)?.parameters ?? {};
+      // T903/§B166: the mode switch resolves against the node's EFFECTIVE schema, like every
+      // other write. `locate` already found the parameter through the funnel; resolving the
+      // seed value against the static schema would hand a reflected control an unresolvable
+      // key and seed the mode it is switching INTO from nothing.
+      const schema = effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters);
       const resolved = resolveParameter(found.node, input.parameterKey, found.definition, { schema });
       const stored = found.node.parameters[input.parameterKey];
       const slot = isParameterSlot(stored) ? stored : slotFromValue(resolved.value);

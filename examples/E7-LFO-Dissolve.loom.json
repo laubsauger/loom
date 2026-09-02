@@ -101,16 +101,16 @@
         "parameters": {
           "cross": {
             "bindings": {
-              "driven": {
-                "channel": "lfo1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lfo1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

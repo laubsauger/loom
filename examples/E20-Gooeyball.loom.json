@@ -225,30 +225,30 @@
           "kind": "point",
           "position.x": {
             "bindings": {
-              "driven": {
-                "channel": "orbitx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbitx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 2
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "position.y": 0.8,
           "position.z": {
             "bindings": {
-              "driven": {
-                "channel": "orbitz1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbitz1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

@@ -344,16 +344,16 @@
           ],
           "rotate": {
             "bindings": {
-              "driven": {
-                "channel": "spin1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('spin1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 12
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -436,29 +436,29 @@
           ],
           "center.x": {
             "bindings": {
-              "driven": {
-                "channel": "pathx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "center.y": {
             "bindings": {
-              "driven": {
-                "channel": "pathy1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pathy1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "fillcolor": [
             1,
@@ -544,16 +544,16 @@
         "parameters": {
           "opacity": {
             "bindings": {
-              "driven": {
-                "channel": "lenv1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lenv1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "operation": "over"
         },
@@ -583,16 +583,16 @@
         "parameters": {
           "bottom": {
             "bindings": {
-              "driven": {
-                "channel": "sl1:onset",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sl1').chan.onset"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "left": 0,
           "right": 1,
@@ -642,16 +642,16 @@
         "parameters": {
           "amount": {
             "bindings": {
-              "driven": {
-                "channel": "genv1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('genv1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* The slicing geometry. BANDS horizontal strips; every strip decides independently\n   whether it jumps this deal, so quiet passages tear a strip or two and loud ones\n   shred the frame — the density rides amount, not only the distance. */\nconst BANDS: f32 = 36.0;\nconst BLOCKS: vec2f = vec2f(9.0, 5.0);\nconst DEALS_PER_SECOND: f32 = 3.0;\n/* RGB split as a fraction of the band's own jump — the fringe belongs to the tear. */\nconst FRINGE: f32 = 0.35;\n\nfn hash2(a: f32, b: f32) -> f32 {\n  return fract(sin(a * 12.9898 + b * 78.233) * 43758.5453);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture, 0));\n  /* FREE-RUNNING deal clock (§V436): a timeline lap must not re-deal the glitch. */\n  let deal = floor(frameU.absTime * DEALS_PER_SECOND);\n\n  /* The band's jump: rolled per (band, deal), gated so only some bands tear, scaled\n     by amount. At amount = 0 the gate closes and the offset is EXACTLY zero. */\n  let band = floor(uv.y * BANDS);\n  let roll = hash2(band, deal);\n  let gate = select(0.0, 1.0, roll > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.85);\n  let jump = (hash2(band + 57.0, deal) - 0.5) * 0.34 * params.amount * gate;\n\n  /* The block tear: a coarser grid shifts VERTICALLY on its own roll — rarer, bigger. */\n  let block = floor(uv * BLOCKS);\n  let brollA = hash2(block.x * 31.0 + block.y, deal + 101.0);\n  let bgate = select(0.0, 1.0, brollA > 1.0 - clamp(params.amount, 0.0, 1.0) * 0.35);\n  let lift = (hash2(block.x + block.y * 47.0, deal + 202.0) - 0.5) * 0.22 * params.amount * bgate;\n\n  let displaced = vec2f(uv.x + jump, uv.y + lift);\n\n  /* Integer-texel reads, wrapped, one per channel: the red and blue planes travel a\n     little further along the SAME tear, which is what a real capture card does when\n     the sync slips. textureLoad and not the sampler, so amount = 0 is byte-exact. */\n  let px = (fract(displaced) * dims - vec2f(0.5, 0.5));\n  let pxR = (fract(displaced + vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let pxB = (fract(displaced - vec2f(jump * FRINGE, 0.0)) * dims - vec2f(0.5, 0.5));\n  let clampHi = dims - vec2f(1.0, 1.0);\n  let g = textureLoad(inputTexture, vec2i(clamp(round(px), vec2f(0.0), clampHi)), 0);\n  let r = textureLoad(inputTexture, vec2i(clamp(round(pxR), vec2f(0.0), clampHi)), 0);\n  let b = textureLoad(inputTexture, vec2i(clamp(round(pxB), vec2f(0.0), clampHi)), 0);\n  return vec4f(r.r, g.g, b.b, g.a);\n}"
         },

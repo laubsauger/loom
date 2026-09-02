@@ -263,29 +263,29 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "sway1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sway1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.y": {
             "bindings": {
-              "driven": {
-                "channel": "rise1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('rise1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "far": 120,
           "fov": 50,
@@ -527,29 +527,29 @@
           "seed": 30,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "bore1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('bore1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 0.16
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "lum1:level",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lum1').chan.level"
               },
               "static": {
                 "kind": "static",
                 "value": 0.28
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

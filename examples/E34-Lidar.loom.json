@@ -427,16 +427,16 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;\n  /* 0.60..1.22 rad (34°..70° below horizontal): the steep end lands well inside range,\n     the shallow end's slant exceeds it and the outer ring goes dark — and shallow\n     strikes reflect FORWARD off back-slopes, which is where the echoes come from.\n     The steep end is capped by LIDAR_RANGE, not by taste — see that constant. */\n  let tilt = 0.6 + ctx.value1 * 0.62;\n  q.position = vec3f(0.0, 3.3, 0.0);\n  q.direction = normalize(vec3f(\n    sin(azimuth) * cos(tilt),\n    -sin(tilt),\n    cos(azimuth) * cos(tilt),\n  ));\n  /* T672: every ray is CAST, every tenth is DRAWN. See LIDAR_SPOKE_EVERY. */\n  q.spoke = select(0.0, 1.0, (ctx.index % 10u) == 0u);\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "tiltwave1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('tiltwave1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -633,29 +633,29 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "orbx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 3.8
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.z": {
             "bindings": {
-              "driven": {
-                "channel": "orbz1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbz1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "far": 40,
           "fov": 46,

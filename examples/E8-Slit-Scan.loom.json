@@ -79,29 +79,29 @@
           ],
           "center.x": {
             "bindings": {
-              "driven": {
-                "channel": "swingx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('swingx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "center.y": {
             "bindings": {
-              "driven": {
-                "channel": "swingy1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('swingy1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "fillcolor": [
             1,

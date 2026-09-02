@@ -96,29 +96,29 @@
           ],
           "offset.x": {
             "bindings": {
-              "driven": {
-                "channel": "driftx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('driftx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.15
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "offset.y": {
             "bindings": {
-              "driven": {
-                "channel": "drifty1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drifty1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.05
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "repeat": [
             2,

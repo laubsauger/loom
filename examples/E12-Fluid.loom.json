@@ -169,29 +169,29 @@
           ],
           "center.x": {
             "bindings": {
-              "driven": {
-                "channel": "mouse1:x",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('mouse1').chan.x"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "center.y": {
             "bindings": {
-              "driven": {
-                "channel": "mouse1:y",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('mouse1').chan.y"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "fillcolor": [
             1,

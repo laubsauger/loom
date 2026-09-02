@@ -47,10 +47,10 @@ export const instancedTorusDocument = document(
           // The slot merges OVER the base values (T348) — both survive.
           parameters: {
             "rotate.y": {
-              mode: "driven",
+              mode: "expression",
               bindings: {
                 static: { kind: "static", value: 0 },
-                driven: { kind: "driven", channel: "lfo1" },
+                expression: { kind: "expression", source: "op('lfo1').chan.value" },
               },
             },
           },

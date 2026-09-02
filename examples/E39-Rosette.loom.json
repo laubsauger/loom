@@ -304,29 +304,29 @@
           "interp": "linear",
           "period": {
             "bindings": {
-              "driven": {
-                "channel": "petal1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('petal1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 6
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "phase": {
             "bindings": {
-              "driven": {
-                "channel": "spin1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('spin1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "stops": [
             {
@@ -479,16 +479,16 @@
           "contrast": 1,
           "gamma1": {
             "bindings": {
-              "driven": {
-                "channel": "deep1:lowMid",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('deep1').chan.lowMid"
               },
               "static": {
                 "kind": "static",
                 "value": 1.6
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "invert": 0,
           "opacity": 1,
@@ -613,16 +613,16 @@
           "row": 0.5,
           "scale": {
             "bindings": {
-              "driven": {
-                "channel": "hue1:highMid",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('hue1').chan.highMid"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

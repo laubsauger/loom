@@ -45,6 +45,16 @@ const MODE_ENUMERATION: Readonly<Record<ParameterMode, true>> = {
 
 export const PARAMETER_MODES = Object.keys(MODE_ENUMERATION) as readonly ParameterMode[];
 
+/**
+ * §T897: the modes a user can SET. `driven` is retired — a channel read is an expression
+ * term (`op('name').chan.low`) — but it stays in `ParameterMode` and the schema forever,
+ * because documents in the wild hold it and the load-time upgrade needs to parse it.
+ * Authoring surfaces (the mode buttons, `parameter.setMode`) offer only these.
+ */
+export const AUTHORABLE_PARAMETER_MODES: readonly ParameterMode[] = PARAMETER_MODES.filter(
+  (mode) => mode !== "driven",
+);
+
 const MODE_SET: ReadonlySet<string> = new Set(PARAMETER_MODES);
 
 export function isParameterSlot(value: unknown): value is ParameterSlot {
@@ -322,3 +332,45 @@ export function holdsRetainedValue(slot: ParameterSlot, mode: ParameterMode): bo
   return payloadText(binding).trim() !== "";
 }
 
+
+/**
+ * §T897 — `driven` mode is retired (owner's ruling; TD's model). A channel read is an
+ * EXPRESSION term now: `op('name').chan.value` (a node's bare/single channel) or
+ * `op('name').chan.low` (a named one), resolving through the SAME channels resolver the
+ * driven mode used, so the migration is value-identical by construction. This is the ONE
+ * mapping — the load-time upgrade below and the example builders both call it, so the two
+ * spellings can never drift.
+ */
+export function channelExpression(channel: string): string {
+  const colon = channel.indexOf(":");
+  const name = colon < 0 ? channel : channel.slice(0, colon);
+  const key = colon < 0 ? "value" : channel.slice(colon + 1);
+  return `op('${name}').chan.${key}`;
+}
+
+/**
+ * The §T897 load-time upgrade: parse `driven` forever, emit it never. A slot whose ACTIVE
+ * mode is `driven` becomes an expression slot carrying the channel read (the expression
+ * payload is its translation — the driven binding WAS the active intent). An INACTIVE
+ * driven payload is translated into the expression slot only when that slot is empty
+ * (§V108: never overwrite a retained payload the user authored). The driven payload itself
+ * is dropped once translated; a shadowed one beside an authored expression stays, harmless,
+ * for the schema still parses it.
+ */
+export function upgradeDrivenSlot(slot: ParameterSlot): { slot: ParameterSlot; changed: boolean } {
+  const driven = slot.bindings.driven;
+  if (driven === undefined || driven.kind !== "driven") return { slot, changed: false };
+  const translated = { kind: "expression" as const, source: channelExpression(driven.channel) };
+  if (slot.mode === "driven") {
+    const { driven: _dropped, ...rest } = slot.bindings;
+    return {
+      slot: { mode: "expression", bindings: { ...rest, expression: translated } },
+      changed: true,
+    };
+  }
+  if (slot.bindings.expression === undefined) {
+    const { driven: _dropped, ...rest } = slot.bindings;
+    return { slot: { mode: slot.mode, bindings: { ...rest, expression: translated } }, changed: true };
+  }
+  return { slot, changed: false };
+}

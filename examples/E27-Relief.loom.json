@@ -507,16 +507,16 @@
           "channel": "luminance",
           "offset": {
             "bindings": {
-              "driven": {
-                "channel": "cycle1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('cycle1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "row": 0.5,
           "scale": 1
@@ -604,16 +604,16 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "sway1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sway1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "far": 100,
           "fov": 40,
@@ -682,16 +682,16 @@
           "seed": 41,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "kick1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('kick1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -724,16 +724,16 @@
           "opacity": 1,
           "whitelevel": {
             "bindings": {
-              "driven": {
-                "channel": "roofsafe1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('roofsafe1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1035,29 +1035,29 @@
           ],
           "center.x": {
             "bindings": {
-              "driven": {
-                "channel": "driftx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('driftx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "center.y": {
             "bindings": {
-              "driven": {
-                "channel": "drifty1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drifty1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "fillcolor": [
             0.72,

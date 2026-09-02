@@ -101,16 +101,16 @@
         "parameters": {
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "drift1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drift1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.4
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.y": 1.25,
           "eye.z": 4.9,
@@ -511,29 +511,29 @@
           "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* two quadrature LFOs, in through the value slots (T479): values, never rebuilds */\n  q.position = vec3f(ctx.value1, 0.85, ctx.value2);\n  return q;\n}",
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "orbx1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbx1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1.7
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "orbz1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('orbz1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

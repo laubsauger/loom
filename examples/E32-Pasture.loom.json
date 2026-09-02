@@ -950,16 +950,16 @@
           "group": "p.graze.x > 0.30",
           "sizePixels": {
             "bindings": {
-              "driven": {
-                "channel": "gnaw1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('gnaw1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 2.6
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1020,16 +1020,16 @@
         "parameters": {
           "opacity": {
             "bindings": {
-              "driven": {
-                "channel": "glow1:level",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('glow1').chan.level"
               },
               "static": {
                 "kind": "static",
                 "value": 0.17
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1299,16 +1299,16 @@
           "group": "p.graze.z > 0.30",
           "sizePixels": {
             "bindings": {
-              "driven": {
-                "channel": "spark1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('spark1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 1.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1359,16 +1359,16 @@
           "period": 2.2,
           "phase": {
             "bindings": {
-              "driven": {
-                "channel": "sweepg1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sweepg1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "stops": [
             {
@@ -1582,55 +1582,55 @@
           "seed": 21,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "pace1:low",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('pace1').chan.low"
               },
               "static": {
                 "kind": "static",
                 "value": 0.28
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "reach1:high",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('reach1').chan.high"
               },
               "static": {
                 "kind": "static",
                 "value": 0.08
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value3": {
             "bindings": {
-              "driven": {
-                "channel": "burst1:onsetCount",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('burst1').chan.onsetCount"
               },
               "static": {
                 "kind": "static",
                 "value": 0.02
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value4": {
             "bindings": {
-              "driven": {
-                "channel": "range1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('range1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -1646,16 +1646,16 @@
         "parameters": {
           "hueoffset": {
             "bindings": {
-              "driven": {
-                "channel": "drift1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drift1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "saturation": 1.06,
           "value": 1
@@ -1736,16 +1736,16 @@
           ],
           "persistence": {
             "bindings": {
-              "driven": {
-                "channel": "trail1:level",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('trail1').chan.level"
               },
               "static": {
                 "kind": "static",
                 "value": 0.7
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "reset": false,
           "source": "hue1",
@@ -2101,16 +2101,16 @@
           "opacity": 1,
           "whitelevel": {
             "bindings": {
-              "driven": {
-                "channel": "warm1:lowMid",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('warm1').chan.lowMid"
               },
               "static": {
                 "kind": "static",
                 "value": 0.62
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -2187,16 +2187,16 @@
         "parameters": {
           "opacity": {
             "bindings": {
-              "driven": {
-                "channel": "drop1:level",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drop1').chan.level"
               },
               "static": {
                 "kind": "static",
                 "value": 0.2
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -2251,16 +2251,16 @@
           ],
           "r": {
             "bindings": {
-              "driven": {
-                "channel": "sway1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sway1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "s": [
             1.12,
@@ -2414,16 +2414,16 @@
           "row": 0.5,
           "scale": {
             "bindings": {
-              "driven": {
-                "channel": "grade1:highMid",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('grade1').chan.highMid"
               },
               "static": {
                 "kind": "static",
                 "value": 1.15
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {

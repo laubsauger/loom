@@ -49,10 +49,10 @@ export const lfoDissolveDocument = document(
         label: "cross1",
         parameters: {
           cross: {
-            mode: "driven",
+            mode: "expression",
             bindings: {
               static: { kind: "static", value: 0.5 },
-              driven: { kind: "driven", channel: "lfo1" },
+              expression: { kind: "expression", source: "op('lfo1').chan.value" },
             },
           },
         },

@@ -14,6 +14,7 @@ import type { UnknownParameter } from "./forward-compat.ts";
 import { checkMemoryBudget, clampNodeResolutions, clampSettings } from "./limits.ts";
 import { detachComponentLibrary } from "./project-file.ts";
 import { parseProjectDocument } from "./serialize.ts";
+import { isParameterSlot, upgradeDrivenSlot } from "../parameters/slots.ts";
 
 /**
  * Opening a `.loom.json` (T43).
@@ -122,6 +123,12 @@ export function loadProject(text: string, options: LoadProjectOptions = {}): Loa
   diagnostics.push(...nodeMigration.diagnostics);
   document = { ...document, graph: nodeMigration.graph };
 
+  // §T897: `driven` mode is retired — a channel read is an expression term now
+  // (`op('name').chan.low`). Documents in the wild still hold driven slots; they are
+  // upgraded here, value-identically, and never written back. Parse forever, emit never.
+  const drivenUpgrade = upgradeDrivenSlots(document.graph);
+  if (drivenUpgrade.upgraded > 0) document = { ...document, graph: drivenUpgrade.graph };
+
   const placeholders = findPlaceholders(document.graph, options.nodes);
   for (const placeholder of placeholders) {
     diagnostics.push({
@@ -168,6 +175,7 @@ export function loadProject(text: string, options: LoadProjectOptions = {}): Loa
     changed:
       parsed.migrations.length > 0 ||
       nodeMigration.changes.length > 0 ||
+      drivenUpgrade.upgraded > 0 ||
       settings.clamped ||
       graph.clamped,
     diagnostics,
@@ -274,4 +282,25 @@ function findUnresolvedAssets(
 ): AssetReference[] {
   const resolved = resolveAsset ?? ((asset: AssetReference) => asset.source.kind !== "objectUrl");
   return assets.filter((asset) => !resolved(asset));
+}
+
+/** §T897: every driven slot in the graph, upgraded to its expression form. Pure. */
+function upgradeDrivenSlots(graph: GraphDocument): { graph: GraphDocument; upgraded: number } {
+  let upgraded = 0;
+  const nodes: GraphDocument["nodes"] = {};
+  for (const [nodeId, node] of Object.entries(graph.nodes)) {
+    let touched = false;
+    const parameters = { ...node.parameters };
+    for (const [key, stored] of Object.entries(parameters)) {
+      if (!isParameterSlot(stored)) continue;
+      const result = upgradeDrivenSlot(stored);
+      if (result.changed) {
+        parameters[key] = result.slot;
+        touched = true;
+        upgraded += 1;
+      }
+    }
+    nodes[nodeId] = touched ? { ...node, parameters } : node;
+  }
+  return { graph: upgraded > 0 ? { ...graph, nodes } : graph, upgraded };
 }

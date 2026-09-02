@@ -327,16 +327,16 @@
           "seed": 38,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "hold1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('hold1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": 0,
           "value3": 0,
@@ -501,16 +501,16 @@
         "parameters": {
           "hueoffset": {
             "bindings": {
-              "driven": {
-                "channel": "drift1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('drift1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "saturation": 1.08,
           "value": 1

@@ -6,6 +6,7 @@ import type {
   ProjectSettings,
 } from "../../domain/types/graph.ts";
 import type { ParameterSlot, ParameterValue } from "../../domain/types/parameters.ts";
+import { channelExpression } from "../../domain/parameters/slots.ts";
 import { SCHEMA_VERSION } from "../../domain/types/schemas.ts";
 
 
@@ -95,16 +96,22 @@ export function edge(
 }
 
 /**
- * A `driven` slot (§V107): the channel is in effect, `retained` is what §V108 keeps and
- * what every host without that channel attached resolves to — the compiler in the example
- * gate included, which is why a retained value has to be a sane picture on its own.
+ * A channel-driven slot (§T897, formerly `driven` mode §V107): the channel is in effect,
+ * `retained` is what §V108 keeps and what every host without that channel attached resolves
+ * to — the compiler in the example gate included, which is why a retained value has to be a
+ * sane picture on its own.
+ *
+ * T897 (owner's ruling): there is no separate `driven` mode any more — TD's model. A channel
+ * read is an EXPRESSION term (`op('gd1').chan.high`), so inline maths over the live signal is
+ * one edit away instead of a mode change. `name` maps to `.chan.value` and `name:c` to
+ * `.chan.c`, which resolve identically to the old bare/suffixed driven addresses.
  */
 export function drivenSlot(channel: string, retained: number): ParameterSlot {
   return {
-    mode: "driven",
+    mode: "expression",
     bindings: {
       static: { kind: "static", value: retained },
-      driven: { kind: "driven", channel },
+      expression: { kind: "expression", source: channelExpression(channel) },
     },
   };
 }

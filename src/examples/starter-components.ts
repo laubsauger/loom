@@ -11,6 +11,7 @@ import type { InvocationContext } from "../domain/types/commands.ts";
 import type { GraphDocument, ProjectDocument, ProjectSettings } from "../domain/types/graph.ts";
 import type { ComponentId, NodeId } from "../domain/types/ids.ts";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
+import { channelExpression } from "../domain/parameters/slots.ts";
 import {
   EXAMPLE_TIMESTAMP,
   bloomDocument,
@@ -224,12 +225,12 @@ const AUDIO_LEVEL_SETTINGS: ProjectSettings = {
   limits: LIMITS,
 };
 
-/** The retained-static + driven slot a parameter takes when a channel drives it (§V107). */
+/** The retained-static + channel-expression slot a parameter takes when a channel drives it (§T897). */
 const drivenBy = (channel: string, retained: number) => ({
-  mode: "driven" as const,
+  mode: "expression" as const,
   bindings: {
     static: { kind: "static" as const, value: retained },
-    driven: { kind: "driven" as const, channel },
+    expression: { kind: "expression" as const, source: channelExpression(channel) },
   },
 });
 

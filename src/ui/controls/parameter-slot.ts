@@ -1,5 +1,5 @@
 import type { ParameterMode, ParameterSlot, ParameterValue } from "@domain/types/parameters.ts";
-import { isParameterSlot, slotFromValue, PARAMETER_MODES } from "@domain/parameters/slots.ts";
+import { isParameterSlot, slotFromValue, AUTHORABLE_PARAMETER_MODES } from "@domain/parameters/slots.ts";
 
 /**
  * Slot EDITING — the write half of the mode model (T204, §V107, §V108).
@@ -16,8 +16,9 @@ import { isParameterSlot, slotFromValue, PARAMETER_MODES } from "@domain/paramet
  * forbids.
  */
 
-/** Display order of the mode buttons — TD's row, left to right. */
-export const MODE_ORDER: readonly ParameterMode[] = PARAMETER_MODES;
+/** Display order of the mode buttons — TD's row, left to right. §T897: no Driven button —
+ * a channel read is an expression term (`op('name').chan.low`), exactly TD's model. */
+export const MODE_ORDER: readonly ParameterMode[] = AUTHORABLE_PARAMETER_MODES;
 
 /** Button captions. Short because four of them share one control row. */
 export const MODE_LABELS: Readonly<Record<ParameterMode, string>> = {

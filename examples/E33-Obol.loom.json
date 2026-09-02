@@ -441,29 +441,29 @@
           ],
           "eye.x": {
             "bindings": {
-              "driven": {
-                "channel": "swing1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('swing1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "eye.y": {
             "bindings": {
-              "driven": {
-                "channel": "lift1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('lift1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.78
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "far": 40,
           "fov": 42,
@@ -685,29 +685,29 @@
           "seed": 33,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "tide1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('tide1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "sheen1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sheen1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -729,16 +729,16 @@
           ],
           "roughness": {
             "bindings": {
-              "driven": {
-                "channel": "glossrest1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('glossrest1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.19
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "shininess": 300,
           "specular": [
@@ -854,29 +854,29 @@
           "seed": 33,
           "value1": {
             "bindings": {
-              "driven": {
-                "channel": "tide1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('tide1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "value2": {
             "bindings": {
-              "driven": {
-                "channel": "sheen1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sheen1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.5
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           }
         },
         "position": {
@@ -968,16 +968,16 @@
           "ambientOcclusion": true,
           "aoIntensity": {
             "bindings": {
-              "driven": {
-                "channel": "aorest1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('aorest1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.55
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "aoQuality": "high",
           "aoRadius": 0.34,
@@ -990,16 +990,16 @@
           "camera": "eye1",
           "environmentIntensity": {
             "bindings": {
-              "driven": {
-                "channel": "envrest1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('envrest1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "lights": "key1 fill1 crown1",
           "scenes": "cyc1 body1 shards1"

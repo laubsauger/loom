@@ -331,16 +331,16 @@
         "parameters": {
           "amp": {
             "bindings": {
-              "driven": {
-                "channel": "sway1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('sway1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "aspectcorrect": true,
           "exp": 1,
@@ -370,16 +370,16 @@
           "blacklevel": 0.42,
           "brightness": {
             "bindings": {
-              "driven": {
-                "channel": "gain1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('gain1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 1.3
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "contrast": 1,
           "whitelevel": 1.05
@@ -474,16 +474,16 @@
           "period": 1,
           "phase": {
             "bindings": {
-              "driven": {
-                "channel": "swirl1",
-                "kind": "driven"
+              "expression": {
+                "kind": "expression",
+                "source": "op('swirl1').chan.value"
               },
               "static": {
                 "kind": "static",
                 "value": 0.03
               }
             },
-            "mode": "driven"
+            "mode": "expression"
           },
           "stops": [
             {
