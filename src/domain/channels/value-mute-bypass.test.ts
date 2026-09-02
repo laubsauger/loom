@@ -359,6 +359,15 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
     // T654: channelIn with no external resolver speaks its fallback — nonzero here so
     // the sweep can hear it go silent. No other node has a `fallback` parameter.
     fallback: 0.62,
+    // T942: the same shape for midiIn, and for the same reason. A node with NOTHING
+    // learned publishes an empty bag — correctly: there are no controls to report, and
+    // inventing one would be a channel the user never asked for. So the sweep hands it one
+    // learned control whose REST is nonzero, which is exactly what it publishes with no
+    // hardware attached, and the mute assertion has something to silence. No other node
+    // has a `mapping` parameter.
+    mapping: JSON.stringify([
+      { channel: "cutoff", source: { kind: "cc", channel: 1, number: 74 }, range: [0.4, 1], mode: "absolute" },
+    ]),
   };
 
   const evaluateOne = (

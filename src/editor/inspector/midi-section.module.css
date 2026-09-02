@@ -1,0 +1,43 @@
+/* T942 tier 1 — the learn table's own layout. A NEW file rather than lines added to
+   `inspector.module.css`: the shared sheet is a hot surface across sessions, and a
+   node-specific table has no business in it (`audio-section` and `webcam-section` needed
+   nothing of their own, which is why neither has one). */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 6px;
+  align-items: center;
+}
+
+.rowDetail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.rowDetail input[type="number"] {
+  width: 5.5em;
+}
+
+.source {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.learning {
+  opacity: 1;
+  font-weight: 600;
+}
+
+.problem {
+  color: var(--error);
+}

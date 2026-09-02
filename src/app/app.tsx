@@ -65,7 +65,9 @@ import { createValueHistoryStore } from "./value-history.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useModelInference } from "./use-model-inference.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { useValueGraph } from "./use-value-graph.ts";
+import { useMidiInput } from "./use-midi-input.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
@@ -286,7 +288,27 @@ export function App({
    * nothing. (T238's single-channel shorthand WAS live, so an LFO always worked — the bug
    * is smaller than "the value graph does nothing" and still real.)
    */
-  const valueGraph = useValueGraph(runtime, analyze.resolver);
+  /**
+   * T942 tier 1 — the session's ONE Web MIDI access, constructed. It asks for NOTHING on
+   * mount: `request()` runs from the MIDI section's button and nowhere else, because
+   * Chrome has prompted for all Web MIDI since 124 and a prompt on load is §V476's ambush
+   * applied to every document rather than to one example.
+   */
+  const midi = useMidiInput();
+
+  /**
+   * The value graph's external channels are a MERGE now, and the order does not matter
+   * because the two namespaces cannot collide: MIDI answers only `midi:` names (it checks
+   * the prefix rather than assuming it, §V665) and analyze answers node names, which
+   * cannot begin with `midi:` since `:` is the addressing separator. Stated rather than
+   * relied on: a resolver that answered for everything would silently shadow the other.
+   */
+  const externalChannels = useCallback<ChannelResolver>(
+    (channel, context) => midi.resolver(channel, context) ?? analyze.resolver(channel, context),
+    [analyze.resolver, midi.resolver],
+  );
+
+  const valueGraph = useValueGraph(runtime, externalChannels);
 
   /**
    * The rolling window every value node plots in its body (T344, §V275).
@@ -1173,6 +1195,7 @@ export function App({
                 status={status}
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
+                midi={midi}
               />
               </AppRuntimeContext.Provider>
             </ErrorBoundary>

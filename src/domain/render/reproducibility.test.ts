@@ -80,6 +80,10 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       "channelIn:async-cached",
       // T385/T715: inference, whose latency is unbounded rather than one frame.
       "depth:async-cached",
+      // T942: a MIDI controller. Live hardware in exactly the sense the mic is, and
+      // deliberately NOT async-cached despite sharing analyze's `channels` seam — a MIDI
+      // message is at most one frame old by construction, so there is no age to show.
+      "midiIn:external-live",
       "mouse:external-live",
       "pose:async-cached",
       "webcam:external-live",

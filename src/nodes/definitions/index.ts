@@ -32,6 +32,7 @@ import { pointTopologyNode } from "./point-topology.ts";
 import { pointProximityNode } from "./point-proximity.ts";
 import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
 import { slitScanNode } from "./slit-scan.ts";
+import { midiInNode } from "./midi.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -66,6 +67,7 @@ export { pointTopologyNode } from "./point-topology.ts";
 export { pointProximityNode } from "./point-proximity.ts";
 export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
 export { slitScanNode } from "./slit-scan.ts";
+export { midiInNode } from "./midi.ts";
 export {
   movieFileInNode,
   webcamNode,
@@ -186,6 +188,9 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   audioInNode,
   audioFileInNode,
   audioPatternNode,
+  // T942: the controller as channels — the value family's fourth input source, after
+  // Mouse, the trio and the audio pair. Page-native, no helper, no bridge.
+  midiInNode,
   ...sceneNodeDefinitions,
   ...pointGeneratorDefinitions,
   pointsFromTextureNode,

@@ -28,6 +28,10 @@ describe("the code-parameter census (T492)", () => {
       .sort();
     expect(census).toEqual([
       "customWgsl.source:wgsl",
+      // T942: the MIDI-learn table. Declared code/json for the same reason the attribute
+      // schemas are (§V458) — it is hand-editable structured data, so it gets the JSON
+      // editor and the code pane from the manifest rather than from a UI special case.
+      "midiIn.mapping:json",
       "pointKernel.attributes:json",
       "pointKernel.group:wgsl",
       "pointKernel.kernel:wgsl",
@@ -150,6 +154,10 @@ describe("core catalogue (T70, T40)", () => {
       "audioIn",
       "audioFileIn",
       "audioPattern",
+      // T942: the controller as channels. Page-native Web MIDI, learned bindings held in
+      // the node's own `mapping` parameter, read through the `channels` seam analyze
+      // already publishes into — no new port type and no compiler change.
+      "midiIn",
       // T447: the scene family — assembly by NAME, data by wire (V372).
       "camera",
       "light",
@@ -317,6 +325,9 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "componentOutValue",
         "constant",
         "lfo",
+        // T942: a controller's learned controls are a channel bag, so the node plots and
+        // previews exactly as Mouse does — no special case anywhere for it being hardware.
+        "midiIn",
         "mouse",
         "timer",
         "valueFilter",

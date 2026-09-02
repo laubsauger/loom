@@ -99,6 +99,16 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // reads wherever the cursor is at that instant; during a take it is wherever the user
   // left it, or wherever they moved it while the take ran.
   mouse: "external-live",
+  // T942. A MIDI controller, read through the same `channels` seam `analyze` publishes
+  // into. `external-live` and NOT `async-cached`, and the difference is worth stating
+  // because the seam it shares with `channelIn` argues for the other answer: a MIDI
+  // message arrives on the event loop BETWEEN frames and is read at the next frame
+  // boundary, so it is at most one frame old BY CONSTRUCTION — exactly the pointer's
+  // latency, not analyze's readback schedule. So no age is published for it and none
+  // should be: §V329's staleness half does not apply to a device that cannot be stale.
+  // What DOES apply is the first half — a take samples whatever the performer happened
+  // to be touching, twice takes are two performances, and no parameter changes that.
+  midiIn: "external-live",
 
   /*
    * ASYNC-CACHED — a result that arrives on its own schedule, published latest-wins.

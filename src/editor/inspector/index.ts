@@ -3,6 +3,9 @@
 export { Inspector } from "./inspector.tsx";
 export type { InspectorProps, InspectorProjectSettings } from "./inspector.tsx";
 
+export { MidiSection } from "./midi-section.tsx";
+export type { MidiSectionProps, MidiSectionSurface } from "./midi-section.tsx";
+
 export { CommonReadout, CommonSection } from "./common-section.tsx";
 export type { CommonReadoutProps, CommonSectionProps } from "./common-section.tsx";
 

@@ -279,6 +279,11 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   valueStep: "clockless",
   audioIn: "clockless",
   audioFileIn: "clockless",
+  // T942: MIDI In reports where the CONTROLS are, exactly as `mouse` reports where the
+  // cursor is. There is no phase to lap and no position to wrap; a timeline loop passes
+  // straight through it. Its one piece of state (a Toggle's latch) is a per-node bag that
+  // clears with the transport (§V181), which is a RESET rule rather than a clock.
+  midiIn: "clockless",
   // T654/T670: channelIn reads a RESOLVER — the last completed value of an external
   // channel (analyze's readback via session extras) — and no clock at all. Whatever
   // clock the MEASUREMENT is on belongs to the node that produced it; a lap reaches

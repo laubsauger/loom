@@ -18,7 +18,7 @@ import { ComponentPage } from "@editor/component/index.ts";
 import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import { Inspector } from "@editor/inspector/index.ts";
-import type { InputResolution } from "@editor/inspector/index.ts";
+import type { InputResolution, MidiSectionSurface } from "@editor/inspector/index.ts";
 import { useKeymapPane } from "@editor/keymap/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
@@ -125,6 +125,12 @@ export interface InspectorPaneProps {
   /** Values the open file carried that this build cannot read (§V68, §V69). */
   unknownParameters?: readonly UnknownParameter[];  /** T434(b)/T432: the session audio capture's status, for the Inspector's Audio section. */
   audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
+  /**
+   * T942: the session's ONE Web MIDI access, for the Inspector's MIDI section — its state,
+   * its ports, its permission request and its learn arming. Absent = no session MIDI
+   * wiring (tests, embeds), and the section is then hidden the way the Audio one is.
+   */
+  midi?: MidiSectionSurface;
 }
 
 /**
@@ -175,6 +181,7 @@ export function InspectorPane({
   status,
   unknownParameters = [],
   audioStatus,
+  midi,
 }: InspectorPaneProps) {
   const { bus, invocation, registry, settings } = useAppRuntime();
   // §V351/B67: the pane that declares a context must be able to hold focus, or clicking
@@ -244,6 +251,7 @@ export function InspectorPane({
           {...(channels === undefined ? {} : { channels })}
           {...(latestFrame === undefined ? {} : { latestFrame })}
           {...(audioStatus === undefined ? {} : { audioStatus })}
+          {...(midi === undefined ? {} : { midi })}
         />
       </div>
     </ContextMenuHost>

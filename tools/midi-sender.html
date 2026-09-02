@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MIDI Sender — Loom dev tool</title>
+    <style>
+      :root { color-scheme: dark light; }
+      body {
+        font: 14px/1.5 system-ui, sans-serif;
+        margin: 0 auto;
+        padding: 24px;
+        max-width: 46rem;
+      }
+      h1 { font-size: 1.2rem; margin: 0 0 4px; }
+      h2 { font-size: 0.95rem; margin: 24px 0 8px; }
+      p, li { margin: 6px 0; }
+      .muted { opacity: 0.7; }
+      fieldset { border: 1px solid currentColor; border-radius: 6px; padding: 12px; margin: 12px 0; opacity: 0.95; }
+      legend { padding: 0 6px; font-weight: 600; }
+      .row { display: grid; grid-template-columns: 4rem 5rem 1fr 3.5rem; gap: 8px; align-items: center; margin: 6px 0; }
+      .row input[type="range"] { width: 100%; }
+      .pads { display: flex; gap: 8px; flex-wrap: wrap; }
+      button { font: inherit; padding: 4px 10px; }
+      code { font-family: ui-monospace, monospace; }
+      #log { font-family: ui-monospace, monospace; white-space: pre; min-height: 3em; opacity: 0.8; }
+      .warn { border-left: 3px solid currentColor; padding-left: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>MIDI Sender</h1>
+    <p class="muted">
+      A dev tool for exercising Loom's MIDI In node and MIDI-learn without a hardware
+      controller. It is not part of the app: it is served by the dev server only and is not
+      included in a production build.
+    </p>
+
+    <h2>How to use it</h2>
+    <ol>
+      <li>Create a <strong>virtual MIDI port</strong> on this machine (see below) — a browser
+        tab cannot send MIDI to itself without one, because Web MIDI outputs go to the
+        operating system and Web MIDI inputs come back from it.</li>
+      <li>Open this page, press <em>Enable MIDI</em>, and pick that virtual port as the output.</li>
+      <li>In Loom, drop a <strong>MIDI In</strong> node, open the inspector's <em>MIDI</em>
+        section, press <em>Enable MIDI</em>, and pick the same virtual port (or leave it on
+        <em>Any input</em>).</li>
+      <li>Press <em>Add control</em>, then <em>Learn</em>, then move a knob on this page. The
+        row binds to that CC.</li>
+      <li>Rename the row to something you would actually type — <code>cutoff</code> — and drive
+        a parameter with <code>midi1:cutoff</code>.</li>
+    </ol>
+
+    <h2>Creating a virtual MIDI port</h2>
+    <ul>
+      <li><strong>macOS</strong> — no install needed. Open <em>Audio MIDI Setup</em>, choose
+        <em>Window → Show MIDI Studio</em>, double-click <em>IAC Driver</em>, and tick
+        <em>Device is online</em>. Its bus then appears as both an input and an output.</li>
+      <li><strong>Windows</strong> — install <em>loopMIDI</em> (Tobias Erichsen, free) and add
+        a port. There is no built-in equivalent.</li>
+      <li><strong>Linux</strong> — ALSA has one built in:
+        <code>sudo modprobe snd-virmidi</code> gives you a set of virtual ports, or run
+        <code>a2jmidid</code> / a JACK setup if you already use one.</li>
+    </ul>
+    <p class="warn muted">
+      Web MIDI needs a secure context. <code>http://localhost</code> counts as one, so the dev
+      server is fine. Safari has no Web MIDI at any version, so this page will say so there —
+      which is the same thing Loom itself says, for the same reason.
+    </p>
+
+    <h2>Send</h2>
+    <p><button id="enable" type="button">Enable MIDI</button> <span id="status">Not started.</span></p>
+    <p>
+      <label>Output <select id="port"></select></label>
+      <label>Channel
+        <select id="channel">
+          <option>1</option><option>2</option><option>3</option><option>4</option>
+          <option>5</option><option>6</option><option>7</option><option>8</option>
+          <option>9</option><option>10</option><option>11</option><option>12</option>
+          <option>13</option><option>14</option><option>15</option><option>16</option>
+        </select>
+      </label>
+    </p>
+
+    <fieldset>
+      <legend>Knobs — Control Change, 7-bit</legend>
+      <div id="knobs"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pads — momentary, for Toggle mode</legend>
+      <div class="pads" id="pads"></div>
+      <p class="muted">
+        A pad sends 127 on press and 0 on release. Learn one onto a row and set its Mode to
+        Toggle to latch it.
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pitch bend — 14-bit</legend>
+      <div class="row">
+        <span>Bend</span>
+        <span class="muted">0..16383</span>
+        <input id="bend" type="range" min="0" max="16383" value="8192" />
+        <span id="bendValue">8192</span>
+      </div>
+      <p class="muted">
+        Loom decodes both data bytes, so the value here should arrive intact rather than
+        quantised to 128 steps. That is the assertion worth eyeballing.
+      </p>
+    </fieldset>
+
+    <h2>Last sent</h2>
+    <div id="log">nothing yet</div>
+
+    <script type="module">
+      const statusEl = document.getElementById("status");
+      const portEl = document.getElementById("port");
+      const channelEl = document.getElementById("channel");
+      const logEl = document.getElementById("log");
+
+      let access = null;
+
+      function outputs() {
+        const found = [];
+        if (access !== null) access.outputs.forEach((output) => found.push(output));
+        return found;
+      }
+
+      function refreshPorts() {
+        const found = outputs();
+        const previous = portEl.value;
+        portEl.replaceChildren();
+        for (const output of found) {
+          const option = document.createElement("option");
+          option.value = output.id;
+          option.textContent = output.name || output.id;
+          portEl.append(option);
+        }
+        if (found.some((output) => output.id === previous)) portEl.value = previous;
+        statusEl.textContent =
+          found.length === 0
+            ? "MIDI is on, but there is no output port. Create a virtual port (see above)."
+            : `MIDI is on — ${found.length} output${found.length === 1 ? "" : "s"}.`;
+      }
+
+      document.getElementById("enable").addEventListener("click", () => {
+        if (typeof navigator.requestMIDIAccess !== "function") {
+          statusEl.textContent = "This browser has no Web MIDI. Use Chrome, Edge or Firefox.";
+          return;
+        }
+        statusEl.textContent = "Waiting for permission…";
+        navigator.requestMIDIAccess({ sysex: false }).then(
+          (granted) => {
+            access = granted;
+            granted.onstatechange = refreshPorts;
+            refreshPorts();
+          },
+          (error) => {
+            statusEl.textContent = `MIDI could not start: ${error.name} — ${error.message}`;
+          },
+        );
+      });
+
+      function send(bytes, description) {
+        const output = outputs().find((entry) => entry.id === portEl.value);
+        if (output === undefined) {
+          logEl.textContent = "No output port selected.";
+          return;
+        }
+        output.send(bytes);
+        logEl.textContent = `${description}\n[${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(" ")}]`;
+      }
+
+      const channel = () => Number(channelEl.value) - 1;
+
+      /* Four knobs on CCs a controller is likely to leave alone; the numbers are editable
+         so a specific mapping can be reproduced. */
+      const knobsEl = document.getElementById("knobs");
+      for (const [index, cc] of [21, 22, 23, 24].entries()) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `
+          <span>Knob ${index + 1}</span>
+          <label class="muted">CC <input type="number" min="0" max="127" value="${cc}" style="width:4rem" /></label>
+          <input type="range" min="0" max="127" value="0" />
+          <span>0</span>`;
+        const [numberEl, rangeEl] = row.querySelectorAll("input");
+        const readout = row.querySelector("span:last-of-type");
+        rangeEl.addEventListener("input", () => {
+          const value = Number(rangeEl.value);
+          readout.textContent = String(value);
+          send([0xb0 | channel(), Number(numberEl.value) & 0x7f, value], `CC ${numberEl.value} ch ${channelEl.value} = ${value}`);
+        });
+        knobsEl.append(row);
+      }
+
+      const padsEl = document.getElementById("pads");
+      for (const cc of [64, 65, 66, 67]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = `Pad CC ${cc}`;
+        const fire = (value) => send([0xb0 | channel(), cc, value], `CC ${cc} ch ${channelEl.value} = ${value}`);
+        button.addEventListener("pointerdown", () => fire(127));
+        button.addEventListener("pointerup", () => fire(0));
+        button.addEventListener("pointerleave", () => fire(0));
+        padsEl.append(button);
+      }
+
+      const bendEl = document.getElementById("bend");
+      const bendValueEl = document.getElementById("bendValue");
+      bendEl.addEventListener("input", () => {
+        const value = Number(bendEl.value);
+        bendValueEl.textContent = String(value);
+        // LSB first, then MSB — the encoding a 7-bit reader silently truncates.
+        send([0xe0 | channel(), value & 0x7f, (value >> 7) & 0x7f], `Bend ch ${channelEl.value} = ${value}`);
+      });
+    </script>
+  </body>
+</html>

@@ -17,6 +17,11 @@
 
 ## Run
 
+The hosted build has everything that runs in the browser. Anything needing a helper
+process on your machine — the stdio MCP bridge today, external devices and services
+later — works only from a local clone. Nodes that need one stay visible either way and
+say what they are waiting for.
+
 Requires Node.js 22+, pnpm 9.15.4, and a WebGPU browser.
 
 ```bash
@@ -27,6 +32,35 @@ pnpm dev
 ```bash
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
+
+## MIDI
+
+A **MIDI In** node reads a controller as channels: learn a control in the inspector's MIDI
+section (arm a row, move the knob) and it publishes under the name you give it, so
+`midi1:cutoff` drives any parameter — including a shader's own reflected `struct Params`
+fields. It reads 7-bit Control Change and 14-bit pitch bend; notes, velocity, MIDI clock,
+14-bit CC pairs and SysEx are not read.
+
+Access is asked for on a button press, never on page load. With no Web MIDI (Safari has
+none at any version), a refused permission, or nothing plugged in, the node still publishes
+every learned channel at its rest value, so the document loads and renders — and the MIDI
+section says which of those it is.
+
+### Testing it without a controller
+
+`tools/midi-sender.html` is a dev-only page with knobs, pads and a pitch-bend slider that
+sends real MIDI through Web MIDI. It is served by the dev server (`pnpm dev`, then open
+`/tools/midi-sender.html`) and is not part of a production build.
+
+It needs a **virtual MIDI port**, because a browser's MIDI output goes to the operating
+system rather than back to the same page:
+
+- **macOS** — nothing to install. *Audio MIDI Setup → Window → Show MIDI Studio*,
+  double-click **IAC Driver**, tick *Device is online*.
+- **Windows** — install **loopMIDI** (free) and add a port.
+- **Linux** — `sudo modprobe snd-virmidi` for ALSA virtual ports.
+
+Then send from one tab and learn in the other. The page repeats these instructions itself.
 
 ## MCP
 
