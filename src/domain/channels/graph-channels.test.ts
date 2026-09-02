@@ -110,4 +110,38 @@ describe("hasAnimatedParameters", () => {
       ),
     ).toBe(true);
   });
+
+  /**
+   * T988 — `map` is the fifth mode and it is the one this predicate leaves out. That is a
+   * decision, so it is gated: the reason has to be checkable, not remembered.
+   *
+   * §V287: a map has NO CPU value. `resolveStored`'s `map` branch returns the RETAINED
+   * static and files the mapping as data for the consumer to compile, so the number the
+   * inspector reads is the same at every frame. Saying "animated" here would arm the
+   * panel's 10 Hz sampler — a timer, a `setState` and a full inspector re-render, ten
+   * times a second — for a value that provably cannot move.
+   */
+  it("excludes `map`, because a mapped parameter's CPU value is the same at every frame", () => {
+    const mapped = node("a", "blur", {
+      parameters: {
+        size: {
+          mode: "map",
+          bindings: {
+            map: { kind: "map", attribute: "size" },
+            static: { kind: "static", value: 12 },
+          },
+        },
+      },
+    });
+
+    // The reason, measured rather than asserted: resolve the same parameter a thousand
+    // frames apart and it is the retained 12 both times. If that ever stopped being true,
+    // THIS is the assertion that has to fail before the predicate is changed.
+    const early = resolveParameters(mapped, blurNode, { frame: frameAt(0) }).values["size"];
+    const late = resolveParameters(mapped, blurNode, { frame: frameAt(1000) }).values["size"];
+    expect(early).toBe(12);
+    expect(late).toBe(early);
+
+    expect(hasAnimatedParameters(graphWith(mapped))).toBe(false);
+  });
 });

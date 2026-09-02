@@ -38,6 +38,19 @@ export const MODE_GLYPHS: Readonly<Record<ParameterMode, string>> = {
   map: "M",
 };
 
+/**
+ * §V830 — the row badge for a non-static mode. Four characters, because it rides in the
+ * label line next to `rc` and a driven parameter must be identifiable at a glance,
+ * without expanding the mode panel to find out which of the four things is moving it.
+ */
+export const MODE_BADGES: Readonly<Record<ParameterMode, string>> = {
+  static: "const",
+  expression: "expr",
+  bind: "bind",
+  driven: "drvn",
+  map: "map",
+};
+
 /** What the active mode's payload is called in its editor's label. */
 export const MODE_PAYLOAD_LABELS: Readonly<Record<ParameterMode, string>> = {
   static: "Value",

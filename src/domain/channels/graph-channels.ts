@@ -76,6 +76,15 @@ export function hasAnimatedParameters(graph: GraphDocument): boolean {
  * from this, and a second predicate that drifted would mean the inspector going quiet for
  * exactly the parameters the frame loop is animating. Component keys (`color.g`) live in
  * the same record, so a compound with one driven channel counts.
+ *
+ * `map` is the fifth mode and it is DELIBERATELY not here (T988, §V287). A map has no CPU
+ * value: `resolveStored`'s `map` branch returns the RETAINED static and files the mapping
+ * as data for the consumer to compile, so re-resolving it at frame 900 produces exactly
+ * the number frame 0 produced. Listing it would arm the panel's 10 Hz sampler — a timer,
+ * a `setState` and a full inspector re-render, ten times a second, for a value that
+ * cannot move. `expression`, `driven` and `bind` are here because each of them CAN read
+ * the frame: an expression through `frame.*`, a driven slot through its channel, a bind
+ * through a sibling that is one of the first two.
  */
 export function nodeHasAnimatedParameters(node: GraphDocument["nodes"][string]): boolean {
   for (const stored of Object.values(node.parameters)) {

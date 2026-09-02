@@ -24,7 +24,7 @@ import { PulseField } from "./pulse-field.tsx";
 import { StopsField } from "./stops-field.tsx";
 import { ParameterModePanel } from "./parameter-mode.tsx";
 import { valueForDefinition } from "./parameter-value.ts";
-import { slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
+import { MODE_BADGES, MODE_LABELS, slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
 import { TextField } from "./text-field.tsx";
 import { VectorField, specForVector } from "./vector-field.tsx";
 import type { EditPhase, ValueListener } from "./types.ts";
@@ -188,12 +188,29 @@ export function ParameterControl({
   const emit = (next: ParameterValue, phase: EditPhase): void => onChange(next, phase);
 
   /**
-   * A channel whose own mode is not `static` is decided by its expression, bind or
-   * channel — so its field says so by being unavailable, rather than accepting a drag
-   * whose value the resolver would then override.
+   * §V830 (T988) — WHAT decides this parameter, when the stored constant does not.
+   *
+   * Refusing the drag was always right: a gesture the resolver overwrites on the next
+   * frame is a lie. Saying so with `disabled` was not. `disabled` is the browser's word
+   * for inert and unimportant, and it dims the number, drops the field out of tab order
+   * and tells a screen reader to skip it — for the ONE moving value on the panel, which
+   * is the value the panel was opened to read. Grey is also what broken, loading,
+   * unsupported and not-licensed look like, so it asked the user to tell five states
+   * apart by one colour.
+   *
+   * The caption is the positive half: the field carries the driver's NAME, not the
+   * absence of editability. Per channel where the channel has its own slot (§V113), and
+   * for the whole compound otherwise.
    */
-  const componentDisabled =
-    components === undefined ? undefined : components.map((component) => component.mode !== "static");
+  const drivenBy = slot.mode === "static" ? null : MODE_LABELS[slot.mode];
+  /** The row-level half of the same mark: `expr`, `bind`, `chan`, `map`. */
+  const drivenBadge = slot.mode === "static" ? null : MODE_BADGES[slot.mode];
+  const componentDriven =
+    components === undefined
+      ? undefined
+      : components.map((component) =>
+          component.mode === "static" ? null : MODE_LABELS[component.mode],
+        );
 
   const writeSlot = (key: string, next: ParameterSlot): void => {
     onStoredChange?.({ [key]: next }, "commit");
@@ -274,12 +291,16 @@ export function ParameterControl({
 
   const shared = {
     label,
-    // A parameter whose active mode is not `static` is not editable by dragging its
-    // value: the expression, the bind or the channel decides it. Saying so by disabling
-    // the field beats a control that silently discards what the user does with it.
-    disabled: disabled || slot.mode !== "static",
+    disabled,
     ...(descriptionId === undefined ? {} : { describedBy: descriptionId }),
   };
+  /**
+   * §V830 is implemented for the value-bearing fields (number, vector, colour, text): the
+   * ones whose whole point is "what is it right now". A switch, a select, a pulse and the
+   * code editor have no read-only presentation yet, so they keep the old refusal — being
+   * unavailable — rather than silently accepting a write the resolver would discard.
+   */
+  const sharedLocked = { ...shared, disabled: disabled || drivenBy !== null };
 
   const row = (children: ReactNode, options?: { hint?: string | null; stacked?: boolean }) => (
     <div className={styles.rowHost} onKeyDown={onKeyDown}>
@@ -289,6 +310,7 @@ export function ParameterControl({
         compileTime={definition.compileTime === true}
         inactive={inactive}
         driven={driven}
+        drivenBadge={drivenBadge}
         description={definition.description}
         hint={options?.hint ?? null}
         stacked={options?.stacked ?? false}
@@ -319,6 +341,7 @@ export function ParameterControl({
           value={typeof shown === "number" ? shown : definition.default}
           defaultValue={definition.default}
           spec={definition}
+          {...(drivenBy === null ? {} : { drivenBy })}
           {...(definition.unit === undefined ? {} : { unit: definition.unit })}
           onChange={(next, phase) => emit(next, phase)}
         />,
@@ -328,7 +351,7 @@ export function ParameterControl({
     case "boolean":
       return row(
         <BooleanField
-          {...shared}
+          {...sharedLocked}
           id={controlId}
           value={shown === true}
           onChange={(next, phase) => emit(next, phase)}
@@ -338,7 +361,7 @@ export function ParameterControl({
     case "enum":
       return row(
         <EnumField
-          {...shared}
+          {...sharedLocked}
           id={controlId}
           value={typeof shown === "string" ? shown : definition.default}
           options={definition.options}
@@ -352,7 +375,8 @@ export function ParameterControl({
           {...shared}
           value={toRgba(shown)}
           definition={definition}
-          {...(componentDisabled === undefined ? {} : { componentDisabled })}
+          {...(drivenBy === null ? {} : { drivenBy })}
+          {...(componentDriven === undefined ? {} : { componentDriven })}
           onChange={(next, phase) => emitCompound(next, phase)}
         />,
         { hint: definition.space },
@@ -364,7 +388,8 @@ export function ParameterControl({
           {...shared}
           value={Array.isArray(shown) ? (shown as readonly number[]) : definition.default}
           definition={definition}
-          {...(componentDisabled === undefined ? {} : { componentDisabled })}
+          {...(drivenBy === null ? {} : { drivenBy })}
+          {...(componentDriven === undefined ? {} : { componentDriven })}
           onChange={(next, phase) => emitCompound(next, phase)}
         />,
         { hint: describeRange(specForVector(definition)), stacked: definition.size > 2 },
@@ -377,6 +402,7 @@ export function ParameterControl({
           id={controlId}
           value={typeof shown === "string" ? shown : definition.default}
           multiline={definition.multiline === true}
+          readOnly={drivenBy !== null}
           onChange={(next, phase) => emit(next, phase)}
         />,
         { stacked: definition.multiline === true },
@@ -390,7 +416,7 @@ export function ParameterControl({
             label,
             value: typeof shown === "string" ? shown : definition.default,
             language: definition.language,
-            disabled: shared.disabled === true,
+            disabled: sharedLocked.disabled === true,
             onCommit: (next) => emit(next, "commit"),
           })
         ) : (
@@ -399,6 +425,7 @@ export function ParameterControl({
             id={controlId}
             value={typeof shown === "string" ? shown : definition.default}
             multiline
+            readOnly={drivenBy !== null}
             onChange={(next, phase) => emit(next, phase)}
           />
         ),
@@ -421,9 +448,9 @@ export function ParameterControl({
     case "pulse":
       return row(
         <PulseField
-          {...shared}
+          {...sharedLocked}
           id={controlId}
-          disabled={shared.disabled || onPulse === undefined}
+          disabled={sharedLocked.disabled || onPulse === undefined}
           onFire={() => onPulse?.(parameterKey)}
         />,
       );
@@ -431,7 +458,7 @@ export function ParameterControl({
     case "stops":
       return row(
         <StopsField
-          {...shared}
+          {...sharedLocked}
           value={Array.isArray(shown) ? (shown as readonly ColorStop[]) : definition.default}
           definition={definition}
           onChange={(next, phase) => emit(next, phase)}

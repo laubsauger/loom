@@ -28,11 +28,20 @@ export interface VectorFieldProps {
   definition: VectorParameter;
   disabled?: boolean;
   /**
-   * Per-axis availability (§V113). A channel whose own slot runs an expression, a bind
-   * or a channel is not draggable — its value is decided elsewhere, and a field that
-   * accepts a gesture the resolver then overrides is a field that lies.
+   * §V830 — what decides the WHOLE vector, when its own slot is not static. Every axis
+   * inherits it; a per-axis caption below overrides it.
    */
-  componentDisabled?: readonly boolean[];
+  drivenBy?: string | undefined;
+  /**
+   * Per-axis drivers (§V113, §V830). Entry `i` names what decides axis `i` — "Expression",
+   * "Bind", "Channel", "Map" — or is null when that axis is a plain constant.
+   *
+   * A driven axis is not draggable: its value is decided elsewhere, and a field that
+   * accepts a gesture the resolver then overrides is a field that lies. It is NOT
+   * disabled either — see `NumberField.drivenBy`. It keeps updating, keeps focus and
+   * says which of the four things is moving it.
+   */
+  componentDriven?: readonly (string | null)[];
   describedBy?: string;
   onChange: ValueListener<readonly number[]>;
 }
@@ -42,12 +51,17 @@ export function VectorField({
   value,
   definition,
   disabled = false,
-  componentDisabled,
+  drivenBy,
+  componentDriven,
   describedBy,
   onChange,
 }: VectorFieldProps) {
   const spec = specForVector(definition);
   const size = definition.size;
+
+  /** The axis's own driver, else the compound's, else nothing: this axis is a constant. */
+  const driverFor = (index: number): string | undefined =>
+    componentDriven?.[index] ?? drivenBy ?? undefined;
 
   const setAxis = (index: number, next: number, phase: EditPhase): void => {
     const updated = Array.from({ length: size }, (_unused, axis) =>
@@ -68,7 +82,8 @@ export function VectorField({
             value={value[index] ?? definition.default[index] ?? 0}
             defaultValue={definition.default[index] ?? 0}
             spec={spec}
-            disabled={disabled || componentDisabled?.[index] === true}
+            disabled={disabled}
+            {...(driverFor(index) === undefined ? {} : { drivenBy: driverFor(index) })}
             {...(describedBy === undefined ? {} : { describedBy })}
             onChange={(next, phase) => setAxis(index, next, phase)}
           />

@@ -42,10 +42,19 @@ export interface ColorFieldProps {
   definition: ColorParameter;
   disabled?: boolean;
   /**
-   * Per-channel availability (§V113): `color.g` running an expression is not draggable,
-   * because its own slot decides it and the swatch does not.
+   * §V830 — what decides the WHOLE colour, when its own slot is not static. Every
+   * channel inherits it; a per-channel caption below overrides it.
    */
-  componentDisabled?: readonly boolean[];
+  drivenBy?: string | undefined;
+  /**
+   * Per-channel drivers (§V113, §V830). Entry `i` names what decides channel `i` —
+   * "Expression", "Bind", "Channel", "Map" — or is null when the channel is a constant.
+   *
+   * `color.g` running an expression is not draggable, because its own slot decides it
+   * and the swatch does not. It is not DISABLED either: it keeps showing what is on
+   * screen and says which of the four things is putting it there (`NumberField.drivenBy`).
+   */
+  componentDriven?: readonly (string | null)[];
   describedBy?: string;
   onChange: ValueListener<readonly number[]>;
 }
@@ -55,7 +64,8 @@ export function ColorField({
   value,
   definition,
   disabled = false,
-  componentDisabled,
+  drivenBy,
+  componentDriven,
   describedBy,
   onChange,
 }: ColorFieldProps) {
@@ -66,6 +76,16 @@ export function ColorField({
 
   const shown = convertColor(stored, space, representation);
   const hex = toHex(stored, space);
+
+  /** The channel's own driver, else the colour's, else nothing: this channel is a constant. */
+  const driverFor = (index: number): string | undefined =>
+    componentDriven?.[index] ?? drivenBy ?? undefined;
+  /**
+   * §V113: the swatch, the picker and the hex field all write ALL FOUR channels, so one
+   * driven channel makes every one of them a write that would clobber a driver.
+   */
+  const channelDrivers = COLOR_CHANNEL_LABELS.map((_label, index) => driverFor(index));
+  const anyDriven = channelDrivers.some((driver) => driver !== undefined);
 
   const emit = (next: Rgba, phase: EditPhase): void => {
     onChange([next[0], next[1], next[2], next[3]], phase);
@@ -82,6 +102,12 @@ export function ColorField({
   };
 
   const commitHex = (text: string): void => {
+    // §V830: `readOnly` stops the typing; this stops the write, so the refusal cannot be
+    // reached around by a synthetic change the way `disabled` could not be.
+    if (anyDriven) {
+      setHexDraft(null);
+      return;
+    }
     const parsed = parseHex(text, space, stored[3]);
     setHexDraft(null);
     if (parsed !== null) emit(parsed, "commit");
@@ -122,7 +148,7 @@ export function ColorField({
               value={stored}
               space={space}
               disabled={disabled}
-              {...(componentDisabled === undefined ? {} : { componentDisabled })}
+              componentDisabled={channelDrivers.map((driver) => driver !== undefined)}
               onChange={emit}
             />
             {COLOR_CHANNEL_LABELS.map((channelLabel, index) => (
@@ -135,7 +161,8 @@ export function ColorField({
                   value={shown[index] ?? 0}
                   defaultValue={defaults[index] ?? 0}
                   spec={channelSpec(index)}
-                  disabled={disabled || componentDisabled?.[index] === true}
+                  disabled={disabled}
+                  {...(driverFor(index) === undefined ? {} : { drivenBy: driverFor(index) })}
                   onChange={(next, phase) => setChannel(index, next, phase)}
                 />
               </div>
@@ -165,6 +192,10 @@ export function ColorField({
         className={cx(styles.hex, "nodrag")}
         value={hexDraft ?? hex}
         disabled={disabled}
+        // §V830: legible, focusable, live — and refusing the edit, which is what
+        // `readOnly` says and `disabled` did not.
+        readOnly={anyDriven}
+        {...(anyDriven ? { "aria-readonly": true } : {})}
         aria-label={`${label} hex`}
         {...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
         onPointerDown={(event) => event.stopPropagation()}

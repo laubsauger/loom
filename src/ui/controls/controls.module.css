@@ -146,6 +146,54 @@
 }
 
 /*
+  §V830 (T988) — a value that comes from somewhere else.
+
+  The mark is POSITIVE and it is amber, because `--signal` is this project's one word for
+  "live / active / running" and that is exactly what a driven parameter is. It is
+  deliberately NOT the disabled treatment above: grey reads as broken, loading,
+  unsupported and not-licensed all at once, and the owner would be disambiguating five
+  states from one colour. The number stays at full `--text` — it is the one moving value
+  on the panel, and reading it is why the panel is open.
+
+  Matches the inspector's own `.driven` readout (`--signal` + `--font-mono`), which is the
+  established vocabulary for "this value comes from elsewhere".
+
+  The cursor is the only thing borrowed from disabled: the field is not a drag surface any
+  more, so it must not advertise itself as one.
+*/
+.number[data-driven="true"] {
+  cursor: default;
+  border-color: var(--signal);
+}
+
+/* The position marker stays lit — a driven field's fill is the thing that is moving. */
+.number[data-driven="true"] .numberFill {
+  border-right-color: var(--signal);
+}
+
+/*
+  The driver's initial (E, B, D, M), in the field's left gutter — the same seat
+  `LadderSwatch` uses, and the two are mutually exclusive: a field that refuses drags has
+  no drag magnitude to choose. Always visible, unlike the swatch: this one is a STATEMENT
+  about the value, not an affordance that would clutter a row until it is wanted.
+*/
+.drivenMark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  pointer-events: none;
+  user-select: none;
+}
+
+/*
   Value position, made visible (doc §8.1 "Parameters show units and constrained ranges").
 
   The ACCENT is the leading edge, not the whole bar: a thin amber marker at the value,
@@ -415,6 +463,17 @@
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
   text-transform: lowercase;
+}
+
+/*
+  §V830 — a text-shaped field whose value is decided elsewhere. Same amber seam the
+  numeric field gets, same reason: the value stays fully legible and focusable, and the
+  colour says "live", not "broken".
+*/
+.hex:read-only,
+.text:read-only {
+  border-color: var(--signal);
+  cursor: default;
 }
 
 /* T896 — the picker. A native colour input styled to read as a wide swatch, so the

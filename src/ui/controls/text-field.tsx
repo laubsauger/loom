@@ -17,6 +17,12 @@ export interface TextFieldProps {
   value: string;
   multiline?: boolean;
   disabled?: boolean;
+  /**
+   * §V830 — the value is decided elsewhere (an expression, a bind). The edit is refused,
+   * but the field stays legible, focusable and announced, and keeps showing what is in
+   * effect: `readOnly`, never `disabled`.
+   */
+  readOnly?: boolean;
   id?: string;
   describedBy?: string;
   onChange: ValueListener<string>;
@@ -27,6 +33,7 @@ export function TextField({
   value,
   multiline = false,
   disabled = false,
+  readOnly = false,
   id,
   describedBy,
   onChange,
@@ -41,8 +48,11 @@ export function TextField({
 
   const commit = useCallback((): void => {
     dirty.current = false;
+    // §V830: `readOnly` stops the typing; this stops the write, so a synthetic change
+    // cannot reach around the refusal.
+    if (readOnly) return;
     if (draft !== value) onChange(draft, "commit");
-  }, [draft, onChange, value]);
+  }, [draft, onChange, readOnly, value]);
 
   const identity = {
     "aria-label": label,
@@ -56,6 +66,8 @@ export function TextField({
         className={cx(styles.text, styles.textarea, "nodrag")}
         value={draft}
         disabled={disabled}
+        readOnly={readOnly}
+        {...(readOnly ? { "aria-readonly": true } : {})}
         {...identity}
         onPointerDown={(event) => event.stopPropagation()}
         // §V53: a text area is a text context; editing keys stop here.
@@ -75,6 +87,8 @@ export function TextField({
       className={cx(styles.text, "nodrag")}
       value={draft}
       disabled={disabled}
+      readOnly={readOnly}
+      {...(readOnly ? { "aria-readonly": true } : {})}
       {...identity}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {

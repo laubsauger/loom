@@ -29,6 +29,16 @@ export interface ControlRowProps {
   inactive?: string | null;
   /** The effective value comes from a driver, not the document (doc §8.2 seam). */
   driven?: boolean;
+  /**
+   * §V830 — the short name of the MODE deciding this parameter (`expr`, `bind`, `chan`,
+   * `map`), or null when the stored constant decides it.
+   *
+   * A positive statement, and the row-level half of the same mark the field carries: a
+   * driven parameter must be identifiable without expanding the mode panel to find out
+   * which of the four things is moving it. It outranks `driven`'s generic `drv`, which
+   * only ever meant "a driver, somewhere".
+   */
+  drivenBadge?: string | null;
   variant?: ControlVariant;
   /** Renders the label above the control — for multiline text and wide controls. */
   stacked?: boolean;
@@ -77,6 +87,7 @@ export function ControlRow({
   compileTime = false,
   inactive = null,
   driven = false,
+  drivenBadge = null,
   variant = "inspector",
   stacked = false,
   controlId,
@@ -149,7 +160,14 @@ export function ControlRow({
             rc
           </span>
         ) : null}
-        {driven ? (
+        {drivenBadge !== null ? (
+          <span
+            className={styles.drivenBadge}
+            title={`${drivenBadge} — this value is decided by its mode, not by editing the field. It updates with the render.`}
+          >
+            {drivenBadge}
+          </span>
+        ) : driven ? (
           <span className={styles.drivenBadge} title="Driven — the shown value comes from a driver">
             drv
           </span>

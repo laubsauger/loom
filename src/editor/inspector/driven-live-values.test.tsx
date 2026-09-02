@@ -284,7 +284,25 @@ describe("T893/§V108 — the retained value survives being displayed over", () 
     // decides it, and a control that accepted an edit here would be the same lie again
     // with the arrow reversed.
     expect(harness.shown("Amount")).toBe("120");
-    expect(harness.field("Amount").disabled).toBe(true);
+    const field = harness.field("Amount");
+    const before = harness.revision();
+    fireEvent.change(field, { target: { value: "5" } });
+    fireEvent.blur(field);
+    await settle();
+    expect(harness.revision(), "the driven field banked an edit the channel decides").toBe(before);
+
+    /*
+     * §V830 (T988) — and it refuses WITHOUT going inert. This assertion used to read
+     * `.disabled === true`, which is how the refusal was implemented and why the owner
+     * could not tell a driven parameter from a broken one: `disabled` dims the value,
+     * drops the field out of the tab order and tells a screen reader to skip it, for the
+     * one number on the panel that is actually moving. Read-only refuses the same edit
+     * and keeps the readout a readout.
+     */
+    expect(field.disabled).toBe(false);
+    expect(field.getAttribute("aria-readonly")).toBe("true");
+    field.focus();
+    expect(document.activeElement).toBe(field);
   });
 
   it("detaches to the RETAINED number, never to the live sample", async () => {

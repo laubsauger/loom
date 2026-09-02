@@ -51,7 +51,8 @@ type Change<T> = [T, EditPhase];
 function renderColor(
   definition: ColorParameter,
   value: readonly number[],
-  componentDisabled?: readonly boolean[],
+  /** §V830: entry `i` names what decides channel `i`, or null when it is a constant. */
+  componentDriven?: readonly (string | null)[],
 ) {
   const changes: Change<readonly number[]>[] = [];
   render(
@@ -59,7 +60,7 @@ function renderColor(
       label={definition.label}
       value={value}
       definition={definition}
-      {...(componentDisabled === undefined ? {} : { componentDisabled })}
+      {...(componentDriven === undefined ? {} : { componentDriven })}
       onChange={(next, phase) => changes.push([next, phase])}
     />,
   );
@@ -132,7 +133,7 @@ describe("(b) §V113 — a colour with a non-static channel does not accept a pi
   it("refuses the write and says why", () => {
     // `color.g` runs an expression; r/b/a are static. The picker emits one RGB triple,
     // so honouring it would silently overwrite g's expression.
-    const changes = renderColor(displayColor, [1, 0.5, 0, 1], [false, true, false, false]);
+    const changes = renderColor(displayColor, [1, 0.5, 0, 1], [null, "Expression", null, null]);
     // Found by TYPE, not by its locked name: the refusal has to be proved even if the
     // control forgets to say why, and a name lookup would fail first and hide it.
     const input = document.querySelector('input[type="color"]') as HTMLInputElement;
@@ -148,14 +149,20 @@ describe("(b) §V113 — a colour with a non-static channel does not accept a pi
   });
 
   it("stays available when every channel is static", () => {
-    renderColor(displayColor, [1, 0.5, 0, 1], [false, false, false, false]);
+    renderColor(displayColor, [1, 0.5, 0, 1], [null, null, null, null]);
     expect(picker("Tint picker").disabled).toBe(false);
   });
 
   it("the numeric fields keep their PER-CHANNEL seat — only the picker is all-or-nothing", () => {
-    const changes = renderColor(displayColor, [1, 0.5, 0, 1], [false, true, false, false]);
-    // g is unavailable because g's own mode says so...
-    expect((screen.getByRole("spinbutton", { name: "Tint G" }) as HTMLInputElement).disabled).toBe(true);
+    const changes = renderColor(displayColor, [1, 0.5, 0, 1], [null, "Expression", null, null]);
+    // g refuses the edit because g's own mode says so — and §V830: it refuses it while
+    // staying focusable and legible, so `disabled` is exactly what it must NOT be.
+    const green = screen.getByRole("spinbutton", { name: "Tint G" }) as HTMLInputElement;
+    expect(green.disabled).toBe(false);
+    expect(green.getAttribute("aria-readonly")).toBe("true");
+    fireEvent.change(green, { target: { value: "0.9" } });
+    fireEvent.blur(green);
+    expect(changes, "a driven channel accepted a write the resolver would overwrite").toEqual([]);
     // ...and r is still editable, which is the §V113 seat the picker cannot provide.
     const red = screen.getByRole("spinbutton", { name: "Tint R" }) as HTMLInputElement;
     expect(red.disabled).toBe(false);
