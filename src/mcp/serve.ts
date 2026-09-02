@@ -15,6 +15,7 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import { createAgentPorts } from "../runtime/export/agent-ports.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
+import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "./device-hub.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -118,6 +119,21 @@ export interface HeadlessMcpServerOptions {
      * a check with no reachable grant path is a permanent denial in a costume).
      */
     readonly announce?: (message: string) => void;
+    /**
+     * How the DEVICE role opens UDP sockets (T942 tier 3). Injected ONLY by tests.
+     *
+     * A gate cannot make a phone send OSC, and binding a real UDP port inside a suite that
+     * runs several servers at once is how a test starts depending on the machine. So the
+     * ONE call to the operating system is a parameter, defaulting to the real thing — the
+     * same shape `useMidiInput` gives `requestMIDIAccess` and `bridge-host` gives
+     * `proxySocketFactory`. A fake socket then drives the whole path: subscribe, decode,
+     * coalesce, push, encode, send, and every refusal, with only the OS replaced.
+     */
+    readonly udpSocketFactory?: UdpSocketFactory;
+    /** How often coalesced OSC readings are pushed. Injectable so a gate flushes on demand. */
+    readonly deviceFlushMs?: number;
+    /** Host clock for device timestamps. Injectable so a gate asserts an exact `at`. */
+    readonly deviceNow?: () => number;
   };
 }
 
@@ -202,11 +218,27 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
   // event or a `listen` callback — both later ticks — so nothing reads this before it is set.
   // eslint-disable-next-line prefer-const
   let connection: McpConnection;
+  /*
+   * T942 tier 3: the DEVICE hub, built beside the bridge rather than as a second server.
+   *
+   * It binds NOTHING on construction — a UDP socket opens only when an attached page asks
+   * for one by port, so a running MCP server is not a listening OSC server until somebody
+   * says so. That is the same "nothing dials on load" consent the page attachment has.
+   */
+  const devices =
+    options.bridge === undefined
+      ? null
+      : createDeviceHub({
+          socketFactory: options.bridge.udpSocketFactory ?? nodeUdpSocketFactory(),
+          ...(options.bridge.deviceFlushMs === undefined ? {} : { flushMs: options.bridge.deviceFlushMs }),
+          ...(options.bridge.deviceNow === undefined ? {} : { now: options.bridge.deviceNow }),
+        });
   const bridge =
     options.bridge === undefined
       ? null
       : createBridgeHost({
           headless: surface,
+          ...(devices === null ? {} : { devices }),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),

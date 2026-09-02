@@ -284,6 +284,12 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // straight through it. Its one piece of state (a Toggle's latch) is a per-node bag that
   // clears with the transport (§V181), which is a RESET rule rather than a clock.
   midiIn: "clockless",
+  // T942 tier 3: OSC In reports where the CONTROLS are, exactly as MIDI In does — no
+  // phase to lap, no position to wrap. OSC Out FORWARDS its input bag and reads no clock
+  // of its own, so like valueSwitch and componentOutValue it INHERITS whatever clock the
+  // wired source owns; a lap reaches it only through that source.
+  oscIn: "clockless",
+  oscOut: "clockless",
   // T654/T670: channelIn reads a RESOLVER — the last completed value of an external
   // channel (analyze's readback via session extras) — and no clock at all. Whatever
   // clock the MEASUREMENT is on belongs to the node that produced it; a lap reaches

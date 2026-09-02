@@ -18,6 +18,7 @@ import {
   writeHandoff,
 } from "./bridge-handoff.ts";
 import { createBridgeProxy, type BridgeProxy } from "./bridge-proxy.ts";
+import type { DeviceHub, DeviceSession } from "./device-hub.ts";
 import type { BridgeSocket } from "./bridge-client.ts";
 import {
   createLoopbackWebSocketServer,
@@ -144,6 +145,16 @@ export interface BridgeStatus {
   readonly pairingCode: string | null;
   /** Set only while proxying: who really owns the port. */
   readonly incumbent: { readonly port: number; readonly pid: number | null } | null;
+  /**
+   * Whether a tab holds this bridge's DEVICE role, and which (T942 tier 3).
+   *
+   * Separate from `attached` because the two are independent by design: an agent can drive
+   * the document with nothing listening for OSC, and a patch can listen for OSC with no
+   * agent attached. Reported rather than inferred (§V338) — "why is my OSC node quiet" is
+   * answerable from here.
+   */
+  readonly deviceAttached: boolean;
+  readonly deviceClient: string | null;
   /** Why the status is what it is, in one sentence (§V288). */
   readonly detail: string;
 }
@@ -183,6 +194,14 @@ export interface BridgeHostOptions {
   readonly proxyRetryMs?: number;
   /** The proxy's socket, for a test that wants to watch the bytes. */
   readonly proxySocketFactory?: (url: string) => BridgeSocket;
+  /**
+   * The DEVICE hub — OSC and, later, anything else a page cannot speak (T942 tier 3).
+   *
+   * Absent means this bridge serves no devices, and a `deviceAttach` is refused BY NAME
+   * rather than ignored: "this bridge was started without device support" is a different
+   * sentence from "wrong code", and a caller needs to know which (§V359).
+   */
+  readonly devices?: DeviceHub;
 }
 
 /**
@@ -239,6 +258,16 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   const pending = new Map<number, PendingCall>();
   /** Sibling servers forwarding their stdio traffic here. NOT the page slot (T921). */
   const proxies = new Set<LoopbackConnection>();
+  /**
+   * The attached DEVICE client, or null. ONE at a time, refused by name — the same rule
+   * the page slot has, for the same reason: §T458(b) is a relay that let any connected
+   * client reach another's surface, and one-at-a-time is what makes cross-client reach
+   * structurally impossible rather than merely unimplemented. A device client never
+   * occupies the page slot and never sees a tool.
+   */
+  let device: LoopbackConnection | null = null;
+  let deviceClient: string | null = null;
+  let deviceSession: DeviceSession | null = null;
   /** Set when THIS process lost the race and forwards to somebody else instead. */
   let proxy: BridgeProxy | null = null;
   let server: LoopbackWebSocketServer | null = null;
@@ -387,6 +416,82 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     }
   };
 
+  /** Every device client's connection dies here, with its subscriptions and its sockets. */
+  const releaseDevice = (reason: string): void => {
+    if (device === null) return;
+    device = null;
+    deviceClient = null;
+    deviceSession?.close();
+    deviceSession = null;
+    notice({ severity: "info", message: `Device bridge released: ${reason}.` });
+  };
+
+  /**
+   * One device client's request (T942 tier 3).
+   *
+   * Three requests carry an `id` and are answered exactly once; `deviceAck` carries none
+   * and is answered never. Nothing here reads a message from another role, which is what
+   * makes the role gate structural rather than procedural (§T458(b)).
+   */
+  const handleDeviceMessage = (socket: LoopbackConnection, message: Record<string, unknown>): void => {
+    const session = deviceSession;
+    if (session === null) return;
+    switch (message["type"]) {
+      case "deviceSubscribe": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        const opened = session.subscribe(message["source"]);
+        if ("reason" in opened) {
+          send(socket, { type: "deviceRefused", id, reason: opened.reason });
+          return;
+        }
+        send(socket, {
+          type: "deviceSubscribed",
+          id,
+          stream: opened.stream,
+          flow: opened.flow,
+          detail: opened.detail,
+        });
+        return;
+      }
+      case "deviceUnsubscribe": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        session.unsubscribe(message["stream"]);
+        return;
+      }
+      case "deviceSend": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        void session.send(message["to"], message["packets"]).then(
+          (outcome) => {
+            send(socket, { type: "deviceSendResult", id, outcome });
+          },
+          (error: unknown) => {
+            // A THROW is a local failure, never an arrival: it takes the `failed` word,
+            // which is the one that claims least (§T950 gap 3).
+            send(socket, {
+              type: "deviceSendResult",
+              id,
+              outcome: {
+                delivery: "failed",
+                reason: error instanceof Error ? error.message : String(error),
+              },
+            });
+          },
+        );
+        return;
+      }
+      case "deviceAck":
+        // Flow control. A coalescing stream has no window to advance, so this is accepted
+        // and ignored on purpose — the message exists so a credit-based device can land
+        // without a protocol revision (§T950 gap 2).
+        return;
+      default:
+        return;
+    }
+  };
+
   const onConnection = (socket: LoopbackConnection): void => {
     if (!isPermittedOrigin(socket.origin)) {
       refuse(
@@ -396,8 +501,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       return;
     }
 
-    /** Which of the two roles this socket claimed, once it has claimed one. */
-    let role: "none" | "page" | "proxy" = "none";
+    /** Which of the THREE roles this socket claimed, once it has claimed one. */
+    let role: "none" | "page" | "proxy" | "device" = "none";
     const silence = setTimeout(() => {
       if (role !== "none") return;
       refuse(socket, "no pairing code or proxy token arrived; the socket was closed.");
@@ -406,6 +511,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     socket.onClose = () => {
       clearTimeout(silence);
       proxies.delete(socket);
+      if (device === socket) releaseDevice("the tab closed the connection");
       if (page === socket) detach("the tab closed the connection");
     };
 
@@ -443,6 +549,56 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           });
           return;
         }
+        if (type === "deviceAttach") {
+          // The DEVICE role, gated by the SAME human-typed pairing code the page role is
+          // — not the proxy token, which exists only in a 0600 file. A device attachment
+          // is exactly as hard to obtain as a page attachment, and no easier (T942).
+          const devices = options.devices;
+          if (devices === undefined) {
+            clearTimeout(silence);
+            refuse(
+              socket,
+              "this Loom bridge was started without device support, so it cannot listen for OSC. That is a different problem from a wrong pairing code.",
+            );
+            return;
+          }
+          const given = message["code"];
+          if (typeof given !== "string" || !pairingCodeMatches(pairingCode, given)) {
+            clearTimeout(silence);
+            refuse(socket, "that pairing code does not match the one this bridge printed.");
+            return;
+          }
+          if (device !== null) {
+            clearTimeout(silence);
+            refuse(
+              socket,
+              "a Loom tab is already using this bridge's devices. Disconnect it first — one at a time, so a stream always has one identifiable owner.",
+            );
+            return;
+          }
+          role = "device";
+          clearTimeout(silence);
+          const said = message["client"];
+          deviceClient = typeof said === "string" ? said.slice(0, 120) : "a Loom tab";
+          device = socket;
+          deviceSession = devices.open({
+            // PUSHES. No id, nothing waiting, straight onto the socket (§T950 gap 1).
+            onEvents: (stream, at, seq, dropped, values) => {
+              if (device !== socket) return;
+              send(socket, { type: "deviceEvents", stream, at, seq, dropped, values });
+            },
+            onState: (stream, state, detail) => {
+              if (device !== socket) return;
+              send(socket, { type: "deviceStreamState", stream, state, detail });
+            },
+          });
+          send(socket, { type: "deviceAttached", sources: devices.sources });
+          notice({
+            severity: "info",
+            message: `Device bridge attached to ${deviceClient}; it can now open loopback UDP sockets for OSC and transmit to destinations it names explicitly.`,
+          });
+          return;
+        }
         if (type !== "attach") return;
         const code = message["code"];
         if (typeof code !== "string" || !pairingCodeMatches(pairingCode, code)) {
@@ -476,6 +632,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
       if (role === "proxy") {
         handleProxyMessage(socket, message);
+        return;
+      }
+
+      if (role === "device") {
+        if (device !== socket) return;
+        handleDeviceMessage(socket, message);
         return;
       }
 
@@ -659,6 +821,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         client: null,
         pairingCode: live.pairingCode,
         incumbent: { port: live.port, pid: live.pid },
+        deviceAttached: false,
+        deviceClient: null,
         detail: live.detail,
       };
     }
@@ -672,6 +836,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         client: null,
         pairingCode: null,
         incumbent: null,
+        deviceAttached: false,
+        deviceClient: null,
         detail: `The bridge could not listen: ${listenError}.`,
       };
     }
@@ -685,6 +851,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         client: pageClient,
         pairingCode,
         incumbent: null,
+        deviceAttached: device !== null,
+        deviceClient,
         detail: `Attached to ${pageClient ?? "a Loom tab"}; tool calls run against the live document.`,
       };
     }
@@ -700,6 +868,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         // this process will own a listener for it.
         pairingCode,
         incumbent: null,
+        deviceAttached: device !== null,
+        deviceClient,
         detail: `Binding ${BRIDGE_HOST}:${wantedPort}; it is not yet known whether this process owns the bridge.`,
       };
     }
@@ -712,6 +882,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       client: null,
       pairingCode,
       incumbent: null,
+      deviceAttached: device !== null,
+      deviceClient,
       detail: `Listening on ${BRIDGE_HOST}:${boundPort}, nothing attached. Tool calls run headless. Pairing code ${pairingCode}.`,
     };
   };
@@ -823,6 +995,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     status,
     dispose() {
       disposed = true;
+      releaseDevice("the server shut down");
+      options.devices?.dispose();
       detach("the server shut down");
       if (rebind !== null) clearTimeout(rebind);
       rebind = null;

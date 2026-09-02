@@ -68,6 +68,7 @@ import { useGraphCompile } from "./use-graph-compile.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMidiInput } from "./use-midi-input.ts";
+import { useOscBridge } from "./use-osc-bridge.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
@@ -297,15 +298,25 @@ export function App({
   const midi = useMidiInput();
 
   /**
-   * The value graph's external channels are a MERGE now, and the order does not matter
-   * because the two namespaces cannot collide: MIDI answers only `midi:` names (it checks
-   * the prefix rather than assuming it, §V665) and analyze answers node names, which
-   * cannot begin with `midi:` since `:` is the addressing separator. Stated rather than
-   * relied on: a resolver that answered for everything would silently shadow the other.
+   * T942 tier 3 — the session's ONE device attachment, constructed. It dials NOTHING on
+   * mount unless this tab already paired in this browser session (T925's memory), and the
+   * helper it reaches binds loopback only; with no helper running every `oscIn` publishes
+   * its declared rests and the document renders, degraded and saying so (§T715, §T948).
+   */
+  const osc = useOscBridge();
+
+  /**
+   * The value graph's external channels are a MERGE of THREE now, and the order still does
+   * not matter because no two namespaces can collide: MIDI answers only `midi:` names and
+   * OSC only `osc:` names (both CHECK the prefix rather than assuming it, §V665), and
+   * analyze answers node names, which can begin with neither since `:` is the addressing
+   * separator. Stated rather than relied on: a resolver that answered for everything would
+   * silently shadow the others.
    */
   const externalChannels = useCallback<ChannelResolver>(
-    (channel, context) => midi.resolver(channel, context) ?? analyze.resolver(channel, context),
-    [analyze.resolver, midi.resolver],
+    (channel, context) =>
+      midi.resolver(channel, context) ?? osc.resolver(channel, context) ?? analyze.resolver(channel, context),
+    [analyze.resolver, midi.resolver, osc.resolver],
   );
 
   const valueGraph = useValueGraph(runtime, externalChannels);
@@ -576,6 +587,20 @@ export function App({
       // Immediately after the ONE evaluation, so the plot and the parameter read the same
       // frame's numbers (§V275) and no stateful stage is advanced twice.
       sampleValueHistory(inputs.frame);
+      /*
+       * T942 tier 3 — OSC egress, and it lives HERE rather than in `oscOut.valueEvaluate`
+       * on purpose: this callback runs only in the LIVE session, so an offline render, a
+       * headless export and every Dawn gate transmit nothing at all (§T950's fifth gap,
+       * answered structurally). After the value graph, so what leaves is this frame's
+       * numbers rather than the previous frame's (§V179).
+       */
+      osc.sync(
+        inputs.frame,
+        runtime.flattened.current().graph,
+        runtime.registry,
+        valueGraph.channels(),
+        valueGraph.resolver,
+      );
     },
     observe: observeFrame,
     onReset: () => {
@@ -839,6 +864,11 @@ export function App({
       ...compile.diagnostics,
       ...valueGraph.diagnostics,
       ...media.diagnostics,
+      // T942 tier 3 — why OSC is not working, keyed to the node it concerns. It joins the
+      // ONE list rather than growing a panel of its own: the owner's ruling is that a
+      // device's interface lives in its NODE, so its degraded reason belongs on the
+      // surface every other node-scoped problem already uses (§V365, §V338).
+      ...osc.diagnostics,
       ...rejection,
       ...autosave.diagnostics,
       ...project.diagnostics,
@@ -859,6 +889,7 @@ export function App({
     frameLoop.diagnostics,
     valueGraph.diagnostics,
     media.diagnostics,
+    osc.diagnostics,
     project.diagnostics,
     recovery.diagnostics,
     rejection,

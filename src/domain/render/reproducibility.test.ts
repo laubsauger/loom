@@ -85,6 +85,12 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       // message is at most one frame old by construction, so there is no age to show.
       "midiIn:external-live",
       "mouse:external-live",
+      // T942 tier 3: OSC arriving over the device bridge. `external-live` for midiIn's
+      // reason — bounded latency, a different performance per take. Its SIBLING `oscOut`
+      // is deliberately absent from this list: it is a passthrough wire whose render
+      // reproduces, and its transmission is a live-session side effect that an offline
+      // render never performs. See the table's entry for the argument.
+      "oscIn:external-live",
       "pose:async-cached",
       "webcam:external-live",
     ]);

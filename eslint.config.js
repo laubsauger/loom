@@ -232,6 +232,16 @@ export default tseslint.config(
     },
   },
   {
+    // T942: the hand-testing scripts in `tools/` are Node programs run from a terminal
+    // (`node tools/osc-send.mjs …`), not part of any build. Listed here rather than
+    // ignored, because they are code a person reads and edits and should still be linted
+    // — they simply have `process`, `console` and `Buffer`.
+    files: ["tools/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: {
       globals: { ...globals.browser },

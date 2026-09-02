@@ -158,6 +158,10 @@ describe("core catalogue (T70, T40)", () => {
       // the node's own `mapping` parameter, read through the `channels` seam analyze
       // already publishes into — no new port type and no compiler change.
       "midiIn",
+      // T942 tier 3: OSC as channels, and OSC back out. Both need the local helper — a
+      // page cannot speak UDP — and neither is a new port type or a compiler change.
+      "oscIn",
+      "oscOut",
       // T447: the scene family — assembly by NAME, data by wire (V372).
       "camera",
       "light",
@@ -210,6 +214,12 @@ describe("core catalogue (T70, T40)", () => {
         "render",
         // T607: boundary sockets file beside component instances.
         "component",
+        // T942 tier 3: the "output" shelf ALREADY EXISTS — `output` itself sits on it,
+        // from the spike set — and `oscOut` is the first CORE node to join it. That is
+        // the honest shelf for it: an output is where the graph LEAVES, and filing a
+        // transmitter under "value" would put it next to Value Math and imply it is a
+        // piece of arithmetic rather than a thing that reaches a network.
+        "output",
       ]),
     );
   });
@@ -329,6 +339,10 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         // previews exactly as Mouse does — no special case anywhere for it being hardware.
         "midiIn",
         "mouse",
+        // T942 tier 3: oscIn publishes its learned addresses; oscOut publishes the bag it
+        // is SENDING, so a plot on it shows exactly what left the machine.
+        "oscIn",
+        "oscOut",
         "timer",
         "valueFilter",
         "valueLag",

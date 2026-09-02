@@ -368,6 +368,18 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
     mapping: JSON.stringify([
       { channel: "cutoff", source: { kind: "cc", channel: 1, number: 74 }, range: [0.4, 1], mode: "absolute" },
     ]),
+    /*
+     * T942 tier 3: the same shape again for oscIn, and for the same reason — a node with
+     * nothing declared publishes an EMPTY bag, correctly, so the sweep hands it one control
+     * whose REST is nonzero. That is exactly what it publishes with no helper running,
+     * which is the degraded path this row is built around.
+     *
+     * `cutoffRest` is a GENERATED parameter (`parametersFor` grows it out of `controls`),
+     * so this row also proves the sweep reaches a node whose schema is per-instance. No
+     * other node has a `controls` parameter.
+     */
+    controls: "cutoff",
+    cutoffRest: 0.53,
   };
 
   const evaluateOne = (

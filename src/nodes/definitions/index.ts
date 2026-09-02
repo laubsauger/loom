@@ -33,6 +33,7 @@ import { pointProximityNode } from "./point-proximity.ts";
 import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
 import { slitScanNode } from "./slit-scan.ts";
 import { midiInNode } from "./midi.ts";
+import { oscInNode, oscOutNode } from "./osc.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -68,6 +69,7 @@ export { pointProximityNode } from "./point-proximity.ts";
 export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
 export { slitScanNode } from "./slit-scan.ts";
 export { midiInNode } from "./midi.ts";
+export { oscInNode, oscOutNode } from "./osc.ts";
 export {
   movieFileInNode,
   webcamNode,
@@ -191,6 +193,10 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   // T942: the controller as channels — the value family's fourth input source, after
   // Mouse, the trio and the audio pair. Page-native, no helper, no bridge.
   midiInNode,
+  // T942 tier 3: OSC as channels, and OSC back OUT. Both need the local helper — a page
+  // cannot speak UDP — and both degrade to their declared rests with none running.
+  oscInNode,
+  oscOutNode,
   ...sceneNodeDefinitions,
   ...pointGeneratorDefinitions,
   pointsFromTextureNode,

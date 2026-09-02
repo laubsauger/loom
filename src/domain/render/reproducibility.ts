@@ -109,6 +109,11 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // What DOES apply is the first half — a take samples whatever the performer happened
   // to be touching, twice takes are two performances, and no parameter changes that.
   midiIn: "external-live",
+  // T942 tier 3. OSC arriving over the device bridge, through the same `channels` seam.
+  // `external-live` for `midiIn`'s reason and one extra: a reading crosses a loopback
+  // socket, so it is at most one PUSH plus one frame old — still bounded, still not a
+  // readback schedule, and still a different performance on every take.
+  oscIn: "external-live",
 
   /*
    * ASYNC-CACHED — a result that arrives on its own schedule, published latest-wins.
@@ -246,6 +251,23 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   componentOutPoints: "pure",
   componentInValue: "pure",
   componentOutValue: "pure",
+  /*
+   * T942 tier 3 — `oscOut` is PURE, and this classification is a decision rather than an
+   * oversight, so it is argued here.
+   *
+   * What this table classifies is whether the RENDER reproduces. `oscOut` publishes its
+   * input bag unchanged and reads nothing external, so the same document at the same frame
+   * gives the same numbers and the same pixels whether or not a helper is running or a
+   * receiver exists. It is a wire.
+   *
+   * The transmission is not in `valueEvaluate` at all — it is pumped from the app's live
+   * frame loop (`use-osc-bridge.ts`), which is the direct answer to §T950's "no
+   * side-effect story for offline/headless": an offline or headless render installs no
+   * pump and therefore transmits nothing. Had the send lived in the node, this row would
+   * have to be `external-live` AND a headless export would fire UDP at a lighting rig.
+   * Keeping the send out of the node is what buys BOTH.
+   */
+  oscOut: "pure",
   // Value nodes: every one of them reads `FrameEvaluationInput` or its own inputs and
   // nothing else (§V44, and `CLOCK_OWNERSHIP` is the table that pins WHICH clock).
   lfo: "pure",

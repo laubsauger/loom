@@ -62,6 +62,55 @@ system rather than back to the same page:
 
 Then send from one tab and learn in the other. The page repeats these instructions itself.
 
+## OSC
+
+An **OSC In** node reads OSC as channels and an **OSC Out** node sends them back out, so a
+patch can sit in the middle of a studio chain rather than at the end of one.
+
+Both need a **local helper**, because a browser page cannot receive or send UDP. The helper
+is the MCP server you may already be running:
+
+```bash
+pnpm mcp:serve
+```
+
+Enter the pairing code it prints in the agent panel's **Connections** section, once. The OSC
+nodes use the same attachment — there is no second code and no second panel.
+
+**Everything else is on the node itself.** On *OSC In*, set **Port** and list the channel
+names you want in **Controls** (`cutoff pan`); each name grows its own **Address** and
+**Rest** parameter. `osc1:cutoff` then drives any parameter, including a shader's own
+reflected `struct Params` fields. Values arrive exactly as sent — unlike a 7-bit MIDI CC an
+OSC argument has no declared full scale, so nothing is normalised for you. A message with
+several arguments addresses by index: `/pad/xy` publishes `/pad/xy/0` and `/pad/xy/1`.
+
+On *OSC Out*, set **Host** and **Port**. **There is no default destination** — an
+unconfigured node sends nothing — and broadcast (`x.x.x.255`) and multicast addresses are
+refused by name, because a lighting network is a network. One channel called `value` sends
+`/address`; several send `/address/name` each.
+
+Two limits, stated rather than discovered:
+
+- **The helper listens on `127.0.0.1` only**, so a sender on another machine (a phone
+  running TouchOSC) cannot reach it yet. Widening that is a deliberate decision with its own
+  security argument to make.
+- **OSC rides UDP, so a send can only ever be reported as *sent*, never as *arrived*.**
+  Nothing in the app will tell you a message was delivered, because nothing can know.
+
+With no helper running — which includes the hosted build — every OSC In control still
+publishes its Rest value, so the document loads and renders, and the problems pane says
+which node needs what.
+
+### Testing it without hardware
+
+```bash
+node tools/osc-send.mjs 9000 /synth/cutoff 0.7     # one message
+node tools/osc-send.mjs --sweep 9000 /synth/cutoff # 0 → 1 → 0 at 60 Hz
+node tools/osc-listen.mjs 9001                     # watch what OSC Out sends
+```
+
+Both talk to `127.0.0.1` only, and neither takes a host argument.
+
 ## MCP
 
 Loom exposes its tools over stdio for desktop clients and through WebMCP in supported browsers.
