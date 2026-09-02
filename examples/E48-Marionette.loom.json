@@ -1,0 +1,396 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-bones-glow": {
+        "id": "e-bones-glow",
+        "source": {
+          "nodeId": "bones",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in2"
+        }
+      },
+      "e-cam-pose": {
+        "id": "e-cam-pose",
+        "source": {
+          "nodeId": "cam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pose",
+          "portId": "input"
+        }
+      },
+      "e-dancer-pick": {
+        "id": "e-dancer-pick",
+        "order": 0,
+        "source": {
+          "nodeId": "dancer",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-joints-marks": {
+        "id": "e-joints-marks",
+        "source": {
+          "nodeId": "joints",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "marks",
+          "portId": "points"
+        }
+      },
+      "e-pick-bones": {
+        "id": "e-pick-bones",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bones",
+          "portId": "input"
+        }
+      },
+      "e-pick-joints": {
+        "id": "e-pick-joints",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "joints",
+          "portId": "texture"
+        }
+      },
+      "e-pose-pick": {
+        "id": "e-pose-pick",
+        "order": 1,
+        "source": {
+          "nodeId": "pose",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pick",
+          "portId": "inputs"
+        }
+      },
+      "e-seed-dancer": {
+        "id": "e-seed-dancer",
+        "source": {
+          "nodeId": "seed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dancer",
+          "portId": "input"
+        }
+      },
+      "e-shot-glow": {
+        "id": "e-shot-glow",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in1"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bones": {
+        "definitionVersion": 1,
+        "id": "bones",
+        "label": "bones1",
+        "parameters": {
+          "gain": 0.7,
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  width: f32,\n  gain: f32,\n}\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nfn keypoint(index: u32) -> vec4f {\n  return textureLoad(inputTexture, vec2i(i32(index), 0), 0);\n}\n\nfn boneGlow(uv: vec2f, a: u32, b: u32) -> f32 {\n  let ka = keypoint(a);\n  let kb = keypoint(b);\n  /* A bone exists only when BOTH joints are confident — a person leaving shot fades\n     limb by limb instead of the skeleton snapping to garbage. */\n  let sure = min(ka.b, kb.b);\n  if (sure < 0.3) { return 0.0; }\n  let pa = ka.rg;\n  let pb = kb.rg;\n  let ab = pb - pa;\n  let h = clamp(dot(uv - pa, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);\n  let d = length(uv - pa - ab * h);\n  return exp(-(d * d) / (params.width * params.width)) * sure;\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  /* MoveNet's canonical eighteen bones, hardcoded — the skeleton IS this list. */\n  var glow = 0.0;\n  glow += boneGlow(uv, 0u, 1u);  glow += boneGlow(uv, 0u, 2u);\n  glow += boneGlow(uv, 1u, 3u);  glow += boneGlow(uv, 2u, 4u);\n  glow += boneGlow(uv, 0u, 5u);  glow += boneGlow(uv, 0u, 6u);\n  glow += boneGlow(uv, 5u, 6u);\n  glow += boneGlow(uv, 5u, 7u);  glow += boneGlow(uv, 7u, 9u);\n  glow += boneGlow(uv, 6u, 8u);  glow += boneGlow(uv, 8u, 10u);\n  glow += boneGlow(uv, 5u, 11u); glow += boneGlow(uv, 6u, 12u);\n  glow += boneGlow(uv, 11u, 12u);\n  glow += boneGlow(uv, 11u, 13u); glow += boneGlow(uv, 13u, 15u);\n  glow += boneGlow(uv, 12u, 14u); glow += boneGlow(uv, 14u, 16u);\n  let colour = vec3f(0.45, 0.8, 1.0) * glow * params.gain;\n  /* Alpha carries the figure's own coverage: the OVER composite below uses it to lay\n     the fresh frame on top of its echo — without this the loop is a 16x accumulator\n     (1/(1-persistence)) and the swing sweeps fill into solid wedges (measured). */\n  return vec4f(colour, clamp(glow * params.gain, 0.0, 1.0));\n}",
+          "width": 0.0045
+        },
+        "position": {
+          "x": -1320,
+          "y": 120
+        },
+        "resolution": {
+          "height": 720,
+          "mode": "fixed",
+          "width": 1280
+        },
+        "type": "customWgsl"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {},
+        "position": {
+          "x": -2220,
+          "y": 120
+        },
+        "type": "webcam"
+      },
+      "dancer": {
+        "definitionVersion": 1,
+        "id": "dancer",
+        "label": "dancer1",
+        "parameters": {
+          "bob": 0.012,
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  stride: f32,\n  bob: f32,\n  tempo: f32,\n}\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* One texel per joint (17x1): the exact contract MoveNet's result carries — r,g the\n   frame position, b the confidence. A procedural walk cycle: pelvis bobs, legs swing in\n   anti-phase with knee bend on the swing leg, arms counter-swing, head rides quietly.\n   FREE-RUNNING on absTime (a timeline loop must not snap the walk, T489). */\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let joint = u32(clamp(uv.x, 0.0, 0.999) * 17.0);\n  let t = frameU.absTime * params.tempo;\n  let phase = t * 6.2831853;\n\n  /* The body's trunk. x drifts gently so the echo trail has a path to remember. */\n  let sway = sin(phase * 0.25) * 0.06;\n  let pelvis = vec2f(0.5 + sway, 0.62 + sin(phase * 2.0) * params.bob);\n  let chest = pelvis + vec2f(sin(phase) * 0.01, -0.17);\n  let head = chest + vec2f(sin(phase) * 0.008, -0.09);\n\n  /* Legs: anti-phase swing about the hips; the knee leads the ankle. */\n  let swingL = sin(phase) * params.stride;\n  let swingR = sin(phase + 3.14159265) * params.stride;\n  let liftL = max(cos(phase), 0.0) * 0.05;\n  let liftR = max(cos(phase + 3.14159265), 0.0) * 0.05;\n  let hipL = pelvis + vec2f(-0.045, 0.0);\n  let hipR = pelvis + vec2f(0.045, 0.0);\n  let kneeL = hipL + vec2f(swingL * 0.6, 0.12 - liftL * 0.5);\n  let kneeR = hipR + vec2f(swingR * 0.6, 0.12 - liftR * 0.5);\n  let ankleL = kneeL + vec2f(swingL * 0.5, 0.13 - liftL);\n  let ankleR = kneeR + vec2f(swingR * 0.5, 0.13 - liftR);\n\n  /* Arms: counter-swing (left arm with right leg). */\n  let shoulderL = chest + vec2f(-0.075, 0.01);\n  let shoulderR = chest + vec2f(0.075, 0.01);\n  let elbowL = shoulderL + vec2f(swingR * 0.45, 0.09);\n  let elbowR = shoulderR + vec2f(swingL * 0.45, 0.09);\n  let wristL = elbowL + vec2f(swingR * 0.45, 0.08);\n  let wristR = elbowR + vec2f(swingL * 0.45, 0.08);\n\n  /* The face rides the head. */\n  let nose = head + vec2f(0.0, 0.005);\n  let eyeL = head + vec2f(-0.012, -0.01);\n  let eyeR = head + vec2f(0.012, -0.01);\n  let earL = head + vec2f(-0.025, 0.0);\n  let earR = head + vec2f(0.025, 0.0);\n\n  var p = nose;\n  if (joint == 1u) { p = eyeL; }\n  if (joint == 2u) { p = eyeR; }\n  if (joint == 3u) { p = earL; }\n  if (joint == 4u) { p = earR; }\n  if (joint == 5u) { p = shoulderL; }\n  if (joint == 6u) { p = shoulderR; }\n  if (joint == 7u) { p = elbowL; }\n  if (joint == 8u) { p = elbowR; }\n  if (joint == 9u) { p = wristL; }\n  if (joint == 10u) { p = wristR; }\n  if (joint == 11u) { p = hipL; }\n  if (joint == 12u) { p = hipR; }\n  if (joint == 13u) { p = kneeL; }\n  if (joint == 14u) { p = kneeR; }\n  if (joint == 15u) { p = ankleL; }\n  if (joint == 16u) { p = ankleR; }\n  return vec4f(p, 1.0, 1.0);\n}",
+          "stride": 0.09,
+          "tempo": 0.55
+        },
+        "position": {
+          "x": -2220,
+          "y": -160
+        },
+        "type": "customWgsl"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            0,
+            0,
+            2.6
+          ],
+          "far": 20,
+          "fov": 45,
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": -1020,
+          "y": 60
+        },
+        "type": "camera"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -420,
+          "y": -20
+        },
+        "type": "add"
+      },
+      "joints": {
+        "definitionVersion": 1,
+        "id": "joints",
+        "label": "joints1",
+        "parameters": {
+          "cols": 17,
+          "depth": 0,
+          "mode": "value",
+          "rows": 1,
+          "sizeX": 2,
+          "sizeY": 2,
+          "threshold": 0.3
+        },
+        "position": {
+          "x": -1320,
+          "y": -160
+        },
+        "type": "pointsFromTexture"
+      },
+      "marks": {
+        "definitionVersion": 1,
+        "id": "marks",
+        "label": "marks1",
+        "parameters": {
+          "blend": "additive",
+          "material": "spark1",
+          "mode": "points",
+          "scale": 0.017,
+          "soft": 1,
+          "spherical": true,
+          "tint": [
+            1,
+            0.85,
+            0.6,
+            1
+          ]
+        },
+        "position": {
+          "x": -1020,
+          "y": -160
+        },
+        "type": "geometry"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": -120,
+          "y": -20
+        },
+        "type": "output"
+      },
+      "pick": {
+        "definitionVersion": 1,
+        "id": "pick",
+        "label": "pick1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1620,
+          "y": -20
+        },
+        "type": "switch"
+      },
+      "pose": {
+        "definitionVersion": 1,
+        "id": "pose",
+        "label": "pose1",
+        "parameters": {},
+        "position": {
+          "x": -1920,
+          "y": 120
+        },
+        "type": "pose"
+      },
+      "seed": {
+        "definitionVersion": 2,
+        "id": "seed",
+        "label": "seed1",
+        "parameters": {
+          "interp": "linear",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -2520,
+          "y": -160
+        },
+        "resolution": {
+          "height": 1,
+          "mode": "fixed",
+          "width": 17
+        },
+        "type": "ramp"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "ambientIntensity": 0,
+          "antialias": "msaa",
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "eye1",
+          "lights": "",
+          "scenes": "marks1"
+        },
+        "position": {
+          "x": -720,
+          "y": -160
+        },
+        "type": "render"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1020,
+          "y": -380
+        },
+        "type": "materialUnlit"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E48 Marionette",
+  "projectId": "example-e48-marionette",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 48,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
