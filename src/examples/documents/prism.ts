@@ -17,10 +17,8 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  *   shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1(add).in2
  *   shot1 ─────────────────────────────────────────────► glow1(add).in1 ─► out1
  *
- *   optics1.value1 = 1 (static)                                       the AIM, at rest (T915)
- *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3              the AIM, by hand
- *   follow1 ─► stir1(valueSlope) ─► urge1(valueMath) ─► hold1(valueLag)
- *                                          ┄drives┄► optics1.value4   WHICH ONE (T857)
+ *   mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value1 (y: angle)  the AIM — the
+ *                               ┄drives┄► optics1.value3 (x: entry)   pointer's, always (T915b)
  *   fan1.tint ← the `tint` attribute (map mode, T478)
  *
  * THE OWNER'S REFERENCE, and the one technical fact that makes it buildable: A PRISM
@@ -122,28 +120,20 @@ import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
  * the T718 swap) while the FAN keeps its no-burial claim at fewer than 30 px against a
  * red-verified real burial of 209 (§V751).
  *
- * ONE HAND ON THE AIM, OVER A CHOSEN REST (T857, T915). The auto swing is GONE — the
- * owner: "it should be static aside from user interaction" — so `value1` is a static
- * default (1: the band's steep end, the widest measured fan, chosen deliberately because
- * the rest state IS the shipped image now, §V471). `mouse1 → follow1(valueLag) → value3`
- * is the pointer. How the hand and the rest MEET is unchanged from T857:
+ * THE POINTER OWNS THE AIM (T915b). T915 removed the LFOs; the owner came back: "Prism
+ * example still has auto movement and reset after a time … i wanted exclusive mouse
+ * control bro. no resets no auto swing and swivel." The residue was T857's authority
+ * blend: `hold1` was a velocity envelope — it rose while the cursor moved and DECAYED
+ * when it stopped, handing the aim back to a rest pose. Not an LFO, so the T915 audit
+ * passed over it; but it changed when the input didn't, and that is the property that
+ * matters. The whole `stir → urge → hold` branch is gone, and with it the blend.
  *
- * They used to be summed in the kernel — `clamp(value1 + 0.55·value3, 0, 1)` — and the
- * owner's report reads straight off that line: *the mouse controls get overridden by the
- * auto movement, the range of motion is too limited, and we can't miss the glass triangle*.
- * Both halves are the one wiring. A SQUARE lfo visits two aims and SLAMS between them, so
- * the pointer was a small delta riding on a jump and never had the aim at all; and a sum of
- * two 0..1 terms is bounded, so no cursor position could reach an extreme, let alone aim
- * the beam past the glass.
- *
- * So the kernel MIXES them, weighted by whether a hand is on the pointer at all:
- * `mix(swingAngle, handAngle, hand)`, with `hand = clamp(400·value4, 0, 1)` and `value4`
- * fed by `follow1 → stir1(valueSlope) → urge1(×itself) → hold1(valueLag)` — the cursor's
- * speed, squared to make it unsigned, through an envelope that rises in 0.02s and falls
- * over 0.6s. A cursor moving faster than a twentieth of the frame per second owns the aim
- * outright; a couple of seconds after it stops, the rest aim has it back. And a cursor that
- * has NEVER moved reads exactly 0 through all three stages, so every gate and every fresh
- * session still sees the LFO's picture, bit for bit, exactly as the additive build promised.
+ * Now: `mouse1 → follow1(valueLag 0.18) → value1 (y) and value3 (x)` — position only.
+ * y sets the angle across the full 6°–84° band; x walks the entry up the face and past
+ * the apex into a real miss. The lag settles AT the pointer and stays there forever.
+ * A never-moved cursor reads (0, 0): near-normal incidence at the base of the face —
+ * Snell's converged white line, which TIRs at the exit face into the clean white V of
+ * the reference's near-perpendicular shot. That IS the card (§V471).
  *
  * THE SWING IS NOT TOUCHED, and that is §T842's lesson rather than caution: the square,
  * the slam, and the two angles it visits are this example's character, so the fix is in how
@@ -315,16 +305,10 @@ export const prismDocument = document(
       // the aim while it moves (T857) and the lag chain hands it back to the static.
       node("mouse", "mouse", [-1880, 840], {}, { label: "mouse1" }),
       node("follow", "valueLag", [-1560, 840], { lag: 0.18 }, { label: "follow1" }),
-      // T857 — THE POINTER'S AUTHORITY, in three stages that each do one job. `stir1` is
-      // how fast the cursor is moving (per second, signed); `urge1` squares it against
       // itself, which is the only absolute value the CHOP set has and is also the right
-      // curve — a flick outweighs a drift; `hold1` is the envelope, 0.02s to rise and
       // 0.6s to fall, so the hand keeps the aim for a second or two after it stops and
       // then gives it back. A cursor that has never moved reads EXACTLY zero through all
       // three, which is what keeps every other gate in the suite on the swing's picture.
-      node("stir", "valueSlope", [-1240, 840], {}, { label: "stir1" }),
-      node("urge", "valueMath", [-920, 840], { operation: "multiply", operand: 1 }, { label: "urge1" }),
-      node("hold", "valueLag", [-600, 840], { lag: 0.02, releaseRatio: 30 }, { label: "hold1" }),
 
       // ---- the wall (T918) --------------------------------------------------------
       node("wallramp", "ramp", [-2200, -420], {
@@ -406,17 +390,18 @@ export const prismDocument = document(
         value2: 0.03,
       }, {
         label: "optics1",
-        // T857: three slots, and NONE of them is added to another. `value1` is the
-        // swing's aim on its own narrow scale, `value3` the pointer's on the wide one,
-        // and `value4` decides which of the two the kernel is looking at.
+        // T915b — the pointer OWNS the aim, both axes, exclusively: y is the angle
+        // (6°–84°), x walks the entry up the face and off past the apex. Nothing
+        // decays, nothing blends against a rest pose — a parked cursor is a parked
+        // beam. The only motion filter is follow1's positional lag, which settles AT
+        // the pointer, never back toward anything.
         parameters: {
           /* T915: the STATIC default aim — the rest state IS the shipped image now, so it is
              chosen, not inherited from where the swing's midpoint fell (§V471). 1 is the
              band's steep end (θ1 = 37°), the aim the picture gate measures the WIDEST fan
              at — the frame that shows §T913's dispersion rather than a white line. */
-          value1: 1,
+          value1: drivenSlot("follow1:y", 0),
           value3: drivenSlot("follow1:x", 0),
-          value4: drivenSlot("hold1:x", 0),
         },
       }),
       // UNLIT, and white: a beam is scattered light in the air, not a surface, and it
@@ -501,11 +486,6 @@ export const prismDocument = document(
       edge("e-wallramp-skin", ["wallramp", "out"], ["wallskin", "texture"]),
       edge("e-skin-wall", ["wallskin", "out"], ["wall", "points"]),
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
-      edge("e-follow-stir", ["follow", "out"], ["stir", "in"]),
-      // One source into BOTH operands: `urge1` multiplies the speed by itself.
-      edge("e-stir-urge-a", ["stir", "out"], ["urge", "a"]),
-      edge("e-stir-urge-b", ["stir", "out"], ["urge", "b"]),
-      edge("e-urge-hold", ["urge", "out"], ["hold", "in"]),
 
       edge("e-bar-form", ["bar", "out"], ["form", "in"]),
       edge("e-form-solid", ["form", "out"], ["solid", "points"]),

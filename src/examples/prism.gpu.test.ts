@@ -294,8 +294,8 @@ describe("E13 Prism — the picture", () => {
    * dδ/dn = (sin θ3 + cos θ3 · tan θ2) / cos θ4, and as θ1 grows, θ2 grows, θ3 = A − θ2
    * shrinks and θ4 with it — so angular dispersion FALLS as the beam lies down on the
    * entry face and RISES as the internal ray approaches the critical angle at the EXIT
-   * face. Computed: 10.91° of fan at value1 = 1 (θ1 = 37°) against 5.98° at value1 = 0
-   * (θ1 = 62°), a ratio of 1.82. Measured on the picture at this commit: 108px against
+   * face. Computed: 10.91° of fan at θ1 = 37.2° (value1 0.4 on T915b's 6°–84° axis)
+   * against 5.98° at θ1 = 62.2° (value1 0.72), a ratio of 1.82. Measured on the picture at this commit: 108px against
    * 46px at column 240, a ratio of 2.35 — larger than the angular ratio because the
    * fan's exit point also swings, which is the same physics arriving twice.
    *
@@ -307,11 +307,11 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const wide = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
       });
       const narrow = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0);
+        param(graph, "optics", "value1", 0.72);
       });
 
       const wideSpan = fanRun(wide, COLUMN, FAN_THRESHOLD).span;
@@ -343,11 +343,11 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const dispersing = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
       });
       const flat = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
         param(graph, "optics", "value2", 0);
       });
       const spread = fanRun(dispersing, COLUMN, FAN_THRESHOLD).span;
@@ -376,7 +376,7 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const fan = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
       });
       const run = fanRun(fan, COLUMN, FAN_THRESHOLD);
       const band = Math.max(2, Math.round(run.span * 0.15));
@@ -429,11 +429,11 @@ describe("E13 Prism — the picture", () => {
       const prism = await shoot(soloPrism);
       const shaft = await shoot((graph) => {
         soloShaft(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
       });
       const fan = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 1);
+        param(graph, "optics", "value1", 0.4);
       });
 
       const glass = maskAbove(prism, 1);
@@ -504,29 +504,21 @@ describe("E13 Prism — the picture", () => {
   );
 
   /**
-   * THE POINTER TAKES THE AIM WHILE IT MOVES, AND HANDS IT BACK (T857, §V624).
+   * THE POINTER MOVES THE AIM, AND WHERE IT STOPS THE AIM STAYS (T915b, §V624).
    *
-   * The owner's report was that the mouse "gets overridden by the auto movement", and the
-   * cause was one line: the kernel ADDED the pointer's share to a SQUARE lfo's aim, so the
-   * hand was a small delta riding on a slam. It is a blend now — `mix(swing, hand, w)`
-   * with `w = clamp(400·value4, 0, 1)` and `value4` the cursor's own speed squared through
-   * `stir1 → urge1 → hold1` — so this gate has to be two-sided or it proves half of it:
+   * T857's version of this gate asserted the aim came BACK a few seconds after the
+   * cursor stopped — and that hand-back is exactly the "reset after a time" the owner
+   * rejected twice. The gate now asserts the OPPOSITE second half, on the app's own
+   * pointer path (§V182/T661):
    *
-   *   MOVING  — the fan must go somewhere the swing's whole range cannot reach;
-   *   IDLE    — a few seconds later, with the cursor still parked where it stopped, the
-   *             fan must be back where the swing alone puts it, to the pixel.
+   *   MOVING — the fan must land somewhere the parked picture never puts it;
+   *   PARKED — five more seconds with the cursor exactly where it stopped, and the fan
+   *            has not moved a further pixel beyond the lag's own settling.
    *
-   * The second half is the one a naive "pointer wins" build would fail, and the first is
-   * the one the old additive build failed. Both renders are compared against a PARKED
-   * render of the SAME length, so `drift1`'s camera sway and the LFO phase are common mode
-   * and the only difference in each pair is the cursor.
-   *
-   * The harness feeds the same pointer source the shaders read (§V182/T661), so this is
-   * the app's own path. `value1` is pinned for every render: the swing must not be what
-   * moves the fan here.
+   * Nothing is pinned: both aim axes ride the pointer, which is the whole T915b claim.
    */
   it(
-    "answers a MOVING pointer, and gives the aim back when it stops",
+    "answers a MOVING pointer, and STAYS where the pointer stops",
     async () => {
       const { document } = e13();
       const run = async (
@@ -535,8 +527,6 @@ describe("E13 Prism — the picture", () => {
       ): Promise<{ mid: number; span: number }> => {
         const graph = structuredClone(document.graph) as GraphDocument;
         soloFan(graph);
-        // The LFO is pinned so the ONLY difference within a pair is the pointer.
-        param(graph, "optics", "value1", 0);
         const result = await renderHeadless({
           host: nodeGpuHost(),
           graph,
@@ -563,31 +553,27 @@ describe("E13 Prism — the picture", () => {
         const run = fanRun({ w: image.width, h: image.height, d: image.data }, COLUMN, FAN_THRESHOLD);
         return { mid: (run.lo + run.hi) / 2, span: run.span };
       };
-      const parked = () => ({ x: 0, y: 0, buttons: 0 });
-      /* A second of travel from the middle of the frame to a fifth along it: 0.35 of the
-         frame in a second, which is an ordinary aiming move and ten times the speed the
-         authority needs. It STOPS at frame 60 and stays stopped. */
-      const sweep = (index: number) => ({ x: 0.5 - 0.35 * Math.min(1, index / 60), y: 0.5, buttons: 0 });
+      /* Both runs park somewhere a fan reads at COLUMN: y 0.56 is θ1 ≈ 49.7° (mid-band,
+         no TIR); the x positions put the entry at τ 0.25 against τ 0. */
+      const parked = () => ({ x: 0.207, y: 0.56, buttons: 0 });
+      /* A second of travel: an ordinary aiming move. It STOPS at frame 60 and stays. */
+      const sweep = (index: number) => ({ x: 0.207 + 0.185 * Math.min(1, index / 60), y: 0.56, buttons: 0 });
 
       const stillMoving = await run(70, sweep);
       const parkedShort = await run(70, parked);
-      // The hand has the aim: the fan is somewhere the swing's own range never puts it.
-      // Measured at this commit, at column 240: the run's midpoint sits at y 123 with the
-      // cursor moving and y 289.5 with it parked — a 166px swing, against the 86px the
-      // additive build managed with the cursor HELD at the end of its travel.
-      expect(Math.abs(stillMoving.mid - parkedShort.mid)).toBeGreaterThan(150);
+      // The pointer has the aim: the entry walked up the face and the fan's whole run
+      // moved with it — two renders differing ONLY in the cursor.
+      expect(Math.abs(stillMoving.mid - parkedShort.mid)).toBeGreaterThan(40);
 
       const longIdle = await run(360, sweep);
+      // THE T915b GATE: five more seconds parked where it stopped, and the aim has NOT
+      // been handed back to anything — the fan sits where frame 70 left it, within the
+      // lag's last hair of settling. The T857 build measured a 150px+ return here.
+      expect(Math.abs(longIdle.mid - stillMoving.mid)).toBeLessThan(6);
+      expect(Math.abs(longIdle.span - stillMoving.span)).toBeLessThan(6);
+      // ... and it is still nowhere near the parked picture: held ≠ drifted home.
       const parkedLong = await run(360, parked);
-      // Five seconds after the cursor stopped, the swing has it back. The envelope's
-      // release is 0.6s, so this is eight time constants; measured residue was 2.5px of
-      // 166 at 720p — T914's 1080p render scales every pixel measure by 1.5, so the
-      // tolerance scales with it (the ratio to the journey below stays what it was).
-      expect(Math.abs(longIdle.mid - parkedLong.mid)).toBeLessThan(6);
-      expect(Math.abs(longIdle.span - parkedLong.span)).toBeLessThan(6);
-      // ... and it really came BACK: the fan is nowhere near where the hand had it, so
-      // "within 4px of parked" is a journey rather than a picture that never moved.
-      expect(Math.abs(longIdle.mid - stillMoving.mid)).toBeGreaterThan(150);
+      expect(Math.abs(longIdle.mid - parkedLong.mid)).toBeGreaterThan(40);
     },
     600_000,
   );
@@ -597,8 +583,10 @@ describe("E13 Prism — the picture", () => {
    * or even miss the glass triangle") and the one the additive aim could not express at
    * all, because the entry point was pinned ON the face by construction.
    *
-   * The pointer's reach runs to ±0.8 along a face whose half-length is 0.658, so the outer
-   * ninth of the travel at each end puts the entry past a vertex. The claim is not merely
+   * T915b's walk runs to τ = 1.07 along a face whose half-length is 0.658, so the top of
+   * the x travel puts the entry past the apex. (The walk's floor is the shipped entry —
+   * ON the face by construction — so the base-side miss no longer exists to gate.)
+   * The claim is not merely
    * "the fan went away" — a black frame would satisfy that — so it is three-sided: the fan
    * is GONE, the shaft is still crossing the frame and is LONGER than a hit's (it carries
    * on instead of stopping at the face), and the glass still reads at full strength, which
@@ -614,7 +602,6 @@ describe("E13 Prism — the picture", () => {
       ): Promise<{ count: number; frame: Frame }> => {
         const graph = structuredClone(document.graph) as GraphDocument;
         solo(graph);
-        param(graph, "optics", "value1", 0);
         const result = await renderHeadless({
           host: nodeGpuHost(),
           graph,
@@ -623,7 +610,8 @@ describe("E13 Prism — the picture", () => {
           capture: [69],
           animate: true,
           outputNodeId: "out",
-          pointer: (index) => ({ x: 0.5 + (toX - 0.5) * Math.min(1, index / 60), y: 0.5, buttons: 0 }),
+          // y 0.56 holds θ1 ≈ 49.7° while x does the walking.
+          pointer: (index) => ({ x: 0.207 + (toX - 0.207) * Math.min(1, index / 60), y: 0.56, buttons: 0 }),
         });
         const frame = result.frames[0];
         if (frame === undefined) throw new Error("no frame captured");
@@ -643,38 +631,29 @@ describe("E13 Prism — the picture", () => {
         return { count: mask.reduce((a, b) => a + b, 0), frame: shot };
       };
 
-      // 0.5 is the middle of the travel: the entry sits at the face's own midpoint and
-      // the beam is squarely on the glass. 0.02 aims past the APEX, 0.98 past the BASE.
-      const fanOn = await lit(soloFan, 0.5);
-      const fanApex = await lit(soloFan, 0.02);
-      const fanBase = await lit(soloFan, 0.98);
+      // x 0.207 puts the entry at the face's own midpoint (τ 0): squarely on the glass.
+      // x 0.98 walks it to τ 1.04, past the apex.
+      const fanOn = await lit(soloFan, 0.207);
+      const fanApex = await lit(soloFan, 0.98);
       expect(fanOn.count).toBeGreaterThan(5000);
       // Zero-length beams draw zero AREA (T680), so the fan is not dim — it is absent.
-      // Measured: 20,429 fan pixels on the glass, 0 past either vertex.
       expect(fanApex.count).toBe(0);
-      expect(fanBase.count).toBe(0);
 
       // The shaft is still crossing the frame — a missed beam is a beam GOING BY, not
       // nothing — and it goes PAST the body rather than through it. That second half is
       // the exact inversion of the T718 claim above, on the same instrument: a hit puts
       // more than 300 shaft-group pixels inside an 8px erosion of the glass (the drawn
       // internal segment), and a miss must put NONE inside even a 3px erosion.
-      const glassOn = await lit(soloPrism, 0.5);
-      const glassApex = await lit(soloPrism, 0.02);
-      const glassBase = await lit(soloPrism, 0.98);
-      const shaftApex = await lit(soloShaft, 0.02);
-      const shaftBase = await lit(soloShaft, 0.98);
+      const glassOn = await lit(soloPrism, 0.207);
+      const glassApex = await lit(soloPrism, 0.98);
+      const shaftApex = await lit(soloShaft, 0.98);
       const overlap = (a: Uint8Array, b: Uint8Array): number => {
         let n = 0;
         for (let pixel = 0; pixel < a.length; pixel += 1) if (a[pixel] === 1 && b[pixel] === 1) n += 1;
         return n;
       };
-      // Measured: 1,637 shaft pixels past the apex and 3,183 past the base (the apex miss
-      // leaves the top of the frame), and 0 inside the body in either.
-      for (const [shaft, glass] of [
-        [shaftApex, glassApex],
-        [shaftBase, glassBase],
-      ] as const) {
+      // Measured: shaft pixels past the apex still cross the frame, none inside the body.
+      for (const [shaft, glass] of [[shaftApex, glassApex]] as const) {
         expect(shaft.count).toBeGreaterThan(1000);
         const body = erode(maskAbove(glass.frame, 1), glass.frame.w, glass.frame.h, 3);
         expect(overlap(maskAbove(shaft.frame, 12), body)).toBe(0);
@@ -687,9 +666,8 @@ describe("E13 Prism — the picture", () => {
          every draw present, the beam sailing past. Measured: 2,700 lit body pixels in
          all three of the solo, the on-glass and the missed frames. */
       expect(glassApex.count).toBe(glassOn.count);
-      expect(glassBase.count).toBe(glassOn.count);
       expect(glassOn.count).toBeGreaterThan(2000);
-      const wholeApex = await lit(muteBloom, 0.02);
+      const wholeApex = await lit(muteBloom, 0.98);
       const bodyMask = maskAbove(glassOn.frame, 12);
       expect(overlap(maskAbove(wholeApex.frame, 12), bodyMask)).toBe(glassOn.count);
     },

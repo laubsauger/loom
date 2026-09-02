@@ -211,98 +211,68 @@ describe("E13 Prism", () => {
    * values), and a Lag that holds instead of integrating (it never reaches either end).
    */
   it("holds the aim STATIC with no pointer — the rest state is the shipped image (T915)", () => {
-    // The owner: "static aside from user interaction". The swing LFO is gone, so with a
-    // parked cursor value1 must read its chosen default on EVERY frame — one aim, not a
-    // sweep. 1 is deliberate: the band's steep end, where the measured fan is widest, so
-    // the frame a gallery visitor sees is the dispersion and not a white line (§V471).
+    // The owner: "static aside from user interaction". No LFO, no envelope: with a parked
+    // cursor BOTH aim axes must read one value on EVERY frame. A never-moved pointer is
+    // (0, 0) — near-normal incidence at the base of the face, the white-line/TIR card.
     const run = valueGraphRun(document);
     const parked: Pointer = { x: 0, y: 0, buttons: 0 };
-    const aims = new Set<number>();
+    const aims = new Set<string>();
     for (let index = 0; index < 120; index += 1) {
       const { plan: live } = run.step(parked);
       const dispatch = live.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
-      const value = ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})["value1"] as number;
-      aims.add(Number(value.toFixed(6)));
+      const uniforms = (dispatch as { uniforms?: Record<string, number> }).uniforms ?? {};
+      aims.add(`${Number(uniforms["value1"]).toFixed(6)}/${Number(uniforms["value3"]).toFixed(6)}`);
     }
-    expect([...aims]).toEqual([1]);
+    expect([...aims]).toEqual(["0.000000/0.000000"]);
   });
 
   /**
-   * THE POINTER TAKES THE AIM WHILE IT MOVES AND HANDS IT BACK, AND IT NEVER ADDS (T857).
+   * THE POINTER OWNS THE AIM, AND A PARKED CURSOR IS A PARKED BEAM (T915b).
    *
-   * The old wiring summed `value3` into the swing's aim inside the kernel, and the owner's
-   * report — *the mouse gets overridden by the auto movement* — is what a small delta on
-   * top of a SQUARE lfo's slam feels like. The kernel MIXES them now, weighted by
-   * `clamp(400·value4, 0, 1)`, and `value4` comes from the cursor's own motion:
-   * `follow1 → stir1(valueSlope) → urge1(× itself) → hold1(valueLag)`.
+   * T857's envelope decayed: `hold1` rose while the cursor moved and fell when it
+   * stopped, handing the aim back to a rest pose — the owner's "reset after a time".
+   * It read as smoothing because it was a valueLag; it behaved as decay because its
+   * input was a DERIVATIVE. The property that separates the two — and the one this gate
+   * asserts, because it is the one an LFO audit can never catch — is: does the value
+   * change when the input doesn't.
    *
-   * Three claims live at this level, and the picture half of each is in
-   * `prism.gpu.test.ts`:
-   *
-   *   1. A CURSOR THAT HAS NEVER MOVED IS EXACTLY ZERO AUTHORITY — not nearly zero. That
-   *      is what keeps every other gate in the suite, and every fresh session, on the
-   *      LFO's own picture (§V108's retained value, made true of an input that has none).
-   *   2. THE SWING IS NOT MODULATED. `value1` at a given frame is the same number whatever
-   *      the pointer is doing — the fix is in how the two terms COMBINE, never in what the
-   *      auto term is (§T842). A build that had gone back to arithmetic on the LFO's own
-   *      chain would fail this and nothing else.
-   *   3. THE ENVELOPE IS AN ENVELOPE: full authority within a couple of frames of a real
-   *      move, and back under the threshold a few seconds after it stops.
-   *
-   * `value3` keeps its own Lag SHAPE assertion — one frame after the pointer jumps it has
-   * moved and moved only part of the way; ninety frames later it has arrived.
+   * So the gate is the owner's phrasing as a measurement: hold the pointer still at a
+   * NON-DEFAULT position and the aim must not move, at all, for as long as we care to
+   * watch. The velocity branch failed this within a second of its release constant; a
+   * pure positional lag cannot fail it once settled.
    */
-  it("gives the pointer the aim only while it moves, and never adds to the swing", () => {
+  it("keeps the aim exactly where the pointer left it — no decay, ever (T915b)", () => {
     const slotOf = (source: CompiledGraph, slot: string): number => {
       const dispatch = source.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === "optics");
       return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})[slot] as number;
     };
-    /** The kernel's own gain: at or above this, `clamp(400·value4, 0, 1)` is 1. */
-    const FULL = 1 / 400;
 
-    // The shipped, unresolved plan: no pointer anywhere, and the slots' retained values.
+    // The shipped, unresolved plan: the slots' retained statics, both zero.
+    expect(slotOf(plan, "value1")).toBe(0);
     expect(slotOf(plan, "value3")).toBe(0);
-    expect(slotOf(plan, "value4")).toBe(0);
 
-    const parked: Pointer = { x: 0, y: 0, buttons: 0 };
-    const idle = valueGraphRun(document);
-    // A minute of frames with nothing moving: still exactly nothing.
-    expect(slotOf(idle.hold(parked, 60).plan, "value4")).toBe(0);
-    expect(slotOf(idle.hold(parked, 60).plan, "value3")).toBeCloseTo(0, 6);
+    // Move to a NON-DEFAULT aim and let the lag settle: both axes arrive AT the pointer —
+    // x on value3 (the entry walk), y on value1 (the angle) — not near it, not biased
+    // toward any rest.
+    const run = valueGraphRun(document);
+    const held: Pointer = { x: 0.7, y: 0.3, buttons: 0 };
+    run.step({ x: 0, y: 0, buttons: 0 });
+    const settled = run.hold(held, 240).plan;
+    expect(slotOf(settled, "value3")).toBeCloseTo(0.7, 3);
+    expect(slotOf(settled, "value1")).toBeCloseTo(0.3, 3);
 
-    // A real move: a third of the frame over twenty frames, which is 1 unit/second and an
-    // ordinary aiming gesture. The authority saturates almost at once.
-    const hand = valueGraphRun(document);
-    let last = hand.step(parked);
-    for (let index = 1; index <= 20; index += 1) last = hand.step({ x: index / 60, y: 0.5, buttons: 0 });
-    expect(slotOf(last.plan, "value4")).toBeGreaterThan(FULL);
+    // THE GATE: five more seconds parked at that same position — the aim does not move
+    // by a millionth. This is the assertion the velocity branch could never pass, and
+    // the LFO audit never checked.
+    const atSettle = { x: slotOf(settled, "value3"), y: slotOf(settled, "value1") };
+    const later = run.hold(held, 300).plan;
+    expect(slotOf(later, "value3")).toBeCloseTo(atSettle.x, 6);
+    expect(slotOf(later, "value1")).toBeCloseTo(atSettle.y, 6);
 
-    /* Then the cursor stops dead, and the aim comes back on the envelope's own clock:
-       the held value decays with a 0.6s time constant from the square of the speed, so a
-       1 unit/second gesture holds for 0.6·ln(400/1) ≈ 3.6s and a gentler one for less.
-       That the hold time scales with how hard you moved is the feel, not an accident.
-       Measured here: still 0.0046 (above the 0.0025 threshold) at 3.1s, and released by
-       five. The fall is a fall rather than a cliff — it is still full a moment after the
-       cursor stops. */
-    const held: Pointer = { x: 20 / 60, y: 0.5, buttons: 0 };
-    expect(slotOf(hand.hold(held, 6).plan, "value4")).toBeGreaterThan(FULL);
-    expect(slotOf(hand.hold(held, 180).plan, "value4")).toBeGreaterThan(FULL);
-    expect(slotOf(hand.hold(held, 120).plan, "value4")).toBeLessThan(FULL);
-
-    // THE SWING IS UNTOUCHED. Two sessions, the same frame indices, one with a cursor
-    // sweeping across the frame and one with none: `value1` must agree exactly (§V361 —
-    // cut the pointer entirely and THIS is the number that does not differ).
-    const withHand = valueGraphRun(document);
-    const without = valueGraphRun(document);
-    for (let index = 0; index < 120; index += 1) {
-      const a = slotOf(withHand.step({ x: (index % 60) / 60, y: 0.5, buttons: 0 }).plan, "value1");
-      const b = slotOf(without.step(parked).plan, "value1");
-      expect(a).toBe(b);
-    }
-
-    // And `value3` is still a Lag: partway there in one frame, arrived after ninety.
+    // And the lag is still a lag — partway there one frame after a jump, arrived after
+    // ninety — so "no decay" was not bought by removing the smoothing.
     const shape = valueGraphRun(document);
-    shape.hold(parked, 60);
+    shape.hold({ x: 0, y: 0, buttons: 0 }, 60);
     const dragged: Pointer = { x: 1, y: 0.5, buttons: 0 };
     const oneFrame = slotOf(shape.step(dragged).plan, "value3");
     expect(oneFrame).toBeGreaterThan(0);

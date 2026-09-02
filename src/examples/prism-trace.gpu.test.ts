@@ -29,19 +29,14 @@ import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
  * and asserts the fan opens WIDER at steep incidence (T710's measured 46 → 108px, here
  * as exit-angle spread).
  *
- * ## T857 — the two channels the pointer drives, and what they re-cut here
+ * ## T915b — the pointer owns both axes, exclusively
  *
- * `value4` used to be an entry-point offset and is now the pointer's AUTHORITY: the
- * kernel mixes the swing's aim with the pointer's by `clamp(400·value4, 0, 1)`, so
- * `value4: 0` is the swing's picture EXACTLY and the first two cases below are unmoved,
- * numbers and all. `value3` is the pointer's own aim, on a wider scale (84° → 6°) that
- * also walks the entry point along the face — and PAST it, which is the state the owner
- * asked for and the third and fourth cases now gate.
- *
- * That widening does not weaken a single Snell claim; it hands them more domain. The
- * old range could not reach total internal reflection at the shipped dispersive power at
- * all (the last case measures that both ways), and it could not reach an entry point
- * off the face, so "the beam misses" had no gate because it had no expression.
+ * T857's authority blend (`value4`, a decaying velocity envelope) is GONE — it was the
+ * owner's "reset after a time". Now `value1` is the pointer's Y: the incidence angle,
+ * 6° at 0 to 84° at 1. `value3` is the pointer's X: the entry point, τ = ENTRY + 1.35·x
+ * along the face — past the apex at the top of the travel, which keeps the miss state
+ * the owner asked for. Nothing decays; a fixed (value1, value3) is a fixed picture,
+ * which is also what makes every assertion below deterministic.
  */
 
 /* T920: the beam. 2 fixed slots + SLICES(9) x BANDS(61) x 3 legs. The CENTRE slice
@@ -61,14 +56,12 @@ const NL: readonly [number, number] = [-Math.sqrt(3) / 2, 0.5];
 const ND: readonly [number, number] = [0, -1];
 const APEX = Math.PI / 3; // 60° between the refracting faces
 const N_RED = 1.5;
-const THETA_LO = (37 * Math.PI) / 180;
-const THETA_HI = (62 * Math.PI) / 180;
-/* T857 — the POINTER's own scale, and the reach that walks the entry point. Pinned here
-   as the kernel's own literals, exactly as RI is: a gate that derived them from the
-   kernel text could not notice the kernel changing them. */
+/* T915b — the pointer's band and walk. Pinned here as the kernel's own literals, exactly
+   as RI is: a gate that derived them from the kernel text could not notice the kernel
+   changing them. */
 const HAND_LO = (6 * Math.PI) / 180;
 const HAND_HI = (84 * Math.PI) / 180;
-const REACH = 1.6;
+const WALK = 1.35;
 const ENTRY = -0.28;
 /** An equilateral cross-section's half side, from the inradius the mesh shares. */
 const HALF_FACE = RI * Math.sqrt(3);
@@ -95,12 +88,11 @@ const CAPABILITIES = {
 const registry = createNodeRegistry(allNodeDefinitions).view();
 
 interface Values {
+  /** T915b: the pointer's Y — the incidence angle, 6° at 0 to 84° at 1. */
   readonly value1: number;
   readonly value2: number;
-  /** T857: the pointer's aim, 0 → 84°, 1 → 6°, and the entry walk with it. */
+  /** T915b: the pointer's X — the entry walk, τ = ENTRY + WALK·x. */
   readonly value3?: number;
-  /** T857: the pointer's authority, before the kernel's ×400 gain. */
-  readonly value4: number;
 }
 
 function traceGraph(values: Values): GraphDocument {
@@ -132,7 +124,6 @@ function traceGraph(values: Values): GraphDocument {
             value1: values.value1,
             value2: values.value2,
             value3: values.value3 ?? 0,
-            value4: values.value4,
           },
           "trace1",
         ),
@@ -194,11 +185,9 @@ const length = (s: Segment): number => Math.hypot(s.tip[0] - s.origin[0], s.tip[
 const faceAngle = (d: readonly [number, number], n: readonly [number, number]): number =>
   Math.acos(Math.min(1, Math.abs(dot(d, n))));
 
-const thetaOf = (aim: number): number => THETA_HI + (THETA_LO - THETA_HI) * aim;
-/** T857 — the pointer's own scale, at full authority. */
-const handThetaOf = (px: number): number => HAND_HI + (HAND_LO - HAND_HI) * px;
-/** T857 — where on the face the pointer puts the entry, at full authority. */
-const handTauOf = (px: number): number => REACH * (0.5 - px);
+const thetaOf = (aim: number): number => HAND_LO + (HAND_HI - HAND_LO) * aim;
+/** T915b — where on the face the pointer's X puts the entry. */
+const walkTauOf = (px: number): number => ENTRY + WALK * px;
 /** The entry point's coordinate ALONG the face, from the face's own midpoint. */
 const tauOf = (point: readonly [number, number]): number =>
   (point[0] - NR[0] * RI) * TANGENT[0] + (point[1] - NR[1] * RI) * TANGENT[1];
@@ -222,8 +211,11 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const dispersion = 0.085; // E13's shipped dispersive power
     const spreads: number[] = [];
-    for (const aim of [0, 0.5, 1]) {
-      const segments = await runTrace({ value1: aim, value2: dispersion, value4: 0 });
+    // The same three incidences the pre-T915b gate swept (62°, 49.7°, 37.2°), named on
+    // the pointer's own axis now — every Snell number below is derived from thetaOf, so
+    // the claims move with the aim, not with the axis that names it.
+    for (const aim of [0.72, 0.56, 0.4]) {
+      const segments = await runTrace({ value1: aim, value2: dispersion });
       const thetaI = thetaOf(aim);
 
       // THE INTERNAL SEGMENT (slot 2): its refracted angle against the entry face is
@@ -280,19 +272,19 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       };
       return exitOf(1) - exitOf(0);
     };
-    expect(spreads[2]!).toBeCloseTo(analyticSpread(1), 3);
+    expect(spreads[2]!).toBeCloseTo(analyticSpread(0.4), 3);
   }, 240_000);
 
   it("total internal reflection leaves through the BASE, and Snell holds there too", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    // aim 1 (θi = 37°) with a wide dispersive power: the violet end reaches
+    // θi = 37.2° with a wide dispersive power: the violet end reaches
     // n · sin(60° − θr) > 1 — total internal reflection at the exit face. The band
     // must not vanish: it reflects, crosses the body, and leaves through the base.
     const dispersion = 0.3;
-    const segments = await runTrace({ value1: 1, value2: dispersion, value4: 0 });
-    const thetaI = thetaOf(1);
+    const segments = await runTrace({ value1: 0.4, value2: dispersion });
+    const thetaI = thetaOf(0.4);
 
     const nViolet = bandN(1, dispersion);
     const thetaR = Math.asin(Math.sin(thetaI) / nViolet);
@@ -328,12 +320,10 @@ describe("the prism is a traced ray (T718, §V683)", () => {
    *
    * Two claims that a plausible-looking picture would fail separately: the entry point
    * lands where the pointer's own arithmetic says it lands — ON the face plane, at
-   * τ = 1.6·(0.5 − value3) along it — and the internal segment collapses as the faces
-   * converge toward the apex, while the path stays CONNECTED end to end.
-   *
-   * Measured at this commit: τ 0 → 0.56 of a 0.658 half-face, and the internal segment
-   * 0.678 → 0.091, a thirteenth of its length. The old value4-as-offset case measured
-   * a fifth; the pointer reaches further up the face than the gate ever drove it.
+   * τ = ENTRY + 1.35·value3 along it — and the internal segment collapses as the faces
+   * converge toward the apex, while the path stays CONNECTED end to end. T915b holds
+   * the ANGLE fixed while the entry walks: the two axes are independent now, so this
+   * is purely the walk's claim.
    */
   it("walks the entry point to the apex on the pointer's own aim, and the path follows", async () => {
     const probe = await probeDawn();
@@ -341,17 +331,18 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const dispersion = 0.085;
     const nMid = bandN(0.5, dispersion);
+    const AIM = 0.56; // θi = 49.7°, fixed for the whole walk
     const at = async (px: number): Promise<Segment[]> =>
-      runTrace({ value1: 0.5, value2: dispersion, value3: px, value4: 1 });
+      runTrace({ value1: AIM, value2: dispersion, value3: px });
 
-    // Mid-travel puts the entry at the face's own midpoint; a fifth of the way along
-    // puts it 0.56 up a 0.658 half-face, a hair short of the apex.
-    const middle = await at(0.5);
-    const apex = await at(0.15);
+    // px 0.207 puts the entry at the face's own midpoint (τ 0); px 0.622 puts it
+    // 0.56 up a 0.658 half-face, a hair short of the apex.
+    const middle = await at(0.207);
+    const apex = await at(0.622);
 
     for (const [px, segments] of [
-      [0.5, middle],
-      [0.15, apex],
+      [0.207, middle],
+      [0.622, apex],
     ] as const) {
       const entry = segments[0]!.tip;
       // ON the entry face's plane, at the tangential coordinate the pointer names.
@@ -361,11 +352,11 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       // T920: near the apex the entry lands ON THE BEVEL — the real surface bows off the
       // face plane by up to the corner radius — so tau matches the flat-face arithmetic
       // to the bevel's deviation, not float exactness. Mid-face entries still land exact.
-      expect(tauOf(entry)).toBeCloseTo(handTauOf(px), 2);
+      expect(tauOf(entry)).toBeCloseTo(walkTauOf(px), 2);
       // And Snell still governs the first refraction at that new entry.
       const internal = segments[interiorIndex(0.5)]!;
       expect(faceAngle(direction(internal), NR)).toBeCloseTo(
-        Math.asin(Math.sin(handThetaOf(px)) / nMid),
+        Math.asin(Math.sin(thetaOf(AIM)) / nMid),
         3,
       );
       // Connected: shaft tip = internal origin, internal tip = the central band's exit.
@@ -381,13 +372,15 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     expect(length(apex[interiorIndex(0.5)]!)).toBeLessThan(length(middle[interiorIndex(0.5)]!) * 0.25);
     expect(length(apex[interiorIndex(0.5)]!)).toBeGreaterThan(0.02);
 
-    // The swing, at ANY aim, never leaves E13's shipped entry — this is the half that
-    // says the walk belongs to the pointer and not to the LFO (§V361: cut the edge and
-    // this is what differs).
-    for (const aim of [0, 1]) {
-      const swing = await runTrace({ value1: aim, value2: dispersion, value3: 0.15, value4: 0 });
-      // T920: the shaft's tip is the MARCHED entry now — on the plane to the march epsilon.
-      expect(tauOf(swing[0]!.tip)).toBeCloseTo(ENTRY, 3);
+    // T915b: the AXES ARE INDEPENDENT — the angle axis, at either extreme that still
+    // refracts, never moves the entry off value3's own τ (§V361: this is what says the
+    // walk belongs to X and only X).
+    for (const aim of [0.4, 1]) {
+      const pinned = await runTrace({ value1: aim, value2: dispersion, value3: 0 });
+      // T920: the shaft's tip is the MARCHED entry — and at aim 1 the ray meets the face
+      // at 84°, where the march's stop distance stretches ~10× along the ray (1/cos), so
+      // the grazing pin holds to 2 decimals, not 3 (measured: 0.0016 off at aim 1).
+      expect(tauOf(pinned[0]!.tip)).toBeCloseTo(ENTRY, 2);
     }
   }, 300_000);
 
@@ -397,8 +390,9 @@ describe("the prism is a traced ray (T718, §V683)", () => {
    * the glass triangle."
    *
    * The refracting face is a SEGMENT — half-length RI·√3 = 0.658 from its midpoint — and
-   * the pointer's reach runs to ±0.8, so the outer ninth of the travel at each end puts
-   * the entry off the face. What the kernel must then draw is a beam GOING BY: the shaft
+   * the walk runs to τ = 1.07, so the top of the travel puts the entry past the apex.
+   * (The walk's floor is ENTRY = −0.28, ON the face by construction: there is no
+   * low-side miss to gate any more.) What the kernel must then draw is a beam GOING BY: the shaft
    * carries straight on (2.10 + 2.60 long instead of 2.10) and every other slot collapses
    * to zero length, which the beam shader renders as zero area (T680).
    *
@@ -416,26 +410,26 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const dispersion = 0.085;
     const at = async (px: number): Promise<Segment[]> =>
-      runTrace({ value1: 0.5, value2: dispersion, value3: px, value4: 1 });
+      runTrace({ value1: 0.56, value2: dispersion, value3: px });
 
     /* Just INSIDE the apex — T920 split this boundary in two, because the last 0.046 of
        the face IS THE BEVEL now:
-       - px 0.2 (τ 0.48, mid-face): the flat-plane physics — light enters AND leaves.
-       - px 0.1 (τ 0.64): the flat-plane arithmetic says on-face, but the ROUNDED body
+       - px 0.563 (τ 0.48, mid-face): the flat-plane physics — light enters AND leaves.
+       - px 0.681 (τ 0.64): the flat-plane arithmetic says on-face, but the ROUNDED body
          curves away below the sharp corner — the marched ray passes it. The bevel
          SHRINKS the effective face by its own radius, and a ray aimed at the sharp
          triangle's last arc-width is a real miss on the real body. The old flat trace
          refracted here because its planes had no corner to round away. */
-    const grazing = await at(0.2);
-    expect(Math.abs(handTauOf(0.2))).toBeLessThan(HALF_FACE);
+    const grazing = await at(0.563);
+    expect(Math.abs(walkTauOf(0.563))).toBeLessThan(HALF_FACE);
     expect(length(grazing[bandIndex(0.5)]!)).toBeGreaterThan(0.5);
     expect(length(grazing[interiorIndex(0.5)]!)).toBeGreaterThan(0.005);
-    const onBevel = await at(0.1);
+    const onBevel = await at(0.681);
     expect(length(onBevel[interiorIndex(0.5)]!)).toBeLessThan(1e-4); // past the round-over: a miss
     expect(length(onBevel[bandIndex(0.5)]!)).toBeLessThan(1e-4);
 
-    for (const px of [0.05, 0.95]) {
-      const tau = handTauOf(px);
+    for (const px of [0.85, 1]) {
+      const tau = walkTauOf(px);
       expect(Math.abs(tau)).toBeGreaterThan(HALF_FACE); // the domain says: off the face
       const segments = await at(px);
 
@@ -461,16 +455,15 @@ describe("the prism is a traced ray (T718, §V683)", () => {
    * widening is measured by what it newly reaches, not asserted.
    *
    * The TIR case above buys its TIR with a dispersion of 0.3 — three and a half times
-   * what E13 ships — because at 0.085 the violet end's onset sits at θ1 = 34.5°, below
-   * the swing's floor of 37°. The pointer runs to 6°, so the whole spectrum crosses the
-   * onset, and there are TWO regimes on the way, gated here in order:
+   * what E13 ships — because at 0.085 the violet end's onset sits at θ1 = 34.5°, and
+   * the old swing's floor was 37°. The pointer's Y runs to 6°, so the whole spectrum
+   * crosses the onset, and there are TWO regimes on the way, gated here in order:
    *
-   *   px 0.68 (θ1 = 31.0°) — THE SPECTRUM SPLITS. The red end still exits the exit face
+   *   y 0.32 (θ1 = 31.0°) — THE SPECTRUM SPLITS. The red end still exits the exit face
    *     at 74.4°; the violet end is past its critical angle there, reflects, and leaves
    *     through the BASE. Two faces in use in one frame, at the shipped dispersion.
-   *   px 0.80 (θ1 = 21.6°) — the entry has walked low enough that the internal ray meets
-   *     the BASE first, at APEX + θr = 73.8°, past critical for every band: the mirror is
-   *     the base now and the exit is the left face.
+   *   y 0.2 (θ1 = 21.6°) — past critical for EVERY band at the exit face: the whole
+   *     spectrum reflects there and leaves through the base together.
    *
    * And the second regime carries a fact worth asserting because nothing could satisfy it
    * by accident: after a total internal reflection this cross-section hands every
@@ -488,18 +481,22 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const trapped = (thetaI: number, n: number): boolean =>
       n * Math.sin(APEX - thetaR(thetaI, n)) > 1;
 
-    // The swing's whole range, at both ends and the middle: no band anywhere near TIR.
-    for (const aim of [0, 0.5, 1]) {
-      for (const t of [0, 0.5, 1]) expect(trapped(thetaOf(aim), bandN(t, dispersion))).toBe(false);
+    // The old swing's whole band (37°–62°): no band anywhere near TIR — which is why
+    // the blend's rest pose could never show this regime and the pointer's Y can.
+    for (const theta of [37, 49.5, 62]) {
+      for (const t of [0, 0.5, 1])
+        expect(trapped((theta * Math.PI) / 180, bandN(t, dispersion))).toBe(false);
     }
 
     // ---- the SPLIT: red out the exit face, violet out the base, one frame -------------
-    const splitPx = 0.68;
-    const splitTheta = handThetaOf(splitPx);
-    expect(Math.abs(handTauOf(splitPx))).toBeLessThan(HALF_FACE); // still on the glass
+    const splitAim = 0.32;
+    const splitTheta = thetaOf(splitAim);
     expect(trapped(splitTheta, bandN(0, dispersion))).toBe(false); // red is not
     expect(trapped(splitTheta, bandN(1, dispersion))).toBe(true); //  violet is
-    const split = await runTrace({ value1: 0.5, value2: dispersion, value3: splitPx, value4: 1 });
+    // value3 0.207 (τ 0): the violet's reflected leg lands mid-base (x ≈ −0.27, analytic),
+    // clear of both corner arcs — at τ = ENTRY it lands at x −0.55, ON the round-over,
+    // where the sweeping normal breaks the flat-face identity this gate pins.
+    const split = await runTrace({ value1: splitAim, value2: dispersion, value3: 0.207 });
 
     const red = split[bandIndex(0)]!;
     const nRed = bandN(0, dispersion);
@@ -517,19 +514,19 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     // is asin(n·sin θr) — which is θ1 itself, the identity noted above.
     expect(faceAngle(direction(violet), ND)).toBeCloseTo(splitTheta, 3);
 
-    // ---- the BASE-FIRST regime: the mirror is the base, the exit is the left face -----
-    const basePx = 0.8;
-    const baseTheta = handThetaOf(basePx);
-    const segments = await runTrace({ value1: 0.5, value2: dispersion, value3: basePx, value4: 1 });
+    // ---- the ALL-TIR regime: every band reflects at the exit face, exits the base ----
+    const baseAim = 0.2;
+    const baseTheta = thetaOf(baseAim);
+    const segments = await runTrace({ value1: baseAim, value2: dispersion, value3: 0.207 });
     for (const t of [0, 0.5, 1]) {
       const n = bandN(t, dispersion);
-      // The domain: the internal ray meets the BASE at APEX + θr, past critical for all.
-      expect(n * Math.sin(APEX + thetaR(baseTheta, n))).toBeGreaterThan(1);
+      // The domain: past critical at the exit face for EVERY band.
+      expect(trapped(baseTheta, n)).toBe(true);
       const band = segments[bandIndex(t)]!;
-      expect(dot(band.origin, NL)).toBeCloseTo(RI, 3);
+      expect(dot(band.origin, ND)).toBeCloseTo(RI, 3);
       expect(length(band)).toBeGreaterThan(0.5);
       // Every wavelength leaves at exactly θ1 — a sheet, not a fan.
-      expect(faceAngle(direction(band), NL)).toBeCloseTo(baseTheta, 3);
+      expect(faceAngle(direction(band), ND)).toBeCloseTo(baseTheta, 3);
     }
     // The reflected leg inside the body is DRAWN, which is what makes TIR a path here.
     expect(length(segments[tirIndex(0.5)]!)).toBeGreaterThan(0.02);
@@ -549,7 +546,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const spreadAcrossSlices = async (px: number): Promise<number> => {
-      const segments = await runTrace({ value1: 0.5, value2: 0.03, value3: px, value4: 1 });
+      const segments = await runTrace({ value1: 0.86, value2: 0.03, value3: px });
       const angles: number[] = [];
       for (const s of [0, 4, 8]) {
         const seg = segments[sliceExitIndex(s, 0.5)]!;
@@ -562,11 +559,11 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     };
 
     // Mid-face: the whole aperture on flat glass — parallel to the march's precision.
-    const flat = await spreadAcrossSlices(0.3);
+    const flat = await spreadAcrossSlices(0.444);
     expect(flat).toBeLessThan(0.002);
     // Riding the round-over (τ ≈ 0.58, the face's last arc-width): the slices meet a
     // sweeping normal and their exits genuinely diverge — measured ≥ 20× the flat case.
-    const bevel = await spreadAcrossSlices(0.14);
+    const bevel = await spreadAcrossSlices(0.634);
     expect(bevel).toBeGreaterThan(0.04);
   }, 300_000);
 
@@ -580,7 +577,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const segments = await runTrace({ value1: 1, value2: 0.03, value4: 0 });
+    const segments = await runTrace({ value1: 0.4, value2: 0.03 }); // θ1 = 37.2°
     const red = segments[interiorIndex(0)]!;
     const violet = segments[interiorIndex(1)]!;
     expect(length(red)).toBeGreaterThan(0.05);
