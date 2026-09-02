@@ -546,16 +546,14 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
             );
           })()
         : [];
-    const pendingReadbacks: Array<Promise<unknown>> = [];
     const analyze =
       analyzeEntries.length === 0
         ? null
         : createAnalyzeChannels({
-            readBuffer: (resourceId) => {
-              const read = backend.readBuffer(resourceId);
-              pendingReadbacks.push(read.catch(() => undefined));
-              return read;
-            },
+            // B161: the harness awaits `sample()`'s own returned chain, so it no longer
+            // tracks the raw readback promise separately — that split await was the phase
+            // shift.
+            readBuffer: (resourceId) => backend.readBuffer(resourceId),
           });
     analyze?.track(analyzeEntries);
 
@@ -675,11 +673,12 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       driver.step();
       request.recordPointer?.(index, pointerSource.state);
       if (analyze !== null) {
-        // Between frames, §V48's sanctioned window — then settle every copy this call
-        // issued before the next step, so the value frame N+1 reads is frame N's
-        // reduction by construction, not by luck.
-        analyze.sample(index);
-        await Promise.all(pendingReadbacks.splice(0));
+        // Between frames, §V48's sanctioned window — await the whole sample chain (B161),
+        // guard-clear included, so the value frame N+1 reads is frame N's reduction by
+        // construction, and the in-flight guard is clear before the next sample. Awaiting
+        // the FULL chain (not the raw readback) is the fix: it stops a captured frame's
+        // extra readback microtasks from shifting the sampling phase.
+        await analyze.sample(index);
       }
       if (wanted.has(index)) {
         // §V48/§V7: readback happens between frames, never inside the loop, which is why

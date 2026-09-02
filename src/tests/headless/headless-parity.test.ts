@@ -363,4 +363,69 @@ describe("B161 — captures are observations, not mutations", () => {
     const perturbed = await frameUnder([0, 8]);
     expect(imageDigest(perturbed)).toBe(imageDigest(bare));
   }, 90_000);
+
+  /**
+   * The second half, and the one §B160's cache fix did NOT dissolve: the ANALYZE readback.
+   * A feedback loop — analyze meters the frame, channelIn brings the number back to drive
+   * the brightness that produced it — so a single perturbed reading cascades into a visibly
+   * different frame 8.
+   *
+   * The cause was §V144's latency going non-deterministic. Analyze sampling is
+   * fire-and-forget with an in-flight guard; the harness used to await only the raw
+   * readback promise, not analyze's full `.finally(clear guard)` chain, so the guard could
+   * still be set at the next sample and every other frame was skipped. A captured frame's
+   * extra readback injected microtasks that shifted that phase by one — the observer effect.
+   * The fix: `sample()` returns its whole chain and the harness awaits THAT, so the guard is
+   * always clear before the next sample and the phase cannot move.
+   */
+  const analyzeGraph = () =>
+    ({
+      revision: 1,
+      groups: {},
+      nodes: {
+        src: { id: "src", type: "noise", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { type: "perlin4d", speed: 1.5, period: 0.35 } },
+        gain: {
+          id: "gain",
+          type: "level",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: {
+            blacklevel: 0,
+            whitelevel: 1,
+            gamma1: 1,
+            contrast: 1,
+            brightness: { mode: "driven", bindings: { static: { kind: "static", value: 1 }, driven: { kind: "driven", channel: "meter1" } } },
+            opacity: 1,
+          },
+        },
+        meter: { id: "meter", type: "analyze", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { channel: "luminance", operation: "average" }, label: "meter1" },
+        probe: { id: "probe", type: "channelIn", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { channel: "meter1", fallback: 0.5 } },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+      edges: {
+        e0: { id: "e0", source: { nodeId: "src", portId: "out" }, target: { nodeId: "gain", portId: "input" } },
+        e1: { id: "e1", source: { nodeId: "gain", portId: "out" }, target: { nodeId: "meter", portId: "input" } },
+        e2: { id: "e2", source: { nodeId: "gain", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    }) as never;
+
+  it("an analyze-driven frame does not depend on which frames were captured", async () => {
+    requireDawn();
+    const frameUnder = async (capture: number[]) => {
+      const result = await renderHeadless({
+        host: dawnGpuHost(),
+        graph: analyzeGraph(),
+        frames: 9,
+        capture,
+        animate: true,
+        outputNodeId: "out",
+      });
+      const frame = result.frames.find((entry) => entry.frameIndex === 8);
+      if (frame === undefined) throw new Error("frame 8 not captured");
+      return frame;
+    };
+    const bare = await frameUnder([8]);
+    const perturbed = await frameUnder([0, 8]);
+    expect(imageDigest(perturbed)).toBe(imageDigest(bare));
+  }, 90_000);
 });

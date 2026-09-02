@@ -84,8 +84,15 @@ export interface AnalyzeChannels {
    * holds. It is passed in rather than counted here because §V44 puts the clock in the
    * caller: this module reads no clock and counts no ticks, so the same call from an
    * offline driver stamps offline frame numbers with no branch anywhere.
+   *
+   * Returns a promise that resolves when THIS call's readbacks have fully settled —
+   * `latest` written AND the in-flight guard cleared. The LIVE loop ignores it: sampling
+   * is fire-and-forget there, stale beats stalled (§V144). The OFFLINE/harness path awaits
+   * it (B161) — awaiting the full chain, not the raw readback, is what makes the guard
+   * clear before the next sample, so the phase cannot shift with an unrelated readback's
+   * microtasks and a captured frame stops perturbing a later one.
    */
-  sample(frameIndex: number): void;
+  sample(frameIndex: number): Promise<void>;
   /** Synchronous, latest-completed values. Plug in front of graphChannelResolver. */
   readonly resolver: ChannelResolver;
   /**
@@ -129,10 +136,11 @@ export function createAnalyzeChannels(options: {
       }
     },
     sample(frameIndex) {
+      const settling: Array<Promise<void>> = [];
       for (const entry of tracked) {
         if (inFlight.has(entry.channel)) continue;
         inFlight.add(entry.channel);
-        options
+        const chain = options
           .readBuffer(entry.resourceId)
           .then((raw) => {
             const values = new Float32Array(raw, 0, 4);
@@ -151,7 +159,11 @@ export function createAnalyzeChannels(options: {
           .finally(() => {
             inFlight.delete(entry.channel);
           });
+        settling.push(chain);
       }
+      // The whole chain, guard-clear included — so an awaiting caller (B161) sees a
+      // settled state, not just a landed readback.
+      return Promise.all(settling).then(() => undefined);
     },
     resultAges(frameIndex) {
       const ages: AnalyzeAge[] = [];
