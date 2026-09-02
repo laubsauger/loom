@@ -353,7 +353,10 @@ export function NodeSearch({ definitions, anchor, onPick, onClose }: NodeSearchP
               );
             })}
           </div>
-          <div className={styles.list}>
+          {/* `nowheel` is React Flow's own wheel opt-out (the same one node-preview-slot.tsx
+              applies). Without it the canvas zooms instead of the list scrolling, so a
+              result set taller than the 244px cap was unreachable. */}
+          <div className={`${styles.list} nowheel`}>
             {results.length === 0 ? (
               <p className={styles.empty}>
                 {category === null
