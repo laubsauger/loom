@@ -115,6 +115,7 @@ export async function measure(
   graph: GraphDocument,
   settings: ProjectSettings,
   outputNodeId: string,
+  components?: import("../domain/components/index.ts").ComponentRegistryView,
 ): Promise<Reading> {
   /* T776/§V760: the window is a property of the FIXTURE the graph drives from, decided here
      so the liveness floors, the §V643 baselines and the regenerator cannot disagree about
@@ -131,6 +132,7 @@ export async function measure(
     outputNodeId,
     fps: 60,
     animate: true,
+    ...(components === undefined ? {} : { components }),
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) {

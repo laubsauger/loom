@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { exampleFileNameOf, measure } from "./look-instrument.ts";
+import { starterComponentsView } from "./component-files.ts";
 
 /**
  * Regenerates `look-baselines.json` (T690, §V643).
@@ -33,7 +34,7 @@ for (const document of EXAMPLE_DOCUMENTS) {
   matched += 1;
   const outputNodeId = Object.values(document.graph.nodes).find((node) => node.type === "output")?.id;
   if (outputNodeId === undefined) throw new Error(`${document.name}: no output node`);
-  const reading = await measure(document.graph, document.settings, outputNodeId);
+  const reading = await measure(document.graph, document.settings, outputNodeId, await starterComponentsView());
   entries[exampleFileNameOf(document.name)] = {
     motion: Number(reading.motion.toFixed(5)),
     range: Number(reading.range.toFixed(4)),

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { boxGap, boxesOverlap, nodeBox, previewAspectOf, type NodeBox } from "@domain/graph/node-box.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
+import { createComponentSystem } from "../domain/components/registry.ts";
+import { buildStarterComponents } from "./starter-components.ts";
 import { exampleRegistry } from "./runner.ts";
 
 /**
@@ -49,7 +51,11 @@ import { exampleRegistry } from "./runner.ts";
 const MIN_VERTICAL_GUTTER = 32;
 const MIN_HORIZONTAL_GUTTER = 16;
 
-const registry = exampleRegistry();
+/* T956: E47 instances a library component, whose type ("component:depthPoints@1")
+   resolves only through the component-aware registry — the same pair the runner and the
+   loader use, fed the starter definitions the shipped file embeds. */
+const { components, nodes: registry } = createComponentSystem(exampleRegistry());
+for (const built of await buildStarterComponents()) components.register(built.definition);
 
 interface PlacedNode {
   readonly id: string;

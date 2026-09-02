@@ -7,6 +7,7 @@ import { EXAMPLES_DIR } from "./catalogue.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { CARD_FRAME, PROBE_RESOLUTION, exampleFileNameOf, measure } from "./look-instrument.ts";
+import { starterComponentsView } from "./component-files.ts";
 import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
 
 /**
@@ -604,6 +605,7 @@ describe("T521 — every shipped example moves, and you can see it", () => {
           entry.document.graph,
           entry.document.settings,
           entry.outputNodeId,
+          await starterComponentsView(), // T956: E47 instances DepthPoints
         );
         const declared = DECLARED[fileName];
 

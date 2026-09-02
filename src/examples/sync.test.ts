@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PROJECT_FILE_EXTENSION, serializeProjectDocument } from "../domain/project/index.ts";
 import { listExamples } from "./catalogue.ts";
 import { buildExampleFiles } from "./example-files.ts";
+import { buildStarterComponents } from "./starter-components.ts";
 import { requireExample } from "./runner.ts";
 
 /**
@@ -19,8 +20,11 @@ import { requireExample } from "./runner.ts";
  *   node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
  */
 
-describe("shipped examples match the save path", () => {
-  const generated = new Map(buildExampleFiles().map((file) => [file.fileName, file.text]));
+describe("shipped examples match the save path", async () => {
+  // T956: the hologram embeds the DepthPoints definition, so the starter set is
+  // authored first — the same defs the build script passes.
+  const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
+  const generated = new Map(buildExampleFiles(starterDefinitions).map((file) => [file.fileName, file.text]));
   const shipped = new Map(listExamples().map((file) => [file.fileName, file.text]));
 
   it("ships exactly the files the builder writes", () => {
@@ -44,7 +48,15 @@ describe("shipped examples match the save path", () => {
     if (file === undefined) throw new Error(`missing ${fileName}`);
     const { document } = requireExample(file);
 
-    expect(serializeProjectDocument(document)).toBe(file.text);
+    /* T956: the componentLibrary rides at the file ROOT and is lifted out at load (the
+       component-sync suite owns its round trip); what must hold HERE is that the
+       DOCUMENT half changed nothing. Re-serialize the parsed root minus the library
+       through the same serializer and the comparison is byte-for-byte again. */
+    const root = JSON.parse(file.text) as Record<string, unknown>;
+    delete root["componentLibrary"];
+    expect(serializeProjectDocument(document)).toBe(
+      serializeProjectDocument(root as never),
+    );
     expect(fileName.endsWith(PROJECT_FILE_EXTENSION)).toBe(true);
   });
 });

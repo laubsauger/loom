@@ -4,6 +4,7 @@ import { EXAMPLE_DOCUMENTS } from "./documents.ts";
 import { exampleFileNameOf } from "./look-instrument.ts";
 import { EXAMPLES_DIR } from "./catalogue.ts";
 import { renderThumbnail, thumbnailStem } from "./thumbnail.ts";
+import { starterComponentsView } from "./component-files.ts";
 
 /**
  * Regenerates `examples/thumbs/<ExampleFileStem>.png` (T847), one still per example at
@@ -30,7 +31,7 @@ for (const document of EXAMPLE_DOCUMENTS) {
   matched += 1;
   const outputNodeId = Object.values(document.graph.nodes).find((node) => node.type === "output")?.id;
   if (outputNodeId === undefined) throw new Error(`${document.name}: no output node`);
-  const png = await renderThumbnail(document.graph, document.settings, outputNodeId);
+  const png = await renderThumbnail(document.graph, document.settings, outputNodeId, await starterComponentsView());
   const path = join(thumbsDir, `${thumbnailStem(loomName)}.png`);
   writeFileSync(path, png);
   console.log(`wrote ${path} (${(png.length / 1024).toFixed(1)} KB)`);

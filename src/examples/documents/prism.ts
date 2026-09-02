@@ -514,8 +514,8 @@ export const prismDocument = document(
          motes churns at the body's drift rate, which read as dust "movement" no matter
          what the motes themselves did. Slowed 3x; both frequencies are ordinary node
          params, tune them in the inspector. */
-      node("driftyaw", "lfo", [-1560, 1000], { shape: "sine", frequency: 0.013, phase: 0.13 }, { label: "driftyaw1" }),
-      node("driftnod", "lfo", [-1560, 1160], { shape: "sine", frequency: 0.021, phase: 0.71 }, { label: "driftnod1" }),
+      node("driftyaw", "lfo", [-1560, 1020], { shape: "sine", frequency: 0.013, phase: 0.13 }, { label: "driftyaw1" }),
+      node("driftnod", "lfo", [-1560, 1280], { shape: "sine", frequency: 0.021, phase: 0.71 }, { label: "driftnod1" }),
       // itself, which is the only absolute value the CHOP set has and is also the right
       // 0.6s to fall, so the hand keeps the aim for a second or two after it stops and
       // then gives it back. A cursor that has never moved reads EXACTLY zero through all
@@ -549,7 +549,7 @@ export const prismDocument = document(
         kernel: WALL_PLACE_KERNEL,
       }, { label: "wallplace1" }),
       node("wallskin", "textureToAttribute", [-1560, -200], { count: WALL_COLS * WALL_ROWS }, { label: "wallskin1" }),
-      node("wall", "geometry", [-1240, -200], {
+      node("wall", "geometry", [-920, -160], {
         mode: "surface", material: "flare1", tint: [1, 1, 1, 1],
       }, { label: "wall1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } } } }),
 
@@ -633,12 +633,12 @@ export const prismDocument = document(
       }),
       // UNLIT, and white: a beam is scattered light in the air, not a surface, and it
       // takes no part in shadowing either (§V617). The colour is the attribute's.
-      node("flare", "materialUnlit", [-1560, -140], { color: [1, 1, 1, 1] }, { label: "flare1" }),
+      node("flare", "materialUnlit", [-2520, -140], { color: [1, 1, 1, 1] }, { label: "flare1" }),
       // §V471.1 — ONE SOURCE, TWO READINGS, split by a group predicate rather than by
       // more nodes. The split is not cosmetic: a single shaft wants a parallel-sided
       // ribbon, and 61 beams leaving the same face within 0.03 of each other fuse into
       // an opaque wedge at any taper above about zero (T680).
-      node("shaft", "geometry", [-1240, -140], {
+      node("shaft", "geometry", [-1240, -84], {
         /* T917: SOFT + ADDITIVE — the beams are light now, not ribbons of paint. The soft
            profile falls off across the width; additive lets the ghost, interior and shaft
            sum where they cross instead of z-fighting. */
@@ -660,7 +660,7 @@ export const prismDocument = document(
       } }),
       // T941b — the IN-GLASS fan: interior wedge segments (role 0.5), width-mapped
       // like the exit fan, pinched at the shared entry point by the taper.
-      node("core", "geometry", [-1240, 180], {
+      node("core", "geometry", [-920, 100], {
         mode: "beam", endpoint: "tip", scale: 4, taper: 0.05, soft: 1, blend: "additive", material: "flare1",
         group: "p.role > 0.25 && p.role < 0.75", tint: [1, 1, 1, 1],
       }, { label: "core1", parameters: {
@@ -668,7 +668,7 @@ export const prismDocument = document(
         scale: { mode: "map", bindings: { static: { kind: "static", value: 4 }, map: { kind: "map", attribute: "tint", channel: "w" } } },
       } }),
       // T940 — the dust cloud (see PRISM_DUST_KERNEL above).
-      node("dust", "pointKernel", [-1560, 260], {
+      node("dust", "pointKernel", [-1560, 340], {
         capacity: 650, seed: 7,
         attributes: JSON.stringify([
           { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
@@ -687,7 +687,7 @@ export const prismDocument = document(
           driftSpeed: 1,
         },
       }),
-      node("motes", "geometry", [-1240, 260], {
+      node("motes", "geometry", [-920, 300], {
         /* T940b: spherical soft splats, per-mote sizes — dust, not confetti. */
         mode: "points", scale: 0.004, soft: 1, spherical: true, blend: "additive", material: "flare1", tint: [1, 1, 1, 1],
       }, { label: "motes1", parameters: {
@@ -718,7 +718,7 @@ export const prismDocument = document(
       }, { label: "band1" }),
       node("studio", "add", [-1560, -900], {}, { label: "studio1", resolution: { mode: "fixed", width: 512, height: 256 } }),
       // T945a: the lamp painted INTO the environment — see BEAM_ENV_WGSL.
-      node("beamglow", "customWgsl", [-1240, -900], {
+      node("beamglow", "customWgsl", [-920, -1080], {
         [SHADER_SOURCE_PARAMETER]: BEAM_ENV_WGSL,
         gain: 2.2,
       }, {

@@ -164,7 +164,7 @@
     "phrase": 0.03713
   },
   "E44-Sounding.loom.json": {
-    "motion": 0.07386,
+    "motion": 0.07293,
     "range": 0.9743,
     "f0max": 1
   },
@@ -178,6 +178,11 @@
     "motion": 0.01421,
     "range": 0.61,
     "f0max": 0.6129
+  },
+  "E47-Hologram.loom.json": {
+    "motion": 0.03659,
+    "range": 0.928,
+    "f0max": 0.9815
   },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,

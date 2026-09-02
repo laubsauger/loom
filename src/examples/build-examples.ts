@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXAMPLES_DIR, STARTER_COMPONENTS_DIR } from "./catalogue.ts";
 import { buildStarterComponentFiles } from "./component-files.ts";
+import { buildStarterComponents } from "./starter-components.ts";
 import { buildExampleFiles } from "./example-files.ts";
 
 /**
@@ -25,8 +26,12 @@ const onlyAt = process.argv.indexOf("--only");
 const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : undefined;
 if (onlyAt >= 0 && only === undefined) throw new Error("--only needs a name substring");
 
+/* T956: examples that INSTANCE a library component embed its definition, so the starter
+   set is authored first even under --only — the definitions are deterministic and cheap. */
+const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
+
 let wrote = 0;
-for (const file of buildExampleFiles()) {
+for (const file of buildExampleFiles(starterDefinitions)) {
   if (only !== undefined && !file.fileName.includes(only)) continue;
   const path = join(EXAMPLES_DIR, file.fileName);
   writeFileSync(path, file.text, "utf8");

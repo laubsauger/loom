@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildExampleFiles } from "../../examples/example-files.ts";
+import { buildStarterComponents } from "../../examples/starter-components.ts";
 import type { ExampleFile } from "../../examples/catalogue.ts";
 import { exampleRegistry, requireExample } from "../../examples/runner.ts";
 import { probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
@@ -28,10 +29,13 @@ function oracleSettings(settings: Parameters<typeof renderUnderPolicy>[0]["setti
   return { ...settings, outputResolution: { width: 128, height: 72 } };
 }
 
+// T956: the hologram embeds the DepthPoints definition — authored before the suite.
+const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
+
 describe("cook oracle (T249, §V157)", () => {
   const registry = exampleRegistry();
 
-  const files: ExampleFile[] = buildExampleFiles().map((file) => ({
+  const files: ExampleFile[] = buildExampleFiles(starterDefinitions).map((file) => ({
     fileName: file.fileName,
     path: file.fileName,
     text: file.text,

@@ -322,8 +322,8 @@
           "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  lampPhi: f32,\n  gain: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let color = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);\n  /* Inverse of the renderer's sampleEnvironment mapping (scene-render.wgsl.ts):\n     u = atan2(x, -z)/2pi + 0.5, v = acos(y)/pi. */\n  let azimuth = (uv.x - 0.5) * 6.2831853;\n  let polar = uv.y * 3.14159265;\n  let d = vec3f(sin(polar) * sin(azimuth), cos(polar), -sin(polar) * cos(azimuth));\n  let lamp = vec3f(cos(params.lampPhi), sin(params.lampPhi), 0.0);\n  let angle = acos(clamp(dot(d, lamp), -1.0, 1.0));\n  /* A hot core and a soft halo — what a bare beam source looks like to a glossy face. */\n  let spot = exp(-(angle * angle) / (0.06 * 0.06)) + 0.25 * exp(-(angle * angle) / (0.30 * 0.30));\n  return vec4f(color.rgb + vec3f(1.0, 0.98, 0.94) * spot * params.gain, color.a);\n}"
         },
         "position": {
-          "x": -1240,
-          "y": -900
+          "x": -920,
+          "y": -1080
         },
         "type": "customWgsl"
       },
@@ -389,8 +389,8 @@
           }
         },
         "position": {
-          "x": -1240,
-          "y": 180
+          "x": -920,
+          "y": 100
         },
         "type": "geometry"
       },
@@ -423,7 +423,7 @@
         },
         "position": {
           "x": -1560,
-          "y": 1160
+          "y": 1280
         },
         "type": "lfo"
       },
@@ -438,7 +438,7 @@
         },
         "position": {
           "x": -1560,
-          "y": 1000
+          "y": 1020
         },
         "type": "lfo"
       },
@@ -508,7 +508,7 @@
         },
         "position": {
           "x": -1560,
-          "y": 260
+          "y": 340
         },
         "type": "pointKernel"
       },
@@ -602,7 +602,7 @@
           ]
         },
         "position": {
-          "x": -1560,
+          "x": -2520,
           "y": -140
         },
         "type": "materialUnlit"
@@ -778,8 +778,8 @@
           }
         },
         "position": {
-          "x": -1240,
-          "y": 260
+          "x": -920,
+          "y": 300
         },
         "type": "geometry"
       },
@@ -907,7 +907,7 @@
         },
         "position": {
           "x": -1240,
-          "y": -140
+          "y": -84
         },
         "type": "geometry"
       },
@@ -1141,8 +1141,8 @@
           }
         },
         "position": {
-          "x": -1240,
-          "y": -200
+          "x": -920,
+          "y": -160
         },
         "type": "geometry"
       },

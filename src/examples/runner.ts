@@ -1,6 +1,8 @@
 import { compileGraph } from "../compiler/index.ts";
 import type { CompiledGraph } from "../compiler/index.ts";
 import { loadProject } from "../domain/project/index.ts";
+import { createComponentSystem } from "../domain/components/registry.ts";
+import type { ComponentRegistryView } from "../domain/components/index.ts";
 import type { UnknownNodePlaceholder } from "../domain/project/index.ts";
 import type { BackendCapabilities, FrameInputs } from "../domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
@@ -54,12 +56,18 @@ export interface RunExampleResult {
   readonly placeholders: readonly UnknownNodePlaceholder[];
   readonly plan: CompiledGraph | undefined;
   readonly read: PlanReadResult | undefined;
+  /** T956: the file's own embedded component library, for harness renders. */
+  readonly components?: ComponentRegistryView;
 }
 
 /** Load + compile one example. Never throws: a failure is a result the gate can name. */
 export function runExample(file: ExampleFile): RunExampleResult {
-  const registry = exampleRegistry();
-  const loaded = loadProject(file.text, { nodes: registry });
+  /* T956: an example may EMBED library components (the hologram instances DepthPoints),
+     so loading goes through the component-aware pair — the file's own componentLibrary
+     registers into `components`, and the compile flattens the instances. An example
+     with no library pays nothing. */
+  const { components, nodes: registry } = createComponentSystem(exampleRegistry());
+  const loaded = loadProject(file.text, { nodes: registry, components });
 
   if (!loaded.ok) {
     return {
@@ -79,6 +87,7 @@ export function runExample(file: ExampleFile): RunExampleResult {
     settings: loaded.document.settings,
     registry,
     capabilities: TIER_B_CAPABILITIES,
+    components: components.view(),
   });
 
   return {
@@ -90,6 +99,7 @@ export function runExample(file: ExampleFile): RunExampleResult {
     placeholders: loaded.placeholders,
     plan,
     read: readExecutionPlan(plan),
+    components: components.view(),
   };
 }
 

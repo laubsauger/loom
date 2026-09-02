@@ -75,6 +75,7 @@ export async function renderThumbnail(
   graph: GraphDocument,
   settings: ProjectSettings,
   outputNodeId: string,
+  components?: import("../domain/components/index.ts").ComponentRegistryView,
 ): Promise<Uint8Array> {
   const result = await renderHeadless({
     host: nodeGpuHost(),
@@ -85,6 +86,7 @@ export async function renderThumbnail(
     outputNodeId,
     fps: 60,
     animate: true,
+    ...(components === undefined ? {} : { components }),
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) {

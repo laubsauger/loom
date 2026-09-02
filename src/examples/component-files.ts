@@ -1,5 +1,24 @@
 import { buildProjectFile, type ProjectFile } from "../domain/project/index.ts";
 import { STARTER_COMPONENT_TIMESTAMP, buildStarterComponents } from "./starter-components.ts";
+import { createComponentSystem } from "../domain/components/registry.ts";
+import { createNodeRegistry } from "../nodes/registry/registry.ts";
+import { allNodeDefinitions } from "../nodes/definitions/index.ts";
+import type { ComponentRegistryView } from "../domain/components/index.ts";
+
+/**
+ * T956: the starter library as a registry VIEW, for harness renders of examples that
+ * INSTANCE a component (the hologram). Authored through the real commands like
+ * everything else; cached, because the authoring is deterministic.
+ */
+let starterView: Promise<ComponentRegistryView> | undefined;
+export function starterComponentsView(): Promise<ComponentRegistryView> {
+  starterView ??= (async () => {
+    const { components } = createComponentSystem(createNodeRegistry(allNodeDefinitions).view());
+    for (const built of await buildStarterComponents()) components.register(built.definition);
+    return components.view();
+  })();
+  return starterView;
+}
 
 /**
  * The exact bytes each starter component ships as (T190, §V94).

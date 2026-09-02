@@ -74,6 +74,7 @@ describe("examples: the gate", () => {
       "E44-Sounding.loom.json",
       "E45-Pulse.loom.json",
       "E46-Lantern.loom.json",
+      "E47-Hologram.loom.json",
       "E5-Kaleidoscope.loom.json",
       "E6-Displacement-Stack.loom.json",
       "E7-LFO-Dissolve.loom.json",
@@ -160,7 +161,23 @@ describe.each(examples)("example $fileName", (file) => {
         return definition?.passthrough === undefined;
       })
       .sort();
-    expect([...plan.order].sort()).toEqual(expectedOrder);
+    /* T956: a component INSTANCE flattens into `<id>/<inner>` plan nodes (E47's holo1 is
+       the first shipped case), so order membership is asserted through that mapping: the
+       instance id itself never compiles, its expansion must be non-empty, and nothing
+       else may appear that the document does not account for. */
+    const instanceIds = new Set(
+      Object.keys(document.graph.nodes).filter((id) =>
+        (document.graph.nodes[id]?.type ?? "").startsWith("component:"),
+      ),
+    );
+    const plainExpected = expectedOrder.filter((id) => !instanceIds.has(id));
+    const flattenedOf = (id: string) => [...plan.order].filter((entry) => entry.startsWith(`${id}/`));
+    for (const id of instanceIds) expect(flattenedOf(id).length).toBeGreaterThan(0);
+    const unexplained = [...plan.order].filter(
+      (entry) => !plainExpected.includes(entry) && ![...instanceIds].some((id) => entry.startsWith(`${id}/`)),
+    );
+    expect(unexplained).toEqual([]);
+    for (const id of plainExpected) expect([...plan.order]).toContain(id);
     expect(plan.passes.length).toBeGreaterThan(0);
   });
 

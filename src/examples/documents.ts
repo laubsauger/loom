@@ -37,6 +37,7 @@ export { cinderDocument } from "./documents/cinder.ts";
 export { currentDocument } from "./documents/current.ts";
 export { spliceDocument } from "./documents/splice.ts";
 export { soundingDocument } from "./documents/sounding.ts";
+export { hologramDocument } from "./documents/hologram.ts";
 export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
@@ -76,6 +77,7 @@ import { cinderDocument } from "./documents/cinder.ts";
 import { currentDocument } from "./documents/current.ts";
 import { spliceDocument } from "./documents/splice.ts";
 import { soundingDocument } from "./documents/sounding.ts";
+import { hologramDocument } from "./documents/hologram.ts";
 import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
 
@@ -117,6 +119,7 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   currentDocument,
   spliceDocument,
   soundingDocument,
+  hologramDocument,
   pulseDocument,
   lanternDocument,
 ];
