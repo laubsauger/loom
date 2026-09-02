@@ -354,7 +354,7 @@ Being explicit about the tiers matters because it is tempting to design for Tier
 
 ## 8. Safety
 
-**Preamble, and it must appear in our documentation as well as here.** A laser projector can cause permanent eye injury. Compliance with IEC 60825-1 is a property of the *projector and the operator*, never of the software driving it. **Shaderloom is not a safety device and must never describe itself as one.** What follows is about ensuring that *our bugs* do not create a hazard, and about failing in the safe direction. It does not make an unsafe projector safe.
+**Preamble, and it must appear in our documentation as well as here.** A laser projector can cause permanent eye injury. Compliance with IEC 60825-1 is a property of the *projector and the operator*, never of the software driving it. **Loom is not a safety device and must never describe itself as one.** What follows is about ensuring that *our bugs* do not create a hazard, and about failing in the safe direction. It does not make an unsafe projector safe.
 
 ### 8.1 The physical fact everything follows from
 

@@ -23,11 +23,18 @@ function trackedFiles(): string[] {
 const BINARY = new Set([".png", ".jpg", ".ico", ".woff2"]);
 /** The engineering record of what was true then — class 4, deliberately untouched. */
 const RECORD = new Set(["SPEC.md", "SPEC-ARCHIVE.md"]);
+/*
+ * The gate names the old word to describe itself, so without this it reports ITSELF and
+ * masks the real offender behind its own noise — which is how `docs/laser-vector-display-plan.md`
+ * sat unrenamed while the gate was already red.
+ */
+const SELF = "src/tests/integration/rename-gate.test.ts";
 
 describe("the Shaderloom → Loom rename holds (§T899)", () => {
   it("no tracked file outside the SPEC record says Shaderloom", () => {
     const offenders: string[] = [];
     for (const file of trackedFiles()) {
+      if (file === SELF) continue;
       const name = file.split("/").at(-1) ?? file;
       if (RECORD.has(name)) continue;
       if (BINARY.has(name.slice(name.lastIndexOf(".")))) continue;
