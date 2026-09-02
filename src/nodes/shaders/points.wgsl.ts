@@ -387,3 +387,79 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
 }`;
 }
+
+/**
+ * Range (T983) — keep points where one attribute falls inside [from, to]; park the rest.
+ *
+ * PARK, NOT COMPACT, and the choice is documented because the compaction machinery
+ * exists (src/points/lifecycle.ts) and was declined: compaction MOVES SLOTS, which
+ * destroys a grid topology claim (the lattice is slot order) and forces a live-count
+ * every consumer must honour. Parking keeps every slot where it is — the same idiom
+ * `pointsFromTexture`'s threshold and DepthPoints' carve already use — so topology,
+ * capacity and every carried attribute pass through untouched and the filter costs one
+ * pass. A parked point sits at z = -1e6: out of every camera, out of every proximity
+ * radius, zero pixels.
+ *
+ * THE BOUNDARY BELONGS TO INSIDE (>= from, <= to). Keep-outside drops it. That makes
+ * two instances of this node with the same range an EXACT PARTITION — §T983's design
+ * property, the reason §T979's backdrop wall can be "everything outside the subject's
+ * slab" with no point drawn twice and none lost.
+ *
+ * On a counted set the dead tail is parked too, and the output deliberately does NOT
+ * republish the count: count means "the first N slots are the live ones, contiguous",
+ * and a range filter's survivors are not contiguous — republishing it would be a lie a
+ * consumer acts on.
+ */
+export function pointRangeWgsl(options: {
+  /** WGSL type of the tested attribute's array element. */
+  attributeType: string;
+  /** Component accessor for vectors ("" for scalars, ".x" … ".w"). */
+  component: string;
+  /** The tested attribute IS position — no second input binding. */
+  positionIsSource: boolean;
+  counted: boolean;
+}): string {
+  const scalar = options.attributeType === "u32" ? "u32" : "f32";
+  const source = options.positionIsSource ? "in_position" : "in_attr";
+  let binding = 2;
+  const attrDeclaration = options.positionIsSource
+    ? ""
+    : `@group(0) @binding(${binding++}) var<storage, read> in_attr: array<${options.attributeType}>;\n`;
+  const countDeclaration = options.counted
+    ? `@group(0) @binding(${binding++}) var<storage, read> in_count: array<u32>;\n`
+    : "";
+  const liveExpression = options.counted ? "min(params.count, in_count[0])" : "params.count";
+  const valueExpression =
+    scalar === "u32" ? `f32(${source}[index]${options.component})` : `${source}[index]${options.component}`;
+  /* "from" is a WGSL reserved keyword — the struct spells the range lo/hi. */
+  return `struct RangeParams {
+  count: u32,
+  keepInside: u32,
+  lo: f32,
+  hi: f32,
+};
+
+@group(0) @binding(0) var<uniform> params: RangeParams;
+@group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
+${attrDeclaration}${countDeclaration}@group(0) @binding(${binding}) var<storage, read_write> out_position: array<vec3f>;
+
+/* The park spot every absent point in this codebase uses (pointsFromTexture, carve). */
+const PARKED: vec3f = vec3f(0.0, 0.0, -1.0e6);
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.count) {
+    return;
+  }
+  if (index >= ${liveExpression}) {
+    out_position[index] = PARKED;
+    return;
+  }
+  let value = ${valueExpression};
+  /* Boundary is INSIDE on both modes: two instances over one range partition exactly. */
+  let inside = value >= params.lo && value <= params.hi;
+  let keep = inside == (params.keepInside == 1u);
+  out_position[index] = select(PARKED, in_position[index], keep);
+}`;
+}
