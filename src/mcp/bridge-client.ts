@@ -26,15 +26,19 @@ import { toolListings } from "./published-tools.ts";
  *
  * ## Security, stated where it is implemented
  *
- *  - **Nothing dials on load.** `createBridgeClient` opens no socket; it publishes an idle
- *    row carrying the `connect` the panel renders a field for. An agent cannot attach to a
- *    tab whose owner did not attach it.
- *  - **The pairing code is typed by the human, and never persisted.** It is minted by the
- *    bridge process and published only through the bridge's own channels, so a page the user
- *    did not open cannot produce one — which is what stops any site in any other tab from
- *    opening `ws://127.0.0.1` and driving this document. It travels as the first MESSAGE on
- *    the socket, never in the URL: T398's finding about the deprecated relay, whose session
- *    token rode the query string into every log that touched it.
+ *  - **Nothing dials on load unless THIS TAB attached in THIS SESSION.** `createBridgeClient`
+ *    opens no socket and publishes an idle row carrying the `connect` the panel renders a
+ *    field for. The one exception is T925's, and its consent is real rather than assumed:
+ *    if the human attached this tab earlier in this browser session, the code is in
+ *    `sessionStorage` and one silent attempt is made. An agent still cannot attach to a tab
+ *    whose owner never attached it, and a tab the owner closed forgets everything.
+ *  - **The pairing code is typed by the human, and outlives only the tab.** It is minted by
+ *    the bridge process and published only through the bridge's own channels, so a page the
+ *    user did not open cannot produce one — which is what stops any site in any other tab
+ *    from opening `ws://127.0.0.1` and driving this document. It travels as the first
+ *    MESSAGE on the socket, never in the URL: T398's finding about the deprecated relay,
+ *    whose session token rode the query string into every log that touched it. It is never
+ *    logged, and never written anywhere that survives the tab — see `PAIRING_STORAGE_KEY`.
  *  - **Explicit connect, explicit disconnect, visible state.** Every transition publishes a
  *    row with a reason (§V288/§V338); `McpConnectionPanel` renders it and the Disconnect
  *    beside it. Unmount disconnects, so a closed tab leaves no live attachment.
@@ -59,6 +63,81 @@ import { toolListings } from "./published-tools.ts";
  */
 const BRIDGE_IDLE_DETAIL =
   `Not attached — a desktop client (Claude Desktop, any stdio MCP client) drives THIS tab through the bridge: run \`pnpm mcp:serve\` in the project, read the pairing code it prints, and enter it here. Until a tab attaches, that server answers from a headless copy of the project — an agent can build a graph there that this tab never shows. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
+
+/**
+ * WHERE THE PAIRING CODE IS REMEMBERED, AND FOR EXACTLY HOW LONG (T925).
+ *
+ * ## The pain, in the owner's words
+ *
+ * *"maybe we should try to reconnect to the last known mcp code on hot reload… its super
+ * painful right now with any edit from an agent reloading the page and killing the link and
+ * having me to repaste the code."* Note the shape of that: the agent's OWN edit triggers the
+ * HMR reload that drops the attachment, so the tool stops working because of the work it
+ * enables. Every such edit cost a hand-carried six-character secret between two windows.
+ *
+ * ## `sessionStorage`, and why not `localStorage`
+ *
+ * This code gates control of the user's open document. `sessionStorage` survives a reload
+ * and dies with the tab — exactly the lifetime of the pain, and no longer. `localStorage`
+ * would outlive the bridge PROCESS that minted the code and leave a stale control secret on
+ * disk for days, buying nothing: the code is minted per process, so a value that outlives
+ * the process is guaranteed worthless and merely dangerous.
+ *
+ * ## Why this key does not carry the legacy prefix (§V813)
+ *
+ * §V813 keeps the thirteen existing storage keys on the OLD prefix because MOVING a key
+ * orphans data the user already has. A brand-new address has nothing to orphan, so it takes
+ * the current name. Two prefixes is the honest state of a renamed product mid-flight; it is
+ * a decision, not an oversight.
+ */
+const PAIRING_STORAGE_KEY = "loom.bridge.pairing.v1";
+
+/** The three things this module does with a remembered code. Injectable for tests. */
+export interface PairingMemory {
+  read(): string | null;
+  write(code: string): void;
+  forget(): void;
+}
+
+/**
+ * The real thing, and every call is wrapped.
+ *
+ * Reaching `sessionStorage` THROWS rather than returning null in a browser configured to
+ * block site data, and `setItem` throws on quota. Remembering a code is a convenience; it
+ * must never be able to stop a tab from attaching by hand.
+ */
+export function sessionPairingMemory(): PairingMemory {
+  const store = (): Storage | null => {
+    try {
+      return globalThis.sessionStorage as Storage | undefined ?? null;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    read() {
+      try {
+        return store()?.getItem(PAIRING_STORAGE_KEY) ?? null;
+      } catch {
+        return null;
+      }
+    },
+    write(code) {
+      try {
+        store()?.setItem(PAIRING_STORAGE_KEY, code);
+      } catch {
+        // Nothing to say and nothing to do: the next reload asks the human, as before.
+      }
+    },
+    forget() {
+      try {
+        store()?.removeItem(PAIRING_STORAGE_KEY);
+      } catch {
+        // Same.
+      }
+    },
+  };
+}
 
 /**
  * The socket shape this module needs.
@@ -120,13 +199,27 @@ export interface BridgeClientOptions {
   /** How this tab names itself to the bridge. Shown to the operator, never trusted. */
   readonly client?: string;
   readonly socketFactory?: BridgeSocketFactory;
+  /** Where a code is remembered across a reload (T925). Injectable for tests. */
+  readonly memory?: PairingMemory;
+  /**
+   * Whether to make the one silent attempt with a remembered code on construction.
+   *
+   * Default on — that is the whole feature. Off is for a test that wants a cold client.
+   */
+  readonly autoReconnect?: boolean;
 }
 
 export interface BridgeClient {
   /** Attaches with the pairing code the user typed. Only ever called from a user action. */
   connect(pairingCode: string): void;
-  /** Withdraws the tools and closes the socket. Safe to call when not attached. */
-  disconnect(): void;
+  /**
+   * Withdraws the tools and closes the socket. Safe to call when not attached.
+   *
+   * `forget` separates a HUMAN revoking the attachment from a component unmounting. The
+   * panel's Disconnect forgets; a React teardown (a StrictMode double-mount, an HMR module
+   * swap) must not, or T925's memory would be wiped by the very reload it exists to survive.
+   */
+  disconnect(options?: { readonly forget?: boolean }): void;
   /**
    * Tells the bridge this tab's tool roster moved, so the MCP client gets a
    * `tools/list_changed` and stops describing ports that have since mounted or gone.
@@ -139,12 +232,25 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   const openSocket = options.socketFactory ?? browserSocket;
   const url = bridgeUrl(options.port ?? BRIDGE_PORT);
   const clientName = options.client ?? "a Loom tab";
+  const memory = options.memory ?? sessionPairingMemory();
 
   let socket: BridgeSocket | null = null;
   /** Set while the user has asked to be attached. Guards late socket events. */
   let wanted = false;
   /** Set once the bridge has confirmed the pairing. */
   let attached = false;
+  /** The code of the attempt in flight, so a confirmed attach can remember it (T925). */
+  let attempting: string | null = null;
+  /** Whether the attempt in flight came from memory rather than from a person typing. */
+  let attemptWasRemembered = false;
+  /**
+   * Latch consumed by the next `connect`.
+   *
+   * `connect` is the ONE public door — a remembered attempt has to walk through the same
+   * one a typed code does, or the two paths drift. This carries the single bit that
+   * distinguishes them without widening the interface with an argument no caller should pass.
+   */
+  let nextAttemptIsRemembered = false;
 
   const publish = (
     state: "disconnected" | "connecting" | "connected" | "error",
@@ -169,7 +275,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       disconnect:
         state === "connected" || state === "connecting"
           ? () => {
-              client.disconnect();
+              // A HUMAN pressed this, so the remembered code goes with it (T925).
+              client.disconnect({ forget: true });
             }
           : null,
     });
@@ -213,6 +320,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       }
       case "attached": {
         attached = true;
+        // Remembered only once the bridge has CONFIRMED it, so a wrong code is never stored
+        // and never replayed on the next reload (T925).
+        if (attempting !== null) memory.write(attempting);
         publish(
           "connected",
           "Attached. An agent on your MCP client is driving THIS document — every tool call it makes lands on the graph you are looking at.",
@@ -224,15 +334,25 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         // The bridge's own words, carried as DATA into a field rendered as a text node —
         // never interpolated into anything a model reads (§V37).
         const said = message["reason"];
+        const wasRemembered = attemptWasRemembered;
         wanted = false;
         attached = false;
+        // A refused code is forgotten, and NOT retried. Codes are minted per process, so a
+        // stale one after the server respawned is the EXPECTED case, not an exceptional one
+        // — and a retry loop would hammer a bridge that can never accept it (T925).
+        memory.forget();
         const live = socket;
         socket = null;
         if (live !== null) {
           live.onclose = null;
           live.close();
         }
-        publish("error", `The bridge refused: ${typeof said === "string" ? said : "no reason given"}`);
+        publish(
+          "error",
+          wasRemembered
+            ? `The code this tab remembered from before the reload is no longer valid — the Loom MCP server mints a new pairing code every time it starts. Enter the current one; an agent connected to that server can read it out with the bridge_status tool. (The bridge said: ${typeof said === "string" ? said : "no reason given"})`
+            : `The bridge refused: ${typeof said === "string" ? said : "no reason given"}`,
+        );
         return;
       }
       case "ping": {
@@ -248,6 +368,8 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   const client: BridgeClient = {
     connect(pairingCode) {
       if (wanted) return;
+      const fromMemory = nextAttemptIsRemembered;
+      nextAttemptIsRemembered = false;
       const code = normalisePairingCode(pairingCode);
       if (code === "") {
         // Refused before a byte leaves the page: nothing opened, nothing published (§V288).
@@ -255,6 +377,10 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         return;
       }
       wanted = true;
+      attemptWasRemembered = fromMemory;
+      // Held for the `attached` confirmation. NEVER put into a published detail or a log —
+      // the panel row is rendered on screen and copied into bug reports.
+      attempting = code;
       publish("connecting", `Attaching to the bridge at ${url}…`);
       let live: BridgeSocket;
       try {
@@ -280,6 +406,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       live.onclose = () => {
         if (socket !== live) return;
         socket = null;
+        attempting = null;
         if (!wanted) return;
         wanted = false;
         // §V288: a connection that dies says so. Silence would leave the panel reading
@@ -298,9 +425,14 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       };
     },
 
-    disconnect() {
+    disconnect(disconnectOptions) {
       wanted = false;
       attached = false;
+      attempting = null;
+      attemptWasRemembered = false;
+      // Explicit revocation is explicit: a human pressing Disconnect must not be silently
+      // re-attached by the next reload. A component teardown passes nothing (T925).
+      if (disconnectOptions?.forget === true) memory.forget();
       const live = socket;
       socket = null;
       if (live !== null) {
@@ -317,5 +449,25 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
   };
 
   publish("disconnected", BRIDGE_IDLE_DETAIL);
+
+  /**
+   * ONE silent attempt with the code this tab attached with earlier in this session (T925).
+   *
+   * Exactly one, and only from memory that a CONFIRMED attach wrote. If it is refused the
+   * code is forgotten and the field comes back — a respawned server minting a new code is
+   * the expected outcome here, not an error condition, so there is no retry.
+   *
+   * `import.meta.hot` was considered for holding the socket across a partial HMR swap and
+   * deliberately skipped: this client is owned by a React effect that tears it down and
+   * rebuilds it on the swap anyway, so a module-level hook would be fighting the lifecycle
+   * for the case that already costs nothing. The reload that actually hurt is a FULL one,
+   * which no module hook survives and this memory does.
+   */
+  const remembered = memory.read();
+  if (remembered !== null && options.autoReconnect !== false) {
+    nextAttemptIsRemembered = true;
+    client.connect(remembered);
+  }
+
   return client;
 }

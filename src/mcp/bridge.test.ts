@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import type { Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createGraphStore } from "../domain/graph/store.ts";
@@ -85,16 +88,54 @@ afterEach(() => {
   while (cleanups.length > 0) cleanups.pop()?.();
 });
 
-async function bridgedServer(): Promise<Harness> {
+/**
+ * A temp directory for the port handoff (T921), never the developer's real `~/.loom`.
+ *
+ * A test that wrote there would leave a file naming a live PID on the machine of whoever
+ * ran the suite, and two tests running in parallel would fight over it.
+ */
+function handoffDirectory(): string {
+  const directory = mkdtempSync(join(tmpdir(), "loom-bridge-"));
+  cleanups.push(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return directory;
+}
+
+interface BridgedServerOptions {
+  /** Bind THIS port instead of asking the OS — how a second server loses the race. */
+  readonly port?: number;
+  readonly handoffDir?: string;
+  readonly proxyRetryMs?: number;
+  /** A server that is expected to LOSE does not wait for a bound port. */
+  readonly expectBound?: boolean;
+}
+
+async function bridgedServer(options: BridgedServerOptions = {}): Promise<Harness> {
   const sent: Array<Record<string, unknown>> = [];
   const server = createHeadlessMcpServer({
     send: (message) => sent.push(message),
-    // Port 0: the OS picks, so parallel suites never collide on the shared constant.
-    bridge: { port: 0 },
+    bridge: {
+      // Port 0: the OS picks, so parallel suites never collide on the shared constant.
+      port: options.port ?? 0,
+      handoffDir: options.handoffDir ?? handoffDirectory(),
+      ...(options.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.proxyRetryMs }),
+    },
   });
   cleanups.push(() => {
     server.dispose();
   });
+  if (options.expectBound === false) {
+    return {
+      server,
+      sent,
+      port: options.port ?? 0,
+      async request(method, params, id) {
+        await server.receive({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
+        return sent.findLast((message) => message["id"] === id) as { result?: Record<string, unknown> };
+      },
+    };
+  }
   await until(() => server.bridgeStatus()?.port !== null, "the bridge to bind a port");
   const port = server.bridgeStatus()?.port;
   if (port == null) throw new Error("bridge reported no port");
@@ -453,3 +494,450 @@ async function rawHandshake(port: number, origin: string): Promise<Record<string
     setTimeout(() => reject(new Error("no refusal frame arrived")), 5_000);
   });
 }
+
+/**
+ * T921 — TWO SERVERS, ONE PORT, AND NEITHER OF THEM A HEADLESS TWIN.
+ *
+ * ## The measurement these tests encode
+ *
+ * Claude Desktop spawns TWO `serve.ts` processes from ONE config entry — measured three
+ * times (91036/91053, 97103/97114), one second apart, and Desktop consistently talked to the
+ * SECOND spawn, which is always the one that lost the bind. So the failure was not a coin
+ * flip, it was reproducible: the process the owner's client was actually using served a full
+ * tool catalogue from a headless copy of the project, and the pairing code it printed named a
+ * listener that had never bound. "I entered the code and nothing happened."
+ *
+ * Three claims, each with its own test, because they fail independently:
+ *
+ *  1. The loser PROXIES the winner, so both stdio pipes reach the same live tab.
+ *  2. `bridge_status` reports the code and port that are true NOW — the loser reports the
+ *     INCUMBENT's code, because its own names nothing.
+ *  3. The loser NEVER answers from its own headless document while an incumbent exists, and
+ *     it takes the port once the incumbent is gone rather than staying dead forever.
+ *
+ * Nothing here is stubbed: two real `createHeadlessMcpServer`s, one real listener, one real
+ * loopback socket between them, and a real page attached to the winner (§V382).
+ */
+
+/** One `tools/call` over stdio, unwrapped to the surface's own result shape. */
+async function callPayload(
+  harness: Harness,
+  name: string,
+  args: Record<string, unknown>,
+  id: number,
+): Promise<{
+  status: string;
+  data: Record<string, unknown> | null;
+  diagnostics: Array<{ code?: string; message?: string }>;
+  bridge?: Record<string, unknown>;
+}> {
+  const call = await harness.request("tools/call", { name, arguments: args }, id);
+  const content = (call.result?.["content"] as Array<{ type: string; text: string }>).find(
+    (entry) => entry.type === "text",
+  );
+  return JSON.parse(content?.text ?? "{}") as never;
+}
+
+/** A winner and a loser fighting over ONE port, with one handoff directory between them. */
+async function racingServers(shared: { handoffDir?: string; proxyRetryMs?: number } = {}) {
+  const handoffDir = shared.handoffDir ?? handoffDirectory();
+  const incumbent = await bridgedServer({ handoffDir });
+  const loser = await bridgedServer({
+    port: incumbent.port,
+    handoffDir,
+    proxyRetryMs: shared.proxyRetryMs ?? 25,
+    expectBound: false,
+  });
+  return { incumbent, loser, handoffDir };
+}
+
+describe("two servers, one port: the loser proxies the winner (T921, §V288)", () => {
+  it("a tools/call on the LOSER's stdio edits the tab attached to the WINNER", async () => {
+    const { incumbent, loser } = await racingServers();
+    const page = await attachPage(incumbent);
+    await until(() => page.row()?.state === "connected", "the page to attach to the incumbent");
+    await until(
+      () => loser.server.bridgeStatus()?.mode === "proxying",
+      "the second server to lose the bind and enter proxy mode",
+    );
+    await until(
+      () => (loser.server.bridgeStatus()?.pairingCode ?? null) !== null,
+      "the proxy to reach the incumbent",
+    );
+
+    expect(Object.keys(page.store.view.getGraph().nodes)).toHaveLength(0);
+
+    // THE CLAIM: the process that LOST the port drives the tab anyway. Before T921 this call
+    // landed in a headless twin and the owner's canvas never moved.
+    const viaLoser = await callPayload(loser, "add_node", { type: "solid" }, 900);
+    expect(viaLoser.status).toBe("ok");
+    expect(viaLoser.bridge?.["attached"]).toBe(true);
+    expect(viaLoser.bridge?.["target"]).toBe("vitest-page");
+    expect(Object.values(page.store.view.getGraph().nodes)).toHaveLength(1);
+
+    // And the winner still drives the same tab, so BOTH of Desktop's processes are live —
+    // which is why proxying beats refusing the second instance.
+    const viaIncumbent = await callPayload(incumbent, "add_node", { type: "solid" }, 901);
+    expect(viaIncumbent.status).toBe("ok");
+    expect(viaIncumbent.bridge?.["attached"]).toBe(true);
+    const nodes = Object.values(page.store.view.getGraph().nodes);
+    expect(nodes).toHaveLength(2);
+    expect(nodes.map((node) => node.type)).toEqual(["solid", "solid"]);
+  });
+
+  it("serves the WINNER's tool roster, and the one-page rule still refuses a second tab", async () => {
+    const { incumbent, loser } = await racingServers();
+    const code = pairingCodeOf(incumbent);
+    const first = await attachPage(incumbent, { code });
+    await until(() => first.row()?.state === "connected", "the first page to attach");
+    await until(
+      () =>
+        loser.server.bridgeStatus()?.mode === "proxying" &&
+        (loser.server.bridgeStatus()?.pairingCode ?? null) !== null,
+      "the proxy to reach the incumbent",
+    );
+
+    // The roster the loser publishes is the roster that will actually execute — the page's.
+    const listed = await loser.request("tools/list", {}, 910);
+    const tools = listed.result?.["tools"] as Array<Record<string, unknown>>;
+    const addNode = tools.find((tool) => tool["name"] === "add_node");
+    expect(String(addNode?.["description"])).not.toContain("headless");
+    expect(String(addNode?.["description"])).not.toContain("REFUSED");
+    // The transport's own tool is published exactly ONCE, by the process being talked to —
+    // a proxied list that carried the incumbent's copy too would announce it twice.
+    expect(tools.filter((tool) => tool["name"] === "bridge_status")).toHaveLength(1);
+
+    // The widened rule is widened along ONE axis: a proxying SERVER is not a page, and the
+    // one-tab-at-a-time rule for PAGES is untouched by it.
+    const second = await attachPage(incumbent, { code });
+    await until(() => second.row()?.state === "error", "the second page to be refused");
+    expect(second.row()?.detail).toContain("already attached");
+    expect(first.row()?.state).toBe("connected");
+    // The proxy survived a page refusal it had nothing to do with.
+    expect(loser.server.bridgeStatus()?.mode).toBe("proxying");
+  });
+});
+
+describe("bridge_status reports the bridge as it is NOW (T921, §V288)", () => {
+  it("returns the winner's real code, port and attach state", async () => {
+    const harness = await bridgedServer();
+    const code = pairingCodeOf(harness);
+
+    const before = await callPayload(harness, "bridge_status", {}, 920);
+    expect(before.status).toBe("ok");
+    expect(before.data?.["mode"]).toBe("listening");
+    expect(before.data?.["pairingCode"]).toBe(code);
+    expect(before.data?.["port"]).toBe(harness.port);
+    expect(before.data?.["host"]).toBe("127.0.0.1");
+    expect(before.data?.["pid"]).toBe(process.pid);
+    expect(before.data?.["attached"]).toBe(false);
+
+    const page = await attachPage(harness, { code });
+    await until(() => page.row()?.state === "connected", "the page to attach");
+
+    // The point of the tool: the SAME call now reports a different, true, state. A client
+    // paraphrasing its earlier notification could not have produced this.
+    const after = await callPayload(harness, "bridge_status", {}, 921);
+    expect(after.data?.["attached"]).toBe(true);
+    expect(after.data?.["client"]).toBe("vitest-page");
+    expect(after.data?.["pairingCode"]).toBe(code);
+    expect(after.data?.["port"]).toBe(harness.port);
+  });
+
+  it("the LOSER reports the incumbent's code, not its own — the stale-code bug (T921)", async () => {
+    const { incumbent, loser } = await racingServers();
+    const code = pairingCodeOf(incumbent);
+    await until(
+      () =>
+        loser.server.bridgeStatus()?.mode === "proxying" &&
+        (loser.server.bridgeStatus()?.pairingCode ?? null) !== null,
+      "the proxy to learn the incumbent's pairing code",
+    );
+
+    const status = await callPayload(loser, "bridge_status", {}, 930);
+    expect(status.data?.["mode"]).toBe("proxying");
+    expect(status.data?.["listening"]).toBe(false);
+    // THE FIX FOR THE ACTUAL REPORT: the loser's own minted code names a listener that never
+    // bound, so entering it can never work. It hands over the one that does.
+    expect(status.data?.["pairingCode"]).toBe(code);
+    expect(status.data?.["incumbent"]).toEqual({ port: incumbent.port, pid: process.pid });
+
+    // And the same code reaches the model through `instructions`, so a client that never
+    // calls the tool is still told something true.
+    const init = await loser.request("initialize", {}, 931);
+    const instructions = String(init.result?.["instructions"]);
+    expect(instructions).toContain(code);
+    expect(instructions).toContain("did NOT bind the bridge port");
+  });
+});
+
+describe("the loser never answers from headless while an incumbent exists (T921, §V288/§V469)", () => {
+  it("refuses by name, then TAKES the port once the incumbent is gone", async () => {
+    // Separate handoff directories: the loser can see that the port is taken but cannot find
+    // a Loom bridge to proxy. That is the worst case — and the one where answering from its
+    // own twin would be most tempting and most wrong.
+    const incumbent = await bridgedServer({ handoffDir: handoffDirectory() });
+    const loser = await bridgedServer({
+      port: incumbent.port,
+      handoffDir: handoffDirectory(),
+      proxyRetryMs: 25,
+      expectBound: false,
+    });
+    await until(() => loser.server.bridgeStatus()?.mode === "proxying", "the loser to lose the bind");
+
+    const refused = await callPayload(loser, "add_node", { type: "solid" }, 940);
+    expect(refused.status).toBe("error");
+    expect(refused.diagnostics[0]?.code).toBe("bridge/not-the-owner");
+    // Actionable, not merely negative: the owner is told WHICH port and WHICH process.
+    expect(String(refused.diagnostics[0]?.message)).toContain(`127.0.0.1:${incumbent.port}`);
+    expect(String(refused.diagnostics[0]?.message)).toContain("headless");
+
+    // tools/list says the same thing, so a client knows before it calls.
+    const listed = await loser.request("tools/list", {}, 941);
+    const addNode = (listed.result?.["tools"] as Array<Record<string, unknown>>).find(
+      (tool) => tool["name"] === "add_node",
+    );
+    expect(String(addNode?.["description"])).toContain("does not own the bridge port");
+    // bridge_status is the one thing that still answers, because it is the diagnosis.
+    const status = await callPayload(loser, "bridge_status", {}, 942);
+    expect(status.status).toBe("ok");
+    expect(status.data?.["mode"]).toBe("proxying");
+
+    // MEASURED SEPARATELY AND ALSO FIXED HERE: before T921 `onListenError` fired once and the
+    // process served headless forever, so killing the winner left the port FREE and rescued
+    // nobody. Now the loser takes it.
+    incumbent.server.dispose();
+    await until(
+      () => loser.server.bridgeStatus()?.mode === "listening",
+      "the loser to take the freed port",
+      10_000,
+    );
+    expect(loser.server.bridgeStatus()?.port).toBe(incumbent.port);
+
+    // THE EXACT-VALUE PROOF that the refusal was real: the loser's own document is EMPTY, so
+    // the `add_node` it refused above never quietly landed in the twin.
+    const graph = await callPayload(loser, "get_graph", {}, 943);
+    expect(graph.status).toBe("ok");
+    expect(graph.data?.["nodes"]).toEqual([]);
+  });
+
+  it("says a working get_node_definition is not evidence of an attachment (T921, §V469)", async () => {
+    // The owner's own confusion: catalogue tools answer perfectly while unattached, so the
+    // surface looks half-alive. A partial success hiding a total failure.
+    const harness = await bridgedServer();
+    const definition = await callPayload(
+      harness,
+      "get_node_definition",
+      { type: "solid" },
+      950,
+    );
+    expect(definition.status).toBe("ok");
+    expect(String(definition.bridge?.["note"])).toContain("get_node_definition");
+    expect(String(definition.bridge?.["note"])).toContain("NOT evidence");
+    expect(definition.bridge?.["attached"]).toBe(false);
+  });
+});
+
+/**
+ * T925 — THE RELOAD THAT KILLED THE LINK.
+ *
+ * The owner: *"maybe we should try to reconnect to the last known mcp code on hot reload…
+ * its super painful right now with any edit from an agent reloading the page and killing the
+ * link and having me to repaste the code."* The agent's own edit triggers the HMR reload
+ * that drops the attachment, so the tool stopped working because of the work it enabled.
+ *
+ * These run over the same real socket the rest of the file uses, with the STORAGE injected
+ * rather than the transport — the thing under test is which codes get remembered and when,
+ * and Node has no `sessionStorage` to remember them in.
+ */
+
+/** `sessionStorage` reduced to what the client uses, so a test can watch every write. */
+function fakeMemory(seed: string | null = null) {
+  let stored = seed;
+  const writes: string[] = [];
+  return {
+    memory: {
+      read: () => stored,
+      write: (code: string) => {
+        stored = code;
+        writes.push(code);
+      },
+      forget: () => {
+        stored = null;
+      },
+    },
+    writes,
+    current: () => stored,
+  };
+}
+
+describe("the bridge survives a reload (T925)", () => {
+  it("remembers a CONFIRMED code and re-attaches with nobody typing", async () => {
+    const harness = await bridgedServer();
+    const code = pairingCodeOf(harness);
+    const storage = fakeMemory();
+
+    const first = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry: createMcpTransportRegistry(),
+      port: harness.port,
+      client: "vitest-page",
+      memory: storage.memory,
+    });
+    cleanups.push(() => first.disconnect());
+    first.connect(code);
+    await until(() => harness.server.bridgeStatus()?.attached === true, "the first attach");
+    // Remembered only once the bridge CONFIRMED it — one write, the accepted code.
+    expect(storage.writes).toEqual([code]);
+
+    // The reload: the effect tears the client down without forgetting, and a new one is built.
+    first.disconnect();
+    await until(() => harness.server.bridgeStatus()?.attached === false, "the reload to detach");
+
+    const page = pageHarness();
+    const registry = createMcpTransportRegistry();
+    const second = createBridgeClient({
+      surface: () => page.surface,
+      registry,
+      port: harness.port,
+      client: "vitest-reloaded",
+      memory: storage.memory,
+    });
+    cleanups.push(() => second.disconnect());
+
+    // THE CLAIM: nobody called connect. The tab re-attached itself from what it remembered.
+    await until(() => harness.server.bridgeStatus()?.attached === true, "the silent re-attach");
+    expect(harness.server.bridgeStatus()?.client).toBe("vitest-reloaded");
+
+    // And it is genuinely attached, not merely connected: a stdio call lands on the new page.
+    const call = await callPayload(harness, "add_node", { type: "solid" }, 960);
+    expect(call.status).toBe("ok");
+    expect(Object.values(page.store.view.getGraph().nodes)).toHaveLength(1);
+  });
+
+  it("never remembers a code the bridge refused", async () => {
+    const harness = await bridgedServer();
+    const storage = fakeMemory();
+    const registry = createMcpTransportRegistry();
+    const client = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry,
+      port: harness.port,
+      client: "vitest-page",
+      memory: storage.memory,
+    });
+    cleanups.push(() => client.disconnect());
+    client.connect("AAAAAA");
+    await until(
+      () => registry.snapshot().find((row) => row.kind === "bridge")?.state === "error",
+      "the bridge to refuse",
+    );
+    expect(storage.writes).toEqual([]);
+    expect(storage.current()).toBeNull();
+  });
+
+  it("forgets a stale remembered code, says why, and does NOT retry", async () => {
+    const harness = await bridgedServer();
+    // The expected case, not an exceptional one: the server respawned and minted a new code.
+    const storage = fakeMemory("AAAAAA");
+    const registry = createMcpTransportRegistry();
+    const client = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry,
+      port: harness.port,
+      client: "vitest-page",
+      memory: storage.memory,
+    });
+    cleanups.push(() => client.disconnect());
+
+    const row = () => registry.snapshot().find((transport) => transport.kind === "bridge");
+    await until(() => row()?.state === "error", "the remembered code to be refused");
+    expect(storage.current()).toBeNull();
+    // The sentence names the real cause — a per-process code — and the way to read the new
+    // one, which is the tool T921 added. Not "the bridge refused", which reads as user error.
+    expect(row()?.detail).toContain("no longer valid");
+    expect(row()?.detail).toContain("bridge_status");
+    // The field comes back so the human can recover.
+    expect(row()?.connect).not.toBeNull();
+    // NO RETRY LOOP: a stale code can never be accepted, and hammering the bridge with it
+    // would burn its one-socket-at-a-time slot forever.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(row()?.state).toBe("error");
+    expect(storage.current()).toBeNull();
+    expect(harness.server.bridgeStatus()?.attached).toBe(false);
+  });
+
+  it("a human's Disconnect forgets; a component teardown does not", async () => {
+    const harness = await bridgedServer();
+    const code = pairingCodeOf(harness);
+
+    const kept = fakeMemory();
+    const teardown = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry: createMcpTransportRegistry(),
+      port: harness.port,
+      client: "vitest-page",
+      memory: kept.memory,
+    });
+    cleanups.push(() => teardown.disconnect());
+    teardown.connect(code);
+    await until(() => harness.server.bridgeStatus()?.attached === true, "the attach");
+    teardown.disconnect();
+    // The reload path. Forgetting here would defeat the whole feature.
+    expect(kept.current()).toBe(code);
+    await until(() => harness.server.bridgeStatus()?.attached === false, "the teardown to detach");
+
+    const dropped = fakeMemory();
+    const registry = createMcpTransportRegistry();
+    const revoked = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry,
+      port: harness.port,
+      client: "vitest-page",
+      memory: dropped.memory,
+    });
+    cleanups.push(() => revoked.disconnect());
+    revoked.connect(code);
+    await until(() => harness.server.bridgeStatus()?.attached === true, "the second attach");
+    expect(dropped.current()).toBe(code);
+
+    // The panel's own affordance — the button a human presses — is explicit revocation.
+    registry.snapshot().find((transport) => transport.kind === "bridge")?.disconnect?.();
+    expect(dropped.current()).toBeNull();
+  });
+
+  it("never publishes the pairing code into a row a human can read off the screen", async () => {
+    const harness = await bridgedServer();
+    const code = pairingCodeOf(harness);
+    const storage = fakeMemory();
+    const details: string[] = [];
+    const inner = createMcpTransportRegistry();
+    const registry = {
+      ...inner,
+      snapshot: () => inner.snapshot(),
+      subscribe: (listener: () => void) => inner.subscribe(listener),
+      noteInvocation: (kind: Parameters<typeof inner.noteInvocation>[0], tool: string) =>
+        inner.noteInvocation(kind, tool),
+      publish: (status: Parameters<typeof inner.publish>[0]) => {
+        details.push(status.detail);
+        inner.publish(status);
+      },
+    };
+    const client = createBridgeClient({
+      surface: () => pageHarness().surface,
+      registry,
+      port: harness.port,
+      client: "vitest-page",
+      memory: storage.memory,
+    });
+    cleanups.push(() => client.disconnect());
+    client.connect(code);
+    await until(() => harness.server.bridgeStatus()?.attached === true, "the attach");
+
+    // The secret is remembered and transmitted, and appears in NOTHING that gets rendered,
+    // screenshotted or pasted into a bug report.
+    expect(storage.current()).toBe(code);
+    expect(details.length).toBeGreaterThan(0);
+    expect(details.filter((detail) => detail.includes(code))).toEqual([]);
+  });
+});

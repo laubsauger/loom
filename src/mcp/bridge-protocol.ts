@@ -37,9 +37,17 @@
  *  - **The code is never in a URL or a query string.** T398's finding about the deprecated
  *    relay, whose session token rides the socket URL: URLs land in logs, in referrers and in
  *    process listings. It travels as the first MESSAGE on an opened socket instead.
- *  - **One attachment at a time.** A second page is refused BY NAME (§V288) rather than
- *    silently multiplexed — T458(b) is exactly that bug in the relay, where any connected
- *    channel could invoke another channel's tools.
+ *  - **One PAGE at a time.** A second page is refused BY NAME (§V288) rather than silently
+ *    multiplexed — T458(b) is exactly that bug in the relay, where any connected channel
+ *    could invoke another channel's tools. T921 WIDENED this rule along one axis and no
+ *    other: a connection now declares a ROLE in its first message. The `page` role is
+ *    unchanged in every respect, one at a time, gated by the pairing code. The `proxy` role
+ *    is a SIBLING SERVER that lost the race for the port and forwards its stdio traffic
+ *    here; several may connect, none of them occupies the page slot, and the credential is
+ *    a separate secret that exists only in a `0600` file (`bridge-handoff.ts`). The rule
+ *    the original bullet was protecting — an agent's edits always land somewhere
+ *    identifiable — is untouched, because every proxied call still executes against the one
+ *    attached page and still carries that page's name in its result.
  *
  * ## Nothing here interprets a message
  *
@@ -158,7 +166,7 @@ export type BridgeHostMessage =
   | { readonly type: "callTool"; readonly id: number; readonly tool: string; readonly arguments: unknown }
   | { readonly type: "ping"; readonly id: number };
 
-/** Page → host. */
+/** Page → host. Role `page`, opened by `attach`. */
 export type BridgePageMessage =
   | { readonly type: "attach"; readonly code: string; readonly client: string }
   | { readonly type: "listToolsResult"; readonly id: number; readonly tools: readonly BridgeToolListing[] }
@@ -166,6 +174,64 @@ export type BridgePageMessage =
   | { readonly type: "callToolError"; readonly id: number; readonly message: string }
   | { readonly type: "toolsChanged" }
   | { readonly type: "pong"; readonly id: number };
+
+/**
+ * PROXY → INCUMBENT (T921). The other role this socket carries.
+ *
+ * A sibling `serve.ts` that lost the race for the port opens a connection, presents the
+ * proxy token from the handoff file, and then asks the SAME two questions a bridge host
+ * asks a page: what tools do you have, and please run this one. The message names are
+ * deliberately the same as the host→page requests, because the shape is the same request in
+ * the same direction of causation — what differs is who is answering, and that is settled
+ * once, by the role declared in the first message.
+ *
+ * The proxy never sends `attach`, so it can never take the page slot; a page never knows
+ * the token, so it can never take the proxy role. One socket type, two disjoint roles.
+ */
+export type BridgeProxyMessage =
+  | { readonly type: "proxyAttach"; readonly token: string; readonly client: string }
+  | { readonly type: "listTools"; readonly id: number }
+  | { readonly type: "callTool"; readonly id: number; readonly tool: string; readonly arguments: unknown };
+
+/**
+ * INCUMBENT → PROXY.
+ *
+ * `proxyAttached` carries the three facts the loser cannot otherwise state truthfully: which
+ * port is really bound, which PID owns it, and — the one that unblocked the owner — the
+ * pairing code that ACTUALLY WORKS. Before T921 the loser printed its own freshly minted
+ * code for a listener that never bound, which is exactly the "I entered it and nothing
+ * happened" report. Handing the incumbent's code to the proxy means both of Claude
+ * Desktop's processes name the same live bridge.
+ */
+export type BridgeProxyReply =
+  | {
+      readonly type: "proxyAttached";
+      readonly serverInfo: string;
+      readonly port: number;
+      readonly pid: number;
+      readonly pairingCode: string;
+    }
+  | { readonly type: "refused"; readonly reason: string }
+  | { readonly type: "listToolsResult"; readonly id: number; readonly tools: readonly BridgeToolListing[] }
+  | { readonly type: "callToolResult"; readonly id: number; readonly result: unknown }
+  | { readonly type: "callToolError"; readonly id: number; readonly message: string }
+  | { readonly type: "toolsChanged" };
+
+/**
+ * Constant-time-ish comparison for the proxy token. Same reasoning as `pairingCodeMatches`,
+ * and NOT the same function: the token is neither normalised nor case-folded, because
+ * nothing retypes it — folding it would only shrink the space for no human benefit.
+ */
+export function proxyTokenMatches(expected: string, given: unknown): boolean {
+  if (typeof given !== "string" || expected.length === 0 || given.length !== expected.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let index = 0; index < expected.length; index += 1) {
+    diff |= expected.charCodeAt(index) ^ given.charCodeAt(index);
+  }
+  return diff === 0;
+}
 
 /**
  * Parses one frame's text into an object, or null.
@@ -196,11 +262,48 @@ export function parseBridgeMessage(data: unknown): Record<string, unknown> | nul
  */
 export const BRIDGE_ATTACH_TIMEOUT_MS = 5_000;
 
-/** What a headless tool result and the panel both say. One sentence, one place (§V39). */
+/**
+ * A tool result shaped like the surface's own, for failures the BRIDGE itself must report.
+ *
+ * Never an exception and never a JSON-RPC error: "the tab went away", "another server owns
+ * the port" and "that call timed out" are all things the calling model should read and act
+ * on, so they travel as DATA in the same envelope a refusal does (§V66). One definition,
+ * because the host and the proxy both need it and two copies would drift (§V39).
+ */
+export function bridgeFailureResult(
+  tool: string,
+  code: string,
+  message: string,
+): Record<string, unknown> {
+  return {
+    tool,
+    status: "error",
+    data: null,
+    diagnostics: [{ severity: "error", code, message }],
+    revision: null,
+  };
+}
+
+/**
+ * What a headless tool result and the panel both say. One sentence, one place (§V39).
+ *
+ * The middle clause is T921's third finding, and it is the owner's own confusion quoted back
+ * as a fix: *"somehow the get node definition stuff still works. so i'm confused… is that
+ * again headless then? this is so weird."* The catalogue tools answer PERFECTLY while
+ * unattached, because node types are the same in both processes — so the surface looks
+ * half-alive, and a half-alive surface reads as a working one. That is §V469's shape: a
+ * partial success hiding a total failure. Naming the split is what stops a correct answer
+ * from `get_node_definition` being read as evidence that the bridge is attached.
+ */
 export function headlessNote(pairingCode: string): string {
   return (
     "No Loom tab is attached to this bridge, so this ran against a HEADLESS in-memory " +
-    "document the user cannot see. To drive the tab they are looking at: open Loom, " +
-    `go to the agent panel's Connections section, and enter the pairing code ${pairingCode}.`
+    "document the user cannot see. NOTE that catalogue tools (list_node_definitions, " +
+    "get_node_definition) answer CORRECTLY either way, because node types are the same in " +
+    "both processes — a working answer from one of those is NOT evidence that a tab is " +
+    "attached, and every DOCUMENT tool here is reading or editing an empty copy. To drive " +
+    "the tab the user is looking at: open Loom, go to the agent panel's Connections " +
+    `section, and enter the pairing code ${pairingCode}. Call bridge_status for the current ` +
+    "code and port rather than repeating one from earlier in this conversation."
   );
 }

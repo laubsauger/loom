@@ -83,6 +83,9 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
     bridgeRef.current = bridge;
     return () => {
       bridgeRef.current = null;
+      // WITHOUT `forget` on purpose (T925): this is a component teardown — a StrictMode
+      // double-mount or an HMR swap — not a human revoking the attachment. Forgetting here
+      // would wipe the remembered code with the very reload the memory exists to survive.
       bridge.disconnect();
     };
   }, [registry]);

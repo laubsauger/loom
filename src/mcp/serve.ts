@@ -42,6 +42,16 @@ import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
  * The owner's MCP client config does not change, which is the constraint the whole design
  * is built around: the same `node … serve.ts --grant-export` invocation, one new listener.
  *
+ * ## TWO OF THESE PROCESSES CAN EXIST AT ONCE, AND THAT IS NOT A MISCONFIGURATION (T921)
+ *
+ * MEASURED: Claude Desktop spawns TWO of this process from ONE config entry, a second apart.
+ * The port is a constant, so one binds and one does not — and the one Desktop actually talks
+ * to was consistently the second, which is always the loser. It used to keep serving a full
+ * catalogue from its own headless document, so the owner's canvas never moved and the
+ * pairing code it printed named a listener that had never bound. Now the loser PROXIES the
+ * winner, and a server that cannot bind keeps retrying until the port frees. `bridge_status`
+ * makes all of it readable on demand. See `bridge-host.ts`.
+ *
  * With nothing attached this serves headless exactly as before — that path works and the
  * tests depend on it — but says so in the `instructions`, in every tool description and in
  * every tool result, so "the agent built a graph I cannot see" is never silent (§V338).
@@ -89,6 +99,16 @@ export interface HeadlessMcpServerOptions {
    */
   bridge?: {
     readonly port?: number;
+    /**
+     * Where the port handoff is published and read (T921). Defaults to `~/.loom`.
+     *
+     * Injectable for the same reason `port` is: a test must not write into the developer's
+     * real home directory, and two servers racing for one port inside one test have to be
+     * pointed at one temporary directory.
+     */
+    readonly handoffDir?: string;
+    /** How often a server that lost the bind retries. Injectable so a test does not wait. */
+    readonly proxyRetryMs?: number;
     /**
      * Where a HUMAN reads the bridge's news — the pairing code above all.
      *
@@ -188,6 +208,8 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
       : createBridgeHost({
           headless: surface,
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
+          ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
+          ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
           onToolsChanged: () => {
             connection.refreshTools();
           },
