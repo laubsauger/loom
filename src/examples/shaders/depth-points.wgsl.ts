@@ -128,6 +128,15 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* T973: photographic at heat 0, thermal at 1 — and the middle is the point: the
      source's own colour with depth bleeding through, one knob rather than a mode. */
   let blended = mix(colour.rgb, thermal(p.depthN), clamp(ctx.params.heat, 0.0, 1.0));
-  q.tint = vec4f(blended * ctx.params.gain, 1.0);
+  /* §T977 follow-up: the field's ALPHA is honoured as COVERAGE, premultiplied — the
+     colour carries the coverage, the scene renderer's own additive convention, and the
+     same rule this kernel already applies at its two parked exits (tint = vec4f(0.0)).
+     A masked colour map (DepthCut) now actually darkens the motes it cut. CLAMPED,
+     because coverage is [0, 1] by meaning: an additive composite upstream SUMS alphas
+     (measured - a lit disc over an opaque bed reads a = 2), and honouring that literally
+     would double the rgb of every such point. With the clamp, any map that is
+     opaque-or-over is bit-identical to the pre-fix output. */
+  let cover = clamp(colour.a, 0.0, 1.0);
+  q.tint = vec4f(blended * ctx.params.gain * cover, cover);
   return q;
 }`;
