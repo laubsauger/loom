@@ -299,7 +299,10 @@ describe("T935 — the derivation against the shipped node catalogue", () => {
       type,
       definitionVersion: definition.version,
       position: { x: 0, y: 0 },
-      parameters: { ...defaultParameters(definition.parameters), ...overrides },
+      // §T903's funnel, even here: `effectiveParameterSchema` is the ONE way to a node's
+      // parameters, and a test that reached past it into `definition.parameters` would be
+      // seeding a node the app could never produce.
+      parameters: { ...defaultParameters(effectiveParameterSchema(definition, {})), ...overrides },
     };
   };
 
